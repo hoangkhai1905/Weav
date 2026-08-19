@@ -1,13 +1,32 @@
 services:
+  # ==================================================
+  # Identity Service - Spring Boot
+  # ==================================================
   identity-service:
     profiles: ["app"]
+
     build:
       context: ./services/identity-service
       dockerfile: Dockerfile.dev
+
     ports:
       - "8081:8080"
-    env_file:
-      - .env
+
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-postgres}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_SSL_MODE: ${DB_SSL_MODE:-require}
+      DB_SCHEMA: identity
+
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
 
     develop:
       watch:
@@ -21,15 +40,44 @@ services:
         - action: rebuild
           path: ./services/identity-service/pom.xml
 
+
+  # ==================================================
+  # Workflow Service - Spring Boot
+  # ==================================================
   workflow-service:
     profiles: ["app"]
+
     build:
       context: ./services/workflow-service
       dockerfile: Dockerfile.dev
+
     ports:
       - "8082:8080"
-    env_file:
-      - .env
+
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+
+      # PostgreSQL / Supabase
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-postgres}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_SCHEMA: workflow
+
+      # Valkey
+      VALKEY_URL: ${VALKEY_URL}
+
+      # RabbitMQ
+      # Inside Docker network, use service name instead of localhost.
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
 
     develop:
       watch:
@@ -42,41 +90,116 @@ services:
 
         - action: rebuild
           path: ./services/workflow-service/pom.xml
-          
+
+
+  # ==================================================
+  # AI Service - NestJS
+  # ==================================================
   ai-service:
     profiles: ["app"]
+
     build:
       context: .
       dockerfile: services/ai-service/Dockerfile.dev
+
     ports:
       - "3001:3000"
-    env_file:
-      - .env
 
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+
+      # AI providers
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+
+  # ==================================================
+  # API Gateway - NestJS
+  # ==================================================
   api-gateway:
     profiles: ["app"]
+
     build:
       context: .
       dockerfile: services/api-gateway/Dockerfile.dev
+
     ports:
       - "3000:3000"
-    env_file:
-    - .env
 
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+
+      # Supabase project metadata only
+      SUPABASE_URL: ${SUPABASE_URL}
+
+      # Valkey - rate limiting / cache
+      VALKEY_URL: ${VALKEY_URL}
+
+      # Internal service URLs
+      IDENTITY_SERVICE_URL: http://identity-service:8080
+      WORKFLOW_SERVICE_URL: http://workflow-service:8080
+      AI_SERVICE_URL: http://ai-service:3000
+      OCR_SERVICE_URL: http://ocr-service:8000
+      BOT_NOTIFICATION_SERVICE_URL: http://bot-notification-service:3000
+
+
+  # ==================================================
+  # Bot / Notification Service - NestJS
+  # ==================================================
   bot-notification-service:
     profiles: ["app"]
+
     build:
       context: .
       dockerfile: services/bot-notification-service/Dockerfile.dev
-    env_file:
-      - .env
 
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+
+      # PostgreSQL / Supabase
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-postgres}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_SCHEMA: bot
+
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+
+      # Workflow Service
+      WORKFLOW_SERVICE_URL: http://workflow-service:8080
+
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+
+  # ==================================================
+  # OCR Service - Python
+  # ==================================================
   ocr-service:
     profiles: ["app"]
+
     build:
       context: ./services/ocr-service
       dockerfile: Dockerfile.dev
+
     ports:
       - "8000:8000"
-    env_file:
-      - .env
+
+    environment:
+      APP_ENV: ${APP_ENV:-development}
