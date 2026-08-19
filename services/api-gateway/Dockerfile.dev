@@ -1,0 +1,21 @@
+FROM node:24-bookworm
+
+RUN corepack enable \
+    && corepack prepare pnpm@11.22.0 --activate
+
+WORKDIR /workspace
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+
+COPY services/api-gateway/package.json ./services/api-gateway/package.json
+COPY packages ./packages
+
+RUN pnpm install \
+    --filter ./services/api-gateway... \
+    --frozen-lockfile
+
+COPY services/api-gateway ./services/api-gateway
+
+WORKDIR /workspace/services/api-gateway
+
+CMD ["pnpm", "start:dev"]

@@ -1,0 +1,25 @@
+FROM node:24-bookworm
+
+RUN corepack enable \
+    && corepack prepare pnpm@11.22.0 --activate
+
+WORKDIR /workspace
+
+# Workspace metadata + lockfile
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+
+# Manifest của service
+COPY services/ai-service/package.json ./services/ai-service/package.json
+
+# Shared packages để sau này workspace:* vẫn dùng được
+COPY packages ./packages
+
+RUN pnpm install \
+    --filter ./services/ai-service... \
+    --frozen-lockfile
+
+COPY services/ai-service ./services/ai-service
+
+WORKDIR /workspace/services/ai-service
+
+CMD ["pnpm", "start:dev"]

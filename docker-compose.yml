@@ -1,3 +1,0 @@
-# Base local orchestration.
-# Services will be added incrementally as they are implemented.
-services: {}

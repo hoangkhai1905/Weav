@@ -1,0 +1,16 @@
+{
+  "name": "weav",
+  "private": true,
+  "packageManager": "pnpm@11.22.0",
+  "scripts": {
+    "install:all": "pnpm install",
+    "build:web": "pnpm --dir apps/web build",
+    "build:ai": "pnpm --dir services/ai-service build",
+    "build:gateway": "pnpm --dir services/api-gateway build",
+    "build:bot": "pnpm --dir services/bot-notification-service build",
+    "docker:infra": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:ps": "docker compose ps",
+    "docker:config": "docker compose -f compose.yml -f compose.dev.yml config"
+  }
+}

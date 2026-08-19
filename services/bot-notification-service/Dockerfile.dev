@@ -1,0 +1,21 @@
+FROM node:24-bookworm
+
+RUN corepack enable \
+    && corepack prepare pnpm@11.22.0 --activate
+
+WORKDIR /workspace
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+
+COPY services/bot-notification-service/package.json ./services/bot-notification-service/package.json
+COPY packages ./packages
+
+RUN pnpm install \
+    --filter ./services/bot-notification-service... \
+    --frozen-lockfile
+
+COPY services/bot-notification-service ./services/bot-notification-service
+
+WORKDIR /workspace/services/bot-notification-service
+
+CMD ["pnpm", "start:dev"]

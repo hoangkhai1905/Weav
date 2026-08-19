@@ -1,32 +1,157 @@
-# Environment
+# ==================================================
+# WEAV - Root .gitignore
+# ==================================================
+
+# --------------------------------------------------
+# Environment / secrets
+# --------------------------------------------------
 .env
 .env.*
 !.env.example
 
-# Dependencies
-node_modules/
-.venv/
-venv/
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
 
-# Build
-dist/
-build/
-coverage/
-
-# IDE / OS
-.vscode/
-.idea/
+# --------------------------------------------------
+# OS
+# --------------------------------------------------
 .DS_Store
 Thumbs.db
+Desktop.ini
 
+# --------------------------------------------------
+# VS Code / IDE
+# --------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# --------------------------------------------------
 # Logs
+# --------------------------------------------------
 *.log
 logs/
 
-# Python
-__pycache__/
-*.py[cod]
+# --------------------------------------------------
+# Java / Maven / Spring Boot
+# --------------------------------------------------
+**/target/
 
-# Secrets / local data
-*.pem
-*.key
+*.class
+*.jar
+*.war
+*.ear
+
+# Keep Maven Wrapper
+!**/mvnw
+!**/mvnw.cmd
+!**/.mvn/**
+
+# Spring local overrides
+**/application-local.yml
+**/application-local.yaml
+**/application-local.properties
+
+# --------------------------------------------------
+# Node.js / pnpm
+# --------------------------------------------------
+**/node_modules/
+
+**/dist/
+**/build/
+**/.cache/
+
+.pnpm-store/
+.npm/
+.yarn/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --------------------------------------------------
+# React / Vite
+# --------------------------------------------------
+**/.vite/
+**/.vite-inspect/
+
+# --------------------------------------------------
+# Expo / React Native
+# --------------------------------------------------
+**/.expo/
+**/.expo-shared/
+
+**/android/.gradle/
+**/android/build/
+**/android/app/build/
+
+**/ios/Pods/
+**/ios/build/
+
+*.jks
+*.keystore
+
+# --------------------------------------------------
+# Python / FastAPI
+# --------------------------------------------------
+**/.venv/
+**/venv/
+
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+.coverage
+coverage.xml
+htmlcov/
+
+# --------------------------------------------------
+# Test / coverage artifacts
+# --------------------------------------------------
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# --------------------------------------------------
+# Temporary files
+# --------------------------------------------------
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+tmp/
+temp/
+
+# --------------------------------------------------
+# Docker
+# --------------------------------------------------
+docker-data/
+
+# --------------------------------------------------
+# Local database / storage artifacts
+# --------------------------------------------------
+*.db
+*.sqlite
+*.sqlite3
+
+# --------------------------------------------------
+# Local tool files
+# --------------------------------------------------
+.tool-versions.local
