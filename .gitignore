@@ -155,3 +155,7 @@ docker-data/
 # Local tool files
 # --------------------------------------------------
 .tool-versions.local
+.claude
+.gitnexus
+AGENTS.md
+CLAUDE.md
