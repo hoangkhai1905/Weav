@@ -49,7 +49,9 @@ Sau khi đã cài Git, Java 25, Node 24, pnpm, uv và Docker:
 git clone <REPOSITORY_URL>
 cd Weav
 
-.\scripts\setup.ps1
+.\scripts\dev\setup.ps1
+
+powershell -ExecutionPolicy Bypass -File .\scripts\dev\setup.ps1
 ```
 
 Không chạy lại:
@@ -304,7 +306,8 @@ cd ..\..
 pnpm --dir apps/web build
 pnpm --dir services/ai-service build
 pnpm --dir services/api-gateway build
-pnpm --dir services/bot-notification-service build
+pnpm --dir services/bot-service build
+pnpm --dir services/notification-service build
 ```
 
 ---
@@ -360,7 +363,8 @@ services/workflow-service/Dockerfile.dev
 
 services/ai-service/Dockerfile.dev
 services/api-gateway/Dockerfile.dev
-services/bot-notification-service/Dockerfile.dev
+services/bot-service/Dockerfile.dev
+services/notification-service/Dockerfile.dev
 
 services/ocr-service/Dockerfile.dev
 ```
@@ -469,11 +473,13 @@ Frontend Web        → React + TypeScript + Vite
 Mobile              → React Native + Expo
 
 Identity            → Java 25 + Spring Boot
+Workspace           → Java 25 + Spring Boot
 Workflow / Worker   → Java 25 + Spring Boot
 
 AI                  → TypeScript + NestJS + Fastify
 API Gateway         → TypeScript + NestJS + Fastify
-Bot & Notification  → TypeScript + NestJS + Fastify
+Bot                 → TypeScript + NestJS + Fastify
+Notification        → TypeScript + NestJS + Fastify
 
 OCR                 → Python 3.12 + FastAPI + PaddleOCR
 

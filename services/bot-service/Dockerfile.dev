@@ -1,0 +1,21 @@
+FROM node:24-bookworm
+
+RUN corepack enable \
+    && corepack prepare pnpm@11.22.0 --activate
+
+WORKDIR /workspace
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+
+COPY services/bot-service/package.json ./services/bot-service/package.json
+COPY packages ./packages
+
+RUN pnpm install \
+    --filter ./services/bot-service... \
+    --frozen-lockfile
+
+COPY services/bot-service ./services/bot-service
+
+WORKDIR /workspace/services/bot-service
+
+CMD ["pnpm", "start:dev"]

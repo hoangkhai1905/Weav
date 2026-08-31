@@ -12,7 +12,7 @@ Set-StrictMode -Version Latest
 # Windows / PowerShell
 # ============================================================
 
-$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $RepoRoot
 
 function Write-Step {
@@ -346,6 +346,20 @@ if (-not $SkipVerify) {
 
     Write-Ok "Identity Service compiles."
 
+    Push-Location "services/workspace-service"
+
+    try {
+        Invoke-Checked `
+            ".\mvnw.cmd" `
+            @("clean", "compile") `
+            "Workspace Service failed to compile."
+    }
+    finally {
+        Pop-Location
+    }
+
+    Write-Ok "Workspace Service compiles."
+
     Push-Location "services/workflow-service"
 
     try {
@@ -384,9 +398,18 @@ if (-not $SkipVerify) {
     Write-Ok "API Gateway builds."
 
     Invoke-Checked `
+    "pnpm" `
+    @("--dir", "services/bot-service", "build") `
+    "Bot Service build failed."
+
+    Write-Ok "Bot Service builds."
+
+    Invoke-Checked `
         "pnpm" `
-        @("--dir", "services/bot-notification-service", "build") `
-        "Bot & Notification Service build failed."
+        @("--dir", "services/notification-service", "build") `
+        "Notification Service build failed."
+
+    Write-Ok "Notification Service builds."
 
     Write-Ok "Bot & Notification Service builds."
 

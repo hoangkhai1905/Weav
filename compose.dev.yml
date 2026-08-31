@@ -40,6 +40,42 @@ services:
         - action: rebuild
           path: ./services/identity-service/pom.xml
 
+    # ==================================================
+  # Workspace Service - Spring Boot
+  # ==================================================
+  workspace-service:
+    profiles: ["app"]
+
+    build:
+      context: ./services/workspace-service
+      dockerfile: Dockerfile.dev
+
+    ports:
+      - "8082:8080"
+
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-postgres}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_SSL_MODE: ${DB_SSL_MODE:-require}
+      DB_SCHEMA: workspace
+
+    develop:
+      watch:
+        - action: sync+exec
+          path: ./services/workspace-service/src
+          target: /app/src
+          initial_sync: true
+          exec:
+            command: ./mvnw -q -DskipTests compile
+
+        - action: rebuild
+          path: ./services/workspace-service/pom.xml
+
 
   # ==================================================
   # Workflow Service - Spring Boot
@@ -52,7 +88,7 @@ services:
       dockerfile: Dockerfile.dev
 
     ports:
-      - "8082:8080"
+      - "8083:8080"
 
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -147,21 +183,23 @@ services:
 
       # Internal service URLs
       IDENTITY_SERVICE_URL: http://identity-service:8080
+      WORKSPACE_SERVICE_URL: http://workspace-service:8080
       WORKFLOW_SERVICE_URL: http://workflow-service:8080
       AI_SERVICE_URL: http://ai-service:3000
       OCR_SERVICE_URL: http://ocr-service:8000
-      BOT_NOTIFICATION_SERVICE_URL: http://bot-notification-service:3000
+      BOT_SERVICE_URL: http://bot-service:3000
+      # NOTIFICATION_SERVICE_URL: http://notification-service:3000
 
 
   # ==================================================
-  # Bot / Notification Service - NestJS
+  # Bot - NestJS
   # ==================================================
-  bot-notification-service:
+  bot-service:
     profiles: ["app"]
 
     build:
       context: .
-      dockerfile: services/bot-notification-service/Dockerfile.dev
+      dockerfile: services/bot-service/Dockerfile.dev
 
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -182,6 +220,36 @@ services:
 
       # Workflow Service
       WORKFLOW_SERVICE_URL: http://workflow-service:8080
+
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+
+  # ==================================================
+  # Notification Service - NestJS
+  # ==================================================
+  notification-service:
+    profiles: ["app"]
+
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile.dev
+
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-postgres}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_SCHEMA: notification
+
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
 
     depends_on:
       rabbitmq:
