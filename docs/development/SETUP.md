@@ -171,24 +171,45 @@ Copy-Item .env.example .env
 
 Điền credentials development vào `.env`.
 
-### Supabase
+### Neon PostgreSQL
 
 ```env
-SUPABASE_URL=
-SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
+# Use the pooled endpoint from Neon; the hostname contains "-pooler".
+IDENTITY_DB_HOST=
+IDENTITY_DB_PORT=5432
+IDENTITY_DB_NAME=
+IDENTITY_DB_USERNAME=
+IDENTITY_DB_PASSWORD=
+IDENTITY_DB_SSL_MODE=require
 
-DB_HOST=
-DB_PORT=5432
-DB_NAME=postgres
-DB_USERNAME=
-DB_PASSWORD=
+WORKSPACE_DB_HOST=
+WORKSPACE_DB_PORT=5432
+WORKSPACE_DB_NAME=
+WORKSPACE_DB_USERNAME=
+WORKSPACE_DB_PASSWORD=
+WORKSPACE_DB_SSL_MODE=require
 
-IDENTITY_DB_SCHEMA=identity
-WORKFLOW_DB_SCHEMA=workflow
-BOT_DB_SCHEMA=bot
+WORKFLOW_DB_HOST=
+WORKFLOW_DB_PORT=5432
+WORKFLOW_DB_NAME=
+WORKFLOW_DB_USERNAME=
+WORKFLOW_DB_PASSWORD=
+WORKFLOW_DB_SSL_MODE=require
+
+BOT_DB_HOST=
+BOT_DB_PORT=5432
+BOT_DB_NAME=
+BOT_DB_USERNAME=
+BOT_DB_PASSWORD=
+BOT_DB_SSL_MODE=require
+
+NOTIFICATION_DB_HOST=
+NOTIFICATION_DB_PORT=5432
+NOTIFICATION_DB_NAME=
+NOTIFICATION_DB_USERNAME=
+NOTIFICATION_DB_PASSWORD=
+NOTIFICATION_DB_SSL_MODE=require
 ```
-
 ### Aiven Valkey
 
 ```env
@@ -391,7 +412,7 @@ cd ..\..
 # 4. Environment variables
 Copy-Item .env.example .env
 
-# Điền Supabase / Aiven credentials vào .env
+# Điền Neon / Aiven credentials vào .env
 
 # 5. Start infrastructure
 docker compose up -d
@@ -483,7 +504,8 @@ Notification        → TypeScript + NestJS + Fastify
 
 OCR                 → Python 3.12 + FastAPI + PaddleOCR
 
-Database / Storage  → Supabase
+Database             → Neon PostgreSQL
+Storage              → Not configured
 Cache               → Aiven Valkey
 Message Broker      → RabbitMQ
 Development Runtime → Docker / Docker Compose

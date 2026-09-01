@@ -283,7 +283,7 @@ if (-not (Test-Path ".env.example")) {
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
     Write-Ok "Created .env from .env.example."
-    Write-Warn "Fill Supabase / Aiven / API credentials in .env when required."
+    Write-Warn "Fill Neon / Aiven / API credentials in .env when required."
 }
 else {
     Write-Ok ".env already exists. It was NOT overwritten."

@@ -15,18 +15,25 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
 
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_NAME: ${DB_NAME:-postgres}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_SSL_MODE: ${DB_SSL_MODE:-require}
+      DB_HOST: ${IDENTITY_DB_HOST}
+      DB_PORT: ${IDENTITY_DB_PORT:-5432}
+      DB_NAME: ${IDENTITY_DB_NAME}
+      DB_USERNAME: ${IDENTITY_DB_USERNAME}
+      DB_PASSWORD: ${IDENTITY_DB_PASSWORD}
+      DB_SSL_MODE: ${IDENTITY_DB_SSL_MODE:-require}
       DB_SCHEMA: identity
 
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
     develop:
       watch:
@@ -56,12 +63,12 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
 
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_NAME: ${DB_NAME:-postgres}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_SSL_MODE: ${DB_SSL_MODE:-require}
+      DB_HOST: ${WORKSPACE_DB_HOST}
+      DB_PORT: ${WORKSPACE_DB_PORT:-5432}
+      DB_NAME: ${WORKSPACE_DB_NAME}
+      DB_USERNAME: ${WORKSPACE_DB_USERNAME}
+      DB_PASSWORD: ${WORKSPACE_DB_PASSWORD}
+      DB_SSL_MODE: ${WORKSPACE_DB_SSL_MODE:-require}
       DB_SCHEMA: workspace
 
     develop:
@@ -93,12 +100,13 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
 
-      # PostgreSQL / Supabase
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_NAME: ${DB_NAME:-postgres}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
+      # Neon PostgreSQL pooled connection
+      DB_HOST: ${WORKFLOW_DB_HOST}
+      DB_PORT: ${WORKFLOW_DB_PORT:-5432}
+      DB_NAME: ${WORKFLOW_DB_NAME}
+      DB_USERNAME: ${WORKFLOW_DB_USERNAME}
+      DB_PASSWORD: ${WORKFLOW_DB_PASSWORD}
+      DB_SSL_MODE: ${WORKFLOW_DB_SSL_MODE:-require}
       DB_SCHEMA: workflow
 
       # Valkey
@@ -175,9 +183,6 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
 
-      # Supabase project metadata only
-      SUPABASE_URL: ${SUPABASE_URL}
-
       # Valkey - rate limiting / cache
       VALKEY_URL: ${VALKEY_URL}
 
@@ -204,12 +209,13 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
 
-      # PostgreSQL / Supabase
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_NAME: ${DB_NAME:-postgres}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
+      # Neon PostgreSQL pooled connection
+      DB_HOST: ${BOT_DB_HOST}
+      DB_PORT: ${BOT_DB_PORT:-5432}
+      DB_NAME: ${BOT_DB_NAME}
+      DB_USERNAME: ${BOT_DB_USERNAME}
+      DB_PASSWORD: ${BOT_DB_PASSWORD}
+      DB_SSL_MODE: ${BOT_DB_SSL_MODE:-require}
       DB_SCHEMA: bot
 
       # RabbitMQ
@@ -239,11 +245,13 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
 
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_NAME: ${DB_NAME:-postgres}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
+      # Neon PostgreSQL pooled connection
+      DB_HOST: ${NOTIFICATION_DB_HOST}
+      DB_PORT: ${NOTIFICATION_DB_PORT:-5432}
+      DB_NAME: ${NOTIFICATION_DB_NAME}
+      DB_USERNAME: ${NOTIFICATION_DB_USERNAME}
+      DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      DB_SSL_MODE: ${NOTIFICATION_DB_SSL_MODE:-require}
       DB_SCHEMA: notification
 
       RABBITMQ_HOST: rabbitmq
