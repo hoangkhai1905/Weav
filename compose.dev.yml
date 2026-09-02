@@ -71,6 +71,11 @@ services:
       DB_SSL_MODE: ${WORKSPACE_DB_SSL_MODE:-require}
       DB_SCHEMA: workspace
 
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+
     develop:
       watch:
         - action: sync+exec
