@@ -1,8 +1,8 @@
 package com.weav.identity;
 
-import com.weav.identity.infrastructure.persistence.entity.SystemRole;
-import com.weav.identity.infrastructure.persistence.entity.User;
-import com.weav.identity.infrastructure.persistence.entity.UserStatus;
+import com.weav.identity.domain.valueobject.SystemRole;
+import com.weav.identity.infrastructure.persistence.entity.UserJpaEntity;
+import com.weav.identity.domain.valueobject.UserStatus;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,7 +46,7 @@ class IdentityServiceApplicationTests {
     @Test
     @Transactional
     void jpaPersistsAndReadsUserWithInstantTimestamps() {
-        User user = new User(
+        UserJpaEntity user = new UserJpaEntity(
                 "jpa-test@example.com",
                 null,
                 "JPA Test User",
@@ -59,7 +59,7 @@ class IdentityServiceApplicationTests {
         entityManager.flush();
         entityManager.clear();
 
-        User persisted = entityManager.find(User.class, user.getId());
+        UserJpaEntity persisted = entityManager.find(UserJpaEntity.class, user.getId());
 
         assertNotNull(persisted);
         assertEquals("jpa-test@example.com", persisted.getEmail());

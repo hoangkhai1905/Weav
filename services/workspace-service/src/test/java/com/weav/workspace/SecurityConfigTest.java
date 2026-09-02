@@ -1,6 +1,6 @@
 package com.weav.workspace;
 
-import com.weav.workspace.config.JwtProperties;
+import com.weav.workspace.infrastructure.security.JwtProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

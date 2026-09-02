@@ -1,14 +1,14 @@
 package com.weav.workspace;
 
 import tools.jackson.databind.ObjectMapper;
-import com.weav.workspace.infrastructure.persistence.entity.Connection;
-import com.weav.workspace.infrastructure.persistence.entity.ConnectionAuthType;
-import com.weav.workspace.infrastructure.persistence.entity.ConnectionProvider;
-import com.weav.workspace.infrastructure.persistence.entity.ConnectionStatus;
-import com.weav.workspace.infrastructure.persistence.entity.Credential;
-import com.weav.workspace.infrastructure.persistence.entity.Membership;
-import com.weav.workspace.infrastructure.persistence.entity.MembershipRole;
-import com.weav.workspace.infrastructure.persistence.entity.Workspace;
+import com.weav.workspace.infrastructure.persistence.entity.ConnectionJpaEntity;
+import com.weav.workspace.domain.valueobject.ConnectionAuthType;
+import com.weav.workspace.domain.valueobject.ConnectionProvider;
+import com.weav.workspace.domain.valueobject.ConnectionStatus;
+import com.weav.workspace.infrastructure.persistence.entity.CredentialJpaEntity;
+import com.weav.workspace.infrastructure.persistence.entity.MembershipJpaEntity;
+import com.weav.workspace.domain.valueobject.MembershipRole;
+import com.weav.workspace.infrastructure.persistence.entity.WorkspaceJpaEntity;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,13 +56,13 @@ class WorkspacePersistenceTest {
     @Transactional
     void jpaPersistsAndReadsWorkspaceEntitiesWithInstantTimestamps() throws Exception {
         UUID ownerId = UUID.randomUUID();
-        Workspace workspace = new Workspace("Persistence Test", ownerId);
+        WorkspaceJpaEntity workspace = new WorkspaceJpaEntity("Persistence Test", ownerId);
         entityManager.persist(workspace);
 
-        Membership membership = new Membership(workspace.getId(), ownerId, MembershipRole.OWNER);
+        MembershipJpaEntity membership = new MembershipJpaEntity(workspace.getId(), ownerId, MembershipRole.OWNER);
         entityManager.persist(membership);
 
-        Connection connection = new Connection(
+        ConnectionJpaEntity connection = new ConnectionJpaEntity(
                 workspace.getId(),
                 ownerId,
                 "HTTP API",
@@ -74,7 +74,7 @@ class WorkspacePersistenceTest {
         entityManager.persist(connection);
 
         byte[] encryptedPayload = new byte[] {1, 2, 3, 4};
-        Credential credential = new Credential(
+        CredentialJpaEntity credential = new CredentialJpaEntity(
                 connection.getId(),
                 encryptedPayload,
                 "v1",
@@ -85,10 +85,10 @@ class WorkspacePersistenceTest {
         entityManager.flush();
         entityManager.clear();
 
-        Workspace persistedWorkspace = entityManager.find(Workspace.class, workspace.getId());
-        Membership persistedMembership = entityManager.find(Membership.class, membership.getId());
-        Connection persistedConnection = entityManager.find(Connection.class, connection.getId());
-        Credential persistedCredential = entityManager.find(Credential.class, credential.getId());
+        WorkspaceJpaEntity persistedWorkspace = entityManager.find(WorkspaceJpaEntity.class, workspace.getId());
+        MembershipJpaEntity persistedMembership = entityManager.find(MembershipJpaEntity.class, membership.getId());
+        ConnectionJpaEntity persistedConnection = entityManager.find(ConnectionJpaEntity.class, connection.getId());
+        CredentialJpaEntity persistedCredential = entityManager.find(CredentialJpaEntity.class, credential.getId());
 
         assertNotNull(persistedWorkspace);
         assertEquals("Persistence Test", persistedWorkspace.getName());

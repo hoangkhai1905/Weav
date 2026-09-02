@@ -1,28 +1,28 @@
 package com.weav.workflow;
 
-import com.weav.workflow.infrastructure.persistence.entity.AgentRun;
-import com.weav.workflow.infrastructure.persistence.entity.AgentRunStatus;
-import com.weav.workflow.infrastructure.persistence.entity.AgentStep;
-import com.weav.workflow.infrastructure.persistence.entity.AgentStepDecisionType;
-import com.weav.workflow.infrastructure.persistence.entity.AgentStepStatus;
-import com.weav.workflow.infrastructure.persistence.entity.AttemptStatus;
-import com.weav.workflow.infrastructure.persistence.entity.ExecutionLog;
-import com.weav.workflow.infrastructure.persistence.entity.ExecutionStatus;
-import com.weav.workflow.infrastructure.persistence.entity.ExecutionTriggerType;
-import com.weav.workflow.infrastructure.persistence.entity.LogLevel;
-import com.weav.workflow.infrastructure.persistence.entity.NodeExecution;
-import com.weav.workflow.infrastructure.persistence.entity.NodeExecutionAttempt;
-import com.weav.workflow.infrastructure.persistence.entity.NodeExecutionStatus;
-import com.weav.workflow.infrastructure.persistence.entity.OutboxEvent;
-import com.weav.workflow.infrastructure.persistence.entity.OutboxStatus;
-import com.weav.workflow.infrastructure.persistence.entity.TriggerStatus;
-import com.weav.workflow.infrastructure.persistence.entity.TriggerType;
-import com.weav.workflow.infrastructure.persistence.entity.Workflow;
-import com.weav.workflow.infrastructure.persistence.entity.WorkflowExecution;
-import com.weav.workflow.infrastructure.persistence.entity.WorkflowFile;
-import com.weav.workflow.infrastructure.persistence.entity.WorkflowStatus;
-import com.weav.workflow.infrastructure.persistence.entity.WorkflowTrigger;
-import com.weav.workflow.infrastructure.persistence.entity.WorkflowVersion;
+import com.weav.workflow.infrastructure.persistence.entity.AgentRunJpaEntity;
+import com.weav.workflow.domain.valueobject.AgentRunStatus;
+import com.weav.workflow.infrastructure.persistence.entity.AgentStepJpaEntity;
+import com.weav.workflow.domain.valueobject.AgentStepDecisionType;
+import com.weav.workflow.domain.valueobject.AgentStepStatus;
+import com.weav.workflow.domain.valueobject.AttemptStatus;
+import com.weav.workflow.infrastructure.persistence.entity.ExecutionLogJpaEntity;
+import com.weav.workflow.domain.valueobject.ExecutionStatus;
+import com.weav.workflow.domain.valueobject.ExecutionTriggerType;
+import com.weav.workflow.domain.valueobject.LogLevel;
+import com.weav.workflow.infrastructure.persistence.entity.NodeExecutionJpaEntity;
+import com.weav.workflow.infrastructure.persistence.entity.NodeExecutionAttemptJpaEntity;
+import com.weav.workflow.domain.valueobject.NodeExecutionStatus;
+import com.weav.workflow.infrastructure.persistence.entity.OutboxEventJpaEntity;
+import com.weav.workflow.domain.valueobject.OutboxStatus;
+import com.weav.workflow.domain.valueobject.TriggerStatus;
+import com.weav.workflow.domain.valueobject.TriggerType;
+import com.weav.workflow.infrastructure.persistence.entity.WorkflowJpaEntity;
+import com.weav.workflow.infrastructure.persistence.entity.WorkflowExecutionJpaEntity;
+import com.weav.workflow.infrastructure.persistence.entity.WorkflowFileJpaEntity;
+import com.weav.workflow.domain.valueobject.WorkflowStatus;
+import com.weav.workflow.infrastructure.persistence.entity.WorkflowTriggerJpaEntity;
+import com.weav.workflow.infrastructure.persistence.entity.WorkflowVersionJpaEntity;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,9 +72,9 @@ class WorkflowPersistenceTest {
     void jpaPersistsAndReadsWorkflowExecutionEntities() throws Exception {
         UUID workspaceId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
-        Workflow workflow = new Workflow(
+        WorkflowJpaEntity workflow = new WorkflowJpaEntity(
                 workspaceId,
-                "Invoice Workflow",
+                "Invoice WorkflowJpaEntity",
                 "1.0",
                 objectMapper.readTree("{\"nodes\":[],\"edges\":[]}"),
                 userId
@@ -83,7 +83,7 @@ class WorkflowPersistenceTest {
         workflow.setEditorState(objectMapper.readTree("{\"viewport\":{\"zoom\":1}}"));
         entityManager.persist(workflow);
 
-        WorkflowVersion version = new WorkflowVersion(
+        WorkflowVersionJpaEntity version = new WorkflowVersionJpaEntity(
                 workflow.getId(),
                 1,
                 objectMapper.readTree("{\"nodes\":[],\"edges\":[]}"),
@@ -93,7 +93,7 @@ class WorkflowPersistenceTest {
         entityManager.persist(version);
         workflow.setCurrentVersionId(version.getId());
 
-        WorkflowTrigger trigger = new WorkflowTrigger(
+        WorkflowTriggerJpaEntity trigger = new WorkflowTriggerJpaEntity(
                 workflow.getId(),
                 version.getId(),
                 "schedule-1",
@@ -102,7 +102,7 @@ class WorkflowPersistenceTest {
         );
         entityManager.persist(trigger);
 
-        WorkflowExecution execution = new WorkflowExecution(
+        WorkflowExecutionJpaEntity execution = new WorkflowExecutionJpaEntity(
                 workflow.getId(),
                 version.getId(),
                 ExecutionTriggerType.SCHEDULE,
@@ -112,7 +112,7 @@ class WorkflowPersistenceTest {
         );
         entityManager.persist(execution);
 
-        NodeExecution nodeExecution = new NodeExecution(
+        NodeExecutionJpaEntity nodeExecution = new NodeExecutionJpaEntity(
                 execution.getId(),
                 "node-1",
                 "http.request",
@@ -120,14 +120,14 @@ class WorkflowPersistenceTest {
         );
         entityManager.persist(nodeExecution);
 
-        NodeExecutionAttempt attempt = new NodeExecutionAttempt(
+        NodeExecutionAttemptJpaEntity attempt = new NodeExecutionAttemptJpaEntity(
                 nodeExecution.getId(),
                 1,
                 objectMapper.readTree("{\"url\":\"https://example.test\"}")
         );
         entityManager.persist(attempt);
 
-        ExecutionLog log = new ExecutionLog(
+        ExecutionLogJpaEntity log = new ExecutionLogJpaEntity(
                 execution.getId(),
                 nodeExecution.getId(),
                 attempt.getId(),
@@ -138,7 +138,7 @@ class WorkflowPersistenceTest {
         );
         entityManager.persist(log);
 
-        WorkflowFile file = new WorkflowFile(
+        WorkflowFileJpaEntity file = new WorkflowFileJpaEntity(
                 workspaceId,
                 "workspace/" + workspaceId + "/invoice.pdf",
                 "invoice.pdf",
@@ -149,15 +149,15 @@ class WorkflowPersistenceTest {
         );
         entityManager.persist(file);
 
-        OutboxEvent outboxEvent = new OutboxEvent(
-                "WorkflowExecution",
+        OutboxEventJpaEntity outboxEvent = new OutboxEventJpaEntity(
+                "WorkflowExecutionJpaEntity",
                 execution.getId(),
                 "execution.requested",
                 objectMapper.readTree("{\"executionId\":\"" + execution.getId() + "\"}")
         );
         entityManager.persist(outboxEvent);
 
-        AgentRun agentRun = new AgentRun(
+        AgentRunJpaEntity agentRun = new AgentRunJpaEntity(
                 attempt.getId(),
                 "Process the invoice",
                 objectMapper.readTree("[\"gmail.send\"]"),
@@ -166,7 +166,7 @@ class WorkflowPersistenceTest {
         );
         entityManager.persist(agentRun);
 
-        AgentStep agentStep = new AgentStep(
+        AgentStepJpaEntity agentStep = new AgentStepJpaEntity(
                 agentRun.getId(),
                 1,
                 AgentStepDecisionType.TOOL_CALL,
@@ -180,17 +180,17 @@ class WorkflowPersistenceTest {
         entityManager.flush();
         entityManager.clear();
 
-        Workflow persistedWorkflow = entityManager.find(Workflow.class, workflow.getId());
-        WorkflowVersion persistedVersion = entityManager.find(WorkflowVersion.class, version.getId());
-        WorkflowTrigger persistedTrigger = entityManager.find(WorkflowTrigger.class, trigger.getId());
-        WorkflowExecution persistedExecution = entityManager.find(WorkflowExecution.class, execution.getId());
-        NodeExecution persistedNode = entityManager.find(NodeExecution.class, nodeExecution.getId());
-        NodeExecutionAttempt persistedAttempt = entityManager.find(NodeExecutionAttempt.class, attempt.getId());
-        ExecutionLog persistedLog = entityManager.find(ExecutionLog.class, log.getId());
-        WorkflowFile persistedFile = entityManager.find(WorkflowFile.class, file.getId());
-        OutboxEvent persistedOutbox = entityManager.find(OutboxEvent.class, outboxEvent.getId());
-        AgentRun persistedAgentRun = entityManager.find(AgentRun.class, agentRun.getId());
-        AgentStep persistedAgentStep = entityManager.find(AgentStep.class, agentStep.getId());
+        WorkflowJpaEntity persistedWorkflow = entityManager.find(WorkflowJpaEntity.class, workflow.getId());
+        WorkflowVersionJpaEntity persistedVersion = entityManager.find(WorkflowVersionJpaEntity.class, version.getId());
+        WorkflowTriggerJpaEntity persistedTrigger = entityManager.find(WorkflowTriggerJpaEntity.class, trigger.getId());
+        WorkflowExecutionJpaEntity persistedExecution = entityManager.find(WorkflowExecutionJpaEntity.class, execution.getId());
+        NodeExecutionJpaEntity persistedNode = entityManager.find(NodeExecutionJpaEntity.class, nodeExecution.getId());
+        NodeExecutionAttemptJpaEntity persistedAttempt = entityManager.find(NodeExecutionAttemptJpaEntity.class, attempt.getId());
+        ExecutionLogJpaEntity persistedLog = entityManager.find(ExecutionLogJpaEntity.class, log.getId());
+        WorkflowFileJpaEntity persistedFile = entityManager.find(WorkflowFileJpaEntity.class, file.getId());
+        OutboxEventJpaEntity persistedOutbox = entityManager.find(OutboxEventJpaEntity.class, outboxEvent.getId());
+        AgentRunJpaEntity persistedAgentRun = entityManager.find(AgentRunJpaEntity.class, agentRun.getId());
+        AgentStepJpaEntity persistedAgentStep = entityManager.find(AgentStepJpaEntity.class, agentStep.getId());
 
         assertNotNull(persistedWorkflow);
         assertEquals(WorkflowStatus.DRAFT, persistedWorkflow.getStatus());

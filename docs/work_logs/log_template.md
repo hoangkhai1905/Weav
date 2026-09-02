@@ -4,7 +4,7 @@
 
 ## Cách dùng
 
-- Tạo một file mới trong `docs/work_logs/` cho mỗi ngày theo tên `YYYY-MM-DD.md`. Nếu một ngày có nhiều session, giữ chung một file và thêm một mục `Session` mới.
+- Tạo một file mới trong `docs/work_logs/` cho mỗi ngày theo tên `YYYY-MM-DD.md`. Nếu một ngày có nhiều session, giữ chung một file và thêm một mục `Session` mới. Nếu việc nhiều thì có thể tạo file mới và thêm tóm tắt việc đã làm ở sau ngày.
 - Ghi thông tin có thể kiểm chứng: file, endpoint, lệnh, kết quả, ticket/PR và quyết định. Phân biệt rõ `đã hoàn thành`, `đã kiểm tra`, `đang làm`, `chưa làm`.
 - Không ghi mật khẩu, connection string có token, JWT secret, API key, cookie, dữ liệu cá nhân nhạy cảm hoặc nội dung `.env`. Chỉ ghi tên biến môi trường, loại cấu hình và nơi quản lý secret.
 - Cập nhật log ngay sau một thay đổi đáng kể hoặc trước khi bàn giao. Người tiếp nhận phải đọc phần `Trạng thái bàn giao` và `Việc tiếp theo` trước khi sửa code.
@@ -16,17 +16,17 @@
 
 ## 1. Metadata
 
-| Trường | Giá trị |
-| --- | --- |
-| Ngày làm việc | `YYYY-MM-DD` |
-| Múi giờ ghi log | `Asia/Saigon` |
-| Dự án / repository | `<tên dự án>` |
-| Nhánh / commit đầu ngày | `<branch>` / `<short SHA hoặc N/A>` |
-| Người thực hiện | `<tên hoặc vai trò>` |
-| Người review / nhận bàn giao | `<tên hoặc vai trò>` |
-| Trạng thái cuối ngày | `Hoàn thành` / `Đang tiếp tục` / `Bị chặn` |
-| Phạm vi session | `<một câu mô tả>` |
-| Liên kết liên quan | `<issue, PR, Notion, ticket, ADR>` |
+| Trường                       | Giá trị                                    |
+| ---------------------------- | ------------------------------------------ |
+| Ngày làm việc                | `YYYY-MM-DD`                               |
+| Múi giờ ghi log              | `Asia/Saigon`                              |
+| Dự án / repository           | `<tên dự án>`                              |
+| Nhánh / commit đầu ngày      | `<branch>` / `<short SHA hoặc N/A>`        |
+| Người thực hiện              | `<tên hoặc vai trò>`                       | 
+| Người review / nhận bàn giao | `<tên hoặc vai trò>`                       |
+| Trạng thái cuối ngày         | `Hoàn thành` / `Đang tiếp tục` / `Bị chặn` |
+| Phạm vi session              | `<một câu mô tả>`                          |
+| Liên kết liên quan           | `<issue, PR, Notion, ticket, ADR>`         |
 
 ## 2. Tóm tắt điều hành
 
@@ -38,14 +38,14 @@
 
 ### Tình trạng nhanh
 
-| Hạng mục | Trạng thái | Ghi chú ngắn |
-| --- | --- | --- |
-| Build / compile | `PASS` / `FAIL` / `Chưa chạy` | `<lệnh và phạm vi>` |
-| Unit / integration test | `PASS` / `FAIL` / `Chưa chạy` | `<số test hoặc bằng chứng>` |
-| Migration / database | `PASS` / `FAIL` / `Chưa áp dụng` | `<schema/migration>` |
-| Health check | `UP` / `DOWN` / `Chưa kiểm tra` | `<endpoint>` |
-| Review thay đổi | `Đã kiểm tra` / `Chưa kiểm tra` | `<diff/check>` |
-| Commit / PR | `<SHA, PR hoặc chưa tạo>` | `<lý do nếu chưa tạo>` |
+| Hạng mục                | Trạng thái                       | Ghi chú ngắn                |
+| ----------------------- | -------------------------------- | --------------------------- |
+| Build / compile         | `PASS` / `FAIL` / `Chưa chạy`    | `<lệnh và phạm vi>`         |
+| Unit / integration test | `PASS` / `FAIL` / `Chưa chạy`    | `<số test hoặc bằng chứng>` |
+| Migration / database    | `PASS` / `FAIL` / `Chưa áp dụng` | `<schema/migration>`        |
+| Health check            | `UP` / `DOWN` / `Chưa kiểm tra`  | `<endpoint>`                |
+| Review thay đổi         | `Đã kiểm tra` / `Chưa kiểm tra`  | `<diff/check>`              |
+| Commit / PR             | `<SHA, PR hoặc chưa tạo>`        | `<lý do nếu chưa tạo>`      |
 
 ## 3. Mục tiêu và phạm vi
 
@@ -80,10 +80,10 @@
 
 ### Session `<số>` - `<khung giờ hoặc mốc>`
 
-| Thời điểm | Việc đã thực hiện | Kết quả / bằng chứng | Trạng thái |
-| --- | --- | --- | --- |
+| Thời điểm | Việc đã thực hiện    | Kết quả / bằng chứng                    | Trạng thái                      |
+| --------- | -------------------- | --------------------------------------- | ------------------------------- |
 | `<HH:mm>` | `<Hành động cụ thể>` | `<File, lệnh, endpoint hoặc nhận định>` | `Xong` / `Đang làm` / `Bị chặn` |
-| `<HH:mm>` | `<Hành động cụ thể>` | `<Kết quả>` | `<Trạng thái>` |
+| `<HH:mm>` | `<Hành động cụ thể>` | `<Kết quả>`                             | `<Trạng thái>`                  |
 
 ### Diễn giải quan trọng
 
@@ -91,10 +91,10 @@
 
 ## 6. Quyết định kỹ thuật
 
-| Quyết định | Lý do / bằng chứng | Phương án đã cân nhắc | Hệ quả và việc theo dõi |
-| --- | --- | --- | --- |
-| `<Quyết định>` | `<Tại sao chọn>` | `<Các lựa chọn khác>` | `<Rủi ro/next step>` |
-| `<Quyết định>` | `<Tại sao chọn>` | `<Các lựa chọn khác>` | `<Rủi ro/next step>` |
+| Quyết định     | Lý do / bằng chứng | Phương án đã cân nhắc | Hệ quả và việc theo dõi |
+| -------------- | ------------------ | --------------------- | ----------------------- |
+| `<Quyết định>` | `<Tại sao chọn>`   | `<Các lựa chọn khác>` | `<Rủi ro/next step>`    |
+| `<Quyết định>` | `<Tại sao chọn>`   | `<Các lựa chọn khác>` | `<Rủi ro/next step>`    |
 
 Nếu quyết định ảnh hưởng lâu dài, tạo hoặc cập nhật ADR và liên kết tại đây.
 
@@ -127,22 +127,22 @@ Nếu quyết định ảnh hưởng lâu dài, tạo hoặc cập nhật ADR v�
 
 ## 8. Danh sách file ảnh hưởng
 
-| Loại | Đường dẫn | Thay đổi chính | Lưu ý cho người tiếp nhận |
-| --- | --- | --- | --- |
-| `Sửa` / `Thêm` / `Xóa` | `<relative/path>` | `<một câu>` | `<rủi ro/cách dùng>` |
-| `Sửa` / `Thêm` / `Xóa` | `<relative/path>` | `<một câu>` | `<rủi ro/cách dùng>` |
+| Loại                   | Đường dẫn         | Thay đổi chính | Lưu ý cho người tiếp nhận |
+| ---------------------- | ----------------- | -------------- | ------------------------- |
+| `Sửa` / `Thêm` / `Xóa` | `<relative/path>` | `<một câu>`    | `<rủi ro/cách dùng>`      |
+| `Sửa` / `Thêm` / `Xóa` | `<relative/path>` | `<một câu>`    | `<rủi ro/cách dùng>`      |
 
 Không liệt kê `.env`, secret hoặc file sinh tự động nếu chúng không cần review; thay vào đó mô tả tên cấu hình ở phần 7.3.
 
 ## 9. Kiểm tra và bằng chứng
 
-| Hạng mục | Lệnh / thao tác tái lập | Kết quả thực tế | Phạm vi và giới hạn |
-| --- | --- | --- | --- |
-| Compile/build | ``<command>`` | `PASS/FAIL` | `<module, environment>` |
-| Test | ``<command>`` | `PASS/FAIL; số test` | `<unit/integration/e2e>` |
-| DB migration | ``<command/query an toàn>`` | `PASS/FAIL` | `<schema/version>` |
-| Endpoint | ``<curl/httpie/URL>`` | `<status/body an toàn>` | `<môi trường>` |
-| Static/diff check | ``<command>`` | `PASS/FAIL` | `<những gì đã kiểm>` |
+| Hạng mục          | Lệnh / thao tác tái lập   | Kết quả thực tế         | Phạm vi và giới hạn      |
+| ----------------- | ------------------------- | ----------------------- | ------------------------ |
+| Compile/build     | `<command>`               | `PASS/FAIL`             | `<module, environment>`  |
+| Test              | `<command>`               | `PASS/FAIL; số test`    | `<unit/integration/e2e>` |
+| DB migration      | `<command/query an toàn>` | `PASS/FAIL`             | `<schema/version>`       |
+| Endpoint          | `<curl/httpie/URL>`       | `<status/body an toàn>` | `<môi trường>`           |
+| Static/diff check | `<command>`               | `PASS/FAIL`             | `<những gì đã kiểm>`     |
 
 ### Điều chưa được kiểm tra
 
@@ -150,9 +150,9 @@ Không liệt kê `.env`, secret hoặc file sinh tự động nếu chúng khô
 
 ## 10. Sự cố, rủi ro và blocker
 
-| Mức độ | Vấn đề | Nguyên nhân / dấu hiệu | Cách xử lý hiện tại | Chủ sở hữu / bước tiếp theo |
-| --- | --- | --- | --- | --- |
-| `Cao` / `Trung bình` / `Thấp` | `<vấn đề>` | `<bằng chứng>` | `<đã giảm thiểu gì>` | `<ai/làm gì/khi nào>` |
+| Mức độ                        | Vấn đề     | Nguyên nhân / dấu hiệu | Cách xử lý hiện tại  | Chủ sở hữu / bước tiếp theo |
+| ----------------------------- | ---------- | ---------------------- | -------------------- | --------------------------- |
+| `Cao` / `Trung bình` / `Thấp` | `<vấn đề>` | `<bằng chứng>`         | `<đã giảm thiểu gì>` | `<ai/làm gì/khi nào>`       |
 
 ### Lỗi có thể tái lập
 
@@ -187,13 +187,13 @@ Không liệt kê `.env`, secret hoặc file sinh tự động nếu chúng khô
 
 ## 13. Kết thúc session
 
-| Trường | Giá trị |
-| --- | --- |
-| Thời điểm dừng | `<YYYY-MM-DD HH:mm Asia/Saigon>` |
-| Trạng thái worktree | `<sạch / có thay đổi chưa commit; mô tả ngắn>` |
-| Commit/PR đã tạo | `<SHA/URL hoặc Chưa tạo>` |
-| Người cập nhật log | `<tên hoặc AI agent>` |
-| Cần đọc trước khi tiếp tục | `<mục/đường dẫn quan trọng>` |
+| Trường                     | Giá trị                                        |
+| -------------------------- | ---------------------------------------------- |
+| Thời điểm dừng             | `<YYYY-MM-DD HH:mm Asia/Saigon>`               |
+| Trạng thái worktree        | `<sạch / có thay đổi chưa commit; mô tả ngắn>` |
+| Commit/PR đã tạo           | `<SHA/URL hoặc Chưa tạo>`                      |
+| Người cập nhật log         | `<tên hoặc AI agent>`                          |
+| Cần đọc trước khi tiếp tục | `<mục/đường dẫn quan trọng>`                   |
 
 ---
 
