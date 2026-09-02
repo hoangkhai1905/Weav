@@ -103,7 +103,7 @@ class WorkspacePersistenceTest {
         assertNotNull(persistedConnection);
         assertEquals(ConnectionProvider.HTTP, persistedConnection.getProvider());
         assertEquals(ConnectionAuthType.API_KEY, persistedConnection.getAuthType());
-        assertEquals("https://example.test", persistedConnection.getConfig().get("baseUrl").asText());
+        assertEquals("https://example.test", persistedConnection.getConfig().get("baseUrl").asString());
 
         assertNotNull(persistedCredential);
         assertArrayEquals(encryptedPayload, persistedCredential.getEncryptedPayload());

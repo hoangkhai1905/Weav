@@ -202,7 +202,7 @@ public class GlobalExceptionHandler {
             return HttpStatus.FORBIDDEN;
         }
         if (exception instanceof InvalidStateException) {
-            return HttpStatus.UNPROCESSABLE_ENTITY;
+            return HttpStatus.UNPROCESSABLE_CONTENT;
         }
         return HttpStatus.BAD_REQUEST;
     }
