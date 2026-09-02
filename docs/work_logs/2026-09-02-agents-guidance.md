@@ -31,8 +31,8 @@ Added the approved project context and collaboration rules to AGENTS.md, then mi
 | GitNexus impact for AGENTS.md | UNKNOWN; file is not a graph symbol. Confirmed by targeted text search; no code caller path. |
 | Existing worktree status | Clean before edits on dev. |
 | Runtime tests | Not applicable; documentation-only change. |
-| git diff --check | Pending after edits. |
-| GitNexus detect-changes | Pending before commit. |
+| git diff --check | PASS. |
+| GitNexus detect-changes | PASS: No changes detected. |
 
 ## 6. Risks and handoff
 
@@ -41,5 +41,7 @@ Added the approved project context and collaboration rules to AGENTS.md, then mi
 
 ## 7. End session
 
-- Status: in progress until diff and pre-commit checks pass.
+- Status: complete; documentation checks passed and the tracked plan/log were committed.
+- Commit: d63777a (docs: add agent workflow guidance)
+- Note: AGENTS.md and CLAUDE.md are local ignored files and were intentionally not force-added.
 - No secrets, credentials, tokens, connection strings, or personal data recorded.
