@@ -267,6 +267,31 @@ test.describe('workflow builder execution motion', () => {
     expect(after?.width).toBe(before?.width);
   });
 
+  test('keeps the builder mounted after deleting three nodes', async ({ page }) => {
+    await page.goto('/workflows/wf-001/builder');
+
+    const canvas = page.getByTestId('workflow-canvas');
+    const nodes = page.getByTestId('workflow-node');
+    const inspector = page.getByTestId('workflow-inspector');
+    await expect(nodes).toHaveCount(4);
+
+    await nodes.nth(1).click();
+    await expect(inspector).toBeVisible();
+
+    await page.keyboard.press('Backspace');
+    await expect(nodes).toHaveCount(3);
+    await expect(inspector).toHaveCount(0);
+    await expect(canvas).toBeVisible();
+
+    for (const expectedCount of [2, 1]) {
+      await nodes.first().click();
+      await page.keyboard.press('Backspace');
+      await expect(nodes).toHaveCount(expectedCount);
+      await expect(inspector).toHaveCount(0);
+      await expect(canvas).toBeVisible();
+    }
+  });
+
   test('keeps state feedback when reduced motion is enabled', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/workflows/wf-001/builder');
