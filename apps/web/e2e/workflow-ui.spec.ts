@@ -195,6 +195,33 @@ test.describe('workflow builder execution motion', () => {
   });
 });
 
+test.describe('OCR workflow node', () => {
+  test('adds OCR to the canvas and previews extracted document text', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
+    await page.goto('/workflows/wf-001/builder');
+
+    await page.getByRole('button', { name: 'OCR Text Extract' }).click();
+
+    const inspector = page.getByTestId('workflow-inspector');
+    await expect(inspector).toContainText('OCR Text Extract');
+    const fileInput = inspector.getByTestId('ocr-file-input');
+    await expect(fileInput).toBeVisible();
+    await fileInput.setInputFiles({
+      name: 'invoice.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('mock invoice image'),
+    });
+
+    await expect(inspector.getByText('invoice.png', { exact: true })).toBeVisible();
+    await inspector.getByRole('button', { name: 'Extract text' }).click();
+
+    const result = inspector.getByTestId('ocr-result');
+    await expect(result).toBeVisible();
+    await expect(result).toContainText('Detected text');
+    await expect(result).toContainText('98.4%');
+  });
+});
+
 test.describe('workspace account surfaces', () => {
   test('keeps workspace, profile settings, and help surfaces discoverable', async ({ page }) => {
     await page.goto('/workspace');
