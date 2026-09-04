@@ -93,6 +93,27 @@ test.describe('workflow builder execution motion', () => {
     await expect(activeEdge.locator('animateMotion')).toHaveAttribute('repeatCount', 'indefinite');
   });
 
+  test('shows a subtle flow preview before an execution starts', async ({ page }) => {
+    await page.goto('/workflows/wf-001/builder');
+
+    const flowPreview = page.getByTestId('execution-edge-flow');
+    await expect(flowPreview).toHaveCount(3);
+    await expect(flowPreview.first().locator('animate')).toHaveAttribute('repeatCount', 'indefinite');
+  });
+
+  test('opens the inspector on node click and dismisses it outside the panel', async ({ page }) => {
+    await page.goto('/workflows/wf-001/builder');
+
+    const inspector = page.getByTestId('workflow-inspector');
+    await expect(inspector).toHaveCount(0);
+
+    await page.getByTestId('workflow-node').filter({ hasText: 'AI Extract Core' }).click();
+    await expect(inspector).toBeVisible();
+
+    await page.locator('.react-flow__pane').click({ position: { x: 120, y: 120 } });
+    await expect(inspector).toHaveCount(0);
+  });
+
   test('keeps state feedback when reduced motion is enabled', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/workflows/wf-001/builder');
