@@ -1,6 +1,15 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('industrial workflow shell', () => {
+  test('uses the refreshed WEAV mark in the shell and auth brand', async ({ page }) => {
+    await page.goto('/dashboard');
+    await expect(page.locator('img[alt="WEAV app logo"]')).toHaveAttribute('src', '/weav-logo-v2.png');
+
+    await page.goto('/login');
+    await expect(page.locator('img[alt="WEAV Logo"]')).toHaveAttribute('src', '/weav-logo-v2.png');
+    await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/weav-logo-v2.png');
+  });
+
   test('shows readable navigation and moves the active indicator to Workflows', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'light' });
     await page.goto('/workflows');
