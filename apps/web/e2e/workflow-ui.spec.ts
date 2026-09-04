@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('industrial workflow shell', () => {
   test('shows readable navigation and moves the active indicator to Workflows', async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'light' });
     await page.goto('/workflows');
 
     const sidebar = page.getByTestId('app-sidebar');
@@ -11,6 +12,11 @@ test.describe('industrial workflow shell', () => {
     await expect(workflowsLink).toHaveAttribute('aria-current', 'page');
     await expect(workflowsLink).toHaveCSS('font-size', '14px');
     await expect(workflowsLink.getByTestId('active-nav-indicator')).toBeVisible();
+
+    await page.evaluate(() => {
+      localStorage.setItem('weav_theme', 'light');
+      document.documentElement.classList.remove('dark');
+    });
 
     const sidebarLightness = await sidebar.evaluate((element) => {
       const [red, green, blue] = element.ownerDocument.defaultView!

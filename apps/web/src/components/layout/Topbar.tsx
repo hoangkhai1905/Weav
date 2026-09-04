@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Bell, Menu, Moon, Search, Sun } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useUIStore } from '../../store/useUIStore';
 
@@ -8,7 +9,7 @@ export function Topbar() {
   const { language, toggleLanguage } = useI18nStore();
 
   return (
-    <header className="z-20 flex h-14 shrink-0 select-none items-center justify-between border-b border-border bg-card px-4 text-foreground">
+    <header className="z-20 flex h-14 shrink-0 select-none items-center justify-between border-b border-border bg-card px-4 text-foreground transition-colors duration-200">
       <div className="flex items-center gap-3">
         <button
           onClick={toggleMobileSidebar}
@@ -56,11 +57,21 @@ export function Topbar() {
 
         <button
           onClick={toggleTheme}
-          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer overflow-hidden"
           title="Toggle theme"
           aria-label="Toggle theme"
         >
-          {theme === 'light' ? <Sun size={16} /> : <Moon size={16} />}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={theme}
+              initial={{ opacity: 0, rotate: -90, scale: 0.8 }}
+              animate={{ opacity: 1, rotate: 0, scale: 1 }}
+              exit={{ opacity: 0, rotate: 90, scale: 0.8 }}
+              transition={{ duration: 0.15 }}
+            >
+              {theme === 'light' ? <Sun size={16} className="text-amber-500" /> : <Moon size={16} className="text-blue-400" />}
+            </motion.div>
+          </AnimatePresence>
         </button>
 
         <Link
