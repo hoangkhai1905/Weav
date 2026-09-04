@@ -15,12 +15,8 @@ import {
   Globe,
   GitBranch,
   Send,
-  ShieldCheck,
   Lock,
   ArrowRight,
-  BookOpen,
-  History,
-  Check,
 } from 'lucide-react';
 import { workflowApi } from '../api/workflow.api';
 
@@ -36,21 +32,17 @@ export function AiGeneratorPage() {
 
   // Generation Stages & Animation State
   const [isSynthesizing, setIsSynthesizing] = useState(false);
-  const [synthesisMode, setSynthesisMode] = useState<'fast' | 'cot'>('fast');
-  const [generationStage, setGenerationStage] = useState<'understand' | 'build' | 'validate' | 'complete'>('complete');
   const [visibleNodesCount, setVisibleNodesCount] = useState<number>(5);
   const [copiedCode, setCopiedCode] = useState(false);
 
   const handleSynthesize = () => {
     if (isSynthesizing) return;
     setIsSynthesizing(true);
-    setGenerationStage('understand');
     setVisibleNodesCount(0);
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (prefersReducedMotion) {
-      setGenerationStage('complete');
       setVisibleNodesCount(5);
       setIsSynthesizing(false);
       return;
@@ -58,7 +50,6 @@ export function AiGeneratorPage() {
 
     // Stage 1: Understand (~400ms)
     setTimeout(() => {
-      setGenerationStage('build');
       // Stage 2: Build - progressive node reveals
       setVisibleNodesCount(1);
     }, 500);
@@ -68,12 +59,10 @@ export function AiGeneratorPage() {
     setTimeout(() => setVisibleNodesCount(4), 1400);
     setTimeout(() => {
       setVisibleNodesCount(5);
-      setGenerationStage('validate');
     }, 1700);
 
     // Stage 3: Validate & Complete
     setTimeout(() => {
-      setGenerationStage('complete');
       setIsSynthesizing(false);
     }, 2200);
   };
@@ -104,223 +93,80 @@ export function AiGeneratorPage() {
   ];
 
   return (
-    <div className="space-y-5 text-slate-900 dark:text-slate-100 font-sans pb-16">
-      {/* Breadcrumb & Metadata Header */}
+    <div data-testid="ai-generator-page" className="space-y-5 text-slate-900 dark:text-slate-100 font-sans pb-16">
+      {/* Focused creation header */}
       <div className="space-y-2">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-          <div className="flex items-center gap-2">
-            <Link to="/workspace" className="hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
-              Workspace
-            </Link>
-            <span>/</span>
-            <Link to="/workflows" className="hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
-              Workflows
-            </Link>
-            <span>/</span>
-            <Link to="/workflows/new" className="hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
-              Create workflow
-            </Link>
-            <span>/</span>
-            <span className="text-slate-900 dark:text-slate-100 font-semibold flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />
-              Create with AI
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 font-mono text-[11px]">
-            <span className="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Engine: WEAV Synthesizer v2.4 (Deterministic)
-            </span>
-            <span className="hidden md:inline px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-              Cluster: us-east-prod-04
-            </span>
-          </div>
+        <Link
+          to="/workflows/new"
+          className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+        >
+          <ArrowLeft size={14} />
+          Back to workflows
+        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Create with AI</h1>
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Ready
+          </span>
         </div>
-
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-3 pt-1">
-          <div className="space-y-1">
-            <div className="flex items-center gap-3">
-              <Link
-                to="/workflows/new"
-                className="text-xs text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 flex items-center gap-1"
-              >
-                <ArrowLeft size={14} />
-                <span>Back to Create workflow</span>
-              </Link>
-              <span className="text-slate-300 dark:text-slate-700">|</span>
-              <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-                Create with AI
-              </h1>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 max-w-3xl">
-              Describe the automation in plain technical specifications. WEAV compiles step topologies, validates JSON schemas, and synthesizes immutable graph bindings.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button className="h-8 px-3 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5">
-              <BookOpen size={14} />
-              <span>Synthesizer Specs</span>
-            </button>
-            <button className="h-8 px-3 rounded text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center gap-1.5">
-              <Terminal size={14} />
-              <span>CLI Generator</span>
-            </button>
-          </div>
-        </div>
+        <p className="max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+          Tell us what you want to automate. We’ll build the workflow for you.
+        </p>
       </div>
 
-      {/* Top Workbench: Intent Prompting & Compiler Parameters */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-xs space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#2563EB]" />
-            <label className="text-xs font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-              Automation Intent & Prompt
+      {/* Focused prompt workbench */}
+      <section data-testid="ai-prompt-workbench" className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <label htmlFor="workflow-prompt" className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              What should this workflow do?
             </label>
-            <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-              Natural Language to Pipeline AST
-            </span>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Include the trigger, action, and any rules that matter.</p>
           </div>
-
-          <div className="flex items-center gap-3 font-mono text-[11px] text-slate-500 dark:text-slate-400">
-            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-              <CheckCircle2 size={12} />
-              JSON-Schema Strict: Enforced
-            </span>
-            <span>•</span>
-            <span>{prompt.length} chars</span>
-            <span>•</span>
-            <span>~{Math.ceil(prompt.length / 4.5)} tokens</span>
-          </div>
+          <span className="shrink-0 font-mono text-[10px] text-slate-400">{prompt.length} chars</span>
         </div>
 
-        {/* Textarea Field */}
-        <div className="relative rounded-lg bg-slate-50 dark:bg-slate-950 border border-[#2563EB]/50 p-3 focus-within:border-[#2563EB] transition-all">
+        <div className="rounded-lg border border-blue-500/50 bg-slate-50 p-3 transition-colors focus-within:border-blue-500 dark:bg-slate-950">
           <textarea
+            id="workflow-prompt"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            rows={3}
-            placeholder="Describe triggers, downstream systems, transform logic, conditions, and notifications..."
-            className="w-full bg-transparent text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 resize-none outline-none border-0 p-0 leading-relaxed font-sans"
+            rows={4}
+            placeholder="Example: When a payment arrives, check inventory and notify the team."
+            className="w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-slate-900 outline-none placeholder:text-slate-400 dark:text-slate-100"
           />
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2.5 mt-2 border-t border-slate-200/60 dark:border-slate-800/80">
-            {/* Starter Prompt Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 text-[11px]">
-              <span className="text-slate-400 shrink-0 font-medium text-[10px]">Quick starters:</span>
-              {PROMPT_STARTERS.map((starter, idx) => (
-                <button
-                  key={starter}
-                  type="button"
-                  onClick={() => setPrompt(`When triggered, ${starter.toLowerCase()} and log execution results.`)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors whitespace-nowrap ${
-                    idx === 0
-                      ? 'bg-[#2563EB]/10 text-[#2563EB] border border-[#2563EB]/30 font-semibold'
-                      : 'bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {idx === 0 && <Check size={10} className="inline mr-1" />}
-                  {starter}
-                </button>
-              ))}
-            </div>
-
-            <button className="text-[11px] text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 flex items-center gap-1 shrink-0">
-              <History size={12} />
-              <span>Recent prompts</span>
-            </button>
+          <div className="mt-3 flex items-center gap-2 overflow-x-auto border-t border-slate-200/70 pt-3 dark:border-slate-800">
+            <span className="shrink-0 text-[11px] font-medium text-slate-400">Try an example</span>
+            {PROMPT_STARTERS.slice(0, 3).map((starter) => (
+              <button
+                key={starter}
+                type="button"
+                onClick={() => setPrompt(`When triggered, ${starter.toLowerCase()} and log execution results.`)}
+                className="shrink-0 rounded-md bg-slate-200/70 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
+              >
+                {starter}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Controls Ribbon */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Mode Switcher */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-md border border-slate-200 dark:border-slate-700 text-xs">
-              <button
-                onClick={() => setSynthesisMode('fast')}
-                className={`px-2.5 py-1 rounded text-[11px] font-medium flex items-center gap-1 transition-colors ${
-                  synthesisMode === 'fast'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs font-semibold'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                <Zap size={12} className="text-[#2563EB]" />
-                <span>Fast synthesis (v2.4)</span>
-              </button>
-              <button
-                onClick={() => setSynthesisMode('cot')}
-                className={`px-2.5 py-1 rounded text-[11px] font-medium flex items-center gap-1 transition-colors ${
-                  synthesisMode === 'cot'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs font-semibold'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                <Sparkles size={12} />
-                <span>Deep reasoning (CoT)</span>
-              </button>
-            </div>
-
-            {/* Validation Badges */}
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 text-[11px] text-slate-600 dark:text-slate-400">
-              <ShieldCheck size={13} className="text-emerald-500" />
-              <span>
-                Strict JSON schema validation: <strong className="text-slate-900 dark:text-slate-100">Enabled</strong>
-              </span>
-            </div>
-
-            <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 text-[11px] text-slate-600 dark:text-slate-400">
-              <Lock size={13} />
-              <span>
-                Secret Isolation: <strong className="text-slate-900 dark:text-slate-100">Strict</strong>
-              </span>
-            </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <div data-testid="generation-status" className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+            {isSynthesizing ? <Loader2 size={14} className="animate-spin text-blue-600" /> : <CheckCircle2 size={14} className="text-emerald-500" />}
+            <span>{isSynthesizing ? 'Building your workflow…' : 'Ready to generate'}</span>
           </div>
-
-          <div className="flex items-center justify-between sm:justify-end gap-3">
-            {/* Status Pill */}
-            {isSynthesizing ? (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-mono text-[11px] border border-amber-500/20">
-                <Loader2 size={12} className="animate-spin" />
-                <span>
-                  Stage:{' '}
-                  {generationStage === 'understand'
-                    ? '1. Understand Intent'
-                    : generationStage === 'build'
-                    ? '2. Build Topology'
-                    : '3. Validate Schema'}
-                </span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono text-[11px] border border-emerald-500/20">
-                <CheckCircle2 size={12} />
-                <span>Synthesis complete (1.2s • 5 nodes generated)</span>
-              </div>
-            )}
-
-            {/* Synthesize Button */}
-            <button
-              onClick={handleSynthesize}
-              disabled={isSynthesizing}
-              className="px-4 py-1.5 bg-[#2563EB] hover:bg-[#5b32d6] text-white text-xs font-semibold rounded-md transition-all shadow-xs flex items-center gap-1.5"
-            >
-              {isSynthesizing ? (
-                <>
-                  <Loader2 size={14} className="animate-spin" />
-                  <span>Synthesizing...</span>
-                </>
-              ) : (
-                <>
-                  <Zap size={14} />
-                  <span>Synthesize Pipeline</span>
-                </>
-              )}
-            </button>
-          </div>
+          <button
+            onClick={handleSynthesize}
+            disabled={isSynthesizing}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70"
+          >
+            {isSynthesizing ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
+            <span>{isSynthesizing ? 'Building…' : 'Generate workflow'}</span>
+          </button>
         </div>
-      </div>
+      </section>
 
       {/* Generated Graph Pipeline Preview */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden flex flex-col">
@@ -330,17 +176,13 @@ export function AiGeneratorPage() {
             <div className="flex items-center gap-2">
               <Sparkles size={16} className="text-[#2563EB]" />
               <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                Generated Workflow Preview
+                Workflow preview
               </span>
             </div>
 
             <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              5 nodes • 4 connections • AST Validated
-            </span>
-
-            <span className="font-mono text-[10px] text-slate-400">
-              Graph ID: wf_syn_802fb9
+              5 steps ready
             </span>
           </div>
 
@@ -357,13 +199,13 @@ export function AiGeneratorPage() {
               className="h-7 px-2.5 rounded text-xs font-medium bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-1 shadow-xs"
             >
               <Edit3 size={12} />
-              <span>Edit in canvas</span>
+                <span>Edit</span>
             </button>
             <button
               onClick={handleAcceptPipeline}
               className="h-7 px-3 rounded text-xs font-semibold bg-[#2563EB] hover:bg-[#5b32d6] text-white transition-colors flex items-center gap-1 shadow-xs"
             >
-              <span>Accept Pipeline</span>
+                <span>Use workflow</span>
               <ArrowRight size={12} />
             </button>
           </div>
@@ -583,8 +425,16 @@ export function AiGeneratorPage() {
         </div>
       </div>
 
-      {/* Inspector & Synthesized Schema Detail Pane */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {/* Optional technical details */}
+      <details data-testid="technical-details" className="group rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-700 transition-colors hover:text-slate-900 dark:text-slate-200 dark:hover:text-white">
+          <span className="inline-flex items-center gap-2">
+            <Code2 size={15} className="text-[#2563EB]" />
+            Technical details
+            <span className="text-xs font-normal text-slate-400">Optional</span>
+          </span>
+        </summary>
+        <div className="grid grid-cols-1 gap-4 border-t border-slate-200 p-3 dark:border-slate-800 lg:grid-cols-3">
         {/* Left: Variable Bindings */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-xs space-y-3 lg:col-span-1">
           <div className="flex items-center justify-between">
@@ -684,7 +534,8 @@ export function AiGeneratorPage() {
 }`}
           </pre>
         </div>
-      </div>
+        </div>
+      </details>
 
       {/* Prominent Operational Control Bottom Bar (Fixed Sticky) */}
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 p-3 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -692,10 +543,7 @@ export function AiGeneratorPage() {
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
           <div className="flex flex-col">
             <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-              Synthesized graph is compiled and ready
-            </span>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400">
-              All 5 node interfaces match upstream contract definitions without type mismatch.
+              Workflow ready
             </span>
           </div>
         </div>
@@ -711,18 +559,17 @@ export function AiGeneratorPage() {
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             className="px-3 py-1.5 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded transition-colors"
           >
-            Edit Prompt
+            Edit prompt
           </button>
           <button
             onClick={handleAcceptPipeline}
             className="px-4 py-1.5 text-xs font-semibold bg-[#2563EB] hover:bg-[#5b32d6] text-white rounded transition-colors shadow-xs flex items-center gap-1.5"
           >
             <Zap size={14} />
-            <span>Create & Deploy Workflow</span>
+            <span>Create workflow</span>
           </button>
         </div>
       </div>
     </div>
   );
 }
-
