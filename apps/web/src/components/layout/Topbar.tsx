@@ -1,12 +1,27 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Bell, Menu, Moon, Search, Sun } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useUIStore } from '../../store/useUIStore';
 
+const getTopbarPageKey = (pathname: string) => {
+  if (pathname.startsWith('/workflows')) return 'nav.workflows';
+  if (pathname.startsWith('/executions')) return 'nav.executions';
+  if (pathname.startsWith('/connections')) return 'nav.connections';
+  if (pathname.startsWith('/workspace')) return 'nav.workspace';
+  if (pathname.startsWith('/ai')) return 'nav.ai_generator';
+  if (pathname.startsWith('/telegram')) return 'nav.telegram';
+  if (pathname.startsWith('/notifications')) return 'nav.notifications';
+  if (pathname.startsWith('/settings')) return 'nav.settings';
+  if (pathname.startsWith('/help')) return 'nav.help';
+  return 'nav.dashboard';
+};
+
 export function Topbar() {
   const { searchQuery, setSearchQuery, theme, toggleTheme, toggleMobileSidebar } = useUIStore();
   const { language, toggleLanguage, t } = useI18nStore();
+  const location = useLocation();
+  const currentPageKey = getTopbarPageKey(location.pathname);
 
   return (
     <header className="z-20 flex h-14 shrink-0 select-none items-center justify-between border-b border-border bg-card px-4 text-foreground transition-colors duration-200">
@@ -22,7 +37,9 @@ export function Topbar() {
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
           <span>{t('topbar.home')}</span>
           <span className="text-border">/</span>
-          <span className="font-semibold text-foreground">{t('nav.dashboard')}</span>
+          <span data-testid="topbar-breadcrumb-current" className="font-semibold text-foreground">
+            {t(currentPageKey)}
+          </span>
         </div>
       </div>
 
