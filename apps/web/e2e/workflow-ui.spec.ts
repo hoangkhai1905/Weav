@@ -145,6 +145,33 @@ test.describe('bulk workflow actions', () => {
   });
 });
 
+test.describe('workflow responsive layout', () => {
+  test('keeps selected workflow actions within the viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'VI')" });
+    await page.goto('/workflows');
+
+    const rows = page.getByTestId('workflow-row');
+    await expect(rows).toHaveCount(3);
+    await rows.nth(0).getByRole('checkbox', { name: /Select / }).check();
+    await rows.nth(1).getByRole('checkbox', { name: /Select / }).check();
+
+    const dimensions = await page.evaluate(() => {
+      const globalObj = globalThis as unknown as {
+        document: { documentElement: { clientWidth: number; scrollWidth: number } };
+      };
+      return {
+        clientWidth: globalObj.document.documentElement.clientWidth,
+        scrollWidth: globalObj.document.documentElement.scrollWidth,
+      };
+    });
+
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+    await expect(page.locator('main')).toHaveCSS('min-width', '0px');
+    await expect(page.locator('main')).toHaveCSS('overflow-x', 'hidden');
+  });
+});
+
 test.describe('workflow builder execution motion', () => {
   test('keeps the minimap contained and the selected workflow visible', async ({ page }) => {
     await page.goto('/workflows/wf-001/builder');
