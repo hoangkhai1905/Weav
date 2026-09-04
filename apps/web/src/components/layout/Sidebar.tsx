@@ -55,7 +55,7 @@ export function Sidebar() {
             `group relative flex min-h-10 items-center gap-3 overflow-hidden rounded-lg px-3 text-sm font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar ${
               isActive
                 ? 'bg-sidebar-active text-sidebar-foreground'
-                : 'text-sidebar-foreground/80 hover:bg-blue-100/70 hover:text-sidebar-foreground'
+                : 'text-sidebar-foreground/80 hover:bg-blue-100/70 hover:text-sidebar-foreground dark:hover:bg-blue-950/40'
             }`
           }
         >
@@ -121,12 +121,12 @@ export function Sidebar() {
         {renderNavItems(MAIN_NAV_ITEMS, isMobile)}
       </nav>
 
-      <div className="shrink-0 space-y-1 border-t border-slate-200 bg-slate-200/30 p-3">
+      <div data-testid="sidebar-footer" className="shrink-0 space-y-1 border-t border-slate-200/80 bg-slate-100/70 p-3 dark:border-slate-800 dark:bg-slate-900/45">
         <nav aria-label="Support navigation">{renderNavItems(BOTTOM_NAV_ITEMS, isMobile)}</nav>
 
         <div className="mt-3 flex items-center justify-between border-t border-slate-200 px-2 pt-3 pb-1">
           <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-200 text-xs font-bold text-sidebar-foreground ring-1 ring-slate-300/70">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-200 text-xs font-bold text-sidebar-foreground ring-1 ring-slate-300/70 dark:bg-slate-800 dark:ring-slate-700">
               NT
             </div>
             <div className="flex min-w-0 flex-col">

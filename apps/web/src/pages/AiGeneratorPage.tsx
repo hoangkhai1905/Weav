@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
 import {
   ArrowLeft,
   Sparkles,
@@ -23,6 +24,7 @@ import { workflowApi } from '../api/workflow.api';
 export function AiGeneratorPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const prefersReducedMotion = useReducedMotion();
 
   // Initial prompt state (passed from CreateWorkflowPage or default)
   const [prompt, setPrompt] = useState<string>(
@@ -116,7 +118,13 @@ export function AiGeneratorPage() {
       </div>
 
       {/* Focused prompt workbench */}
-      <section data-testid="ai-prompt-workbench" className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900">
+      <motion.section
+        data-testid="ai-prompt-workbench"
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.32, ease: [0.16, 1, 0.3, 1] }}
+        className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs dark:border-slate-800 dark:bg-slate-900"
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <label htmlFor="workflow-prompt" className="text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -127,49 +135,67 @@ export function AiGeneratorPage() {
           <span className="shrink-0 font-mono text-[10px] text-slate-400">{prompt.length} chars</span>
         </div>
 
-        <div className="rounded-lg border border-blue-500/50 bg-slate-50 p-3 transition-colors focus-within:border-blue-500 dark:bg-slate-950">
+        <div className="rounded-lg border border-blue-500/60 bg-slate-100 p-3 transition-colors focus-within:border-blue-600 dark:bg-slate-800/80">
           <textarea
             id="workflow-prompt"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             rows={4}
             placeholder="Example: When a payment arrives, check inventory and notify the team."
-            className="w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-slate-900 outline-none placeholder:text-slate-400 dark:text-slate-100"
+            className="w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-slate-900 outline-none placeholder:text-slate-500 dark:text-slate-50 dark:placeholder:text-slate-400"
           />
 
-          <div className="mt-3 flex items-center gap-2 overflow-x-auto border-t border-slate-200/70 pt-3 dark:border-slate-800">
-            <span className="shrink-0 text-[11px] font-medium text-slate-400">Try an example</span>
+          <div className="mt-3 flex items-center gap-2 overflow-x-auto border-t border-slate-300/70 pt-3 dark:border-slate-700">
+            <span className="shrink-0 text-[11px] font-medium text-slate-500 dark:text-slate-300">Try an example</span>
             {PROMPT_STARTERS.slice(0, 3).map((starter) => (
-              <button
+              <motion.button
                 key={starter}
                 type="button"
                 onClick={() => setPrompt(`When triggered, ${starter.toLowerCase()} and log execution results.`)}
-                className="shrink-0 rounded-md bg-slate-200/70 px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:bg-blue-50 hover:text-blue-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
+                whileHover={prefersReducedMotion ? undefined : { y: -1 }}
+                whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
+                className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:border-blue-500/60 dark:hover:bg-blue-950/40 dark:hover:text-blue-200"
               >
                 {starter}
-              </button>
+              </motion.button>
             ))}
           </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-          <div data-testid="generation-status" className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+          <motion.div
+            key={isSynthesizing ? 'building' : 'ready'}
+            data-testid="generation-status"
+            initial={prefersReducedMotion ? false : { opacity: 0, x: -4 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300"
+          >
             {isSynthesizing ? <Loader2 size={14} className="animate-spin text-blue-600" /> : <CheckCircle2 size={14} className="text-emerald-500" />}
             <span>{isSynthesizing ? 'Building your workflow…' : 'Ready to generate'}</span>
-          </div>
-          <button
+          </motion.div>
+          <motion.button
             onClick={handleSynthesize}
             disabled={isSynthesizing}
+            whileHover={prefersReducedMotion ? undefined : { y: -1, scale: 1.01 }}
+            whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
+            animate={isSynthesizing && !prefersReducedMotion ? { boxShadow: ['0 0 0 0 rgba(37, 99, 235, 0)', '0 0 0 6px rgba(37, 99, 235, 0.16)', '0 0 0 0 rgba(37, 99, 235, 0)'] } : undefined}
+            transition={isSynthesizing && !prefersReducedMotion ? { duration: 1.25, repeat: Infinity } : undefined}
             className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-wait disabled:opacity-70"
           >
             {isSynthesizing ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
             <span>{isSynthesizing ? 'Building…' : 'Generate workflow'}</span>
-          </button>
+          </motion.button>
         </div>
-      </section>
+      </motion.section>
 
       {/* Generated Graph Pipeline Preview */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden flex flex-col">
+      <motion.div
+        data-testid="workflow-preview"
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.36, delay: prefersReducedMotion ? 0 : 0.08, ease: [0.16, 1, 0.3, 1] }}
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden flex flex-col"
+      >
         {/* Section Header */}
         <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-3 flex-wrap">
@@ -199,13 +225,13 @@ export function AiGeneratorPage() {
               className="h-7 px-2.5 rounded text-xs font-medium bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-1 shadow-xs"
             >
               <Edit3 size={12} />
-                <span>Edit</span>
+              <span>Edit</span>
             </button>
             <button
               onClick={handleAcceptPipeline}
-              className="h-7 px-3 rounded text-xs font-semibold bg-[#2563EB] hover:bg-[#5b32d6] text-white transition-colors flex items-center gap-1 shadow-xs"
+              className="h-7 px-3 rounded text-xs font-semibold bg-[#2563EB] hover:bg-blue-700 text-white transition-colors flex items-center gap-1 shadow-xs"
             >
-                <span>Use workflow</span>
+              <span>Use workflow</span>
               <ArrowRight size={12} />
             </button>
           </div>
@@ -213,14 +239,14 @@ export function AiGeneratorPage() {
 
         {/* Graph Visual Area with Dot Matrix Backing */}
         <div
-          className="relative w-full p-6 bg-slate-100 dark:bg-slate-950 overflow-x-auto min-h-[220px]"
+          className="relative w-full p-6 bg-slate-100 dark:bg-slate-900 overflow-x-auto min-h-[220px]"
           style={{
             backgroundImage: 'radial-gradient(#94a3b8 1px, transparent 1px)',
             backgroundSize: '16px 16px',
           }}
         >
           {/* Canvas Status Ribbon Top Left */}
-          <div className="absolute top-3 left-4 flex items-center gap-2 bg-white/90 dark:bg-slate-900/90 backdrop-blur rounded px-2.5 py-1 border border-slate-200 dark:border-slate-800 text-[10px] font-mono text-slate-500 dark:text-slate-400 shadow-xs">
+          <div className="absolute top-3 left-4 flex items-center gap-2 bg-white/90 dark:bg-slate-800/95 backdrop-blur rounded px-2.5 py-1 border border-slate-200 dark:border-slate-700 text-[10px] font-mono text-slate-600 dark:text-slate-300 shadow-xs">
             <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               Deterministic Flow
@@ -235,7 +261,7 @@ export function AiGeneratorPage() {
           <div className="flex items-center gap-0 min-w-max pt-6 pb-2 px-2">
             {/* NODE 1: Webhook Trigger */}
             {visibleNodesCount >= 1 && (
-              <div className="w-64 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col relative transition-all hover:shadow-md">
+              <div className="w-64 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col relative transition-all hover:shadow-md">
                 <div className="h-8 px-3 bg-amber-500/10 rounded-t-lg flex items-center justify-between border-b border-amber-500/20">
                   <div className="flex items-center gap-2">
                     <Globe size={14} className="text-amber-600 dark:text-amber-400" />
@@ -250,7 +276,7 @@ export function AiGeneratorPage() {
                     <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">POST /stripe-orders</p>
                     <p className="font-mono text-[10px] text-slate-500 truncate">Listen for payment_intent.succeeded</p>
                   </div>
-                  <div className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded font-mono text-[10px] text-slate-600 dark:text-slate-400 flex items-center justify-between">
+                <div className="p-1.5 bg-slate-50 dark:bg-slate-700 rounded font-mono text-[10px] text-slate-600 dark:text-slate-300 flex items-center justify-between">
                     <span>Output: $json.body</span>
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   </div>
@@ -269,13 +295,18 @@ export function AiGeneratorPage() {
                   <path d="M 0 8 L 32 8" stroke="currentColor" strokeDasharray="2 2" strokeWidth="2" />
                   <polygon fill="currentColor" points="32,4 40,8 32,12" />
                 </svg>
-                <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#2563EB]" />
+                <motion.div
+                  data-testid="preview-flow-dot"
+                  animate={prefersReducedMotion ? { opacity: 0.8 } : { x: [-8, 8], opacity: [0.45, 1, 0.45] }}
+                  transition={prefersReducedMotion ? undefined : { duration: 1.1, repeat: Infinity, delay: 0 }}
+                  className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#2563EB]"
+                />
               </div>
             )}
 
             {/* NODE 2: Database Query */}
             {visibleNodesCount >= 2 && (
-              <div className="w-64 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col relative transition-all hover:shadow-md">
+              <div className="w-64 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col relative transition-all hover:shadow-md">
                 <div className="h-8 px-3 bg-sky-500/10 rounded-t-lg flex items-center justify-between border-b border-sky-500/20">
                   <div className="flex items-center gap-2">
                     <Database size={14} className="text-sky-600 dark:text-sky-400" />
@@ -290,7 +321,7 @@ export function AiGeneratorPage() {
                     <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">Query Inventory Status</p>
                     <p className="font-mono text-[10px] text-slate-500 truncate">SELECT stock FROM items WHERE id = :id</p>
                   </div>
-                  <div className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded font-mono text-[10px] text-slate-600 dark:text-slate-400 flex items-center justify-between">
+                <div className="p-1.5 bg-slate-50 dark:bg-slate-700 rounded font-mono text-[10px] text-slate-600 dark:text-slate-300 flex items-center justify-between">
                     <span>Input: {`{{$json.item_id}}`}</span>
                     <span className="text-emerald-500 font-mono">200 OK</span>
                   </div>
@@ -309,13 +340,18 @@ export function AiGeneratorPage() {
                   <path d="M 0 8 L 32 8" stroke="currentColor" strokeDasharray="2 2" strokeWidth="2" />
                   <polygon fill="currentColor" points="32,4 40,8 32,12" />
                 </svg>
-                <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#2563EB]" />
+                <motion.div
+                  data-testid="preview-flow-dot"
+                  animate={prefersReducedMotion ? { opacity: 0.8 } : { x: [-8, 8], opacity: [0.45, 1, 0.45] }}
+                  transition={prefersReducedMotion ? undefined : { duration: 1.1, repeat: Infinity, delay: 0.18 }}
+                  className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#2563EB]"
+                />
               </div>
             )}
 
             {/* NODE 3: AI Extract Node (Highlighted) */}
             {visibleNodesCount >= 3 && (
-              <div className="w-68 bg-white dark:bg-slate-900 rounded-lg border-2 border-[#2563EB] shadow-md shadow-[#2563EB]/20 flex flex-col relative transition-all">
+              <div className="w-68 bg-white dark:bg-slate-800 rounded-lg border-2 border-[#2563EB] shadow-md shadow-[#2563EB]/20 flex flex-col relative transition-all">
                 <div className="h-8 px-3 bg-[#2563EB] rounded-t-[6px] flex items-center justify-between text-white">
                   <div className="flex items-center gap-2">
                     <Sparkles size={14} className="fill-white" />
@@ -349,13 +385,18 @@ export function AiGeneratorPage() {
                   <path d="M 0 8 L 32 8" stroke="currentColor" strokeDasharray="2 2" strokeWidth="2" />
                   <polygon fill="currentColor" points="32,4 40,8 32,12" />
                 </svg>
-                <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#2563EB]" />
+                <motion.div
+                  data-testid="preview-flow-dot"
+                  animate={prefersReducedMotion ? { opacity: 0.8 } : { x: [-8, 8], opacity: [0.45, 1, 0.45] }}
+                  transition={prefersReducedMotion ? undefined : { duration: 1.1, repeat: Infinity, delay: 0.36 }}
+                  className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#2563EB]"
+                />
               </div>
             )}
 
             {/* NODE 4: Condition Node */}
             {visibleNodesCount >= 4 && (
-              <div className="w-64 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col relative transition-all hover:shadow-md">
+              <div className="w-64 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col relative transition-all hover:shadow-md">
                 <div className="h-8 px-3 bg-sky-500/10 rounded-t-lg flex items-center justify-between border-b border-sky-500/20">
                   <div className="flex items-center gap-2">
                     <GitBranch size={14} className="text-sky-600 dark:text-sky-400" />
@@ -370,7 +411,7 @@ export function AiGeneratorPage() {
                     <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">Order Total &gt; $100</p>
                     <p className="font-mono text-[10px] text-slate-500 truncate">eval({`{{$json.amount}}`} &gt; 10000)</p>
                   </div>
-                  <div className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded font-mono text-[10px] text-slate-600 dark:text-slate-400 flex items-center justify-between">
+                <div className="p-1.5 bg-slate-50 dark:bg-slate-700 rounded font-mono text-[10px] text-slate-600 dark:text-slate-300 flex items-center justify-between">
                     <span>Branch: true</span>
                     <span className="text-emerald-500 font-semibold font-mono">Passed</span>
                   </div>
@@ -389,13 +430,18 @@ export function AiGeneratorPage() {
                   <path d="M 0 8 L 32 8" stroke="currentColor" strokeDasharray="2 2" strokeWidth="2" />
                   <polygon fill="currentColor" points="32,4 40,8 32,12" />
                 </svg>
-                <div className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#2563EB]" />
+                <motion.div
+                  data-testid="preview-flow-dot"
+                  animate={prefersReducedMotion ? { opacity: 0.8 } : { x: [-8, 8], opacity: [0.45, 1, 0.45] }}
+                  transition={prefersReducedMotion ? undefined : { duration: 1.1, repeat: Infinity, delay: 0.54 }}
+                  className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#2563EB]"
+                />
               </div>
             )}
 
             {/* NODE 5: Slack Dispatch Action */}
             {visibleNodesCount >= 5 && (
-              <div className="w-64 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col relative transition-all hover:shadow-md">
+              <div className="w-64 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col relative transition-all hover:shadow-md">
                 <div className="h-8 px-3 bg-emerald-500/10 rounded-t-lg flex items-center justify-between border-b border-emerald-500/20">
                   <div className="flex items-center gap-2">
                     <Send size={14} className="text-emerald-600 dark:text-emerald-400" />
@@ -410,7 +456,7 @@ export function AiGeneratorPage() {
                     <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">Notify #sales-alerts</p>
                     <p className="font-mono text-[10px] text-slate-500 truncate">BlockKit: Order VIP Notification</p>
                   </div>
-                  <div className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded font-mono text-[10px] text-slate-600 dark:text-slate-400 flex items-center justify-between">
+                <div className="p-1.5 bg-slate-50 dark:bg-slate-700 rounded font-mono text-[10px] text-slate-600 dark:text-slate-300 flex items-center justify-between">
                     <span>Channel: #sales-alerts</span>
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   </div>
@@ -423,7 +469,7 @@ export function AiGeneratorPage() {
             )}
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Optional technical details */}
       <details data-testid="technical-details" className="group rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
@@ -563,7 +609,7 @@ export function AiGeneratorPage() {
           </button>
           <button
             onClick={handleAcceptPipeline}
-            className="px-4 py-1.5 text-xs font-semibold bg-[#2563EB] hover:bg-[#5b32d6] text-white rounded transition-colors shadow-xs flex items-center gap-1.5"
+            className="px-4 py-1.5 text-xs font-semibold bg-[#2563EB] hover:bg-blue-700 text-white rounded transition-colors shadow-xs flex items-center gap-1.5"
           >
             <Zap size={14} />
             <span>Create workflow</span>
