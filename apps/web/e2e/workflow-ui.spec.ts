@@ -110,6 +110,26 @@ test.describe('workflow operations list', () => {
   });
 });
 
+test.describe('bulk workflow actions', () => {
+  test('turns row selection into a confirmable delete action', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
+    await page.goto('/workflows');
+
+    const rows = page.getByTestId('workflow-row');
+    await expect(rows).toHaveCount(3);
+    await rows.nth(0).getByRole('checkbox', { name: /Select / }).check();
+    await rows.nth(1).getByRole('checkbox', { name: /Select / }).check();
+
+    const bulkActions = page.getByTestId('workflow-bulk-actions');
+    await expect(bulkActions).toContainText('2 workflows selected');
+    await bulkActions.getByRole('button', { name: 'Delete selected workflows' }).click();
+    await expect(page.getByText('Delete selected workflows?', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Delete workflows', exact: true }).click();
+    await expect(bulkActions).toHaveCount(0);
+  });
+});
+
 test.describe('workflow builder execution motion', () => {
   test('keeps the minimap contained and the selected workflow visible', async ({ page }) => {
     await page.goto('/workflows/wf-001/builder');
