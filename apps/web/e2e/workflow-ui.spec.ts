@@ -114,6 +114,24 @@ test.describe('workflow builder execution motion', () => {
     await expect(inspector).toHaveCount(0);
   });
 
+  test('keeps canvas geometry stable while the inspector opens and closes', async ({ page }) => {
+    await page.goto('/workflows/wf-001/builder');
+
+    const canvas = page.getByTestId('workflow-canvas');
+    const before = await canvas.boundingBox();
+    await page.getByTestId('workflow-node').filter({ hasText: 'AI Extract Core' }).click();
+    await expect(page.getByTestId('workflow-inspector')).toBeVisible();
+    const open = await canvas.boundingBox();
+
+    expect(open?.x).toBe(before?.x);
+    expect(open?.width).toBe(before?.width);
+
+    await page.locator('.react-flow__pane').click({ position: { x: 120, y: 120 } });
+    await expect(page.getByTestId('workflow-inspector')).toHaveCount(0);
+    const after = await canvas.boundingBox();
+    expect(after?.width).toBe(before?.width);
+  });
+
   test('keeps state feedback when reduced motion is enabled', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/workflows/wf-001/builder');
