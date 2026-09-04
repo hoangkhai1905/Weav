@@ -33,7 +33,7 @@ export function ExecutionEdge({
     targetPosition,
   });
   const isActive = Boolean(data?.active);
-  const showPacket = Boolean(isActive && !data?.reducedMotion);
+  const reducedMotion = Boolean(data?.reducedMotion);
 
   return (
     <>
@@ -49,21 +49,29 @@ export function ExecutionEdge({
           transition: 'stroke 180ms ease, stroke-width 180ms ease',
         }}
       />
-      {showPacket && (
-        <g data-testid="execution-edge-active" aria-hidden="true">
-          <path
-            data-testid="execution-edge-flow"
-            d={edgePath}
-            fill="none"
-            stroke="#60a5fa"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeDasharray="1 15"
-            opacity="0.75"
-            pointerEvents="none"
-          >
-            <animate attributeName="stroke-dashoffset" from="0" to="-16" dur="0.42s" repeatCount="indefinite" />
-          </path>
+      <g data-testid={isActive ? 'execution-edge-active' : 'execution-edge-idle'} aria-hidden="true">
+        <path
+          data-testid="execution-edge-flow"
+          d={edgePath}
+          fill="none"
+          stroke={isActive ? '#60a5fa' : '#2563eb'}
+          strokeWidth={isActive ? 3 : 2.25}
+          strokeLinecap="round"
+          strokeDasharray={isActive ? '1 15' : '1 24'}
+          opacity={isActive ? 0.9 : 0.56}
+          pointerEvents="none"
+        >
+          {!reducedMotion && (
+            <animate
+              attributeName="stroke-dashoffset"
+              from="0"
+              to={isActive ? '-16' : '-25'}
+              dur={isActive ? '0.42s' : '1.2s'}
+              repeatCount="indefinite"
+            />
+          )}
+        </path>
+        {isActive && (
           <circle r="4.5" fill="#2563eb" stroke="#dbeafe" strokeWidth="1.5">
             <animateMotion
               path={edgePath}
@@ -72,8 +80,8 @@ export function ExecutionEdge({
               fill="freeze"
             />
           </circle>
-        </g>
-      )}
+        )}
+      </g>
     </>
   );
 }

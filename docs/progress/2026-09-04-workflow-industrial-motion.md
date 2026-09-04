@@ -63,6 +63,7 @@ Relevant files:
 - MiniMap QA follow-up: clarified the viewport/camera window with a cobalt-compatible slate fill and outline so the transparent viewport no longer reads as an unexplained white card; verified the mask remains a first-class React Flow viewport overlay.
 - Account surfaces follow-up: refreshed Workspace, Settings/Profile, and Help with cobalt/slate hierarchy, semantic status accents, responsive spacing, purposeful Framer Motion entrances/feedback, accessible labels, and a discoverability regression journey covering all three routes.
 - Builder motion follow-up: made active execution edges visibly carry a looping packet and dash-flow during each transition, added processing/success icon feedback on workflow nodes, and gave Run Test a clear pulse/spinner state; reduced-motion still resolves state immediately.
+- Builder interaction follow-up: added an always-visible, low-intensity edge flow preview (with a static reduced-motion fallback), made the inspector closed by default, and added outside-click dismissal with node-click reopen; Chromium E2E is now 11/11.
 
 ## GitNexus evidence
 

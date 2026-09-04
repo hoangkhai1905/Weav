@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ReactFlow,
   Controls,
@@ -66,7 +66,6 @@ const INITIAL_NODES: Node[] = [
       nodeType: 'ai.extract',
       status: 'idle',
       executionTime: '850ms',
-      selected: true,
       config: {
         model: 'gpt-4o-mini',
         inputPayload: '{{ $json.body.order_payload }}',
@@ -170,10 +169,12 @@ export const WorkflowBuilderPage: React.FC = () => {
   const nodeSequenceRef = useRef(INITIAL_NODES.length);
   const logSequenceRef = useRef(4);
   const executionTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const inspectorRef = useRef<HTMLElement | null>(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(INITIAL_EDGES);
-  const [selectedNodeId, setSelectedNodeId] = useState<string>('node-extract');
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
 
   // Canvas State & Controls
   const [showGrid, setShowGrid] = useState(true);
@@ -244,7 +245,24 @@ export const WorkflowBuilderPage: React.FC = () => {
     [setEdges]
   );
 
+  const closeInspector = useCallback(() => {
+    setInspectorOpen(false);
+    setSelectedNodeId(null);
+    setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, selected: false } })));
+  }, [setNodes]);
+
+  const handleWorkspacePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      if (!inspectorRef.current?.contains(target)) {
+        closeInspector();
+      }
+    },
+    [closeInspector]
+  );
+
   const onNodeClick = (_: React.MouseEvent, node: Node) => {
+    setInspectorOpen(true);
     setSelectedNodeId(node.id);
     setNodes((nds) =>
       nds.map((n) => ({
@@ -280,6 +298,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       newNode,
     ]);
     setSelectedNodeId(newNodeId);
+    setInspectorOpen(true);
     setIsSaved(false);
   };
 
@@ -385,7 +404,10 @@ export const WorkflowBuilderPage: React.FC = () => {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) || nodes[1];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-48px)] -m-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
+    <div
+      onPointerDownCapture={handleWorkspacePointerDown}
+      className="flex flex-col h-[calc(100vh-48px)] -m-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans"
+    >
       {/* TOP EDITOR HEADER (~48px) */}
       <header className="h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 flex items-center justify-between shrink-0 z-20">
         <div className="flex items-center gap-3">
@@ -582,6 +604,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onPaneClick={closeInspector}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView
@@ -620,10 +643,16 @@ export const WorkflowBuilderPage: React.FC = () => {
         </main>
 
         {/* RIGHT INSPECTOR PANEL (~360px) */}
+        <AnimatePresence initial={false}>
+          {inspectorOpen && (
         <motion.aside
-          initial={prefersReducedMotion ? false : { opacity: 0, x: 12 }}
+          key="workflow-inspector"
+          ref={inspectorRef}
+          data-testid="workflow-inspector"
+          initial={prefersReducedMotion ? false : { opacity: 0, x: 16 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: prefersReducedMotion ? 0 : 0.3, ease: [0.16, 1, 0.3, 1] }}
+          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: 16 }}
+          transition={{ duration: prefersReducedMotion ? 0 : 0.24, ease: [0.16, 1, 0.3, 1] }}
           className="z-10 flex w-88 shrink-0 flex-col border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
         >
           {/* Inspector Header */}
@@ -791,6 +820,8 @@ export const WorkflowBuilderPage: React.FC = () => {
             </button>
           </div>
         </motion.aside>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* BOTTOM TELEMETRY CONSOLE STREAM */}
