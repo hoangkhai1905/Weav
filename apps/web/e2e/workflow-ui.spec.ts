@@ -37,6 +37,18 @@ test.describe('industrial workflow shell', () => {
   });
 });
 
+test.describe('topbar breadcrumbs', () => {
+  test('tracks the active route in the current page breadcrumb', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
+
+    await page.goto('/executions');
+    await expect(page.getByTestId('topbar-breadcrumb-current')).toHaveText('Executions');
+
+    await page.goto('/workflows');
+    await expect(page.getByTestId('topbar-breadcrumb-current')).toHaveText('Workflows');
+  });
+});
+
 test.describe('dashboard quick actions', () => {
   test('surfaces the core workflow actions on the overview', async ({ page }) => {
     await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
