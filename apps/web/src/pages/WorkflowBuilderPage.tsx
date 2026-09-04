@@ -596,7 +596,7 @@ export const WorkflowBuilderPage: React.FC = () => {
         </aside>
 
         {/* WORKFLOW CANVAS (CENTER) */}
-        <main className="flex-1 h-full bg-slate-100 dark:bg-slate-950 relative overflow-hidden">
+        <main data-testid="workflow-canvas" className="flex-1 h-full bg-slate-100 dark:bg-slate-950 relative overflow-hidden">
           <ReactFlow
             nodes={nodes}
             edges={renderedEdges}
@@ -653,7 +653,7 @@ export const WorkflowBuilderPage: React.FC = () => {
           animate={{ opacity: 1, x: 0 }}
           exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: 16 }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.24, ease: [0.16, 1, 0.3, 1] }}
-          className="z-10 flex w-88 shrink-0 flex-col border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+          className="absolute inset-y-0 right-0 z-10 flex w-88 flex-col border-l border-slate-200 bg-white shadow-xl shadow-slate-900/10 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/25"
         >
           {/* Inspector Header */}
           <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
