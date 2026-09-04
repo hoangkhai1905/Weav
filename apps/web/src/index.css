@@ -105,6 +105,30 @@
   animation: shimmer 2.5s infinite linear;
 }
 
+/* Keep the React Flow camera window legible without making it look like a blank card. */
+.react-flow__minimap.workflow-minimap {
+  background-color: rgba(226, 232, 240, 0.9) !important;
+}
+
+.dark .react-flow__minimap.workflow-minimap {
+  background-color: rgba(15, 23, 42, 0.9) !important;
+}
+
+.workflow-minimap .react-flow__minimap-mask path {
+  vector-effect: non-scaling-stroke;
+}
+
+.workflow-minimap .react-flow__minimap-mask {
+  fill: rgba(71, 85, 105, 0.42);
+  stroke: #64748b;
+  stroke-width: 1.5;
+}
+
+.dark .workflow-minimap .react-flow__minimap-mask {
+  fill: rgba(15, 23, 42, 0.62);
+  stroke: #94a3b8;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

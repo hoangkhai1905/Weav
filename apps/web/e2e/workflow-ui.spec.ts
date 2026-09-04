@@ -69,6 +69,10 @@ test.describe('workflow builder execution motion', () => {
     expect(minimapBox).not.toBeNull();
     expect(minimapBox?.width).toBeGreaterThan(150);
     expect(minimapBox?.height).toBeGreaterThan(90);
+
+    const viewportMask = minimap.locator('.react-flow__minimap-mask');
+    await expect(viewportMask).toBeVisible();
+    await expect(viewportMask).toHaveCSS('stroke', /rgb\((100, 116, 139|148, 163, 184)\)/);
   });
 
   test('communicates execution state through nodes and edges', async ({ page }) => {

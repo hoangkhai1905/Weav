@@ -597,7 +597,7 @@ export const WorkflowBuilderPage: React.FC = () => {
               <MiniMap
                 data-testid="workflow-minimap"
                 aria-label="Workflow minimap"
-                className="hidden sm:block !bottom-3 !right-3 !m-0 !h-28 !w-44 !rounded-md !border-slate-300 !bg-slate-100/95 !shadow-lg dark:!border-slate-700 dark:!bg-slate-900/95"
+                className="workflow-minimap hidden sm:block !bottom-3 !right-3 !m-0 !h-28 !w-44 !rounded-md !border-slate-300 !bg-slate-200/90 !shadow-lg dark:!border-slate-700 dark:!bg-slate-950/90"
                 style={{ width: 176, height: 112, borderRadius: 6 }}
                 nodeColor={(node) => {
                   const status = String(node.data?.status ?? 'idle');
@@ -606,7 +606,9 @@ export const WorkflowBuilderPage: React.FC = () => {
                 nodeStrokeColor={theme === 'dark' ? '#64748b' : '#94a3b8'}
                 nodeStrokeWidth={1.5}
                 nodeBorderRadius={4}
-                maskColor={theme === 'dark' ? 'rgba(15, 24, 38, 0.58)' : 'rgba(148, 163, 184, 0.34)'}
+                maskColor={theme === 'dark' ? 'rgba(15, 24, 38, 0.62)' : 'rgba(71, 85, 105, 0.42)'}
+                maskStrokeColor={theme === 'dark' ? '#94a3b8' : '#64748b'}
+                maskStrokeWidth={1.5}
                 pannable
                 zoomable
               />
