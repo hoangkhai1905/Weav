@@ -70,18 +70,14 @@ test.describe('dashboard quick actions', () => {
     await expect(page.getByText('Create workflow with AI', { exact: true })).toBeVisible();
   });
 
-  test('shows an OCR quick action in both languages and opens the OCR builder', async ({ page }) => {
-    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
-    await page.goto('/dashboard');
+    test('keeps OCR available in Builder instead of Dashboard quick actions', async ({ page }) => {
+      await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
+      await page.goto('/dashboard');
 
-    const quickActions = page.getByTestId('dashboard-quick-actions');
-    await expect(quickActions.getByRole('link', { name: 'OCR document' })).toBeVisible();
-
-    await page.getByRole('button', { name: 'Switch to Vietnamese' }).click();
-    await expect(quickActions.getByRole('link', { name: 'OCR tài liệu' })).toBeVisible();
-    await quickActions.getByRole('link', { name: 'OCR tài liệu' }).click();
-    await expect(page).toHaveURL(/\/workflows\/wf-prod-5521\/builder$/);
-  });
+      const quickActions = page.getByTestId('dashboard-quick-actions');
+      await expect(quickActions.getByTestId('dashboard-ocr-action')).toHaveCount(0);
+      await expect(quickActions.getByRole('link', { name: 'Run test' })).toBeVisible();
+    });
 });
 
 test.describe('language switching', () => {
