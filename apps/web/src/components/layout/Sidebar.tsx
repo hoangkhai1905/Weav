@@ -54,8 +54,8 @@ export function Sidebar() {
           className={({ isActive }) =>
             `group relative flex min-h-10 items-center gap-3 overflow-hidden rounded-lg px-3 text-sm font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar ${
               isActive
-                ? 'bg-sidebar-active text-white'
-                : 'text-sidebar-foreground/80 hover:bg-white/[0.06] hover:text-white'
+                ? 'bg-sidebar-active text-sidebar-foreground'
+                : 'text-sidebar-foreground/80 hover:bg-blue-100/70 hover:text-sidebar-foreground'
             }`
           }
         >
@@ -75,7 +75,7 @@ export function Sidebar() {
                 className={
                   isActive
                     ? 'shrink-0 text-primary'
-                    : 'shrink-0 text-sidebar-muted transition-colors group-hover:text-white'
+                    : 'shrink-0 text-sidebar-muted transition-colors group-hover:text-primary'
                 }
               />
               <span className="truncate">{t(item.translationKey)}</span>
@@ -88,15 +88,15 @@ export function Sidebar() {
   const renderContent = (isMobile = false) => (
     <div
       data-testid="app-sidebar"
-      className="flex h-full flex-col border-r border-white/8 bg-sidebar text-sidebar-foreground select-none"
+      className="flex h-full select-none flex-col border-r border-slate-200 bg-sidebar text-sidebar-foreground"
     >
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-white/8 px-4">
+      <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-4">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-black text-primary-foreground shadow-sm shadow-black/20">
             W
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-bold leading-none tracking-tight text-white">WEAV</span>
+            <span className="text-sm font-bold leading-none tracking-tight text-sidebar-foreground">WEAV</span>
             <span className="mt-1 text-[11px] font-medium leading-tight text-sidebar-muted">
               Workflow Operations
             </span>
@@ -106,7 +106,7 @@ export function Sidebar() {
         {isMobile && (
           <button
             onClick={() => setMobileSidebarOpen(false)}
-            className="rounded-md p-1.5 text-sidebar-muted transition-colors hover:bg-white/8 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="rounded-md p-1.5 text-sidebar-muted transition-colors hover:bg-blue-100 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             aria-label="Close navigation"
           >
             <X size={18} />
@@ -121,21 +121,21 @@ export function Sidebar() {
         {renderNavItems(MAIN_NAV_ITEMS, isMobile)}
       </nav>
 
-      <div className="shrink-0 space-y-1 border-t border-white/8 bg-black/10 p-3">
+      <div className="shrink-0 space-y-1 border-t border-slate-200 bg-slate-200/30 p-3">
         <nav aria-label="Support navigation">{renderNavItems(BOTTOM_NAV_ITEMS, isMobile)}</nav>
 
-        <div className="mt-3 flex items-center justify-between border-t border-white/8 px-2 pt-3 pb-1">
+        <div className="mt-3 flex items-center justify-between border-t border-slate-200 px-2 pt-3 pb-1">
           <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-xs font-bold text-white ring-1 ring-white/10">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-200 text-xs font-bold text-sidebar-foreground ring-1 ring-slate-300/70">
               NT
             </div>
             <div className="flex min-w-0 flex-col">
-              <span className="truncate text-xs font-semibold leading-tight text-white">
+              <span className="truncate text-xs font-semibold leading-tight text-sidebar-foreground">
                 Nguyễn Anh Xuân Trường
               </span>
               <div className="mt-1 flex items-center gap-1.5">
                 <span className="truncate text-[11px] leading-none text-sidebar-muted">Workspace</span>
-                <span className="inline-flex items-center rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary">
+                <span className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-blue-700">
                   Pro
                 </span>
               </div>
@@ -144,7 +144,7 @@ export function Sidebar() {
 
           <button
             onClick={logout}
-            className="rounded-md p-2 text-sidebar-muted transition-colors hover:bg-white/8 hover:text-rose-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="rounded-md p-2 text-sidebar-muted transition-colors hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             title={t('nav.logout')}
             aria-label={t('nav.logout')}
           >

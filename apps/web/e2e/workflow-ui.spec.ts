@@ -11,6 +11,16 @@ test.describe('industrial workflow shell', () => {
     await expect(workflowsLink).toHaveAttribute('aria-current', 'page');
     await expect(workflowsLink).toHaveCSS('font-size', '14px');
     await expect(workflowsLink.getByTestId('active-nav-indicator')).toBeVisible();
+
+    const sidebarLightness = await sidebar.evaluate((element) => {
+      const [red, green, blue] = element.ownerDocument.defaultView!
+        .getComputedStyle(element)
+        .backgroundColor.match(/\d+/g)!
+        .slice(0, 3)
+        .map(Number);
+      return (red + green + blue) / (255 * 3);
+    });
+    expect(sidebarLightness).toBeGreaterThan(0.75);
   });
 });
 
@@ -32,5 +42,26 @@ test.describe('workflow operations list', () => {
     const firstRow = rows.first();
     await firstRow.getByRole('button', { name: 'More workflow actions' }).click();
     await expect(page.getByRole('menu')).toBeVisible();
+  });
+});
+
+test.describe('workflow builder execution motion', () => {
+  test('communicates execution state through nodes and edges', async ({ page }) => {
+    await page.goto('/workflows/wf-001/builder');
+    await page.getByRole('button', { name: 'Run test workflow' }).first().click();
+
+    await expect(page.getByTestId('workflow-node').filter({ hasText: 'AI Extract Core' }))
+      .toHaveAttribute('data-status', /processing|success/);
+    await expect(page.getByTestId('execution-edge-active')).toBeVisible();
+  });
+
+  test('keeps state feedback when reduced motion is enabled', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto('/workflows/wf-001/builder');
+    await page.getByRole('button', { name: 'Run test workflow' }).first().click();
+
+    await expect(page.getByTestId('workflow-node').filter({ hasText: 'AI Extract Core' }))
+      .toHaveAttribute('data-status', 'success');
+    await expect(page.getByTestId('execution-edge-active')).toHaveCount(0);
   });
 });

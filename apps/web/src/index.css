@@ -46,10 +46,10 @@
   --input: #d9e0e8;
   --ring: #2563eb;
 
-  --sidebar: #111827;
-  --sidebar-foreground: #e5e7eb;
-  --sidebar-muted: #94a3b8;
-  --sidebar-active: #1e3a5f;
+  --sidebar: #eef3f8;
+  --sidebar-foreground: #172033;
+  --sidebar-muted: #64748b;
+  --sidebar-active: #dbeafe;
 
   --radius: 0.75rem;
 }
