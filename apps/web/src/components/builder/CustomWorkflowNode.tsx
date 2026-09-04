@@ -119,6 +119,17 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
     ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20'
     : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700';
 
+  const iconMotion = prefersReducedMotion
+    ? { scale: 1 }
+    : status === 'processing'
+      ? { scale: [1, 1.08, 1] }
+      : status === 'success'
+        ? { scale: [1, 1.12, 1] }
+        : { scale: 1 };
+  const iconTransition = status === 'processing'
+    ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' as const }
+    : { duration: prefersReducedMotion ? 0.01 : 0.28, ease: [0.16, 1, 0.3, 1] as const };
+
   return (
     <motion.div
       data-testid="workflow-node"
@@ -146,9 +157,14 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
 
       {/* Node Header */}
       <div className="flex items-start gap-2.5">
-        <div className={`p-2 rounded-md border flex items-center justify-center shrink-0 ${iconBgClass}`}>
-          <Icon size={16} />
-        </div>
+        <motion.div
+          data-testid="workflow-node-icon"
+          animate={iconMotion}
+          transition={iconTransition}
+          className={`p-2 rounded-md border flex items-center justify-center shrink-0 ${iconBgClass}`}
+        >
+          <Icon size={16} aria-hidden="true" />
+        </motion.div>
 
         <div className="flex flex-col min-w-0 flex-1">
           <div className="flex items-center justify-between gap-1">

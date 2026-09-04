@@ -443,15 +443,18 @@ export const WorkflowBuilderPage: React.FC = () => {
             <span>Publish</span>
           </button>
 
-          <button
+          <motion.button
             onClick={handleRunExecution}
             disabled={isRunning}
             aria-label="Run test workflow"
-            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+            aria-busy={isRunning}
+            whileHover={prefersReducedMotion ? undefined : { y: -1, scale: 1.01 }}
+            whileTap={prefersReducedMotion ? undefined : { scale: 0.97 }}
+            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground shadow-sm shadow-blue-600/25 transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-80"
           >
             {isRunning ? (
               <>
-                <Loader2 size={13} className="motion-safe:animate-spin" />
+                <span className="relative flex size-3.5 items-center justify-center"><span className="absolute size-3.5 animate-ping rounded-full bg-white/45 motion-reduce:animate-none" /><Loader2 size={13} className="relative motion-safe:animate-spin" /></span>
                 <span>Running...</span>
               </>
             ) : (
@@ -460,7 +463,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                 <span>Run Test</span>
               </>
             )}
-          </button>
+          </motion.button>
         </div>
       </header>
 

@@ -84,6 +84,15 @@ test.describe('workflow builder execution motion', () => {
     await expect(page.getByTestId('execution-edge-active')).toBeVisible();
   });
 
+  test('keeps the active packet visible for the full edge transition', async ({ page }) => {
+    await page.goto('/workflows/wf-001/builder');
+    await page.getByRole('button', { name: 'Run test workflow' }).first().click();
+
+    const activeEdge = page.getByTestId('execution-edge-active');
+    await expect(activeEdge).toBeVisible();
+    await expect(activeEdge.locator('animateMotion')).toHaveAttribute('repeatCount', 'indefinite');
+  });
+
   test('keeps state feedback when reduced motion is enabled', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/workflows/wf-001/builder');
