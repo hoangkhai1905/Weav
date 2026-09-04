@@ -393,7 +393,7 @@ export function ExecutionDetailPage() {
           stroke: isFailedEdge
             ? '#f43f5e'
             : isExecutedEdge
-            ? '#6E3FF3'
+            ? '#2563EB'
             : theme === 'dark'
             ? '#475569'
             : '#cbd5e1',
@@ -404,7 +404,7 @@ export function ExecutionDetailPage() {
           color: isFailedEdge
             ? '#f43f5e'
             : isExecutedEdge
-            ? '#6E3FF3'
+            ? '#2563EB'
             : theme === 'dark'
             ? '#475569'
             : '#cbd5e1',
@@ -451,7 +451,7 @@ export function ExecutionDetailPage() {
   if (!execution || !workflow) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[70vh] gap-3 text-slate-500">
-        <RefreshCw size={24} className="animate-spin text-[#6E3FF3]" />
+        <RefreshCw size={24} className="animate-spin text-[#2563EB]" />
         <span className="font-mono text-xs">Loading execution telemetry & graph AST...</span>
       </div>
     );
@@ -486,7 +486,7 @@ export function ExecutionDetailPage() {
             exit={{ opacity: 0, y: -10 }}
             className="fixed top-16 right-8 z-50 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-xl border border-slate-800 flex items-center gap-2"
           >
-            <Activity size={14} className="text-[#6E3FF3] animate-pulse" />
+            <Activity size={14} className="text-[#2563EB] animate-pulse" />
             <span>{toastMessage}</span>
           </motion.div>
         )}
@@ -508,7 +508,7 @@ export function ExecutionDetailPage() {
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-400 font-medium">Workspace / Executions</span>
               <span className="text-slate-300 dark:text-slate-700">/</span>
-              <span className="font-mono text-xs font-bold text-[#6E3FF3] dark:text-violet-400">{execution.id}</span>
+              <span className="font-mono text-xs font-bold text-[#2563EB] dark:text-blue-400">{execution.id}</span>
             </div>
             <div className="flex items-center gap-2.5">
               <h1 className="font-bold text-slate-900 dark:text-slate-100 text-sm tracking-tight">{execution.workflowName}</h1>
@@ -524,8 +524,8 @@ export function ExecutionDetailPage() {
           {/* Status Badge */}
           <div className="flex items-center gap-1.5">
             {execution.status === 'RUNNING' && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-violet-950 text-[#6E3FF3] dark:text-violet-300 font-semibold text-[11px]">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#6E3FF3] animate-ping"></span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-blue-950 text-[#2563EB] dark:text-blue-300 font-semibold text-[11px]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-ping"></span>
                 Running
               </span>
             )}
@@ -571,7 +571,7 @@ export function ExecutionDetailPage() {
           <button
             onClick={startPacketAnimation}
             disabled={isPlayingAnimation}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-violet-950/60 text-[#6E3FF3] dark:text-violet-300 hover:bg-[#6E3FF3] hover:text-white transition-all text-xs font-medium border border-indigo-200 dark:border-violet-800/60 shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-blue-950/60 text-[#2563EB] dark:text-blue-300 hover:bg-[#2563EB] hover:text-white transition-all text-xs font-medium border border-indigo-200 dark:border-blue-800/60 shadow-xs"
           >
             <Sparkles size={13} className={isPlayingAnimation ? 'animate-spin' : ''} />
             <span>{isPlayingAnimation ? 'Simulating flow...' : 'Replay Data Flow'}</span>
@@ -589,7 +589,7 @@ export function ExecutionDetailPage() {
           {/* Re-run / Retry Button */}
           <button
             onClick={() => triggerToast(`Re-running execution ${execution.id}...`)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#6E3FF3] hover:bg-violet-600 text-white transition-colors text-xs font-semibold shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2563EB] hover:bg-blue-600 text-white transition-colors text-xs font-semibold shadow-xs"
           >
             <RotateCcw size={13} />
             <span>Re-run</span>
@@ -618,8 +618,8 @@ export function ExecutionDetailPage() {
           {isPlayingAnimation && (
             <div className="absolute top-4 left-6 z-10 bg-slate-900/90 text-white text-[11px] px-3 py-1.5 rounded-full border border-slate-800 flex items-center gap-2 backdrop-blur-md shadow-lg">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#6E3FF3] opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#6E3FF3]"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2563EB]"></span>
               </span>
               <span className="font-mono">Tracing executed data path: {packetProgress}%</span>
             </div>
@@ -632,7 +632,7 @@ export function ExecutionDetailPage() {
               <span>Completed</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#6E3FF3] animate-pulse"></span>
+              <span className="w-2.5 h-2.5 rounded-full bg-[#2563EB] animate-pulse"></span>
               <span>Processing</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -654,7 +654,7 @@ export function ExecutionDetailPage() {
               onClick={() => setInspectorTab('DETAILS')}
               className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all ${
                 inspectorTab === 'DETAILS'
-                  ? 'bg-white dark:bg-slate-900 text-[#6E3FF3] dark:text-violet-300 shadow-xs border border-slate-200 dark:border-slate-800'
+                  ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-blue-300 shadow-xs border border-slate-200 dark:border-slate-800'
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
@@ -664,7 +664,7 @@ export function ExecutionDetailPage() {
               onClick={() => setInspectorTab('LOGS')}
               className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all ${
                 inspectorTab === 'LOGS'
-                  ? 'bg-white dark:bg-slate-900 text-[#6E3FF3] dark:text-violet-300 shadow-xs border border-slate-200 dark:border-slate-800'
+                  ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-blue-300 shadow-xs border border-slate-200 dark:border-slate-800'
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
@@ -674,7 +674,7 @@ export function ExecutionDetailPage() {
               onClick={() => setInspectorTab('PAYLOAD')}
               className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all ${
                 inspectorTab === 'PAYLOAD'
-                  ? 'bg-white dark:bg-slate-900 text-[#6E3FF3] dark:text-violet-300 shadow-xs border border-slate-200 dark:border-slate-800'
+                  ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-blue-300 shadow-xs border border-slate-200 dark:border-slate-800'
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
@@ -699,7 +699,7 @@ export function ExecutionDetailPage() {
                               : selectedNodeResult.status === 'FAILED'
                               ? 'bg-rose-50 dark:bg-rose-950 text-rose-600 dark:text-rose-400 border-rose-500/20'
                               : selectedNodeResult.status === 'RUNNING'
-                              ? 'bg-indigo-50 dark:bg-violet-950 text-[#6E3FF3] dark:text-violet-300 border-indigo-200'
+                              ? 'bg-indigo-50 dark:bg-blue-950 text-[#2563EB] dark:text-blue-300 border-indigo-200'
                               : 'bg-slate-100 text-slate-500 border-slate-200'
                           }`}
                         >
@@ -714,7 +714,7 @@ export function ExecutionDetailPage() {
                         </div>
                         <div>
                           <span className="text-slate-400 text-[10px]">Duration:</span>
-                          <div className="font-semibold text-[#6E3FF3] dark:text-violet-400">
+                          <div className="font-semibold text-[#2563EB] dark:text-blue-400">
                             {selectedNodeResult.durationMs ? `${selectedNodeResult.durationMs}ms` : '—'}
                           </div>
                         </div>
@@ -753,7 +753,7 @@ export function ExecutionDetailPage() {
                         </span>
                         <button
                           onClick={() => copyToClipboard(JSON.stringify(selectedNodeResult.input, null, 2), 'Input Payload')}
-                          className="text-[10px] text-[#6E3FF3] hover:underline font-mono"
+                          className="text-[10px] text-[#2563EB] hover:underline font-mono"
                         >
                           Copy Input
                         </button>
@@ -771,7 +771,7 @@ export function ExecutionDetailPage() {
                         </span>
                         <button
                           onClick={() => copyToClipboard(JSON.stringify(selectedNodeResult.output, null, 2), 'Output Payload')}
-                          className="text-[10px] text-[#6E3FF3] hover:underline font-mono"
+                          className="text-[10px] text-[#2563EB] hover:underline font-mono"
                         >
                           Copy Output
                         </button>
@@ -802,7 +802,7 @@ export function ExecutionDetailPage() {
                         'All Logs'
                       )
                     }
-                    className="text-[10px] text-[#6E3FF3] hover:underline font-mono"
+                    className="text-[10px] text-[#2563EB] hover:underline font-mono"
                   >
                     Copy All Logs
                   </button>
@@ -843,7 +843,7 @@ export function ExecutionDetailPage() {
                   </span>
                   <button
                     onClick={() => copyToClipboard(JSON.stringify(execution.nodeResults['node-1']?.input || {}, null, 2), 'Trigger JSON')}
-                    className="text-[10px] text-[#6E3FF3] hover:underline font-mono"
+                    className="text-[10px] text-[#2563EB] hover:underline font-mono"
                   >
                     Copy Raw JSON
                   </button>
@@ -865,7 +865,7 @@ export function ExecutionDetailPage() {
           className="px-6 py-2 bg-slate-50 dark:bg-slate-950 flex items-center justify-between cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
         >
           <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200">
-            <Terminal size={14} className="text-[#6E3FF3]" />
+            <Terminal size={14} className="text-[#2563EB]" />
             <span>Execution Telemetry Console</span>
             <span className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono text-[10px]">
               {filteredLogs.length} events

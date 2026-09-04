@@ -3,15 +3,15 @@ import { Play, Webhook, Mail, Sparkles, Send, CheckCircle2, Zap, Layers } from '
 
 export function AnimatedWorkflowShowcase() {
   return (
-    <div className="w-full h-full flex flex-col justify-between p-6 bg-gradient-to-br from-violet-500/10 via-indigo-500/5 to-rose-500/10 dark:from-violet-950/40 dark:via-slate-900 dark:to-indigo-950/40 rounded-3xl border border-slate-200/80 dark:border-slate-800 relative overflow-hidden select-none">
+    <div className="w-full h-full flex flex-col justify-between p-6 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-sky-500/10 dark:from-blue-950/40 dark:via-slate-900 dark:to-indigo-950/40 rounded-3xl border border-slate-200/80 dark:border-slate-800 relative overflow-hidden select-none">
       {/* Ambient background particles */}
-      <div className="absolute top-10 right-10 w-72 h-72 bg-violet-500/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-10 left-10 w-72 h-72 bg-rose-500/15 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute top-10 right-10 w-72 h-72 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-10 left-10 w-72 h-72 bg-sky-500/15 rounded-full blur-3xl pointer-events-none" />
 
       {/* Top Header Label */}
       <div className="relative z-10 space-y-2">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-500/10 dark:bg-violet-500/20 text-violet-600 dark:text-violet-300 border border-violet-500/20 text-xs font-bold shadow-sm">
-          <Sparkles size={14} className="text-violet-500 animate-spin" />
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 border border-blue-500/20 text-xs font-bold shadow-sm">
+          <Sparkles size={14} className="text-blue-500 animate-spin" />
           <span>Real-Time AI Node Graph</span>
         </div>
         <h2 className="text-xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
@@ -29,7 +29,7 @@ export function AnimatedWorkflowShowcase() {
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
-            className="text-violet-300 dark:text-violet-700/60"
+            className="text-blue-300 dark:text-blue-700/60"
             strokeDasharray="4 4"
           />
           {/* Bezier Path 2 (Webhook to AI Extract) */}
@@ -150,7 +150,7 @@ export function AnimatedWorkflowShowcase() {
       {/* Feature Highlights Grid */}
       <div className="relative z-10 grid grid-cols-3 gap-2 pt-2">
         <div className="p-2.5 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl text-center shadow-sm">
-          <Layers size={16} className="mx-auto mb-1 text-violet-500" />
+          <Layers size={16} className="mx-auto mb-1 text-blue-500" />
           <span className="block text-[11px] font-bold text-slate-900 dark:text-slate-100">React Flow 12</span>
           <span className="text-[9px] text-slate-500 dark:text-slate-400">Drag & Drop Canvas</span>
         </div>

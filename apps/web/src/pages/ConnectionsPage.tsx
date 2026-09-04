@@ -405,7 +405,7 @@ export function ConnectionsPage() {
 
           <button
             onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#2563EB] hover:bg-violet-600 text-white transition-colors text-xs font-bold shadow-xs cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#2563EB] hover:bg-blue-600 text-white transition-colors text-xs font-bold shadow-xs cursor-pointer"
           >
             <Plus size={15} />
             <span>Add connection</span>
@@ -495,7 +495,7 @@ export function ConnectionsPage() {
             onClick={() => setStatusFilter('ALL')}
             className={`px-3 py-1 rounded-md text-[11px] font-medium transition-all ${
               statusFilter === 'ALL'
-                ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-violet-300 font-bold shadow-xs'
+                ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-blue-300 font-bold shadow-xs'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
             }`}
           >
@@ -606,7 +606,7 @@ export function ConnectionsPage() {
                       <p className="font-medium text-xs">No service connections match your search or filters.</p>
                       <button
                         onClick={() => setIsAddModalOpen(true)}
-                        className="mt-1 px-3 py-1.5 bg-[#2563EB] text-white text-xs font-bold rounded-lg hover:bg-violet-600 transition-colors"
+                        className="mt-1 px-3 py-1.5 bg-[#2563EB] text-white text-xs font-bold rounded-lg hover:bg-blue-600 transition-colors"
                       >
                         + Add new connection
                       </button>
@@ -622,7 +622,7 @@ export function ConnectionsPage() {
                     <tr
                       key={conn.id}
                       className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${
-                        isSelected ? 'bg-indigo-50/30 dark:bg-violet-950/20' : ''
+                        isSelected ? 'bg-indigo-50/30 dark:bg-blue-950/20' : ''
                       }`}
                     >
                       {/* Checkbox */}
@@ -716,7 +716,7 @@ export function ConnectionsPage() {
                           {conn.status === 'degraded' && conn.service === 'GitHub' ? (
                             <button
                               onClick={() => handleTestSingleRow(conn.id)}
-                              className="flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-50 dark:bg-violet-950/60 text-[#2563EB] dark:text-violet-300 hover:bg-[#2563EB] hover:text-white font-medium text-[11px] transition-colors"
+                              className="flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-50 dark:bg-blue-950/60 text-[#2563EB] dark:text-blue-300 hover:bg-[#2563EB] hover:text-white font-medium text-[11px] transition-colors"
                             >
                               <Key size={12} />
                               <span>Re-authenticate</span>
@@ -857,7 +857,7 @@ export function ConnectionsPage() {
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-lg bg-[#2563EB] text-white hover:bg-violet-600 transition-colors font-bold shadow-xs"
+                    className="px-4 py-2 rounded-lg bg-[#2563EB] text-white hover:bg-blue-600 transition-colors font-bold shadow-xs"
                   >
                     Save & Test Connection
                   </button>

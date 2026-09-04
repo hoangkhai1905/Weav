@@ -367,7 +367,7 @@ export function ExecutionsPage() {
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2.5">
             <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">Executions</h1>
-            <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-violet-950/60 text-[#2563EB] dark:text-violet-300 font-mono text-[11px] font-semibold border border-indigo-100 dark:border-violet-900/50">
+            <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-blue-950/60 text-[#2563EB] dark:text-blue-300 font-mono text-[11px] font-semibold border border-indigo-100 dark:border-blue-900/50">
               v2.4-stream
             </span>
           </div>
@@ -382,7 +382,7 @@ export function ExecutionsPage() {
             onClick={() => setAutoRefresh(!autoRefresh)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
               autoRefresh
-                ? 'bg-indigo-50/60 dark:bg-violet-950/40 text-[#2563EB] dark:text-violet-300 border-indigo-200 dark:border-violet-800'
+                ? 'bg-indigo-50/60 dark:bg-blue-950/40 text-[#2563EB] dark:text-blue-300 border-indigo-200 dark:border-blue-800'
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
             }`}
           >
@@ -468,7 +468,7 @@ export function ExecutionsPage() {
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400">running now</span>
             </div>
-            <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-violet-950/60 text-[#2563EB] dark:text-violet-300 text-[11px] font-semibold">
+            <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-blue-950/60 text-[#2563EB] dark:text-blue-300 text-[11px] font-semibold">
               12 queued
             </span>
           </div>
@@ -545,7 +545,7 @@ export function ExecutionsPage() {
             <span className="text-slate-200 dark:text-slate-800">|</span>
             <button
               onClick={() => navigate(`/executions/${activeRunning.id.replace('#', '')}`)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-50 dark:bg-violet-950/60 text-[#2563EB] dark:text-violet-300 text-[11px] font-semibold hover:bg-[#2563EB] hover:text-white transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-50 dark:bg-blue-950/60 text-[#2563EB] dark:text-blue-300 text-[11px] font-semibold hover:bg-[#2563EB] hover:text-white transition-colors"
             >
               <Activity size={13} />
               <span>View live trace</span>
@@ -587,7 +587,7 @@ export function ExecutionsPage() {
             </div>
 
             <div className="flex-1 flex items-center justify-center relative min-w-[30px]">
-              <div className="w-full border-t-2 border-indigo-400 dark:border-violet-600"></div>
+              <div className="w-full border-t-2 border-indigo-400 dark:border-blue-600"></div>
               <ChevronRight size={12} className="text-[#2563EB] absolute right-0" />
             </div>
 
@@ -676,7 +676,7 @@ export function ExecutionsPage() {
                     onClick={() => setStatusFilter(tab)}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
                       isActive
-                        ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-violet-300 shadow-sm font-semibold'
+                        ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-blue-300 shadow-sm font-semibold'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
                     }`}
                   >
@@ -799,7 +799,7 @@ export function ExecutionsPage() {
                       <tr
                         key={exec.id}
                         className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${
-                          isSelected ? 'bg-indigo-50/30 dark:bg-violet-950/20' : ''
+                          isSelected ? 'bg-indigo-50/30 dark:bg-blue-950/20' : ''
                         }`}
                       >
                         {/* Checkbox */}
@@ -815,7 +815,7 @@ export function ExecutionsPage() {
                         {/* Execution ID */}
                         <td
                           onClick={() => navigate(`/executions/${exec.id.replace('#', '')}`)}
-                          className="py-2.5 px-3 font-mono text-xs font-bold text-[#2563EB] dark:text-violet-400 hover:underline cursor-pointer"
+                          className="py-2.5 px-3 font-mono text-xs font-bold text-[#2563EB] dark:text-blue-400 hover:underline cursor-pointer"
                         >
                           {exec.id}
                         </td>
@@ -833,7 +833,7 @@ export function ExecutionsPage() {
                         {/* Status */}
                         <td className="py-2.5 px-3">
                           {exec.status === 'RUNNING' && (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-violet-950/80 text-[#2563EB] dark:text-violet-300 font-semibold text-[11px]">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-blue-950/80 text-[#2563EB] dark:text-blue-300 font-semibold text-[11px]">
                               <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-ping"></span>
                               Running
                             </span>
@@ -1050,7 +1050,7 @@ export function ExecutionsPage() {
                         ? 'bg-rose-950 text-rose-400'
                         : activeLogModal.status === 'SUCCESS'
                         ? 'bg-emerald-950 text-emerald-400'
-                        : 'bg-indigo-950 text-violet-300'
+                        : 'bg-indigo-950 text-blue-300'
                     }`}
                   >
                     {activeLogModal.status}
@@ -1129,7 +1129,7 @@ export function ExecutionsPage() {
                     setActiveLogModal(null);
                     navigate(`/executions/${activeLogModal.id.replace('#', '')}`);
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#2563EB] text-white font-sans text-xs font-semibold hover:bg-violet-600 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#2563EB] text-white font-sans text-xs font-semibold hover:bg-blue-600 transition-colors"
                 >
                   <span>Open Full Execution Detail</span>
                   <ExternalLink size={13} />
