@@ -92,9 +92,11 @@ export function Sidebar() {
     >
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-black text-primary-foreground shadow-sm shadow-black/20">
-            W
-          </div>
+          <img
+            src="/weav-logo-v2.png"
+            alt="WEAV app logo"
+            className="h-8 w-8 shrink-0 object-contain drop-shadow-sm"
+          />
           <div className="flex flex-col">
             <span className="text-sm font-bold leading-none tracking-tight text-sidebar-foreground">WEAV</span>
             <span className="mt-1 text-[11px] font-medium leading-tight text-sidebar-muted">

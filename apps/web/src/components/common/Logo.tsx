@@ -22,7 +22,7 @@ export function Logo({ collapsed = false, size = 'md', showSubtitle = true }: Lo
     <Link to="/dashboard" className="flex items-center gap-3 overflow-hidden cursor-pointer select-none group">
       <div className="relative shrink-0">
         <img
-          src="/logo.png"
+          src="/weav-logo-v2.png"
           alt="WEAV Logo"
           className={`${imgSize} rounded-xl object-cover border border-blue-500/30 shadow-md shadow-blue-600/20 group-hover:scale-105 transition-transform duration-300`}
         />

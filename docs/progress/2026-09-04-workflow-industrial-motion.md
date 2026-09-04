@@ -75,6 +75,7 @@ Relevant files:
 - OCR scope clarification: kept OCR as a Builder node with upload/preview; removed the Dashboard quick action so Quick Actions remain focused on workflow-level actions.
 - Layout overflow follow-up: constrained the shared AppLayout main region with `min-w-0` and hidden horizontal overflow, covering the workflow selection toolbar at a desktop viewport.
 - Workflow filter overflow follow-up: allowed the filter/search group and segmented tabs to shrink within the content column, keeping long tab labels scrollable inside the toolbar instead of extending past the viewport.
+- Brand follow-up: generated a transparent cobalt/cyan workflow-node `W` mark and wired it into the shared auth logo, desktop/mobile sidebar brand, and favicon.
 
 ## GitNexus evidence
 
