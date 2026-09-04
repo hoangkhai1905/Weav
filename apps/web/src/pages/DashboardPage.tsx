@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { Plus, Play, RotateCw, Sparkles, X, Check, ArrowRight, Activity, ShoppingCart, ArrowLeftRight, Headphones, Cloud } from 'lucide-react';
+import { Plus, Play, RotateCw, Sparkles, X, Check, ArrowRight, Activity, ShoppingCart, ArrowLeftRight, Headphones, Cloud, Scan } from 'lucide-react';
 import type { WorkflowDefinition, ExecutionDetail } from '../types/workflow.types';
 import { workflowApi } from '../api/workflow.api';
 import { executionApi } from '../api/execution.api';
@@ -186,7 +186,7 @@ export function DashboardPage() {
           <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400">{t('dashboard.workflow_operations')}</span>
         </div>
 
-        <div className="grid grid-cols-1 divide-y divide-slate-200 dark:divide-slate-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+        <div className="grid grid-cols-1 divide-y divide-slate-200 dark:divide-slate-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-5">
           <Link
             to="/workflows/new"
             className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-blue-950/25"
@@ -219,6 +219,24 @@ export function DashboardPage() {
               <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">{t('dashboard.create_ai_desc')}</span>
             </span>
           </button>
+
+          <Link
+            to="/workflows/wf-prod-5521/builder"
+            data-testid="dashboard-ocr-action"
+            aria-label={t('dashboard.ocr_action')}
+            className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-sky-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-sky-950/20"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-700 transition-transform duration-200 group-hover:-translate-y-0.5 dark:bg-sky-950/60 dark:text-sky-300">
+              <Scan size={17} />
+            </span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                {t('dashboard.ocr_action')}
+                <ArrowRight size={12} className="text-sky-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-sky-400" />
+              </span>
+              <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">{t('dashboard.ocr_action_desc')}</span>
+            </span>
+          </Link>
 
           <Link
             to="/workflows/wf-prod-8492/builder"

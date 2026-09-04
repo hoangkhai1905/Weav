@@ -72,6 +72,7 @@ Relevant files:
 - Breadcrumb follow-up: made the shared Topbar derive its current page label from the active route, so Executions, Workflows, and nested builder/detail routes no longer display a stale Dashboard breadcrumb.
 - OCR follow-up: exposed the `ocr.extract` Builder node with image/PDF input, language and table-detection settings, a mock OCR API preview for raw text/fields/pages/confidence, and an upload-to-preview Chromium journey.
 - Workflow list follow-up: turned row checkboxes into a functional bulk-selection toolbar with clear selection and confirmable multi-delete, including persistence verification after reload.
+- Dashboard OCR follow-up: added a bilingual OCR document quick action that opens the OCR-ready Builder workflow in one click, with regression coverage for EN → VI switching.
 
 ## GitNexus evidence
 
