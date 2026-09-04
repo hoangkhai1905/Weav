@@ -410,7 +410,7 @@ export function WorkflowsPage() {
       {/* 2. FILTER & TOOLBAR AREA */}
       <div className="flex flex-col items-stretch justify-between gap-2 rounded-xl border border-border bg-card p-2 shadow-sm lg:flex-row lg:items-center">
         {/* Search & Segmented Tabs */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
+        <div className="flex min-w-0 flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
           {/* Search Input */}
           <div className="relative flex h-9 w-full items-center rounded-lg border border-border bg-background px-2.5 focus-within:ring-2 focus-within:ring-ring/30 sm:w-64">
             <Search size={14} className="text-slate-400 mr-2 shrink-0" />
@@ -429,7 +429,7 @@ export function WorkflowsPage() {
           </div>
 
           {/* Segmented Status Tabs */}
-          <div className="flex items-center gap-0.5 overflow-x-auto rounded-lg bg-muted p-0.5">
+          <div className="min-w-0 flex-1 flex items-center gap-0.5 overflow-x-auto rounded-lg bg-muted p-0.5">
             <button
               type="button"
               onClick={() => setActiveTab('ALL')}
