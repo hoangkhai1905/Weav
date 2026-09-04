@@ -69,6 +69,19 @@ test.describe('dashboard quick actions', () => {
     await page.getByTestId('dashboard-quick-actions').getByRole('button', { name: 'Create with AI' }).click();
     await expect(page.getByText('Create workflow with AI', { exact: true })).toBeVisible();
   });
+
+  test('shows an OCR quick action in both languages and opens the OCR builder', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
+    await page.goto('/dashboard');
+
+    const quickActions = page.getByTestId('dashboard-quick-actions');
+    await expect(quickActions.getByRole('link', { name: 'OCR document' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Switch to Vietnamese' }).click();
+    await expect(quickActions.getByRole('link', { name: 'OCR tài liệu' })).toBeVisible();
+    await quickActions.getByRole('link', { name: 'OCR tài liệu' }).click();
+    await expect(page).toHaveURL(/\/workflows\/wf-prod-5521\/builder$/);
+  });
 });
 
 test.describe('language switching', () => {
