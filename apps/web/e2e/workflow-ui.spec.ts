@@ -37,6 +37,26 @@ test.describe('industrial workflow shell', () => {
   });
 });
 
+test.describe('dashboard quick actions', () => {
+  test('surfaces the core workflow actions on the overview', async ({ page }) => {
+    await page.goto('/dashboard');
+
+    const quickActions = page.getByTestId('dashboard-quick-actions');
+    await expect(quickActions).toBeVisible();
+    await expect(quickActions.getByRole('link', { name: 'Create workflow' })).toBeVisible();
+    await expect(quickActions.getByRole('button', { name: 'Create with AI' })).toBeVisible();
+    await expect(quickActions.getByRole('link', { name: 'Run test' })).toBeVisible();
+    await expect(quickActions.getByRole('link', { name: 'View executions' })).toBeVisible();
+  });
+
+  test('opens the existing AI creation flow from quick actions', async ({ page }) => {
+    await page.goto('/dashboard');
+
+    await page.getByTestId('dashboard-quick-actions').getByRole('button', { name: 'Create with AI' }).click();
+    await expect(page.getByText('Create workflow with AI', { exact: true })).toBeVisible();
+  });
+});
+
 test.describe('workflow operations list', () => {
   test('filters rows without losing operational context', async ({ page }) => {
     await page.goto('/workflows');
