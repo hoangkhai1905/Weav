@@ -142,6 +142,22 @@ test.describe('bulk workflow actions', () => {
 });
 
 test.describe('workflow responsive layout', () => {
+  test('keeps the workflow filter toolbar inside the viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'VI')" });
+    await page.goto('/workflows');
+
+    const toolbar = page.locator('select').first().locator('xpath=ancestor::div[contains(@class, "rounded-xl")][1]');
+    await expect(toolbar).toBeVisible();
+
+    const dimensions = await toolbar.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }));
+
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
+  });
+
   test('keeps selected workflow actions within the viewport', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'VI')" });
