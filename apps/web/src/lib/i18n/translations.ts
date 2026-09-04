@@ -125,6 +125,13 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     'workflows.owner': 'Người tạo:',
     'workflows.all': 'Tất cả',
     'workflows.rows': 'Dòng:',
+    'workflows.bulk_selected': 'workflow đã chọn',
+    'workflows.bulk_clear': 'Bỏ chọn',
+    'workflows.bulk_delete': 'Xóa workflow đã chọn',
+    'workflows.bulk_delete_title': 'Xóa các workflow đã chọn?',
+    'workflows.bulk_delete_description': 'Thao tác này sẽ xóa vĩnh viễn',
+    'workflows.bulk_delete_confirm': 'Xóa workflow',
+    'workflows.bulk_delete_cancel': 'Hủy bỏ',
 
     // Workflow Builder
     'builder.save_draft': 'Lưu Nháp',
@@ -376,6 +383,13 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     'workflows.owner': 'Owner:',
     'workflows.all': 'All',
     'workflows.rows': 'Rows:',
+    'workflows.bulk_selected': 'workflows selected',
+    'workflows.bulk_clear': 'Clear selection',
+    'workflows.bulk_delete': 'Delete selected workflows',
+    'workflows.bulk_delete_title': 'Delete selected workflows?',
+    'workflows.bulk_delete_description': 'This will permanently delete',
+    'workflows.bulk_delete_confirm': 'Delete workflows',
+    'workflows.bulk_delete_cancel': 'Cancel',
 
     // Workflow Builder
     'builder.save_draft': 'Save Draft',

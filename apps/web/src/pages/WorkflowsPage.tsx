@@ -20,10 +20,12 @@ import {
   Trash2,
   Inbox,
   Sparkles,
+  X,
 } from 'lucide-react';
 import type { WorkflowDefinition } from '../types/workflow.types';
 import { workflowApi } from '../api/workflow.api';
 import { WorkflowGlyph } from '../components/workflows/WorkflowGlyph';
+import { ConfirmModal } from '../components/common/ConfirmModal';
 import { MOTION_DURATION, MOTION_EASE, REDUCED_MOTION_TRANSITION } from '../lib/motion';
 import { useI18nStore } from '../store/useI18nStore';
 
@@ -196,6 +198,8 @@ export function WorkflowsPage() {
 
   // Action Menu state
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   const closeMenu = (id: string) => {
     setActiveMenuId(null);
@@ -262,6 +266,28 @@ export function WorkflowsPage() {
       next.add(id);
     }
     setSelectedIds(next);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    const idsToDelete = Array.from(selectedIds);
+    setBulkDeleteLoading(true);
+
+    try {
+      for (const id of idsToDelete) {
+        await workflowApi.deleteWorkflow(id);
+      }
+      setWorkflowsList((current) => current.filter((workflow) => !idsToDelete.includes(workflow.id)));
+      setSelectedIds(new Set());
+      setBulkDeleteOpen(false);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setBulkDeleteLoading(false);
+    }
   };
 
   // Filter calculations
@@ -528,6 +554,46 @@ export function WorkflowsPage() {
           </div>
         </div>
       </div>
+
+      <AnimatePresence initial={false}>
+        {selectedIds.size > 0 && (
+          <motion.div
+            data-testid="workflow-bulk-actions"
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
+            transition={prefersReducedMotion ? REDUCED_MOTION_TRANSITION : { duration: MOTION_DURATION.feedback, ease: MOTION_EASE }}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-2 text-xs dark:border-blue-900/70 dark:bg-blue-950/25"
+            aria-live="polite"
+          >
+            <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+              <span className="flex size-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                {selectedIds.size}
+              </span>
+              <span className="font-semibold">{selectedIds.size} {t('workflows.bulk_selected')}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleClearSelection}
+                className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 font-medium text-slate-600 transition-colors hover:bg-white hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+              >
+                <X size={13} />
+                {t('workflows.bulk_clear')}
+              </button>
+              <button
+                type="button"
+                aria-label={t('workflows.bulk_delete')}
+                onClick={() => setBulkDeleteOpen(true)}
+                className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2.5 py-1.5 font-semibold text-white shadow-sm transition-colors hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50"
+              >
+                <Trash2 size={13} />
+                {t('workflows.bulk_delete')}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* 3. MAIN WORKFLOWS CONTENT (TABLE / GRID / EMPTY STATE) */}
       {filteredWorkflows.length === 0 ? (
@@ -886,6 +952,17 @@ export function WorkflowsPage() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onConfirm={handleBulkDelete}
+        title={t('workflows.bulk_delete_title')}
+        description={`${t('workflows.bulk_delete_description')} ${selectedIds.size} ${t('workflows.bulk_selected')}.`}
+        confirmText={t('workflows.bulk_delete_confirm')}
+        cancelText={t('workflows.bulk_delete_cancel')}
+        loading={bulkDeleteLoading}
+      />
     </div>
   );
 }

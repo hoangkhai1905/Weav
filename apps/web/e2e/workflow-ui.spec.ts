@@ -127,6 +127,8 @@ test.describe('bulk workflow actions', () => {
 
     await page.getByRole('button', { name: 'Delete workflows', exact: true }).click();
     await expect(bulkActions).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByTestId('workflow-row')).toHaveCount(1);
   });
 });
 
