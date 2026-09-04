@@ -161,3 +161,21 @@ test.describe('workspace account surfaces', () => {
     await expect(page.getByRole('link', { name: /open guide/i })).toBeVisible();
   });
 });
+
+test.describe('AI workflow generator focus', () => {
+  test('keeps the first action focused on one prompt and one primary action', async ({ page }) => {
+    await page.goto('/ai/workflow-generator');
+
+    await expect(page.getByTestId('ai-generator-page')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Create with AI', exact: true })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'What should this workflow do?' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Generate workflow', exact: true })).toBeVisible();
+    await expect(page.getByText('Natural Language to Pipeline AST', { exact: true })).toHaveCount(0);
+    await expect(page.getByText(/Engine: WEAV Synthesizer/, { exact: false })).toHaveCount(0);
+    await expect(page.getByText('Workflow preview', { exact: true })).toBeVisible();
+    await expect(page.getByText('5 steps ready', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Graph ID:/, { exact: false })).toHaveCount(0);
+    await expect(page.getByTestId('technical-details')).not.toHaveAttribute('open', '');
+    await expect(page.getByText(/All 5 node interfaces match/, { exact: false })).toHaveCount(0);
+  });
+});
