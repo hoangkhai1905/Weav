@@ -70,6 +70,7 @@ Relevant files:
 - Dashboard action follow-up: added a compact Quick actions band for creating workflows, opening AI generation, entering the latest test builder, and reviewing executions; the AI action reuses the existing modal flow.
 - Language follow-up: completed persisted VI/EN switching for the shared Topbar plus Dashboard, workflow list, executions, connections, chart, live execution, modal, and AI generator surfaces; added accessible labels and regression coverage for round-trip switching.
 - Breadcrumb follow-up: made the shared Topbar derive its current page label from the active route, so Executions, Workflows, and nested builder/detail routes no longer display a stale Dashboard breadcrumb.
+- OCR follow-up: exposed the `ocr.extract` Builder node with image/PDF input, language and table-detection settings, a mock OCR API preview for raw text/fields/pages/confidence, and an upload-to-preview Chromium journey.
 
 ## GitNexus evidence
 

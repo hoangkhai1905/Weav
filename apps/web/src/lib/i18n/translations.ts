@@ -143,6 +143,25 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     'builder.output_schema': 'Output Schema Preview',
     'builder.select_node_hint': 'Nhấp vào một node trên canvas để xem & chỉnh sửa tham số.',
 
+    // OCR
+    'ocr.title': 'OCR Text Extract',
+    'ocr.description': 'Đọc văn bản từ ảnh hoặc PDF và chuyển thành dữ liệu cho AI Extract.',
+    'ocr.file_input': 'Tệp đầu vào',
+    'ocr.choose_file': 'Chọn ảnh hoặc PDF',
+    'ocr.accepted': 'PDF, PNG, JPG, WEBP · tối đa 10 MB',
+    'ocr.language': 'Ngôn ngữ',
+    'ocr.detect_tables': 'Nhận diện bảng',
+    'ocr.extract_text': 'Trích xuất văn bản',
+    'ocr.processing': 'Đang nhận diện…',
+    'ocr.result': 'Detected text',
+    'ocr.pages': 'Trang',
+    'ocr.confidence': 'Độ tin cậy',
+    'ocr.detected_fields': 'Trường nhận diện',
+    'ocr.raw_text': 'Văn bản thô',
+    'ocr.file_required': 'Hãy chọn một tệp trước khi chạy OCR.',
+    'ocr.failed': 'OCR không thể xử lý tệp này.',
+    'ocr.dismiss_result': 'Đóng kết quả OCR',
+
     // AI Generator
     'ai_gen.title': 'Tạo bằng AI',
     'ai_gen.subtitle': 'Mô tả yêu cầu tự động hóa bằng ngôn ngữ tự nhiên. AI sẽ biên dịch thành sơ đồ quy trình hoàn chỉnh.',
@@ -374,6 +393,25 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     'builder.parameters': 'Parameters',
     'builder.output_schema': 'Output Schema Preview',
     'builder.select_node_hint': 'Click any node on the canvas to inspect & configure parameters.',
+
+    // OCR
+    'ocr.title': 'OCR Text Extract',
+    'ocr.description': 'Read text from images or PDFs and pass it into AI Extract.',
+    'ocr.file_input': 'Input document',
+    'ocr.choose_file': 'Choose image or PDF',
+    'ocr.accepted': 'PDF, PNG, JPG, WEBP · up to 10 MB',
+    'ocr.language': 'Language',
+    'ocr.detect_tables': 'Detect tables',
+    'ocr.extract_text': 'Extract text',
+    'ocr.processing': 'Recognizing…',
+    'ocr.result': 'Detected text',
+    'ocr.pages': 'Pages',
+    'ocr.confidence': 'Confidence',
+    'ocr.detected_fields': 'Detected fields',
+    'ocr.raw_text': 'Raw text',
+    'ocr.file_required': 'Choose a file before running OCR.',
+    'ocr.failed': 'OCR could not process this file.',
+    'ocr.dismiss_result': 'Dismiss OCR result',
 
     // AI Generator
     'ai_gen.title': 'Create with AI',

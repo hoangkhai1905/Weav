@@ -36,10 +36,16 @@ import {
   ShieldCheck,
   ChevronDown,
   ChevronRight,
+  FileImage,
+  Scan,
+  Upload,
+  X,
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
 import { useUIStore } from '../store/useUIStore';
+import { useI18nStore } from '../store/useI18nStore';
+import { ocrApi, type OcrExtractionResult } from '../api/ocr.api';
 
 // Preset Nodes for Initial Canvas State
 const INITIAL_NODES: Node[] = [
@@ -148,6 +154,12 @@ const PALETTE_CATALOG = [
     ],
   },
   {
+    category: 'DOCUMENT AI',
+    items: [
+      { type: 'ocr.extract', name: 'OCR Text Extract', desc: 'Read text from images and PDFs', icon: FileImage },
+    ],
+  },
+  {
     category: 'FLOW LOGIC',
     items: [
       { type: 'logic.condition', name: 'If / Condition', desc: 'Branch execution based on rules', icon: GitBranch },
@@ -165,6 +177,7 @@ const PALETTE_CATALOG = [
 
 export const WorkflowBuilderPage: React.FC = () => {
   const { theme } = useUIStore();
+  const { t } = useI18nStore();
   const prefersReducedMotion = useReducedMotion();
   const nodeSequenceRef = useRef(INITIAL_NODES.length);
   const logSequenceRef = useRef(4);
@@ -175,6 +188,8 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(INITIAL_EDGES);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId) || nodes[1];
+  const selectedNodeType = String(selectedNode?.data?.nodeType ?? '');
 
   // Canvas State & Controls
   const [showGrid, setShowGrid] = useState(true);
@@ -192,6 +207,12 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [llmModel, setLlmModel] = useState('gpt-4o-mini');
   const [payloadVar, setPayloadVar] = useState('{{ $json.body.order_payload }}');
   const [promptText, setPromptText] = useState('Extract order items, quantities, customer address, and calculate total price.');
+  const [ocrLanguage, setOcrLanguage] = useState('vi+en');
+  const [ocrDetectTables, setOcrDetectTables] = useState(true);
+  const [ocrFile, setOcrFile] = useState<File | null>(null);
+  const [ocrResult, setOcrResult] = useState<OcrExtractionResult | null>(null);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [isOcrRunning, setIsOcrRunning] = useState(false);
 
   const clearExecutionTimers = useCallback(() => {
     executionTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
@@ -264,6 +285,14 @@ export const WorkflowBuilderPage: React.FC = () => {
   const onNodeClick = (_: React.MouseEvent, node: Node) => {
     setInspectorOpen(true);
     setSelectedNodeId(node.id);
+    if (node.data?.nodeType === 'ocr.extract') {
+      const config = (node.data.config ?? {}) as Record<string, unknown>;
+      setOcrLanguage(String(config.language ?? 'vi+en'));
+      setOcrDetectTables(Boolean(config.detectTables ?? true));
+      setOcrFile(null);
+      setOcrResult(null);
+      setOcrError(null);
+    }
     setNodes((nds) =>
       nds.map((n) => ({
         ...n,
@@ -273,6 +302,59 @@ export const WorkflowBuilderPage: React.FC = () => {
         },
       }))
     );
+  };
+
+  const updateSelectedNodeConfig = useCallback(
+    (updates: Record<string, unknown>) => {
+      if (!selectedNodeId) return;
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === selectedNodeId
+            ? { ...node, data: { ...node.data, config: { ...(node.data.config as Record<string, unknown>), ...updates } } }
+            : node
+        )
+      );
+      setIsSaved(false);
+    },
+    [selectedNodeId, setNodes]
+  );
+
+  const handleOcrFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    setOcrFile(file);
+    setOcrResult(null);
+    setOcrError(null);
+    if (file) updateSelectedNodeConfig({ fileName: file.name });
+  };
+
+  const handleRunOcr = async () => {
+    if (!ocrFile) {
+      setOcrError(t('ocr.file_required'));
+      return;
+    }
+
+    setIsOcrRunning(true);
+    setOcrError(null);
+    try {
+      const result = await ocrApi.extractText(ocrFile, { language: ocrLanguage, detectTables: ocrDetectTables });
+      setOcrResult(result);
+      updateSelectedNodeConfig({ language: ocrLanguage, detectTables: ocrDetectTables, pages: result.pages, confidence: result.confidence });
+      setNodes((nds) =>
+        nds.map((node) =>
+          node.id === selectedNodeId
+            ? { ...node, data: { ...node.data, status: 'success', executionTime: '850ms' } }
+            : node
+        )
+      );
+      setLogs((prev) => [
+        ...prev,
+        { id: String(++logSequenceRef.current), time: '11:04:13.850', level: 'success', msg: `[OCR] Extracted ${result.pages} page${result.pages === 1 ? '' : 's'} at ${result.confidence}% confidence` },
+      ]);
+    } catch (error) {
+      setOcrError(error instanceof Error ? error.message : t('ocr.failed'));
+    } finally {
+      setIsOcrRunning(false);
+    }
   };
 
   const handleAddCatalogItem = (type: string, name: string) => {
@@ -289,7 +371,7 @@ export const WorkflowBuilderPage: React.FC = () => {
         status: 'idle',
         executionTime: '',
         selected: true,
-        config: {},
+        config: type === 'ocr.extract' ? { language: 'vi+en', detectTables: true } : {},
       },
     };
 
@@ -299,6 +381,13 @@ export const WorkflowBuilderPage: React.FC = () => {
     ]);
     setSelectedNodeId(newNodeId);
     setInspectorOpen(true);
+    if (type === 'ocr.extract') {
+      setOcrLanguage('vi+en');
+      setOcrDetectTables(true);
+      setOcrFile(null);
+      setOcrResult(null);
+      setOcrError(null);
+    }
     setIsSaved(false);
   };
 
@@ -400,8 +489,6 @@ export const WorkflowBuilderPage: React.FC = () => {
       setIsRunning(false);
     }, 4200);
   };
-
-  const selectedNode = nodes.find((n) => n.id === selectedNodeId) || nodes[1];
 
   return (
     <div
@@ -577,6 +664,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <button
                           key={item.type}
                           onClick={() => handleAddCatalogItem(item.type, item.name)}
+                          aria-label={item.name}
                           className="group flex w-full cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-left transition-[background-color,border-color,transform] hover:-translate-y-px hover:border-blue-400/60 hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:border-slate-700/50 dark:bg-slate-800/40 dark:hover:bg-blue-950/25 motion-reduce:hover:translate-y-0"
                         >
                           <ItemIcon size={14} className="mt-0.5 shrink-0 text-slate-500 transition-colors group-hover:text-blue-600 dark:group-hover:text-blue-400" />
@@ -690,6 +778,122 @@ export const WorkflowBuilderPage: React.FC = () => {
           {/* Inspector Body Content */}
           <div className="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
             {inspectorTab === 'config' && (
+              selectedNodeType === 'ocr.extract' ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-900/70 dark:bg-blue-950/25">
+                    <div className="flex items-start gap-2">
+                      <Scan size={16} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                      <div>
+                        <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">{t('ocr.title')}</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">{t('ocr.description')}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="ocr-file-input" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                      {t('ocr.file_input')}
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed border-slate-300 bg-slate-50 px-2.5 py-2 text-xs text-slate-600 transition-colors hover:border-blue-400 hover:bg-blue-50/60 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:border-blue-500/60 dark:hover:bg-blue-950/25">
+                      <Upload size={14} className="shrink-0 text-blue-600 dark:text-blue-400" />
+                      <span className="min-w-0 flex-1 truncate">{ocrFile?.name ?? t('ocr.choose_file')}</span>
+                      <input
+                        id="ocr-file-input"
+                        data-testid="ocr-file-input"
+                        type="file"
+                        accept=".pdf,.png,.jpg,.jpeg,.webp,image/*,application/pdf"
+                        onChange={handleOcrFileChange}
+                        className="sr-only"
+                      />
+                    </label>
+                    <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t('ocr.accepted')}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label htmlFor="ocr-language" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        {t('ocr.language')}
+                      </label>
+                      <select
+                        id="ocr-language"
+                        value={ocrLanguage}
+                        onChange={(event) => {
+                          setOcrLanguage(event.target.value);
+                          updateSelectedNodeConfig({ language: event.target.value });
+                        }}
+                        className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                      >
+                        <option value="vi+en">Tiếng Việt + English</option>
+                        <option value="vi">Tiếng Việt</option>
+                        <option value="en">English</option>
+                      </select>
+                    </div>
+                    <label className="mt-5 flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={ocrDetectTables}
+                        onChange={(event) => {
+                          setOcrDetectTables(event.target.checked);
+                          updateSelectedNodeConfig({ detectTables: event.target.checked });
+                        }}
+                        className="size-3.5 accent-blue-600"
+                      />
+                      {t('ocr.detect_tables')}
+                    </label>
+                  </div>
+
+                  {ocrError && (
+                    <p role="alert" className="rounded border border-rose-200 bg-rose-50 px-2.5 py-2 text-[11px] text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-300">
+                      {ocrError}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleRunOcr}
+                    disabled={isOcrRunning}
+                    className="flex w-full items-center justify-center gap-1.5 rounded bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
+                  >
+                    {isOcrRunning ? <Loader2 size={14} className="animate-spin" /> : <Scan size={14} />}
+                    {isOcrRunning ? t('ocr.processing') : t('ocr.extract_text')}
+                  </button>
+
+                  {ocrResult && (
+                    <div data-testid="ocr-result" className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50/70 p-3 dark:border-emerald-900/70 dark:bg-emerald-950/20">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">{t('ocr.result')}</span>
+                        <button
+                          type="button"
+                          onClick={() => setOcrResult(null)}
+                          className="rounded p-0.5 text-emerald-700 transition-colors hover:bg-emerald-100 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+                          aria-label={t('ocr.dismiss_result')}
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[10px]">
+                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-900/50 dark:text-slate-300">{t('ocr.pages')}: <strong>{ocrResult.pages}</strong></span>
+                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-900/50 dark:text-slate-300">{t('ocr.confidence')}: <strong>{ocrResult.confidence}%</strong></span>
+                      </div>
+                      <div>
+                        <span className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-400">{t('ocr.detected_fields')}</span>
+                        <div className="space-y-1">
+                          {ocrResult.detectedFields.map((field) => (
+                            <div key={field.label} className="flex items-center justify-between gap-2 text-[10px]">
+                              <span className="text-slate-500 dark:text-slate-400">{field.label}</span>
+                              <span className="truncate font-mono text-slate-800 dark:text-slate-200">{field.value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-400">{t('ocr.raw_text')}</span>
+                        <pre className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-emerald-200/70 bg-white/70 p-2 font-mono text-[10px] leading-relaxed text-slate-700 dark:border-emerald-900/50 dark:bg-slate-900/50 dark:text-slate-300">{ocrResult.rawText}</pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
               <>
                 <div>
                   <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
@@ -765,6 +969,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </pre>
                 </div>
               </>
+              )
             )}
 
             {inspectorTab === 'input' && (
