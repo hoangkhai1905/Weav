@@ -188,7 +188,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(INITIAL_EDGES);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const selectedNode = nodes.find((n) => n.id === selectedNodeId) || nodes[1];
+  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const selectedNodeType = String(selectedNode?.data?.nodeType ?? '');
 
   // Canvas State & Controls
@@ -271,6 +271,17 @@ export const WorkflowBuilderPage: React.FC = () => {
     setSelectedNodeId(null);
     setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, selected: false } })));
   }, [setNodes]);
+
+  const handleNodesChange = useCallback(
+    (changes: Parameters<typeof onNodesChange>[0]) => {
+      onNodesChange(changes);
+      if (selectedNodeId && changes.some((change) => change.type === 'remove' && change.id === selectedNodeId)) {
+        setSelectedNodeId(null);
+        setInspectorOpen(false);
+      }
+    },
+    [onNodesChange, selectedNodeId]
+  );
 
   const handleWorkspacePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -688,7 +699,7 @@ export const WorkflowBuilderPage: React.FC = () => {
           <ReactFlow
             nodes={nodes}
             edges={renderedEdges}
-            onNodesChange={onNodesChange}
+            onNodesChange={handleNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
@@ -732,7 +743,7 @@ export const WorkflowBuilderPage: React.FC = () => {
 
         {/* RIGHT INSPECTOR PANEL (~360px) */}
         <AnimatePresence initial={false}>
-          {inspectorOpen && (
+          {inspectorOpen && selectedNode && (
         <motion.aside
           key="workflow-inspector"
           ref={inspectorRef}

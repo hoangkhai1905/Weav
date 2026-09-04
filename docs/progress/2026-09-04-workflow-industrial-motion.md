@@ -76,6 +76,7 @@ Relevant files:
 - Layout overflow follow-up: constrained the shared AppLayout main region with `min-w-0` and hidden horizontal overflow, covering the workflow selection toolbar at a desktop viewport.
 - Workflow filter overflow follow-up: allowed the filter/search group and segmented tabs to shrink within the content column, keeping long tab labels scrollable inside the toolbar instead of extending past the viewport.
 - Brand follow-up: generated a transparent cobalt/cyan workflow-node `W` mark and wired it into the shared auth logo, desktop/mobile sidebar brand, and favicon.
+- Builder deletion follow-up: reconciled the inspector selection when React Flow removes the selected node, preventing `selectedNode.data` crashes after deleting multiple nodes.
 
 ## GitNexus evidence
 
