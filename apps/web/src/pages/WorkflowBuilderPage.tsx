@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
@@ -169,6 +169,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   const prefersReducedMotion = useReducedMotion();
   const nodeSequenceRef = useRef(INITIAL_NODES.length);
   const logSequenceRef = useRef(4);
+  const executionTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>(INITIAL_NODES);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(INITIAL_EDGES);
@@ -190,6 +191,21 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [llmModel, setLlmModel] = useState('gpt-4o-mini');
   const [payloadVar, setPayloadVar] = useState('{{ $json.body.order_payload }}');
   const [promptText, setPromptText] = useState('Extract order items, quantities, customer address, and calculate total price.');
+
+  const clearExecutionTimers = useCallback(() => {
+    executionTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
+    executionTimeoutsRef.current = [];
+  }, []);
+
+  const scheduleExecutionStep = useCallback((callback: () => void, delay: number) => {
+    const timeoutId = setTimeout(() => {
+      executionTimeoutsRef.current = executionTimeoutsRef.current.filter((id) => id !== timeoutId);
+      callback();
+    }, delay);
+    executionTimeoutsRef.current.push(timeoutId);
+  }, []);
+
+  useEffect(() => clearExecutionTimers, [clearExecutionTimers]);
 
   // Telemetry Console State
   const [telemetryOpen, setTelemetryOpen] = useState(true);
@@ -271,6 +287,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   // Signature WEAV Execution Sequence Animation
   const handleRunExecution = () => {
     if (isRunning) return;
+    clearExecutionTimers();
     setIsRunning(true);
 
     // Reset all nodes except trigger to idle
@@ -305,7 +322,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       { id: String(++logSequenceRef.current), time: '11:04:13.100', level: 'info', msg: '[Execution] Packet traveling: Webhook ➔ AI Extract' },
     ]);
 
-    setTimeout(() => {
+    scheduleExecutionStep(() => {
       // Step 2: AI Extract becomes processing
       setActiveEdgeId(null);
       setNodes((nds) =>
@@ -317,7 +334,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       ]);
     }, 900);
 
-    setTimeout(() => {
+    scheduleExecutionStep(() => {
       // Step 3: AI Extract success -> Packet travels along edge 2
       setNodes((nds) =>
         nds.map((n) =>
@@ -331,7 +348,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       ]);
     }, 1900);
 
-    setTimeout(() => {
+    scheduleExecutionStep(() => {
       // Step 4: Condition check processing
       setActiveEdgeId(null);
       setNodes((nds) =>
@@ -339,7 +356,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       );
     }, 2700);
 
-    setTimeout(() => {
+    scheduleExecutionStep(() => {
       // Step 5: Condition success -> Packet travels along edge 3
       setNodes((nds) =>
         nds.map((n) =>
@@ -349,7 +366,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       setActiveEdgeId('edge-3-4');
     }, 3400);
 
-    setTimeout(() => {
+    scheduleExecutionStep(() => {
       // Step 6: Final node notify success
       setActiveEdgeId(null);
       setNodes((nds) =>
@@ -578,8 +595,20 @@ export const WorkflowBuilderPage: React.FC = () => {
             <Controls className="!bg-white dark:!bg-slate-900 !border-slate-200 dark:!border-slate-800 !text-slate-700 dark:!text-slate-300" />
             {showMinimap && (
               <MiniMap
-                className="hidden sm:block !bg-white/90 dark:!bg-slate-900/90 !border-slate-200 dark:!border-slate-800"
-                nodeColor="#3b82f6"
+                data-testid="workflow-minimap"
+                aria-label="Workflow minimap"
+                className="hidden sm:block !bottom-3 !right-3 !m-0 !h-28 !w-44 !rounded-md !border-slate-300 !bg-slate-100/95 !shadow-lg dark:!border-slate-700 dark:!bg-slate-900/95"
+                style={{ width: 176, height: 112, borderRadius: 6 }}
+                nodeColor={(node) => {
+                  const status = String(node.data?.status ?? 'idle');
+                  return status === 'success' ? '#10b981' : status === 'processing' ? '#f59e0b' : '#4f8cff';
+                }}
+                nodeStrokeColor={theme === 'dark' ? '#64748b' : '#94a3b8'}
+                nodeStrokeWidth={1.5}
+                nodeBorderRadius={4}
+                maskColor={theme === 'dark' ? 'rgba(15, 24, 38, 0.58)' : 'rgba(148, 163, 184, 0.34)'}
+                pannable
+                zoomable
               />
             )}
           </ReactFlow>

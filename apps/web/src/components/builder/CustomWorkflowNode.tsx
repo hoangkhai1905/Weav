@@ -123,8 +123,8 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
     <motion.div
       data-testid="workflow-node"
       data-status={status}
-      initial={false}
-      animate={prefersReducedMotion ? undefined : { y: isNodeSelected ? -1 : 0 }}
+      initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.985, y: 4 }}
+      animate={prefersReducedMotion ? { opacity: 1, scale: 1 } : { opacity: 1, scale: 1, y: isNodeSelected ? -1 : 0 }}
       transition={{ duration: prefersReducedMotion ? 0.01 : 0.18, ease: [0.16, 1, 0.3, 1] }}
       className={`relative w-64 select-none rounded-lg border bg-card p-3 shadow-sm transition-[border-color,box-shadow] duration-200 hover:shadow-md ${borderStyle}`}
     >

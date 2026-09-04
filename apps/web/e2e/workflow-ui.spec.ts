@@ -59,6 +59,18 @@ test.describe('workflow operations list', () => {
 });
 
 test.describe('workflow builder execution motion', () => {
+  test('keeps the minimap contained and the selected workflow visible', async ({ page }) => {
+    await page.goto('/workflows/wf-001/builder');
+
+    await expect(page.getByTestId('workflow-node').filter({ hasText: 'AI Extract Core' })).toBeVisible();
+    const minimap = page.locator('.react-flow__minimap');
+    await expect(minimap).toBeVisible();
+    const minimapBox = await minimap.boundingBox();
+    expect(minimapBox).not.toBeNull();
+    expect(minimapBox?.width).toBeGreaterThan(150);
+    expect(minimapBox?.height).toBeGreaterThan(90);
+  });
+
   test('communicates execution state through nodes and edges', async ({ page }) => {
     await page.goto('/workflows/wf-001/builder');
     await page.getByRole('button', { name: 'Run test workflow' }).first().click();

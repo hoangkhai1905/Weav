@@ -59,6 +59,7 @@ Relevant files:
 - Firefox harness limitation: 6 Firefox test failures are due to environment test-harness initialization error `browserContext.newPage: Cannot read properties of undefined (reading '_page')`; Chromium environment is verified 100%.
 - Existing non-blocking warning: production JavaScript bundle >500 kB chunk size warning.
 - Visual QA: verified at desktop, tablet, and mobile breakpoints with dark/light theme coherence and reduced-motion fallback.
+- Builder follow-up: added a bounded, slate-masked MiniMap with status-aware node colors and responsive containment; added a one-shot node entrance cue and execution timer cleanup for repeatable packet animation.
 
 ## GitNexus evidence
 
