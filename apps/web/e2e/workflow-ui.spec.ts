@@ -94,3 +94,22 @@ test.describe('workflow builder execution motion', () => {
     await expect(page.getByTestId('execution-edge-active')).toHaveCount(0);
   });
 });
+
+test.describe('workspace account surfaces', () => {
+  test('keeps workspace, profile settings, and help surfaces discoverable', async ({ page }) => {
+    await page.goto('/workspace');
+    await expect(page.getByTestId('workspace-page')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'WEAV Production Workspace', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /mời|invite/i })).toBeVisible();
+
+    await page.goto('/settings/profile');
+    await expect(page.getByTestId('settings-profile-page')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^(Cài đặt|Settings)$/i })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: /email/i })).toBeVisible();
+
+    await page.goto('/help');
+    await expect(page.getByTestId('help-page')).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^(Trợ giúp & Tài liệu|Help & Docs)$/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /open guide/i })).toBeVisible();
+  });
+});

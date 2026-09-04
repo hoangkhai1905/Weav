@@ -61,6 +61,7 @@ Relevant files:
 - Visual QA: verified at desktop, tablet, and mobile breakpoints with dark/light theme coherence and reduced-motion fallback.
 - Builder follow-up: added a bounded, slate-masked MiniMap with status-aware node colors and responsive containment; added a one-shot node entrance cue and execution timer cleanup for repeatable packet animation.
 - MiniMap QA follow-up: clarified the viewport/camera window with a cobalt-compatible slate fill and outline so the transparent viewport no longer reads as an unexplained white card; verified the mask remains a first-class React Flow viewport overlay.
+- Account surfaces follow-up: refreshed Workspace, Settings/Profile, and Help with cobalt/slate hierarchy, semantic status accents, responsive spacing, purposeful Framer Motion entrances/feedback, accessible labels, and a discoverability regression journey covering all three routes.
 
 ## GitNexus evidence
 
