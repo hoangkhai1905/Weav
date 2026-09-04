@@ -178,4 +178,24 @@ test.describe('AI workflow generator focus', () => {
     await expect(page.getByTestId('technical-details')).not.toHaveAttribute('open', '');
     await expect(page.getByText(/All 5 node interfaces match/, { exact: false })).toHaveCount(0);
   });
+
+  test('shows progress feedback and animated flow cues while generating', async ({ page }) => {
+    await page.goto('/ai/workflow-generator');
+
+    await page.getByRole('button', { name: 'Generate workflow', exact: true }).click();
+    await expect(page.getByTestId('generation-status')).toContainText('Building your workflow');
+    await expect(page.getByTestId('preview-flow-dot')).toHaveCount(4);
+  });
+});
+
+test.describe('dark sidebar palette', () => {
+  test('keeps the support footer in the same industrial palette as the sidebar', async ({ page }) => {
+    await page.goto('/dashboard');
+
+    const sidebar = page.getByTestId('app-sidebar');
+    const footer = sidebar.getByTestId('sidebar-footer');
+    await expect(footer).toBeVisible();
+    await expect(footer).toHaveClass(/dark:bg-slate-900\/45/);
+    await expect(footer).not.toHaveClass(/bg-slate-200\/30/);
+  });
 });
