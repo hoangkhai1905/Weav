@@ -67,6 +67,7 @@ Relevant files:
 - Inspector transition follow-up: converted the inspector to a right-side overlay so opening/closing no longer resizes the React Flow canvas; the geometry regression is covered by Chromium E2E 12/12.
 - AI generator focus follow-up: reduced the first viewport to one plain-language prompt, three examples, one primary Generate workflow action, and a collapsed Technical details disclosure; Chromium E2E is now 13/13.
 - Contrast and motion follow-up: strengthened dark prompt/preview surfaces and sidebar support footer contrast, added reduced-motion-safe entrance/progress/connector cues, and covered both feedback paths in Chromium E2E.
+- Dashboard action follow-up: added a compact Quick actions band for creating workflows, opening AI generation, entering the latest test builder, and reviewing executions; the AI action reuses the existing modal flow.
 
 ## GitNexus evidence
 

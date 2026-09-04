@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Play, RotateCw, Sparkles, X, Check, ArrowRight, ShoppingCart, ArrowLeftRight, Headphones, Cloud } from 'lucide-react';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
+import { Plus, Play, RotateCw, Sparkles, X, Check, ArrowRight, Activity, ShoppingCart, ArrowLeftRight, Headphones, Cloud } from 'lucide-react';
 import type { WorkflowDefinition, ExecutionDetail } from '../types/workflow.types';
 import { workflowApi } from '../api/workflow.api';
 import { executionApi } from '../api/execution.api';
@@ -10,6 +10,7 @@ import { LiveExecutionPanel } from '../components/dashboard/LiveExecutionPanel';
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const prefersReducedMotion = useReducedMotion();
 
   const [, setWorkflows] = useState<WorkflowDefinition[]>([]);
   const [, setExecutions] = useState<ExecutionDetail[]>([]);
@@ -162,7 +163,96 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* 3. WORKFLOW ACTIVITY CHART & LIVE EXECUTION PANEL */}
+      {/* 3. QUICK ACTIONS */}
+      <motion.section
+        data-testid="dashboard-quick-actions"
+        aria-labelledby="dashboard-quick-actions-title"
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: prefersReducedMotion ? 0 : 0.3, ease: [0.16, 1, 0.3, 1] }}
+        className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xs dark:border-slate-800 dark:bg-slate-900"
+      >
+        <div className="flex flex-col gap-1 border-b border-slate-200 px-4 py-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 id="dashboard-quick-actions-title" className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100">
+              Quick actions
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              Start or inspect an automation in one click.
+            </p>
+          </div>
+          <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400">Workflow operations</span>
+        </div>
+
+        <div className="grid grid-cols-1 divide-y divide-slate-200 dark:divide-slate-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+          <Link
+            to="/workflows/new"
+            className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-blue-950/25"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm transition-transform duration-200 group-hover:-translate-y-0.5">
+              <Plus size={17} />
+            </span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                Create workflow
+                <ArrowRight size={12} className="text-blue-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-blue-400" />
+              </span>
+              <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">Start from a blank workflow.</span>
+            </span>
+          </Link>
+
+          <button
+            type="button"
+            onClick={() => setAiModalOpen(true)}
+            className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-blue-950/25"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 transition-transform duration-200 group-hover:-translate-y-0.5 dark:bg-blue-950/70 dark:text-blue-300">
+              <Sparkles size={17} />
+            </span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                Create with AI
+                <ArrowRight size={12} className="text-blue-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-blue-400" />
+              </span>
+              <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">Describe the automation you need.</span>
+            </span>
+          </button>
+
+          <Link
+            to="/workflows/wf-prod-8492/builder"
+            className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-slate-800/50"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 transition-transform duration-200 group-hover:-translate-y-0.5 dark:bg-slate-800 dark:text-slate-200">
+              <Play size={17} />
+            </span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                Run test
+                <ArrowRight size={12} className="text-slate-400 transition-transform duration-200 group-hover:translate-x-0.5" />
+              </span>
+              <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">Open the latest workflow builder.</span>
+            </span>
+          </Link>
+
+          <Link
+            to="/executions"
+            className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-emerald-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-emerald-950/20"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 transition-transform duration-200 group-hover:-translate-y-0.5 dark:bg-emerald-950/60 dark:text-emerald-300">
+              <Activity size={17} />
+            </span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                View executions
+                <ArrowRight size={12} className="text-emerald-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-emerald-400" />
+              </span>
+              <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">Inspect recent runs and failures.</span>
+            </span>
+          </Link>
+        </div>
+      </motion.section>
+
+      {/* 4. WORKFLOW ACTIVITY CHART & LIVE EXECUTION PANEL */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         <div className="lg:col-span-7">
           <WorkflowActivityChart />
@@ -172,7 +262,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* 4. RECENT WORKFLOWS TABLE */}
+      {/* 5. RECENT WORKFLOWS TABLE */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-2xs overflow-hidden">
         {/* Table Header Bar */}
         <div className="px-4 py-3 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
@@ -387,7 +477,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* 5. CREATE WITH AI MODAL */}
+      {/* 6. CREATE WITH AI MODAL */}
       <AnimatePresence>
         {aiModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
