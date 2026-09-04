@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Play, RotateCw, Sparkles, X, Check, ArrowRight, ShoppingCart, ArrowLeftRight, Headphones, Cloud } from 'lucide-react';
@@ -19,7 +19,7 @@ export function DashboardPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedNodes, setGeneratedNodes] = useState<string[]>([]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [wfList, execList] = await Promise.all([
         workflowApi.getWorkflows(),
@@ -30,11 +30,13 @@ export function DashboardPage() {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    queueMicrotask(() => {
+      void loadData();
+    });
+  }, [loadData]);
 
   const handleRunWorkflow = async (id: string) => {
     await workflowApi.runWorkflow(id);

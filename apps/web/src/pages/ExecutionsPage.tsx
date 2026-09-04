@@ -262,7 +262,8 @@ export function ExecutionsPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `weav-executions-${Date.now()}.csv`);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    link.setAttribute('download', `weav-executions-${timestamp}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -277,6 +278,7 @@ export function ExecutionsPage() {
   }, [executions]);
 
   // Filtering
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const filteredExecutions = useMemo(() => {
     return executions.filter((item) => {
       // Status tab

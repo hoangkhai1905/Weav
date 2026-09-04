@@ -289,36 +289,40 @@ export function ExecutionDetailPage() {
 
   // Load execution details
   useEffect(() => {
-    const cleanId = executionId ? executionId.replace(/^#?/, '') : 'EX-8492';
-    const formattedId = `#${cleanId}`;
+    queueMicrotask(() => {
+      const cleanId = executionId ? executionId.replace(/^#?/, '') : 'EX-8492';
+      const formattedId = `#${cleanId}`;
 
-    if (MOCK_EXECUTION_DATA[cleanId]) {
-      setExecution(MOCK_EXECUTION_DATA[cleanId].execution);
-      setWorkflow(MOCK_EXECUTION_DATA[cleanId].workflow);
-    } else if (MOCK_EXECUTION_DATA['EX-8492']) {
-      // Fallback synthesizer for any random ID
-      const fallback = MOCK_EXECUTION_DATA['EX-8492'];
-      setExecution({ ...fallback.execution, id: formattedId });
-      setWorkflow(fallback.workflow);
-    }
+      if (MOCK_EXECUTION_DATA[cleanId]) {
+        setExecution(MOCK_EXECUTION_DATA[cleanId].execution);
+        setWorkflow(MOCK_EXECUTION_DATA[cleanId].workflow);
+      } else if (MOCK_EXECUTION_DATA['EX-8492']) {
+        // Fallback synthesizer for any random ID
+        const fallback = MOCK_EXECUTION_DATA['EX-8492'];
+        setExecution({ ...fallback.execution, id: formattedId });
+        setWorkflow(fallback.workflow);
+      }
+    });
   }, [executionId]);
 
   // Auto-select failed node or active running node when execution is loaded
   useEffect(() => {
     if (!execution) return;
-    const failedEntry = Object.entries(execution.nodeResults).find(([_, res]) => res.status === 'FAILED');
-    if (failedEntry) {
-      setSelectedNodeId(failedEntry[0]);
-      return;
-    }
-    const runningEntry = Object.entries(execution.nodeResults).find(([_, res]) => res.status === 'RUNNING');
-    if (runningEntry) {
-      setSelectedNodeId(runningEntry[0]);
-      return;
-    }
-    // Default to first node
-    const firstNode = Object.keys(execution.nodeResults)[0];
-    if (firstNode) setSelectedNodeId(firstNode);
+    queueMicrotask(() => {
+      const failedEntry = Object.entries(execution.nodeResults).find(([, res]) => res.status === 'FAILED');
+      if (failedEntry) {
+        setSelectedNodeId(failedEntry[0]);
+        return;
+      }
+      const runningEntry = Object.entries(execution.nodeResults).find(([, res]) => res.status === 'RUNNING');
+      if (runningEntry) {
+        setSelectedNodeId(runningEntry[0]);
+        return;
+      }
+      // Default to first node
+      const firstNode = Object.keys(execution.nodeResults)[0];
+      if (firstNode) setSelectedNodeId(firstNode);
+    });
   }, [execution]);
 
   // Toast feedback helper
@@ -438,9 +442,11 @@ export function ExecutionDetailPage() {
   // Run signature packet animation ONCE on page mount
   useEffect(() => {
     if (execution) {
-      startPacketAnimation();
+      queueMicrotask(() => {
+        startPacketAnimation();
+      });
     }
-  }, [execution?.id, startPacketAnimation]);
+  }, [execution, startPacketAnimation]);
 
   if (!execution || !workflow) {
     return (

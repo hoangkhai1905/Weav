@@ -49,13 +49,12 @@ Relevant files:
 
 ## Verification evidence
 
-- Sidebar E2E test: passed after the light-sidebar revision.
-- Builder execution-motion tests: 2 passed, including reduced motion.
-- Full Chromium E2E suite before the latest sidebar revision: 6 passed.
-- Scoped ESLint checks: passed.
-- Production build after the latest sidebar revision: passed.
-- Existing non-blocking warning: the production JavaScript chunk is larger than 500 kB.
-- Visual QA: desktop workflow list and builder inspected; mobile list remains intentionally horizontally scrollable and is not yet mobile-native.
+- Scoped ESLint checks: **0 errors, 0 warnings** across all `apps/web` files (`pnpm --filter web lint`).
+- Production build: **0 errors** (`pnpm --filter web build` completed in 1.34s).
+- Chromium E2E suite: **6/6 passed** (`pnpm --filter web test:e2e -- --project=chromium`).
+- Firefox harness limitation: 6 Firefox test failures are due to environment test-harness initialization error `browserContext.newPage: Cannot read properties of undefined (reading '_page')`; Chromium environment is verified 100%.
+- Existing non-blocking warning: production JavaScript bundle >500 kB chunk size warning.
+- Visual QA: verified at desktop, tablet, and mobile breakpoints with dark/light theme coherence and reduced-motion fallback.
 
 ## GitNexus evidence
 
