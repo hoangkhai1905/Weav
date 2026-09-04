@@ -14,13 +14,20 @@ test.describe('industrial workflow shell', () => {
     await expect(workflowsLink.getByTestId('active-nav-indicator')).toBeVisible();
 
     await page.evaluate(() => {
-      localStorage.setItem('weav_theme', 'light');
-      document.documentElement.classList.remove('dark');
+      const globalObj = globalThis as unknown as {
+        localStorage: { setItem: (k: string, v: string) => void };
+        document: { documentElement: { classList: { remove: (c: string) => void } } };
+      };
+      globalObj.localStorage.setItem('weav_theme', 'light');
+      globalObj.document.documentElement.classList.remove('dark');
     });
 
     const sidebarLightness = await sidebar.evaluate((element) => {
-      const [red, green, blue] = element.ownerDocument.defaultView!
-        .getComputedStyle(element)
+      const el = element as unknown as {
+        ownerDocument: { defaultView: { getComputedStyle: (e: unknown) => { backgroundColor: string } } };
+      };
+      const [red, green, blue] = el.ownerDocument.defaultView
+        .getComputedStyle(el)
         .backgroundColor.match(/\d+/g)!
         .slice(0, 3)
         .map(Number);

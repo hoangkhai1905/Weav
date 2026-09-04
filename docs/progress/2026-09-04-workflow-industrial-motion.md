@@ -52,9 +52,10 @@ Relevant files:
 - Refined Dark Palette: graphite/blue-gray `#101826` background, `#182438` card, `#2F4158` border, `#E7EEF8` text, `#4F8CFF` cobalt primary. Zero purple, zero pure black.
 - Connector Centerline Alignment: exact 20px horizontal centerline icon anchor in `LiveExecutionPanel.tsx`.
 - Animated Theme Toggle: Framer Motion rotate/crossfade transition in `Topbar.tsx`.
+- TS Build Fix: resolved `TS2584: Cannot find name 'document'` in `e2e/workflow-ui.spec.ts` via `globalThis` object access for `tsconfig.node.json` compatibility.
 - Scoped ESLint checks: **0 errors, 0 warnings** (`pnpm --filter web lint`).
-- Production build: **0 errors** (`pnpm --filter web build` completed in 1.23s).
-- Chromium E2E suite: **6/6 passed** (`pnpm --filter web test:e2e -- --project=chromium` in 9.4s).
+- Production build: **0 errors** (`pnpm --filter web build` completed in 1.77s).
+- Chromium E2E suite: **6/6 passed** (`pnpm --filter web test:e2e -- --project=chromium` in 10.7s).
 - Firefox harness limitation: 6 Firefox test failures are due to environment test-harness initialization error `browserContext.newPage: Cannot read properties of undefined (reading '_page')`; Chromium environment is verified 100%.
 - Existing non-blocking warning: production JavaScript bundle >500 kB chunk size warning.
 - Visual QA: verified at desktop, tablet, and mobile breakpoints with dark/light theme coherence and reduced-motion fallback.
