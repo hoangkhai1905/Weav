@@ -68,6 +68,7 @@ Relevant files:
 - AI generator focus follow-up: reduced the first viewport to one plain-language prompt, three examples, one primary Generate workflow action, and a collapsed Technical details disclosure; Chromium E2E is now 13/13.
 - Contrast and motion follow-up: strengthened dark prompt/preview surfaces and sidebar support footer contrast, added reduced-motion-safe entrance/progress/connector cues, and covered both feedback paths in Chromium E2E.
 - Dashboard action follow-up: added a compact Quick actions band for creating workflows, opening AI generation, entering the latest test builder, and reviewing executions; the AI action reuses the existing modal flow.
+- Language follow-up: completed persisted VI/EN switching for the shared Topbar plus Dashboard, workflow list, executions, connections, chart, live execution, modal, and AI generator surfaces; added accessible labels and regression coverage for round-trip switching.
 
 ## GitNexus evidence
 

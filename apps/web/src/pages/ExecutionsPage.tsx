@@ -22,6 +22,7 @@ import {
   Terminal,
   Activity,
 } from 'lucide-react';
+import { useI18nStore } from '../store/useI18nStore';
 
 export interface ExecutionItem {
   id: string;
@@ -167,6 +168,7 @@ const INITIAL_EXECUTION_LIST: ExecutionItem[] = [
 
 export function ExecutionsPage() {
   const navigate = useNavigate();
+  const { t } = useI18nStore();
   const [executions, setExecutions] = useState<ExecutionItem[]>(INITIAL_EXECUTION_LIST);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED'>('ALL');
@@ -366,13 +368,13 @@ export function ExecutionsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2.5">
-            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">Executions</h1>
+            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">{t('executions.title')}</h1>
             <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-blue-950/60 text-[#2563EB] dark:text-blue-300 font-mono text-[11px] font-semibold border border-indigo-100 dark:border-blue-900/50">
               v2.4-stream
             </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Monitor workflow runs, live throughput, and execution telemetry in real-time.
+            {t('executions.subtitle')}
           </p>
         </div>
 
@@ -392,7 +394,7 @@ export function ExecutionsPage() {
               )}
               <span className={`relative inline-flex rounded-full h-2 w-2 ${autoRefresh ? 'bg-[#2563EB]' : 'bg-slate-400'}`}></span>
             </span>
-            <span>Auto-refresh ({autoRefresh ? '5s' : 'Off'})</span>
+            <span>{t('executions.auto_refresh')} ({autoRefresh ? '5s' : 'Off'})</span>
             <RefreshCw size={13} className={autoRefresh ? 'animate-spin text-[#2563EB]' : 'text-slate-400'} />
           </button>
 
@@ -406,7 +408,7 @@ export function ExecutionsPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs font-medium shadow-sm"
           >
             <RotateCcw size={13} className="text-slate-400" />
-            <span>Re-run last failed</span>
+            <span>{t('executions.rerun_failed')}</span>
           </button>
 
           {/* Export CSV */}
@@ -415,7 +417,7 @@ export function ExecutionsPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs font-medium shadow-sm"
           >
             <Download size={13} className="text-slate-400" />
-            <span>Export CSV</span>
+            <span>{t('executions.export_csv')}</span>
           </button>
 
           {/* Environment Pill */}
@@ -640,7 +642,7 @@ export function ExecutionsPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search executions by ID, payload, or error..."
+              placeholder={t('executions.search')}
               className="w-full bg-transparent text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none"
             />
             {searchQuery ? (
@@ -661,14 +663,14 @@ export function ExecutionsPage() {
                 const isActive = statusFilter === tab;
                 const label =
                   tab === 'ALL'
-                    ? `All (${counts.ALL})`
+                    ? `${t('workflows.all')} (${counts.ALL})`
                     : tab === 'RUNNING'
-                    ? `Running (${counts.RUNNING})`
+                    ? `${t('status.running')} (${counts.RUNNING})`
                     : tab === 'SUCCESS'
-                    ? `Success (${counts.SUCCESS})`
+                    ? `${t('status.success')} (${counts.SUCCESS})`
                     : tab === 'FAILED'
-                    ? `Failed (${counts.FAILED})`
-                    : `Cancelled (${counts.CANCELLED})`;
+                    ? `${t('status.failed')} (${counts.FAILED})`
+                    : `${t('executions.cancel')} (${counts.CANCELLED})`;
 
                 return (
                   <button
@@ -694,7 +696,7 @@ export function ExecutionsPage() {
                 onChange={(e) => setWorkflowFilter(e.target.value)}
                 className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer max-w-[160px] truncate"
               >
-                <option value="ALL">All Workflows</option>
+                <option value="ALL">{t('workflows.all')} Workflows</option>
                 {workflowNames.map((name) => (
                   <option key={name} value={name}>
                     {name}
@@ -708,7 +710,7 @@ export function ExecutionsPage() {
                 onChange={(e) => setTriggerFilter(e.target.value)}
                 className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer"
               >
-                <option value="ALL">All Triggers</option>
+                <option value="ALL">{t('workflows.all')} Triggers</option>
                 <option value="Webhook">Webhook</option>
                 <option value="Schedule">Schedule</option>
                 <option value="Manual">Manual</option>
@@ -760,14 +762,14 @@ export function ExecutionsPage() {
                       className="w-3.5 h-3.5 rounded border-slate-300 text-[#2563EB] focus:ring-0 cursor-pointer"
                     />
                   </th>
-                  <th className="py-2.5 px-3 font-semibold">Execution ID</th>
-                  <th className="py-2.5 px-3 font-semibold">Workflow Name</th>
-                  <th className="py-2.5 px-3 font-semibold">Status</th>
-                  <th className="py-2.5 px-3 font-semibold">Started</th>
-                  <th className="py-2.5 px-3 font-semibold">Duration</th>
-                  <th className="py-2.5 px-3 font-semibold">Steps / Progress</th>
-                  <th className="py-2.5 px-3 font-semibold">Triggered By</th>
-                  <th className="py-2.5 px-3 text-right font-semibold">Actions</th>
+                  <th className="py-2.5 px-3 font-semibold">{t('executions.col_id')}</th>
+                  <th className="py-2.5 px-3 font-semibold">{t('executions.col_workflow')}</th>
+                  <th className="py-2.5 px-3 font-semibold">{t('executions.col_status')}</th>
+                  <th className="py-2.5 px-3 font-semibold">{t('executions.col_started')}</th>
+                  <th className="py-2.5 px-3 font-semibold">{t('executions.col_duration')}</th>
+                  <th className="py-2.5 px-3 font-semibold">{t('executions.col_progress')}</th>
+                  <th className="py-2.5 px-3 font-semibold">{t('executions.col_triggered_by')}</th>
+                  <th className="py-2.5 px-3 text-right font-semibold">{t('executions.col_actions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs text-slate-800 dark:text-slate-200">

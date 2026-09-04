@@ -24,6 +24,7 @@ import {
   X,
   Globe,
 } from 'lucide-react';
+import { useI18nStore } from '../store/useI18nStore';
 
 export interface ConnectionRecord {
   id: string;
@@ -141,6 +142,7 @@ const INITIAL_CONNECTIONS_LIST: ConnectionRecord[] = [
 ];
 
 export function ConnectionsPage() {
+  const { t } = useI18nStore();
   const [connections, setConnections] = useState<ConnectionRecord[]>(INITIAL_CONNECTIONS_LIST);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'HEALTHY' | 'DEGRADED' | 'FAILED'>('ALL');
@@ -346,9 +348,9 @@ export function ConnectionsPage() {
       {/* Sub-Header Telemetry Strip */}
       <div className="px-4 py-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-          <span>Workspace</span>
+          <span>{t('topbar.home')}</span>
           <span className="text-slate-300 dark:text-slate-700">/</span>
-          <span className="font-semibold text-slate-900 dark:text-slate-100">Connections</span>
+          <span className="font-semibold text-slate-900 dark:text-slate-100">{t('nav.connections')}</span>
           <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[11px]">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span>
             us-east-1 / Production
@@ -361,7 +363,7 @@ export function ConnectionsPage() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
-            <span>Gateway operational</span>
+            <span>{t('connections.gateway_operational')}</span>
             <span className="text-slate-300 dark:text-slate-700">•</span>
             <span className="font-mono text-slate-400">Auto-sync: 30s</span>
           </div>
@@ -372,7 +374,7 @@ export function ConnectionsPage() {
             className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-medium text-[11px] transition-colors"
           >
             <RefreshCw size={12} className={isSyncing ? 'animate-spin text-[#2563EB]' : 'text-slate-400'} />
-            <span>Sync</span>
+            <span>{t('connections.sync')}</span>
           </button>
         </div>
       </div>
@@ -380,9 +382,9 @@ export function ConnectionsPage() {
       {/* Main Header & Primary Action Buttons */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">Connections</h1>
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">{t('connections.title')}</h1>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Manage services, credentials, and API endpoints bound to active workflow graphs.
+            {t('connections.subtitle')}
           </p>
         </div>
 
@@ -392,7 +394,7 @@ export function ConnectionsPage() {
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs font-semibold shadow-xs"
           >
             <FileCheck size={14} className="text-slate-400" />
-            <span>Test all connections</span>
+            <span>{t('connections.test_all')}</span>
           </button>
 
           <button
@@ -400,7 +402,7 @@ export function ConnectionsPage() {
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs font-semibold shadow-xs"
           >
             <Download size={14} className="text-slate-400" />
-            <span>Export status</span>
+            <span>{t('connections.export_status')}</span>
           </button>
 
           <button
@@ -408,7 +410,7 @@ export function ConnectionsPage() {
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#2563EB] hover:bg-blue-600 text-white transition-colors text-xs font-bold shadow-xs cursor-pointer"
           >
             <Plus size={15} />
-            <span>Add connection</span>
+            <span>{t('connections.new_conn')}</span>
           </button>
         </div>
       </div>
@@ -534,7 +536,7 @@ export function ConnectionsPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search connections..."
+              placeholder={t('connections.search')}
               className="w-full bg-transparent text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none"
             />
             {searchQuery ? (

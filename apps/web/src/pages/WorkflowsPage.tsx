@@ -25,6 +25,7 @@ import type { WorkflowDefinition } from '../types/workflow.types';
 import { workflowApi } from '../api/workflow.api';
 import { WorkflowGlyph } from '../components/workflows/WorkflowGlyph';
 import { MOTION_DURATION, MOTION_EASE, REDUCED_MOTION_TRANSITION } from '../lib/motion';
+import { useI18nStore } from '../store/useI18nStore';
 
 interface WorkflowItem {
   id: string;
@@ -175,6 +176,7 @@ const MOCK_WORKFLOWS: WorkflowItem[] = [
 ];
 
 export function WorkflowsPage() {
+  const { t } = useI18nStore();
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const menuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -335,18 +337,18 @@ export function WorkflowsPage() {
       {/* 1. TOP BREADCRUMB & PAGE HEADER */}
       <div className="flex flex-col gap-3">
         <nav className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-          <span className="hover:text-slate-900 dark:hover:text-slate-200 cursor-pointer">Workspace</span>
+          <span className="hover:text-slate-900 dark:hover:text-slate-200 cursor-pointer">{t('topbar.home')}</span>
           <span className="text-slate-300 dark:text-slate-700 font-mono text-[11px]">/</span>
-          <span className="text-slate-900 dark:text-slate-100 font-semibold">Workflows</span>
+          <span className="text-slate-900 dark:text-slate-100 font-semibold">{t('nav.workflows')}</span>
         </nav>
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Workflows
+              {t('workflows.title')}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Build, manage and monitor your production automation workflows.
+              {t('workflows.subtitle')}
             </p>
           </div>
 
@@ -356,7 +358,7 @@ export function WorkflowsPage() {
               className="flex h-9 items-center gap-1.5 rounded-lg border border-primary/25 bg-primary/8 px-3.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/14 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Sparkles size={14} />
-              <span>Create with AI</span>
+              <span>{t('nav.ai_generator')}</span>
             </Link>
 
             <button
@@ -364,7 +366,7 @@ export function WorkflowsPage() {
               className="flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Upload size={14} className="text-slate-500" />
-              <span>Import</span>
+              <span>{t('workflows.import')}</span>
             </button>
 
             <button
@@ -373,7 +375,7 @@ export function WorkflowsPage() {
               className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <Plus size={15} />
-              <span>Create workflow</span>
+              <span>{t('dashboard.new_workflow')}</span>
             </button>
           </div>
         </div>
@@ -388,8 +390,9 @@ export function WorkflowsPage() {
             <Search size={14} className="text-slate-400 mr-2 shrink-0" />
             <input
               type="text"
-              placeholder="Search workflows..."
-              aria-label="Search workflows"
+              data-testid="workflow-search"
+              placeholder={t('workflows.search_placeholder')}
+              aria-label={t('workflows.search_placeholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
@@ -410,7 +413,7 @@ export function WorkflowsPage() {
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              All <span className="font-mono text-[10px] opacity-75 ml-1">{totalCount}</span>
+              {t('workflows.tab_all')} <span className="font-mono text-[10px] opacity-75 ml-1">{totalCount}</span>
             </button>
             <button
               type="button"
@@ -421,7 +424,7 @@ export function WorkflowsPage() {
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Active <span className="font-mono text-[10px] opacity-75 ml-1">{activeCount}</span>
+              {t('workflows.tab_active')} <span className="font-mono text-[10px] opacity-75 ml-1">{activeCount}</span>
             </button>
             <button
               type="button"
@@ -432,7 +435,7 @@ export function WorkflowsPage() {
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Paused <span className="font-mono text-[10px] opacity-75 ml-1">{pausedCount}</span>
+              {t('workflows.tab_paused')} <span className="font-mono text-[10px] opacity-75 ml-1">{pausedCount}</span>
             </button>
             <button
               type="button"
@@ -443,7 +446,7 @@ export function WorkflowsPage() {
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Draft <span className="font-mono text-[10px] opacity-75 ml-1">{draftCount}</span>
+              {t('workflows.tab_draft')} <span className="font-mono text-[10px] opacity-75 ml-1">{draftCount}</span>
             </button>
             <button
               type="button"
@@ -456,7 +459,7 @@ export function WorkflowsPage() {
               title="Preview empty view state"
             >
               <FilterX size={13} />
-              <span>Empty view</span>
+              <span>{t('workflows.empty_view')}</span>
             </button>
           </div>
         </div>
@@ -468,20 +471,20 @@ export function WorkflowsPage() {
             onChange={(e) => setStatusFilter(e.target.value)}
             className="h-8 px-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
           >
-            <option value="ALL">Status: All</option>
-            <option value="RUNNING">Status: Running</option>
-            <option value="SUCCESS">Status: Success</option>
-            <option value="FAILED">Status: Failed</option>
-            <option value="PAUSED">Status: Paused</option>
-            <option value="DRAFT">Status: Draft</option>
+            <option value="ALL">{t('workflows.status_prefix')} {t('workflows.all')}</option>
+            <option value="RUNNING">{t('workflows.status_prefix')} {t('status.running')}</option>
+            <option value="SUCCESS">{t('workflows.status_prefix')} {t('status.success')}</option>
+            <option value="FAILED">{t('workflows.status_prefix')} {t('status.failed')}</option>
+            <option value="PAUSED">{t('workflows.status_prefix')} {t('workflows.tab_paused')}</option>
+            <option value="DRAFT">{t('workflows.status_prefix')} {t('workflows.tab_draft')}</option>
           </select>
 
           <button
             type="button"
             className="h-8 px-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
           >
-            <span className="text-slate-400 font-normal">Last run:</span>
-            <span className="font-semibold">Any time</span>
+            <span className="text-slate-400 font-normal">{t('workflows.last_run')}</span>
+            <span className="font-semibold">{t('workflows.any_time')}</span>
             <ChevronDown size={14} className="text-slate-400" />
           </button>
 
@@ -489,7 +492,7 @@ export function WorkflowsPage() {
             type="button"
             className="h-8 px-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 hidden md:flex items-center gap-1 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
           >
-            <span className="text-slate-400 font-normal">Owner:</span>
+            <span className="text-slate-400 font-normal">{t('workflows.owner')}</span>
             <span className="font-semibold">{ownerFilter}</span>
             <ChevronDown size={14} className="text-slate-400" />
           </button>
@@ -621,13 +624,13 @@ export function WorkflowsPage() {
                       aria-label="Select all workflows"
                     />
                   </th>
-                  <th className="px-3 py-2.5 min-w-[260px]">Workflow Name & ID</th>
-                  <th className="px-3 py-2.5 w-28">Status</th>
-                  <th className="px-3 py-2.5 w-32">Executions (24h)</th>
-                  <th className="px-3 py-2.5 w-36">Success Rate</th>
-                  <th className="px-3 py-2.5 w-32">Last Run</th>
-                  <th className="px-3 py-2.5 w-36">Updated</th>
-                  <th className="px-3 py-2.5 text-right w-24">Actions</th>
+                <th className="px-3 py-2.5 min-w-[260px]">{t('workflows.col_name')}</th>
+                <th className="px-3 py-2.5 w-28">{t('workflows.col_status')}</th>
+                <th className="px-3 py-2.5 w-32">{t('workflows.col_executions')}</th>
+                <th className="px-3 py-2.5 w-36">{t('workflows.col_success_rate')}</th>
+                <th className="px-3 py-2.5 w-32">{t('workflows.col_last_run')}</th>
+                <th className="px-3 py-2.5 w-36">{t('workflows.col_updated')}</th>
+                <th className="px-3 py-2.5 text-right w-24">{t('workflows.col_actions')}</th>
                 </tr>
               </thead>
 

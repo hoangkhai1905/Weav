@@ -1,8 +1,10 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Terminal, Webhook, Cpu, Bell } from 'lucide-react';
+import { useI18nStore } from '../../store/useI18nStore';
 
 export const LiveExecutionPanel: React.FC = () => {
+  const { t } = useI18nStore();
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-5 flex flex-col justify-between shadow-2xs h-full">
       {/* Header */}
@@ -10,11 +12,11 @@ export const LiveExecutionPanel: React.FC = () => {
         <div className="flex flex-col">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-              Live execution
+              {t('dashboard.live_execution')}
             </h2>
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-semibold text-[11px]">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-ping" />
-              Running
+              {t('dashboard.running')}
             </span>
           </div>
           <span className="font-mono text-xs text-slate-500 truncate mt-0.5">
@@ -23,9 +25,9 @@ export const LiveExecutionPanel: React.FC = () => {
         </div>
 
         <button
-          aria-label="Workflow logs"
+          aria-label={t('dashboard.workflow_logs')}
           className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          title="Terminal Logs"
+          title={t('dashboard.workflow_logs')}
         >
           <Terminal size={16} />
         </button>
@@ -85,18 +87,18 @@ export const LiveExecutionPanel: React.FC = () => {
         {/* Node Labels Row (Independent from Centerline Connector Anchor) */}
         <div className="grid grid-cols-[auto_1fr_auto_1fr_auto] items-start gap-1 mt-2 text-center">
           <div className="flex flex-col items-center min-w-[70px] -ml-3">
-            <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">Webhook</span>
+            <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">{t('dashboard.webhook')}</span>
             <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">200 OK</span>
           </div>
           <div />
           <div className="flex flex-col items-center min-w-[80px] -ml-4">
             <span className="text-xs font-bold text-blue-600 dark:text-blue-400">AI Extract</span>
-            <span className="font-mono text-[10px] text-blue-600 dark:text-blue-400 font-medium">parsing...</span>
+            <span className="font-mono text-[10px] text-blue-600 dark:text-blue-400 font-medium">{t('dashboard.parsing')}</span>
           </div>
           <div />
           <div className="flex flex-col items-center min-w-[70px] -ml-3 opacity-70">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Notify</span>
-            <span className="font-mono text-[10px] text-slate-400">queued</span>
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{t('dashboard.notify')}</span>
+            <span className="font-mono text-[10px] text-slate-400">{t('dashboard.queued')}</span>
           </div>
         </div>
       </div>
@@ -106,12 +108,12 @@ export const LiveExecutionPanel: React.FC = () => {
         <div className="flex items-center gap-2 text-slate-300">
           <span className="text-emerald-400 font-bold">●</span>
           <span className="text-slate-400">[10:42:15]</span>
-          <span className="truncate">Webhook payload received (2.4KB JSON)</span>
+          <span className="truncate">{t('dashboard.payload_received')}</span>
         </div>
         <div className="flex items-center gap-2 text-blue-300">
           <span className="text-blue-400 font-bold">▶</span>
           <span className="text-slate-400">[10:42:16]</span>
-          <span className="truncate">Invoking model: extract customer & invoice schema</span>
+          <span className="truncate">{t('dashboard.invoking_model')}</span>
         </div>
       </div>
     </div>

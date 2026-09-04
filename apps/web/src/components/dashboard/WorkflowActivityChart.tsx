@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
+import { useI18nStore } from '../../store/useI18nStore';
 
 interface DataPoint {
   day: string;
@@ -21,6 +22,7 @@ const CHART_DATA: DataPoint[] = [
 ];
 
 export const WorkflowActivityChart: React.FC = () => {
+  const { t } = useI18nStore();
   // Default hoveredIdx to 5 (Fri) to match reference.png
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(5);
 
@@ -35,20 +37,20 @@ export const WorkflowActivityChart: React.FC = () => {
       <div className="flex items-center justify-between mb-3">
         <div className="flex flex-col">
           <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight">
-            Workflow activity
+            {t('dashboard.activity')}
           </h2>
           <div className="flex items-center gap-2 mt-0.5">
             <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
-              128 executions
+              128 {t('dashboard.executions_count')}
             </span>
             <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-              +18.4% vs previous 7 days
+              +18.4% {t('dashboard.vs_previous')}
             </span>
           </div>
         </div>
 
         <button className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors">
-          <span>Last 7 days</span>
+          <span>{t('dashboard.last_7_days')}</span>
           <ChevronDown size={14} className="text-slate-400" />
         </button>
       </div>
@@ -64,10 +66,10 @@ export const WorkflowActivityChart: React.FC = () => {
           }}
         >
           <div className="font-semibold text-white leading-tight">
-            {activeItem.day}: {activeItem.count} runs
+            {activeItem.day}: {activeItem.count} {t('dashboard.runs')}
           </div>
           <div className="text-emerald-400 text-[10px] leading-tight mt-0.5">
-            {activeItem.successRate} success rate
+            {activeItem.successRate} {t('dashboard.success_rate')}
           </div>
         </div>
 

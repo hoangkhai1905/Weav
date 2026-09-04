@@ -39,6 +39,7 @@ test.describe('industrial workflow shell', () => {
 
 test.describe('dashboard quick actions', () => {
   test('surfaces the core workflow actions on the overview', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.goto('/dashboard');
 
     const quickActions = page.getByTestId('dashboard-quick-actions');
@@ -50,6 +51,7 @@ test.describe('dashboard quick actions', () => {
   });
 
   test('opens the existing AI creation flow from quick actions', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.goto('/dashboard');
 
     await page.getByTestId('dashboard-quick-actions').getByRole('button', { name: 'Create with AI' }).click();
@@ -59,15 +61,15 @@ test.describe('dashboard quick actions', () => {
 
 test.describe('language switching', () => {
   test('translates the dashboard shell and quick actions between Vietnamese and English', async ({ page }) => {
-    await page.addInitScript(() => window.localStorage.removeItem('weav_lang_v1'));
+    await page.addInitScript({ content: "window.localStorage.removeItem('weav_lang_v1')" });
     await page.goto('/dashboard');
 
     await expect(page.getByRole('heading', { name: 'Tổng quan không gian làm việc', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'VI', exact: true }).click();
+    await page.getByRole('button', { name: /Đổi sang English|Switch to English/ }).click();
     await expect(page.getByRole('heading', { name: 'Workspace overview', exact: true })).toBeVisible();
     await expect(page.getByTestId('dashboard-quick-actions').getByRole('button', { name: 'Create with AI' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'EN', exact: true }).click();
+    await page.getByRole('button', { name: /Đổi sang Tiếng Việt|Switch to Vietnamese/ }).click();
     await expect(page.getByRole('heading', { name: 'Tổng quan không gian làm việc', exact: true })).toBeVisible();
     await expect(page.getByTestId('dashboard-quick-actions').getByRole('button', { name: 'Tạo bằng AI' })).toBeVisible();
   });
@@ -75,16 +77,18 @@ test.describe('language switching', () => {
 
 test.describe('workflow operations list', () => {
   test('filters rows without losing operational context', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.goto('/workflows');
 
     const rows = page.getByTestId('workflow-row');
     await expect(rows.first()).toBeVisible();
-    await page.getByRole('textbox', { name: 'Search workflows', exact: true }).fill('Invoice');
+    await page.getByTestId('workflow-search').fill('Invoice');
     await expect(rows).toHaveCount(1);
     await expect(rows.first().getByTestId('workflow-glyph')).toBeVisible();
   });
 
   test('opens row actions with an accessible trigger', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.goto('/workflows');
     const rows = page.getByTestId('workflow-row');
     await expect(rows).toHaveCount(3);
@@ -200,6 +204,7 @@ test.describe('workspace account surfaces', () => {
 
 test.describe('AI workflow generator focus', () => {
   test('keeps the first action focused on one prompt and one primary action', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.goto('/ai/workflow-generator');
 
     await expect(page.getByTestId('ai-generator-page')).toBeVisible();
@@ -216,6 +221,7 @@ test.describe('AI workflow generator focus', () => {
   });
 
   test('shows progress feedback and animated flow cues while generating', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.goto('/ai/workflow-generator');
 
     await page.getByRole('button', { name: 'Generate workflow', exact: true }).click();

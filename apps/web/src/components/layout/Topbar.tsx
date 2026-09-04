@@ -6,7 +6,7 @@ import { useUIStore } from '../../store/useUIStore';
 
 export function Topbar() {
   const { searchQuery, setSearchQuery, theme, toggleTheme, toggleMobileSidebar } = useUIStore();
-  const { language, toggleLanguage } = useI18nStore();
+  const { language, toggleLanguage, t } = useI18nStore();
 
   return (
     <header className="z-20 flex h-14 shrink-0 select-none items-center justify-between border-b border-border bg-card px-4 text-foreground transition-colors duration-200">
@@ -14,15 +14,15 @@ export function Topbar() {
         <button
           onClick={toggleMobileSidebar}
           className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden"
-          aria-label="Open navigation"
+          aria-label={t('topbar.open_navigation')}
         >
           <Menu size={18} />
         </button>
 
         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-          <span>Workspace</span>
+          <span>{t('topbar.home')}</span>
           <span className="text-border">/</span>
-          <span className="font-semibold text-foreground">Dashboard</span>
+          <span className="font-semibold text-foreground">{t('nav.dashboard')}</span>
         </div>
       </div>
 
@@ -30,7 +30,7 @@ export function Topbar() {
         <Search size={14} className="pointer-events-none absolute left-3 text-muted-foreground" />
         <input
           type="text"
-          placeholder="Search workflows..."
+          placeholder={t('topbar.search_placeholder')}
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
           className="w-full rounded-lg border border-border bg-background py-1.5 pl-8 pr-12 text-sm text-foreground placeholder:text-muted-foreground transition-colors focus:bg-card focus:outline-none focus:ring-2 focus:ring-ring/30"
@@ -50,7 +50,8 @@ export function Topbar() {
         <button
           onClick={toggleLanguage}
           className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          title={language === 'VI' ? 'Switch to English' : 'Đổi sang Tiếng Việt'}
+          title={language === 'VI' ? t('topbar.switch_to_english') : t('topbar.switch_to_vietnamese')}
+          aria-label={language === 'VI' ? t('topbar.switch_to_english') : t('topbar.switch_to_vietnamese')}
         >
           {language === 'VI' ? 'VI' : 'EN'}
         </button>
@@ -58,8 +59,8 @@ export function Topbar() {
         <button
           onClick={toggleTheme}
           className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer overflow-hidden"
-          title="Toggle theme"
-          aria-label="Toggle theme"
+          title={t('topbar.toggle_theme')}
+          aria-label={t('topbar.toggle_theme')}
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -77,8 +78,8 @@ export function Topbar() {
         <Link
           to="/notifications"
           className="relative rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          title="Notifications"
-          aria-label="Notifications"
+          title={t('nav.notifications')}
+          aria-label={t('nav.notifications')}
         >
           <Bell size={17} />
           <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-card" />
