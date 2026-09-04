@@ -1,122 +1,70 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { AppLayout } from './components/layout/AppLayout';
+import { LoginPage } from './pages/LoginPage';
+import { RegisterPage } from './pages/RegisterPage';
+import { DashboardPage } from './pages/DashboardPage';
+import { WorkflowsPage } from './pages/WorkflowsPage';
+import { CreateWorkflowPage } from './pages/CreateWorkflowPage';
+import { WorkflowBuilderPage } from './pages/WorkflowBuilderPage';
+import { AiGeneratorPage } from './pages/AiGeneratorPage';
+import { ExecutionsPage } from './pages/ExecutionsPage';
+import { ExecutionDetailPage } from './pages/ExecutionDetailPage';
+import { ConnectionsPage } from './pages/ConnectionsPage';
+import { WorkspacePage } from './pages/WorkspacePage';
+import { TelegramPage } from './pages/TelegramPage';
+import { NotificationsPage } from './pages/NotificationsPage';
+import { SettingsPage } from './pages/SettingsPage';
+import { HelpPage } from './pages/HelpPage';
 
-function App() {
-  const [count, setCount] = useState(0)
-
+export function App() {
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <Routes>
+      {/* Auth Routes */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
-      <div className="ticks"></div>
+      {/* Main Protected Application Layout */}
+      <Route element={<AppLayout />}>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {/* Workflows */}
+        <Route path="/workflows" element={<WorkflowsPage />} />
+        <Route path="/workflows/new" element={<CreateWorkflowPage />} />
+        <Route path="/workflows/:workflowId" element={<WorkflowBuilderPage />} />
+        <Route path="/workflows/:workflowId/builder" element={<WorkflowBuilderPage />} />
+        <Route path="/workflows/:workflowId/executions" element={<ExecutionsPage />} />
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+        {/* Executions */}
+        <Route path="/executions" element={<ExecutionsPage />} />
+        <Route path="/executions/:executionId" element={<ExecutionDetailPage />} />
+
+        {/* Connections */}
+        <Route path="/connections" element={<ConnectionsPage />} />
+
+        {/* Workspace */}
+        <Route path="/workspace" element={<WorkspacePage />} />
+        <Route path="/workspace/members" element={<WorkspacePage />} />
+        <Route path="/workspace/settings" element={<WorkspacePage />} />
+
+        {/* AI Generator */}
+        <Route path="/ai" element={<Navigate to="/ai/workflow-generator" replace />} />
+        <Route path="/ai/workflow-generator" element={<AiGeneratorPage />} />
+
+        {/* Telegram */}
+        <Route path="/telegram" element={<TelegramPage />} />
+
+        {/* Notifications & Settings & Help */}
+        <Route path="/notifications" element={<NotificationsPage />} />
+        <Route path="/settings/profile" element={<SettingsPage />} />
+        <Route path="/settings/security" element={<SettingsPage />} />
+        <Route path="/help" element={<HelpPage />} />
+      </Route>
+
+      {/* Catch-all Fallback */}
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
 }
 
-export default App
+export default App;
