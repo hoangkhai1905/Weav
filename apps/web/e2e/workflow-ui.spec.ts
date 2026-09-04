@@ -57,6 +57,22 @@ test.describe('dashboard quick actions', () => {
   });
 });
 
+test.describe('language switching', () => {
+  test('translates the dashboard shell and quick actions between Vietnamese and English', async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.removeItem('weav_lang_v1'));
+    await page.goto('/dashboard');
+
+    await expect(page.getByRole('heading', { name: 'Tổng quan không gian làm việc', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'VI', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Workspace overview', exact: true })).toBeVisible();
+    await expect(page.getByTestId('dashboard-quick-actions').getByRole('button', { name: 'Create with AI' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'EN', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Tổng quan không gian làm việc', exact: true })).toBeVisible();
+    await expect(page.getByTestId('dashboard-quick-actions').getByRole('button', { name: 'Tạo bằng AI' })).toBeVisible();
+  });
+});
+
 test.describe('workflow operations list', () => {
   test('filters rows without losing operational context', async ({ page }) => {
     await page.goto('/workflows');
