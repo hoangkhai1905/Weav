@@ -157,5 +157,3 @@ docker-data/
 .tool-versions.local
 .claude
 .gitnexus
-AGENTS.md
-CLAUDE.md
