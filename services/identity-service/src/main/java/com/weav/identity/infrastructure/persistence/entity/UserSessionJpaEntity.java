@@ -58,6 +58,27 @@ public class UserSessionJpaEntity {
         this.expiresAt = expiresAt;
     }
 
+    public UserSessionJpaEntity(
+            UUID id,
+            UUID userId,
+            String refreshTokenHash,
+            String userAgent,
+            String ipAddress,
+            Instant expiresAt,
+            Instant revokedAt,
+            Instant lastUsedAt,
+            Instant createdAt) {
+        this.id = id;
+        this.userId = userId;
+        this.refreshTokenHash = refreshTokenHash;
+        this.userAgent = userAgent;
+        this.ipAddress = ipAddress;
+        this.expiresAt = expiresAt;
+        this.revokedAt = revokedAt;
+        this.lastUsedAt = lastUsedAt;
+        this.createdAt = createdAt;
+    }
+
     @PrePersist
     void onCreate() {
         if (id == null) {

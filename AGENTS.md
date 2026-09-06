@@ -134,6 +134,13 @@ Record decisions, changed files, commands and results, runtime/browser evidence,
 - Auto-commit is allowed only after a complete, tested logical milestone, with a clear message. Never include secrets, `.env`, build output, or unrelated user changes.
 - If the managed runner reports `helper_unknown_error`, distinguish environment/setup failure from source failure. Verify the resolved workspace path and use a working junction/worktree only when it resolves to this repository; do not "fix" source code based only on runner setup errors.
 
+## External agent CLI bridge
+
+- For OpenCode or Antigravity calls from this repository, use `powershell.exe -NoProfile -File .\scripts\agent-cli.ps1` and use `T:\Weav` only. Do not use `T:\Weav_Alias` or `E:\WeavSub`.
+- Run `-Action Check -Tool Auto` before a task. Use `-Action Run` with an explicit timeout; `-Tool Auto` selects only before the child starts and never duplicates a started request.
+- Add `-AllowRepoContext` when the external CLI may inspect or modify this private repository. Keep `Plan` as the default; use `AcceptEdits` only when explicitly requested.
+- Never add `--dangerously-skip-permissions` or OpenCode `--auto`. Treat provider/account/policy/concurrency failures and `helper_unknown_error` as infrastructure signals, not source evidence.
+
 ## Completion checklist
 
 Before reporting completion:

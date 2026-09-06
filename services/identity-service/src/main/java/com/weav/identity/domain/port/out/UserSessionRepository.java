@@ -8,4 +8,5 @@ public interface UserSessionRepository {
     UserSession save(UserSession session);
     Optional<UserSession> findById(UUID id);
     Optional<UserSession> findByRefreshTokenHash(String refreshTokenHash);
+    Optional<UserSession> findByRefreshTokenHashForUpdate(String refreshTokenHash);
 }

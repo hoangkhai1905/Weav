@@ -1,12 +1,15 @@
 package com.weav.identity.presentation.http.request;
 
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record RegisterUserRequest(
         @NotBlank(message = "Email is required")
-        @Email(message = "Email must be valid")
+        @Pattern(
+                regexp = "^ *[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+ *$",
+                message = "Email must be valid"
+        )
         @Size(max = 320, message = "Email must not exceed 320 characters")
         String email,
 
@@ -17,4 +20,9 @@ public record RegisterUserRequest(
         @Size(max = 120, message = "Display name must not exceed 120 characters")
         String displayName
 ) {
+
+    @Override
+    public String toString() {
+        return "RegisterUserRequest[credentials=[REDACTED]]";
+    }
 }

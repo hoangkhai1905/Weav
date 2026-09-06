@@ -300,6 +300,17 @@ cd services/identity-service
 .\mvnw.cmd clean compile
 ```
 
+Identity core authentication requires `JWT_ACCESS_SECRET` to contain at least 32 UTF-8 bytes. `JWT_REFRESH_SECRET` remains required for configuration compatibility but opaque refresh tokens are generated randomly and only their SHA-256 hashes are stored.
+
+To run the complete Identity suite with disposable PostgreSQL 18:
+
+```powershell
+$env:JAVA_TOOL_OPTIONS='-Duser.timezone=UTC'
+.\mvnw.cmd -B '-Dstyle.color=never' test
+```
+
+The suite applies Flyway migrations to schema `identity` and verifies registration, login, bearer current-user lookup, refresh rotation, logout, duplicate-email/refresh races, and auth throttling. It does not use development Neon credentials.
+
 Workflow:
 
 ```powershell
