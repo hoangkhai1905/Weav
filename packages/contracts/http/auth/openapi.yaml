@@ -1,0 +1,470 @@
+openapi: 3.1.0
+info:
+  title: Weav Identity Core Authentication API
+  version: 1.0.0
+  description: >-
+    Identity-local JSON contract for registration, login, opaque refresh-token
+    rotation, logout, and current-user lookup. Gateway and browser transport are
+    outside this milestone.
+servers:
+  - url: http://localhost:8081
+    description: Local Identity service
+tags:
+  - name: Authentication
+  - name: Users
+security:
+  - bearerAuth: []
+paths:
+  /auth/register:
+    post:
+      tags: [Authentication]
+      operationId: registerUser
+      summary: Register an email/password user
+      description: >-
+        Creates an ACTIVE user with the USER system role. Registration does not
+        establish a session and does not return tokens. Email ownership remains
+        unverified in this milestone.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User registered; no login session was created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Create an authenticated session
+      description: >-
+        Returns the same generic 401 response for an unknown user, wrong
+        password, OAuth-only account, disabled account, or other invalid
+        credentials.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Session created.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      operationId: refreshSession
+      summary: Rotate a refresh token
+      description: >-
+        Atomically replaces a valid single-use opaque refresh token and returns
+        a new token pair. The old token is invalid after a successful commit.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: Refresh token rotated and replacement token pair issued.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      summary: Revoke a refresh-token session
+      description: >-
+        Revokes the session identified by a well-formed refresh token. The
+        operation is idempotent for unknown, expired, or already-revoked
+        well-formed tokens and does not require a live access token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '204':
+          description: Logout completed; the response has no body.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me:
+    get:
+      tags: [Users]
+      operationId: getCurrentUser
+      summary: Get the authenticated user
+      description: >-
+        Requires a valid access JWT and an ACTIVE user with a matching active
+        session. The user identifier is taken from verified JWT claims, never
+        from client input.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current public user profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        HS256 access JWT issued by Identity. Refresh tokens are opaque values
+        supplied only in JSON request bodies and are never bearer credentials.
+
+  headers:
+    CacheControlNoStore:
+      description: Prevents token-bearing responses from being cached.
+      schema:
+        type: string
+        const: no-store
+      example: no-store
+    RetryAfter:
+      description: Number of seconds until the caller should retry.
+      schema:
+        type: integer
+        minimum: 1
+      example: 60
+    BearerChallenge:
+      description: Bearer authentication challenge.
+      schema:
+        type: string
+      example: Bearer
+
+  responses:
+    BadRequest:
+      description: Request validation failed or the JSON body was malformed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            validation:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - field: email
+                      message: Email must be valid
+                timestamp: '2026-09-05T08:30:00Z'
+                status: 400
+                path: /auth/register
+    Unauthorized:
+      description: Credentials, token, account, or session are invalid.
+      headers:
+        WWW-Authenticate:
+          $ref: '#/components/headers/BearerChallenge'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            unauthorized:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: Authentication failed
+                  details: []
+                timestamp: '2026-09-05T08:30:00Z'
+                status: 401
+                path: /auth/login
+    Conflict:
+      description: The canonical email is already registered.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            duplicateEmail:
+              value:
+                error:
+                  code: CONFLICT
+                  message: Resource state conflicts with existing data
+                  details: []
+                timestamp: '2026-09-05T08:30:00Z'
+                status: 409
+                path: /auth/register
+    TooManyRequests:
+      description: The applicable authentication rate limit was exceeded.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            rateLimited:
+              value:
+                error:
+                  code: RATE_LIMITED
+                  message: Too many requests
+                  details: []
+                timestamp: '2026-09-05T08:30:00Z'
+                status: 429
+                path: /auth/login
+    InternalError:
+      description: Sanitized unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            internalError:
+              value:
+                error:
+                  code: INTERNAL_ERROR
+                  message: An unexpected error occurred
+                  details: []
+                timestamp: '2026-09-05T08:30:00Z'
+                status: 500
+                path: /auth/login
+
+  schemas:
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        password:
+          $ref: '#/components/schemas/Password'
+        displayName:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 120
+          description: Optional display name. A JSON null is preserved as absent.
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+        password:
+          $ref: '#/components/schemas/Password'
+
+    RefreshTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: >-
+            Unpadded base64url encoding of 32 cryptographically random bytes.
+            Send only in this JSON field, never in a URL or log.
+
+    Email:
+      type: string
+      minLength: 3
+      maxLength: 320
+      pattern: "^ *[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+ *$"
+      description: >-
+        ASCII email identifier. Identity removes only boundary U+0020 SPACE
+        characters and applies Locale.ROOT ASCII case folding for lookup and
+        uniqueness. Other whitespace is rejected; no dot or plus rewriting is
+        performed.
+
+    Password:
+      type: string
+      format: password
+      minLength: 8
+      maxLength: 72
+      writeOnly: true
+      description: >-
+        Passwords are neither trimmed nor normalized and must also be no more
+        than 72 bytes when encoded as UTF-8 for BCrypt.
+
+    TokenResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - accessToken
+        - refreshToken
+        - tokenType
+        - expiresIn
+        - refreshExpiresAt
+        - user
+      properties:
+        accessToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: HS256 access JWT.
+        refreshToken:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: Replacement opaque single-use refresh token.
+        tokenType:
+          type: string
+          const: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Access-token lifetime in seconds from issuance.
+        refreshExpiresAt:
+          type: string
+          format: date-time
+          description: Absolute refresh-session expiry as a UTC RFC 3339 timestamp.
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
+    UserResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - email
+        - displayName
+        - avatarStorageKey
+        - systemRole
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          maxLength: 320
+          description: Stored supported email spelling; never a password or token field.
+        displayName:
+          type: [string, 'null']
+          maxLength: 120
+        avatarStorageKey:
+          type: [string, 'null']
+          maxLength: 512
+        systemRole:
+          type: string
+          enum: [USER, ADMIN]
+        status:
+          type: string
+          enum: [ACTIVE, DISABLED]
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC RFC 3339 timestamp.
+        updatedAt:
+          type: string
+          format: date-time
+          description: UTC RFC 3339 timestamp.
+
+    ApiErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error, timestamp, status, path]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+        timestamp:
+          type: string
+          format: date-time
+          description: UTC RFC 3339 timestamp.
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        path:
+          type: string
+          maxLength: 2048
+
+    ErrorBody:
+      type: object
+      additionalProperties: false
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          maxLength: 64
+        message:
+          type: string
+          maxLength: 512
+        details:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ErrorDetail'
+
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          maxLength: 256
+        message:
+          type: string
+          maxLength: 512
