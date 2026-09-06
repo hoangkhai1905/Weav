@@ -151,7 +151,7 @@ public class GlobalExceptionHandler {
             DataIntegrityViolationException exception,
             HttpServletRequest request
     ) {
-        log.warn("Data integrity violation on {}", request.getRequestURI(), exception);
+        log.warn("Data integrity violation on {}", request.getRequestURI());
         return respond(
                 HttpStatus.CONFLICT,
                 "CONFLICT",
