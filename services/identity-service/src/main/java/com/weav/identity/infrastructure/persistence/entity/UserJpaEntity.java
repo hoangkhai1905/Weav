@@ -68,6 +68,27 @@ public class UserJpaEntity {
         this.status = status;
     }
 
+    public UserJpaEntity(
+            UUID id,
+            String email,
+            String passwordHash,
+            String displayName,
+            String avatarStorageKey,
+            SystemRole systemRole,
+            UserStatus status,
+            Instant createdAt,
+            Instant updatedAt) {
+        this.id = id;
+        this.email = email;
+        this.passwordHash = passwordHash;
+        this.displayName = displayName;
+        this.avatarStorageKey = avatarStorageKey;
+        this.systemRole = systemRole;
+        this.status = status;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+    }
+
     @PrePersist
     void onCreate() {
         if (id == null) {
