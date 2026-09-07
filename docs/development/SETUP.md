@@ -302,6 +302,8 @@ cd services/identity-service
 
 Identity core authentication requires `JWT_ACCESS_SECRET` to contain at least 32 UTF-8 bytes. `JWT_REFRESH_SECRET` remains required for configuration compatibility but opaque refresh tokens are generated randomly and only their SHA-256 hashes are stored.
 
+The Identity-local OpenAPI contract is published at `packages/contracts/http/auth/openapi.yaml`. Version 1.1 adds the M1 contract target for profile display-name updates, self-service session listing/revocation, revoke-all, and local password change. These additions are contract-first: do not treat them as runtime-ready until the matching M1 implementation and HTTP tests pass. OTP/recovery, Google OAuth, admin, avatar, Gateway, web, and mobile operations are not published by this milestone.
+
 To run the complete Identity suite with disposable PostgreSQL 18:
 
 ```powershell
@@ -309,7 +311,7 @@ $env:JAVA_TOOL_OPTIONS='-Duser.timezone=UTC'
 .\mvnw.cmd -B '-Dstyle.color=never' test
 ```
 
-The suite applies Flyway migrations to schema `identity` and verifies registration, login, bearer current-user lookup, refresh rotation, logout, duplicate-email/refresh races, and auth throttling. It does not use development Neon credentials.
+The current baseline suite applies Flyway migrations to schema `identity` and verifies registration, login, bearer current-user lookup, refresh rotation, logout, duplicate-email/refresh races, and auth throttling. It does not use development Neon credentials. After M1 implementation lands, its focused profile/session/password-change HTTP and concurrency tests must pass together with this baseline suite before the new operations are considered available.
 
 Workflow:
 

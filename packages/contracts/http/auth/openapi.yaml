@@ -1,11 +1,12 @@
 openapi: 3.1.0
 info:
-  title: Weav Identity Core Authentication API
-  version: 1.0.0
+  title: Weav Identity Authentication API
+  version: 1.1.0
   description: >-
     Identity-local JSON contract for registration, login, opaque refresh-token
-    rotation, logout, and current-user lookup. Gateway and browser transport are
-    outside this milestone.
+    rotation, logout, current-user profile, self-service session management,
+    and password change. Gateway and browser transport are outside this
+    milestone.
 servers:
   - url: http://localhost:8081
     description: Local Identity service
@@ -140,6 +141,37 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /auth/change-password:
+    post:
+      tags: [Authentication]
+      operationId: changePassword
+      summary: Change the authenticated user's local password
+      description: >-
+        Requires a valid access JWT and an ACTIVE user with a matching active
+        session. Verifies the current local password, updates it, and revokes
+        every session for the user, including the session authorizing this
+        request, in one transaction. Wrong current credentials and accounts
+        without a local password return the same generic 401 response.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: >-
+            Password changed and all existing sessions revoked; the response
+            has no body and the client must log in again.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /users/me:
     get:
       tags: [Users]
@@ -160,6 +192,128 @@ paths:
                 $ref: '#/components/schemas/UserResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags: [Users]
+      operationId: updateCurrentUser
+      summary: Update the authenticated user's profile
+      description: >-
+        Updates only displayName for the ACTIVE user associated with the
+        matching active session. The displayName member must be present; null
+        or a blank string clears it, while a non-blank string is trimmed. Email,
+        role, status, avatar storage keys, identifiers, and timestamps are not
+        accepted input fields.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Updated public user profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me/sessions:
+    get:
+      tags: [Users]
+      operationId: listCurrentUserSessions
+      summary: List the authenticated user's active sessions
+      description: >-
+        Returns only active sessions owned by the current user, ordered by
+        createdAt descending and then id for stable pagination. Token material,
+        token hashes, and raw IP addresses are never returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: Zero-based page index.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          description: Number of sessions per page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Page of active sessions owned by the current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionPageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Users]
+      operationId: revokeAllCurrentUserSessions
+      summary: Revoke all sessions owned by the authenticated user
+      description: >-
+        Revokes every existing session for the current user, including the
+        session authorizing this request. A genuinely new login that completes
+        after this operation may create a new session; revoked sessions are not
+        restored.
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: All existing sessions were revoked; the response has no body.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me/sessions/{sessionId}:
+    delete:
+      tags: [Users]
+      operationId: revokeCurrentUserSession
+      summary: Revoke one session owned by the authenticated user
+      description: >-
+        Revokes the identified owned session, including the current session.
+        Repeating the request for an already-revoked session owned by this user
+        remains successful. A missing session or a session owned by another
+        user returns the same 404 response.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: Session UUID selected for revocation.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Owned session revoked or already revoked; the response has no body.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -211,6 +365,28 @@ components:
                 timestamp: '2026-09-05T08:30:00Z'
                 status: 400
                 path: /auth/register
+            invalidProfile:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - field: displayName
+                      message: Display name must be at most 120 characters
+                timestamp: '2026-09-06T08:30:00Z'
+                status: 400
+                path: /users/me
+            invalidPassword:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - field: newPassword
+                      message: Password must be at most 72 bytes when encoded as UTF-8
+                timestamp: '2026-09-06T08:30:00Z'
+                status: 400
+                path: /auth/change-password
     Unauthorized:
       description: Credentials, token, account, or session are invalid.
       headers:
@@ -230,6 +406,40 @@ components:
                 timestamp: '2026-09-05T08:30:00Z'
                 status: 401
                 path: /auth/login
+            invalidCurrentSession:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: Authentication failed
+                  details: []
+                timestamp: '2026-09-06T08:30:00Z'
+                status: 401
+                path: /users/me/sessions
+            invalidCurrentPassword:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: Authentication failed
+                  details: []
+                timestamp: '2026-09-06T08:30:00Z'
+                status: 401
+                path: /auth/change-password
+    NotFound:
+      description: The target does not exist or is not owned by the current user.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            sessionNotFound:
+              value:
+                error:
+                  code: NOT_FOUND
+                  message: Resource not found
+                  details: []
+                timestamp: '2026-09-06T08:30:00Z'
+                status: 404
+                path: /users/me/sessions/92d13ef9-3e27-4e2e-b788-7f1f5da5a5f7
     Conflict:
       description: The canonical email is already registered.
       content:
@@ -321,6 +531,28 @@ components:
           description: >-
             Unpadded base64url encoding of 32 cryptographically random bytes.
             Send only in this JSON field, never in a URL or log.
+
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          $ref: '#/components/schemas/Password'
+        newPassword:
+          $ref: '#/components/schemas/Password'
+
+    UpdateProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName]
+      properties:
+        displayName:
+          type: [string, 'null']
+          maxLength: 120
+          description: >-
+            Required member. Null or a string containing only whitespace clears
+            the display name. Other strings are trimmed before storage.
 
     Email:
       type: string
@@ -420,6 +652,65 @@ components:
           type: string
           format: date-time
           description: UTC RFC 3339 timestamp.
+
+    SessionPageResponse:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionResponse'
+        page:
+          type: integer
+          minimum: 0
+          description: Zero-based page index returned by the server.
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalItems:
+          type: integer
+          format: int64
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+
+    SessionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - createdAt
+        - lastUsedAt
+        - expiresAt
+        - current
+        - userAgent
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC RFC 3339 timestamp.
+        lastUsedAt:
+          type: [string, 'null']
+          format: date-time
+          description: UTC RFC 3339 timestamp, or null when never refreshed.
+        expiresAt:
+          type: string
+          format: date-time
+          description: Absolute session expiry as a UTC RFC 3339 timestamp.
+        current:
+          type: boolean
+          description: True when this session matches the access JWT sid claim.
+        userAgent:
+          type: [string, 'null']
+          maxLength: 512
+          description: Bounded client metadata; null for legacy sessions.
 
     ApiErrorResponse:
       type: object

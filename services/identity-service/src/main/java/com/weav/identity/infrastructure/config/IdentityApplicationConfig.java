@@ -4,11 +4,17 @@ import com.weav.identity.application.port.out.AccessTokenIssuer;
 import com.weav.identity.application.port.out.PasswordHasher;
 import com.weav.identity.application.port.out.RefreshTokenGenerator;
 import com.weav.identity.application.port.out.TransactionRunner;
+import com.weav.identity.application.security.CurrentIdentityGuard;
 import com.weav.identity.application.usecase.GetCurrentUserUseCase;
+import com.weav.identity.application.usecase.ChangePasswordUseCase;
 import com.weav.identity.application.usecase.LoginUseCase;
+import com.weav.identity.application.usecase.ListSessionsUseCase;
 import com.weav.identity.application.usecase.LogoutUseCase;
+import com.weav.identity.application.usecase.RevokeAllSessionsUseCase;
+import com.weav.identity.application.usecase.RevokeSessionUseCase;
 import com.weav.identity.application.usecase.RefreshSessionUseCase;
 import com.weav.identity.application.usecase.RegisterUserUseCase;
+import com.weav.identity.application.usecase.UpdateProfileUseCase;
 import com.weav.identity.application.validation.AuthInputPolicy;
 import com.weav.identity.domain.port.out.UserRepository;
 import com.weav.identity.domain.port.out.UserSessionRepository;
@@ -127,12 +133,83 @@ public class IdentityApplicationConfig {
     }
 
     @Bean
-    public GetCurrentUserUseCase getCurrentUserUseCase(
+    public CurrentIdentityGuard currentIdentityGuard(
             UserRepository userRepository,
             UserSessionRepository sessionRepository,
             Clock clock
     ) {
-        return new GetCurrentUserUseCase(userRepository, sessionRepository, clock);
+        return new CurrentIdentityGuard(userRepository, sessionRepository, clock);
+    }
+
+    @Bean
+    public GetCurrentUserUseCase getCurrentUserUseCase(
+            CurrentIdentityGuard identityGuard
+    ) {
+        return new GetCurrentUserUseCase(identityGuard);
+    }
+
+    @Bean
+    public ChangePasswordUseCase changePasswordUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            UserSessionRepository sessionRepository,
+            PasswordHasher passwordHasher,
+            TransactionRunner transactionRunner,
+            AuthInputPolicy inputPolicy,
+            Clock clock
+    ) {
+        return new ChangePasswordUseCase(
+                identityGuard,
+                userRepository,
+                sessionRepository,
+                passwordHasher,
+                transactionRunner,
+                inputPolicy,
+                clock
+        );
+    }
+
+    @Bean
+    public UpdateProfileUseCase updateProfileUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            TransactionRunner transactionRunner,
+            Clock clock
+    ) {
+        return new UpdateProfileUseCase(identityGuard, userRepository, transactionRunner, clock);
+    }
+
+    @Bean
+    public ListSessionsUseCase listSessionsUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserSessionRepository sessionRepository,
+            Clock clock
+    ) {
+        return new ListSessionsUseCase(identityGuard, sessionRepository, clock);
+    }
+
+    @Bean
+    public RevokeSessionUseCase revokeSessionUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            UserSessionRepository sessionRepository,
+            TransactionRunner transactionRunner,
+            Clock clock
+    ) {
+        return new RevokeSessionUseCase(
+                identityGuard, userRepository, sessionRepository, transactionRunner, clock);
+    }
+
+    @Bean
+    public RevokeAllSessionsUseCase revokeAllSessionsUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            UserSessionRepository sessionRepository,
+            TransactionRunner transactionRunner,
+            Clock clock
+    ) {
+        return new RevokeAllSessionsUseCase(
+                identityGuard, userRepository, sessionRepository, transactionRunner, clock);
     }
 
     @Bean
@@ -156,12 +233,19 @@ public class IdentityApplicationConfig {
 
     @Bean
     public LogoutUseCase logoutUseCase(
+            UserRepository userRepository,
             UserSessionRepository sessionRepository,
             RefreshTokenGenerator refreshTokenGenerator,
             TransactionRunner transactionRunner,
             Clock clock
     ) {
-        return new LogoutUseCase(sessionRepository, refreshTokenGenerator, transactionRunner, clock);
+        return new LogoutUseCase(
+                userRepository,
+                sessionRepository,
+                refreshTokenGenerator,
+                transactionRunner,
+                clock
+        );
     }
 
     private static SecretKey accessTokenKey(JwtProperties properties) {

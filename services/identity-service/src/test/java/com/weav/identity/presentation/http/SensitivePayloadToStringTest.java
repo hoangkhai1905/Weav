@@ -3,6 +3,7 @@ package com.weav.identity.presentation.http;
 import com.weav.identity.domain.valueobject.SystemRole;
 import com.weav.identity.domain.valueobject.UserStatus;
 import com.weav.identity.presentation.http.request.LoginRequest;
+import com.weav.identity.presentation.http.request.ChangePasswordRequest;
 import com.weav.identity.presentation.http.request.RefreshTokenRequest;
 import com.weav.identity.presentation.http.request.RegisterUserRequest;
 import com.weav.identity.presentation.http.response.TokenResponse;
@@ -37,12 +38,14 @@ class SensitivePayloadToStringTest {
 
         String combined = new RegisterUserRequest(email, password, "Private Name")
                 + new LoginRequest(email, password).toString()
+                + new ChangePasswordRequest(password, "replacement-secret-password")
                 + new RefreshTokenRequest(refreshToken)
                 + new TokenResponse(accessToken, refreshToken, "Bearer", 900, now, user);
 
         assertTrue(combined.contains("[REDACTED]"));
         assertFalse(combined.contains(email));
         assertFalse(combined.contains(password));
+        assertFalse(combined.contains("replacement-secret-password"));
         assertFalse(combined.contains(refreshToken));
         assertFalse(combined.contains(accessToken));
         assertFalse(combined.contains("Private Name"));

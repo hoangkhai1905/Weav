@@ -82,6 +82,21 @@ class UserPersistenceIntegrationTest {
                 "exact-race@example.com");
     }
 
+    @Test
+    void persistsTheTimestampSuppliedByDomainMutations() {
+        User persisted = userRepository.save(user("updated-at@example.com"));
+        Instant mutationTime = CREATED_AT.plusSeconds(42);
+
+        persisted.updateDisplayName("Changed", mutationTime);
+        persisted.changePassword("replacement-password-hash", mutationTime);
+        userRepository.save(persisted);
+
+        User reloaded = userRepository.findById(persisted.getId()).orElseThrow();
+        assertEquals("Changed", reloaded.getDisplayName());
+        assertEquals("replacement-password-hash", reloaded.getPasswordHash());
+        assertEquals(mutationTime, reloaded.getUpdatedAt());
+    }
+
     private void assertSingleConflict(String firstEmail, String secondEmail) throws Exception {
         executor = Executors.newFixedThreadPool(2);
         CountDownLatch transactionsReady = new CountDownLatch(2);

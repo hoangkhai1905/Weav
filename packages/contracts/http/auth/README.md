@@ -1,6 +1,6 @@
-# Identity core authentication HTTP contract
+# Identity authentication HTTP contract
 
-This directory publishes the Identity-local contract for the first authentication milestone. It covers registration, login, refresh rotation, logout, and current-user lookup. The source of truth for request/response shapes is [openapi.yaml](./openapi.yaml).
+This directory publishes the Identity-local contract for core authentication and the M1 profile/session/password-change milestone. The source of truth for request/response shapes is [openapi.yaml](./openapi.yaml). Publishing an operation here establishes the implementation target; runtime availability still requires the matching Identity implementation and HTTP verification.
 
 ## Endpoint behavior
 
@@ -11,10 +11,25 @@ This directory publishes the Identity-local contract for the first authenticatio
 | `POST /auth/refresh` | Opaque refresh token in JSON | `200` with a replacement token pair and public user |
 | `POST /auth/logout` | Opaque refresh token in JSON | `204` with no body |
 | `GET /users/me` | Access JWT in `Authorization: Bearer ...` | `200` with the public user associated with an active user/session |
+| `PATCH /users/me` | Access JWT plus active matching user/session | `200` with the updated public user; only `displayName` is writable |
+| `GET /users/me/sessions` | Access JWT plus active matching user/session | `200` with a page of the caller's active sessions |
+| `DELETE /users/me/sessions/{sessionId}` | Access JWT plus active matching user/session | `204` for an owned session, including the current or an already-revoked session |
+| `DELETE /users/me/sessions` | Access JWT plus active matching user/session | `204` after revoking all existing sessions, including the current session |
+| `POST /auth/change-password` | Access JWT, active matching user/session, and current local password | `204` after changing the password and revoking every session |
 
 Auth request bodies use `application/json`. Passwords and refresh tokens must never be placed in URLs, query strings, logs, or exception details. Login and refresh responses carry `Cache-Control: no-store`.
 
 Registration always creates `USER` / `ACTIVE`; email ownership is not verified by this milestone. `role`, `systemRole`, `status`, `passwordHash`, `avatarStorageKey`, IDs, and timestamps are not accepted registration fields. The service rejects unknown JSON properties instead of silently binding privileged fields.
+
+## M1 profile and session rules
+
+`PATCH /users/me` requires the `displayName` member. JSON null or a blank string clears the display name; a non-blank value is trimmed and may contain at most 120 characters. An empty object and unknown or privileged fields such as `email`, `role`, `systemRole`, `status`, and `avatarStorageKey` are rejected.
+
+Session listing is self-only and returns active sessions ordered by `createdAt` descending and then `id`. Pagination is zero-based, defaults to page 0 with size 20, and accepts sizes from 1 through 100. A session item contains only `id`, `createdAt`, nullable `lastUsedAt`, `expiresAt`, `current`, and nullable `userAgent`; refresh tokens, token hashes, and raw IP addresses are never exposed.
+
+Revoking one session is allowed for the current session. A missing session and another user's session both return `404`; repeating revocation for an owned session returns `204`. Revoking all sessions includes the session authorizing the request. A new login that genuinely completes after revoke-all may create a new session, but revoked sessions are never restored.
+
+Password change uses the same no-trim, no-normalization, character, and UTF-8 byte limits as registration/login passwords. It requires the current local password; a wrong password and an OAuth-only account return the same generic `401`. Password replacement and revocation of all existing sessions are one transaction, so the client must log in again after `204`.
 
 ## Email and password rules
 
@@ -61,7 +76,7 @@ All documented errors use the existing `ApiErrorResponse` envelope:
 }
 ```
 
-Validation or malformed input returns `400`, invalid credentials/account/session/token returns a generic `401`, canonical email conflict returns `409`, throttling returns `429` with `Retry-After`, and unexpected errors return a sanitized `500`. Wrong password, missing user, OAuth-only user, and disabled account must remain indistinguishable to login callers. Security-filter failures use the same envelope.
+Validation or malformed input returns `400`, invalid credentials/account/session/token returns a generic `401`, a missing or non-owned session target returns `404`, canonical email conflict returns `409`, throttling returns `429` with `Retry-After`, and unexpected errors return a sanitized `500`. Wrong password, missing user, OAuth-only user, and disabled account must remain indistinguishable to login callers. Wrong current password and OAuth-only account must also remain indistinguishable to password-change callers. Security-filter failures use the same envelope.
 
 The development milestone defines bounded single-instance throttling: 20 login attempts/minute per remote IP, 5 registrations/minute per remote IP, 30 refreshes/minute per remote IP, and 10 login attempts/15 minutes per canonical account key. Forwarded headers are not trusted until a proxy is explicitly configured. Shared multi-replica throttling belongs to the Gateway/Valkey integration gate.
 

@@ -37,9 +37,22 @@ public class User {
         return new User(UUID.randomUUID(), email, passwordHash, displayName, null, systemRole, UserStatus.ACTIVE, now, now);
     }
 
-    public void updateDisplayName(String displayName) { this.displayName = displayName; touch(); }
-    public void changePassword(String passwordHash) { this.passwordHash = passwordHash; touch(); }
+    public void updateDisplayName(String displayName, Instant updatedAt) {
+        this.displayName = displayName;
+        touch(updatedAt);
+    }
+
+    public void changePassword(String passwordHash, Instant updatedAt) {
+        this.passwordHash = Objects.requireNonNull(passwordHash, "passwordHash must not be null");
+        touch(updatedAt);
+    }
+
     public void deactivate() { this.status = UserStatus.DISABLED; touch(); }
+
+    private void touch(Instant updatedAt) {
+        this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
+    }
+
     private void touch() { this.updatedAt = Instant.now(); }
 
     public UUID getId() { return id; }
