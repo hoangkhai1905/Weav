@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "1.0",
+  "requestId": "90e1b6f0-51a8-4e92-ba78-0cb9ea2837bc",
+  "document": {
+    "fileName": "blank-scan.png",
+    "mimeType": "image/png",
+    "pages": 1,
+    "pageInfo": [
+      {
+        "page": 1,
+        "width": 800,
+        "height": 1100,
+        "dpi": null
+      }
+    ]
+  },
+  "text": {
+    "rawText": ""
+  },
+  "confidence": null,
+  "blocks": [],
+  "tables": [],
+  "metadata": {
+    "language": "vi+en",
+    "resolvedLanguage": "latin-multilingual",
+    "processingTimeMs": 310,
+    "engine": "paddleocr",
+    "engineVersion": "3.7.0",
+    "modelRevision": "approved-model-manifest-v1",
+    "tableDetection": "completed",
+    "quality": "EMPTY",
+    "preprocessing": [
+      {
+        "page": 1,
+        "steps": [
+          "grayscale"
+        ]
+      }
+    ],
+    "warnings": [
+      {
+        "code": "BLANK_PAGE",
+        "message": "Page 1 contains no detectable text.",
+        "page": 1,
+        "blockId": null
+      }
+    ]
+  }
+}

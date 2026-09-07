@@ -1,0 +1,193 @@
+{
+  "schemaVersion": "1.0",
+  "requestId": "4c9d5ea3-7fa2-43ce-95b8-8c17042a969f",
+  "document": {
+    "fileName": "system-architecture-spec.pdf",
+    "mimeType": "application/pdf",
+    "pages": 1,
+    "pageInfo": [
+      {
+        "page": 1,
+        "width": 1240,
+        "height": 1754,
+        "dpi": 200
+      }
+    ]
+  },
+  "text": {
+    "rawText": "Bảng thông số kỹ thuật dịch vụ / Service Technical Specifications\nThành phần / Component\nThông số / Specification\nWorker Supervisor\n1 replica per CPU node\nMemory Limit\n4096 MiB total"
+  },
+  "confidence": 0.976,
+  "blocks": [
+    {
+      "id": "p1-b1",
+      "order": 0,
+      "text": "Bảng thông số kỹ thuật dịch vụ / Service Technical Specifications",
+      "confidence": 0.985,
+      "page": 1,
+      "boundingBox": {
+        "x": 120.0,
+        "y": 140.0,
+        "width": 780.0,
+        "height": 34.0
+      }
+    },
+    {
+      "id": "p1-b2",
+      "order": 1,
+      "text": "Thành phần / Component",
+      "confidence": 0.980,
+      "page": 1,
+      "boundingBox": {
+        "x": 120.0,
+        "y": 220.0,
+        "width": 380.0,
+        "height": 28.0
+      }
+    },
+    {
+      "id": "p1-b3",
+      "order": 2,
+      "text": "Thông số / Specification",
+      "confidence": 0.975,
+      "page": 1,
+      "boundingBox": {
+        "x": 520.0,
+        "y": 220.0,
+        "width": 380.0,
+        "height": 28.0
+      }
+    },
+    {
+      "id": "p1-b4",
+      "order": 3,
+      "text": "Worker Supervisor",
+      "confidence": 0.972,
+      "page": 1,
+      "boundingBox": {
+        "x": 120.0,
+        "y": 270.0,
+        "width": 380.0,
+        "height": 28.0
+      }
+    },
+    {
+      "id": "p1-b5",
+      "order": 4,
+      "text": "1 replica per CPU node",
+      "confidence": 0.970,
+      "page": 1,
+      "boundingBox": {
+        "x": 520.0,
+        "y": 270.0,
+        "width": 380.0,
+        "height": 28.0
+      }
+    }
+  ],
+  "tables": [
+    {
+      "id": "p1-t1",
+      "page": 1,
+      "boundingBox": {
+        "x": 110.0,
+        "y": 210.0,
+        "width": 800.0,
+        "height": 200.0
+      },
+      "rowCount": 2,
+      "columnCount": 2,
+      "confidence": 0.965,
+      "cells": [
+        {
+          "row": 0,
+          "column": 0,
+          "rowSpan": 1,
+          "columnSpan": 1,
+          "text": "Thành phần / Component",
+          "confidence": 0.980,
+          "boundingBox": {
+            "x": 110.0,
+            "y": 210.0,
+            "width": 400.0,
+            "height": 50.0
+          },
+          "sourceBlockIds": [
+            "p1-b2"
+          ]
+        },
+        {
+          "row": 0,
+          "column": 1,
+          "rowSpan": 1,
+          "columnSpan": 1,
+          "text": "Thông số / Specification",
+          "confidence": 0.975,
+          "boundingBox": {
+            "x": 510.0,
+            "y": 210.0,
+            "width": 400.0,
+            "height": 50.0
+          },
+          "sourceBlockIds": [
+            "p1-b3"
+          ]
+        },
+        {
+          "row": 1,
+          "column": 0,
+          "rowSpan": 1,
+          "columnSpan": 1,
+          "text": "Worker Supervisor",
+          "confidence": 0.972,
+          "boundingBox": {
+            "x": 110.0,
+            "y": 260.0,
+            "width": 400.0,
+            "height": 50.0
+          },
+          "sourceBlockIds": [
+            "p1-b4"
+          ]
+        },
+        {
+          "row": 1,
+          "column": 1,
+          "rowSpan": 1,
+          "columnSpan": 1,
+          "text": "1 replica per CPU node",
+          "confidence": 0.970,
+          "boundingBox": {
+            "x": 510.0,
+            "y": 260.0,
+            "width": 400.0,
+            "height": 50.0
+          },
+          "sourceBlockIds": [
+            "p1-b5"
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "language": "vi+en",
+    "resolvedLanguage": "latin-multilingual",
+    "processingTimeMs": 1420,
+    "engine": "paddleocr",
+    "engineVersion": "3.7.0",
+    "modelRevision": "approved-model-manifest-v1",
+    "tableDetection": "completed",
+    "quality": "OK",
+    "preprocessing": [
+      {
+        "page": 1,
+        "steps": [
+          "grayscale",
+          "contrast"
+        ]
+      }
+    ],
+    "warnings": []
+  }
+}

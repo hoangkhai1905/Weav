@@ -141,7 +141,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'ocr.extract',
     title: 'OCR Text Extract',
-    description: 'Extract raw text and key fields from scanned PDFs / images',
+    description: 'Extract text, blocks, and tables from scanned documents and images',
     category: 'ocr',
     iconName: 'Scan',
     defaultConfig: { language: 'vi+en', detectTables: true },

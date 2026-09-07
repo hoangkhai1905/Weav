@@ -168,6 +168,11 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     'ocr.file_required': 'Hãy chọn một tệp trước khi chạy OCR.',
     'ocr.failed': 'OCR không thể xử lý tệp này.',
     'ocr.dismiss_result': 'Đóng kết quả OCR',
+    'ocr.quality': 'Chất lượng',
+    'ocr.warnings': 'Cảnh báo',
+    'ocr.tables': 'Bảng biểu',
+    'ocr.empty_text': 'Không phát hiện thấy văn bản nào trong tài liệu.',
+    'ocr.mime_type': 'Định dạng',
 
     // AI Generator
     'ai_gen.title': 'Tạo bằng AI',
@@ -426,6 +431,11 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     'ocr.file_required': 'Choose a file before running OCR.',
     'ocr.failed': 'OCR could not process this file.',
     'ocr.dismiss_result': 'Dismiss OCR result',
+    'ocr.quality': 'Quality',
+    'ocr.warnings': 'Warnings',
+    'ocr.tables': 'Tables',
+    'ocr.empty_text': 'No text detected in this document.',
+    'ocr.mime_type': 'Format',
 
     // AI Generator
     'ai_gen.title': 'Create with AI',
