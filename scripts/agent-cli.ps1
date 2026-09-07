@@ -31,6 +31,10 @@ $ExitChildFailed = 40
 $CanonicalRepoRoot = 'T:\Weav'
 $DefaultOpenCodeModel = 'opencode/big-pickle'
 $UserProfilePath = [Environment]::GetFolderPath('UserProfile')
+if ([string]::IsNullOrWhiteSpace($UserProfilePath)) {
+    [Console]::Error.WriteLine('agent-cli: status=blocked code=20 reason=windows-user-profile-unavailable')
+    exit $ExitPrecondition
+}
 $AntigravitySettingsPath = Join-Path $UserProfilePath '.gemini\antigravity-cli\settings.json'
 
 function Stop-AgentCli {
@@ -150,7 +154,9 @@ function Invoke-CapturedProcess {
         [string]$FileName,
         [string[]]$Arguments,
         [string]$WorkingDirectory,
-        [int]$WaitTimeoutSec
+        [int]$WaitTimeoutSec,
+
+        [hashtable]$EnvironmentOverrides = @{}
     )
 
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
@@ -160,6 +166,9 @@ function Invoke-CapturedProcess {
     $startInfo.CreateNoWindow = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
+    foreach ($key in $EnvironmentOverrides.Keys) {
+        $startInfo.EnvironmentVariables[$key] = [string]$EnvironmentOverrides[$key]
+    }
 
     $startInfo.Arguments = ($Arguments | ForEach-Object {
         ConvertTo-WindowsCommandLineArgument $_
@@ -236,9 +245,13 @@ function Get-SafeDiagnostic {
         return 'no-diagnostic-output'
     }
 
-    $safe = $line.ToString()
-    $safe = $safe -replace '(?i)(api[_-]?key|token|password|secret|authorization)\s*[:=]\s*[^\s,;]+', '$1=[redacted]'
+    $safe = $line.ToString() -replace '\x1b\[[0-?]*[ -/]*[@-~]', ''
+    $safe = $safe -replace '(?i)\b(authorization|cookie|set-cookie)\s*:\s*.*', '$1: [redacted]'
     $safe = $safe -replace '(?i)bearer\s+[^\s,;]+', 'Bearer [redacted]'
+    $safe = $safe -replace '(?i)(["'']?(?:[\w-]*(?:api[_-]?key|token|password|secret)|authorization|cookie|set-cookie)["'']?\s*[:=]\s*)(?:"[^"\r\n]*"|''[^''\r\n]*''|[^\s,;]+)', '$1[redacted]'
+    $safe = $safe -replace '(?i)([a-z][a-z0-9+.-]*://)[^/\s@]+@', '$1[redacted]@'
+    $safe = $safe -replace '\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b', '[redacted-jwt]'
+    $safe = $safe -replace '\b(?:sk-|AIza)[A-Za-z0-9_-]{16,}\b', '[redacted-key]'
     if ($safe.Length -gt 240) {
         $safe = $safe.Substring(0, 240) + '...'
     }
@@ -417,6 +430,7 @@ function Invoke-AgentRequest {
     )
 
     $arguments = [System.Collections.Generic.List[string]]::new()
+    $environmentOverrides = @{}
     $childTimeoutSec = [Math]::Max(1, $TimeoutSec - 5)
 
     if ($SelectedTool -eq 'Antigravity') {
@@ -429,11 +443,22 @@ function Invoke-AgentRequest {
         [void]$arguments.Add('--mode')
         [void]$arguments.Add($(if ($Mode -eq 'AcceptEdits') { 'accept-edits' } else { 'plan' }))
         [void]$arguments.Add('--sandbox')
+        if (-not [string]::IsNullOrWhiteSpace($Model)) {
+            [void]$arguments.Add('--model')
+            [void]$arguments.Add($Model.Trim())
+        }
         $info = Get-CommandInfo 'agy'
     }
     else {
         [void]$arguments.Add('run')
         [void]$arguments.Add('--pure')
+        [void]$arguments.Add('--agent')
+        [void]$arguments.Add($(if ($Mode -eq 'AcceptEdits') { 'build' } else { 'plan' }))
+        if ($Mode -eq 'Plan') {
+            # The built-in plan agent still permits shell and plan-file writes.
+            # Deny every tool except these reads, including MCP and delegation.
+            $environmentOverrides['OPENCODE_PERMISSION'] = '{"*":"deny","read":{"*":"allow","*.env":"deny","*.env.*":"deny"},"glob":"allow","grep":"allow"}'
+        }
         [void]$arguments.Add('--dir')
         [void]$arguments.Add($Repository)
         [void]$arguments.Add('--format')
@@ -444,7 +469,11 @@ function Invoke-AgentRequest {
         $info = Get-CommandInfo 'opencode'
     }
 
-    $result = Invoke-CapturedProcess -FileName $info.Path -Arguments $arguments.ToArray() -WorkingDirectory $Repository -WaitTimeoutSec $TimeoutSec
+    $result = Invoke-CapturedProcess -FileName $info.Path -Arguments $arguments.ToArray() -WorkingDirectory $Repository -WaitTimeoutSec $TimeoutSec -EnvironmentOverrides $environmentOverrides
+    $diagnosticLines = @($result.StdErr -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 5)
+    foreach ($diagnosticLine in $diagnosticLines) {
+        [Console]::Error.WriteLine(('agent-cli: tool={0} diagnostic={1}' -f $SelectedTool, (Get-SafeDiagnostic $diagnosticLine)))
+    }
     if ($result.TimedOut) {
         Stop-AgentCli $ExitTimeout ("tool={0} reason=hard-timeout timeout_sec={1}" -f $SelectedTool, $TimeoutSec)
     }
@@ -460,6 +489,10 @@ function Invoke-AgentRequest {
             Stop-AgentCli $ExitUnavailable ("tool={0} reason={1} detail={2}" -f $SelectedTool, $reason, $diagnostic)
         }
         Stop-AgentCli $ExitChildFailed ("tool={0} reason={1} detail={2}" -f $SelectedTool, $reason, $diagnostic)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($result.StdOut)) {
+        Stop-AgentCli $ExitChildFailed ("tool={0} reason=empty-response child_exit=0" -f $SelectedTool)
     }
 
     Write-Output ("agent-cli: tool={0} status=completed code=0" -f $SelectedTool)
