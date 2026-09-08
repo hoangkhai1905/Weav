@@ -29,6 +29,17 @@ class UserTest {
         assertEquals(passwordChangedAt, user.getUpdatedAt());
     }
 
+    @Test
+    void marksEmailVerifiedOnceWithoutOverwritingExistingProof() {
+        User user = user();
+
+        user.markEmailVerified(MUTATED_AT);
+        user.markEmailVerified(MUTATED_AT.plusSeconds(10));
+
+        assertEquals(MUTATED_AT, user.getEmailVerifiedAt());
+        assertEquals(MUTATED_AT, user.getUpdatedAt());
+    }
+
     private static User user() {
         return new User(
                 UUID.randomUUID(),

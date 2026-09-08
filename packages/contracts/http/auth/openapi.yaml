@@ -1,12 +1,12 @@
 openapi: 3.1.0
 info:
   title: Weav Identity Authentication API
-  version: 1.1.0
+  version: 1.2.0
   description: >-
     Identity-local JSON contract for registration, login, opaque refresh-token
     rotation, logout, current-user profile, self-service session management,
-    and password change. Gateway and browser transport are outside this
-    milestone.
+    password change, email verification, and password recovery. Gateway and
+    browser transport are outside this milestone.
 servers:
   - url: http://localhost:8081
     description: Local Identity service
@@ -169,6 +169,181 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/otp/request:
+    post:
+      tags: [Authentication]
+      operationId: requestOtp
+      summary: Request an email verification or password-reset OTP
+      description: >-
+        Purpose-dependent request. EMAIL_VERIFICATION requires an ACTIVE user
+        and matching active session and always sends to the authenticated
+        user's current stored email; the request must not include an email
+        member. Verification must re-check that the challenge's email binding
+        still matches that current stored email.
+        PASSWORD_RESET is public and accepts an email member, but only an
+        ACTIVE local-password account receives a message. Unknown, disabled,
+        and OAuth-only accounts receive the same receipt and no message.
+        Admission capacity and Valkey throttling are reserved before account
+        lookup. SMTP delivery is asynchronous and does not block this response.
+        Request admission enforces a 60-second resend cooldown, at most five
+        requests per hour per HMAC account key, and at most 20 requests per
+        hour per remote IP; account keys are applied even when no account
+        exists.
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpRequest'
+      responses:
+        '202':
+          description: >-
+            Request accepted with an opaque receipt. The receipt shape is the
+            same for eligible and non-eligible password-recovery requests and
+            does not guarantee email delivery.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpReceipt'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/otp/verify:
+    post:
+      tags: [Authentication]
+      operationId: verifyOtp
+      summary: Verify an OTP challenge
+      description: >-
+        The challenge purpose is authoritative and cannot be selected or
+        changed by the client at verification time. PASSWORD_RESET is public
+        and returns an at-most-once reset grant. EMAIL_VERIFICATION requires the
+        same ACTIVE user with a currently active matching session, and the
+        challenge's email binding must still match the user's current stored
+        email; it returns a verified result. OTP verification is atomic:
+        expired, superseded,
+        consumed, or five-times-failed challenges cannot be reused, and
+        concurrent verification has at most one successful result. Verification
+        admission is limited to at most 30 attempts per minute per remote IP;
+        Retry-After is returned with rate-limit errors.
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyOtpRequest'
+      responses:
+        '200':
+          description: Challenge verified and consumed.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpVerificationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/forgot-password:
+    post:
+      tags: [Authentication]
+      operationId: requestPasswordResetOtp
+      summary: Request a password-reset OTP
+      description: >-
+        Public facade for POST /auth/otp/request with purpose PASSWORD_RESET.
+        It uses the same account/IP budgets, bounded-admission path, generic
+        receipt, and non-eligible-account behavior; it must not implement a
+        separate recovery engine.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '202':
+          description: Generic password-recovery request receipt.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpReceipt'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/reset-password:
+    post:
+      tags: [Authentication]
+      operationId: resetPassword
+      summary: Replace a password using a verified reset grant
+      description: >-
+        Consumes the opaque reset grant at most once before the PostgreSQL
+        mutation. The grant expires after 300 seconds, is bound to the
+        PASSWORD_RESET purpose, user, and current credential fingerprint
+        captured at request time, and is stored only as a hash. The database
+        transaction rechecks ACTIVE status, the current stored email, and the
+        current credential binding before it updates the
+        password, records emailVerifiedAt when it is still null, and revokes
+        all existing sessions. A database rollback after grant consumption
+        does not restore the grant; the caller must request a new OTP.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '204':
+          description: >-
+            Password replaced and all existing sessions revoked; the response
+            has no body and is not cacheable.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -475,6 +650,25 @@ components:
                 timestamp: '2026-09-05T08:30:00Z'
                 status: 429
                 path: /auth/login
+    ServiceUnavailable:
+      description: >-
+        A required OTP/recovery dependency or bounded delivery admission is
+        temporarily unavailable. The response is sanitized and does not
+        reveal account existence or provider details.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            dependencyUnavailable:
+              value:
+                error:
+                  code: DEPENDENCY_UNAVAILABLE
+                  message: A required authentication dependency is temporarily unavailable
+                  details: []
+                timestamp: '2026-09-06T08:30:00Z'
+                status: 503
+                path: /auth/otp/request
     InternalError:
       description: Sanitized unexpected server error.
       content:
@@ -542,6 +736,83 @@ components:
         newPassword:
           $ref: '#/components/schemas/Password'
 
+    OtpRequest:
+      oneOf:
+        - $ref: '#/components/schemas/EmailVerificationOtpRequest'
+        - $ref: '#/components/schemas/PasswordResetOtpRequest'
+      discriminator:
+        propertyName: purpose
+        mapping:
+          EMAIL_VERIFICATION: '#/components/schemas/EmailVerificationOtpRequest'
+          PASSWORD_RESET: '#/components/schemas/PasswordResetOtpRequest'
+
+    EmailVerificationOtpRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose]
+      properties:
+        purpose:
+          type: string
+          const: EMAIL_VERIFICATION
+          description: >-
+            Verifies the email stored on the authenticated user's account. The
+            request cannot select or override a destination email.
+
+    PasswordResetOtpRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose, email]
+      properties:
+        purpose:
+          type: string
+          const: PASSWORD_RESET
+        email:
+          $ref: '#/components/schemas/Email'
+
+    ForgotPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+
+    VerifyOtpRequest:
+      type: object
+      additionalProperties: false
+      required: [challengeId, code]
+      properties:
+        challengeId:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: >-
+            Opaque 43-character unpadded base64url challenge identifier from
+            an OTP receipt.
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+          pattern: '^[0-9]{6}$'
+          writeOnly: true
+          description: Six-digit OTP; never log or include it in an error response.
+
+    ResetPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [resetToken, newPassword]
+      properties:
+        resetToken:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          writeOnly: true
+          description: Opaque at-most-once reset grant; send only in this JSON field.
+        newPassword:
+          $ref: '#/components/schemas/Password'
+
     UpdateProfileRequest:
       type: object
       additionalProperties: false
@@ -553,6 +824,75 @@ components:
           description: >-
             Required member. Null or a string containing only whitespace clears
             the display name. Other strings are trimmed before storage.
+
+    OtpReceipt:
+      type: object
+      additionalProperties: false
+      required: [challengeId, expiresIn, retryAfter]
+      properties:
+        challengeId:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: >-
+            Opaque random identifier encoded as 43 unpadded base64url
+            characters. It has the same response shape and identifier length
+            whether or not a mail is sent.
+        expiresIn:
+          type: integer
+          format: int64
+          const: 300
+          description: Challenge lifetime in seconds.
+        retryAfter:
+          type: integer
+          format: int64
+          const: 60
+          description: Minimum resend cooldown in seconds.
+
+    OtpVerificationResponse:
+      oneOf:
+        - $ref: '#/components/schemas/EmailVerificationResult'
+        - $ref: '#/components/schemas/PasswordResetVerificationResult'
+      discriminator:
+        propertyName: purpose
+        mapping:
+          EMAIL_VERIFICATION: '#/components/schemas/EmailVerificationResult'
+          PASSWORD_RESET: '#/components/schemas/PasswordResetVerificationResult'
+
+    EmailVerificationResult:
+      type: object
+      additionalProperties: false
+      required: [purpose, verified]
+      properties:
+        purpose:
+          type: string
+          const: EMAIL_VERIFICATION
+        verified:
+          type: boolean
+          const: true
+
+    PasswordResetVerificationResult:
+      type: object
+      additionalProperties: false
+      required: [purpose, resetToken, expiresIn]
+      properties:
+        purpose:
+          type: string
+          const: PASSWORD_RESET
+        resetToken:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: >-
+            Opaque at-most-once reset grant. It is hash-only at rest and must
+            not be logged, placed in a URL, or returned again after consumption.
+        expiresIn:
+          type: integer
+          format: int64
+          const: 300
+          description: Reset-grant lifetime in seconds.
 
     Email:
       type: string
@@ -624,6 +964,7 @@ components:
         - status
         - createdAt
         - updatedAt
+        - emailVerifiedAt
       properties:
         id:
           type: string
@@ -652,6 +993,12 @@ components:
           type: string
           format: date-time
           description: UTC RFC 3339 timestamp.
+        emailVerifiedAt:
+          type: [string, 'null']
+          format: date-time
+          description: >-
+            UTC RFC 3339 timestamp proving ownership of the current stored
+            email, or null when it has not been verified.
 
     SessionPageResponse:
       type: object

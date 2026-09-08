@@ -50,7 +50,8 @@ public class UserPresentationMapper {
                 user.systemRole(),
                 user.status(),
                 user.createdAt(),
-                user.updatedAt()
+                user.updatedAt(),
+                user.emailVerifiedAt()
         );
     }
 

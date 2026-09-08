@@ -48,6 +48,9 @@ public class UserJpaEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "email_verified_at")
+    private Instant emailVerifiedAt;
+
     protected UserJpaEntity() {
     }
 
@@ -58,6 +61,17 @@ public class UserJpaEntity {
             String avatarStorageKey,
             SystemRole systemRole,
             UserStatus status) {
+        this(email, passwordHash, displayName, avatarStorageKey, systemRole, status, null);
+    }
+
+    public UserJpaEntity(
+            String email,
+            String passwordHash,
+            String displayName,
+            String avatarStorageKey,
+            SystemRole systemRole,
+            UserStatus status,
+            Instant emailVerifiedAt) {
         this.id = UUID.randomUUID();
         this.email = email;
         this.passwordHash = passwordHash;
@@ -65,6 +79,7 @@ public class UserJpaEntity {
         this.avatarStorageKey = avatarStorageKey;
         this.systemRole = systemRole;
         this.status = status;
+        this.emailVerifiedAt = emailVerifiedAt;
     }
 
     public UserJpaEntity(
@@ -77,6 +92,21 @@ public class UserJpaEntity {
             UserStatus status,
             Instant createdAt,
             Instant updatedAt) {
+        this(id, email, passwordHash, displayName, avatarStorageKey, systemRole, status,
+                createdAt, updatedAt, null);
+    }
+
+    public UserJpaEntity(
+            UUID id,
+            String email,
+            String passwordHash,
+            String displayName,
+            String avatarStorageKey,
+            SystemRole systemRole,
+            UserStatus status,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant emailVerifiedAt) {
         this.id = id;
         this.email = email;
         this.passwordHash = passwordHash;
@@ -86,6 +116,7 @@ public class UserJpaEntity {
         this.status = status;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        this.emailVerifiedAt = emailVerifiedAt;
     }
 
     @PrePersist
@@ -160,5 +191,13 @@ public class UserJpaEntity {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public Instant getEmailVerifiedAt() {
+        return emailVerifiedAt;
+    }
+
+    public void setEmailVerifiedAt(Instant emailVerifiedAt) {
+        this.emailVerifiedAt = emailVerifiedAt;
     }
 }

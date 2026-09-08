@@ -1,17 +1,21 @@
 package com.weav.identity.infrastructure.web;
 
 import com.weav.identity.domain.exception.ConflictException;
+import com.weav.identity.domain.exception.DependencyUnavailableException;
 import com.weav.identity.domain.exception.DomainException;
 import com.weav.identity.domain.exception.ForbiddenException;
 import com.weav.identity.domain.exception.InvalidStateException;
 import com.weav.identity.domain.exception.ResourceNotFoundException;
 import com.weav.identity.domain.exception.UnauthorizedException;
+import com.weav.identity.application.validation.OtpRateLimitException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -161,6 +165,23 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(OtpRateLimitException.class)
+    public ResponseEntity<ApiErrorResponse> handleOtpRateLimit(
+            OtpRateLimitException exception,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(exception.getRetryAfterSeconds()))
+                .cacheControl(org.springframework.http.CacheControl.noStore())
+                .body(ApiErrorResponse.of(
+                        "RATE_LIMITED",
+                        "Too many requests",
+                        HttpStatus.TOO_MANY_REQUESTS.value(),
+                        request.getRequestURI(),
+                        List.of()
+                ));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleUnexpectedException(
             Exception exception,
@@ -183,12 +204,19 @@ public class GlobalExceptionHandler {
             List<ApiErrorResponse.ErrorDetail> details,
             HttpServletRequest request
     ) {
-        return ResponseEntity.status(status).body(
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(status);
+        if (status == HttpStatus.TOO_MANY_REQUESTS || status == HttpStatus.SERVICE_UNAVAILABLE) {
+            response.cacheControl(CacheControl.noStore());
+        }
+        return response.body(
                 ApiErrorResponse.of(code, message, status.value(), request.getRequestURI(), details)
         );
     }
 
     private HttpStatus statusFor(DomainException exception) {
+        if (exception instanceof DependencyUnavailableException) {
+            return HttpStatus.SERVICE_UNAVAILABLE;
+        }
         if (exception instanceof ResourceNotFoundException) {
             return HttpStatus.NOT_FOUND;
         }
