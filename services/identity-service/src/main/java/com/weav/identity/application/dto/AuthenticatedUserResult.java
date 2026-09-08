@@ -15,8 +15,22 @@ public record AuthenticatedUserResult(
         SystemRole systemRole,
         UserStatus status,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        Instant emailVerifiedAt
 ) {
+    public AuthenticatedUserResult(
+            UUID id,
+            String email,
+            String displayName,
+            String avatarStorageKey,
+            SystemRole systemRole,
+            UserStatus status,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(id, email, displayName, avatarStorageKey, systemRole, status, createdAt, updatedAt, null);
+    }
+
     public static AuthenticatedUserResult from(User user) {
         return new AuthenticatedUserResult(
                 user.getId(),
@@ -26,7 +40,8 @@ public record AuthenticatedUserResult(
                 user.getSystemRole(),
                 user.getStatus(),
                 user.getCreatedAt(),
-                user.getUpdatedAt()
+                user.getUpdatedAt(),
+                user.getEmailVerifiedAt()
         );
     }
 }

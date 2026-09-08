@@ -42,6 +42,7 @@ public final class AuthRateLimitFilter extends OncePerRequestFilter {
             response.setStatus(429);
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.setHeader(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()));
+            response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
             objectMapper.writeValue(
                     response.getOutputStream(),
                     ApiErrorResponse.of(

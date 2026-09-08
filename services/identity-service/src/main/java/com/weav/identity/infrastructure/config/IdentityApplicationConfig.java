@@ -1,6 +1,10 @@
 package com.weav.identity.infrastructure.config;
 
 import com.weav.identity.application.port.out.AccessTokenIssuer;
+import com.weav.identity.application.port.out.AuthMailDispatcher;
+import com.weav.identity.application.port.out.AuthMailSender;
+import com.weav.identity.application.port.out.KeyedFingerprint;
+import com.weav.identity.application.port.out.OtpChallengeStore;
 import com.weav.identity.application.port.out.PasswordHasher;
 import com.weav.identity.application.port.out.RefreshTokenGenerator;
 import com.weav.identity.application.port.out.TransactionRunner;
@@ -10,15 +14,22 @@ import com.weav.identity.application.usecase.ChangePasswordUseCase;
 import com.weav.identity.application.usecase.LoginUseCase;
 import com.weav.identity.application.usecase.ListSessionsUseCase;
 import com.weav.identity.application.usecase.LogoutUseCase;
+import com.weav.identity.application.usecase.RequestOtpUseCase;
+import com.weav.identity.application.usecase.ResetPasswordUseCase;
 import com.weav.identity.application.usecase.RevokeAllSessionsUseCase;
 import com.weav.identity.application.usecase.RevokeSessionUseCase;
 import com.weav.identity.application.usecase.RefreshSessionUseCase;
 import com.weav.identity.application.usecase.RegisterUserUseCase;
 import com.weav.identity.application.usecase.UpdateProfileUseCase;
+import com.weav.identity.application.usecase.VerifyOtpUseCase;
 import com.weav.identity.application.validation.AuthInputPolicy;
+import com.weav.identity.application.validation.OtpApplicationPolicy;
+import com.weav.identity.application.validation.OtpInputPolicy;
 import com.weav.identity.domain.port.out.UserRepository;
 import com.weav.identity.domain.port.out.UserSessionRepository;
 import com.weav.identity.infrastructure.persistence.SpringTransactionRunner;
+import com.weav.identity.infrastructure.authstate.HmacKeyedFingerprint;
+import com.weav.identity.infrastructure.mail.SmtpAuthMailSender;
 import com.weav.identity.infrastructure.security.BcryptPasswordHasher;
 import com.weav.identity.infrastructure.security.JwtAccessTokenIssuer;
 import com.weav.identity.infrastructure.security.JwtAccessTokenValidator;
@@ -26,6 +37,7 @@ import com.weav.identity.infrastructure.security.JwtProperties;
 import com.weav.identity.infrastructure.security.SecureRefreshTokenGenerator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -42,7 +54,18 @@ import java.security.SecureRandom;
 import java.time.Clock;
 
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties({MailProperties.class, OtpProperties.class})
 public class IdentityApplicationConfig {
+
+    @Bean
+    public AuthMailSender authMailSender(MailProperties properties) {
+        return new SmtpAuthMailSender(properties);
+    }
+
+    @Bean
+    public KeyedFingerprint keyedFingerprint(OtpProperties properties) {
+        return new HmacKeyedFingerprint(properties.getHmacSecret());
+    }
 
     @Bean
     public Clock clock() {
@@ -88,6 +111,105 @@ public class IdentityApplicationConfig {
     @Bean
     public AuthInputPolicy authInputPolicy() {
         return new AuthInputPolicy();
+    }
+
+    @Bean
+    public OtpInputPolicy otpInputPolicy() {
+        return new OtpInputPolicy();
+    }
+
+    @Bean
+    public OtpApplicationPolicy otpApplicationPolicy(OtpProperties properties) {
+        properties.validate();
+        return new OtpApplicationPolicy(
+                properties.getChallengeTtl(),
+                properties.getGrantTtl(),
+                properties.getResendCooldown(),
+                properties.getMaxChallengesPerAccount(),
+                properties.getMaxChallengesPerIp(),
+                properties.getMaxVerifyAttempts(),
+                properties.getMaxVerifyPerIp()
+        );
+    }
+
+    @Bean
+    public SecureRandom otpSecureRandom() {
+        return new SecureRandom();
+    }
+
+    @Bean
+    public RequestOtpUseCase requestOtpUseCase(
+            UserRepository userRepository,
+            CurrentIdentityGuard identityGuard,
+            OtpChallengeStore challengeStore,
+            KeyedFingerprint fingerprint,
+            AuthMailDispatcher mailDispatcher,
+            AuthInputPolicy authInputPolicy,
+            OtpInputPolicy otpInputPolicy,
+            OtpApplicationPolicy otpApplicationPolicy,
+            SecureRandom otpSecureRandom
+    ) {
+        return new RequestOtpUseCase(
+                userRepository,
+                identityGuard,
+                challengeStore,
+                fingerprint,
+                mailDispatcher,
+                authInputPolicy,
+                otpInputPolicy,
+                otpApplicationPolicy,
+                otpSecureRandom
+        );
+    }
+
+    @Bean
+    public VerifyOtpUseCase verifyOtpUseCase(
+            UserRepository userRepository,
+            CurrentIdentityGuard identityGuard,
+            OtpChallengeStore challengeStore,
+            KeyedFingerprint fingerprint,
+            AuthInputPolicy authInputPolicy,
+            OtpInputPolicy otpInputPolicy,
+            OtpApplicationPolicy otpApplicationPolicy,
+            TransactionRunner transactionRunner,
+            Clock clock
+    ) {
+        return new VerifyOtpUseCase(
+                userRepository,
+                identityGuard,
+                challengeStore,
+                fingerprint,
+                authInputPolicy,
+                otpInputPolicy,
+                otpApplicationPolicy,
+                transactionRunner,
+                clock
+        );
+    }
+
+    @Bean
+    public ResetPasswordUseCase resetPasswordUseCase(
+            UserRepository userRepository,
+            UserSessionRepository sessionRepository,
+            OtpChallengeStore challengeStore,
+            KeyedFingerprint fingerprint,
+            PasswordHasher passwordHasher,
+            TransactionRunner transactionRunner,
+            AuthInputPolicy authInputPolicy,
+            OtpInputPolicy otpInputPolicy,
+            Clock clock
+    ) {
+        return new ResetPasswordUseCase(
+                userRepository,
+                sessionRepository,
+                challengeStore,
+                fingerprint,
+                passwordHasher,
+                transactionRunner,
+                authInputPolicy,
+                otpInputPolicy,
+                clock
+        );
     }
 
     @Bean

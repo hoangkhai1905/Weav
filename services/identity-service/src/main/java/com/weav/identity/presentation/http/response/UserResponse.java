@@ -14,6 +14,19 @@ public record UserResponse(
         SystemRole systemRole,
         UserStatus status,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        Instant emailVerifiedAt
 ) {
+    public UserResponse(
+            UUID id,
+            String email,
+            String displayName,
+            String avatarStorageKey,
+            SystemRole systemRole,
+            UserStatus status,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        this(id, email, displayName, avatarStorageKey, systemRole, status, createdAt, updatedAt, null);
+    }
 }

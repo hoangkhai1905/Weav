@@ -17,16 +17,25 @@ public class User {
     private UserStatus status;
     private final Instant createdAt;
     private Instant updatedAt;
+    private Instant emailVerifiedAt;
 
     public User(UUID id, String email, String passwordHash, String displayName,
                 String avatarStorageKey, SystemRole systemRole, UserStatus status,
                 Instant createdAt, Instant updatedAt) {
+        this(id, email, passwordHash, displayName, avatarStorageKey, systemRole, status,
+                createdAt, updatedAt, null);
+    }
+
+    public User(UUID id, String email, String passwordHash, String displayName,
+                String avatarStorageKey, SystemRole systemRole, UserStatus status,
+                Instant createdAt, Instant updatedAt, Instant emailVerifiedAt) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.email = Objects.requireNonNull(email, "email must not be null");
         this.systemRole = Objects.requireNonNull(systemRole, "systemRole must not be null");
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
+        this.emailVerifiedAt = emailVerifiedAt;
         this.passwordHash = passwordHash;
         this.displayName = displayName;
         this.avatarStorageKey = avatarStorageKey;
@@ -47,6 +56,13 @@ public class User {
         touch(updatedAt);
     }
 
+    public void markEmailVerified(Instant verifiedAt) {
+        if (emailVerifiedAt == null) {
+            emailVerifiedAt = Objects.requireNonNull(verifiedAt, "verifiedAt must not be null");
+            touch(verifiedAt);
+        }
+    }
+
     public void deactivate() { this.status = UserStatus.DISABLED; touch(); }
 
     private void touch(Instant updatedAt) {
@@ -64,4 +80,5 @@ public class User {
     public UserStatus getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getEmailVerifiedAt() { return emailVerifiedAt; }
 }

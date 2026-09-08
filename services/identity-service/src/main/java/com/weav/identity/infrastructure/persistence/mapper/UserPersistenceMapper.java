@@ -15,7 +15,8 @@ public class UserPersistenceMapper {
                 user.getSystemRole(),
                 user.getStatus(),
                 user.getCreatedAt(),
-                user.getUpdatedAt());
+                user.getUpdatedAt(),
+                user.getEmailVerifiedAt());
     }
 
     public User toDomain(UserJpaEntity entity) {
@@ -28,6 +29,7 @@ public class UserPersistenceMapper {
                 entity.getSystemRole(),
                 entity.getStatus(),
                 entity.getCreatedAt(),
-                entity.getUpdatedAt());
+                entity.getUpdatedAt(),
+                entity.getEmailVerifiedAt());
     }
 }

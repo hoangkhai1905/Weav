@@ -58,6 +58,7 @@ class AuthRateLimitFilterTest {
         assertEquals(429, deniedResponse.getStatus());
         assertEquals(MediaType.APPLICATION_JSON_VALUE, deniedResponse.getContentType());
         assertEquals("60", deniedResponse.getHeader(HttpHeaders.RETRY_AFTER));
+        assertEquals("no-store", deniedResponse.getHeader(HttpHeaders.CACHE_CONTROL));
         assertEquals(5, downstreamCalls.get());
 
         ApiErrorResponse errorResponse = objectMapper.readValue(

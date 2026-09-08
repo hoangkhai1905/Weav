@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Import(TestcontainersConfiguration.class)
@@ -65,6 +66,7 @@ class IdentityServiceApplicationTests {
         assertEquals("jpa-test@example.com", persisted.getEmail());
         assertEquals(SystemRole.USER, persisted.getSystemRole());
         assertEquals(UserStatus.ACTIVE, persisted.getStatus());
+        assertNull(persisted.getEmailVerifiedAt());
         assertNotNull(persisted.getCreatedAt());
         assertNotNull(persisted.getUpdatedAt());
     }
