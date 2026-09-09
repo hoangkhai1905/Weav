@@ -1,14 +1,14 @@
 # WEAV OCR Service — Model & Runtime Benchmark Specification
 
-**Date:** 2026-09-07
-**Status:** **PARTIAL RUNTIME EVIDENCE** (Task 1 baseline plus Task 3 text and Task 4 table smoke runs; FE Builder integration complete at contract/UI test level).
-**Notice:** Live offline PaddleOCR/PP-StructureV3 smoke runs have executed on the target Linux container with local non-PII fixtures. FE Builder integration is complete at the contract/UI test level (Playwright route-interception). The live authenticated Gateway/Workflow/Neon path, full latency, RSS, CER acceptance-corpus, table F1, and Vietnamese table-diacritic quality remain pending.
+**Date:** 2026-09-09 (last verified evidence: 2026-09-08)
+**Status:** **PARTIAL PRODUCTION EVIDENCE** (local text-OCR smoke is verified; held-out quality, table, load/SLA, and authenticated workflow gates remain open).
+**Notice:** Offline PaddleOCR inference has been verified in the target Linux container with a local non-PII smoke corpus: 5 tests passed across PNG, JPG, WEBP, and a two-page PDF. The current smoke gate is CER <= 15%; it is not the production acceptance target of CER <= 5% on a held-out corpus. FE Builder integration is complete at contract/UI test level. The live authenticated Gateway/Workflow/Neon path, held-out CER/WER, table F1/diacritics, cold-start/p95/RSS, and load/SLA evidence remain pending.
 
 ---
 
 ## 1. Execution Status and Pending Verification Items
 
-As required by Task 1 of the implementation plan, the contract and compatibility test harnesses are frozen. Real model inference evidence remains **pending execution** on the target container image:
+The contract and compatibility harnesses are frozen. The current state separates verified local smoke evidence from production acceptance evidence:
 
 | Item | Status | Verification Dependency | Required Command |
 | --- | --- | --- | --- |
@@ -17,15 +17,16 @@ As required by Task 1 of the implementation plan, the contract and compatibility
 | Compatibility Test Harness | **DONE** | Environment & language mapping tests | `pytest src/tests/integration/test_model_compatibility.py` |
 | OpenCV Distribution Consolidation | **DONE** | Container has exactly one cv2 wheel; compatibility test passes | `docker compose ... build ocr-service` |
 | Paddle CPU SDK Import | **DONE** | Python 3.12 container imports PaddlePaddle/PaddleOCR | `pytest src/tests/integration/test_model_compatibility.py` |
-| Real OCR Smoke (PNG/JPG/WEBP/2-page PDF) | **DONE** | Local offline PP-OCRv5 mobile detector + Latin/English recognizers; CER smoke tolerance | `pytest src/tests/integration/test_real_ocr.py` → `5 passed` |
+| Real OCR Smoke (PNG/JPG/WEBP/2-page PDF) | **DONE (SMOKE)** | Local offline `PP-OCRv5_mobile_det` detector, Vietnamese `PP-OCRv6_medium_rec`, and `en_PP-OCRv5_mobile_rec`; all fixtures met CER <= 15% | `pytest src/tests/integration/test_real_ocr.py -v -s` → `5 passed` |
 | Real Table Structure Smoke | **PARTIAL** | PP-StructureV3 detected and normalized a 3x3 table; unit suite verifies bordered, borderless, multi-span, rotated, rawText de-dup, cell limits, and HTML sanitization; recognizer diacritic quality remains `xfail` | `pytest src/tests/integration/test_real_tables.py` → structure pass, quality assertion `xfail` |
 | FE Builder Gateway Integration | **DONE (UI/Contract)** | Typed multipart client, Inspector UI states, route-interception Playwright E2E | `pnpm --filter web test:e2e -- ocr-builder.spec.ts` → `21 passed` |
 | Live Authenticated Path (FE + Gateway + Neon) | **PENDING** | Real authenticated Gateway/Workflow/Neon session | End-to-end integration test without route interception |
 | Paddle CPU Cold Start | **PENDING EVIDENCE** | 2 vCPU Linux container (`libgomp1`) | Benchmark runner in Task 1/5 |
-| 1-Page Text Warmed p95 | **PENDING EVIDENCE** | PP-OCRv4/v5 Latin/Vi models | Benchmark runner |
+| 1-Page Text Warmed p95 | **PENDING EVIDENCE** | Current `PP-OCRv5_mobile_det` + Vietnamese/English recognition profiles | Benchmark runner |
 | 1-Page Table Warmed p95 | **PENDING EVIDENCE** | PP-StructureV3 table model | Benchmark runner |
 | 10-Page Processing Budget | **PENDING EVIDENCE** | Supervised native worker | Bounded spool test |
-| Character Error Rate (CER) | **PENDING EVIDENCE** | >= 60-page clean non-PII corpus | Evaluation script against ground truth |
+| CER/WER Smoke Report | **DONE (SMOKE)** | 4 local documents / 5 test cases with per-fixture CER and WER output | `test_real_ocr.py -v -s` |
+| Character Error Rate (CER) Production Gate | **PENDING EVIDENCE** | >= 60-page clean non-PII held-out corpus; target CER <= 5% | Evaluation script against frozen ground truth |
 | Table Structure F1 | **PENDING EVIDENCE** | >= 20-page table held-out set | Structural cell/span F1 metric |
 
 > [!NOTE]
@@ -63,9 +64,11 @@ Inspection of `pyproject.toml` and `uv.lock` identified the following dependency
    - The directory scaffold contains `src/providers/tesseract` and `src/providers/easyocr`.
    - **Directive:** These packages must **not** be added to dependencies. The production engine is strictly PaddleOCR/PaddlePaddle.
 
-3. **Direct Ingestion Dependencies (for Task 2–4):**
-   - Direct imports for multipart parsing (`python-multipart`), PDF rasterization (`pypdfium2`), and safe HTTP download (`httpx` or `urllib3`) are deferred to their respective implementation tasks and must only be added when actively imported.
-   - PP-StructureV3 requires the locked `paddlex[ocr]` extra; it is now a direct OCR-service dependency for Task 4 table inference.
+3. **Direct Ingestion Dependencies:**
+   - Multipart parsing uses the pinned `python-multipart==0.0.32` package through Starlette's native parser.
+   - PDF rasterization uses the pinned `pypdfium2>=4.30.0` package with bounded DPI/dimensions.
+   - URL validation/fetching uses the service's SSRF-safe standard-library transport seams; no arbitrary outbound URL proxy is enabled by default.
+   - PP-StructureV3 uses the locked `paddlex[ocr]` extra and remains a separately gated table pipeline.
 
 ---
 
@@ -76,7 +79,7 @@ The WEAV OCR API exposes three user-facing language options: `vi`, `en`, and `vi
 ### SDK Parameter Mapping
 PaddleOCR's underlying inference engine does **not** support `"vi+en"` as a native language string. Passing `"vi+en"` verbatim results in an immediate SDK exception or invalid fallback.
 
-Furthermore, empirical testing demonstrated that direct inference with provisioned PP-OCRv5/PP-OCRv6/latin recognizers loses Vietnamese diacritics because the PP-OCRv6 and `latin` model metadata do not provide an accepted Vietnamese character profile. Mapping `vi+en` to `latin` is unsafe and loses diacritics. Both WEAV `vi` and `vi+en` resolve to a Vietnamese-capable profile key (`vi`), never `latin`.
+`vi+en` is a WEAV product option, not a native PaddleOCR language string. The adapter therefore resolves both `vi` and `vi+en` to the Vietnamese-capable `vi` profile; it does not pass `vi+en` verbatim and does not silently map it to `latin`. The bilingual mode is a single Vietnamese-capable recognition profile, not a dual-model ensemble. English-only documents use the dedicated English profile.
 
 The corrected adapter mapping policy is:
 
@@ -86,27 +89,37 @@ The corrected adapter mapping policy is:
 | `en` | PaddleOCR | `en` | `en` | High-speed, high-accuracy recognition for pure English documents. |
 | `vi+en` | PaddleOCR | `vi` | `vi` | Resolves to Vietnamese-capable profile key (`vi`) to preserve diacritics; never passed verbatim or mapped to `latin`. |
 
-### Model Acquisition & Quality Gate Prerequisite
-- **Empirical Evidence & Findings:**
-  - The current local manifest routed `vi` to `latin_PP-OCRv5_mobile_rec`, and `vi+en` resolved to `latin`.
-  - Direct inference with provisioned PP-OCRv5/PP-OCRv6/latin recognizers loses Vietnamese diacritics.
-  - The PP-OCRv6 and latin model metadata do not provide an accepted Vietnamese character profile.
-  - A public fine-tuned candidate could not be downloaded because the environment received HTTP 401. No credentials are added, and that candidate is not claimed to be available offline.
-- **Hard Prerequisite:**
-  - A validated Vietnamese-capable recognizer artifact (providing an accepted Vietnamese character set profile with accurate diacritics) is a strict hard prerequisite before Task 3–4 quality gates can close.
-  - The Task 4 Green checkbox and Task 3–4 gate remain deliberately **OPEN**.
-  - `xfail` on table diacritic quality in `test_real_tables.py` and CER assertions in `test_real_ocr.py` are strictly preserved without weakening.
-  - No speculative invoice fields, post-processed guessed accents, or heuristic replacements are added.
-- **Task 5 Configuration Prerequisite:**
-  - The current architecture lacks a production manifest / application-settings hook (currently using test factories and instance maps).
-  - Documented as the next Task 5 configuration prerequisite instead of speculative overbuilding. No `.env` file was read or modified; no speculative model names or paths were invented.
+### Model Acquisition & Quality Gate Status
+- **Current manifest:** `vi` and `vi+en` use `PP-OCRv5_mobile_det` plus the Vietnamese `PP-OCRv6_medium_rec` artifact; `en` uses `PP-OCRv5_mobile_det` plus `en_PP-OCRv5_mobile_rec`. The source of truth is `services/ocr-service/config/model-manifest.json`.
+- **Runtime evidence:** all three recognizer profiles initialize offline in the target container, and the four-document smoke corpus passed the current CER <= 15% gate. The benchmark now prints CER/WER per fixture.
+- **Artifact policy:** model weights are runtime artifacts stored outside Git and mounted read-only. WEAV does not train or host a remote OCR API in this service; it runs the configured local PaddleOCR weights.
+- **Production gate:** the current evidence is a small smoke set, not the required >= 60-page held-out corpus. The production CER/WER gate therefore remains **OPEN**.
+- **Unchanged constraints:** `test_real_tables.py` diacritic quality remains `xfail` where applicable; no guessed accents, invoice fields, or business extraction heuristics are added.
+
+> **Dated correction (2026-09-09):** Earlier versions of this document described the Vietnamese profile as `latin` or reported model provisioning as pending. Those statements are obsolete for the current manifest and runtime; retain them only as historical context in the work log.
+
+### Current Technical Parameters
+
+| Component | Current value | Notes |
+| --- | --- | --- |
+| OCR SDK | PaddleOCR `3.7.x` / PaddleX `3.7.x` | Pinned through `pyproject.toml`/`uv.lock` |
+| Inference runtime | PaddlePaddle `3.3.0` CPU | `enable_mkldnn=false` for the verified container |
+| Computer vision | OpenCV contrib `4.10.0.84` | Exactly one OpenCV distribution in the image |
+| Paddle inference flags | `use_doc_orientation_classify=false`, `use_doc_unwarping=false`, `use_textline_orientation=false` | Keeps the v1 text pipeline bounded |
+| OCR call | `predict(..., return_word_box=false)` | Word-level boxes are not exposed by the current contract |
+| PDF rendering | 200 DPI default; 72–300 DPI bounded | Pages are rendered and processed one at a time |
+| Default preprocessing | grayscale when needed; denoise if noise metric > 7; CLAHE if std < 45 and intensity range < 120; deskew for 0.5–45 degrees; threshold disabled by default | Threshold stays opt-in to protect Vietnamese diacritics and thin strokes |
+| Adaptive fallback | At most 1 extra pass per page; max upscaled dimension 3500 px; triggered by empty/very short output or low average page confidence | Uses deterministic quality scoring and inverse coordinate mapping |
+| Input/output caps | 10 pages; 20 MP/page; 20,000 blocks; rawText <= 1 MiB | See contract for complete request/output limits |
+
+The repository does not currently record parameter count, vocabulary size, training corpus, or exact model input tensor shape for the external weight artifacts. Those values must be copied from the model cards and checksum manifest before being presented as model facts; they are intentionally not guessed here.
 
 ### Table Structure Pipeline
 - **Engine:** PP-StructureV3 Table Recognition (SLANet / Layout Analysis + Table Structure).
 - **Cell Recognition:** Must reuse the validated Vietnamese-capable recognizer (`vi`) so that Vietnamese headers and text inside table cells retain proper diacritics.
 - **Current evidence:**
   - Structural normalization verified: bordered tables, borderless (wireless/whitespace-aligned) tables, complex merged cells (`rowSpan > 1`, `columnSpan > 1`), rotated coordinates, cell count cap enforcement (max 10,000 cells), table count limit (max 100 tables), HTML/script sanitization, rawText de-duplication, and strict schema validation forbidding business/accounting fields.
-  - The provisioned PP-OCRv5 mobile and server recognizers produced valid cell geometry for real PP-StructureV3 smoke, but did not preserve the Vietnamese diacritics in the synthetic table smoke fixture (`xfail` in `test_real_tables.py`). A validated Vietnamese-capable recognizer artifact is a hard prerequisite; the service does not silently treat approximate text as accepted quality.
+  - PP-StructureV3 produced valid cell geometry in the real table smoke, but Vietnamese table-cell diacritic quality remains `xfail` in `test_real_tables.py`. Text-only OCR success does not close the table quality gate; table-cell CER and structural F1 still require a held-out evaluation set.
 - **Constraints:**
   - Formula, chart, and general vision modules must remain disabled.
   - Cell coordinates must be mapped back to canonical page pixels.
@@ -124,6 +137,18 @@ The following targets must be satisfied during load and benchmark testing:
 - **10-Page Document (Maximum limit):** Total processing <= 60.0 seconds.
 - **Gateway Upstream Timeout:** 100.0 seconds (hard stop at service boundary: 90.0 seconds).
 
+### Observed local smoke measurements
+
+These are measurements from the current Docker development environment, not warmed p95/SLA evidence:
+
+| Measurement | Observed value | Interpretation |
+| --- | ---: | --- |
+| Text OCR benchmark (`test_real_ocr.py`) | 5 passed in 197.24s total | Four documents / five test cases; includes model initialization and PDF work |
+| Direct one-page Vietnamese API smoke | 22,977 ms service processing | Successful response; above the warmed 10s target, so p95/SLA remains open |
+| Previous adaptive trigger experiment | 402.14s total | Triggered too many fallback passes; replaced by average-page-confidence policy |
+
+Do not use the total test-suite duration as a per-request latency or p95 value. A dedicated warmed load runner is still required.
+
 ### Memory & Concurrency Budgets
 - **Init / Cold RSS:** <= 800 MiB.
 - **Warm Inference RSS:** <= 2500 MiB (within the 4 GiB container envelope).
@@ -134,6 +159,10 @@ The following targets must be satisfied during load and benchmark testing:
 ## 6. Proposed Evaluation Corpus (>= 100 Pages Non-PII)
 
 Benchmarking must use synthetic, open-licensed, or internal non-PII test documents. Real user documents, personal identifiable information, and real invoices must never be used.
+
+### Current smoke corpus
+
+The verified local smoke corpus currently contains four documents: three raster images (`PNG`, `JPG`, `WEBP`) and one two-page PDF, with ground-truth text files. It is sufficient to verify file-format support and a development CER <= 15% smoke gate, but it is not large or diverse enough to represent the proposed tuning/held-out production corpus.
 
 The proposed corpus consists of:
 1. **Clean Documents (>= 60 pages):**
@@ -180,13 +209,64 @@ Model weights are runtime artifacts outside Git. The tracked setup script, manif
 
 ### Required Model Artifacts
 
-All models are downloaded from verified official public sources with verified SHA256 checksums:
+All models are downloaded from pinned public sources and verified with SHA256 checksums defined in `scripts/setup-ocr-model.ps1`. The Vietnamese recognition artifact is hosted in a public community Hugging Face repository; it is not presented as an official PaddlePaddle release:
 
 | Model ID | Role | Supported Profiles | Source Repository |
 | --- | --- | --- | --- |
 | `PP-OCRv5_mobile_det` | Text Detection | `vi`, `vi+en`, `en` | `https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det` |
 | `pp-ocrv6-medium-rec-vietnamese` | Vietnamese Text Recognition | `vi`, `vi+en` | `https://huggingface.co/tieubaoca/pp-ocrv6-medium-rec-vietnamese` |
 | `en_PP-OCRv5_mobile_rec` | English Text Recognition | `en` | `https://huggingface.co/PaddlePaddle/en_PP-OCRv5_mobile_rec` |
+
+### How to Read the Host Model Directory
+
+The host model directory can contain more folders than the three artifacts listed above. A folder being present under `D:\Weav-OCR-Models` does **not** mean that WEAV selects it for every request. The runtime selection is controlled by `services/ocr-service/config/model-manifest.json`, while the provisioning script manages only the three required text-OCR artifacts.
+
+For normal text extraction, the pipeline is:
+
+```text
+page image -> text detector -> language-specific text recognizer -> text blocks
+```
+
+The current active text path is:
+
+| Directory | Role | Current WEAV status |
+| --- | --- | --- |
+| `PP-OCRv5_mobile_det` | Finds text regions and returns their bounding polygons. | **Active** for `vi`, `vi+en`, and `en`. |
+| `pp-ocrv6-medium-rec-vietnamese` | Reads cropped text regions with Vietnamese characters and diacritics. | **Active** recognizer for `vi` and `vi+en`. |
+| `en_PP-OCRv5_mobile_rec` | Reads cropped English text regions. | **Active** recognizer for `en`. |
+
+The other text-OCR folders are alternatives or cached artifacts, not the current API selection:
+
+| Directory | Role | Current WEAV status |
+| --- | --- | --- |
+| `PP-OCRv3_mobile_det` | Older lightweight text detector. | Alternative/legacy; not selected by the current manifest. |
+| `PP-OCRv5_server_det` | Larger server-grade text detector. | Alternative; not selected by the current manifest. |
+| `PP-OCRv5_server_rec` | Larger server-grade text recognizer. | Alternative; not selected by the current manifest. |
+| `PP-OCRv6_medium_det` | PP-OCRv6 medium text detector. | Alternative; not selected by the current manifest. |
+| `PP-OCRv6_medium_rec` | Generic PP-OCRv6 medium recognizer. | Alternative; the current Vietnamese profile uses the explicitly provisioned Vietnamese artifact instead. |
+| `latin_PP-OCRv3_mobile_rec` | Older lightweight Latin-character recognizer. | Alternative/legacy; not used for Vietnamese. |
+| `latin_PP-OCRv5_mobile_rec` | Latin-character recognizer variant. | Alternative; not selected for the current `en` profile. |
+
+When `detectTables=true`, the service enters a separate PP-StructureV3 pipeline rather than simply changing the text recognizer:
+
+```text
+page image -> optional layout/orientation -> table/cell detection -> table structure -> cell text recognition
+```
+
+The following folders belong to that broader table/document-structure pipeline. Their exact loading is managed by the PaddleOCR/PP-StructureV3 SDK; the current WEAV adapter does not pin each submodel directory individually:
+
+| Directory | Role | Current WEAV status |
+| --- | --- | --- |
+| `PP-DocLayout_plus-L` | Detects document regions such as text, tables, and figures. | PP-Structure dependency; region detection is disabled in the current bounded adapter. |
+| `PP-LCNet_x1_0_doc_ori` | Classifies document/page orientation. | Optional helper; document orientation is disabled in the current adapter. |
+| `PP-LCNet_x1_0_textline_ori` | Classifies text-line orientation. | Optional helper; text-line orientation is disabled in the current adapter. |
+| `PP-LCNet_x1_0_table_cls` | Classifies table-related layout/type information. | Table-pipeline artifact; not part of ordinary text OCR. |
+| `RT-DETR-L_wired_table_cell_det` | Detects cells in bordered/wired tables. | Table-pipeline artifact; production table gate remains open. |
+| `RT-DETR-L_wireless_table_cell_det` | Detects cells in borderless/wireless tables. | Table-pipeline artifact; production table gate remains open. |
+| `SLANet_plus` | Recognizes table structure and grid relationships. | Table-pipeline artifact; production table gate remains open. |
+| `SLANeXt_wired` | Wired-table structure recognition variant. | Table-pipeline artifact; production table gate remains open. |
+
+Therefore, the directory shown in Windows Explorer is best understood as a shared PaddleX model cache. The current text-OCR request uses one detector plus one recognizer profile. The extra folders support possible model variants or table/document analysis and are not evidence that WEAV trained or runs all of them simultaneously. Table-cell diacritic quality and structural F1 still require the held-out production gate described above.
 
 ### Provisioning Instructions
 
