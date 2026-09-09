@@ -275,3 +275,70 @@ class TestGoldenGeometryInverseTransform:
 
         assert clamped_box.x + clamped_box.width <= 800.0
         assert clamped_box.y + clamped_box.height <= 600.0
+
+
+# ---------------------------------------------------------------------------
+# Unit Test Suite: Adaptive Fallback Preprocessor
+# ---------------------------------------------------------------------------
+
+
+class TestAdaptiveFallbackPreprocessor:
+    """Tests OpenCV preprocessor fallback pass: safe upscale, bounds, steps, and inverse transforms."""
+
+    @pytest.fixture(autouse=True)
+    def check_cv2(self):
+        if cv2 is None:
+            pytest.skip("cv2 is required for OpenCV preprocessor adapter tests")
+
+    def test_fallback_preprocessing_applies_safe_upscale_on_small_image(self):
+        """Small image receives safe upscale in fallback mode and records step."""
+        adapter = OpenCvPreprocessorAdapter()
+        small_img = make_clean_high_contrast_canvas(width=400, height=300)
+
+        result = adapter.preprocess_page_fallback(small_img, page_number=1)
+
+        assert result.page == 1
+        assert "fallback_upscale" in result.steps_applied
+        # Processed image must be strictly larger than canonical dimensions
+        h, w = result.processed_image.shape[:2]
+        assert w > 400
+        assert h > 300
+        assert result.inverse_transform is not None
+        assert result.inverse_transform.scale_x > 1.0
+        assert result.inverse_transform.scale_y > 1.0
+
+        # Transform box from upscaled space back to canonical space
+        orig_box = BoundingBox(x=50.0, y=100.0, width=120.0, height=30.0)
+        upscaled_box = BoundingBox(
+            x=orig_box.x * result.inverse_transform.scale_x,
+            y=orig_box.y * result.inverse_transform.scale_y,
+            width=orig_box.width * result.inverse_transform.scale_x,
+            height=orig_box.height * result.inverse_transform.scale_y,
+        )
+        restored_box = result.inverse_transform.transform_bounding_box(upscaled_box)
+        assert abs(restored_box.x - orig_box.x) <= 2.0
+        assert abs(restored_box.y - orig_box.y) <= 2.0
+        assert abs(restored_box.width - orig_box.width) <= 2.0
+        assert abs(restored_box.height - orig_box.height) <= 2.0
+
+    def test_fallback_preprocessing_respects_max_upscale_dimension(self):
+        """Large image does not upscale past MAX_UPSCALED_DIMENSION to protect memory."""
+        adapter = OpenCvPreprocessorAdapter()
+        # Large canvas
+        large_img = np.full((3200, 2800), 255, dtype=np.uint8)
+
+        result = adapter.preprocess_page_fallback(large_img, page_number=1)
+
+        h, w = result.processed_image.shape[:2]
+        assert max(h, w) <= OpenCvPreprocessorAdapter.MAX_UPSCALED_DIMENSION
+        # Upscale should either be skipped (scale=1.0) or clamped so it doesn't blow up
+        assert result.inverse_transform.scale_x <= 1.25
+
+    def test_fallback_preprocessing_enhances_contrast_and_records_step(self):
+        """Low contrast image in fallback receives contrast enhancement with fallback naming."""
+        adapter = OpenCvPreprocessorAdapter()
+        low_contrast_img = make_low_contrast_canvas(width=600, height=400)
+
+        result = adapter.preprocess_page_fallback(low_contrast_img, page_number=1)
+
+        assert any("contrast" in s for s in result.steps_applied)

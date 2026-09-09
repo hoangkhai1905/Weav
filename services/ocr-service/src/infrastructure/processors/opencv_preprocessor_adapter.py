@@ -165,6 +165,10 @@ class OpenCvPreprocessorAdapter(PreprocessorPort):
     NOISE_VARIANCE_THRESHOLD = 7.0  # High-frequency residual mean > 7.0 triggers Gaussian blur
     MIN_DESKEW_ANGLE_DEG = 0.5  # Skew below 0.5 degrees is ignored to preserve sharpness
     MAX_DESKEW_ANGLE_DEG = 45.0  # Skew above 45 degrees is considered document-orientation level
+    MAX_UPSCALED_DIMENSION = 3500  # Cap on upscaled dimension to bound memory and CPU usage
+    MAX_UPSCALE_DIMENSION = MAX_UPSCALED_DIMENSION
+    FALLBACK_CONTRAST_STD_THRESHOLD = 65.0  # Wider threshold to enhance washed-out text in fallback
+    FALLBACK_CONTRAST_PTP_THRESHOLD = 180.0
 
     def __init__(
         self,
@@ -247,6 +251,102 @@ class OpenCvPreprocessorAdapter(PreprocessorPort):
         # Build inverse coordinate transform
         inv_transform = InverseCoordinateTransform(
             affine_matrix=affine_matrix,
+            canonical_width=canonical_w,
+            canonical_height=canonical_h,
+        )
+
+        return PreprocessingResult(
+            page=page_number,
+            processed_image=gray,
+            steps_applied=steps_applied,
+            inverse_transform=inv_transform,
+        )
+
+    def preprocess_page_fallback(
+        self,
+        page_image: Any,
+        page_number: int,
+    ) -> PreprocessingResult:
+        """Process page image using bounded fallback enhancements (safe upscale, adaptive contrast)."""
+        if cv2 is None:
+            raise InternalError("OpenCV (cv2) is required for image preprocessing but is not installed")
+
+        if not isinstance(page_image, np.ndarray):
+            img_arr = np.array(page_image)
+        else:
+            img_arr = page_image.copy()
+
+        steps_applied: list[str] = []
+        canonical_h, canonical_w = img_arr.shape[:2]
+
+        # 1. Grayscale step (measured: only if multi-channel)
+        if len(img_arr.shape) == 3 and img_arr.shape[2] in (3, 4):
+            if img_arr.shape[2] == 4:
+                bgr = cv2.cvtColor(img_arr, cv2.COLOR_BGRA2BGR)
+            else:
+                bgr = img_arr
+
+            diff_rg = np.mean(cv2.absdiff(bgr[:, :, 0], bgr[:, :, 1]))
+            diff_gb = np.mean(cv2.absdiff(bgr[:, :, 1], bgr[:, :, 2]))
+            is_color = (diff_rg + diff_gb) > 2.0
+
+            gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+            if is_color:
+                steps_applied.append("grayscale")
+        else:
+            gray = img_arr.squeeze()
+
+        # 2. Bounded safe upscale for low-resolution / small-text images
+        scale = 1.0
+        max_dim = max(canonical_w, canonical_h)
+        min_dim = min(canonical_w, canonical_h)
+
+        if min_dim < 1200 or max_dim < 1600:
+            potential_scale = 2.0 if min_dim < 800 else 1.5
+            if max_dim * potential_scale > self.MAX_UPSCALED_DIMENSION:
+                scale = max(1.0, float(self.MAX_UPSCALED_DIMENSION) / float(max_dim))
+            else:
+                scale = potential_scale
+
+        if scale > 1.05:
+            new_w = round(canonical_w * scale)
+            new_h = round(canonical_h * scale)
+            if max(new_w, new_h) > self.MAX_UPSCALED_DIMENSION:
+                clamp_factor = float(self.MAX_UPSCALED_DIMENSION) / float(max(new_w, new_h))
+                new_w = round(new_w * clamp_factor)
+                new_h = round(new_h * clamp_factor)
+            gray = cv2.resize(gray, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+            scale_x = float(new_w) / float(canonical_w)
+            scale_y = float(new_h) / float(canonical_h)
+            steps_applied.append("fallback_upscale")
+        else:
+            scale_x = 1.0
+            scale_y = 1.0
+
+        # 3. Denoise step
+        med_blur = cv2.medianBlur(gray, 3)
+        noise_metric = float(np.mean(cv2.absdiff(gray, med_blur)))
+        if noise_metric > self.NOISE_VARIANCE_THRESHOLD:
+            gray = cv2.GaussianBlur(gray, (3, 3), 0)
+            steps_applied.append("denoise")
+
+        # 4. Adaptive contrast (CLAHE with wider fallback threshold)
+        contrast_std = float(np.std(gray))
+        contrast_ptp = float(np.ptp(gray))
+        if contrast_std < self.FALLBACK_CONTRAST_STD_THRESHOLD and contrast_ptp < self.FALLBACK_CONTRAST_PTP_THRESHOLD:
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            gray = clahe.apply(gray)
+            steps_applied.append("fallback_contrast")
+
+        # 5. Optional threshold if enable_threshold (protect Vietnamese diacritics)
+        if self.enable_threshold:
+            _, gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+            steps_applied.append("threshold")
+
+        # 6. Build inverse coordinate transform mapping back to canonical page pixels
+        inv_transform = InverseCoordinateTransform(
+            scale_x=scale_x,
+            scale_y=scale_y,
             canonical_width=canonical_w,
             canonical_height=canonical_h,
         )

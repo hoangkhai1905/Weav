@@ -63,6 +63,47 @@ MODEL_MANIFEST_ENV = "WEAV_OCR_MODEL_MANIFEST"
 OCR_MODEL_ROOT_ENV = "OCR_MODEL_ROOT"
 
 
+def compute_pass_quality_score(blocks: list[TextBlock]) -> float:
+    """Calculate deterministic quality score in [0.0, 1.0] for an extraction candidate.
+
+    Weighted average confidence + useful alphanumeric text content;
+    penalizes hallucinated punctuation noise and avoids selecting solely on text length.
+    """
+    if not blocks:
+        return 0.0
+
+    total_chars = 0
+    alnum_chars = 0
+    weighted_conf_sum = 0.0
+
+    for block in blocks:
+        text = block.text.strip()
+        non_ws = sum(1 for ch in text if not ch.isspace())
+        if non_ws == 0:
+            continue
+        total_chars += non_ws
+        alnum = sum(1 for ch in text if ch.isalnum())
+        alnum_chars += alnum
+        weighted_conf_sum += block.confidence * non_ws
+
+    if total_chars == 0:
+        return 0.0
+
+    weighted_conf = weighted_conf_sum / total_chars
+    alnum_ratio = alnum_chars / total_chars
+
+    # Severe penalty for hallucinated or punctuation noise (e.g. "...---!!!")
+    if alnum_ratio < 0.35:
+        return max(0.0, min(1.0, weighted_conf * 0.15))
+
+    # Useful content saturation (reaches 1.0 at ~150 alphanumeric characters)
+    content_factor = min(1.0, alnum_chars / 150.0)
+
+    # Composite deterministic score: 60% confidence, 20% alnum ratio, 20% content saturation
+    raw_score = (weighted_conf * 0.60) + (alnum_ratio * 0.20) + (content_factor * 0.20)
+    return max(0.0, min(1.0, round(raw_score, 4)))
+
+
 def _as_python(value: Any) -> Any:
     """Convert numpy/Paddle containers into ordinary Python containers."""
     tolist = getattr(value, "tolist", None)
@@ -234,6 +275,7 @@ class PaddleOcrEngineAdapter(OcrEnginePort):
         low_confidence_threshold: float = DEFAULT_LOW_CONFIDENCE_THRESHOLD,
         manifest_path: str | Path | None = None,
         model_root: str | Path | None = None,
+        fallback_enabled: bool = True,
     ) -> None:
         self.pdf_renderer = pdf_renderer or PdfRenderer()
         self.preprocessor = preprocessor or OpenCvPreprocessorAdapter()
@@ -241,6 +283,7 @@ class PaddleOcrEngineAdapter(OcrEnginePort):
         self.engine_version = engine_version
         self.model_revision = model_revision
         self.low_confidence_threshold = low_confidence_threshold
+        self.fallback_enabled = fallback_enabled
         self._manifest_path = manifest_path
         if model_root is not None and str(model_root).strip():
             self._model_root = Path(model_root).expanduser()
@@ -251,6 +294,24 @@ class PaddleOcrEngineAdapter(OcrEnginePort):
 
         self._ocr_instances: dict[str, Any] = dict(ocr_instance_map or {})
         self._ocr_factory = ocr_factory
+
+    def _should_trigger_fallback(self, blocks: list[TextBlock]) -> bool:
+        """Determine if page results warrant an adaptive fallback pass.
+
+        Conservative trigger policy:
+        - Fallback if no blocks detected (zero blocks / potentially blank page).
+        - Fallback if total useful text content is very short (< 3 alphanumeric characters).
+        - Fallback if average confidence across the entire page is below low_confidence_threshold.
+        - Does NOT trigger fallback merely because a single block has low confidence.
+        """
+        if not blocks:
+            return True
+        total_alnum = sum(sum(1 for ch in b.text if ch.isalnum()) for b in blocks)
+        if total_alnum < 3:
+            return True
+        avg_confidence = sum(b.confidence for b in blocks) / len(blocks)
+        return avg_confidence < self.low_confidence_threshold
+
 
     async def extract(
         self,
@@ -276,31 +337,54 @@ class PaddleOcrEngineAdapter(OcrEnginePort):
             canonical_w = rendered_page.width
             canonical_h = rendered_page.height
 
-            # 1. Apply measured image preprocessing
-            proc_result = self.preprocessor.preprocess_page(
+            # 1. Default pass: measured image preprocessing & inference
+            proc_result_1 = self.preprocessor.preprocess_page(
                 rendered_page.image,
                 page_number=page_num,
             )
-            all_preprocessing.append(
-                PreprocessingRecord(page=page_num, steps=proc_result.steps_applied)
-            )
-
-            # 2. Invoke PaddleOCR inference
-            raw_detections = self._run_engine_inference(ocr_engine, proc_result.processed_image)
-
-            # 3. Parse and normalize detections
-            page_blocks, page_warnings = self._normalize_page_detections(
-                raw_detections=raw_detections,
+            raw_detections_1 = self._run_engine_inference(ocr_engine, proc_result_1.processed_image)
+            blocks_1, warnings_1 = self._normalize_page_detections(
+                raw_detections=raw_detections_1,
                 page_num=page_num,
                 canonical_w=canonical_w,
                 canonical_h=canonical_h,
-                inverse_transform=proc_result.inverse_transform,
+                inverse_transform=proc_result_1.inverse_transform,
             )
 
-            all_warnings.extend(page_warnings)
+            chosen_blocks = blocks_1
+            chosen_warnings = warnings_1
+            chosen_steps = proc_result_1.steps_applied
 
-            # 4. Sort blocks in canonical reading order (top-to-bottom, left-to-right)
-            sorted_page_blocks = self._sort_reading_order(page_blocks)
+            # 2. Adaptive fallback pass (strictly bounded: max 1 fallback pass per page)
+            if self.fallback_enabled and self._should_trigger_fallback(blocks_1):
+                proc_result_2 = self.preprocessor.preprocess_page_fallback(
+                    rendered_page.image,
+                    page_number=page_num,
+                )
+                raw_detections_2 = self._run_engine_inference(ocr_engine, proc_result_2.processed_image)
+                blocks_2, warnings_2 = self._normalize_page_detections(
+                    raw_detections=raw_detections_2,
+                    page_num=page_num,
+                    canonical_w=canonical_w,
+                    canonical_h=canonical_h,
+                    inverse_transform=proc_result_2.inverse_transform,
+                )
+
+                score_1 = compute_pass_quality_score(blocks_1)
+                score_2 = compute_pass_quality_score(blocks_2)
+
+                if score_2 > score_1:
+                    chosen_blocks = blocks_2
+                    chosen_warnings = warnings_2
+                    chosen_steps = proc_result_2.steps_applied
+
+            all_preprocessing.append(
+                PreprocessingRecord(page=page_num, steps=chosen_steps)
+            )
+            all_warnings.extend(chosen_warnings)
+
+            # 3. Sort blocks in canonical reading order (top-to-bottom, left-to-right)
+            sorted_page_blocks = self._sort_reading_order(chosen_blocks)
 
             # 5. Assign sequential global order and IDs
             for idx, block in enumerate(sorted_page_blocks):

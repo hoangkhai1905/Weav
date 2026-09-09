@@ -31,3 +31,11 @@ class PreprocessorPort(ABC):
     ) -> PreprocessingResult:
         """Apply targeted image enhancements (e.g. grayscale, contrast, deskew) for a given page."""
         ...
+
+    def preprocess_page_fallback(
+        self,
+        page_image: Any,
+        page_number: int,
+    ) -> PreprocessingResult:
+        """Apply targeted fallback enhancements (e.g. safe upscale, adaptive contrast) for low-quality results."""
+        return self.preprocess_page(page_image, page_number)

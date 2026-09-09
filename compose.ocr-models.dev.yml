@@ -1,6 +1,11 @@
 services:
+  api-gateway:
+    environment:
+      OCR_ALLOW_UNAUTHENTICATED_DEV: true
+
   ocr-service:
     environment:
+      OCR_ALLOW_UNAUTHENTICATED_DEV: "true"
       OCR_MODEL_ROOT: /models
       WEAV_OCR_MODEL_MANIFEST: /app/config/model-manifest.json
     volumes:

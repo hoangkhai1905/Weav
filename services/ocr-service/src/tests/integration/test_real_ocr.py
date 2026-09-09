@@ -15,6 +15,7 @@ import json
 import os
 import unicodedata
 from pathlib import Path
+from typing import Any, ClassVar
 
 import pytest
 
@@ -61,6 +62,69 @@ def calculate_cer(reference: str, hypothesis: str) -> float:
             )
 
     return d[len(ref)][len(hyp)] / float(len(ref))
+
+
+def calculate_wer(reference: str, hypothesis: str) -> float:
+    """Calculate Word Error Rate (WER) between normalized reference and hypothesis text."""
+    ref_norm = unicodedata.normalize("NFC", reference).strip()
+    hyp_norm = unicodedata.normalize("NFC", hypothesis).strip()
+
+    ref_words = ref_norm.split()
+    hyp_words = hyp_norm.split()
+
+    if not ref_words:
+        return 0.0 if not hyp_words else 1.0
+
+    d = [[0] * (len(hyp_words) + 1) for _ in range(len(ref_words) + 1)]
+    for i in range(len(ref_words) + 1):
+        d[i][0] = i
+    for j in range(len(hyp_words) + 1):
+        d[0][j] = j
+
+    for i in range(1, len(ref_words) + 1):
+        for j in range(1, len(hyp_words) + 1):
+            cost = 0 if ref_words[i - 1] == hyp_words[j - 1] else 1
+            d[i][j] = min(
+                d[i - 1][j] + 1,  # deletion
+                d[i][j - 1] + 1,  # insertion
+                d[i - 1][j - 1] + cost,  # substitution
+            )
+
+    return d[len(ref_words)][len(hyp_words)] / float(len(ref_words))
+
+
+class OcrBenchmarkReport:
+    """In-memory benchmark report recording per-fixture CER, WER, and size metrics."""
+
+    records: ClassVar[list[dict[str, Any]]] = []
+
+    @classmethod
+    def record(
+        cls,
+        fixture: str,
+        lang: str,
+        cer: float,
+        wer: float,
+        chars: int,
+        words: int,
+        blocks: int,
+    ) -> None:
+        cls.records.append(
+            {
+                "fixture": fixture,
+                "lang": lang,
+                "cer": cer,
+                "wer": wer,
+                "chars": chars,
+                "words": words,
+                "blocks": blocks,
+            }
+        )
+        print(
+            f"\n[OCR BENCHMARK REPORT] {fixture:<25} | lang: {lang:<5} | "
+            f"CER: {cer * 100:6.2f}% | WER: {wer * 100:6.2f}% | "
+            f"blocks: {blocks:3d} | chars: {chars:4d} | words: {words:4d}"
+        )
 
 
 def _check_local_inference_prerequisites() -> dict[str, dict[str, str]]:
@@ -217,8 +281,18 @@ class TestRealOcrInference:
             assert block.boundingBox.width > 0.0
             assert block.boundingBox.height > 0.0
 
-        # Quality check via CER
+        # Quality check via CER and WER
         cer = calculate_cer(ground_truth, result.raw_text)
+        wer = calculate_wer(ground_truth, result.raw_text)
+        OcrBenchmarkReport.record(
+            fixture=filename,
+            lang=lang,
+            cer=cer,
+            wer=wer,
+            chars=len(result.raw_text.strip()),
+            words=len(result.raw_text.strip().split()),
+            blocks=len(result.blocks),
+        )
         assert cer <= MAX_ACCEPTABLE_CER, (
             f"Character Error Rate ({cer:.3f}) exceeded tolerance ({MAX_ACCEPTABLE_CER}) for {filename}"
         )
@@ -258,18 +332,37 @@ class TestRealOcrInference:
         pages_found = {b.page for b in result.blocks}
         assert pages_found == {1, 2}
 
-        # If ground truth files exist, check CER
+        # If ground truth files exist, check CER and WER
         if gt_page1_file.exists() and gt_page2_file.exists():
             p1_expected = gt_page1_file.read_text(encoding="utf-8")
             p2_expected = gt_page2_file.read_text(encoding="utf-8")
             combined_expected = f"{p1_expected.strip()}\n\f\n{p2_expected.strip()}"
 
             cer = calculate_cer(combined_expected, result.raw_text)
+            wer = calculate_wer(combined_expected, result.raw_text)
+            OcrBenchmarkReport.record(
+                fixture="two_page_bilingual.pdf",
+                lang="vi+en",
+                cer=cer,
+                wer=wer,
+                chars=len(result.raw_text.strip()),
+                words=len(result.raw_text.strip().split()),
+                blocks=len(result.blocks),
+            )
             assert cer <= MAX_ACCEPTABLE_CER
 
     def test_cer_calculation_logic(self):
-        """Unit verification of the CER calculation helper."""
+        """Unit verification of the CER and WER calculation helpers."""
         assert calculate_cer("abc", "abc") == 0.0
         assert calculate_cer("abc", "ab") == pytest.approx(1.0 / 3.0)
         assert calculate_cer("Tiếng Việt", "Tiếng Việt") == 0.0
         assert calculate_cer("abc", "xyz") == 1.0
+
+        assert calculate_wer("hello world", "hello world") == 0.0
+        assert calculate_wer("hello world", "hello") == 0.5
+        assert calculate_wer("hello world", "hello there world") == 0.5
+        assert calculate_wer("Tiếng Việt Nam", "Tiếng Việt") == pytest.approx(1.0 / 3.0)
+        assert calculate_wer("hello world", "foo bar") == 1.0
+        assert calculate_wer("", "") == 0.0
+        assert calculate_wer("", "word") == 1.0
+        assert calculate_wer("word", "") == 1.0
