@@ -124,6 +124,66 @@ class AuthRateLimitFilterTest {
         assertEquals(0, rateLimiter.entryCount());
     }
 
+    @Test
+    void rateLimitsOAuthUnlinkByRemoteAddress() throws Exception {
+        AtomicInteger downstreamCalls = new AtomicInteger();
+        FilterChain chain = countingChain(downstreamCalls);
+        String accountPath = "/users/me/oauth-accounts/33333333-3333-3333-3333-333333333333";
+
+        for (int attempt = 0; attempt < 10; attempt++) {
+            filter.doFilter(
+                    request("DELETE", accountPath, REMOTE_ADDRESS),
+                    new MockHttpServletResponse(),
+                    chain);
+        }
+
+        MockHttpServletResponse deniedResponse = new MockHttpServletResponse();
+        filter.doFilter(request("DELETE", accountPath, REMOTE_ADDRESS), deniedResponse, chain);
+
+        assertEquals(429, deniedResponse.getStatus());
+        assertEquals("900", deniedResponse.getHeader(HttpHeaders.RETRY_AFTER));
+        assertEquals("no-store", deniedResponse.getHeader(HttpHeaders.CACHE_CONTROL));
+        assertEquals("no-referrer", deniedResponse.getHeader("Referrer-Policy"));
+        assertEquals(10, downstreamCalls.get());
+    }
+
+    @Test
+    void rateLimitsCookieRefreshAndLogoutByRemoteAddress() throws Exception {
+        AtomicInteger downstreamCalls = new AtomicInteger();
+        FilterChain chain = countingChain(downstreamCalls);
+
+        for (int attempt = 0; attempt < 30; attempt++) {
+            filter.doFilter(
+                    request("POST", "/auth/web/refresh", REMOTE_ADDRESS),
+                    new MockHttpServletResponse(),
+                    chain);
+        }
+        MockHttpServletResponse refreshDenied = new MockHttpServletResponse();
+        filter.doFilter(
+                request("POST", "/auth/web/refresh", REMOTE_ADDRESS),
+                refreshDenied,
+                chain);
+        assertEquals(429, refreshDenied.getStatus());
+        assertEquals("60", refreshDenied.getHeader(HttpHeaders.RETRY_AFTER));
+        assertEquals("no-referrer", refreshDenied.getHeader("Referrer-Policy"));
+
+        for (int attempt = 0; attempt < 10; attempt++) {
+            filter.doFilter(
+                    request("POST", "/auth/web/logout", "203.0.113.10"),
+                    new MockHttpServletResponse(),
+                    chain);
+        }
+        MockHttpServletResponse logoutDenied = new MockHttpServletResponse();
+        filter.doFilter(
+                request("POST", "/auth/web/logout", "203.0.113.10"),
+                logoutDenied,
+                chain);
+        assertEquals(429, logoutDenied.getStatus());
+        assertEquals("900", logoutDenied.getHeader(HttpHeaders.RETRY_AFTER));
+        assertEquals("no-referrer", logoutDenied.getHeader("Referrer-Policy"));
+        assertEquals(40, downstreamCalls.get());
+    }
+
     private static MockHttpServletRequest request(String method, String servletPath, String remoteAddress) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, servletPath);
         request.setServletPath(servletPath);

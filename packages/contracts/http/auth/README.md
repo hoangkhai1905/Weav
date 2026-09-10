@@ -1,6 +1,6 @@
 # Identity authentication HTTP contract
 
-This directory publishes the Identity-local contract for core authentication, the M1 profile/session/password-change milestone, and the M2 email-verification/password-recovery target. The source of truth for request/response shapes is [openapi.yaml](./openapi.yaml). Publishing an operation here establishes the implementation target; runtime availability still requires the matching Identity implementation, Valkey/SMTP integration, and HTTP verification.
+This directory publishes the Identity-local contract for core authentication, the M1 profile/session/password-change milestone, the M2 email-verification/password-recovery target, and the bounded M3 Google OAuth web transport. The source of truth for request/response shapes is [openapi.yaml](./openapi.yaml). Publishing an operation here establishes the implementation target; runtime availability still requires the matching Identity implementation, Valkey/SMTP integration, and HTTP verification.
 
 ## Endpoint behavior
 
@@ -20,10 +20,23 @@ This directory publishes the Identity-local contract for core authentication, th
 | `POST /auth/otp/verify` | Public for `PASSWORD_RESET`; active self/session for `EMAIL_VERIFICATION` | `200` with a purpose-bound verification result; password reset returns an at-most-once reset grant |
 | `POST /auth/forgot-password` | Public | `202` with the same opaque receipt whether or not an eligible local account exists |
 | `POST /auth/reset-password` | Public, at-most-once reset grant | `204` after password replacement and revocation of all existing sessions |
+| `POST /auth/oauth/google/start` | Exact registered Origin | `200` with a registered Google authorization URL, opaque transaction handle, and CSRF value |
+| `GET /auth/oauth/google/callback` | Provider redirect plus state/correlation binding | `303` only to the registered return target with an opaque handoff, or a fixed cancellation/provider error |
+| `POST /auth/oauth/exchange` | Exact Origin/XSRF; anonymous LOGIN or matching bearer LINK | `200` access-only LOGIN JSON plus HttpOnly refresh cookie, or LINK metadata without a new session/cookie |
+| `GET /auth/web/csrf` | Exact registered Origin | `200` with a signed non-secret CSRF value and matching cookie |
+| `POST /auth/web/refresh` | Exact Origin/XSRF; refresh cookie only | `200` access-only LOGIN JSON plus one rotated HttpOnly refresh cookie; omit `Authorization` |
+| `POST /auth/web/logout` | Exact Origin/XSRF; well-formed refresh cookie only | `204` after idempotent revocation and clearing the same HttpOnly cookie attributes |
+| `POST /users/me/oauth/google/link` | Active bearer, current password, exact Origin/XSRF | `200` with the registered Google authorization URL and no account mutation yet |
+| `GET /users/me/oauth-accounts` | Active bearer session | `200` with safe self-only provider metadata |
+| `DELETE /users/me/oauth-accounts/{accountId}` | Active bearer, current password, exact Origin/XSRF | `204` for an owned account; safe `404`/`409` guards preserve other login methods |
 
 Auth request bodies use `application/json`. Passwords and refresh tokens must never be placed in URLs, query strings, logs, or exception details. Login and refresh responses carry `Cache-Control: no-store`.
 
 Registration always creates `USER` / `ACTIVE`; `emailVerifiedAt` is initially `null`, and login remains allowed before email verification. `role`, `systemRole`, `status`, `passwordHash`, `avatarStorageKey`, IDs, and timestamps are not accepted registration fields. The service rejects unknown JSON properties instead of silently binding privileged fields.
+
+## M3 Google OAuth web transport
+
+The OAuth routes use only registered logical client/return-target IDs and exact configured browser Origins. Unsafe exchange, link, unlink, refresh and logout requests require a signed, bounded `XSRF-TOKEN`/`X-XSRF-TOKEN` double-submit pair. Correlation and refresh cookies are host-only `HttpOnly; Secure; SameSite=Lax` cookies; the refresh value is never returned in JSON. Provider state, nonce, PKCE verifier, handoff proof, and provider tokens are not reflected in error responses or final redirect URLs. Web refresh/logout read only the uniquely-present refresh cookie, reject malformed or duplicate values, and require clients to omit `Authorization`; `/auth/refresh` and `/auth/logout` retain their existing JSON/native contract.
 
 ## M2 email verification and recovery rules
 
@@ -37,7 +50,7 @@ An OTP is a six-digit value generated with a cryptographically secure random sou
 
 Every accepted request returns the same opaque `OtpReceipt` shape: `challengeId` (43 unpadded base64url characters), `expiresIn: 300`, and `retryAfter: 60`. Eligible and non-eligible requests use the same challenge-ID length. The receipt is not evidence that an email was delivered. SMTP delivery is asynchronous and bounded; an eligible account gets a mail job, while a non-eligible account follows the same no-op admission path. Queue overload and unavailable Valkey return a sanitized `503` before account lookup. SMTP failure invalidates the associated challenge, while the public recovery response remains generic.
 
-Request throttling is keyed without revealing account existence: a 60-second resend cooldown, at most 5 requests/hour per HMAC account key, at most 20 requests/hour per remote IP, and at most 30 verification attempts/minute per remote IP. Verification still enforces the five-failure-per-challenge limit. Forwarded headers are not trusted until a trusted proxy is configured.
+Request throttling is keyed without revealing account existence: a 60-second resend cooldown, at most 5 requests/hour per HMAC account key, at most 20 requests/hour per remote IP, and at most 30 verification attempts/minute per remote IP. OAuth web refresh is bounded to 30 requests/minute per remote IP and web logout to 10 requests/15 minutes per remote IP. Verification still enforces the five-failure-per-challenge limit. Forwarded headers are not trusted until a trusted proxy is configured.
 
 For `PASSWORD_RESET`, successful OTP verification atomically consumes the challenge and returns an opaque 32-byte reset grant with a 300-second lifetime. The grant is hash-only, bound to the purpose/user, the challenge's current-email binding, and a credential fingerprint captured when the challenge was requested, and can be consumed at most once. Both OTP verification and password reset recheck the current credential fingerprint; a changed password invalidates the old grant. Reset consumes the grant before the PostgreSQL mutation; if the database transaction fails or the response is lost after consumption, the grant is not restored and the caller must request a new OTP. A reset rechecks ACTIVE status, the challenge's current-email binding against the user's current stored email, and the current credential fingerprint under the user lock, replaces the password, records `emailVerifiedAt` when still null, and revokes every existing session in the same database transaction.
 
@@ -106,4 +119,4 @@ The development milestone defines bounded single-instance throttling: 20 login a
 
 This API uses explicit bearer headers and JSON credentials and is directly suitable for native/API clients. Native clients may keep refresh material in Expo SecureStore in the later client milestone.
 
-This contract does not authorize browser refresh-token storage, cookie authentication, CORS policy, CSRF exemptions beyond the bearer/JSON service boundary, or Gateway proxy behavior. Before browser delivery, define and test a secure refresh-cookie or BFF transport, CSRF protection, explicit trusted origins, and the real Gateway route. No Gateway, web, or mobile change is part of this Identity milestone.
+The M3 OAuth routes define a bounded browser handoff, exact trusted origins, route-specific CSRF protection, and an HttpOnly refresh cookie for the LOGIN exchange plus the cookie-only web refresh/logout routes. They do not authorize broad cookie authentication, Gateway proxy behavior, or mobile changes; those remain later transport work. The deterministic HTTP integration proof does not claim a live browser's Secure-cookie acceptance.

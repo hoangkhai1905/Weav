@@ -28,6 +28,15 @@ services:
       JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
 
+      # Optional Google OAuth. Compose interpolation forwards root .env values
+      # into the container; blank credentials keep the provider disabled.
+      GOOGLE_OAUTH_ENABLED: ${GOOGLE_OAUTH_ENABLED:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8081/auth/oauth/google/callback}
+      OAUTH_WEB_RETURN_TARGET_URI: ${OAUTH_WEB_RETURN_TARGET_URI:-http://localhost:5173/auth/callback}
+      OAUTH_WEB_ALLOWED_ORIGIN: ${OAUTH_WEB_ALLOWED_ORIGIN:-http://localhost:5173}
+
       # Valkey OTP state
       VALKEY_URL: ${VALKEY_URL}
       OTP_HMAC_SECRET: ${OTP_HMAC_SECRET}

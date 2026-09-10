@@ -1,12 +1,14 @@
 openapi: 3.1.0
 info:
   title: Weav Identity Authentication API
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     Identity-local JSON contract for registration, login, opaque refresh-token
     rotation, logout, current-user profile, self-service session management,
-    password change, email verification, and password recovery. Gateway and
-    browser transport are outside this milestone.
+    password change, email verification, password recovery, and the bounded
+    Google OAuth browser transport, including cookie-only web refresh/logout.
+    The Gateway remains outside this milestone; the existing JSON/native
+    refresh and logout contract is unchanged.
 servers:
   - url: http://localhost:8081
     description: Local Identity service
@@ -138,6 +140,268 @@ paths:
           description: Logout completed; the response has no body.
         '400':
           $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/oauth/google/start:
+    post:
+      tags: [Authentication]
+      operationId: startGoogleLogin
+      summary: Start a Google login handoff
+      description: >-
+        Starts a server-bound Google authorization transaction using only the
+        registered logical client and return-target IDs. The exact configured
+        Origin is required. The response sets an HttpOnly Secure correlation
+        cookie and a signed non-secret XSRF-TOKEN cookie; provider state,
+        nonce, and provider PKCE material remain server-side or in the
+        authorization URL.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthStartRequest'
+      responses:
+        '200':
+          description: OAuth authorization URL and opaque transaction handle.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthStartResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/oauth/google/callback:
+    get:
+      tags: [Authentication]
+      operationId: completeGoogleCallback
+      summary: Complete the Google provider callback
+      description: >-
+        Validates the registered transaction, provider state, correlation
+        cookie, provider PKCE and signed provider identity. A valid callback
+        returns a 303 only to the configured return target with opaque
+        handoff_code and transaction_id values. Invalid state or correlation
+        returns a generic 400 without a redirect. Provider denial uses a
+        fixed oauth_error value after the same state/cookie checks.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 2048
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 43
+            maxLength: 43
+            pattern: '^[A-Za-z0-9_-]{43}$'
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '303':
+          description: Safe redirect to the configured web return target.
+          headers:
+            Location:
+              description: >-
+                Configured return target carrying only transaction_id and a
+                bounded handoff_code or fixed oauth_error.
+              schema:
+                type: string
+                format: uri-reference
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/oauth/exchange:
+    post:
+      tags: [Authentication]
+      operationId: exchangeGoogleHandoff
+      summary: Exchange a Google handoff for login or link completion
+      description: >-
+        Requires the exact configured Origin and signed XSRF double-submit
+        value. Without an Authorization header the consumed handoff must be a
+        LOGIN intent and the response creates one normal session, returning
+        only the access token in JSON and rotating an HttpOnly refresh cookie.
+        With a valid current bearer the consumed handoff must be a matching
+        LINK intent; it creates only the OAuth association and never mints a
+        session or overwrites cookies. The dispatcher never probes both
+        intents.
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthExchangeRequest'
+      responses:
+        '200':
+          description: Login session or link completion result.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OAuthLoginExchangeResponse'
+                  - $ref: '#/components/schemas/OAuthLinkExchangeResponse'
+                discriminator:
+                  propertyName: outcome
+                  mapping:
+                    LOGIN: '#/components/schemas/OAuthLoginExchangeResponse'
+                    LINKED: '#/components/schemas/OAuthLinkExchangeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/web/csrf:
+    get:
+      tags: [Authentication]
+      operationId: bootstrapOAuthCsrf
+      summary: Bootstrap the web OAuth CSRF value
+      description: >-
+        Returns a short-lived signed non-secret double-submit value and sets
+        the matching Secure XSRF-TOKEN cookie. The exact configured Origin is
+        required; this route does not authenticate or mutate a session.
+      security: []
+      responses:
+        '200':
+          description: CSRF value for subsequent unsafe web OAuth requests.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthCsrfResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/web/refresh:
+    post:
+      tags: [Authentication]
+      operationId: refreshWebSession
+      summary: Rotate the HttpOnly web refresh cookie
+      description: >-
+        Requires the exact configured Origin and a valid signed XSRF-TOKEN /
+        X-XSRF-TOKEN double-submit pair. The refresh credential is read only
+        from the uniquely-present __Secure-weav_refresh cookie; request bodies
+        are ignored and malformed, duplicate, missing, expired, revoked, or
+        disabled-session cookies return a generic 401. Clients must omit the
+        Authorization header for this cookie-only route. A successful atomic
+        rotation returns the access-only LOGIN response and sets one replacement
+        cookie with the configured refresh lifetime.
+      security: []
+      responses:
+        '200':
+          description: Access token and public current user; refresh material is cookie-only.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Referrer-Policy:
+              $ref: '#/components/headers/ReferrerPolicyNoReferrer'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthLoginExchangeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/web/logout:
+    post:
+      tags: [Authentication]
+      operationId: logoutWebSession
+      summary: Revoke the session identified by the web refresh cookie
+      description: >-
+        Requires the exact configured Origin and a valid signed XSRF-TOKEN /
+        X-XSRF-TOKEN double-submit pair. A uniquely-present, well-formed
+        refresh cookie is revoked using the existing idempotent logout rules,
+        including when it is already unknown or revoked, and the same cookie
+        attributes are cleared. Missing or malformed/duplicate cookies return
+        a generic 401 without clearing any cookie. Clients must omit the
+        Authorization header for this cookie-only route.
+      security: []
+      responses:
+        '204':
+          description: Logout completed; the response has no body and clears the web refresh cookie.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Referrer-Policy:
+              $ref: '#/components/headers/ReferrerPolicyNoReferrer'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -347,6 +611,121 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /users/me/oauth/google/link:
+    post:
+      tags: [Users]
+      operationId: startGoogleLink
+      summary: Start an authenticated Google account link
+      description: >-
+        Requires the current active bearer session, exact Origin and XSRF
+        double-submit value, plus the current local password. Account identity
+        and session identity come from verified JWT claims. The response sets
+        the HttpOnly correlation cookie and returns the same bounded start
+        shape as login.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthLinkStartRequest'
+      responses:
+        '200':
+          description: OAuth authorization URL and opaque transaction handle.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthStartResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me/oauth-accounts:
+    get:
+      tags: [Users]
+      operationId: listCurrentUserOAuthAccounts
+      summary: List the authenticated user's linked OAuth accounts
+      description: >-
+        Returns only safe provider metadata for the current active bearer
+        session. Provider subjects, tokens, credential fingerprints and
+        password data are never returned.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Safe linked-account metadata.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OAuthAccountMetadata'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Users]
+      operationId: unlinkCurrentUserOAuthAccount
+      summary: Unlink one OAuth account from the current user
+      description: >-
+        Deletes only an account owned by the current user after active-session
+        and exact Origin/XSRF checks. A missing or non-owned account is a safe
+        404. Removing the final usable login method returns 409 before local
+        password validation; otherwise the current local password is required.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          description: Owned OAuth-account UUID selected for removal.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthUnlinkRequest'
+      responses:
+        '204':
+          description: OAuth account removed; the current local session remains active.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /users/me:
     get:
       tags: [Users]
@@ -509,6 +888,20 @@ components:
         type: string
         const: no-store
       example: no-store
+    ReferrerPolicyNoReferrer:
+      description: Prevents callback, handoff, and cookie URLs from being sent as a referrer.
+      schema:
+        type: string
+        const: no-referrer
+      example: no-referrer
+    OAuthSetCookie:
+      description: >-
+        HttpOnly/Secure/SameSite=Lax OAuth correlation or refresh cookie, or a
+        Secure XSRF-TOKEN cookie. The raw cookie value is never returned in
+        JSON and is not readable when HttpOnly is set.
+      schema:
+        type: string
+      example: __Secure-weav_oauth_tx=<opaque>; Path=/auth; Max-Age=600; Secure; HttpOnly; SameSite=Lax
     RetryAfter:
       description: Number of seconds until the caller should retry.
       schema:
@@ -599,6 +992,22 @@ components:
                 timestamp: '2026-09-06T08:30:00Z'
                 status: 401
                 path: /auth/change-password
+    Forbidden:
+      description: The registered Origin or signed XSRF double-submit value is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            invalidOriginOrCsrf:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: Access denied
+                  details: []
+                timestamp: '2026-09-10T08:30:00Z'
+                status: 403
+                path: /auth/oauth/exchange
     NotFound:
       description: The target does not exist or is not owned by the current user.
       content:
@@ -951,6 +1360,180 @@ components:
           description: Absolute refresh-session expiry as a UTC RFC 3339 timestamp.
         user:
           $ref: '#/components/schemas/UserResponse'
+
+    OAuthStartRequest:
+      type: object
+      additionalProperties: false
+      required: [clientId, returnTargetId, codeChallenge, codeChallengeMethod]
+      properties:
+        clientId:
+          type: string
+          minLength: 1
+          maxLength: 32
+          pattern: '^[\x21-\x7E]{1,32}$'
+          const: web
+        returnTargetId:
+          type: string
+          minLength: 1
+          maxLength: 32
+          pattern: '^[\x21-\x7E]{1,32}$'
+          const: web
+        codeChallenge:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: S256 challenge derived from the browser-held PKCE verifier.
+        codeChallengeMethod:
+          type: string
+          const: S256
+
+    OAuthLinkStartRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, clientId, returnTargetId, codeChallenge, codeChallengeMethod]
+      properties:
+        currentPassword:
+          $ref: '#/components/schemas/Password'
+        clientId:
+          type: string
+          const: web
+        returnTargetId:
+          type: string
+          const: web
+        codeChallenge:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        codeChallengeMethod:
+          type: string
+          const: S256
+
+    OAuthStartResponse:
+      type: object
+      additionalProperties: false
+      required: [transactionId, authorizationUrl, csrfToken]
+      properties:
+        transactionId:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: Opaque server correlation handle.
+        authorizationUrl:
+          type: string
+          format: uri
+          description: Provider authorization URL built from registered configuration.
+        csrfToken:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: Signed non-secret double-submit value.
+
+    OAuthExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [clientId, returnTargetId, transactionId, handoffCode, codeVerifier]
+      properties:
+        clientId:
+          type: string
+          const: web
+        returnTargetId:
+          type: string
+          const: web
+        transactionId:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        handoffCode:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: Opaque one-use callback handoff proof.
+        codeVerifier:
+          type: string
+          minLength: 43
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._~-]{43,128}$'
+          writeOnly: true
+
+    OAuthLoginExchangeResponse:
+      type: object
+      additionalProperties: false
+      required: [outcome, accessToken, tokenType, expiresIn, user]
+      properties:
+        outcome:
+          type: string
+          const: LOGIN
+        accessToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: HS256 access JWT; refresh material is cookie-only.
+        tokenType:
+          type: string
+          const: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          minimum: 1
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
+    OAuthLinkExchangeResponse:
+      type: object
+      additionalProperties: false
+      required: [outcome, oauthAccount]
+      properties:
+        outcome:
+          type: string
+          const: LINKED
+        oauthAccount:
+          $ref: '#/components/schemas/OAuthAccountMetadata'
+
+    OAuthCsrfResponse:
+      type: object
+      additionalProperties: false
+      required: [csrfToken]
+      properties:
+        csrfToken:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+
+    OAuthAccountMetadata:
+      type: object
+      additionalProperties: false
+      required: [id, provider, providerEmail, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum: [GOOGLE]
+        providerEmail:
+          type: [string, 'null']
+          maxLength: 320
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    OAuthUnlinkRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword]
+      properties:
+        currentPassword:
+          $ref: '#/components/schemas/Password'
 
     UserResponse:
       type: object

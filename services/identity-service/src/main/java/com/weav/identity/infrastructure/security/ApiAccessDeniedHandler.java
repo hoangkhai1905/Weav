@@ -3,6 +3,7 @@ package com.weav.identity.infrastructure.security;
 import com.weav.identity.infrastructure.web.ApiErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.web.access.AccessDeniedHandler;
@@ -29,6 +30,8 @@ public class ApiAccessDeniedHandler implements AccessDeniedHandler {
     ) throws IOException {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+        response.setHeader("Referrer-Policy", "no-referrer");
         objectMapper.writeValue(
                 response.getOutputStream(),
                 ApiErrorResponse.of(

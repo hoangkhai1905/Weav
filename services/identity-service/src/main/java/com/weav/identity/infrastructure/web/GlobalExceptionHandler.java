@@ -5,9 +5,13 @@ import com.weav.identity.domain.exception.DependencyUnavailableException;
 import com.weav.identity.domain.exception.DomainException;
 import com.weav.identity.domain.exception.ForbiddenException;
 import com.weav.identity.domain.exception.InvalidStateException;
+import com.weav.identity.domain.exception.OAuthAccountLinkRequiredException;
+import com.weav.identity.domain.exception.OAuthHandoffInvalidException;
+import com.weav.identity.domain.exception.OAuthLastLoginMethodException;
 import com.weav.identity.domain.exception.ResourceNotFoundException;
 import com.weav.identity.domain.exception.UnauthorizedException;
 import com.weav.identity.application.validation.OtpRateLimitException;
+import com.weav.identity.infrastructure.security.AuthRateLimitExceededException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -182,6 +186,26 @@ public class GlobalExceptionHandler {
                 ));
     }
 
+    @ExceptionHandler(AuthRateLimitExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleAuthRateLimit(
+            AuthRateLimitExceededException exception,
+            HttpServletRequest request
+    ) {
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()))
+                .cacheControl(CacheControl.noStore());
+        if (isOAuthTransportPath(request.getRequestURI())) {
+            response.header("Referrer-Policy", "no-referrer");
+        }
+        return response.body(ApiErrorResponse.of(
+                "RATE_LIMITED",
+                "Too many authentication attempts",
+                HttpStatus.TOO_MANY_REQUESTS.value(),
+                request.getRequestURI(),
+                List.of()
+        ));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleUnexpectedException(
             Exception exception,
@@ -205,8 +229,13 @@ public class GlobalExceptionHandler {
             HttpServletRequest request
     ) {
         ResponseEntity.BodyBuilder response = ResponseEntity.status(status);
-        if (status == HttpStatus.TOO_MANY_REQUESTS || status == HttpStatus.SERVICE_UNAVAILABLE) {
+        if (status == HttpStatus.TOO_MANY_REQUESTS
+                || status == HttpStatus.SERVICE_UNAVAILABLE
+                || isOAuthTransportPath(request.getRequestURI())) {
             response.cacheControl(CacheControl.noStore());
+        }
+        if (isOAuthTransportPath(request.getRequestURI())) {
+            response.header("Referrer-Policy", "no-referrer");
         }
         return response.body(
                 ApiErrorResponse.of(code, message, status.value(), request.getRequestURI(), details)
@@ -220,10 +249,15 @@ public class GlobalExceptionHandler {
         if (exception instanceof ResourceNotFoundException) {
             return HttpStatus.NOT_FOUND;
         }
-        if (exception instanceof ConflictException) {
+        if (exception instanceof ConflictException
+                || exception instanceof OAuthAccountLinkRequiredException
+                || exception instanceof OAuthLastLoginMethodException) {
             return HttpStatus.CONFLICT;
         }
         if (exception instanceof UnauthorizedException) {
+            return HttpStatus.UNAUTHORIZED;
+        }
+        if (exception instanceof OAuthHandoffInvalidException) {
             return HttpStatus.UNAUTHORIZED;
         }
         if (exception instanceof ForbiddenException) {
@@ -233,6 +267,12 @@ public class GlobalExceptionHandler {
             return HttpStatus.UNPROCESSABLE_CONTENT;
         }
         return HttpStatus.BAD_REQUEST;
+    }
+
+    private static boolean isOAuthTransportPath(String path) {
+        return path != null && (path.startsWith("/auth/oauth/")
+                || path.startsWith("/auth/web/")
+                || path.startsWith("/users/me/oauth"));
     }
 
     private ApiErrorResponse.ErrorDetail toDetail(FieldError error) {

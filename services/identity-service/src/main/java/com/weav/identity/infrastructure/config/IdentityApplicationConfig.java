@@ -9,9 +9,12 @@ import com.weav.identity.application.port.out.PasswordHasher;
 import com.weav.identity.application.port.out.RefreshTokenGenerator;
 import com.weav.identity.application.port.out.TransactionRunner;
 import com.weav.identity.application.security.CurrentIdentityGuard;
+import com.weav.identity.application.usecase.CompleteGoogleLoginUseCase;
 import com.weav.identity.application.usecase.GetCurrentUserUseCase;
 import com.weav.identity.application.usecase.ChangePasswordUseCase;
 import com.weav.identity.application.usecase.LoginUseCase;
+import com.weav.identity.application.usecase.LinkGoogleAccountUseCase;
+import com.weav.identity.application.usecase.ListOAuthAccountsUseCase;
 import com.weav.identity.application.usecase.ListSessionsUseCase;
 import com.weav.identity.application.usecase.LogoutUseCase;
 import com.weav.identity.application.usecase.RequestOtpUseCase;
@@ -20,12 +23,14 @@ import com.weav.identity.application.usecase.RevokeAllSessionsUseCase;
 import com.weav.identity.application.usecase.RevokeSessionUseCase;
 import com.weav.identity.application.usecase.RefreshSessionUseCase;
 import com.weav.identity.application.usecase.RegisterUserUseCase;
+import com.weav.identity.application.usecase.UnlinkOAuthAccountUseCase;
 import com.weav.identity.application.usecase.UpdateProfileUseCase;
 import com.weav.identity.application.usecase.VerifyOtpUseCase;
 import com.weav.identity.application.validation.AuthInputPolicy;
 import com.weav.identity.application.validation.OtpApplicationPolicy;
 import com.weav.identity.application.validation.OtpInputPolicy;
 import com.weav.identity.domain.port.out.UserRepository;
+import com.weav.identity.domain.port.out.OAuthAccountRepository;
 import com.weav.identity.domain.port.out.UserSessionRepository;
 import com.weav.identity.infrastructure.persistence.SpringTransactionRunner;
 import com.weav.identity.infrastructure.authstate.HmacKeyedFingerprint;
@@ -252,6 +257,79 @@ public class IdentityApplicationConfig {
                 clock,
                 properties.refreshExpiresIn()
         );
+    }
+
+    @Bean
+    public CompleteGoogleLoginUseCase completeGoogleLoginUseCase(
+            UserRepository userRepository,
+            OAuthAccountRepository oauthAccountRepository,
+            UserSessionRepository sessionRepository,
+            RefreshTokenGenerator refreshTokenGenerator,
+            AccessTokenIssuer accessTokenIssuer,
+            TransactionRunner transactionRunner,
+            AuthInputPolicy inputPolicy,
+            Clock clock,
+            JwtProperties properties
+    ) {
+        return new CompleteGoogleLoginUseCase(
+                userRepository,
+                oauthAccountRepository,
+                sessionRepository,
+                refreshTokenGenerator,
+                accessTokenIssuer,
+                transactionRunner,
+                inputPolicy,
+                clock,
+                properties.refreshExpiresIn()
+        );
+    }
+
+    @Bean
+    public LinkGoogleAccountUseCase linkGoogleAccountUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            OAuthAccountRepository oauthAccountRepository,
+            PasswordHasher passwordHasher,
+            KeyedFingerprint fingerprint,
+            TransactionRunner transactionRunner,
+            AuthInputPolicy inputPolicy,
+            Clock clock
+    ) {
+        return new LinkGoogleAccountUseCase(
+                identityGuard,
+                userRepository,
+                oauthAccountRepository,
+                passwordHasher,
+                fingerprint,
+                transactionRunner,
+                inputPolicy,
+                clock);
+    }
+
+    @Bean
+    public ListOAuthAccountsUseCase listOAuthAccountsUseCase(
+            CurrentIdentityGuard identityGuard,
+            OAuthAccountRepository oauthAccountRepository
+    ) {
+        return new ListOAuthAccountsUseCase(identityGuard, oauthAccountRepository);
+    }
+
+    @Bean
+    public UnlinkOAuthAccountUseCase unlinkOAuthAccountUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            OAuthAccountRepository oauthAccountRepository,
+            PasswordHasher passwordHasher,
+            TransactionRunner transactionRunner,
+            AuthInputPolicy inputPolicy
+    ) {
+        return new UnlinkOAuthAccountUseCase(
+                identityGuard,
+                userRepository,
+                oauthAccountRepository,
+                passwordHasher,
+                transactionRunner,
+                inputPolicy);
     }
 
     @Bean

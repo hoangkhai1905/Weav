@@ -302,7 +302,31 @@ cd services/identity-service
 
 Identity core authentication requires `JWT_ACCESS_SECRET` to contain at least 32 UTF-8 bytes. `JWT_REFRESH_SECRET` remains required for configuration compatibility but opaque refresh tokens are generated randomly and only their SHA-256 hashes are stored.
 
-The Identity-local OpenAPI contract is published at `packages/contracts/http/auth/openapi.yaml`. Version 1.1 adds the M1 contract target for profile display-name updates, self-service session listing/revocation, revoke-all, and local password change. These additions are contract-first: do not treat them as runtime-ready until the matching M1 implementation and HTTP tests pass. OTP/recovery, Google OAuth, admin, avatar, Gateway, web, and mobile operations are not published by this milestone.
+### Optional Google OAuth web transport
+
+The Identity service reads these names from its process environment; no Spring or Maven startup path loads the repository-root `.env` automatically:
+
+```text
+GOOGLE_OAUTH_ENABLED        # blank = auto; false = force disabled; true = require complete config
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET        # secret value supplied out-of-band
+GOOGLE_REDIRECT_URI         # default: http://localhost:8081/auth/oauth/google/callback
+OAUTH_WEB_RETURN_TARGET_URI # default: http://localhost:5173/auth/callback
+OAUTH_WEB_ALLOWED_ORIGIN    # default: http://localhost:5173
+```
+
+The Google issuer is fixed to `https://accounts.google.com`; web cookies remain `Secure` and the allowed origin is an exact match. With both credential values empty, OAuth providers and routes stay disabled and core Identity still boots. Setting `GOOGLE_OAUTH_ENABLED=true` with a missing or malformed required value fails startup rather than silently enabling a partial flow.
+
+For Compose, load the local environment at the project root so interpolation forwards these values into `identity-service`, then validate without printing resolved values:
+
+```powershell
+docker compose --env-file .env -f compose.yml -f compose.dev.yml config --quiet
+docker compose --env-file .env -f compose.yml -f compose.dev.yml --profile app up identity-service
+```
+
+For direct Maven startup, inject the same names into the process environment through the local shell or secret manager before starting `services/identity-service`; do not pass secret values on the command line or commit `.env`.
+
+The Identity-local OpenAPI contract is published at `packages/contracts/http/auth/openapi.yaml`. Version 1.1 adds the M1 contract target for profile display-name updates, self-service session listing/revocation, revoke-all, and local password change. These additions are contract-first: do not treat them as runtime-ready until the matching M1 implementation and HTTP tests pass. OTP/recovery, admin, avatar, Gateway, and mobile operations remain deferred; the M3 Google OAuth web transport still requires real-provider/browser acceptance.
 
 To run the complete Identity suite with disposable PostgreSQL 18:
 

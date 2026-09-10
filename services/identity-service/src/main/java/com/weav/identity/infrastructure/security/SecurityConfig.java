@@ -30,18 +30,32 @@ public class SecurityConfig {
     ) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
+                .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
                                 HttpMethod.POST,
                                 "/auth/register",
                                 "/auth/login",
                                 "/auth/refresh",
                                 "/auth/logout",
+                                "/auth/web/refresh",
+                                "/auth/web/logout",
                                 "/auth/otp/request",
                                 "/auth/otp/verify",
                                 "/auth/forgot-password",
                                 "/auth/reset-password"
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.POST,
+                                "/auth/oauth/google/start",
+                                "/auth/oauth/exchange"
+                        ).permitAll()
+                        .requestMatchers(
+                                HttpMethod.GET,
+                                "/auth/oauth/google/callback",
+                                "/auth/web/csrf"
                         ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .anyRequest().authenticated()
