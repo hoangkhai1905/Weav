@@ -20,6 +20,7 @@ export function LoginPage() {
   );
   const [password, setPassword] = useState(isAuthMockMode ? 'password123' : '');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,6 +39,21 @@ export function LoginPage() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setGoogleLoading(true);
+    setError('');
+    try {
+      await authApi.startGoogleLogin();
+    } catch (error) {
+      setGoogleLoading(false);
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to start Google sign-in. Please try again.',
+      );
     }
   };
 
@@ -158,13 +174,42 @@ export function LoginPage() {
 
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || googleLoading}
                   className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer border border-blue-400/30"
                 >
                   <span>{loading ? 'Logging in...' : 'Sign In'}</span>
                   <ArrowRight size={16} />
                 </button>
               </form>
+
+              {!isAuthMockMode && (
+                <>
+                  <div className="relative my-5 text-center">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-slate-200 dark:border-slate-800" />
+                    </div>
+                    <span className="relative bg-white px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:bg-slate-900 dark:text-slate-500">
+                      Or continue with
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={handleGoogleLogin}
+                    type="button"
+                    disabled={loading || googleLoading}
+                    className="w-full py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {googleLoading ? (
+                      <span>Connecting to Google…</span>
+                    ) : (
+                      <>
+                        <Globe size={16} className="text-blue-500" />
+                        <span>Continue with Google</span>
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
 
               {isAuthMockMode && (
                 <>
