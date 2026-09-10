@@ -1,8 +1,7 @@
 <!-- gitnexus:start -->
-
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Weav** (2503 symbols, 3813 relationships, 62 execution flows).
+This project is indexed by GitNexus as **Weav** (6523 symbols, 15748 relationships, 357 execution flows).
 
 > Index stale? Run `node .gitnexus/run.cjs analyze --index-only` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? Bootstrap with `npx`, `bunx`, or `pnpm dlx` — e.g. `bunx gitnexus@latest analyze` (npm 11 npx crash; #1939).
 
@@ -25,23 +24,23 @@ This project is indexed by GitNexus as **Weav** (2503 symbols, 3813 relationship
 
 ## Resources
 
-| Resource                              | Use for                                  |
-| ------------------------------------- | ---------------------------------------- |
-| `gitnexus://repo/Weav/context`        | Codebase overview, check index freshness |
-| `gitnexus://repo/Weav/clusters`       | All functional areas                     |
-| `gitnexus://repo/Weav/processes`      | All execution flows                      |
-| `gitnexus://repo/Weav/process/{name}` | Step-by-step execution trace             |
+| Resource | Use for |
+| --- | --- |
+| `gitnexus://repo/Weav/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/Weav/clusters` | All functional areas |
+| `gitnexus://repo/Weav/processes` | All execution flows |
+| `gitnexus://repo/Weav/process/{name}` | Step-by-step execution trace |
 
 ## CLI
 
-| Task                                         | Read this skill file                               |
-| -------------------------------------------- | -------------------------------------------------- |
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus-exploring/SKILL.md`       |
-| Blast radius / "What breaks if I change X?"  | `.claude/skills/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?"             | `.claude/skills/gitnexus-debugging/SKILL.md`       |
-| Rename / extract / split / refactor          | `.claude/skills/gitnexus-refactoring/SKILL.md`     |
-| Tools, resources, schema reference           | `.claude/skills/gitnexus-guide/SKILL.md`           |
-| Index, status, clean, wiki CLI commands      | `.claude/skills/gitnexus-cli/SKILL.md`             |
+| Task | Read this skill file |
+| --- | --- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus-exploring/SKILL.md` |
+| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus-debugging/SKILL.md` |
+| Rename / extract / split / refactor | `.claude/skills/gitnexus-refactoring/SKILL.md` |
+| Tools, resources, schema reference | `.claude/skills/gitnexus-guide/SKILL.md` |
+| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
 
@@ -83,6 +82,13 @@ Verify the current repository configuration before relying on this summary. If t
 8. For user-facing web behavior, verify the real running application with Playwright. Use Playwright for Expo Web where applicable; native mobile uses unit/integration tests unless a native E2E harness is explicitly introduced.
 9. Review the diff, run `git diff --check`, update `docs/work_logs/YYYY-MM-DD.md` (or a focused same-day file), and state any blocker.
 10. Before committing, run GitNexus `detect_changes`. Commit only a complete, tested logical milestone.
+
+## Communication and execution rules
+
+- If a worker or managed runner reports `helper_unknown_error: setup refresh had errors`, stop immediately and wait for the user to resolve it. Do not retry or work around it.
+- Commits may be made in small logical batches or completed milestones so the user can push them. Report briefly when a batch or milestone is complete.
+- Keep progress and status updates concise; mention only what is necessary.
+- If anything is unclear or unverified, ask the user. Do not infer, invent, or present assumptions as facts.
 
 ## Refactoring policy
 
@@ -134,7 +140,7 @@ Record decisions, changed files, commands and results, runtime/browser evidence,
 
 - Small tasks stay on the current branch.
 - Large, multi-service, or multi-agent tasks use a separate branch/worktree with clear file ownership.
-- Auto-commit is allowed only after a complete, tested logical milestone, with a clear message and description (use [git commit -m "summary" -m "description"]). Never include secrets, `.env`, build output, or unrelated user changes.
+- Commits are allowed for small logical batches or completed, tested milestones, with a clear message and description (use [git commit -m "summary" -m "description"]). Report each committed batch or milestone briefly so the user can push it. Never include secrets, `.env`, build output, or unrelated user changes.
 - If the managed runner reports `helper_unknown_error`, distinguish environment/setup failure from source failure. Verify the resolved workspace path and use a working junction/worktree only when it resolves to this repository; do not "fix" source code based only on runner setup errors.
 
 ## External agent CLI bridge
