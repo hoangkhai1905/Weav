@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { Logger } from '@nestjs/common';
 import {
   FastifyAdapter,
   NestFastifyApplication,
@@ -8,10 +9,11 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter(),
+    new FastifyAdapter({ bodyLimit: 65536 }),
   );
 
   const port = Number(process.env.PORT ?? 3000);
+  app.enableShutdownHooks();
 
   await app.listen({
     port,
@@ -19,4 +21,7 @@ async function bootstrap() {
   });
 }
 
-bootstrap();
+void bootstrap().catch(() => {
+  Logger.error('Notification service startup failed');
+  process.exitCode = 1;
+});

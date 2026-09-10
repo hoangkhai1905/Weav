@@ -5,27 +5,37 @@ import { Sparkles, ArrowRight, Sun, Moon, Globe } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
-import { authApi } from '../api/auth.api';
+import { authApi, isAuthMockMode } from '../api/auth.api';
 import { AnimatedWorkflowShowcase } from '../components/auth/AnimatedWorkflowShowcase';
 import { Logo } from '../components/common/Logo';
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { loginMock } = useAuthStore();
+  const { loginMock, setUser } = useAuthStore();
   const { theme, toggleTheme } = useUIStore();
   const { language, toggleLanguage } = useI18nStore();
 
-  const [email, setEmail] = useState('truong@example.com');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState(
+    isAuthMockMode ? 'truong@example.com' : '',
+  );
+  const [password, setPassword] = useState(isAuthMockMode ? 'password123' : '');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
     try {
-      await authApi.login(email, password);
-      loginMock();
+      const session = await authApi.login(email, password);
+      setUser(session.user);
       navigate('/dashboard');
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to sign in. Please try again.',
+      );
     } finally {
       setLoading(false);
     }
@@ -86,13 +96,27 @@ export function LoginPage() {
           >
             <div>
               <div className="space-y-1.5 mb-6">
-                <h1 className="text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">Welcome back</h1>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Sign in to manage workflows, monitor executions & AI nodes.</p>
+                <h1 className="text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+                  Welcome back
+                </h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Sign in to manage workflows, monitor executions & AI nodes.
+                </p>
               </div>
 
+              {error && (
+                <p
+                  role="alert"
+                  className="mb-3 text-sm text-rose-600 dark:text-rose-400"
+                >
+                  {error}
+                </p>
+              )}
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Email Address
+                  </label>
                   <input
                     type="email"
                     required
@@ -103,7 +127,9 @@ export function LoginPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Password</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Password
+                  </label>
                   <input
                     type="password"
                     required
@@ -115,10 +141,17 @@ export function LoginPage() {
 
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" defaultChecked className="rounded border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-blue-600" />
+                    <input
+                      type="checkbox"
+                      defaultChecked
+                      className="rounded border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-blue-600"
+                    />
                     <span>Remember me</span>
                   </label>
-                  <a href="#forgot" className="text-blue-600 dark:text-blue-400 font-semibold hover:underline">
+                  <a
+                    href="#forgot"
+                    className="text-blue-600 dark:text-blue-400 font-semibold hover:underline"
+                  >
                     Forgot password?
                   </a>
                 </div>
@@ -133,28 +166,35 @@ export function LoginPage() {
                 </button>
               </form>
 
-              <div className="relative my-6 text-center">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-slate-200 dark:border-slate-800" />
-                </div>
-                <span className="relative bg-white dark:bg-slate-900 px-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                  Quick Access
-                </span>
-              </div>
+              {isAuthMockMode && (
+                <>
+                  <div className="relative my-6 text-center">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-slate-200 dark:border-slate-800" />
+                    </div>
+                    <span className="relative bg-white dark:bg-slate-900 px-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                      Quick Access
+                    </span>
+                  </div>
 
-              <button
-                onClick={handleQuickDemo}
-                type="button"
-                className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <Sparkles size={16} className="text-blue-500" />
-                <span>Quick Demo Login (Nguyễn Anh Xuân Trường)</span>
-              </button>
+                  <button
+                    onClick={handleQuickDemo}
+                    type="button"
+                    className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Sparkles size={16} className="text-blue-500" />
+                    <span>Quick Demo Login (Nguyễn Anh Xuân Trường)</span>
+                  </button>
+                </>
+              )}
             </div>
 
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80 text-center text-xs text-slate-500 dark:text-slate-400">
               Don't have an account?{' '}
-              <Link to="/register" className="text-blue-600 dark:text-blue-400 font-bold hover:underline">
+              <Link
+                to="/register"
+                className="text-blue-600 dark:text-blue-400 font-bold hover:underline"
+              >
                 Register here
               </Link>
             </div>

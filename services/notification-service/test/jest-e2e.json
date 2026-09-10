@@ -4,6 +4,7 @@
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
-  }
+    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "allowJs": true, "module": "CommonJS", "moduleResolution": "Node", "resolvePackageJsonExports": false } }]
+  },
+  "transformIgnorePatterns": ["node_modules/(?!\\.pnpm|expo-server-sdk/)", "node_modules/\\.pnpm/(?!expo-server-sdk@)"]
 }

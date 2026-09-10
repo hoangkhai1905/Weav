@@ -11,19 +11,33 @@ import { Logo } from '../components/common/Logo';
 
 export function RegisterPage() {
   const navigate = useNavigate();
-  const { loginMock } = useAuthStore();
+  const { setUser } = useAuthStore();
   const { theme, toggleTheme } = useUIStore();
   const { language, toggleLanguage } = useI18nStore();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await authApi.register(email, name);
-    loginMock();
-    navigate('/dashboard');
+    setLoading(true);
+    setError('');
+    try {
+      const session = await authApi.register(email, name, password);
+      setUser(session.user);
+      navigate('/dashboard');
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to register. Please try again.',
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -86,13 +100,28 @@ export function RegisterPage() {
           >
             <div>
               <div className="space-y-1.5 mb-6">
-                <h1 className="text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">Create your Account</h1>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Join WEAV and start building automated AI workflows in minutes.</p>
+                <h1 className="text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
+                  Create your Account
+                </h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Join WEAV and start building automated AI workflows in
+                  minutes.
+                </p>
               </div>
 
+              {error && (
+                <p
+                  role="alert"
+                  className="mb-3 text-sm text-rose-600 dark:text-rose-400"
+                >
+                  {error}
+                </p>
+              )}
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Full Name</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Full Name
+                  </label>
                   <input
                     type="text"
                     required
@@ -104,7 +133,9 @@ export function RegisterPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Email Address</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Email Address
+                  </label>
                   <input
                     type="email"
                     required
@@ -116,7 +147,9 @@ export function RegisterPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Password</label>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Password
+                  </label>
                   <input
                     type="password"
                     required
@@ -129,6 +162,7 @@ export function RegisterPage() {
 
                 <button
                   type="submit"
+                  disabled={loading}
                   className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer border border-blue-400/30 mt-2"
                 >
                   <span>Create Account</span>
@@ -139,7 +173,10 @@ export function RegisterPage() {
 
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80 text-center text-xs text-slate-500 dark:text-slate-400">
               Already have an account?{' '}
-              <Link to="/login" className="text-blue-600 dark:text-blue-400 font-bold hover:underline">
+              <Link
+                to="/login"
+                className="text-blue-600 dark:text-blue-400 font-bold hover:underline"
+              >
                 Sign In
               </Link>
             </div>

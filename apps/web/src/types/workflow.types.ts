@@ -125,4 +125,14 @@ export interface NotificationItem {
   timestamp: string;
   read: boolean;
   link?: string;
+  userId?: string;
+  executionId?: string | null;
+  eventType?: string;
+  provider?: 'TELEGRAM' | 'EXPO_PUSH';
+  status?: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED';
+  readAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  scheduledAt?: string | null;
+  sentAt?: string | null;
 }

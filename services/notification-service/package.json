@@ -6,7 +6,9 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "nest build",
+    "build": "prisma generate && nest build",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -17,7 +19,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:integration": "node --test test/migration.integration.cjs test/runtime.integration.cjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -26,10 +29,17 @@
     "@nestjs/platform-fastify": "^11.2.1",
     "@nestjs/swagger": "^11.4.7",
     "@nestjs/terminus": "^11.1.1",
+    "@prisma/adapter-pg": "7.9.1",
     "@prisma/client": "^7.9.1",
+    "@prisma/client-runtime-utils": "7.9.1",
+    "amqplib": "^2.0.1",
     "expo-server-sdk": "^7.1.0",
+    "fastify": "^5.12.3",
+    "jsonwebtoken": "^9.0.3",
+    "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "undici": "^7.29.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -38,9 +48,12 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@types/amqplib": "^0.10.8",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
     "@types/supertest": "^7.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
@@ -67,8 +80,22 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "allowJs": true,
+            "module": "CommonJS",
+            "moduleResolution": "Node",
+            "resolvePackageJsonExports": false
+          }
+        }
+      ]
     },
+    "transformIgnorePatterns": [
+      "node_modules/(?!\\.pnpm|expo-server-sdk/)",
+      "node_modules/\\.pnpm/(?!expo-server-sdk@)"
+    ],
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],

@@ -1,5 +1,23 @@
 # Welcome to your Expo app 👋
 
+## Notification API
+
+Notifications use the existing authenticated HTTP client and `/api/notifications`
+gateway routes. `EXPO_PUBLIC_API_MODE` defaults to `http`; set it explicitly to
+`mock` for the offline demo. Configure `EXPO_PUBLIC_API_BASE_URL` (local default:
+`http://localhost:3000`). A physical device needs the gateway's reachable LAN URL.
+Restart Expo after changing environment variables.
+
+The inbox supports refresh, cursor pagination, unread counts, read actions and
+delivery status. It polls counts every 10 seconds and the list every 30 seconds.
+HTTP 401 clears the existing auth session. HTTP mode starts signed out and requires
+a real Identity access token via the existing auth flow; it never uses the demo
+session. The gateway proxies `/api/auth/login`, `/register`, `/refresh`, `/logout`
+to Identity's corresponding `/auth/*` routes, and `/api/auth/me` to `/users/me`.
+The adapter maps Identity's flat token response into the existing mobile session.
+Registration creates a user first, then explicitly logs in. JSON refresh/logout
+send the refresh token in the body; refresh is not automatically retried.
+
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
 ## Get started

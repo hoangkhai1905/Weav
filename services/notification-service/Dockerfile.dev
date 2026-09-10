@@ -18,4 +18,6 @@ COPY services/notification-service ./services/notification-service
 
 WORKDIR /workspace/services/notification-service
 
+RUN pnpm db:generate
+
 CMD ["pnpm", "start:dev"]

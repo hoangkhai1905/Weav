@@ -3,6 +3,7 @@ import { Bell, Menu, Moon, Search, Sun } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useUIStore } from '../../store/useUIStore';
+import { useNotificationUnreadCount } from '../../hooks/useNotifications';
 
 const getTopbarPageKey = (pathname: string) => {
   if (pathname.startsWith('/workflows')) return 'nav.workflows';
@@ -21,6 +22,7 @@ export function Topbar() {
   const { searchQuery, setSearchQuery, theme, toggleTheme, toggleMobileSidebar } = useUIStore();
   const { language, toggleLanguage, t } = useI18nStore();
   const location = useLocation();
+  const { data: unreadCount = 0, isError: unreadError } = useNotificationUnreadCount();
   const currentPageKey = getTopbarPageKey(location.pathname);
 
   return (
@@ -95,11 +97,15 @@ export function Topbar() {
         <Link
           to="/notifications"
           className="relative rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          title={t('nav.notifications')}
-          aria-label={t('nav.notifications')}
+          title={unreadError ? t('notif.count_error') : t('nav.notifications')}
+          aria-label={`${t('nav.notifications')}${unreadCount > 0 ? `: ${unreadCount} ${t('notif.unread')}` : ''}`}
         >
           <Bell size={17} />
-          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-card" />
+          {unreadCount > 0 && (
+            <span aria-hidden="true" className="absolute -right-2 -top-1 min-w-4 rounded-full bg-primary px-1 text-center text-[9px] font-bold leading-4 text-primary-foreground ring-2 ring-card">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
         </Link>
 
         <div className="ml-1 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground shadow-sm">
