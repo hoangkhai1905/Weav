@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.weav.identity.TestcontainersConfiguration;
 import com.weav.identity.domain.model.User;
 import com.weav.identity.domain.model.UserSession;
+import com.weav.identity.domain.model.UserSessionPage;
 import com.weav.identity.domain.valueobject.SystemRole;
 import com.weav.identity.domain.valueobject.UserStatus;
 import com.weav.identity.infrastructure.persistence.repository.SpringDataUserRepository;
@@ -130,16 +131,78 @@ class UserSessionPersistenceIntegrationTest {
         assertEquals(session.getId(), locked.getId());
     }
 
-    private UserSession session(String refreshTokenHash) {
-        return new UserSession(
+    @Test
+    void listsOnlyActiveSessionsInStableOrderAndRevokesAllUnrevokedSessions() {
+        Instant now = CREATED_AT.plusSeconds(100);
+        UUID firstId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID secondId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        UUID expiredId = UUID.fromString("00000000-0000-0000-0000-000000000003");
+        UUID otherUserId = userRepository.save(new User(
                 UUID.randomUUID(),
-                userId,
+                "other-session-owner@example.com",
+                "$2a$10$test-password-hash",
+                "Other Session Owner",
+                null,
+                SystemRole.USER,
+                UserStatus.ACTIVE,
+                CREATED_AT,
+                CREATED_AT)).getId();
+        userSessionRepository.save(session(firstId, userId, "active-first", now.plusSeconds(100), now));
+        userSessionRepository.save(session(secondId, userId, "active-second", now.plusSeconds(100), now));
+        userSessionRepository.save(session(expiredId, userId, "expired", now, now.plusSeconds(1)));
+        userSessionRepository.save(session(UUID.randomUUID(), otherUserId, "other-user", now.plusSeconds(100), now));
+
+        UserSessionPage page = userSessionRepository.findActiveByUserId(userId, now, 0, 20);
+
+        assertEquals(2, page.totalItems());
+        assertEquals(1, page.totalPages());
+        assertEquals(2, page.items().size());
+        assertEquals(firstId, page.items().get(0).getId());
+        assertEquals(secondId, page.items().get(1).getId());
+
+        Instant revokedAt = now.plusSeconds(10);
+        int revoked = transactionTemplate.execute(status -> userSessionRepository.revokeAllForUser(userId, revokedAt));
+
+        assertEquals(3, revoked);
+        assertEquals(revokedAt, userSessionRepository.findById(firstId).orElseThrow().getRevokedAt());
+        assertEquals(revokedAt, userSessionRepository.findById(secondId).orElseThrow().getRevokedAt());
+        assertEquals(revokedAt, userSessionRepository.findById(expiredId).orElseThrow().getRevokedAt());
+        assertNull(userSessionRepository.findByRefreshTokenHash("other-user").orElseThrow().getRevokedAt());
+    }
+
+    @Test
+    void exactLockedLookupRequiresAndWorksInsideTransaction() {
+        UserSession session = session("locked-id-hash");
+        userSessionRepository.save(session);
+
+        assertThrows(InvalidDataAccessApiUsageException.class,
+                () -> userSessionRepository.findByIdForUpdate(session.getId()));
+
+        UserSession locked = transactionTemplate.execute(status ->
+                userSessionRepository.findByIdForUpdate(session.getId()).orElseThrow());
+
+        assertEquals(session.getId(), locked.getId());
+    }
+
+    private UserSession session(String refreshTokenHash) {
+        return session(UUID.randomUUID(), userId, refreshTokenHash, EXPIRES_AT, CREATED_AT);
+    }
+
+    private UserSession session(
+            UUID id,
+            UUID ownerId,
+            String refreshTokenHash,
+            Instant expiresAt,
+            Instant createdAt) {
+        return new UserSession(
+                id,
+                ownerId,
                 refreshTokenHash,
                 "JUnit",
                 "127.0.0.1",
-                EXPIRES_AT,
+                expiresAt,
                 null,
                 null,
-                CREATED_AT);
+                createdAt);
     }
 }

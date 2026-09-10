@@ -21,7 +21,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 
 public final class LoginUseCase {
@@ -65,40 +64,50 @@ public final class LoginUseCase {
         }
     }
 
+    private static String snapshotHash(User candidate) {
+        if (candidate == null || candidate.getPasswordHash() == null || candidate.getPasswordHash().isBlank()) {
+            return DUMMY_BCRYPT_HASH;
+        }
+        return candidate.getPasswordHash();
+    }
+
     public TokenPairResult execute(LoginCommand command) {
         Objects.requireNonNull(command, "command must not be null");
         String email = inputPolicy.canonicalizeEmail(command.email());
         inputPolicy.validatePassword(command.password());
 
-        Optional<User> candidate = userRepository.findByEmail(email);
-        String storedHash = candidate.map(User::getPasswordHash)
-                .filter(hash -> !hash.isBlank())
-                .orElse(DUMMY_BCRYPT_HASH);
-        boolean passwordMatches = passwordHasher.matches(command.password(), storedHash);
-
-        User user = candidate.orElse(null);
-        if (!passwordMatches
-                || user == null
-                || user.getPasswordHash() == null
-                || user.getPasswordHash().isBlank()
-                || user.getStatus() != UserStatus.ACTIVE) {
+        User candidate = userRepository.findByEmail(email).orElse(null);
+        String snapshotHash = snapshotHash(candidate);
+        if (!passwordHasher.matches(command.password(), snapshotHash)
+                || candidate == null
+                || candidate.getPasswordHash() == null
+                || candidate.getPasswordHash().isBlank()) {
             throw new UnauthorizedException(AUTHENTICATION_FAILED);
         }
 
-        GeneratedRefreshToken refreshToken = refreshTokenGenerator.generate();
-        Instant now = clock.instant();
-        Instant refreshExpiresAt = now.plus(sessionLifetime);
-        UserSession session = new UserSession(
-                UUID.randomUUID(),
-                user.getId(),
-                refreshToken.hash(),
-                null,
-                null,
-                refreshExpiresAt,
-                now
-        );
-
         return transactionRunner.required(() -> {
+            User user = userRepository.findByIdForUpdate(candidate.getId())
+                    .orElseThrow(() -> new UnauthorizedException(AUTHENTICATION_FAILED));
+            boolean passwordChanged = !Objects.equals(user.getPasswordHash(), snapshotHash);
+            if (passwordChanged
+                    || user.getPasswordHash() == null
+                    || user.getPasswordHash().isBlank()
+                    || user.getStatus() != UserStatus.ACTIVE) {
+                throw new UnauthorizedException(AUTHENTICATION_FAILED);
+            }
+
+            GeneratedRefreshToken refreshToken = refreshTokenGenerator.generate();
+            Instant now = clock.instant();
+            Instant refreshExpiresAt = now.plus(sessionLifetime);
+            UserSession session = new UserSession(
+                    UUID.randomUUID(),
+                    user.getId(),
+                    refreshToken.hash(),
+                    command.userAgent(),
+                    command.ipAddress(),
+                    refreshExpiresAt,
+                    now
+            );
             UserSession savedSession = sessionRepository.save(session);
             IssuedAccessToken accessToken = accessTokenIssuer.issue(
                     user.getId(),

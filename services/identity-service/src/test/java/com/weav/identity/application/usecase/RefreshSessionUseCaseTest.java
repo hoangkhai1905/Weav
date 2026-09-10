@@ -33,6 +33,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -65,9 +66,10 @@ class RefreshSessionUseCaseTest {
         UserSession session = session(null, absoluteExpiry);
         User user = user(UserStatus.ACTIVE);
         when(refreshTokenGenerator.hash(SUBMITTED_TOKEN)).thenReturn(SUBMITTED_HASH);
+        when(sessionRepository.findByRefreshTokenHash(SUBMITTED_HASH)).thenReturn(Optional.of(session));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
         when(sessionRepository.findByRefreshTokenHashForUpdate(SUBMITTED_HASH))
                 .thenReturn(Optional.of(session));
-        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         when(refreshTokenGenerator.generate())
                 .thenReturn(new GeneratedRefreshToken("replacement-refresh-token", "replacement-refresh-hash"));
         when(sessionRepository.save(session)).thenAnswer(invocation -> {
@@ -93,6 +95,10 @@ class RefreshSessionUseCaseTest {
         assertEquals(absoluteExpiry, result.refreshExpiresAt());
         assertEquals(USER_ID, result.user().id());
         verify(sessionRepository).save(session);
+        var order = inOrder(sessionRepository, userRepository);
+        order.verify(sessionRepository).findByRefreshTokenHash(SUBMITTED_HASH);
+        order.verify(userRepository).findByIdForUpdate(USER_ID);
+        order.verify(sessionRepository).findByRefreshTokenHashForUpdate(SUBMITTED_HASH);
     }
 
     @Test
@@ -100,8 +106,12 @@ class RefreshSessionUseCaseTest {
         UserSession revoked = session(NOW.minus(Duration.ofMinutes(1)), NOW.plus(Duration.ofDays(1)));
         UserSession expired = session(null, NOW.minus(Duration.ofSeconds(1)));
         when(refreshTokenGenerator.hash(SUBMITTED_TOKEN)).thenReturn(SUBMITTED_HASH);
-        when(sessionRepository.findByRefreshTokenHashForUpdate(SUBMITTED_HASH))
+        when(sessionRepository.findByRefreshTokenHash(SUBMITTED_HASH))
                 .thenReturn(Optional.of(revoked), Optional.of(expired), Optional.empty());
+        when(userRepository.findByIdForUpdate(USER_ID))
+                .thenReturn(Optional.of(user(UserStatus.ACTIVE)), Optional.of(user(UserStatus.ACTIVE)));
+        when(sessionRepository.findByRefreshTokenHashForUpdate(SUBMITTED_HASH))
+                .thenReturn(Optional.of(revoked), Optional.of(expired));
 
         List<UnauthorizedException> failures = List.of(
                 assertUnauthorized(),
@@ -114,8 +124,7 @@ class RefreshSessionUseCaseTest {
         assertTrue(failures.stream().allMatch(failure -> "Authentication failed".equals(failure.getMessage())));
         assertTrue(failures.stream().noneMatch(failure -> failure.getMessage().contains(SUBMITTED_TOKEN)));
         assertTrue(failures.stream().noneMatch(failure -> failure.getMessage().contains(SUBMITTED_HASH)));
-        assertEquals(3, transactionRunner.invocations);
-        verify(userRepository, never()).findById(any(UUID.class));
+        assertEquals(2, transactionRunner.invocations);
         verify(refreshTokenGenerator, never()).generate();
         verify(sessionRepository, never()).save(any(UserSession.class));
         verify(accessTokenIssuer, never()).issue(any(), any(), any(), any());
@@ -125,9 +134,8 @@ class RefreshSessionUseCaseTest {
     void rejectsInactiveUserBeforeRotatingSession() {
         UserSession session = session(null, NOW.plus(Duration.ofDays(1)));
         when(refreshTokenGenerator.hash(SUBMITTED_TOKEN)).thenReturn(SUBMITTED_HASH);
-        when(sessionRepository.findByRefreshTokenHashForUpdate(SUBMITTED_HASH))
-                .thenReturn(Optional.of(session));
-        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user(UserStatus.DISABLED)));
+        when(sessionRepository.findByRefreshTokenHash(SUBMITTED_HASH)).thenReturn(Optional.of(session));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user(UserStatus.DISABLED)));
 
         UnauthorizedException failure = assertUnauthorized();
 
@@ -135,8 +143,52 @@ class RefreshSessionUseCaseTest {
         assertFalse(failure.getMessage().contains(SUBMITTED_TOKEN));
         assertEquals("submitted-refresh-hash", session.getRefreshTokenHash());
         verify(refreshTokenGenerator, never()).generate();
+        verify(sessionRepository, never()).findByRefreshTokenHashForUpdate(SUBMITTED_HASH);
         verify(sessionRepository, never()).save(any(UserSession.class));
         verify(accessTokenIssuer, never()).issue(any(), any(), any(), any());
+    }
+
+    @Test
+    void evaluatesExpiryOnlyAfterUserAndSessionLocksAreAcquired() {
+        UserSession session = session(null, NOW.plus(Duration.ofDays(1)));
+        User user = user(UserStatus.ACTIVE);
+        Clock transactionClock = new Clock() {
+            @Override
+            public ZoneOffset getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(java.time.ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                assertTrue(transactionRunner.inTransaction, "expiry time must be read after locks begin");
+                return NOW;
+            }
+        };
+        RefreshSessionUseCase transactionTimedUseCase = new RefreshSessionUseCase(
+                userRepository,
+                sessionRepository,
+                refreshTokenGenerator,
+                accessTokenIssuer,
+                transactionRunner,
+                transactionClock);
+        when(refreshTokenGenerator.hash(SUBMITTED_TOKEN)).thenReturn(SUBMITTED_HASH);
+        when(sessionRepository.findByRefreshTokenHash(SUBMITTED_HASH)).thenReturn(Optional.of(session));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
+        when(sessionRepository.findByRefreshTokenHashForUpdate(SUBMITTED_HASH)).thenReturn(Optional.of(session));
+        when(refreshTokenGenerator.generate())
+                .thenReturn(new GeneratedRefreshToken("replacement-refresh-token", "replacement-refresh-hash"));
+        when(sessionRepository.save(session)).thenReturn(session);
+        when(accessTokenIssuer.issue(USER_ID, SESSION_ID, SystemRole.USER, UserStatus.ACTIVE))
+                .thenReturn(new IssuedAccessToken("access-token", NOW.plus(Duration.ofMinutes(15))));
+
+        transactionTimedUseCase.execute(new RefreshTokenCommand(SUBMITTED_TOKEN));
+
+        assertEquals(NOW, session.getLastUsedAt());
     }
 
     private UnauthorizedException assertUnauthorized() {

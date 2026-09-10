@@ -50,15 +50,20 @@ public final class RefreshSessionUseCase {
     public TokenPairResult execute(RefreshTokenCommand command) {
         Objects.requireNonNull(command, "command must not be null");
         String submittedHash = refreshTokenGenerator.hash(command.refreshToken());
-        Instant now = clock.instant();
+        UserSession candidate = sessionRepository.findByRefreshTokenHash(submittedHash)
+                .orElseThrow(() -> new UnauthorizedException(AUTHENTICATION_FAILED));
 
         return transactionRunner.required(() -> {
-            UserSession session = sessionRepository.findByRefreshTokenHashForUpdate(submittedHash)
-                    .filter(value -> value.isActive(now))
-                    .orElseThrow(() -> new UnauthorizedException(AUTHENTICATION_FAILED));
-            User user = userRepository.findById(session.getUserId())
+            User user = userRepository.findByIdForUpdate(candidate.getUserId())
                     .filter(value -> value.getStatus() == UserStatus.ACTIVE)
                     .orElseThrow(() -> new UnauthorizedException(AUTHENTICATION_FAILED));
+            UserSession session = sessionRepository.findByRefreshTokenHashForUpdate(submittedHash)
+                    .filter(value -> value.getUserId().equals(user.getId()))
+                    .orElseThrow(() -> new UnauthorizedException(AUTHENTICATION_FAILED));
+            Instant now = clock.instant();
+            if (!session.isActive(now)) {
+                throw new UnauthorizedException(AUTHENTICATION_FAILED);
+            }
 
             GeneratedRefreshToken replacement = refreshTokenGenerator.generate();
             session.rotateRefreshToken(replacement.hash(), now);

@@ -20,8 +20,9 @@ class UserPersistenceMapperTest {
         UUID id = UUID.fromString("11111111-1111-1111-1111-111111111111");
         Instant createdAt = Instant.parse("2026-01-01T00:00:00Z");
         Instant updatedAt = Instant.parse("2026-01-02T00:00:00Z");
+        Instant emailVerifiedAt = Instant.parse("2026-01-03T00:00:00Z");
         User source = new User(id, "user@example.com", null, null, "avatar-key",
-                SystemRole.ADMIN, UserStatus.DISABLED, createdAt, updatedAt);
+                SystemRole.ADMIN, UserStatus.DISABLED, createdAt, updatedAt, emailVerifiedAt);
 
         UserJpaEntity entity = mapper.toEntity(source);
         User restored = mapper.toDomain(entity);
@@ -35,5 +36,6 @@ class UserPersistenceMapperTest {
         assertEquals(source.getStatus(), restored.getStatus());
         assertEquals(source.getCreatedAt(), restored.getCreatedAt());
         assertEquals(source.getUpdatedAt(), restored.getUpdatedAt());
+        assertEquals(source.getEmailVerifiedAt(), restored.getEmailVerifiedAt());
     }
 }

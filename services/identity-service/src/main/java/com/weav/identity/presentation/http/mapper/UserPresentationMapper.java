@@ -4,10 +4,16 @@ import com.weav.identity.application.dto.AuthenticatedUserResult;
 import com.weav.identity.application.dto.LoginCommand;
 import com.weav.identity.application.dto.RefreshTokenCommand;
 import com.weav.identity.application.dto.RegisterUserCommand;
+import com.weav.identity.application.dto.SessionPageResult;
+import com.weav.identity.application.dto.SessionResult;
 import com.weav.identity.application.dto.TokenPairResult;
+import com.weav.identity.application.dto.UpdateProfileCommand;
 import com.weav.identity.presentation.http.request.LoginRequest;
 import com.weav.identity.presentation.http.request.RefreshTokenRequest;
 import com.weav.identity.presentation.http.request.RegisterUserRequest;
+import com.weav.identity.presentation.http.request.UpdateProfileRequest;
+import com.weav.identity.presentation.http.response.SessionPageResponse;
+import com.weav.identity.presentation.http.response.SessionResponse;
 import com.weav.identity.presentation.http.response.TokenResponse;
 import com.weav.identity.presentation.http.response.UserResponse;
 import org.springframework.stereotype.Component;
@@ -19,12 +25,20 @@ public class UserPresentationMapper {
         return new RegisterUserCommand(request.email(), request.password(), request.displayName());
     }
 
+    public LoginCommand toCommand(LoginRequest request, String userAgent, String ipAddress) {
+        return new LoginCommand(request.email(), request.password(), userAgent, ipAddress);
+    }
+
     public LoginCommand toCommand(LoginRequest request) {
         return new LoginCommand(request.email(), request.password());
     }
 
     public RefreshTokenCommand toCommand(RefreshTokenRequest request) {
         return new RefreshTokenCommand(request.refreshToken());
+    }
+
+    public UpdateProfileCommand toCommand(UpdateProfileRequest request) {
+        return new UpdateProfileCommand(request.displayName());
     }
 
     public UserResponse toResponse(AuthenticatedUserResult user) {
@@ -36,7 +50,8 @@ public class UserPresentationMapper {
                 user.systemRole(),
                 user.status(),
                 user.createdAt(),
-                user.updatedAt()
+                user.updatedAt(),
+                user.emailVerifiedAt()
         );
     }
 
@@ -48,6 +63,27 @@ public class UserPresentationMapper {
                 result.expiresIn(),
                 result.refreshExpiresAt(),
                 toResponse(result.user())
+        );
+    }
+
+    public SessionResponse toSessionResponse(SessionResult session) {
+        return new SessionResponse(
+                session.id(),
+                session.createdAt(),
+                session.lastUsedAt(),
+                session.expiresAt(),
+                session.current(),
+                session.userAgent()
+        );
+    }
+
+    public SessionPageResponse toSessionPageResponse(SessionPageResult page) {
+        return new SessionPageResponse(
+                page.items().stream().map(this::toSessionResponse).toList(),
+                page.page(),
+                page.size(),
+                page.totalItems(),
+                page.totalPages()
         );
     }
 }

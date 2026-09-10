@@ -1,4 +1,5 @@
 <!-- gitnexus:start -->
+
 # GitNexus — Code Intelligence
 
 This project is indexed by GitNexus as **Weav** (2503 symbols, 3813 relationships, 62 execution flows).
@@ -24,23 +25,23 @@ This project is indexed by GitNexus as **Weav** (2503 symbols, 3813 relationship
 
 ## Resources
 
-| Resource | Use for |
-| --- | --- |
-| `gitnexus://repo/Weav/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/Weav/clusters` | All functional areas |
-| `gitnexus://repo/Weav/processes` | All execution flows |
-| `gitnexus://repo/Weav/process/{name}` | Step-by-step execution trace |
+| Resource                              | Use for                                  |
+| ------------------------------------- | ---------------------------------------- |
+| `gitnexus://repo/Weav/context`        | Codebase overview, check index freshness |
+| `gitnexus://repo/Weav/clusters`       | All functional areas                     |
+| `gitnexus://repo/Weav/processes`      | All execution flows                      |
+| `gitnexus://repo/Weav/process/{name}` | Step-by-step execution trace             |
 
 ## CLI
 
-| Task | Read this skill file |
-| --- | --- |
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
+| Task                                         | Read this skill file                               |
+| -------------------------------------------- | -------------------------------------------------- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus-exploring/SKILL.md`       |
+| Blast radius / "What breaks if I change X?"  | `.claude/skills/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?"             | `.claude/skills/gitnexus-debugging/SKILL.md`       |
+| Rename / extract / split / refactor          | `.claude/skills/gitnexus-refactoring/SKILL.md`     |
+| Tools, resources, schema reference           | `.claude/skills/gitnexus-guide/SKILL.md`           |
+| Index, status, clean, wiki CLI commands      | `.claude/skills/gitnexus-cli/SKILL.md`             |
 
 <!-- gitnexus:end -->
 
@@ -69,6 +70,7 @@ Verify the current repository configuration before relying on this summary. If t
 - Shared packages are for contracts, schemas, clients, and genuinely generic utilities. Do not move service-specific business logic into shared packages.
 - Keep public API and database changes backward-compatible by default. Prefer additive migrations and additive fields/endpoints.
 - Do not rename or drop persisted data, break an API contract, or remove compatibility behavior without a migration/rollback plan and explicit user confirmation.
+
 ## Required workflow
 
 1. Read this file, relevant service/app documentation, the applicable work log, and `git status` before changing anything.
@@ -105,6 +107,7 @@ Use only skills relevant to the current task. If a skill is unavailable or not c
 - For performance work, establish a baseline, measure the bottleneck, preserve correctness, and use a bounded optimization loop. Do not claim an optimization from intuition or a build-only result.
 - For completion, use verification-before-completion and browser-QA guidance when available. A passing mock, static check, or build does not prove a real user flow works.
 - Use context-budget/strategic-compact only when context pressure makes it useful.
+
 ## Testing and verification
 
 - Discover the exact command from the affected package's `package.json`, Maven/Gradle wrapper, or Python configuration instead of guessing.
@@ -131,7 +134,7 @@ Record decisions, changed files, commands and results, runtime/browser evidence,
 
 - Small tasks stay on the current branch.
 - Large, multi-service, or multi-agent tasks use a separate branch/worktree with clear file ownership.
-- Auto-commit is allowed only after a complete, tested logical milestone, with a clear message. Never include secrets, `.env`, build output, or unrelated user changes.
+- Auto-commit is allowed only after a complete, tested logical milestone, with a clear message and description (use [git commit -m "summary" -m "description"]). Never include secrets, `.env`, build output, or unrelated user changes.
 - If the managed runner reports `helper_unknown_error`, distinguish environment/setup failure from source failure. Verify the resolved workspace path and use a working junction/worktree only when it resolves to this repository; do not "fix" source code based only on runner setup errors.
 
 ## External agent CLI bridge

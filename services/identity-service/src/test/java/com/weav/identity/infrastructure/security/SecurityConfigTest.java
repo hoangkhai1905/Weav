@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -64,6 +65,16 @@ class SecurityConfigTest {
     void protectsRoutesByDefault() throws Exception {
         mockMvc.perform(get("/protected"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void doesNotGrantOAuthCorsToCoreAuthRoutes() throws Exception {
+        mockMvc.perform(post("/auth/login")
+                        .header("Origin", "https://web.test")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
     }
 
     @Test

@@ -42,6 +42,10 @@ public final class AuthRateLimitFilter extends OncePerRequestFilter {
             response.setStatus(429);
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.setHeader(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()));
+            response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+            if (isOAuthTransportPath(request.getRequestURI())) {
+                response.setHeader("Referrer-Policy", "no-referrer");
+            }
             objectMapper.writeValue(
                     response.getOutputStream(),
                     ApiErrorResponse.of(
@@ -56,14 +60,33 @@ public final class AuthRateLimitFilter extends OncePerRequestFilter {
     }
 
     private AuthRateLimiter.Scope scopeFor(HttpServletRequest request) {
-        if (!"POST".equals(request.getMethod())) {
-            return null;
-        }
-        return switch (request.getServletPath()) {
-            case "/auth/register" -> AuthRateLimiter.Scope.REGISTER_IP;
-            case "/auth/login" -> AuthRateLimiter.Scope.LOGIN_IP;
-            case "/auth/refresh" -> AuthRateLimiter.Scope.REFRESH_IP;
+        return switch (request.getMethod()) {
+            case "POST" -> switch (request.getServletPath()) {
+                case "/auth/register" -> AuthRateLimiter.Scope.REGISTER_IP;
+                case "/auth/login" -> AuthRateLimiter.Scope.LOGIN_IP;
+                case "/auth/refresh" -> AuthRateLimiter.Scope.REFRESH_IP;
+                case "/auth/oauth/google/start" -> AuthRateLimiter.Scope.OAUTH_START_IP;
+                case "/auth/oauth/exchange" -> AuthRateLimiter.Scope.OAUTH_EXCHANGE_IP;
+                case "/auth/web/refresh" -> AuthRateLimiter.Scope.OAUTH_WEB_REFRESH_IP;
+                case "/auth/web/logout" -> AuthRateLimiter.Scope.OAUTH_WEB_LOGOUT_IP;
+                case "/users/me/oauth/google/link" -> AuthRateLimiter.Scope.OAUTH_LINK_START_IP;
+                default -> null;
+            };
+            case "DELETE" -> request.getServletPath().startsWith("/users/me/oauth-accounts/")
+                    ? AuthRateLimiter.Scope.OAUTH_UNLINK_IP
+                    : null;
+            case "GET" -> switch (request.getServletPath()) {
+                case "/auth/oauth/google/callback" -> AuthRateLimiter.Scope.OAUTH_CALLBACK_IP;
+                case "/auth/web/csrf" -> AuthRateLimiter.Scope.OAUTH_CSRF_IP;
+                default -> null;
+            };
             default -> null;
         };
+    }
+
+    private static boolean isOAuthTransportPath(String path) {
+        return path != null && (path.startsWith("/auth/oauth/")
+                || path.startsWith("/auth/web/")
+                || path.startsWith("/users/me/oauth"));
     }
 }

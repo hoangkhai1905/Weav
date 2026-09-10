@@ -31,6 +31,8 @@ public class ApiAuthenticationEntryPoint implements AuthenticationEntryPoint {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+        response.setHeader("Referrer-Policy", "no-referrer");
         objectMapper.writeValue(
                 response.getOutputStream(),
                 ApiErrorResponse.of(

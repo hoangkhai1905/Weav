@@ -1,11 +1,14 @@
 openapi: 3.1.0
 info:
-  title: Weav Identity Core Authentication API
-  version: 1.0.0
+  title: Weav Identity Authentication API
+  version: 1.3.0
   description: >-
     Identity-local JSON contract for registration, login, opaque refresh-token
-    rotation, logout, and current-user lookup. Gateway and browser transport are
-    outside this milestone.
+    rotation, logout, current-user profile, self-service session management,
+    password change, email verification, password recovery, and the bounded
+    Google OAuth browser transport, including cookie-only web refresh/logout.
+    The Gateway remains outside this milestone; the existing JSON/native
+    refresh and logout contract is unchanged.
 servers:
   - url: http://localhost:8081
     description: Local Identity service
@@ -140,6 +143,589 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /auth/oauth/google/start:
+    post:
+      tags: [Authentication]
+      operationId: startGoogleLogin
+      summary: Start a Google login handoff
+      description: >-
+        Starts a server-bound Google authorization transaction using only the
+        registered logical client and return-target IDs. The exact configured
+        Origin is required. The response sets an HttpOnly Secure correlation
+        cookie and a signed non-secret XSRF-TOKEN cookie; provider state,
+        nonce, and provider PKCE material remain server-side or in the
+        authorization URL.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthStartRequest'
+      responses:
+        '200':
+          description: OAuth authorization URL and opaque transaction handle.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthStartResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/oauth/google/callback:
+    get:
+      tags: [Authentication]
+      operationId: completeGoogleCallback
+      summary: Complete the Google provider callback
+      description: >-
+        Validates the registered transaction, provider state, correlation
+        cookie, provider PKCE and signed provider identity. A valid callback
+        returns a 303 only to the configured return target with opaque
+        handoff_code and transaction_id values. Invalid state or correlation
+        returns a generic 400 without a redirect. Provider denial uses a
+        fixed oauth_error value after the same state/cookie checks.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 2048
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 43
+            maxLength: 43
+            pattern: '^[A-Za-z0-9_-]{43}$'
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '303':
+          description: Safe redirect to the configured web return target.
+          headers:
+            Location:
+              description: >-
+                Configured return target carrying only transaction_id and a
+                bounded handoff_code or fixed oauth_error.
+              schema:
+                type: string
+                format: uri-reference
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/oauth/exchange:
+    post:
+      tags: [Authentication]
+      operationId: exchangeGoogleHandoff
+      summary: Exchange a Google handoff for login or link completion
+      description: >-
+        Requires the exact configured Origin and signed XSRF double-submit
+        value. Without an Authorization header the consumed handoff must be a
+        LOGIN intent and the response creates one normal session, returning
+        only the access token in JSON and rotating an HttpOnly refresh cookie.
+        With a valid current bearer the consumed handoff must be a matching
+        LINK intent; it creates only the OAuth association and never mints a
+        session or overwrites cookies. The dispatcher never probes both
+        intents.
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthExchangeRequest'
+      responses:
+        '200':
+          description: Login session or link completion result.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OAuthLoginExchangeResponse'
+                  - $ref: '#/components/schemas/OAuthLinkExchangeResponse'
+                discriminator:
+                  propertyName: outcome
+                  mapping:
+                    LOGIN: '#/components/schemas/OAuthLoginExchangeResponse'
+                    LINKED: '#/components/schemas/OAuthLinkExchangeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/web/csrf:
+    get:
+      tags: [Authentication]
+      operationId: bootstrapOAuthCsrf
+      summary: Bootstrap the web OAuth CSRF value
+      description: >-
+        Returns a short-lived signed non-secret double-submit value and sets
+        the matching Secure XSRF-TOKEN cookie. The exact configured Origin is
+        required; this route does not authenticate or mutate a session.
+      security: []
+      responses:
+        '200':
+          description: CSRF value for subsequent unsafe web OAuth requests.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthCsrfResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/web/refresh:
+    post:
+      tags: [Authentication]
+      operationId: refreshWebSession
+      summary: Rotate the HttpOnly web refresh cookie
+      description: >-
+        Requires the exact configured Origin and a valid signed XSRF-TOKEN /
+        X-XSRF-TOKEN double-submit pair. The refresh credential is read only
+        from the uniquely-present __Secure-weav_refresh cookie; request bodies
+        are ignored and malformed, duplicate, missing, expired, revoked, or
+        disabled-session cookies return a generic 401. Clients must omit the
+        Authorization header for this cookie-only route. A successful atomic
+        rotation returns the access-only LOGIN response and sets one replacement
+        cookie with the configured refresh lifetime.
+      security: []
+      responses:
+        '200':
+          description: Access token and public current user; refresh material is cookie-only.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Referrer-Policy:
+              $ref: '#/components/headers/ReferrerPolicyNoReferrer'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthLoginExchangeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/web/logout:
+    post:
+      tags: [Authentication]
+      operationId: logoutWebSession
+      summary: Revoke the session identified by the web refresh cookie
+      description: >-
+        Requires the exact configured Origin and a valid signed XSRF-TOKEN /
+        X-XSRF-TOKEN double-submit pair. A uniquely-present, well-formed
+        refresh cookie is revoked using the existing idempotent logout rules,
+        including when it is already unknown or revoked, and the same cookie
+        attributes are cleared. Missing or malformed/duplicate cookies return
+        a generic 401 without clearing any cookie. Clients must omit the
+        Authorization header for this cookie-only route.
+      security: []
+      responses:
+        '204':
+          description: Logout completed; the response has no body and clears the web refresh cookie.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Referrer-Policy:
+              $ref: '#/components/headers/ReferrerPolicyNoReferrer'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/change-password:
+    post:
+      tags: [Authentication]
+      operationId: changePassword
+      summary: Change the authenticated user's local password
+      description: >-
+        Requires a valid access JWT and an ACTIVE user with a matching active
+        session. Verifies the current local password, updates it, and revokes
+        every session for the user, including the session authorizing this
+        request, in one transaction. Wrong current credentials and accounts
+        without a local password return the same generic 401 response.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: >-
+            Password changed and all existing sessions revoked; the response
+            has no body and the client must log in again.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/otp/request:
+    post:
+      tags: [Authentication]
+      operationId: requestOtp
+      summary: Request an email verification or password-reset OTP
+      description: >-
+        Purpose-dependent request. EMAIL_VERIFICATION requires an ACTIVE user
+        and matching active session and always sends to the authenticated
+        user's current stored email; the request must not include an email
+        member. Verification must re-check that the challenge's email binding
+        still matches that current stored email.
+        PASSWORD_RESET is public and accepts an email member, but only an
+        ACTIVE local-password account receives a message. Unknown, disabled,
+        and OAuth-only accounts receive the same receipt and no message.
+        Admission capacity and Valkey throttling are reserved before account
+        lookup. SMTP delivery is asynchronous and does not block this response.
+        Request admission enforces a 60-second resend cooldown, at most five
+        requests per hour per HMAC account key, and at most 20 requests per
+        hour per remote IP; account keys are applied even when no account
+        exists.
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpRequest'
+      responses:
+        '202':
+          description: >-
+            Request accepted with an opaque receipt. The receipt shape is the
+            same for eligible and non-eligible password-recovery requests and
+            does not guarantee email delivery.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpReceipt'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/otp/verify:
+    post:
+      tags: [Authentication]
+      operationId: verifyOtp
+      summary: Verify an OTP challenge
+      description: >-
+        The challenge purpose is authoritative and cannot be selected or
+        changed by the client at verification time. PASSWORD_RESET is public
+        and returns an at-most-once reset grant. EMAIL_VERIFICATION requires the
+        same ACTIVE user with a currently active matching session, and the
+        challenge's email binding must still match the user's current stored
+        email; it returns a verified result. OTP verification is atomic:
+        expired, superseded,
+        consumed, or five-times-failed challenges cannot be reused, and
+        concurrent verification has at most one successful result. Verification
+        admission is limited to at most 30 attempts per minute per remote IP;
+        Retry-After is returned with rate-limit errors.
+      security:
+        - {}
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyOtpRequest'
+      responses:
+        '200':
+          description: Challenge verified and consumed.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpVerificationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/forgot-password:
+    post:
+      tags: [Authentication]
+      operationId: requestPasswordResetOtp
+      summary: Request a password-reset OTP
+      description: >-
+        Public facade for POST /auth/otp/request with purpose PASSWORD_RESET.
+        It uses the same account/IP budgets, bounded-admission path, generic
+        receipt, and non-eligible-account behavior; it must not implement a
+        separate recovery engine.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '202':
+          description: Generic password-recovery request receipt.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpReceipt'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/reset-password:
+    post:
+      tags: [Authentication]
+      operationId: resetPassword
+      summary: Replace a password using a verified reset grant
+      description: >-
+        Consumes the opaque reset grant at most once before the PostgreSQL
+        mutation. The grant expires after 300 seconds, is bound to the
+        PASSWORD_RESET purpose, user, and current credential fingerprint
+        captured at request time, and is stored only as a hash. The database
+        transaction rechecks ACTIVE status, the current stored email, and the
+        current credential binding before it updates the
+        password, records emailVerifiedAt when it is still null, and revokes
+        all existing sessions. A database rollback after grant consumption
+        does not restore the grant; the caller must request a new OTP.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '204':
+          description: >-
+            Password replaced and all existing sessions revoked; the response
+            has no body and is not cacheable.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me/oauth/google/link:
+    post:
+      tags: [Users]
+      operationId: startGoogleLink
+      summary: Start an authenticated Google account link
+      description: >-
+        Requires the current active bearer session, exact Origin and XSRF
+        double-submit value, plus the current local password. Account identity
+        and session identity come from verified JWT claims. The response sets
+        the HttpOnly correlation cookie and returns the same bounded start
+        shape as login.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthLinkStartRequest'
+      responses:
+        '200':
+          description: OAuth authorization URL and opaque transaction handle.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthStartResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me/oauth-accounts:
+    get:
+      tags: [Users]
+      operationId: listCurrentUserOAuthAccounts
+      summary: List the authenticated user's linked OAuth accounts
+      description: >-
+        Returns only safe provider metadata for the current active bearer
+        session. Provider subjects, tokens, credential fingerprints and
+        password data are never returned.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Safe linked-account metadata.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OAuthAccountMetadata'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Users]
+      operationId: unlinkCurrentUserOAuthAccount
+      summary: Unlink one OAuth account from the current user
+      description: >-
+        Deletes only an account owned by the current user after active-session
+        and exact Origin/XSRF checks. A missing or non-owned account is a safe
+        404. Removing the final usable login method returns 409 before local
+        password validation; otherwise the current local password is required.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          description: Owned OAuth-account UUID selected for removal.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthUnlinkRequest'
+      responses:
+        '204':
+          description: OAuth account removed; the current local session remains active.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /users/me:
     get:
       tags: [Users]
@@ -162,6 +748,128 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
+    patch:
+      tags: [Users]
+      operationId: updateCurrentUser
+      summary: Update the authenticated user's profile
+      description: >-
+        Updates only displayName for the ACTIVE user associated with the
+        matching active session. The displayName member must be present; null
+        or a blank string clears it, while a non-blank string is trimmed. Email,
+        role, status, avatar storage keys, identifiers, and timestamps are not
+        accepted input fields.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Updated public user profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me/sessions:
+    get:
+      tags: [Users]
+      operationId: listCurrentUserSessions
+      summary: List the authenticated user's active sessions
+      description: >-
+        Returns only active sessions owned by the current user, ordered by
+        createdAt descending and then id for stable pagination. Token material,
+        token hashes, and raw IP addresses are never returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: Zero-based page index.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          description: Number of sessions per page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Page of active sessions owned by the current user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionPageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Users]
+      operationId: revokeAllCurrentUserSessions
+      summary: Revoke all sessions owned by the authenticated user
+      description: >-
+        Revokes every existing session for the current user, including the
+        session authorizing this request. A genuinely new login that completes
+        after this operation may create a new session; revoked sessions are not
+        restored.
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: All existing sessions were revoked; the response has no body.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me/sessions/{sessionId}:
+    delete:
+      tags: [Users]
+      operationId: revokeCurrentUserSession
+      summary: Revoke one session owned by the authenticated user
+      description: >-
+        Revokes the identified owned session, including the current session.
+        Repeating the request for an already-revoked session owned by this user
+        remains successful. A missing session or a session owned by another
+        user returns the same 404 response.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          description: Session UUID selected for revocation.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Owned session revoked or already revoked; the response has no body.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
 
 components:
   securitySchemes:
@@ -180,6 +888,20 @@ components:
         type: string
         const: no-store
       example: no-store
+    ReferrerPolicyNoReferrer:
+      description: Prevents callback, handoff, and cookie URLs from being sent as a referrer.
+      schema:
+        type: string
+        const: no-referrer
+      example: no-referrer
+    OAuthSetCookie:
+      description: >-
+        HttpOnly/Secure/SameSite=Lax OAuth correlation or refresh cookie, or a
+        Secure XSRF-TOKEN cookie. The raw cookie value is never returned in
+        JSON and is not readable when HttpOnly is set.
+      schema:
+        type: string
+      example: __Secure-weav_oauth_tx=<opaque>; Path=/auth; Max-Age=600; Secure; HttpOnly; SameSite=Lax
     RetryAfter:
       description: Number of seconds until the caller should retry.
       schema:
@@ -211,6 +933,28 @@ components:
                 timestamp: '2026-09-05T08:30:00Z'
                 status: 400
                 path: /auth/register
+            invalidProfile:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - field: displayName
+                      message: Display name must be at most 120 characters
+                timestamp: '2026-09-06T08:30:00Z'
+                status: 400
+                path: /users/me
+            invalidPassword:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - field: newPassword
+                      message: Password must be at most 72 bytes when encoded as UTF-8
+                timestamp: '2026-09-06T08:30:00Z'
+                status: 400
+                path: /auth/change-password
     Unauthorized:
       description: Credentials, token, account, or session are invalid.
       headers:
@@ -230,6 +974,56 @@ components:
                 timestamp: '2026-09-05T08:30:00Z'
                 status: 401
                 path: /auth/login
+            invalidCurrentSession:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: Authentication failed
+                  details: []
+                timestamp: '2026-09-06T08:30:00Z'
+                status: 401
+                path: /users/me/sessions
+            invalidCurrentPassword:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: Authentication failed
+                  details: []
+                timestamp: '2026-09-06T08:30:00Z'
+                status: 401
+                path: /auth/change-password
+    Forbidden:
+      description: The registered Origin or signed XSRF double-submit value is missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            invalidOriginOrCsrf:
+              value:
+                error:
+                  code: FORBIDDEN
+                  message: Access denied
+                  details: []
+                timestamp: '2026-09-10T08:30:00Z'
+                status: 403
+                path: /auth/oauth/exchange
+    NotFound:
+      description: The target does not exist or is not owned by the current user.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            sessionNotFound:
+              value:
+                error:
+                  code: NOT_FOUND
+                  message: Resource not found
+                  details: []
+                timestamp: '2026-09-06T08:30:00Z'
+                status: 404
+                path: /users/me/sessions/92d13ef9-3e27-4e2e-b788-7f1f5da5a5f7
     Conflict:
       description: The canonical email is already registered.
       content:
@@ -265,6 +1059,25 @@ components:
                 timestamp: '2026-09-05T08:30:00Z'
                 status: 429
                 path: /auth/login
+    ServiceUnavailable:
+      description: >-
+        A required OTP/recovery dependency or bounded delivery admission is
+        temporarily unavailable. The response is sanitized and does not
+        reveal account existence or provider details.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiErrorResponse'
+          examples:
+            dependencyUnavailable:
+              value:
+                error:
+                  code: DEPENDENCY_UNAVAILABLE
+                  message: A required authentication dependency is temporarily unavailable
+                  details: []
+                timestamp: '2026-09-06T08:30:00Z'
+                status: 503
+                path: /auth/otp/request
     InternalError:
       description: Sanitized unexpected server error.
       content:
@@ -321,6 +1134,174 @@ components:
           description: >-
             Unpadded base64url encoding of 32 cryptographically random bytes.
             Send only in this JSON field, never in a URL or log.
+
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          $ref: '#/components/schemas/Password'
+        newPassword:
+          $ref: '#/components/schemas/Password'
+
+    OtpRequest:
+      oneOf:
+        - $ref: '#/components/schemas/EmailVerificationOtpRequest'
+        - $ref: '#/components/schemas/PasswordResetOtpRequest'
+      discriminator:
+        propertyName: purpose
+        mapping:
+          EMAIL_VERIFICATION: '#/components/schemas/EmailVerificationOtpRequest'
+          PASSWORD_RESET: '#/components/schemas/PasswordResetOtpRequest'
+
+    EmailVerificationOtpRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose]
+      properties:
+        purpose:
+          type: string
+          const: EMAIL_VERIFICATION
+          description: >-
+            Verifies the email stored on the authenticated user's account. The
+            request cannot select or override a destination email.
+
+    PasswordResetOtpRequest:
+      type: object
+      additionalProperties: false
+      required: [purpose, email]
+      properties:
+        purpose:
+          type: string
+          const: PASSWORD_RESET
+        email:
+          $ref: '#/components/schemas/Email'
+
+    ForgotPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          $ref: '#/components/schemas/Email'
+
+    VerifyOtpRequest:
+      type: object
+      additionalProperties: false
+      required: [challengeId, code]
+      properties:
+        challengeId:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: >-
+            Opaque 43-character unpadded base64url challenge identifier from
+            an OTP receipt.
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+          pattern: '^[0-9]{6}$'
+          writeOnly: true
+          description: Six-digit OTP; never log or include it in an error response.
+
+    ResetPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [resetToken, newPassword]
+      properties:
+        resetToken:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          writeOnly: true
+          description: Opaque at-most-once reset grant; send only in this JSON field.
+        newPassword:
+          $ref: '#/components/schemas/Password'
+
+    UpdateProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName]
+      properties:
+        displayName:
+          type: [string, 'null']
+          maxLength: 120
+          description: >-
+            Required member. Null or a string containing only whitespace clears
+            the display name. Other strings are trimmed before storage.
+
+    OtpReceipt:
+      type: object
+      additionalProperties: false
+      required: [challengeId, expiresIn, retryAfter]
+      properties:
+        challengeId:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: >-
+            Opaque random identifier encoded as 43 unpadded base64url
+            characters. It has the same response shape and identifier length
+            whether or not a mail is sent.
+        expiresIn:
+          type: integer
+          format: int64
+          const: 300
+          description: Challenge lifetime in seconds.
+        retryAfter:
+          type: integer
+          format: int64
+          const: 60
+          description: Minimum resend cooldown in seconds.
+
+    OtpVerificationResponse:
+      oneOf:
+        - $ref: '#/components/schemas/EmailVerificationResult'
+        - $ref: '#/components/schemas/PasswordResetVerificationResult'
+      discriminator:
+        propertyName: purpose
+        mapping:
+          EMAIL_VERIFICATION: '#/components/schemas/EmailVerificationResult'
+          PASSWORD_RESET: '#/components/schemas/PasswordResetVerificationResult'
+
+    EmailVerificationResult:
+      type: object
+      additionalProperties: false
+      required: [purpose, verified]
+      properties:
+        purpose:
+          type: string
+          const: EMAIL_VERIFICATION
+        verified:
+          type: boolean
+          const: true
+
+    PasswordResetVerificationResult:
+      type: object
+      additionalProperties: false
+      required: [purpose, resetToken, expiresIn]
+      properties:
+        purpose:
+          type: string
+          const: PASSWORD_RESET
+        resetToken:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: >-
+            Opaque at-most-once reset grant. It is hash-only at rest and must
+            not be logged, placed in a URL, or returned again after consumption.
+        expiresIn:
+          type: integer
+          format: int64
+          const: 300
+          description: Reset-grant lifetime in seconds.
 
     Email:
       type: string
@@ -380,6 +1361,180 @@ components:
         user:
           $ref: '#/components/schemas/UserResponse'
 
+    OAuthStartRequest:
+      type: object
+      additionalProperties: false
+      required: [clientId, returnTargetId, codeChallenge, codeChallengeMethod]
+      properties:
+        clientId:
+          type: string
+          minLength: 1
+          maxLength: 32
+          pattern: '^[\x21-\x7E]{1,32}$'
+          const: web
+        returnTargetId:
+          type: string
+          minLength: 1
+          maxLength: 32
+          pattern: '^[\x21-\x7E]{1,32}$'
+          const: web
+        codeChallenge:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: S256 challenge derived from the browser-held PKCE verifier.
+        codeChallengeMethod:
+          type: string
+          const: S256
+
+    OAuthLinkStartRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword, clientId, returnTargetId, codeChallenge, codeChallengeMethod]
+      properties:
+        currentPassword:
+          $ref: '#/components/schemas/Password'
+        clientId:
+          type: string
+          const: web
+        returnTargetId:
+          type: string
+          const: web
+        codeChallenge:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        codeChallengeMethod:
+          type: string
+          const: S256
+
+    OAuthStartResponse:
+      type: object
+      additionalProperties: false
+      required: [transactionId, authorizationUrl, csrfToken]
+      properties:
+        transactionId:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: Opaque server correlation handle.
+        authorizationUrl:
+          type: string
+          format: uri
+          description: Provider authorization URL built from registered configuration.
+        csrfToken:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: Signed non-secret double-submit value.
+
+    OAuthExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [clientId, returnTargetId, transactionId, handoffCode, codeVerifier]
+      properties:
+        clientId:
+          type: string
+          const: web
+        returnTargetId:
+          type: string
+          const: web
+        transactionId:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        handoffCode:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: Opaque one-use callback handoff proof.
+        codeVerifier:
+          type: string
+          minLength: 43
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._~-]{43,128}$'
+          writeOnly: true
+
+    OAuthLoginExchangeResponse:
+      type: object
+      additionalProperties: false
+      required: [outcome, accessToken, tokenType, expiresIn, user]
+      properties:
+        outcome:
+          type: string
+          const: LOGIN
+        accessToken:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: HS256 access JWT; refresh material is cookie-only.
+        tokenType:
+          type: string
+          const: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          minimum: 1
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
+    OAuthLinkExchangeResponse:
+      type: object
+      additionalProperties: false
+      required: [outcome, oauthAccount]
+      properties:
+        outcome:
+          type: string
+          const: LINKED
+        oauthAccount:
+          $ref: '#/components/schemas/OAuthAccountMetadata'
+
+    OAuthCsrfResponse:
+      type: object
+      additionalProperties: false
+      required: [csrfToken]
+      properties:
+        csrfToken:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+
+    OAuthAccountMetadata:
+      type: object
+      additionalProperties: false
+      required: [id, provider, providerEmail, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum: [GOOGLE]
+        providerEmail:
+          type: [string, 'null']
+          maxLength: 320
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    OAuthUnlinkRequest:
+      type: object
+      additionalProperties: false
+      required: [currentPassword]
+      properties:
+        currentPassword:
+          $ref: '#/components/schemas/Password'
+
     UserResponse:
       type: object
       additionalProperties: false
@@ -392,6 +1547,7 @@ components:
         - status
         - createdAt
         - updatedAt
+        - emailVerifiedAt
       properties:
         id:
           type: string
@@ -420,6 +1576,71 @@ components:
           type: string
           format: date-time
           description: UTC RFC 3339 timestamp.
+        emailVerifiedAt:
+          type: [string, 'null']
+          format: date-time
+          description: >-
+            UTC RFC 3339 timestamp proving ownership of the current stored
+            email, or null when it has not been verified.
+
+    SessionPageResponse:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionResponse'
+        page:
+          type: integer
+          minimum: 0
+          description: Zero-based page index returned by the server.
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalItems:
+          type: integer
+          format: int64
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+
+    SessionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - createdAt
+        - lastUsedAt
+        - expiresAt
+        - current
+        - userAgent
+      properties:
+        id:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+          description: UTC RFC 3339 timestamp.
+        lastUsedAt:
+          type: [string, 'null']
+          format: date-time
+          description: UTC RFC 3339 timestamp, or null when never refreshed.
+        expiresAt:
+          type: string
+          format: date-time
+          description: Absolute session expiry as a UTC RFC 3339 timestamp.
+        current:
+          type: boolean
+          description: True when this session matches the access JWT sid claim.
+        userAgent:
+          type: [string, 'null']
+          maxLength: 512
+          description: Bounded client metadata; null for legacy sessions.
 
     ApiErrorResponse:
       type: object

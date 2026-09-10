@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>M3 OAuth browser fixture</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #f4f7fb; color: #162033; }
+    main { max-width: 760px; margin: 10vh auto; padding: 2rem; background: white; border: 1px solid #d7deea; border-radius: 12px; box-shadow: 0 8px 30px #16203318; }
+    button { border: 0; border-radius: 8px; padding: .7rem 1rem; background: #2457d6; color: white; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    pre { white-space: pre-wrap; background: #eef2f8; border-radius: 8px; padding: 1rem; min-height: 8rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>M3 OAuth browser fixture</h1>
+    <p>This local page exercises the isolated signed-provider flow. It never displays credentials, tokens, cookies, or callback query values.</p>
+    <button id="run" type="button">Run browser fixture</button>
+    <pre id="status">Ready.</pre>
+  </main>
+  <script>
+    (() => {
+      const identityOrigin = "http://localhost:8081";
+      const verifierPrefix = "m3.oauth.verifier.";
+      const status = document.getElementById("status");
+      const button = document.getElementById("run");
+
+      const safeStatus = (message) => { status.textContent = message; };
+
+      const base64Url = (bytes) => {
+        let value = "";
+        for (const byte of bytes) value += String.fromCharCode(byte);
+        return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+      };
+
+      const randomVerifier = () => {
+        const bytes = new Uint8Array(32);
+        crypto.getRandomValues(bytes);
+        return base64Url(bytes);
+      };
+
+      const cookieProbe = () => new Promise((resolve) => {
+        const frame = document.createElement("iframe");
+        const timer = window.setTimeout(() => {
+          window.removeEventListener("message", onMessage);
+          frame.remove();
+          resolve({ correlationHttpOnly: false, refreshHttpOnly: false, csrfVisible: false, probeTimedOut: true });
+        }, 4000);
+        const onMessage = (event) => {
+          if (event.origin !== identityOrigin || event.data?.type !== "m3-cookie-probe") return;
+          window.clearTimeout(timer);
+          window.removeEventListener("message", onMessage);
+          const cookie = String(event.data.cookie || "");
+          frame.remove();
+          resolve({
+            correlationHttpOnly: !cookie.includes("__Secure-weav_oauth_tx="),
+            refreshHttpOnly: !cookie.includes("__Secure-weav_refresh="),
+            csrfVisible: cookie.includes("XSRF-TOKEN="),
+            probeTimedOut: false
+          });
+        };
+        window.addEventListener("message", onMessage);
+        frame.hidden = true;
+        frame.src = identityOrigin + "/auth/__m3/cookie-probe";
+        document.body.appendChild(frame);
+      });
+
+      const postResult = async (result) => {
+        const fields = Object.entries(result)
+          .filter(([key, value]) => /^[a-zA-Z][a-zA-Z0-9]*$/.test(key) && (/^\d+$/.test(String(value)) || value === true || value === false || /^[A-Z_]+$/.test(String(value))))
+          .map(([key, value]) => encodeURIComponent(key) + "=" + encodeURIComponent(String(value)))
+          .join("&");
+        await fetch("/__m3/complete", { method: "POST", body: fields, keepalive: true });
+      };
+
+      const runStart = async () => {
+        button.disabled = true;
+        safeStatus("Starting the signed local provider flow…");
+        const verifier = randomVerifier();
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+        const codeChallenge = base64Url(new Uint8Array(digest));
+        const response = await fetch(identityOrigin + "/auth/oauth/google/start", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientId: "web",
+            returnTargetId: "web",
+            codeChallenge,
+            codeChallengeMethod: "S256"
+          })
+        });
+        if (!response.ok) throw new Error("start-failed");
+        const body = await response.json();
+        const preRedirectProbe = await cookieProbe();
+        sessionStorage.setItem(verifierPrefix + body.transactionId, JSON.stringify({
+          verifier,
+          transactionId: body.transactionId,
+          startStatus: response.status,
+          preRedirectProbe
+        }));
+        window.location.assign(body.authorizationUrl);
+      };
+
+      const completeCallback = async () => {
+        const query = new URLSearchParams(window.location.search);
+        const transactionId = query.get("transaction_id");
+        const handoffCode = query.get("handoff_code");
+        // Remove the handoff before any asynchronous exchange or rendering.
+        window.history.replaceState(null, "", "/auth/callback");
+        const cleanCallbackUrl = window.location.search === "" && window.location.hash === "";
+        const stored = transactionId
+          ? JSON.parse(sessionStorage.getItem(verifierPrefix + transactionId) || "null")
+          : null;
+        if (!stored || !handoffCode) throw new Error("callback-failed");
+
+        const preExchangeStateResponse = await fetch("/__m3/state", { cache: "no-store" });
+        if (!preExchangeStateResponse.ok) throw new Error("pre-exchange-state-failed");
+        const preExchangeState = await preExchangeStateResponse.json();
+
+        const csrfResponse = await fetch(identityOrigin + "/auth/web/csrf", {
+          credentials: "include"
+        });
+        if (!csrfResponse.ok) throw new Error("csrf-failed");
+        const csrf = (await csrfResponse.json()).csrfToken;
+        const exchange = await fetch(identityOrigin + "/auth/oauth/exchange", {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            "X-XSRF-TOKEN": csrf
+          },
+          // LOGIN deliberately has no Authorization header.
+          body: JSON.stringify({
+            clientId: "web",
+            returnTargetId: "web",
+            transactionId,
+            handoffCode,
+            codeVerifier: stored.verifier
+          })
+        });
+        const exchangeBody = await exchange.json();
+        const postExchangeStateResponse = await fetch("/__m3/state", { cache: "no-store" });
+        if (!postExchangeStateResponse.ok) throw new Error("post-exchange-state-failed");
+        const postExchangeState = await postExchangeStateResponse.json();
+        const accessToken = exchangeBody.accessToken;
+        const postExchangeProbe = await cookieProbe();
+        const refresh = await fetch(identityOrigin + "/auth/web/refresh", {
+          method: "POST",
+          credentials: "include",
+          headers: { "X-XSRF-TOKEN": csrf }
+        });
+        const refreshBody = await refresh.json();
+        const postRefreshProbe = await cookieProbe();
+        const logout = await fetch(identityOrigin + "/auth/web/logout", {
+          method: "POST",
+          credentials: "include",
+          headers: { "X-XSRF-TOKEN": csrf }
+        });
+        const replay = await fetch(identityOrigin + "/auth/web/refresh", {
+          method: "POST",
+          credentials: "include",
+          headers: { "X-XSRF-TOKEN": csrf }
+        });
+        const result = {
+          start: stored.startStatus,
+          callbackUrlClean: cleanCallbackUrl,
+          login: exchange.status,
+          loginOutcome: exchangeBody.outcome,
+          accessOnly: typeof accessToken === "string" && !exchangeBody.refreshToken && !exchangeBody.refreshExpiresAt,
+          loginAuthorizationOmitted: true,
+          refresh: refresh.status,
+          refreshAccessOnly: typeof refreshBody.accessToken === "string" && !refreshBody.refreshToken && !refreshBody.refreshExpiresAt,
+          logout: logout.status,
+          afterLogout: replay.status,
+          correlationHttpOnly: stored.preRedirectProbe.correlationHttpOnly,
+          refreshHttpOnly: postExchangeProbe.refreshHttpOnly && postRefreshProbe.refreshHttpOnly,
+          csrfVisible: stored.preRedirectProbe.csrfVisible && postExchangeProbe.csrfVisible,
+          preExchangeEmpty: preExchangeState.users === 0
+            && preExchangeState.sessions === 0
+            && preExchangeState.oauthAccounts === 0,
+          postExchangePersisted: postExchangeState.users === 1
+            && postExchangeState.sessions === 1
+            && postExchangeState.oauthAccounts === 1,
+          probeTimedOut: stored.preRedirectProbe.probeTimedOut || postExchangeProbe.probeTimedOut || postRefreshProbe.probeTimedOut
+        };
+        safeStatus(JSON.stringify(result, null, 2));
+        await postResult(result);
+      };
+
+      const run = async () => {
+        try {
+          if (window.location.pathname === "/auth/callback") {
+            await completeCallback();
+          } else {
+            await runStart();
+          }
+        } catch (error) {
+          const result = { browserFlowFailed: true, callbackUrlClean: false };
+          safeStatus("Browser fixture failed before completion.");
+          await postResult(result);
+        }
+      };
+
+      button.addEventListener("click", run);
+      if (window.location.pathname === "/auth/callback") run();
+    })();
+  </script>
+</body>
+</html>

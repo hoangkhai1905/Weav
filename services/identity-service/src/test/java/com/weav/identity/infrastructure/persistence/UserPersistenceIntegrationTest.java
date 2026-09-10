@@ -33,6 +33,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class UserPersistenceIntegrationTest {
 
     private static final Instant CREATED_AT = Instant.parse("2026-01-02T03:04:05Z");
+    private static final Instant VERIFIED_AT = Instant.parse("2026-01-02T03:05:05Z");
 
     @Autowired
     private UserRepositoryAdapter userRepository;
@@ -80,6 +81,23 @@ class UserPersistenceIntegrationTest {
         assertSingleConflict(
                 "exact-race@example.com",
                 "exact-race@example.com");
+    }
+
+    @Test
+    void persistsTheTimestampSuppliedByDomainMutations() {
+        User persisted = userRepository.save(user("updated-at@example.com"));
+        persisted.markEmailVerified(VERIFIED_AT);
+        Instant mutationTime = CREATED_AT.plusSeconds(42);
+
+        persisted.updateDisplayName("Changed", mutationTime);
+        persisted.changePassword("replacement-password-hash", mutationTime);
+        userRepository.save(persisted);
+
+        User reloaded = userRepository.findById(persisted.getId()).orElseThrow();
+        assertEquals("Changed", reloaded.getDisplayName());
+        assertEquals("replacement-password-hash", reloaded.getPasswordHash());
+        assertEquals(mutationTime, reloaded.getUpdatedAt());
+        assertEquals(VERIFIED_AT, reloaded.getEmailVerifiedAt());
     }
 
     private void assertSingleConflict(String firstEmail, String secondEmail) throws Exception {

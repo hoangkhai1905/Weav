@@ -1,23 +1,34 @@
 package com.weav.identity;
 
+import com.weav.identity.application.port.out.OAuthProviderClient;
+import com.weav.identity.application.usecase.OAuthFlowCoordinator;
 import com.weav.identity.domain.valueobject.SystemRole;
 import com.weav.identity.infrastructure.persistence.entity.UserJpaEntity;
+import com.weav.identity.presentation.http.OAuthAccountController;
+import com.weav.identity.presentation.http.OAuthController;
 import com.weav.identity.domain.valueobject.UserStatus;
 import jakarta.persistence.EntityManager;
+import org.springframework.context.ApplicationContext;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest
+@TestPropertySource(properties = "weav.oauth.enabled=false")
 class IdentityServiceApplicationTests {
+
+    @Autowired
+    private ApplicationContext applicationContext;
 
     @Autowired
     private EntityManager entityManager;
@@ -27,6 +38,14 @@ class IdentityServiceApplicationTests {
 
     @Test
     void contextLoads() {
+    }
+
+    @Test
+    void disabledOAuthConfigurationDoesNotRegisterProviderAdapter() {
+        assertTrue(applicationContext.getBeansOfType(OAuthProviderClient.class).isEmpty());
+        assertTrue(applicationContext.getBeansOfType(OAuthFlowCoordinator.class).isEmpty());
+        assertTrue(applicationContext.getBeansOfType(OAuthController.class).isEmpty());
+        assertTrue(applicationContext.getBeansOfType(OAuthAccountController.class).isEmpty());
     }
 
     @Test
@@ -65,6 +84,7 @@ class IdentityServiceApplicationTests {
         assertEquals("jpa-test@example.com", persisted.getEmail());
         assertEquals(SystemRole.USER, persisted.getSystemRole());
         assertEquals(UserStatus.ACTIVE, persisted.getStatus());
+        assertNull(persisted.getEmailVerifiedAt());
         assertNotNull(persisted.getCreatedAt());
         assertNotNull(persisted.getUpdatedAt());
     }

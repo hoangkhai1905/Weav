@@ -18,9 +18,13 @@ import java.util.UUID;
 @Entity
 @Table(
         name = "oauth_accounts",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_oauth_account_provider_user",
-                columnNames = {"provider", "provider_user_id"}))
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_oauth_account_provider_user",
+                        columnNames = {"provider", "provider_user_id"}),
+                @UniqueConstraint(
+                        name = "uk_oauth_account_user_provider",
+                        columnNames = {"user_id", "provider"})})
 public class OAuthAccountJpaEntity {
 
     @Id
@@ -61,6 +65,23 @@ public class OAuthAccountJpaEntity {
         this.providerEmail = providerEmail;
     }
 
+    public OAuthAccountJpaEntity(
+            UUID id,
+            UUID userId,
+            OAuthProvider provider,
+            String providerUserId,
+            String providerEmail,
+            Instant createdAt,
+            Instant updatedAt) {
+        this.id = id;
+        this.userId = userId;
+        this.provider = provider;
+        this.providerUserId = providerUserId;
+        this.providerEmail = providerEmail;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+    }
+
     @PrePersist
     void onCreate() {
         if (id == null) {
@@ -77,7 +98,9 @@ public class OAuthAccountJpaEntity {
 
     @PreUpdate
     void onUpdate() {
-        updatedAt = Instant.now();
+        if (updatedAt == null) {
+            updatedAt = Instant.now();
+        }
     }
 
     public UUID getId() {

@@ -72,6 +72,8 @@ class LoginUseCaseTest {
         User oauthOnly = user(null, UserStatus.ACTIVE);
         when(userRepository.findByEmail("user@example.com"))
                 .thenReturn(Optional.empty(), Optional.of(active), Optional.of(disabled), Optional.of(oauthOnly));
+        when(userRepository.findByIdForUpdate(USER_ID))
+                .thenReturn(Optional.of(active), Optional.of(disabled), Optional.of(oauthOnly));
         when(passwordHasher.matches(eq("password"), anyString()))
                 .thenReturn(false, false, true, false);
 
@@ -98,6 +100,7 @@ class LoginUseCaseTest {
     void createsOneSessionUsingConfiguredAbsoluteLifetimeAndReturnsTokenPairInsideTransaction() {
         User user = user("real-hash", UserStatus.ACTIVE);
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
         when(passwordHasher.matches("password", "real-hash")).thenReturn(true);
         when(refreshTokenGenerator.generate()).thenReturn(new GeneratedRefreshToken("plain-refresh", "refresh-hash"));
         when(sessionRepository.save(any(UserSession.class))).thenAnswer(invocation -> {
@@ -135,6 +138,7 @@ class LoginUseCaseTest {
     void propagatesTokenIssuanceFailureInsteadOfReturningPartialSuccess() {
         User user = user("real-hash", UserStatus.ACTIVE);
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
         when(passwordHasher.matches("password", "real-hash")).thenReturn(true);
         when(refreshTokenGenerator.generate()).thenReturn(new GeneratedRefreshToken("plain-refresh", "refresh-hash"));
         when(sessionRepository.save(any(UserSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -144,6 +148,56 @@ class LoginUseCaseTest {
         assertThrows(IllegalStateException.class,
                 () -> useCase.execute(new LoginCommand("user@example.com", "password")));
         assertEquals(1, transactionRunner.invocations);
+    }
+
+    @Test
+    void rechecksPasswordFromLockedUserBeforeCreatingSession() {
+        User staleCandidate = user("old-hash", UserStatus.ACTIVE);
+        User lockedUser = user("replacement-hash", UserStatus.ACTIVE);
+        when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(staleCandidate));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(lockedUser));
+        when(passwordHasher.matches("password", "old-hash")).thenReturn(true);
+
+        assertUnauthorized();
+
+        verify(passwordHasher).matches("password", "old-hash");
+        verify(passwordHasher, never()).matches("password", "replacement-hash");
+        verify(refreshTokenGenerator, never()).generate();
+        verify(sessionRepository, never()).save(any(UserSession.class));
+        verify(accessTokenIssuer, never()).issue(any(), any(), any(), any());
+    }
+
+    @Test
+    void doesNotReturnTokensWhenTransactionCommitFails() {
+        User user = user("real-hash", UserStatus.ACTIVE);
+        TransactionRunner failingCommit = new FailingCommitTransactionRunner();
+        LoginUseCase failingUseCase = new LoginUseCase(
+                userRepository,
+                sessionRepository,
+                passwordHasher,
+                refreshTokenGenerator,
+                accessTokenIssuer,
+                failingCommit,
+                new AuthInputPolicy(),
+                CLOCK,
+                SESSION_LIFETIME
+        );
+        when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
+        when(passwordHasher.matches("password", "real-hash")).thenReturn(true);
+        when(refreshTokenGenerator.generate()).thenReturn(new GeneratedRefreshToken("plain-refresh", "refresh-hash"));
+        when(sessionRepository.save(any(UserSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accessTokenIssuer.issue(eq(USER_ID), any(UUID.class), eq(SystemRole.USER), eq(UserStatus.ACTIVE)))
+                .thenReturn(new IssuedAccessToken("access-token", NOW.plus(Duration.ofMinutes(15))));
+
+        IllegalStateException failure = assertThrows(
+                IllegalStateException.class,
+                () -> failingUseCase.execute(new LoginCommand("user@example.com", "password"))
+        );
+
+        assertEquals("commit failed", failure.getMessage());
+        verify(sessionRepository).save(any(UserSession.class));
+        verify(accessTokenIssuer).issue(eq(USER_ID), any(UUID.class), eq(SystemRole.USER), eq(UserStatus.ACTIVE));
     }
 
     private UnauthorizedException assertUnauthorized() {
@@ -178,6 +232,14 @@ class LoginUseCaseTest {
             } finally {
                 inTransaction = false;
             }
+        }
+    }
+
+    private static final class FailingCommitTransactionRunner implements TransactionRunner {
+        @Override
+        public <T> T required(Supplier<T> work) {
+            work.get();
+            throw new IllegalStateException("commit failed");
         }
     }
 }

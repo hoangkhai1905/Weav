@@ -297,12 +297,14 @@ class RefreshConcurrencyIntegrationTest {
 
         @Bean
         LogoutUseCase logoutUseCase(
+                UserRepositoryAdapter userRepository,
                 UserSessionRepositoryAdapter userSessionRepository,
                 RefreshTokenGenerator refreshTokenGenerator,
                 TransactionRunner transactionRunner,
                 Clock clock
         ) {
             return new LogoutUseCase(
+                    userRepository,
                     userSessionRepository,
                     refreshTokenGenerator,
                     transactionRunner,

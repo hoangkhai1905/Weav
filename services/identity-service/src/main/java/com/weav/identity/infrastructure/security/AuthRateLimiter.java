@@ -82,7 +82,17 @@ public final class AuthRateLimiter {
         REGISTER_IP(5, Duration.ofMinutes(1)),
         LOGIN_IP(20, Duration.ofMinutes(1)),
         REFRESH_IP(30, Duration.ofMinutes(1)),
-        LOGIN_ACCOUNT(10, Duration.ofMinutes(15));
+        LOGIN_ACCOUNT(10, Duration.ofMinutes(15)),
+        OAUTH_START_IP(10, Duration.ofMinutes(15)),
+        OAUTH_CALLBACK_IP(20, Duration.ofMinutes(1)),
+        OAUTH_EXCHANGE_IP(30, Duration.ofMinutes(1)),
+        OAUTH_LINK_START_IP(10, Duration.ofMinutes(15)),
+        OAUTH_LINK_START_SESSION(5, Duration.ofMinutes(15)),
+        OAUTH_UNLINK_IP(10, Duration.ofMinutes(15)),
+        OAUTH_UNLINK_SESSION(5, Duration.ofMinutes(15)),
+        OAUTH_CSRF_IP(30, Duration.ofMinutes(1)),
+        OAUTH_WEB_REFRESH_IP(30, Duration.ofMinutes(1)),
+        OAUTH_WEB_LOGOUT_IP(10, Duration.ofMinutes(15));
 
         private final int limit;
         private final Duration window;

@@ -1,6 +1,9 @@
 package com.weav.identity.infrastructure.web;
 
 import com.weav.identity.domain.exception.ResourceNotFoundException;
+import com.weav.identity.domain.exception.DependencyUnavailableException;
+import com.weav.identity.application.validation.OtpRateLimitException;
+import com.weav.identity.infrastructure.security.AuthRateLimitExceededException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +19,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class GlobalExceptionHandlerTest {
@@ -52,6 +56,36 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.status").value(404));
     }
 
+    @Test
+    void mapsDependencyUnavailableToSanitizedServiceUnavailable() throws Exception {
+        mockMvc.perform(get("/test/dependency"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.error.code").value("DEPENDENCY_UNAVAILABLE"))
+                .andExpect(jsonPath("$.status").value(503));
+    }
+
+    @Test
+    void mapsOtpRateLimitToRetryable429() throws Exception {
+        mockMvc.perform(get("/test/otp-rate-limit"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "37"))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"))
+                .andExpect(jsonPath("$.status").value(429));
+    }
+
+    @Test
+    void mapsOAuthSessionRateLimitToRetryable429WithoutReferrerLeak() throws Exception {
+        mockMvc.perform(get("/users/me/oauth-accounts/test-rate"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "900"))
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("Referrer-Policy", "no-referrer"))
+                .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"))
+                .andExpect(jsonPath("$.status").value(429));
+    }
+
     @RestController
     static class TestController {
 
@@ -62,6 +96,21 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/not-found")
         void notFound() {
             throw new ResourceNotFoundException("User", 123);
+        }
+
+        @GetMapping("/test/dependency")
+        void dependency() {
+            throw new DependencyUnavailableException();
+        }
+
+        @GetMapping("/test/otp-rate-limit")
+        void otpRateLimit() {
+            throw new OtpRateLimitException(37);
+        }
+
+        @GetMapping("/users/me/oauth-accounts/test-rate")
+        void oauthRateLimit() {
+            throw new AuthRateLimitExceededException(900);
         }
     }
 

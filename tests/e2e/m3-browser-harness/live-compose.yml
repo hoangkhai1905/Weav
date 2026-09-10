@@ -1,0 +1,73 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: identity
+      POSTGRES_USER: identity
+      POSTGRES_PASSWORD: identity-local-only
+    ports:
+      - "127.0.0.1:55432:5432"
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U identity -d identity"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:56379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  identity-service:
+    image: eclipse-temurin:25-jdk
+    command: ["java", "-Duser.timezone=UTC", "-jar", "/app/identity-service.jar"]
+    volumes:
+      - type: bind
+        source: ../../../services/identity-service/target/identity-service-0.0.1-SNAPSHOT.jar
+        target: /app/identity-service.jar
+        read_only: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8081:8080"
+    environment:
+      APP_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: identity
+      DB_USERNAME: identity
+      DB_PASSWORD: identity-local-only
+      DB_SSL_MODE: disable
+      DB_SCHEMA: identity
+
+      # Local-only signing material; never reuse these values outside this stack.
+      JWT_ACCESS_SECRET: m3-live-local-access-secret-012345678901234567890123
+      JWT_REFRESH_SECRET: m3-live-local-refresh-secret-012345678901234567890123
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 7d
+      OTP_HMAC_SECRET: m3-live-local-otp-hmac-secret-012345678901234567890123
+      VALKEY_URL: redis://valkey:6379
+
+      SMTP_AUTH_ENABLED: "false"
+      SMTP_STARTTLS_ENABLED: "false"
+      SMTP_STARTTLS_REQUIRED: "false"
+      SMTP_SSL_ENABLED: "false"
+
+      # These three values are interpolated from the existing root .env only.
+      GOOGLE_OAUTH_ENABLED: "true"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?GOOGLE_CLIENT_ID must be set in T:\Weav\.env}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?GOOGLE_CLIENT_SECRET must be set in T:\Weav\.env}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:?GOOGLE_REDIRECT_URI must be set in T:\Weav\.env}
+      OAUTH_WEB_RETURN_TARGET_URI: http://localhost:5173/auth/callback
+      OAUTH_WEB_ALLOWED_ORIGIN: http://localhost:5173

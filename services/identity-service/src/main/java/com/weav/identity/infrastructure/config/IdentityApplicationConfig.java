@@ -1,18 +1,40 @@
 package com.weav.identity.infrastructure.config;
 
 import com.weav.identity.application.port.out.AccessTokenIssuer;
+import com.weav.identity.application.port.out.AuthMailDispatcher;
+import com.weav.identity.application.port.out.AuthMailSender;
+import com.weav.identity.application.port.out.KeyedFingerprint;
+import com.weav.identity.application.port.out.OtpChallengeStore;
 import com.weav.identity.application.port.out.PasswordHasher;
 import com.weav.identity.application.port.out.RefreshTokenGenerator;
 import com.weav.identity.application.port.out.TransactionRunner;
+import com.weav.identity.application.security.CurrentIdentityGuard;
+import com.weav.identity.application.usecase.CompleteGoogleLoginUseCase;
 import com.weav.identity.application.usecase.GetCurrentUserUseCase;
+import com.weav.identity.application.usecase.ChangePasswordUseCase;
 import com.weav.identity.application.usecase.LoginUseCase;
+import com.weav.identity.application.usecase.LinkGoogleAccountUseCase;
+import com.weav.identity.application.usecase.ListOAuthAccountsUseCase;
+import com.weav.identity.application.usecase.ListSessionsUseCase;
 import com.weav.identity.application.usecase.LogoutUseCase;
+import com.weav.identity.application.usecase.RequestOtpUseCase;
+import com.weav.identity.application.usecase.ResetPasswordUseCase;
+import com.weav.identity.application.usecase.RevokeAllSessionsUseCase;
+import com.weav.identity.application.usecase.RevokeSessionUseCase;
 import com.weav.identity.application.usecase.RefreshSessionUseCase;
 import com.weav.identity.application.usecase.RegisterUserUseCase;
+import com.weav.identity.application.usecase.UnlinkOAuthAccountUseCase;
+import com.weav.identity.application.usecase.UpdateProfileUseCase;
+import com.weav.identity.application.usecase.VerifyOtpUseCase;
 import com.weav.identity.application.validation.AuthInputPolicy;
+import com.weav.identity.application.validation.OtpApplicationPolicy;
+import com.weav.identity.application.validation.OtpInputPolicy;
 import com.weav.identity.domain.port.out.UserRepository;
+import com.weav.identity.domain.port.out.OAuthAccountRepository;
 import com.weav.identity.domain.port.out.UserSessionRepository;
 import com.weav.identity.infrastructure.persistence.SpringTransactionRunner;
+import com.weav.identity.infrastructure.authstate.HmacKeyedFingerprint;
+import com.weav.identity.infrastructure.mail.SmtpAuthMailSender;
 import com.weav.identity.infrastructure.security.BcryptPasswordHasher;
 import com.weav.identity.infrastructure.security.JwtAccessTokenIssuer;
 import com.weav.identity.infrastructure.security.JwtAccessTokenValidator;
@@ -20,6 +42,7 @@ import com.weav.identity.infrastructure.security.JwtProperties;
 import com.weav.identity.infrastructure.security.SecureRefreshTokenGenerator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -36,7 +59,18 @@ import java.security.SecureRandom;
 import java.time.Clock;
 
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties({MailProperties.class, OtpProperties.class})
 public class IdentityApplicationConfig {
+
+    @Bean
+    public AuthMailSender authMailSender(MailProperties properties) {
+        return new SmtpAuthMailSender(properties);
+    }
+
+    @Bean
+    public KeyedFingerprint keyedFingerprint(OtpProperties properties) {
+        return new HmacKeyedFingerprint(properties.getHmacSecret());
+    }
 
     @Bean
     public Clock clock() {
@@ -85,6 +119,105 @@ public class IdentityApplicationConfig {
     }
 
     @Bean
+    public OtpInputPolicy otpInputPolicy() {
+        return new OtpInputPolicy();
+    }
+
+    @Bean
+    public OtpApplicationPolicy otpApplicationPolicy(OtpProperties properties) {
+        properties.validate();
+        return new OtpApplicationPolicy(
+                properties.getChallengeTtl(),
+                properties.getGrantTtl(),
+                properties.getResendCooldown(),
+                properties.getMaxChallengesPerAccount(),
+                properties.getMaxChallengesPerIp(),
+                properties.getMaxVerifyAttempts(),
+                properties.getMaxVerifyPerIp()
+        );
+    }
+
+    @Bean
+    public SecureRandom otpSecureRandom() {
+        return new SecureRandom();
+    }
+
+    @Bean
+    public RequestOtpUseCase requestOtpUseCase(
+            UserRepository userRepository,
+            CurrentIdentityGuard identityGuard,
+            OtpChallengeStore challengeStore,
+            KeyedFingerprint fingerprint,
+            AuthMailDispatcher mailDispatcher,
+            AuthInputPolicy authInputPolicy,
+            OtpInputPolicy otpInputPolicy,
+            OtpApplicationPolicy otpApplicationPolicy,
+            SecureRandom otpSecureRandom
+    ) {
+        return new RequestOtpUseCase(
+                userRepository,
+                identityGuard,
+                challengeStore,
+                fingerprint,
+                mailDispatcher,
+                authInputPolicy,
+                otpInputPolicy,
+                otpApplicationPolicy,
+                otpSecureRandom
+        );
+    }
+
+    @Bean
+    public VerifyOtpUseCase verifyOtpUseCase(
+            UserRepository userRepository,
+            CurrentIdentityGuard identityGuard,
+            OtpChallengeStore challengeStore,
+            KeyedFingerprint fingerprint,
+            AuthInputPolicy authInputPolicy,
+            OtpInputPolicy otpInputPolicy,
+            OtpApplicationPolicy otpApplicationPolicy,
+            TransactionRunner transactionRunner,
+            Clock clock
+    ) {
+        return new VerifyOtpUseCase(
+                userRepository,
+                identityGuard,
+                challengeStore,
+                fingerprint,
+                authInputPolicy,
+                otpInputPolicy,
+                otpApplicationPolicy,
+                transactionRunner,
+                clock
+        );
+    }
+
+    @Bean
+    public ResetPasswordUseCase resetPasswordUseCase(
+            UserRepository userRepository,
+            UserSessionRepository sessionRepository,
+            OtpChallengeStore challengeStore,
+            KeyedFingerprint fingerprint,
+            PasswordHasher passwordHasher,
+            TransactionRunner transactionRunner,
+            AuthInputPolicy authInputPolicy,
+            OtpInputPolicy otpInputPolicy,
+            Clock clock
+    ) {
+        return new ResetPasswordUseCase(
+                userRepository,
+                sessionRepository,
+                challengeStore,
+                fingerprint,
+                passwordHasher,
+                transactionRunner,
+                authInputPolicy,
+                otpInputPolicy,
+                clock
+        );
+    }
+
+    @Bean
     public RegisterUserUseCase registerUserUseCase(
             UserRepository userRepository,
             PasswordHasher passwordHasher,
@@ -127,12 +260,156 @@ public class IdentityApplicationConfig {
     }
 
     @Bean
-    public GetCurrentUserUseCase getCurrentUserUseCase(
+    public CompleteGoogleLoginUseCase completeGoogleLoginUseCase(
+            UserRepository userRepository,
+            OAuthAccountRepository oauthAccountRepository,
+            UserSessionRepository sessionRepository,
+            RefreshTokenGenerator refreshTokenGenerator,
+            AccessTokenIssuer accessTokenIssuer,
+            TransactionRunner transactionRunner,
+            AuthInputPolicy inputPolicy,
+            Clock clock,
+            JwtProperties properties
+    ) {
+        return new CompleteGoogleLoginUseCase(
+                userRepository,
+                oauthAccountRepository,
+                sessionRepository,
+                refreshTokenGenerator,
+                accessTokenIssuer,
+                transactionRunner,
+                inputPolicy,
+                clock,
+                properties.refreshExpiresIn()
+        );
+    }
+
+    @Bean
+    public LinkGoogleAccountUseCase linkGoogleAccountUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            OAuthAccountRepository oauthAccountRepository,
+            PasswordHasher passwordHasher,
+            KeyedFingerprint fingerprint,
+            TransactionRunner transactionRunner,
+            AuthInputPolicy inputPolicy,
+            Clock clock
+    ) {
+        return new LinkGoogleAccountUseCase(
+                identityGuard,
+                userRepository,
+                oauthAccountRepository,
+                passwordHasher,
+                fingerprint,
+                transactionRunner,
+                inputPolicy,
+                clock);
+    }
+
+    @Bean
+    public ListOAuthAccountsUseCase listOAuthAccountsUseCase(
+            CurrentIdentityGuard identityGuard,
+            OAuthAccountRepository oauthAccountRepository
+    ) {
+        return new ListOAuthAccountsUseCase(identityGuard, oauthAccountRepository);
+    }
+
+    @Bean
+    public UnlinkOAuthAccountUseCase unlinkOAuthAccountUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            OAuthAccountRepository oauthAccountRepository,
+            PasswordHasher passwordHasher,
+            TransactionRunner transactionRunner,
+            AuthInputPolicy inputPolicy
+    ) {
+        return new UnlinkOAuthAccountUseCase(
+                identityGuard,
+                userRepository,
+                oauthAccountRepository,
+                passwordHasher,
+                transactionRunner,
+                inputPolicy);
+    }
+
+    @Bean
+    public CurrentIdentityGuard currentIdentityGuard(
             UserRepository userRepository,
             UserSessionRepository sessionRepository,
             Clock clock
     ) {
-        return new GetCurrentUserUseCase(userRepository, sessionRepository, clock);
+        return new CurrentIdentityGuard(userRepository, sessionRepository, clock);
+    }
+
+    @Bean
+    public GetCurrentUserUseCase getCurrentUserUseCase(
+            CurrentIdentityGuard identityGuard
+    ) {
+        return new GetCurrentUserUseCase(identityGuard);
+    }
+
+    @Bean
+    public ChangePasswordUseCase changePasswordUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            UserSessionRepository sessionRepository,
+            PasswordHasher passwordHasher,
+            TransactionRunner transactionRunner,
+            AuthInputPolicy inputPolicy,
+            Clock clock
+    ) {
+        return new ChangePasswordUseCase(
+                identityGuard,
+                userRepository,
+                sessionRepository,
+                passwordHasher,
+                transactionRunner,
+                inputPolicy,
+                clock
+        );
+    }
+
+    @Bean
+    public UpdateProfileUseCase updateProfileUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            TransactionRunner transactionRunner,
+            Clock clock
+    ) {
+        return new UpdateProfileUseCase(identityGuard, userRepository, transactionRunner, clock);
+    }
+
+    @Bean
+    public ListSessionsUseCase listSessionsUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserSessionRepository sessionRepository,
+            Clock clock
+    ) {
+        return new ListSessionsUseCase(identityGuard, sessionRepository, clock);
+    }
+
+    @Bean
+    public RevokeSessionUseCase revokeSessionUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            UserSessionRepository sessionRepository,
+            TransactionRunner transactionRunner,
+            Clock clock
+    ) {
+        return new RevokeSessionUseCase(
+                identityGuard, userRepository, sessionRepository, transactionRunner, clock);
+    }
+
+    @Bean
+    public RevokeAllSessionsUseCase revokeAllSessionsUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            UserSessionRepository sessionRepository,
+            TransactionRunner transactionRunner,
+            Clock clock
+    ) {
+        return new RevokeAllSessionsUseCase(
+                identityGuard, userRepository, sessionRepository, transactionRunner, clock);
     }
 
     @Bean
@@ -156,12 +433,19 @@ public class IdentityApplicationConfig {
 
     @Bean
     public LogoutUseCase logoutUseCase(
+            UserRepository userRepository,
             UserSessionRepository sessionRepository,
             RefreshTokenGenerator refreshTokenGenerator,
             TransactionRunner transactionRunner,
             Clock clock
     ) {
-        return new LogoutUseCase(sessionRepository, refreshTokenGenerator, transactionRunner, clock);
+        return new LogoutUseCase(
+                userRepository,
+                sessionRepository,
+                refreshTokenGenerator,
+                transactionRunner,
+                clock
+        );
     }
 
     private static SecretKey accessTokenKey(JwtProperties properties) {

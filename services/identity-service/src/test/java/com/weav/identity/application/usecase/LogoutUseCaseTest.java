@@ -4,7 +4,11 @@ import com.weav.identity.application.dto.RefreshTokenCommand;
 import com.weav.identity.application.port.out.RefreshTokenGenerator;
 import com.weav.identity.application.port.out.TransactionRunner;
 import com.weav.identity.domain.model.UserSession;
+import com.weav.identity.domain.model.User;
+import com.weav.identity.domain.port.out.UserRepository;
 import com.weav.identity.domain.port.out.UserSessionRepository;
+import com.weav.identity.domain.valueobject.SystemRole;
+import com.weav.identity.domain.valueobject.UserStatus;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -20,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -35,9 +40,11 @@ class LogoutUseCaseTest {
     private static final String SUBMITTED_HASH = "submitted-refresh-hash";
 
     private final UserSessionRepository sessionRepository = mock(UserSessionRepository.class);
+    private final UserRepository userRepository = mock(UserRepository.class);
     private final RefreshTokenGenerator refreshTokenGenerator = mock(RefreshTokenGenerator.class);
     private final TrackingTransactionRunner transactionRunner = new TrackingTransactionRunner();
     private final LogoutUseCase useCase = new LogoutUseCase(
+            userRepository,
             sessionRepository,
             refreshTokenGenerator,
             transactionRunner,
@@ -48,6 +55,8 @@ class LogoutUseCaseTest {
     void revokesAndPersistsActiveSessionInsideTransaction() {
         UserSession session = session(null);
         when(refreshTokenGenerator.hash(SUBMITTED_TOKEN)).thenReturn(SUBMITTED_HASH);
+        when(sessionRepository.findByRefreshTokenHash(SUBMITTED_HASH)).thenReturn(Optional.of(session));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user()));
         when(sessionRepository.findByRefreshTokenHashForUpdate(SUBMITTED_HASH))
                 .thenReturn(Optional.of(session));
         when(sessionRepository.save(session)).thenAnswer(invocation -> {
@@ -60,18 +69,22 @@ class LogoutUseCaseTest {
         assertEquals(1, transactionRunner.invocations);
         assertEquals(NOW, session.getRevokedAt());
         verify(sessionRepository).save(session);
+        var order = inOrder(sessionRepository, userRepository);
+        order.verify(sessionRepository).findByRefreshTokenHash(SUBMITTED_HASH);
+        order.verify(userRepository).findByIdForUpdate(USER_ID);
+        order.verify(sessionRepository).findByRefreshTokenHashForUpdate(SUBMITTED_HASH);
     }
 
     @Test
     void treatsRepeatedLogoutForUnknownTokenAsSuccessfulNoOp() {
         when(refreshTokenGenerator.hash(SUBMITTED_TOKEN)).thenReturn(SUBMITTED_HASH);
-        when(sessionRepository.findByRefreshTokenHashForUpdate(SUBMITTED_HASH))
+        when(sessionRepository.findByRefreshTokenHash(SUBMITTED_HASH))
                 .thenReturn(Optional.empty());
 
         assertDoesNotThrow(() -> useCase.execute(new RefreshTokenCommand(SUBMITTED_TOKEN)));
         assertDoesNotThrow(() -> useCase.execute(new RefreshTokenCommand(SUBMITTED_TOKEN)));
 
-        assertEquals(2, transactionRunner.invocations);
+        assertEquals(0, transactionRunner.invocations);
         verify(sessionRepository, never()).save(any(UserSession.class));
     }
 
@@ -80,6 +93,8 @@ class LogoutUseCaseTest {
         Instant originallyRevokedAt = NOW.minus(Duration.ofHours(2));
         UserSession session = session(originallyRevokedAt);
         when(refreshTokenGenerator.hash(SUBMITTED_TOKEN)).thenReturn(SUBMITTED_HASH);
+        when(sessionRepository.findByRefreshTokenHash(SUBMITTED_HASH)).thenReturn(Optional.of(session));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user()));
         when(sessionRepository.findByRefreshTokenHashForUpdate(SUBMITTED_HASH))
                 .thenReturn(Optional.of(session));
         when(sessionRepository.save(session)).thenAnswer(invocation -> invocation.getArgument(0));
@@ -102,6 +117,20 @@ class LogoutUseCaseTest {
                 NOW.plus(Duration.ofDays(1)),
                 revokedAt,
                 NOW.minus(Duration.ofHours(1)),
+                NOW.minus(Duration.ofDays(1))
+        );
+    }
+
+    private static User user() {
+        return new User(
+                USER_ID,
+                "user@example.com",
+                "password-hash",
+                "User",
+                null,
+                SystemRole.USER,
+                UserStatus.ACTIVE,
+                NOW.minus(Duration.ofDays(2)),
                 NOW.minus(Duration.ofDays(1))
         );
     }
