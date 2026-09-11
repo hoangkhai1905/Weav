@@ -150,6 +150,7 @@ docker-data/
 *.db
 *.sqlite
 *.sqlite3
+.data/ocr-models/
 
 # --------------------------------------------------
 # Local tool files

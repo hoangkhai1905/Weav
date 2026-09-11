@@ -5,16 +5,22 @@ requires-python = ">=3.12,<3.13"
 
 dependencies = [
     "fastapi>=0.141.1",
-    "opencv-python-headless>=5.0.0.93",
+    "numpy>=1.26.4",
+    "opencv-contrib-python==4.10.0.84",
     "paddleocr>=3.7.0",
+    "paddlex[ocr]>=3.7.0,<3.8.0",
     "paddlepaddle==3.3.0",
+    "pillow>=10.4.0",
     "pydantic>=2.13.4",
+    "pypdfium2>=4.30.0",
+    "python-multipart==0.0.32",
     "uvicorn[standard]>=0.52.3",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.1.0",
     "ruff>=0.16.3",
 ]
 

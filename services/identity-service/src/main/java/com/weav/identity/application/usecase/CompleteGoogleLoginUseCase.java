@@ -119,7 +119,7 @@ public final class CompleteGoogleLoginUseCase {
                 .findByProviderAndProviderUserId(OAuthProvider.GOOGLE, identity.providerSubject())
                 .orElse(null);
         if (linked != null) {
-            return completeExistingLogin(linked, identity.providerSubject(), userAgent, ipAddress);
+            return completeExistingLogin(linked, identity, userAgent, ipAddress);
         }
 
         String canonicalEmail = requireVerifiedEmail(identity);
@@ -136,7 +136,7 @@ public final class CompleteGoogleLoginUseCase {
 
     private TokenPairResult completeExistingLogin(
             OAuthAccount linked,
-            String providerSubject,
+            OAuthProviderClient.ProviderIdentity identity,
             String userAgent,
             String ipAddress
     ) {
@@ -147,11 +147,16 @@ public final class CompleteGoogleLoginUseCase {
             User lockedUser = userRepository.findByIdForUpdate(linked.getUserId())
                     .orElseThrow(CompleteGoogleLoginUseCase::authenticationFailed);
             OAuthAccount current = oauthAccountRepository
-                    .findByProviderAndProviderUserId(OAuthProvider.GOOGLE, providerSubject)
+                    .findByProviderAndProviderUserId(OAuthProvider.GOOGLE, identity.providerSubject())
                     .orElseThrow(CompleteGoogleLoginUseCase::authenticationFailed);
             if (!lockedUser.getId().equals(current.getUserId())
                     || lockedUser.getStatus() != UserStatus.ACTIVE) {
                 throw authenticationFailed();
+            }
+            if ((lockedUser.getDisplayName() == null || lockedUser.getDisplayName().isBlank())
+                    && identity.displayName() != null) {
+                lockedUser.updateDisplayName(identity.displayName(), clock.instant());
+                userRepository.save(lockedUser);
             }
             return issueSession(lockedUser, userAgent, ipAddress);
         });
@@ -182,7 +187,7 @@ public final class CompleteGoogleLoginUseCase {
                 UUID.randomUUID(),
                 canonicalEmail,
                 null,
-                null,
+                identity.displayName(),
                 null,
                 SystemRole.USER,
                 UserStatus.ACTIVE,

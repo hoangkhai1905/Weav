@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+  output = "../node_modules/.prisma/notification"
+}
+datasource db {
+  provider = "postgresql"
+  schemas = ["notification"]
+}
+enum NotificationProvider {
+  TELEGRAM
+  EXPO_PUSH
+  @@schema("notification")
+}
+enum NotificationStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  @@schema("notification")
+}
+model NotificationDelivery {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  executionId String? @map("execution_id") @db.Uuid
+  sourceEventId String? @map("source_event_id") @db.Uuid
+  provider NotificationProvider
+  destination String @db.VarChar(512)
+  eventType String @map("event_type") @db.VarChar(128)
+  payload Json @db.JsonB
+  status NotificationStatus @default(PENDING)
+  retryCount Int @default(0) @map("retry_count")
+  lastError Json? @map("last_error") @db.JsonB
+  readAt DateTime? @map("read_at") @db.Timestamptz(3)
+  scheduledAt DateTime? @map("scheduled_at") @db.Timestamptz(3)
+  sentAt DateTime? @map("sent_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  @@unique([sourceEventId, userId, provider, destination], map: "notification_deliveries_event_recipient_key")
+  @@index([userId, createdAt, id])
+  @@index([userId, readAt, createdAt])
+  @@index([status, scheduledAt])
+  @@map("notification_deliveries")
+  @@schema("notification")
+}

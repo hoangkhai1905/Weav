@@ -122,14 +122,15 @@ public final class ValkeyOAuthTransactionStore implements OAuthTransactionStore 
               'emailVerified', ARGV[10],
               'hostedDomain', ARGV[11],
               'issuedAt', ARGV[12],
-              'userId', ARGV[13],
-              'sessionId', ARGV[14],
-              'credentialFingerprint', ARGV[15],
-              'maxProofFailures', ARGV[16],
+              'providerDisplayName', ARGV[13],
+              'userId', ARGV[14],
+              'sessionId', ARGV[15],
+              'credentialFingerprint', ARGV[16],
+              'maxProofFailures', ARGV[17],
               'proofFailures', '0',
-              'ttl', ARGV[17])
-            redis.call('PEXPIRE', KEYS[1], ARGV[17])
-            return 'CREATED|' .. tostring(math.max(1, math.floor(tonumber(ARGV[17]) / 1000)))
+              'ttl', ARGV[18])
+            redis.call('PEXPIRE', KEYS[1], ARGV[18])
+            return 'CREATED|' .. tostring(math.max(1, math.floor(tonumber(ARGV[18]) / 1000)))
             """, String.class);
 
     private static final DefaultRedisScript<String> CONSUME_HANDOFF_SCRIPT = new DefaultRedisScript<>("""
@@ -141,13 +142,15 @@ public final class ValkeyOAuthTransactionStore implements OAuthTransactionStore 
               'handoffCodeFingerprint', 'transactionId', 'intent', 'clientId',
               'returnTargetId', 'codeChallenge', 'provider', 'providerSubject',
               'providerEmail', 'emailVerified', 'hostedDomain', 'issuedAt',
-              'userId', 'sessionId', 'credentialFingerprint', 'maxProofFailures',
+              'providerDisplayName', 'userId', 'sessionId', 'credentialFingerprint', 'maxProofFailures',
               'proofFailures', 'ttl')
             for index = 1, #values do
-              if not values[index] then return 'CORRUPT' end
+              if not values[index] then
+                if index == 13 then values[index] = '~' else return 'CORRUPT' end
+              end
             end
-            local maximum = tonumber(values[16])
-            local failures = tonumber(values[17])
+            local maximum = tonumber(values[17])
+            local failures = tonumber(values[18])
             local configuredMaximum = tonumber(ARGV[7])
             if not maximum or maximum < 1 or maximum ~= math.floor(maximum)
                or not configuredMaximum or maximum > configuredMaximum
@@ -166,7 +169,7 @@ public final class ValkeyOAuthTransactionStore implements OAuthTransactionStore 
               return 'MISMATCH'
             end
             redis.call('DEL', KEYS[1])
-            return 'CONSUMED|' .. table.concat(values, '|', 1, 16) .. '|' .. values[18]
+            return 'CONSUMED|' .. table.concat(values, '|', 1, 17) .. '|' .. values[19]
             """, String.class);
 
     private final StringRedisTemplate redis;
@@ -248,6 +251,7 @@ public final class ValkeyOAuthTransactionStore implements OAuthTransactionStore 
                 identity.emailVerified() ? "1" : "0",
                 encodeNullable(identity.hostedDomain()),
                 encode(identity.issuedAt().toString()),
+                encodeNullable(identity.displayName()),
                 encodeNullable(uuidValue(handoff.userId())),
                 encodeNullable(uuidValue(handoff.sessionId())),
                 encodeNullable(secretValue(handoff.credentialFingerprint())),
@@ -332,7 +336,7 @@ public final class ValkeyOAuthTransactionStore implements OAuthTransactionStore 
     }
 
     private static Handoff parseHandoff(String payload) {
-        String[] fields = fields(payload, 17);
+        String[] fields = fields(payload, 18);
         try {
             OAuthProvider provider = OAuthProvider.valueOf(decode(fields[6]));
             boolean emailVerified = switch (fields[9]) {
@@ -346,7 +350,8 @@ public final class ValkeyOAuthTransactionStore implements OAuthTransactionStore 
                     decodeNullable(fields[8]),
                     emailVerified,
                     decodeNullable(fields[10]),
-                    Instant.parse(decode(fields[11])));
+                    Instant.parse(decode(fields[11])),
+                    decodeNullable(fields[12]));
             return new Handoff(
                     decode(fields[0]),
                     decode(fields[1]),
@@ -355,11 +360,11 @@ public final class ValkeyOAuthTransactionStore implements OAuthTransactionStore 
                     decode(fields[4]),
                     decode(fields[5]),
                     identity,
-                    parseUuid(fields[12]),
                     parseUuid(fields[13]),
-                    parseSecret(fields[14]),
-                    Duration.ofMillis(parsePositiveLong(fields[16], "handoff TTL")),
-                    Integer.parseInt(fields[15]));
+                    parseUuid(fields[14]),
+                    parseSecret(fields[15]),
+                    Duration.ofMillis(parsePositiveLong(fields[17], "handoff TTL")),
+                    Integer.parseInt(fields[16]));
         } catch (DependencyUnavailableException exception) {
             throw exception;
         } catch (RuntimeException exception) {

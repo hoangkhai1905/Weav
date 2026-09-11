@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "FILE_TOO_LARGE",
+    "message": "The uploaded document exceeds the maximum allowable size of 10 MiB.",
+    "retryable": false,
+    "details": {
+      "limitBytes": 10485760,
+      "receivedBytes": 15728640
+    }
+  },
+  "requestId": "61a5ef28-d5d1-4ba2-9214-41d3c909b9f2"
+}

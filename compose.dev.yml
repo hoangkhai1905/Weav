@@ -220,13 +220,14 @@ services:
       VALKEY_URL: ${VALKEY_URL}
 
       # Internal service URLs
-      IDENTITY_SERVICE_URL: http://identity-service:8080
+      IDENTITY_SERVICE_URL: ${IDENTITY_SERVICE_URL:-http://identity-service:8080}
       WORKSPACE_SERVICE_URL: http://workspace-service:8080
       WORKFLOW_SERVICE_URL: http://workflow-service:8080
       AI_SERVICE_URL: http://ai-service:3000
       OCR_SERVICE_URL: http://ocr-service:8000
       BOT_SERVICE_URL: http://bot-service:3000
-      # NOTIFICATION_SERVICE_URL: http://notification-service:3000
+      NOTIFICATION_SERVICE_URL: http://notification-service:3000
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8081,http://127.0.0.1:8081}
 
 
   # ==================================================
@@ -286,6 +287,23 @@ services:
       DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
       DB_SSL_MODE: ${NOTIFICATION_DB_SSL_MODE:-require}
       DB_SCHEMA: notification
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER:-weav-identity}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-weav-api}
+      NOTIFICATION_TELEGRAM_ENABLED: ${NOTIFICATION_TELEGRAM_ENABLED:-false}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      NOTIFICATION_EXPO_ENABLED: ${NOTIFICATION_EXPO_ENABLED:-false}
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
+      NOTIFICATION_EXCHANGE: ${NOTIFICATION_EXCHANGE:-weav.events}
+      NOTIFICATION_QUEUE: ${NOTIFICATION_QUEUE:-notification-service.execution-events}
+      NOTIFICATION_DLQ: ${NOTIFICATION_DLQ:-notification-service.execution-events.dlq}
+      NOTIFICATION_MAX_ATTEMPTS: ${NOTIFICATION_MAX_ATTEMPTS:-5}
+      NOTIFICATION_RETRY_BASE_MS: ${NOTIFICATION_RETRY_BASE_MS:-1000}
+      NOTIFICATION_RETRY_MAX_MS: ${NOTIFICATION_RETRY_MAX_MS:-300000}
+      NOTIFICATION_TIMEOUT_MS: ${NOTIFICATION_TIMEOUT_MS:-10000}
+      NOTIFICATION_LEASE_MS: ${NOTIFICATION_LEASE_MS:-60000}
+      NOTIFICATION_POLL_MS: ${NOTIFICATION_POLL_MS:-1000}
+      NOTIFICATION_DETAIL_BASE_URL: ${NOTIFICATION_DETAIL_BASE_URL:-}
 
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
@@ -312,3 +330,11 @@ services:
 
     environment:
       APP_ENV: ${APP_ENV:-development}
+      OCR_MODEL_ROOT: /models
+      WEAV_OCR_MODEL_MANIFEST: /app/config/model-manifest.json
+
+    volumes:
+      - type: bind
+        source: ${OCR_MODEL_HOST_PATH:-./.data/ocr-models}
+        target: /models
+        read_only: true

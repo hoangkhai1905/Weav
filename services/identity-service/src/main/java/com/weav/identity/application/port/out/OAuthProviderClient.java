@@ -80,8 +80,20 @@ public interface OAuthProviderClient {
             String providerEmail,
             boolean emailVerified,
             String hostedDomain,
-            Instant issuedAt
+            Instant issuedAt,
+            String displayName
     ) {
+        public ProviderIdentity(
+                OAuthProvider provider,
+                String providerSubject,
+                String providerEmail,
+                boolean emailVerified,
+                String hostedDomain,
+                Instant issuedAt
+        ) {
+            this(provider, providerSubject, providerEmail, emailVerified, hostedDomain, issuedAt, null);
+        }
+
         public ProviderIdentity {
             Objects.requireNonNull(provider, "provider must not be null");
             requireAscii(providerSubject, "providerSubject", 1, 255);
@@ -92,6 +104,9 @@ public interface OAuthProviderClient {
                 requireAscii(hostedDomain, "hostedDomain", 1, 253);
             }
             Objects.requireNonNull(issuedAt, "issuedAt must not be null");
+            if (displayName != null) {
+                requireDisplayName(displayName);
+            }
         }
 
         @Override
@@ -106,6 +121,14 @@ public interface OAuthProviderClient {
                     || value.chars().anyMatch(character -> character < 0x20 || character > 0x7e)) {
                 throw new IllegalArgumentException(name + " must be printable ASCII of length "
                         + minimum + ".." + maximum);
+            }
+        }
+
+        private static void requireDisplayName(String value) {
+            String normalized = value.strip();
+            if (normalized.isEmpty() || normalized.length() > 120
+                    || normalized.chars().anyMatch(Character::isISOControl)) {
+                throw new IllegalArgumentException("displayName must contain 1..120 non-control characters");
             }
         }
     }

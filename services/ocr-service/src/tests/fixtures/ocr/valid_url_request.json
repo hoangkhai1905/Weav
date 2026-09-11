@@ -1,0 +1,8 @@
+{
+  "source": {
+    "type": "url",
+    "fileUrl": "https://storage.example.invalid/workspaces/ws-100/documents/technical-spec.pdf"
+  },
+  "language": "en",
+  "detectTables": false
+}

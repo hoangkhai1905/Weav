@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "OCR_TIMEOUT",
+    "message": "Document processing exceeded the allowed time.",
+    "retryable": false,
+    "details": {
+      "limitSeconds": 60
+    }
+  },
+  "requestId": "eeb24fb2-df80-4dcb-b22d-3a4884799c73"
+}
