@@ -1,11 +1,13 @@
 package com.weav.identity.application.security;
 
 import com.weav.identity.domain.exception.UnauthorizedException;
+import com.weav.identity.domain.exception.ForbiddenException;
 import com.weav.identity.domain.model.User;
 import com.weav.identity.domain.model.UserSession;
 import com.weav.identity.domain.port.out.UserRepository;
 import com.weav.identity.domain.port.out.UserSessionRepository;
 import com.weav.identity.domain.valueobject.UserStatus;
+import com.weav.identity.domain.valueobject.SystemRole;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -45,6 +47,14 @@ public final class CurrentIdentityGuard {
                 .orElseThrow(CurrentIdentityGuard::unauthorized);
     }
 
+    public User requireActiveAdmin(UUID userId, UUID sessionId) {
+        User user = requireActiveUser(userId, sessionId);
+        if (user.getSystemRole() != SystemRole.ADMIN) {
+            throw new ForbiddenException();
+        }
+        return user;
+    }
+
     /**
      * Rechecks authorization after the caller has acquired the user lock.
      * Mutations lock user before session, so a concurrent revoke cannot commit
@@ -62,6 +72,16 @@ public final class CurrentIdentityGuard {
                 .filter(value -> value.getUserId().equals(userId))
                 .filter(value -> value.isActive(now))
                 .orElseThrow(CurrentIdentityGuard::unauthorized);
+    }
+
+    public void requireActiveAdminForLockedUser(User lockedUser, UUID userId, UUID sessionId) {
+        if (lockedUser == null) {
+            throw unauthorized();
+        }
+        requireActiveSessionForLockedUser(lockedUser, userId, sessionId);
+        if (lockedUser.getSystemRole() != SystemRole.ADMIN) {
+            throw new ForbiddenException();
+        }
     }
 
     private static UnauthorizedException unauthorized() {

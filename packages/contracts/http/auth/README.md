@@ -1,6 +1,6 @@
 # Identity authentication HTTP contract
 
-This directory publishes the Identity-local contract for core authentication, the M1 profile/session/password-change milestone, the M2 email-verification/password-recovery target, and the bounded M3 Google OAuth web transport. The source of truth for request/response shapes is [openapi.yaml](./openapi.yaml). Publishing an operation here establishes the implementation target; runtime availability still requires the matching Identity implementation, Valkey/SMTP integration, and HTTP verification.
+This directory publishes the Identity-local contract for core authentication, the M1 profile/session/password-change milestone, the M2 email-verification/password-recovery target, the bounded M3 Google OAuth web transport, and the M4 admin/M5 avatar milestones. The source of truth for request/response shapes is [openapi.yaml](./openapi.yaml). Publishing an operation here establishes the implementation target; runtime availability still requires the matching Identity implementation, storage integration, and HTTP verification.
 
 ## Endpoint behavior
 
@@ -29,8 +29,26 @@ This directory publishes the Identity-local contract for core authentication, th
 | `POST /users/me/oauth/google/link` | Active bearer, current password, exact Origin/XSRF | `200` with the registered Google authorization URL and no account mutation yet |
 | `GET /users/me/oauth-accounts` | Active bearer session | `200` with safe self-only provider metadata |
 | `DELETE /users/me/oauth-accounts/{accountId}` | Active bearer, current password, exact Origin/XSRF | `204` for an owned account; safe `404`/`409` guards preserve other login methods |
+| `GET /admin/users` | Active bearer, current DB role `ADMIN`, matching active session | `200` with bounded, stable, safe administrative pagination |
+| `GET /admin/users/{userId}` | Active bearer, current DB role `ADMIN`, matching active session | `200` with safe administrative detail |
+| `PATCH /admin/users/{userId}/status` | Active bearer, current DB role `ADMIN`, matching active session | `200` after an atomic non-admin status update; disabling revokes all target sessions |
+| `PUT /users/me/avatar` | Active bearer and matching active session | `200` after validated, normalized server-side upload |
+| `GET /users/me/avatar` | Active bearer and matching active session | `200` with a short-lived signed URL and `expiresAt`, or `404` when absent |
+| `DELETE /users/me/avatar` | Active bearer and matching active session | `204` after clearing the reference and scheduling idempotent cleanup |
 
 Auth request bodies use `application/json`. Passwords and refresh tokens must never be placed in URLs, query strings, logs, or exception details. Login and refresh responses carry `Cache-Control: no-store`.
+
+## M4 admin controls
+
+Admin operations recheck the current database user row and active session while holding the actor lock. A stale JWT role claim cannot grant admin access, while a current database role is authoritative. Normal users receive `403`; anonymous, revoked-session, and disabled actors receive `401`.
+
+Listing accepts zero-based `page`, `size` from 1 through 100, a search string up to 120 characters, and an optional `ACTIVE`/`DISABLED` filter. Results use stable `createdAt` descending and `id` ascending order. Detail and list responses omit password hashes, refresh material, and storage keys. Status changes reject every `ADMIN` target, including the actor, with `409`; a missing target is `404`. Disabling and revoking all sessions commit together. Enabling changes only the status, so previously revoked tokens remain invalid. Each status attempt writes a sanitized operational audit event with actor ID, target ID, action, result, and correlation ID.
+
+## M5 avatar storage
+
+Avatar uploads accept JPEG, PNG, and WebP only, up to 2 MiB before and after normalization, with each dimension at most 4096 pixels. Identity checks magic bytes and decoder format, then re-encodes the image to remove metadata before uploading. SVG, remote URLs, disguised executables, and client-selected object keys are rejected. The S3-compatible adapter creates keys under `avatars/{userId}/` and validates that namespace again for every storage operation.
+
+Replacing an avatar uploads the new object first, commits the fresh server-owned reference under the user lock, then cleans the previous object. Database failure removes the new object. Cleanup failure is logged as a sanitized retryable event and placed in an idempotent bounded in-memory reconciliation queue. When that queue is full, the extra task is dropped and an explicit sanitized `result=QUEUE_FULL` event is emitted; pending tasks can also be lost on process restart, so this M5 mechanism provides bounded best-effort cleanup rather than durable orphan recovery. Delete clears the reference before cleanup. Signed URL responses are `no-store` and expire after about five minutes; missing avatars return `404`, while storage outages return sanitized `503` responses.
 
 Registration always creates `USER` / `ACTIVE`; `emailVerifiedAt` is initially `null`, and login remains allowed before email verification. `role`, `systemRole`, `status`, `passwordHash`, `avatarStorageKey`, IDs, and timestamps are not accepted registration fields. The service rejects unknown JSON properties instead of silently binding privileged fields.
 

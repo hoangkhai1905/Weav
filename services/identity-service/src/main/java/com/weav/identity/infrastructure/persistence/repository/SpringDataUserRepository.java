@@ -2,6 +2,9 @@ package com.weav.identity.infrastructure.persistence.repository;
 
 import com.weav.identity.infrastructure.persistence.entity.UserJpaEntity;
 import jakarta.persistence.LockModeType;
+import com.weav.identity.domain.valueobject.UserStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -23,4 +26,14 @@ public interface SpringDataUserRepository extends JpaRepository<UserJpaEntity, U
             + "from UserJpaEntity user "
             + "where lower(trim(user.email)) = lower(trim(:canonicalEmail))")
     boolean existsByCanonicalEmail(@Param("canonicalEmail") String canonicalEmail);
+
+    @Query("select user from UserJpaEntity user "
+            + "where (:search = '' or "
+            + "lower(user.email) like lower(concat('%', :search, '%')) "
+            + "or lower(coalesce(user.displayName, '')) like lower(concat('%', :search, '%'))) "
+            + "and (:status is null or user.status = :status)")
+    Page<UserJpaEntity> search(
+            @Param("search") String search,
+            @Param("status") UserStatus status,
+            Pageable pageable);
 }

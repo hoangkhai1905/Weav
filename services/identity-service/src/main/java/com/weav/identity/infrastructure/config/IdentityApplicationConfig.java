@@ -3,19 +3,25 @@ package com.weav.identity.infrastructure.config;
 import com.weav.identity.application.port.out.AccessTokenIssuer;
 import com.weav.identity.application.port.out.AuthMailDispatcher;
 import com.weav.identity.application.port.out.AuthMailSender;
+import com.weav.identity.application.port.out.AvatarStorage;
 import com.weav.identity.application.port.out.KeyedFingerprint;
 import com.weav.identity.application.port.out.OtpChallengeStore;
 import com.weav.identity.application.port.out.PasswordHasher;
 import com.weav.identity.application.port.out.RefreshTokenGenerator;
 import com.weav.identity.application.port.out.TransactionRunner;
 import com.weav.identity.application.security.CurrentIdentityGuard;
+import com.weav.identity.application.usecase.ChangeUserStatusUseCase;
 import com.weav.identity.application.usecase.CompleteGoogleLoginUseCase;
+import com.weav.identity.application.usecase.DeleteAvatarUseCase;
 import com.weav.identity.application.usecase.GetCurrentUserUseCase;
+import com.weav.identity.application.usecase.GetAvatarUseCase;
+import com.weav.identity.application.usecase.GetUserDetailUseCase;
 import com.weav.identity.application.usecase.ChangePasswordUseCase;
 import com.weav.identity.application.usecase.LoginUseCase;
 import com.weav.identity.application.usecase.LinkGoogleAccountUseCase;
 import com.weav.identity.application.usecase.ListOAuthAccountsUseCase;
 import com.weav.identity.application.usecase.ListSessionsUseCase;
+import com.weav.identity.application.usecase.ListUsersUseCase;
 import com.weav.identity.application.usecase.LogoutUseCase;
 import com.weav.identity.application.usecase.RequestOtpUseCase;
 import com.weav.identity.application.usecase.ResetPasswordUseCase;
@@ -25,16 +31,21 @@ import com.weav.identity.application.usecase.RefreshSessionUseCase;
 import com.weav.identity.application.usecase.RegisterUserUseCase;
 import com.weav.identity.application.usecase.UnlinkOAuthAccountUseCase;
 import com.weav.identity.application.usecase.UpdateProfileUseCase;
+import com.weav.identity.application.usecase.UpdateAvatarUseCase;
 import com.weav.identity.application.usecase.VerifyOtpUseCase;
 import com.weav.identity.application.validation.AuthInputPolicy;
 import com.weav.identity.application.validation.OtpApplicationPolicy;
 import com.weav.identity.application.validation.OtpInputPolicy;
+import com.weav.identity.application.validation.AvatarImageValidator;
 import com.weav.identity.domain.port.out.UserRepository;
 import com.weav.identity.domain.port.out.OAuthAccountRepository;
 import com.weav.identity.domain.port.out.UserSessionRepository;
 import com.weav.identity.infrastructure.persistence.SpringTransactionRunner;
 import com.weav.identity.infrastructure.authstate.HmacKeyedFingerprint;
 import com.weav.identity.infrastructure.mail.SmtpAuthMailSender;
+import com.weav.identity.infrastructure.storage.AvatarCleanupReconciler;
+import com.weav.identity.infrastructure.storage.S3AvatarStorage;
+import com.weav.identity.infrastructure.storage.UnavailableAvatarStorage;
 import com.weav.identity.infrastructure.security.BcryptPasswordHasher;
 import com.weav.identity.infrastructure.security.JwtAccessTokenIssuer;
 import com.weav.identity.infrastructure.security.JwtAccessTokenValidator;
@@ -44,6 +55,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -59,8 +71,21 @@ import java.security.SecureRandom;
 import java.time.Clock;
 
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({MailProperties.class, OtpProperties.class})
+@EnableScheduling
+@EnableConfigurationProperties({MailProperties.class, OtpProperties.class, AvatarStorageProperties.class})
 public class IdentityApplicationConfig {
+
+    @Bean
+    public AvatarStorage avatarStorage(AvatarStorageProperties properties) {
+        return properties.isConfigured()
+                ? new S3AvatarStorage(properties)
+                : new UnavailableAvatarStorage();
+    }
+
+    @Bean
+    public AvatarImageValidator avatarImageValidator() {
+        return new AvatarImageValidator();
+    }
 
     @Bean
     public AuthMailSender authMailSender(MailProperties properties) {
@@ -410,6 +435,87 @@ public class IdentityApplicationConfig {
     ) {
         return new RevokeAllSessionsUseCase(
                 identityGuard, userRepository, sessionRepository, transactionRunner, clock);
+    }
+
+    @Bean
+    public ListUsersUseCase listUsersUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            TransactionRunner transactionRunner
+    ) {
+        return new ListUsersUseCase(identityGuard, userRepository, transactionRunner);
+    }
+
+    @Bean
+    public GetUserDetailUseCase getUserDetailUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            TransactionRunner transactionRunner
+    ) {
+        return new GetUserDetailUseCase(identityGuard, userRepository, transactionRunner);
+    }
+
+    @Bean
+    public ChangeUserStatusUseCase changeUserStatusUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            UserSessionRepository sessionRepository,
+            TransactionRunner transactionRunner,
+            Clock clock
+    ) {
+        return new ChangeUserStatusUseCase(
+                identityGuard,
+                userRepository,
+                sessionRepository,
+                transactionRunner,
+                clock);
+    }
+
+    @Bean
+    public UpdateAvatarUseCase updateAvatarUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            AvatarStorage avatarStorage,
+            AvatarCleanupReconciler cleanupReconciler,
+            AvatarImageValidator imageValidator,
+            TransactionRunner transactionRunner,
+            Clock clock
+    ) {
+        return new UpdateAvatarUseCase(
+                identityGuard,
+                userRepository,
+                avatarStorage,
+                cleanupReconciler,
+                imageValidator,
+                transactionRunner,
+                clock);
+    }
+
+    @Bean
+    public GetAvatarUseCase getAvatarUseCase(
+            CurrentIdentityGuard identityGuard,
+            AvatarStorage avatarStorage,
+            AvatarStorageProperties properties
+    ) {
+        return new GetAvatarUseCase(identityGuard, avatarStorage, properties.getSignedUrlTtl());
+    }
+
+    @Bean
+    public DeleteAvatarUseCase deleteAvatarUseCase(
+            CurrentIdentityGuard identityGuard,
+            UserRepository userRepository,
+            AvatarStorage avatarStorage,
+            AvatarCleanupReconciler cleanupReconciler,
+            TransactionRunner transactionRunner,
+            Clock clock
+    ) {
+        return new DeleteAvatarUseCase(
+                identityGuard,
+                userRepository,
+                avatarStorage,
+                cleanupReconciler,
+                transactionRunner,
+                clock);
     }
 
     @Bean
