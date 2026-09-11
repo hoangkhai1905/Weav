@@ -37,6 +37,8 @@ import {
   ChevronDown,
   ChevronRight,
   FileImage,
+  FileSpreadsheet,
+  FileText,
   Scan,
   Upload,
   X,
@@ -47,6 +49,7 @@ import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
+import { NODE_CATALOG } from '../lib/constants/nodeCatalog';
 
 // Preset Nodes for Initial Canvas State
 const INITIAL_NODES: Node[] = [
@@ -57,6 +60,7 @@ const INITIAL_NODES: Node[] = [
     data: {
       id: 'webhook_inbound_v1',
       name: 'Webhook Trigger',
+      nameKey: 'builder.node.webhook',
       nodeType: 'trigger.webhook',
       status: 'success',
       executionTime: '120ms',
@@ -70,6 +74,7 @@ const INITIAL_NODES: Node[] = [
     data: {
       id: 'extract_order_v1',
       name: 'AI Extract Core',
+      nameKey: 'builder.node.ai_extract',
       nodeType: 'ai.extract',
       status: 'idle',
       executionTime: '850ms',
@@ -88,6 +93,7 @@ const INITIAL_NODES: Node[] = [
     data: {
       id: 'condition_check_v1',
       name: 'High Value Check',
+      nameKey: 'builder.node.condition',
       nodeType: 'logic.condition',
       status: 'idle',
       executionTime: '45ms',
@@ -101,6 +107,7 @@ const INITIAL_NODES: Node[] = [
     data: {
       id: 'notify_slack_v1',
       name: 'Notify Priority Queue',
+      nameKey: 'builder.node.email',
       nodeType: 'email.send',
       status: 'idle',
       executionTime: '210ms',
@@ -139,39 +146,41 @@ const INITIAL_EDGES: Edge[] = [
 // Step Palette Catalog Items
 const PALETTE_CATALOG = [
   {
-    category: 'TRIGGERS',
+    categoryKey: 'builder.category.triggers',
     items: [
-      { type: 'trigger.webhook', name: 'Webhook Inbound', desc: 'Listen to HTTP POST payloads', icon: Globe },
-      { type: 'trigger.schedule', name: 'Schedule / Cron', desc: 'Execute periodically on cron expression', icon: Zap },
-      { type: 'trigger.manual', name: 'Manual Trigger', desc: 'Trigger workflow manually or via API', icon: Play },
+      { type: 'trigger.webhook', nameKey: 'builder.node.webhook', descKey: 'builder.node.webhook_desc', icon: Globe },
+      { type: 'trigger.schedule', nameKey: 'builder.node.schedule', descKey: 'builder.node.schedule_desc', icon: Zap },
+      { type: 'trigger.manual', nameKey: 'builder.node.manual', descKey: 'builder.node.manual_desc', icon: Play },
     ],
   },
   {
-    category: 'AI INTELLIGENCE',
+    categoryKey: 'builder.category.ai',
     items: [
-      { type: 'ai.extract', name: 'AI Extract Core', desc: 'Extract structured JSON from raw text', icon: Sparkles },
-      { type: 'ai.classify', name: 'AI Classify', desc: 'Categorize inputs into dynamic labels', icon: ShieldCheck },
-      { type: 'ai.summarize', name: 'AI Summarize', desc: 'Synthesize long text into concise summaries', icon: FileCode },
+      { type: 'ai.extract', nameKey: 'builder.node.ai_extract', descKey: 'builder.node.ai_extract_desc', icon: Sparkles },
+      { type: 'ai.classify', nameKey: 'builder.node.ai_classify', descKey: 'builder.node.ai_classify_desc', icon: ShieldCheck },
+      { type: 'ai.summarize', nameKey: 'builder.node.ai_summarize', descKey: 'builder.node.ai_summarize_desc', icon: FileCode },
     ],
   },
   {
-    category: 'DOCUMENT AI',
+    categoryKey: 'builder.category.documents',
     items: [
-      { type: 'ocr.extract', name: 'OCR Text Extract', desc: 'Read text from images and PDFs', icon: FileImage },
+      { type: 'ocr.extract', nameKey: 'builder.node.ocr', descKey: 'builder.node.ocr_desc', icon: FileImage },
     ],
   },
   {
-    category: 'FLOW LOGIC',
+    categoryKey: 'builder.category.logic',
     items: [
-      { type: 'logic.condition', name: 'If / Condition', desc: 'Branch execution based on rules', icon: GitBranch },
-      { type: 'logic.filter', name: 'Filter Data', desc: 'Remove non-matching items from array', icon: SlidersHorizontal },
+      { type: 'logic.condition', nameKey: 'builder.node.condition', descKey: 'builder.node.condition_desc', icon: GitBranch },
+      { type: 'logic.filter', nameKey: 'builder.node.filter', descKey: 'builder.node.filter_desc', icon: SlidersHorizontal },
     ],
   },
   {
-    category: 'INTEGRATIONS',
+    categoryKey: 'builder.category.integrations',
     items: [
-      { type: 'email.send', name: 'Send Email / Slack', desc: 'Dispatch notifications to channels', icon: Mail },
-      { type: 'http.request', name: 'HTTP Request', desc: 'Call external REST endpoints', icon: Globe },
+      { type: 'email.send', nameKey: 'builder.node.email', descKey: 'builder.node.email_desc', icon: Mail },
+      { type: 'http.request', nameKey: 'builder.node.http', descKey: 'builder.node.http_desc', icon: Globe },
+      { type: 'google.sheets', nameKey: 'builder.node.google_sheets', descKey: 'builder.node.google_sheets_desc', icon: FileSpreadsheet },
+      { type: 'google.docs', nameKey: 'builder.node.google_docs', descKey: 'builder.node.google_docs_desc', icon: FileText },
     ],
   },
 ];
@@ -192,6 +201,13 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const selectedNodeType = String(selectedNode?.data?.nodeType ?? '');
+  const selectedNodeConfig = (selectedNode?.data?.config ?? {}) as Record<string, unknown>;
+  const isGoogleSheetsNode = selectedNodeType === 'google.sheets';
+  const isGoogleDocsNode = selectedNodeType === 'google.docs';
+  const isGoogleNode = isGoogleSheetsNode || isGoogleDocsNode;
+  const googleOperation = String(
+    selectedNodeConfig.operation ?? (isGoogleSheetsNode ? 'read' : isGoogleDocsNode ? 'create' : '')
+  );
 
   // Canvas State & Controls
   const [showGrid, setShowGrid] = useState(true);
@@ -234,9 +250,9 @@ export const WorkflowBuilderPage: React.FC = () => {
   // Telemetry Console State
   const [telemetryOpen, setTelemetryOpen] = useState(true);
   const [logs, setLogs] = useState<Array<{ id: string; time: string; level: 'info' | 'success' | 'warn'; msg: string }>>([
-    { id: '1', time: '11:04:12.102', level: 'info', msg: '[Webhook] Inbound POST request received from Stripe endpoint' },
-    { id: '2', time: '11:04:12.224', level: 'success', msg: '[Webhook] Payload validated successfully (size: 4.2 KB)' },
-    { id: '3', time: '11:04:12.250', level: 'info', msg: '[AI Extract] Dispatching prompt to model gpt-4o-mini...' },
+    { id: '1', time: '11:04:12.102', level: 'info', msg: 'builder.log.webhook_received' },
+    { id: '2', time: '11:04:12.224', level: 'success', msg: 'builder.log.webhook_validated' },
+    { id: '3', time: '11:04:12.250', level: 'info', msg: 'builder.log.ai_dispatching' },
   ]);
 
   const nodeTypes = useMemo(() => ({ customNode: CustomWorkflowNode }), []);
@@ -416,9 +432,10 @@ export const WorkflowBuilderPage: React.FC = () => {
     }
   };
 
-  const handleAddCatalogItem = (type: string, name: string) => {
+  const handleAddCatalogItem = (type: string, name: string, nameKey: string) => {
     const sequence = ++nodeSequenceRef.current;
     const newNodeId = `node-${sequence}`;
+    const catalogItem = NODE_CATALOG.find((item) => item.type === type);
     const newNode: Node = {
       id: newNodeId,
       type: 'customNode',
@@ -426,11 +443,12 @@ export const WorkflowBuilderPage: React.FC = () => {
       data: {
         id: `${type.replace('.', '_')}_v1`,
         name,
+        nameKey,
         nodeType: type,
         status: 'idle',
         executionTime: '',
         selected: true,
-        config: type === 'ocr.extract' ? { language: 'vi+en', detectTables: true } : {},
+        config: { ...(catalogItem?.defaultConfig ?? {}) },
       },
     };
 
@@ -560,7 +578,7 @@ export const WorkflowBuilderPage: React.FC = () => {
           <Link
             to="/workflows"
             className="p-1 rounded text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Back to Workflows"
+          title={t('builder.back_to_workflows')}
           >
             <ArrowLeft size={16} />
           </Link>
@@ -577,7 +595,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             />
             <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              {isSaved ? 'Saved' : 'Edited'}
+              {isSaved ? t('builder.saved') : t('builder.edited')}
             </span>
           </div>
         </div>
@@ -593,7 +611,7 @@ export const WorkflowBuilderPage: React.FC = () => {
           </button>
           <span className="w-px h-3 bg-slate-300 dark:bg-slate-700 mx-0.5" />
           <button className="px-2 py-0.5 hover:bg-white dark:hover:bg-slate-700 rounded text-[11px] text-slate-700 dark:text-slate-300">
-            Fit View
+            {t('builder.fit_view')}
           </button>
         </div>
 
@@ -604,11 +622,11 @@ export const WorkflowBuilderPage: React.FC = () => {
             className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md transition-colors"
           >
             <Save size={13} />
-            <span>Save</span>
+            <span>{t('builder.save')}</span>
           </button>
 
           <button className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md transition-colors">
-            <span>Publish</span>
+            <span>{t('builder.publish')}</span>
           </button>
 
           <motion.button
@@ -623,12 +641,12 @@ export const WorkflowBuilderPage: React.FC = () => {
             {isRunning ? (
               <>
                 <span className="relative flex size-3.5 items-center justify-center"><span className="absolute size-3.5 animate-ping rounded-full bg-white/45 motion-reduce:animate-none" /><Loader2 size={13} className="relative motion-safe:animate-spin" /></span>
-                <span>Running...</span>
+                <span>{t('builder.running')}</span>
               </>
             ) : (
               <>
                 <Play size={13} className="fill-white" />
-                <span>Run Test</span>
+                <span>{t('builder.run_test')}</span>
               </>
             )}
           </motion.button>
@@ -640,25 +658,25 @@ export const WorkflowBuilderPage: React.FC = () => {
         <div className="flex items-center gap-3 font-mono text-[11px] text-slate-600 dark:text-slate-400">
           <span className="flex items-center gap-1 text-slate-700 dark:text-slate-300 font-medium">
             <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-            v1.4 Production
+            {t('builder.version_production')}
           </span>
           <span className="text-slate-400 dark:text-slate-600">|</span>
-          <span className="text-slate-500 dark:text-slate-400">Live Test #EX-8492</span>
+          <span className="text-slate-500 dark:text-slate-400">{t('builder.live_test')}</span>
         </div>
 
         {/* Step Sequence Breadcrumb */}
         <div className="hidden lg:flex items-center gap-1.5 text-[11px] font-mono">
           <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 size={11} /> Webhook (120ms)
+            <CheckCircle2 size={11} /> {t('builder.breadcrumb.webhook')} (120ms)
           </span>
           <ChevronRight size={12} className="text-slate-400" />
           <span className="flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400">
-            ● AI Extract (850ms)
+            ● {t('builder.breadcrumb.ai_extract')} (850ms)
           </span>
           <ChevronRight size={12} className="text-slate-400" />
-          <span className="text-slate-500">Condition</span>
+          <span className="text-slate-500">{t('builder.breadcrumb.condition')}</span>
           <ChevronRight size={12} className="text-slate-400" />
-          <span className="text-slate-500">Notify</span>
+          <span className="text-slate-500">{t('builder.breadcrumb.notify')}</span>
         </div>
 
         {/* Right Toolbar View Toggles */}
@@ -668,7 +686,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             className={`p-1 rounded transition-colors ${
               showGrid ? 'bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100' : 'text-slate-400'
             }`}
-            title="Toggle Grid"
+            title={t('builder.toggle_grid')}
           >
             <Grid size={14} />
           </button>
@@ -677,7 +695,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             className={`p-1 rounded transition-colors ${
               showMinimap ? 'bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100' : 'text-slate-400'
             }`}
-            title="Toggle Minimap"
+            title={t('builder.toggle_minimap')}
           >
             <Map size={14} />
           </button>
@@ -691,16 +709,16 @@ export const WorkflowBuilderPage: React.FC = () => {
           <div className="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Add Step
+                {t('builder.add_step')}
               </span>
-              <span className="text-[10px] text-slate-400 font-mono">12 Available</span>
+              <span className="text-[10px] text-slate-400 font-mono">{PALETTE_CATALOG.reduce((total, category) => total + category.items.length, 0)} {t('builder.available')}</span>
             </div>
 
             <div className="relative">
               <Search size={13} className="absolute left-2.5 top-2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search actions... (⌘F)"
+                placeholder={t('builder.search_actions')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full rounded border border-slate-200 bg-slate-100 py-1 pl-7 pr-2.5 text-xs outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/60 dark:bg-slate-800/80"
@@ -710,28 +728,28 @@ export const WorkflowBuilderPage: React.FC = () => {
 
           <div className="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
             {PALETTE_CATALOG.map((cat) => (
-              <div key={cat.category} className="space-y-1.5">
+              <div key={cat.categoryKey} className="space-y-1.5">
                 <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                  {cat.category}
+                  {t(cat.categoryKey)}
                 </span>
                 <div className="space-y-1">
                   {cat.items
-                    .filter((item) => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
+                    .filter((item) => t(item.nameKey).toLowerCase().includes(searchQuery.toLowerCase()))
                     .map((item) => {
                       const ItemIcon = item.icon;
                       return (
                         <button
                           key={item.type}
-                          onClick={() => handleAddCatalogItem(item.type, item.name)}
-                          aria-label={item.name}
+                          onClick={() => handleAddCatalogItem(item.type, t(item.nameKey), item.nameKey)}
+                          aria-label={t(item.nameKey)}
                           className="group flex w-full cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-left transition-[background-color,border-color,transform] hover:-translate-y-px hover:border-blue-400/60 hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:border-slate-700/50 dark:bg-slate-800/40 dark:hover:bg-blue-950/25 motion-reduce:hover:translate-y-0"
                         >
                           <ItemIcon size={14} className="mt-0.5 shrink-0 text-slate-500 transition-colors group-hover:text-blue-600 dark:group-hover:text-blue-400" />
                           <div className="flex flex-col min-w-0 flex-1">
                             <span className="truncate text-xs font-medium text-slate-800 transition-colors group-hover:text-blue-700 dark:text-slate-200 dark:group-hover:text-blue-300">
-                              {item.name}
+                              {t(item.nameKey)}
                             </span>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{item.desc}</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{t(item.descKey)}</span>
                           </div>
                         </button>
                       );
@@ -806,14 +824,16 @@ export const WorkflowBuilderPage: React.FC = () => {
           <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                {(selectedNode.data.name as string) || 'Step Inspector'}
+                {selectedNode.data.nameKey
+                  ? t(String(selectedNode.data.nameKey))
+                  : (selectedNode.data.name as string) || t('builder.step_inspector')}
               </span>
               <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                 {(selectedNode.data.id as string) || 'extract_order_v1'}
               </span>
             </div>
             <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-              ● Ready
+              ● {t('builder.ready')}
             </span>
           </div>
 
@@ -829,7 +849,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
-                {tab}
+                {t(`builder.tab.${tab}`)}
               </button>
             ))}
           </div>
@@ -1004,11 +1024,187 @@ export const WorkflowBuilderPage: React.FC = () => {
                     </div>
                   )}
                 </div>
+              ) : isGoogleNode ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-900/70 dark:bg-blue-950/25">
+                    <div className="flex items-start gap-2">
+                      {isGoogleSheetsNode ? (
+                        <FileSpreadsheet size={16} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                      ) : (
+                        <FileText size={16} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                      )}
+                      <div>
+                        <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">{t('builder.google.title')}</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">{t('builder.google.description')}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="google-connection" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                      {t('builder.google.connection')}
+                    </label>
+                    <input
+                      id="google-connection"
+                      type="text"
+                      value={String(selectedNodeConfig.connectionId ?? '')}
+                      onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value })}
+                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="google-operation" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                      {t('builder.google.operation')}
+                    </label>
+                    <select
+                      id="google-operation"
+                      value={googleOperation}
+                      onChange={(event) => updateSelectedNodeConfig({ operation: event.target.value })}
+                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                    >
+                      {isGoogleSheetsNode ? (
+                        <>
+                          <option value="read">{t('builder.google.operation.read')}</option>
+                          <option value="append">{t('builder.google.operation.append')}</option>
+                          <option value="update">{t('builder.google.operation.update')}</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="create">{t('builder.google.operation.create')}</option>
+                          <option value="read">{t('builder.google.operation.read')}</option>
+                          <option value="append">{t('builder.google.operation.append')}</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+
+                  {isGoogleSheetsNode && (
+                    <>
+                      <div>
+                        <label htmlFor="google-spreadsheet-id" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                          {t('builder.google.spreadsheet_id')}
+                        </label>
+                        <input
+                          id="google-spreadsheet-id"
+                          type="text"
+                          value={String(selectedNodeConfig.spreadsheetId ?? '')}
+                          onChange={(event) => updateSelectedNodeConfig({ spreadsheetId: event.target.value })}
+                          className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                        />
+                      </div>
+
+                      {googleOperation === 'append' ? (
+                        <>
+                          <div>
+                            <label htmlFor="google-sheet-name" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                              {t('builder.google.sheet_name')}
+                            </label>
+                            <input
+                              id="google-sheet-name"
+                              type="text"
+                              value={String(selectedNodeConfig.sheetName ?? '')}
+                              onChange={(event) => updateSelectedNodeConfig({ sheetName: event.target.value })}
+                              className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="google-row-variable" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                              {t('builder.google.row_variable')}
+                            </label>
+                            <input
+                              id="google-row-variable"
+                              type="text"
+                              value={String(selectedNodeConfig.rowDataVariable ?? '')}
+                              onChange={(event) => updateSelectedNodeConfig({ rowDataVariable: event.target.value })}
+                              className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <div>
+                          <label htmlFor="google-range" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                            {t('builder.google.range')}
+                          </label>
+                          <input
+                            id="google-range"
+                            type="text"
+                            value={String(selectedNodeConfig.range ?? '')}
+                            onChange={(event) => updateSelectedNodeConfig({ range: event.target.value })}
+                            className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                          />
+                        </div>
+                      )}
+
+                      {googleOperation === 'update' && (
+                        <div>
+                          <label htmlFor="google-value-variable" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                            {t('builder.google.value_variable')}
+                          </label>
+                          <input
+                            id="google-value-variable"
+                            type="text"
+                            value={String(selectedNodeConfig.valueVariable ?? '')}
+                            onChange={(event) => updateSelectedNodeConfig({ valueVariable: event.target.value })}
+                            className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {isGoogleDocsNode && googleOperation === 'create' && (
+                    <div>
+                      <label htmlFor="google-document-title" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        {t('builder.google.title_field')}
+                      </label>
+                      <input
+                        id="google-document-title"
+                        type="text"
+                        value={String(selectedNodeConfig.title ?? '')}
+                        onChange={(event) => updateSelectedNodeConfig({ title: event.target.value })}
+                        className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+                  )}
+
+                  {isGoogleDocsNode && googleOperation !== 'create' && (
+                    <div>
+                      <label htmlFor="google-document-id" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        {t('builder.google.document_id')}
+                      </label>
+                      <input
+                        id="google-document-id"
+                        type="text"
+                        value={String(selectedNodeConfig.documentId ?? '')}
+                        onChange={(event) => updateSelectedNodeConfig({ documentId: event.target.value })}
+                        className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+                  )}
+
+                  {isGoogleDocsNode && (googleOperation === 'create' || googleOperation === 'append') && (
+                    <div>
+                      <label htmlFor="google-content-variable" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        {t('builder.google.content_variable')}
+                      </label>
+                      <input
+                        id="google-content-variable"
+                        type="text"
+                        value={String(selectedNodeConfig.contentVariable ?? '')}
+                        onChange={(event) => updateSelectedNodeConfig({ contentVariable: event.target.value })}
+                        className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+                  )}
+
+                  <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">{t('builder.google.id_hint')}</p>
+                </div>
               ) : (
               <>
                 <div>
                   <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                    LLM Engine
+                    {t('builder.llm_engine')}
                   </label>
                   <select
                     value={llmModel}
@@ -1024,7 +1220,7 @@ export const WorkflowBuilderPage: React.FC = () => {
 
                 <div>
                   <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                    Input Payload Variable
+                    {t('builder.input_payload')}
                   </label>
                   <input
                     type="text"
@@ -1036,7 +1232,7 @@ export const WorkflowBuilderPage: React.FC = () => {
 
                 <div>
                   <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                    Extraction Prompt
+                    {t('builder.extraction_prompt')}
                   </label>
                   <textarea
                     rows={3}
@@ -1048,7 +1244,7 @@ export const WorkflowBuilderPage: React.FC = () => {
 
                 <div>
                   <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1.5">
-                    Schema Attributes
+                    {t('builder.schema_attributes')}
                   </label>
                   <div className="flex flex-wrap gap-1.5">
                     {['order_id', 'items[]', 'total_amount', 'shipping_address'].map((attr) => (
@@ -1064,7 +1260,7 @@ export const WorkflowBuilderPage: React.FC = () => {
 
                 <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
                   <span className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                    JSON Schema Strict Output
+                    {t('builder.json_schema_output')}
                   </span>
                   <pre className="p-2.5 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded font-mono text-[10px] text-slate-800 dark:text-slate-300 overflow-x-auto">
 {`{
@@ -1129,10 +1325,10 @@ export const WorkflowBuilderPage: React.FC = () => {
               aria-label="Run test workflow"
               className="px-2.5 py-1 text-xs font-medium bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded transition-colors"
             >
-              Test Step
+              {t('builder.test_step')}
             </button>
             <button className="rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
-              Save Changes
+              {t('builder.save_changes')}
             </button>
           </div>
         </motion.aside>
@@ -1150,14 +1346,14 @@ export const WorkflowBuilderPage: React.FC = () => {
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-semibold">
               <Terminal size={12} className="text-blue-500" />
-              Execution #EX-8492
+              {t('builder.telemetry.execution')} #EX-8492
             </span>
             <span className="text-slate-400">|</span>
-            <span className="text-slate-500">Started: Just now</span>
+            <span className="text-slate-500">{t('builder.telemetry.started')}</span>
             <span className="text-slate-400">|</span>
-            <span className="text-slate-500">Elapsed: 1.4s</span>
+            <span className="text-slate-500">{t('builder.telemetry.elapsed')}</span>
             <span className="text-slate-400">|</span>
-            <span className="text-emerald-600 dark:text-emerald-400">Pipeline Stages (4)</span>
+            <span className="text-emerald-600 dark:text-emerald-400">{t('builder.telemetry.stages')} (4)</span>
           </div>
 
           <div className="flex items-center gap-2 text-slate-400">
@@ -1168,7 +1364,7 @@ export const WorkflowBuilderPage: React.FC = () => {
               }}
               className="hover:text-slate-600 dark:hover:text-slate-200 text-[10px]"
             >
-              Clear Logs
+          {t('builder.telemetry.clear_logs')}
             </button>
             <ChevronDown size={14} className={`transform transition-transform ${telemetryOpen ? '' : 'rotate-180'}`} />
           </div>
@@ -1211,7 +1407,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         : 'text-slate-300'
                     }
                   >
-                    {log.msg}
+                    {t(log.msg)}
                   </span>
                 </div>
               ))}

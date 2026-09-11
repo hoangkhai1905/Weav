@@ -306,6 +306,35 @@ test.describe('workflow builder execution motion', () => {
 test.describe('OCR workflow node', () => {
   test('adds OCR to the canvas and previews extracted document text', async ({ page }) => {
     await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
+    await page.route('**/api/v1/workspaces/*/ocr/extractions', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          schemaVersion: '1.0',
+          requestId: 'eeb24fb2-df80-4dcb-b22d-3a4884799c73',
+          document: {
+            fileName: 'invoice.png',
+            mimeType: 'image/png',
+            pages: 2,
+            pageInfo: [{ page: 1, width: 1200, height: 1600, dpi: null }],
+          },
+          text: {
+            rawText: 'INVOICE INV-2026-0042\nVendor: Công ty TNHH Minh Long\nTotal: 15,000,000 VND',
+          },
+          confidence: 0.984,
+          blocks: [],
+          tables: [],
+          metadata: {
+            language: 'vi+en',
+            processingTimeMs: 850,
+            engine: 'paddleocr',
+            quality: 'OK',
+            warnings: [],
+          },
+        }),
+      });
+    });
     await page.goto('/workflows/wf-001/builder');
 
     await page.getByRole('button', { name: 'OCR Text Extract' }).click();

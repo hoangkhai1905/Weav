@@ -9,22 +9,29 @@ export function GoogleOAuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const setUser = useAuthStore((state) => state.setUser);
   const [error, setError] = useState('');
-  const startedRef = useRef(false);
+  const exchangeRef = useRef<ReturnType<typeof authApi.completeGoogleLogin> | null>(null);
 
   useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
+    if (!exchangeRef.current) {
+      exchangeRef.current = authApi.completeGoogleLogin({
+        transactionId: searchParams.get('transaction_id') ?? '',
+        handoffCode: searchParams.get('handoff_code') ?? '',
+        error: searchParams.get('oauth_error') ?? undefined,
+      });
+    }
+
     let active = true;
     void (async () => {
       try {
-        const session = await authApi.completeGoogleLogin({
-          transactionId: searchParams.get('transaction_id') ?? '',
-          handoffCode: searchParams.get('handoff_code') ?? '',
-          error: searchParams.get('oauth_error') ?? undefined,
-        });
+        const session = await exchangeRef.current;
+        if (!session) return;
         if (!active) return;
-        setUser(session.user);
-        navigate('/dashboard', { replace: true });
+        if (session.outcome === 'LOGIN') {
+          setUser(session.user);
+          navigate('/dashboard', { replace: true });
+        } else {
+          navigate('/settings/profile', { replace: true });
+        }
       } catch (callbackError) {
         if (!active) return;
         setError(

@@ -115,6 +115,12 @@ export interface UserProfile {
   email: string;
   name: string;
   avatar: string | null;
+  displayName?: string | null;
+  systemRole?: 'USER' | 'ADMIN';
+  status?: 'ACTIVE' | 'DISABLED';
+  emailVerifiedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface NotificationItem {

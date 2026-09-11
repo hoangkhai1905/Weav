@@ -37,10 +37,17 @@ const BOTTOM_NAV_ITEMS: NavItem[] = [
 
 export function Sidebar() {
   const { mobileSidebarOpen, setMobileSidebarOpen } = useUIStore();
-  const { logout } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const { t } = useI18nStore();
   const prefersReducedMotion = useReducedMotion();
   const activeTransition = prefersReducedMotion ? REDUCED_MOTION_TRANSITION : MOTION_TRANSITION;
+  const profileName = user?.displayName?.trim() || user?.name?.trim() || user?.email || 'Account';
+  const profileInitials = profileName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
 
   const renderNavItems = (items: NavItem[], isMobile: boolean) =>
     items.map((item) => {
@@ -129,11 +136,11 @@ export function Sidebar() {
         <div className="mt-3 flex items-center justify-between border-t border-slate-200 px-2 pt-3 pb-1">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-200 text-xs font-bold text-sidebar-foreground ring-1 ring-slate-300/70 dark:bg-slate-800 dark:ring-slate-700">
-              NT
+              {profileInitials || 'A'}
             </div>
             <div className="flex min-w-0 flex-col">
               <span className="truncate text-xs font-semibold leading-tight text-sidebar-foreground">
-                Nguyễn Anh Xuân Trường
+                {profileName}
               </span>
               <div className="mt-1 flex items-center gap-1.5">
                 <span className="truncate text-[11px] leading-none text-sidebar-muted">Workspace</span>

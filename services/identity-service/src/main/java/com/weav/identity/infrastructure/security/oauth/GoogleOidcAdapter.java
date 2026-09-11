@@ -186,6 +186,7 @@ public final class GoogleOidcAdapter implements OAuthProviderClient {
         String email = optionalStringClaim(claims, "email", 1, 254);
         boolean emailVerified = optionalBooleanClaim(claims, "email_verified");
         String hostedDomain = optionalStringClaim(claims, "hd", 1, 253);
+        String displayName = optionalDisplayNameClaim(claims, "name", 120);
         if (hostedDomain != null && !OAuthProtocolPolicy.isValidHostedDomain(hostedDomain)) {
             throw new IllegalArgumentException("provider hosted domain is malformed");
         }
@@ -200,7 +201,8 @@ public final class GoogleOidcAdapter implements OAuthProviderClient {
                 email,
                 emailVerified,
                 hostedDomain,
-                Objects.requireNonNull(jwt.getIssuedAt(), "issuedAt must not be null")
+                Objects.requireNonNull(jwt.getIssuedAt(), "issuedAt must not be null"),
+                displayName
         );
     }
 
@@ -450,6 +452,21 @@ public final class GoogleOidcAdapter implements OAuthProviderClient {
             return null;
         }
         return requiredStringClaim(claims, name, minimum, maximum);
+    }
+
+    private static String optionalDisplayNameClaim(Map<String, Object> claims, String name, int maximum) {
+        if (!claims.containsKey(name) || claims.get(name) == null) {
+            return null;
+        }
+        if (!(claims.get(name) instanceof String value)) {
+            throw new IllegalArgumentException("provider display name claim is malformed");
+        }
+        String normalized = value.strip();
+        if (normalized.isEmpty() || normalized.length() > maximum
+                || normalized.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("provider display name claim is outside its bound");
+        }
+        return normalized;
     }
 
     private static boolean optionalBooleanClaim(Map<String, Object> claims, String name) {

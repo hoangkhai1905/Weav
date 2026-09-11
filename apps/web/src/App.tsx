@@ -16,6 +16,7 @@ import { TelegramPage } from './pages/TelegramPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 
 export function App() {
   return (
@@ -23,6 +24,7 @@ export function App() {
       {/* Auth Routes */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/auth/callback" element={<GoogleOAuthCallbackPage />} />
 
       {/* Main Protected Application Layout */}

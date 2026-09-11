@@ -22,6 +22,7 @@ import {
   GitBranch,
   Filter,
 } from 'lucide-react';
+import { useI18nStore } from '../../store/useI18nStore';
 
 const ICON_MAP: Record<string, React.ElementType> = {
   'trigger.manual': Play,
@@ -31,6 +32,12 @@ const ICON_MAP: Record<string, React.ElementType> = {
   'email.send': Mail,
   'sheets.read': FileSpreadsheet,
   'sheets.append': FileSpreadsheet,
+  'sheets.update': FileSpreadsheet,
+  'docs.create': FileText,
+  'docs.append': FileText,
+  'docs.read': FileText,
+  'google.sheets': FileSpreadsheet,
+  'google.docs': FileText,
   'http.request': Globe,
   'telegram.send_message': Send,
   'ai.extract': Sparkles,
@@ -45,6 +52,7 @@ const ICON_MAP: Record<string, React.ElementType> = {
 export interface CustomNodeData {
   id?: string;
   name?: string;
+  nameKey?: string;
   nodeType?: string;
   config?: Record<string, unknown>;
   status?: 'idle' | 'processing' | 'success' | 'error';
@@ -54,8 +62,9 @@ export interface CustomNodeData {
 
 export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected }) => {
   const prefersReducedMotion = useReducedMotion();
+  const { t } = useI18nStore();
   const nodeType = (data.nodeType as string) || 'trigger.webhook';
-  const name = (data.name as string) || 'Node';
+  const name = data.nameKey ? t(String(data.nameKey)) : (data.name as string) || t('builder.node.default');
   const status = (data.status as CustomNodeData['status']) || 'idle';
   const executionTime = (data.executionTime as string) || '';
   const isNodeSelected = Boolean(selected || data.selected);
@@ -71,7 +80,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
       return (
         <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
           <Loader2 size={10} className="text-amber-500 motion-safe:animate-spin" />
-          Running
+          {t('builder.status.running')}
         </span>
       );
     }
@@ -87,13 +96,13 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
       return (
         <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
           <XCircle size={10} className="text-rose-500" />
-          500 Error
+          {t('builder.status.error')}
         </span>
       );
     }
     return (
       <span className="px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60">
-        Ready
+        {t('builder.status.ready')}
       </span>
     );
   };
@@ -151,7 +160,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
       {/* Selected Indicator Pill */}
       {isNodeSelected && (
         <div className="absolute -top-2.5 left-3 rounded bg-blue-600 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-white shadow-sm">
-          Inspecting Step
+          {t('builder.status.inspecting')}
         </div>
       )}
 
@@ -171,7 +180,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
             <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">{name}</span>
             {isTrigger && (
               <span className="flex items-center gap-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase">
-                <Zap size={9} /> Trigger
+                <Zap size={9} /> {t('builder.status.trigger')}
               </span>
             )}
           </div>

@@ -11,16 +11,23 @@ import type { UserProfile } from '../types/workflow.types';
 
 export const isAuthMockMode = import.meta.env.VITE_API_MODE === 'mock';
 
-interface IdentityUser {
+export interface IdentityUser {
   id: string;
   email: string;
   displayName: string | null;
+  avatarStorageKey?: string | null;
+  systemRole?: 'USER' | 'ADMIN';
+  status?: 'ACTIVE' | 'DISABLED';
+  createdAt?: string;
+  updatedAt?: string;
+  emailVerifiedAt?: string | null;
 }
 
 interface IdentitySession {
   accessToken: string;
   refreshToken: string;
   user: IdentityUser;
+  refreshExpiresAt?: string;
 }
 
 interface GoogleOAuthStartResponse {
@@ -42,6 +49,38 @@ interface PendingGoogleOAuth {
   codeVerifier: string;
   csrfToken: string;
   createdAt: number;
+  intent?: 'LOGIN' | 'LINK';
+}
+
+export interface IdentitySessionView {
+  id: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string;
+  current: boolean;
+  userAgent: string | null;
+}
+
+export interface OAuthAccountMetadata {
+  id: string;
+  provider: string;
+  providerEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface OAuthSessionPage {
+  items: IdentitySessionView[];
+  page: number;
+  size: number;
+  totalItems: number;
+  totalPages: number;
+}
+
+interface OtpReceipt {
+  challengeId: string;
+  expiresIn: number;
+  retryAfter: number;
 }
 
 export interface GoogleOAuthCallback {
@@ -104,6 +143,32 @@ async function request<T>(client: typeof apiClient, config: AxiosRequestConfig):
 
 function authRequest<T>(config: AxiosRequestConfig): Promise<T> {
   return request(apiClient, config);
+}
+
+function accessTokenOrThrow(): string {
+  const token = getStoredAuthToken();
+  if (!token) throw new AuthApiError(401);
+  return token;
+}
+
+function authenticatedAuthRequest<T>(config: AxiosRequestConfig): Promise<T> {
+  return authRequest<T>({
+    ...config,
+    headers: {
+      ...(config.headers ?? {}),
+      Authorization: `Bearer ${accessTokenOrThrow()}`,
+    },
+  });
+}
+
+function authenticatedOAuthRequest<T>(config: AxiosRequestConfig): Promise<T> {
+  return oauthRequest<T>({
+    ...config,
+    headers: {
+      ...(config.headers ?? {}),
+      Authorization: `Bearer ${accessTokenOrThrow()}`,
+    },
+  });
 }
 
 function oauthRequest<T>(config: AxiosRequestConfig): Promise<T> {
@@ -186,8 +251,14 @@ function mapIdentityUser(user: IdentityUser): UserProfile {
   return {
     id: user.id,
     email: user.email,
-    name: user.displayName || user.email,
-    avatar: null,
+    name: user.displayName?.trim() || user.email,
+    avatar: user.avatarStorageKey ?? null,
+    displayName: user.displayName,
+    systemRole: user.systemRole,
+    status: user.status,
+    emailVerifiedAt: user.emailVerifiedAt ?? null,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
   };
 }
 
@@ -221,6 +292,7 @@ export const authApi = {
         codeVerifier,
         csrfToken: response.csrfToken,
         createdAt: Date.now(),
+        intent: 'LOGIN',
       } satisfies PendingGoogleOAuth),
     );
     saveGoogleOAuthCsrf(response.csrfToken);
@@ -230,7 +302,10 @@ export const authApi = {
 
   async completeGoogleLogin(
     callback: GoogleOAuthCallback,
-  ): Promise<{ user: UserProfile; accessToken: string }> {
+  ): Promise<
+    | { outcome: 'LOGIN'; user: UserProfile; accessToken: string }
+    | { outcome: 'LINKED' }
+  > {
     if (callback.error) {
       clearGoogleOAuthState();
       throw new AuthApiError(400);
@@ -241,10 +316,18 @@ export const authApi = {
       throw new AuthApiError(400);
     }
 
-    const session = await oauthRequest<GoogleOAuthExchangeResponse>({
+    const intent = pending.intent ?? 'LOGIN';
+    const session = await oauthRequest<
+      GoogleOAuthExchangeResponse | { outcome: 'LINKED'; oauthAccount: OAuthAccountMetadata }
+    >({
       method: 'POST',
       url: '/auth/oauth/exchange',
-      headers: { 'X-XSRF-TOKEN': pending.csrfToken },
+      headers: {
+        'X-XSRF-TOKEN': pending.csrfToken,
+        ...(intent === 'LINK'
+          ? { Authorization: `Bearer ${accessTokenOrThrow()}` }
+          : {}),
+      },
       data: {
         clientId: 'web',
         returnTargetId: 'web',
@@ -253,13 +336,17 @@ export const authApi = {
         codeVerifier: pending.codeVerifier,
       },
     });
+    if (intent === 'LINK') {
+      if (session?.outcome !== 'LINKED') throw new AuthApiError(502);
+      sessionStorage.removeItem(GOOGLE_OAUTH_PENDING_KEY);
+      return { outcome: 'LINKED' };
+    }
+
     if (
       session?.outcome !== 'LOGIN' ||
       typeof session.accessToken !== 'string' ||
       typeof session.user !== 'object'
-    ) {
-      throw new AuthApiError(502);
-    }
+    ) throw new AuthApiError(502);
 
     const user = mapIdentityUser(session.user);
     localStorage.setItem('weav_token', session.accessToken);
@@ -267,7 +354,43 @@ export const authApi = {
     saveGoogleOAuthCsrf(pending.csrfToken);
     sessionStorage.removeItem(GOOGLE_OAUTH_PENDING_KEY);
     sessionRefreshToken = null;
-    return { user, accessToken: session.accessToken };
+    return { outcome: 'LOGIN', user, accessToken: session.accessToken };
+  },
+
+  async startGoogleLink(currentPassword: string): Promise<string> {
+    if (isAuthMockMode) throw new AuthApiError(400);
+    const codeVerifier = createCodeVerifier();
+    const csrfToken = await ensureGoogleOAuthCsrf();
+    const response = await authenticatedOAuthRequest<GoogleOAuthStartResponse>({
+      method: 'POST',
+      url: '/users/me/oauth/google/link',
+      headers: { 'X-XSRF-TOKEN': csrfToken },
+      data: {
+        currentPassword,
+        clientId: 'web',
+        returnTargetId: 'web',
+        codeChallenge: await createCodeChallenge(codeVerifier),
+        codeChallengeMethod: 'S256',
+      },
+    });
+    if (
+      typeof response?.transactionId !== 'string' ||
+      typeof response.authorizationUrl !== 'string' ||
+      typeof response.csrfToken !== 'string'
+    ) throw new AuthApiError(502);
+    sessionStorage.setItem(
+      GOOGLE_OAUTH_PENDING_KEY,
+      JSON.stringify({
+        transactionId: response.transactionId,
+        codeVerifier,
+        csrfToken: response.csrfToken,
+        createdAt: Date.now(),
+        intent: 'LINK',
+      } satisfies PendingGoogleOAuth),
+    );
+    saveGoogleOAuthCsrf(response.csrfToken);
+    window.location.assign(response.authorizationUrl);
+    return response.authorizationUrl;
   },
 
   async refreshGoogleSession(): Promise<{ user: UserProfile; accessToken: string }> {
@@ -288,6 +411,115 @@ export const authApi = {
     localStorage.setItem('weav_token', session.accessToken);
     sessionStorage.setItem(GOOGLE_OAUTH_SESSION_KEY, '1');
     return { user, accessToken: session.accessToken };
+  },
+
+  async refreshSession(): Promise<{ user: UserProfile; accessToken: string }> {
+    if (isAuthMockMode || !sessionRefreshToken) throw new AuthApiError(401);
+    const session = await authRequest<IdentitySession>({
+      method: 'POST',
+      url: '/api/auth/refresh',
+      data: { refreshToken: sessionRefreshToken },
+    });
+    if (
+      typeof session?.accessToken !== 'string' ||
+      typeof session.refreshToken !== 'string' ||
+      typeof session.user !== 'object'
+    ) throw new AuthApiError(502);
+    const user = mapIdentityUser(session.user);
+    sessionRefreshToken = session.refreshToken;
+    localStorage.setItem('weav_token', session.accessToken);
+    return { user, accessToken: session.accessToken };
+  },
+
+  async updateProfile(displayName: string | null): Promise<UserProfile> {
+    const user = await authenticatedAuthRequest<IdentityUser>({
+      method: 'PATCH',
+      url: '/api/auth/me',
+      data: { displayName },
+    });
+    return mapIdentityUser(user);
+  },
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await authenticatedAuthRequest<void>({
+      method: 'POST',
+      url: '/api/auth/change-password',
+      data: { currentPassword, newPassword },
+    });
+  },
+
+  async listSessions(page = 0, size = 20): Promise<OAuthSessionPage> {
+    return authenticatedAuthRequest<OAuthSessionPage>({
+      method: 'GET',
+      url: '/api/auth/sessions',
+      params: { page, size },
+    });
+  },
+
+  async revokeSession(sessionId: string): Promise<void> {
+    await authenticatedAuthRequest<void>({
+      method: 'DELETE',
+      url: `/api/auth/sessions/${encodeURIComponent(sessionId)}`,
+    });
+  },
+
+  async revokeAllSessions(): Promise<void> {
+    await authenticatedAuthRequest<void>({
+      method: 'DELETE',
+      url: '/api/auth/sessions',
+    });
+  },
+
+  async requestEmailVerification(): Promise<OtpReceipt> {
+    return authenticatedAuthRequest<OtpReceipt>({
+      method: 'POST',
+      url: '/api/auth/otp/request',
+      data: { purpose: 'EMAIL_VERIFICATION' },
+    });
+  },
+
+  async verifyOtp(challengeId: string, code: string): Promise<{ purpose: string; resetToken?: string }> {
+    return authRequest<{ purpose: string; verified?: boolean; resetToken?: string }>({
+      method: 'POST',
+      url: '/api/auth/otp/verify',
+      data: { challengeId, code },
+      headers: getStoredAuthToken()
+        ? { Authorization: `Bearer ${getStoredAuthToken()}` }
+        : undefined,
+    });
+  },
+
+  async requestPasswordReset(email: string): Promise<OtpReceipt> {
+    return authRequest<OtpReceipt>({
+      method: 'POST',
+      url: '/api/auth/forgot-password',
+      data: { email },
+    });
+  },
+
+  async resetPassword(resetToken: string, newPassword: string): Promise<void> {
+    await authRequest<void>({
+      method: 'POST',
+      url: '/api/auth/reset-password',
+      data: { resetToken, newPassword },
+    });
+  },
+
+  async listOAuthAccounts(): Promise<OAuthAccountMetadata[]> {
+    return authenticatedOAuthRequest<OAuthAccountMetadata[]>({
+      method: 'GET',
+      url: '/users/me/oauth-accounts',
+    });
+  },
+
+  async unlinkOAuthAccount(accountId: string, currentPassword: string): Promise<void> {
+    const csrfToken = await ensureGoogleOAuthCsrf();
+    await authenticatedOAuthRequest<void>({
+      method: 'DELETE',
+      url: `/users/me/oauth-accounts/${encodeURIComponent(accountId)}`,
+      headers: { 'X-XSRF-TOKEN': csrfToken },
+      data: { currentPassword },
+    });
   },
 
   async login(
@@ -379,6 +611,15 @@ export const authApi = {
           } catch {
             clearGoogleOAuthState();
             localStorage.removeItem('weav_token');
+            return null;
+          }
+        }
+        if (error instanceof AuthApiError && error.status === 401 && sessionRefreshToken) {
+          try {
+            return (await authApi.refreshSession()).user;
+          } catch {
+            localStorage.removeItem('weav_token');
+            sessionRefreshToken = null;
             return null;
           }
         }
