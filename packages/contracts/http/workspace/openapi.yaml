@@ -1,0 +1,619 @@
+openapi: 3.1.0
+info:
+  title: Weav Workspace API
+  version: 1.0.0
+  description: >-
+    Workspace and membership contracts for the V1 Workspace Service. PostgreSQL
+    owns workspace state; Identity owns user profile data and access-token
+    issuance.
+servers:
+  - url: http://localhost:8080
+    description: Local Workspace service
+tags:
+  - name: Workspaces
+  - name: Members
+  - name: Internal
+security:
+  - bearerAuth: []
+paths:
+  /workspaces:
+    post:
+      tags: [Workspaces]
+      operationId: createWorkspace
+      summary: Create a workspace for the authenticated user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkspaceRequest'
+      responses:
+        '201':
+          description: Workspace created with the caller as its OWNER.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags: [Workspaces]
+      operationId: listMyWorkspaces
+      summary: List workspaces visible to the authenticated user
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/WorkspaceRole'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/WorkspaceSort'
+        - $ref: '#/components/parameters/Direction'
+      responses:
+        '200':
+          description: Page of accessible workspaces.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacePageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/{workspaceId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Workspaces]
+      operationId: getWorkspace
+      summary: Get an accessible workspace
+      responses:
+        '200':
+          description: Workspace details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags: [Workspaces]
+      operationId: renameWorkspace
+      summary: Rename an owned workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameWorkspaceRequest'
+      responses:
+        '200':
+          description: Workspace renamed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/{workspaceId}/members:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Members]
+      operationId: listWorkspaceMembers
+      summary: List enriched members of an accessible workspace
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/MemberRole'
+        - name: canPublishWorkflow
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: canManageWorkflowState
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/MemberSort'
+        - $ref: '#/components/parameters/Direction'
+      responses:
+        '200':
+          description: Page of members enriched from Identity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberPageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [Members]
+      operationId: addWorkspaceMember
+      summary: Add an existing active Identity user by email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddMemberRequest'
+      responses:
+        '201':
+          description: Member added.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/{workspaceId}/members/{userId}/permissions:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/UserId'
+    patch:
+      tags: [Members]
+      operationId: updateWorkspaceMemberPermissions
+      summary: Update a member's optional workflow permissions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMemberPermissionsRequest'
+      responses:
+        '200':
+          description: Member permissions updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/{workspaceId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/UserId'
+    delete:
+      tags: [Members]
+      operationId: removeWorkspaceMember
+      summary: Remove a MEMBER from an owned workspace
+      responses:
+        '204':
+          description: Membership removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/{workspaceId}/members/me:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    delete:
+      tags: [Members]
+      operationId: leaveWorkspace
+      summary: Leave a workspace as the authenticated MEMBER
+      responses:
+        '204':
+          description: Membership removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /internal/workspaces/{workspaceId}/users/{userId}/access:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Internal]
+      operationId: getInternalWorkspaceAccess
+      summary: Resolve a user's stable Workspace capability snapshot
+      security:
+        - internalServiceKey: []
+      responses:
+        '200':
+          description: Capability snapshot for the requested membership.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceAccessResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Identity-issued access JWT.
+    internalServiceKey:
+      type: apiKey
+      in: header
+      name: X-Internal-Service-Key
+      description: V1 service-to-service authentication key; never place a real value in this contract.
+
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Search:
+      name: search
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 120
+    Page:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    WorkspaceRole:
+      name: role
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/MembershipRole'
+    MemberRole:
+      name: role
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/MembershipRole'
+    WorkspaceSort:
+      name: sort
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [name, createdAt, updatedAt]
+        default: name
+    MemberSort:
+      name: sort
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [displayName, joinedAt, role]
+        default: displayName
+    Direction:
+      name: direction
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
+  responses:
+    BadRequest:
+      description: Request validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication or internal service-key verification failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated caller lacks the required capability.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource is absent or not visible to the caller.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Business or PostgreSQL uniqueness conflict.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    DependencyUnavailable:
+      description: Required Identity dependency is temporarily unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Sanitized unexpected server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            internalError:
+              value:
+                code: INTERNAL_ERROR
+                message: An unexpected error occurred
+                requestId: request-id
+
+  schemas:
+    CreateWorkspaceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 255
+          description: Optional trimmed name; omitted/null generates My workspace N.
+    RenameWorkspaceRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+    AddMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          type: string
+          minLength: 1
+          maxLength: 320
+    UpdateMemberPermissionsRequest:
+      type: object
+      additionalProperties: false
+      required: [canPublishWorkflow, canManageWorkflowState]
+      properties:
+        canPublishWorkflow:
+          type: boolean
+        canManageWorkflowState:
+          type: boolean
+    WorkspaceResponse:
+      type: object
+      additionalProperties: false
+      required: [id, name, createdBy, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 255
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    WorkspacePageResponse:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceResponse'
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+    MemberView:
+      type: object
+      additionalProperties: false
+      required:
+        - userId
+        - email
+        - displayName
+        - active
+        - role
+        - canPublishWorkflow
+        - canManageWorkflowState
+        - joinedAt
+        - updatedAt
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          maxLength: 320
+        displayName:
+          type: [string, 'null']
+          maxLength: 255
+        active:
+          type: boolean
+        role:
+          $ref: '#/components/schemas/MembershipRole'
+        canPublishWorkflow:
+          type: boolean
+        canManageWorkflowState:
+          type: boolean
+        joinedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    MemberPageResponse:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemberView'
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+    MembershipRole:
+      type: string
+      enum: [OWNER, MEMBER]
+    WorkspaceCapability:
+      type: string
+      enum:
+        - WORKSPACE_VIEW
+        - MEMBER_VIEW
+        - WORKFLOW_CREATE
+        - WORKFLOW_EDIT
+        - WORKFLOW_RUN
+        - WORKFLOW_MONITOR
+        - WORKFLOW_PUBLISH
+        - WORKFLOW_MANAGE_STATE
+        - WORKSPACE_RENAME
+        - MEMBER_ADD
+        - MEMBER_REMOVE
+        - MEMBER_MANAGE_PERMISSIONS
+    WorkspaceAccessResponse:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, userId, role, capabilities]
+      properties:
+        workspaceId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/MembershipRole'
+        capabilities:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/WorkspaceCapability'
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, message, requestId]
+      properties:
+        code:
+          type: string
+          maxLength: 64
+        message:
+          type: string
+          maxLength: 512
+        requestId:
+          type: string
+          maxLength: 128

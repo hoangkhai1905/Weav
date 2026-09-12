@@ -1,0 +1,16 @@
+package com.weav.workspace.domain.model;
+
+public enum WorkspaceCapability {
+    WORKSPACE_VIEW,
+    MEMBER_VIEW,
+    WORKFLOW_CREATE,
+    WORKFLOW_EDIT,
+    WORKFLOW_RUN,
+    WORKFLOW_MONITOR,
+    WORKFLOW_PUBLISH,
+    WORKFLOW_MANAGE_STATE,
+    WORKSPACE_RENAME,
+    MEMBER_ADD,
+    MEMBER_REMOVE,
+    MEMBER_MANAGE_PERMISSIONS
+}

@@ -1,18 +1,16 @@
 package com.weav.workspace.infrastructure.persistence.entity;
 
 import com.weav.workspace.domain.valueobject.MembershipRole;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -63,30 +61,33 @@ public class MembershipJpaEntity {
             boolean canPublishWorkflow,
             boolean canManageWorkflowState) {
         this.id = UUID.randomUUID();
-        this.workspaceId = workspaceId;
-        this.userId = userId;
-        this.role = role;
+        this.workspaceId = Objects.requireNonNull(workspaceId, "workspaceId must not be null");
+        this.userId = Objects.requireNonNull(userId, "userId must not be null");
+        this.role = Objects.requireNonNull(role, "role must not be null");
         this.canPublishWorkflow = canPublishWorkflow;
         this.canManageWorkflowState = canManageWorkflowState;
-    }
-
-    @PrePersist
-    void onCreate() {
-        if (id == null) {
-            id = UUID.randomUUID();
-        }
         Instant now = Instant.now();
-        if (joinedAt == null) {
-            joinedAt = now;
-        }
-        if (updatedAt == null) {
-            updatedAt = now;
-        }
+        this.joinedAt = now;
+        this.updatedAt = now;
     }
 
-    @PreUpdate
-    void onUpdate() {
-        updatedAt = Instant.now();
+    public MembershipJpaEntity(
+            UUID id,
+            UUID workspaceId,
+            UUID userId,
+            MembershipRole role,
+            boolean canPublishWorkflow,
+            boolean canManageWorkflowState,
+            Instant joinedAt,
+            Instant updatedAt) {
+        this.id = Objects.requireNonNull(id, "id must not be null");
+        this.workspaceId = Objects.requireNonNull(workspaceId, "workspaceId must not be null");
+        this.userId = Objects.requireNonNull(userId, "userId must not be null");
+        this.role = Objects.requireNonNull(role, "role must not be null");
+        this.canPublishWorkflow = canPublishWorkflow;
+        this.canManageWorkflowState = canManageWorkflowState;
+        this.joinedAt = Objects.requireNonNull(joinedAt, "joinedAt must not be null");
+        this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
     }
 
     public UUID getId() {
