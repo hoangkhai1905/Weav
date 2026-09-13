@@ -30,13 +30,20 @@ class CreateWorkspaceRequestValidationTest {
     }
 
     @Test
-    void rejectsInvalidWorkspaceName() {
-        CreateWorkspaceRequest request = new CreateWorkspaceRequest("");
+    void rejectsOversizedWorkspaceName() {
+        CreateWorkspaceRequest request = new CreateWorkspaceRequest("x".repeat(256));
 
         Set<ConstraintViolation<CreateWorkspaceRequest>> violations = validator.validate(request);
 
         assertEquals(1, violations.size());
         assertTrue(violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals("name")));
+    }
+
+    @Test
+    void allowsOmittedNameForDefaultGeneration() {
+        CreateWorkspaceRequest request = new CreateWorkspaceRequest(null);
+
+        assertTrue(validator.validate(request).isEmpty());
     }
 
     @Test

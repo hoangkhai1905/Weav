@@ -6,6 +6,7 @@ import com.weav.workspace.domain.model.WorkspaceMembershipView;
 import com.weav.workspace.domain.port.out.WorkspaceRepository;
 import com.weav.workspace.domain.query.WorkspaceListQuery;
 import com.weav.workspace.infrastructure.persistence.mapper.WorkspacePersistenceMapper;
+import com.weav.workspace.infrastructure.persistence.WorkspacePersistenceExceptionTranslator;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -35,7 +36,11 @@ public class WorkspaceRepositoryAdapter implements WorkspaceRepository {
 
     @Override
     public Workspace save(Workspace workspace) {
-        return mapper.toDomain(repository.saveAndFlush(mapper.toEntity(workspace)));
+        try {
+            return mapper.toDomain(repository.saveAndFlush(mapper.toEntity(workspace)));
+        } catch (RuntimeException exception) {
+            throw WorkspacePersistenceExceptionTranslator.translate(exception);
+        }
     }
 
     @Override

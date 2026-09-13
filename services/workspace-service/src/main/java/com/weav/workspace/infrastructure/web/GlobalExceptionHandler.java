@@ -1,6 +1,7 @@
 package com.weav.workspace.infrastructure.web;
 
 import com.weav.workspace.domain.exception.ConflictException;
+import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.domain.exception.DomainException;
 import com.weav.workspace.domain.exception.ForbiddenException;
 import com.weav.workspace.domain.exception.InvalidStateException;
@@ -189,6 +190,9 @@ public class GlobalExceptionHandler {
     }
 
     private HttpStatus statusFor(DomainException exception) {
+        if (exception instanceof DependencyUnavailableException) {
+            return HttpStatus.SERVICE_UNAVAILABLE;
+        }
         if (exception instanceof ResourceNotFoundException) {
             return HttpStatus.NOT_FOUND;
         }
