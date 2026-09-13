@@ -10,6 +10,13 @@ import java.util.UUID;
 
 public interface MembershipRepository {
     Membership save(Membership membership);
+
+    /**
+     * Applies optional-permission changes without turning a concurrently deleted
+     * membership back into an inserted row.
+     */
+    Membership updateOptionalPermissions(Membership membership);
+
     Optional<Membership> findById(UUID id);
     Optional<Membership> findByWorkspaceIdAndUserId(UUID workspaceId, UUID userId);
     boolean existsByWorkspaceIdAndUserId(UUID workspaceId, UUID userId);

@@ -6,6 +6,7 @@ import com.weav.workspace.domain.model.IdentityUserSummary;
 import com.weav.workspace.domain.model.PageResult;
 import com.weav.workspace.domain.port.out.IdentityDirectoryPort;
 import com.weav.workspace.domain.query.SortDirection;
+import com.weav.workspace.application.validation.IdentityEmailNormalizer;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -25,7 +26,6 @@ import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 /**
  * RestClient adapter for Identity's internal directory API.
@@ -38,11 +38,7 @@ public final class IdentityDirectoryHttpClient implements IdentityDirectoryPort 
     private static final String INTERNAL_KEY_HEADER = "X-Internal-Service-Key";
     private static final int MAX_TRANSPORT_IDS = 500;
     private static final int IDENTITY_PAGE_SIZE = 100;
-    private static final int MAX_EMAIL_LENGTH = 320;
     private static final int MAX_SEARCH_LENGTH = 120;
-    private static final Pattern ASCII_EMAIL = Pattern.compile(
-            "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
-                    + "(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$");
 
     private final RestClient restClient;
     private final IdentityDirectoryProperties properties;
@@ -346,33 +342,7 @@ public final class IdentityDirectoryHttpClient implements IdentityDirectoryPort 
     }
 
     private String normalizeEmail(String email) {
-        if (email == null) {
-            throw new BadRequestException("Email is required");
-        }
-
-        int start = 0;
-        int end = email.length();
-        while (start < end && email.charAt(start) == ' ') {
-            start++;
-        }
-        while (end > start && email.charAt(end - 1) == ' ') {
-            end--;
-        }
-
-        String canonical = email.substring(start, end);
-        if (canonical.length() < 3 || canonical.length() > MAX_EMAIL_LENGTH) {
-            throw new BadRequestException("Email is invalid");
-        }
-        for (int index = 0; index < canonical.length(); index++) {
-            char value = canonical.charAt(index);
-            if (value > 0x7f || Character.isWhitespace(value)) {
-                throw new BadRequestException("Email is invalid");
-            }
-        }
-        if (!ASCII_EMAIL.matcher(canonical).matches()) {
-            throw new BadRequestException("Email is invalid");
-        }
-        return canonical.toLowerCase(Locale.ROOT);
+        return IdentityEmailNormalizer.canonicalize(email);
     }
 
     private String normalizeSearch(String search) {

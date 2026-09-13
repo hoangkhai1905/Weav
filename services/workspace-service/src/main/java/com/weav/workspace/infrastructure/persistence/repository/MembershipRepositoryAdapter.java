@@ -2,10 +2,12 @@ package com.weav.workspace.infrastructure.persistence.repository;
 
 import com.weav.workspace.domain.model.Membership;
 import com.weav.workspace.domain.model.PageResult;
+import com.weav.workspace.domain.exception.ResourceNotFoundException;
 import com.weav.workspace.domain.port.out.MembershipRepository;
 import com.weav.workspace.domain.query.MemberListQuery;
 import com.weav.workspace.domain.query.MemberSort;
 import com.weav.workspace.domain.query.SortDirection;
+import com.weav.workspace.infrastructure.persistence.MembershipPersistenceExceptionTranslator;
 import com.weav.workspace.infrastructure.persistence.entity.MembershipJpaEntity;
 import com.weav.workspace.infrastructure.persistence.mapper.WorkspacePersistenceMapper;
 import jakarta.persistence.criteria.Predicate;
@@ -13,6 +15,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
@@ -34,7 +37,30 @@ public class MembershipRepositoryAdapter implements MembershipRepository {
 
     @Override
     public Membership save(Membership membership) {
-        return mapper.toDomain(repository.saveAndFlush(mapper.toEntity(membership)));
+        try {
+            return mapper.toDomain(repository.saveAndFlush(mapper.toEntity(membership)));
+        } catch (RuntimeException exception) {
+            throw MembershipPersistenceExceptionTranslator.translate(exception);
+        }
+    }
+
+    @Override
+    public Membership updateOptionalPermissions(Membership membership) {
+        try {
+            int updated = repository.updateOptionalPermissions(
+                    membership.getId(),
+                    membership.isCanPublishWorkflow(),
+                    membership.isCanManageWorkflowState(),
+                    membership.getUpdatedAt());
+            if (updated == 0) {
+                throw new ResourceNotFoundException("Member", membership.getUserId());
+            }
+            return repository.findById(membership.getId())
+                    .map(mapper::toDomain)
+                    .orElseThrow(() -> new ResourceNotFoundException("Member", membership.getUserId()));
+        } catch (RuntimeException exception) {
+            throw MembershipPersistenceExceptionTranslator.translate(exception);
+        }
     }
 
     @Override
@@ -89,7 +115,14 @@ public class MembershipRepositoryAdapter implements MembershipRepository {
 
     @Override
     public void delete(Membership membership) {
-        repository.deleteById(membership.getId());
+        try {
+            repository.deleteById(membership.getId());
+            repository.flush();
+        } catch (ObjectOptimisticLockingFailureException exception) {
+            throw new ResourceNotFoundException("Member", membership.getUserId());
+        } catch (RuntimeException exception) {
+            throw MembershipPersistenceExceptionTranslator.translate(exception);
+        }
     }
 
     private Specification<MembershipJpaEntity> candidateFilter(UUID workspaceId, MemberListQuery filter) {

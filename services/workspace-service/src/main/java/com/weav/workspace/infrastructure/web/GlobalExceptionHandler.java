@@ -7,6 +7,7 @@ import com.weav.workspace.domain.exception.ForbiddenException;
 import com.weav.workspace.domain.exception.InvalidStateException;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
 import com.weav.workspace.domain.exception.UnauthorizedException;
+import com.weav.workspace.domain.exception.UserNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -194,6 +195,9 @@ public class GlobalExceptionHandler {
             return HttpStatus.SERVICE_UNAVAILABLE;
         }
         if (exception instanceof ResourceNotFoundException) {
+            return HttpStatus.NOT_FOUND;
+        }
+        if (exception instanceof UserNotFoundException) {
             return HttpStatus.NOT_FOUND;
         }
         if (exception instanceof ConflictException) {

@@ -1,6 +1,7 @@
 package com.weav.workspace.infrastructure.web;
 
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
+import com.weav.workspace.domain.exception.UserNotFoundException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,6 +53,14 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.status").value(404));
     }
 
+    @Test
+    void mapsMissingIdentityUserToNotFoundForMemberAddition() throws Exception {
+        mockMvc.perform(get("/test/identity-not-found"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("USER_NOT_FOUND"))
+                .andExpect(jsonPath("$.status").value(404));
+    }
+
     @RestController
     static class TestController {
 
@@ -62,6 +71,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/not-found")
         void notFound() {
             throw new ResourceNotFoundException("Workspace", 123);
+        }
+
+        @GetMapping("/test/identity-not-found")
+        void identityNotFound() {
+            throw new UserNotFoundException();
         }
     }
 

@@ -208,16 +208,16 @@ class WorkspaceUseCasePersistenceIntegrationTest {
                 return workspaceRepository.findAccessibleWorkspaces(userId, query);
             }
         };
-        MembershipRepository duplicateMembershipRepository = mock(MembershipRepository.class);
-        when(duplicateMembershipRepository.save(any(Membership.class))).thenAnswer(invocation -> {
+        MembershipRepository failingMembershipRepository = mock(MembershipRepository.class);
+        when(failingMembershipRepository.save(any(Membership.class))).thenAnswer(invocation -> {
             Membership membership = invocation.getArgument(0);
             Membership persisted = membershipRepository.save(membership);
-            membershipRepository.save(Membership.owner(membership.getWorkspaceId(), membership.getUserId()));
+            membershipRepository.save(Membership.member(UUID.randomUUID(), membership.getUserId()));
             return persisted;
         });
 
         CreateWorkspaceUseCase useCase = new CreateWorkspaceUseCase(
-                recordingWorkspaceRepository, duplicateMembershipRepository, transactionRunner);
+                recordingWorkspaceRepository, failingMembershipRepository, transactionRunner);
 
         assertThrows(DataIntegrityViolationException.class, () -> useCase.execute(
                 new CreateWorkspaceCommand(actor, null)));
