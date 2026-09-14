@@ -1,6 +1,7 @@
 package com.weav.workspace.infrastructure.security;
 
 import com.weav.workspace.infrastructure.web.ApiErrorResponse;
+import com.weav.workspace.infrastructure.web.RequestCorrelationFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
@@ -11,7 +12,6 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
-import java.util.List;
 
 @Component
 public final class ApiAuthenticationEntryPoint implements AuthenticationEntryPoint {
@@ -31,13 +31,13 @@ public final class ApiAuthenticationEntryPoint implements AuthenticationEntryPoi
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+        String requestId = RequestCorrelationFilter.requestId(request);
+        response.setHeader(RequestCorrelationFilter.HEADER_NAME, requestId);
         objectMapper.writeValue(
                 response.getOutputStream(),
                 ApiErrorResponse.of(
                         "UNAUTHORIZED",
                         "Authentication failed",
-                        HttpServletResponse.SC_UNAUTHORIZED,
-                        request.getRequestURI(),
-                        List.of()));
+                        requestId));
     }
 }

@@ -1,5 +1,6 @@
 package com.weav.workspace.infrastructure.security;
 
+import com.weav.workspace.infrastructure.web.RequestCorrelationFilter;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -32,7 +33,8 @@ public class SecurityConfig {
             HttpSecurity http,
             ApiAuthenticationEntryPoint authenticationEntryPoint,
             ApiAccessDeniedHandler accessDeniedHandler,
-            InternalServiceKeyFilter internalServiceKeyFilter) throws Exception {
+            InternalServiceKeyFilter internalServiceKeyFilter,
+            RequestCorrelationFilter requestCorrelationFilter) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -51,6 +53,7 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable);
 
         http.addFilterBefore(internalServiceKeyFilter, UsernamePasswordAuthenticationFilter.class);
+        http.addFilterBefore(requestCorrelationFilter, InternalServiceKeyFilter.class);
 
         return http.build();
     }
@@ -66,6 +69,19 @@ public class SecurityConfig {
     public FilterRegistrationBean<InternalServiceKeyFilter> internalServiceKeyFilterRegistration(
             InternalServiceKeyFilter filter) {
         FilterRegistrationBean<InternalServiceKeyFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
+    public RequestCorrelationFilter requestCorrelationFilter() {
+        return new RequestCorrelationFilter();
+    }
+
+    @Bean
+    public FilterRegistrationBean<RequestCorrelationFilter> requestCorrelationFilterRegistration(
+            RequestCorrelationFilter filter) {
+        FilterRegistrationBean<RequestCorrelationFilter> registration = new FilterRegistrationBean<>(filter);
         registration.setEnabled(false);
         return registration;
     }

@@ -51,6 +51,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -74,6 +75,7 @@ class WorkspaceHttpSecurityIntegrationTest {
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
     private static final Map<UUID, UserFixture> USERS = new ConcurrentHashMap<>();
     private static final AtomicBoolean identityAvailable = new AtomicBoolean(true);
+    private static final AtomicReference<String> lastIdentityCorrelationId = new AtomicReference<>();
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(2))
             .build();
@@ -138,6 +140,7 @@ class WorkspaceHttpSecurityIntegrationTest {
     @BeforeEach
     void seedWorkspace() {
         identityAvailable.set(true);
+        lastIdentityCorrelationId.set(null);
         redis.getConnectionFactory().getConnection().serverCommands().flushDb();
         ownerId = UUID.randomUUID();
         memberId = UUID.randomUUID();
@@ -160,7 +163,9 @@ class WorkspaceHttpSecurityIntegrationTest {
 
     @Test
     void rejectsBasicRefreshExpiredWrongSignatureAndMalformedSubjectTokens() throws Exception {
-        assertEquals(401, request("GET", "/workspaces", null, null, null).statusCode());
+        HttpResponse<String> missing = request("GET", "/workspaces", null, null, null);
+        assertEquals(401, missing.statusCode());
+        assertErrorResponse(missing, "UNAUTHORIZED");
         assertEquals(401, requestWithRawAuthorization("GET", "/workspaces", "Basic dXNlcjpwYXNz", null).statusCode());
         assertEquals(401, requestWithRawAuthorization("GET", "/workspaces", "Bearer "
                 + signedToken(ownerId, "access", Instant.now().minus(Duration.ofMinutes(2)),
@@ -173,7 +178,32 @@ class WorkspaceHttpSecurityIntegrationTest {
                 Instant.now().plus(Duration.ofMinutes(5)), jwtProperties.accessSecret(), "USER", "ACTIVE"), null).statusCode());
         assertEquals(401, requestWithRawAuthorization("GET", "/workspaces", "Bearer "
                 + signedTokenValue("not-a-uuid", "access", Instant.now().minusSeconds(1),
-                Instant.now().plus(Duration.ofMinutes(5)), jwtProperties.accessSecret(), "USER", "ACTIVE"), null).statusCode());
+                        Instant.now().plus(Duration.ofMinutes(5)), jwtProperties.accessSecret(), "USER", "ACTIVE"), null).statusCode());
+    }
+
+    @Test
+    void correlatesValidAndInvalidRequestIdsAcrossErrorsAndIdentityCalls() throws Exception {
+        String validRequestId = "workspace-http-42";
+        HttpResponse<String> valid = requestWithCorrelation(
+                "GET", "/workspaces?sort=displayName", ownerId, null, null, validRequestId);
+        assertEquals(400, valid.statusCode());
+        assertErrorResponse(valid, "BAD_REQUEST");
+        assertEquals(validRequestId, valid.headers().firstValue("X-Correlation-Id").orElseThrow());
+        assertEquals(validRequestId, json(valid).path("requestId").asText());
+
+        HttpResponse<String> invalid = requestWithCorrelation(
+                "GET", "/workspaces?sort=displayName", ownerId, null, null, "invalid id with-secrets");
+        assertEquals(400, invalid.statusCode());
+        String generatedRequestId = assertErrorResponse(invalid, "BAD_REQUEST");
+        assertFalse(generatedRequestId.contains("invalid"));
+
+        identityAvailable.set(false);
+        HttpResponse<String> identityFailure = requestWithCorrelation(
+                "POST", "/workspaces/" + workspace.getId() + "/members", ownerId, null,
+                "{\"email\":\"target@example.com\"}", validRequestId);
+        assertEquals(503, identityFailure.statusCode());
+        assertErrorResponse(identityFailure, "DEPENDENCY_UNAVAILABLE");
+        assertEquals(validRequestId, lastIdentityCorrelationId.get());
     }
 
     @Test
@@ -216,8 +246,7 @@ class WorkspaceHttpSecurityIntegrationTest {
         assertEquals(1, validBoundaryBody.path("items").size());
         assertEquals(ownerId.toString(), validBoundaryBody.path("items").get(0).path("createdBy").asText());
         assertFalse(validBoundaryBody.path("items").get(0).path("name").asText().isBlank());
-        assertTrue(invalidSort.body().contains("\"error\""));
-        assertTrue(invalidSort.body().contains("\"code\":\"BAD_REQUEST\""));
+        assertErrorResponse(invalidSort, "BAD_REQUEST");
     }
 
     @Test
@@ -231,6 +260,7 @@ class WorkspaceHttpSecurityIntegrationTest {
                 "PATCH", "/workspaces/" + workspace.getId(), ownerId, null, "{\"name\":\"Renamed over HTTP\"}");
 
         assertEquals(403, memberRename.statusCode());
+        assertErrorResponse(memberRename, "FORBIDDEN");
         assertEquals(200, ownerRename.statusCode());
         assertTrue(ownerRename.body().contains("\"name\":\"Renamed over HTTP\""));
     }
@@ -354,7 +384,7 @@ class WorkspaceHttpSecurityIntegrationTest {
         HttpResponse<String> ownerAccess = request("GET", accessPath(ownerId), null, WORKSPACE_KEY, null);
 
         assertEquals(409, left.statusCode());
-        assertTrue(left.body().contains("\"code\":\"OWNER_CANNOT_LEAVE\""));
+        assertErrorResponse(left, "OWNER_CANNOT_LEAVE");
         assertEquals(200, ownerAccess.statusCode());
         assertEquals("OWNER", json(ownerAccess).path("role").asText());
     }
@@ -367,7 +397,7 @@ class WorkspaceHttpSecurityIntegrationTest {
                 "{\"email\":\"target@example.com\"}");
 
         assertEquals(503, unavailable.statusCode());
-        assertTrue(unavailable.body().contains("\"code\":\"DEPENDENCY_UNAVAILABLE\""));
+        assertErrorResponse(unavailable, "DEPENDENCY_UNAVAILABLE");
     }
 
     @Test
@@ -439,7 +469,7 @@ class WorkspaceHttpSecurityIntegrationTest {
 
         HttpResponse<String> missing = request("GET", accessPath(outsiderId), null, WORKSPACE_KEY, null);
         assertEquals(404, missing.statusCode());
-        assertTrue(missing.body().contains("\"code\":\"MEMBERSHIP_NOT_FOUND\""));
+        assertErrorResponse(missing, "MEMBERSHIP_NOT_FOUND");
 
         jdbcTemplate.update("delete from workspace.memberships where workspace_id = ? and user_id = ?",
                 workspace.getId(), memberId);
@@ -452,6 +482,19 @@ class WorkspaceHttpSecurityIntegrationTest {
         JsonNode body = objectMapper.readTree(response.body());
         assertNotNull(body, "response body must be valid JSON");
         return body;
+    }
+
+    private String assertErrorResponse(HttpResponse<String> response, String expectedCode) throws IOException {
+        JsonNode body = json(response);
+        assertEquals(expectedCode, body.path("code").asText());
+        assertFalse(body.path("message").asText().isBlank());
+        assertFalse(body.path("requestId").asText().isBlank());
+        assertFalse(body.has("error"));
+        String responseRequestId = response.headers()
+                .firstValue("X-Correlation-Id")
+                .orElseThrow();
+        assertEquals(responseRequestId, body.path("requestId").asText());
+        return responseRequestId;
     }
 
     private Set<String> capabilityNames(JsonNode capabilities) {
@@ -474,6 +517,17 @@ class WorkspaceHttpSecurityIntegrationTest {
         return requestWithRawAuthorization(method, path, authorization, serviceKey, body);
     }
 
+    private HttpResponse<String> requestWithCorrelation(
+            String method,
+            String path,
+            UUID subject,
+            String serviceKey,
+            String body,
+            String correlationId) throws Exception {
+        String authorization = subject == null ? null : "Bearer " + signedToken(subject);
+        return requestWithRawAuthorization(method, path, authorization, serviceKey, body, correlationId);
+    }
+
     private HttpResponse<String> requestWithRawAuthorization(
             String method,
             String path,
@@ -488,6 +542,16 @@ class WorkspaceHttpSecurityIntegrationTest {
             String authorization,
             String serviceKey,
             String body) throws Exception {
+        return requestWithRawAuthorization(method, path, authorization, serviceKey, body, null);
+    }
+
+    private HttpResponse<String> requestWithRawAuthorization(
+            String method,
+            String path,
+            String authorization,
+            String serviceKey,
+            String body,
+            String correlationId) throws Exception {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create("http://127.0.0.1:" + port + "/workspace" + path))
                 .timeout(Duration.ofSeconds(10));
@@ -496,6 +560,9 @@ class WorkspaceHttpSecurityIntegrationTest {
         }
         if (serviceKey != null) {
             builder.header("X-Internal-Service-Key", serviceKey);
+        }
+        if (correlationId != null) {
+            builder.header("X-Correlation-Id", correlationId);
         }
         if (body != null) {
             builder.header("Content-Type", "application/json");
@@ -570,6 +637,7 @@ class WorkspaceHttpSecurityIntegrationTest {
     }
 
     private static void handleIdentity(HttpExchange exchange) throws IOException {
+        lastIdentityCorrelationId.set(exchange.getRequestHeaders().getFirst("X-Correlation-Id"));
         if (!DIRECTORY_KEY.equals(exchange.getRequestHeaders().getFirst("X-Internal-Service-Key"))) {
             respond(exchange, 401, "{}");
             return;

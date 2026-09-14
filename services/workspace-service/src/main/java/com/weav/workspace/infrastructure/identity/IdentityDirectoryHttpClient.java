@@ -7,11 +7,15 @@ import com.weav.workspace.domain.model.PageResult;
 import com.weav.workspace.domain.port.out.IdentityDirectoryPort;
 import com.weav.workspace.domain.query.SortDirection;
 import com.weav.workspace.application.validation.IdentityEmailNormalizer;
+import com.weav.workspace.infrastructure.web.RequestCorrelationFilter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -35,6 +39,7 @@ import java.util.UUID;
  */
 public final class IdentityDirectoryHttpClient implements IdentityDirectoryPort {
 
+    private static final Logger log = LoggerFactory.getLogger(IdentityDirectoryHttpClient.class);
     private static final String INTERNAL_KEY_HEADER = "X-Internal-Service-Key";
     private static final int MAX_TRANSPORT_IDS = 500;
     private static final int IDENTITY_PAGE_SIZE = 100;
@@ -53,10 +58,9 @@ public final class IdentityDirectoryHttpClient implements IdentityDirectoryPort 
     @Override
     public Optional<IdentityUserSummary> findByEmail(String normalizedEmail) {
         String email = normalizeEmail(normalizedEmail);
+        long started = System.nanoTime();
         try {
-            UserSummaryPayload payload = restClient.post()
-                    .uri("/internal/directory/users/by-email")
-                    .header(INTERNAL_KEY_HEADER, requiredServiceKey())
+            UserSummaryPayload payload = request("/internal/directory/users/by-email")
                     .body(new EmailLookupRequest(email))
                     .retrieve()
                     .body(UserSummaryPayload.class);
@@ -65,8 +69,12 @@ public final class IdentityDirectoryHttpClient implements IdentityDirectoryPort 
             if (exception.getStatusCode().value() == 404) {
                 return Optional.empty();
             }
+            if (isDependencyFailure(exception.getStatusCode())) {
+                logDependencyFailure("findByEmail", exception, started);
+            }
             throw mapResponseFailure(exception.getStatusCode());
         } catch (RestClientException exception) {
+            logDependencyFailure("findByEmail", exception, started);
             throw new DependencyUnavailableException();
         }
     }
@@ -275,18 +283,50 @@ public final class IdentityDirectoryHttpClient implements IdentityDirectoryPort 
     }
 
     private <T> T post(String path, Object body, Class<T> responseType) {
+        long started = System.nanoTime();
         try {
-            return restClient.post()
-                    .uri(path)
-                    .header(INTERNAL_KEY_HEADER, requiredServiceKey())
+            return request(path)
                     .body(body)
                     .retrieve()
                     .body(responseType);
         } catch (RestClientResponseException exception) {
-            throw mapResponseFailure(exception.getStatusCode());
+            RuntimeException mapped = mapResponseFailure(exception.getStatusCode());
+            if (mapped instanceof DependencyUnavailableException) {
+                logDependencyFailure(path, exception, started);
+            }
+            throw mapped;
         } catch (RestClientException exception) {
+            logDependencyFailure(path, exception, started);
             throw new DependencyUnavailableException();
         }
+    }
+
+    private RestClient.RequestBodySpec request(String path) {
+        RestClient.RequestBodySpec request = restClient.post()
+                .uri(path)
+                .header(INTERNAL_KEY_HEADER, requiredServiceKey());
+        String requestId = RequestCorrelationFilter.currentRequestId();
+        return requestId == null
+                ? request
+                : request.header(RequestCorrelationFilter.HEADER_NAME, requestId);
+    }
+
+    private void logDependencyFailure(String operation, RuntimeException exception, long started) {
+        log.warn("event=identity_directory_failure requestId={} operation={} downstream=identity-service "
+                        + "errorType={} latencyMs={}",
+                RequestCorrelationFilter.currentRequestId(),
+                operation,
+                exception.getClass().getSimpleName(),
+                Duration.ofNanos(Math.max(0L, System.nanoTime() - started)).toMillis());
+    }
+
+    private boolean isDependencyFailure(HttpStatusCode status) {
+        int statusCode = status.value();
+        return status.is5xxServerError()
+                || statusCode == 401
+                || statusCode == 403
+                || statusCode == 404
+                || statusCode == 429;
     }
 
     private RuntimeException mapResponseFailure(HttpStatusCode status) {

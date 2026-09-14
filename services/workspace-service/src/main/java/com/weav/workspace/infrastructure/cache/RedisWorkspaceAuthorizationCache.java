@@ -4,6 +4,7 @@ import com.weav.workspace.domain.model.WorkspaceAccessSnapshot;
 import com.weav.workspace.domain.model.WorkspaceCapability;
 import com.weav.workspace.domain.port.out.WorkspaceAuthorizationCache;
 import com.weav.workspace.domain.valueobject.MembershipRole;
+import com.weav.workspace.infrastructure.web.RequestCorrelationFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -60,6 +61,7 @@ public final class RedisWorkspaceAuthorizationCache implements WorkspaceAuthoriz
     @Override
     public Optional<WorkspaceAccessSnapshot> get(UUID workspaceId, UUID userId) {
         String payloadKey = key(workspaceId, userId);
+        long started = System.nanoTime();
         try {
             String payload = redis.opsForValue().get(payloadKey);
             if (payload == null) {
@@ -71,8 +73,9 @@ public final class RedisWorkspaceAuthorizationCache implements WorkspaceAuthoriz
             }
             JsonNode tree = objectMapper.readTree(payload);
             if (!hasValidShape(tree)) {
-                log.warn("Workspace authorization cache payload rejected for workspaceId={} userId={}",
-                        workspaceId, userId);
+                log.warn("event=workspace_authorization_cache_rejected requestId={} operation=read "
+                                + "workspaceId={} userId={} reason=invalid_payload",
+                        RequestCorrelationFilter.currentRequestId(), workspaceId, userId);
                 return Optional.empty();
             }
             WorkspaceAccessSnapshot snapshot = snapshotFrom(tree);
@@ -83,14 +86,14 @@ public final class RedisWorkspaceAuthorizationCache implements WorkspaceAuthoriz
             if (!workspaceId.equals(snapshot.workspaceId())
                     || !userId.equals(snapshot.userId())
                     || !snapshot.hasValidAuthorizationSchema()) {
-                log.warn("Workspace authorization cache entry rejected for workspaceId={} userId={}",
-                        workspaceId, userId);
+                log.warn("event=workspace_authorization_cache_rejected requestId={} operation=read "
+                                + "workspaceId={} userId={} reason=invalid_entry",
+                        RequestCorrelationFilter.currentRequestId(), workspaceId, userId);
                 return Optional.empty();
             }
             return Optional.of(snapshot);
         } catch (RuntimeException exception) {
-            log.warn("Workspace authorization cache read failed for workspaceId={} userId={}",
-                    workspaceId, userId);
+            logCacheFailure("read", workspaceId, userId, exception, started);
             return Optional.empty();
         }
     }
@@ -99,6 +102,7 @@ public final class RedisWorkspaceAuthorizationCache implements WorkspaceAuthoriz
     public Optional<String> readGeneration(UUID workspaceId, UUID userId, Duration ttl) {
         requirePositiveTtl(ttl);
         String generationKey = generationKey(workspaceId, userId);
+        long started = System.nanoTime();
         try {
             String current = redis.opsForValue().get(generationKey);
             if (current != null && !current.isBlank()) {
@@ -115,8 +119,7 @@ public final class RedisWorkspaceAuthorizationCache implements WorkspaceAuthoriz
                     ? Optional.empty()
                     : Optional.of(current);
         } catch (RuntimeException exception) {
-            log.warn("Workspace authorization cache generation read failed for workspaceId={} userId={}",
-                    workspaceId, userId);
+            logCacheFailure("generation", workspaceId, userId, exception, started);
             return Optional.empty();
         }
     }
@@ -137,6 +140,7 @@ public final class RedisWorkspaceAuthorizationCache implements WorkspaceAuthoriz
         if (snapshot == null || expectedGeneration == null || expectedGeneration.isBlank()) {
             return false;
         }
+        long started = System.nanoTime();
         try {
             String payload = objectMapper.writeValueAsString(new CachePayload(
                     snapshot.workspaceId(),
@@ -153,14 +157,14 @@ public final class RedisWorkspaceAuthorizationCache implements WorkspaceAuthoriz
                     Long.toString(ttl.toMillis()));
             return Long.valueOf(1L).equals(result);
         } catch (RuntimeException exception) {
-            log.warn("Workspace authorization cache write failed for workspaceId={} userId={}",
-                    snapshot.workspaceId(), snapshot.userId());
+            logCacheFailure("write", snapshot.workspaceId(), snapshot.userId(), exception, started);
             return false;
         }
     }
 
     @Override
     public void evict(UUID workspaceId, UUID userId) {
+        long started = System.nanoTime();
         try {
             redis.execute(
                     EVICT_AND_ROTATE_GENERATION,
@@ -168,9 +172,24 @@ public final class RedisWorkspaceAuthorizationCache implements WorkspaceAuthoriz
                     UUID.randomUUID().toString(),
                     Long.toString(generationTtl.toMillis()));
         } catch (RuntimeException exception) {
-            log.warn("Workspace authorization cache eviction failed for workspaceId={} userId={}",
-                    workspaceId, userId);
+            logCacheFailure("evict", workspaceId, userId, exception, started);
         }
+    }
+
+    private void logCacheFailure(
+            String operation,
+            UUID workspaceId,
+            UUID userId,
+            RuntimeException exception,
+            long started) {
+        log.warn("event=workspace_authorization_cache_failure requestId={} operation={} "
+                        + "downstream=redis workspaceId={} userId={} errorType={} latencyMs={}",
+                RequestCorrelationFilter.currentRequestId(),
+                operation,
+                workspaceId,
+                userId,
+                exception.getClass().getSimpleName(),
+                Duration.ofNanos(Math.max(0L, System.nanoTime() - started)).toMillis());
     }
 
     private void requirePositiveTtl(Duration ttl) {

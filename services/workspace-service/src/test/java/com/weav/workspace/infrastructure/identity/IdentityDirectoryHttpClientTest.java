@@ -6,8 +6,14 @@ import com.weav.workspace.domain.exception.BadRequestException;
 import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.domain.model.IdentityUserSummary;
 import com.weav.workspace.domain.query.SortDirection;
+import com.weav.workspace.infrastructure.web.RequestCorrelationFilter;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
@@ -18,8 +24,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -119,6 +127,39 @@ class IdentityDirectoryHttpClientTest {
                 DependencyUnavailableException.class,
                 () -> client().matchUserIds(List.of(UUID.randomUUID()), "query"));
         assertTrue(!exception.getMessage().contains("sensitive"));
+    }
+
+    @Test
+    void propagatesCorrelationAndLogsStructuredIdentityFailureWithoutPayload() throws Exception {
+        AtomicReference<String> correlation = new AtomicReference<>();
+        startServer(exchange -> {
+            correlation.set(exchange.getRequestHeaders().getFirst(RequestCorrelationFilter.HEADER_NAME));
+            respond(exchange, 503, "sensitive downstream payload");
+        });
+        Logger logger = (Logger) LoggerFactory.getLogger(IdentityDirectoryHttpClient.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        MDC.put(RequestCorrelationFilter.MDC_KEY, "identity-test-42");
+        try {
+            assertThrows(DependencyUnavailableException.class,
+                    () -> client().matchUserIds(List.of(UUID.randomUUID()), "query"));
+        } finally {
+            MDC.remove(RequestCorrelationFilter.MDC_KEY);
+            logger.detachAppender(appender);
+        }
+
+        assertEquals("identity-test-42", correlation.get());
+        String message = appender.list.get(0).getFormattedMessage();
+        assertTrue(message.contains("event=identity_directory_failure"));
+        assertTrue(message.contains("requestId=identity-test-42"));
+        assertTrue(message.contains("operation=/internal/directory/users/match"));
+        assertTrue(message.contains("downstream=identity-service"));
+        assertTrue(message.contains("errorType="));
+        assertTrue(message.contains("latencyMs="));
+        assertFalse(message.contains("sensitive downstream payload"));
+        assertFalse(message.contains("Authorization"));
+        assertFalse(message.contains("X-Internal-Service-Key"));
     }
 
     @Test

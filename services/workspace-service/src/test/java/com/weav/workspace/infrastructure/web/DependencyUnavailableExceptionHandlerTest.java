@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -20,7 +21,8 @@ class DependencyUnavailableExceptionHandlerTest {
                 new DependencyUnavailableException(), request);
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE.value(), response.getStatusCode().value());
-        assertEquals("DEPENDENCY_UNAVAILABLE", response.getBody().error().code());
-        assertEquals("A required dependency is temporarily unavailable", response.getBody().error().message());
+        assertEquals("DEPENDENCY_UNAVAILABLE", response.getBody().code());
+        assertEquals("A required dependency is temporarily unavailable", response.getBody().message());
+        assertTrue(response.getBody().requestId() != null && !response.getBody().requestId().isBlank());
     }
 }
