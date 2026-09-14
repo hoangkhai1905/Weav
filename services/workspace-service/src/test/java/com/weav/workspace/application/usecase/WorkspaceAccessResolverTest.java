@@ -1,7 +1,7 @@
 package com.weav.workspace.application.usecase;
 
 import com.weav.workspace.application.port.out.TransactionRunner;
-import com.weav.workspace.domain.exception.ResourceNotFoundException;
+import com.weav.workspace.domain.exception.MembershipNotFoundException;
 import com.weav.workspace.domain.model.Membership;
 import com.weav.workspace.domain.model.WorkspaceAccessSnapshot;
 import com.weav.workspace.domain.model.WorkspaceCapability;
@@ -76,7 +76,7 @@ class WorkspaceAccessResolverTest {
         when(memberships.findByWorkspaceIdAndUserId(WORKSPACE, USER)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> resolver(memberships, cache).execute(WORKSPACE, USER))
-                .isInstanceOf(ResourceNotFoundException.class);
+                .isInstanceOf(MembershipNotFoundException.class);
     }
 
     private ResolveWorkspaceAccessUseCase resolver(

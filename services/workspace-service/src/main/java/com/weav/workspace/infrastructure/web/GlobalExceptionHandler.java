@@ -5,6 +5,7 @@ import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.domain.exception.DomainException;
 import com.weav.workspace.domain.exception.ForbiddenException;
 import com.weav.workspace.domain.exception.InvalidStateException;
+import com.weav.workspace.domain.exception.MembershipNotFoundException;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
 import com.weav.workspace.domain.exception.UnauthorizedException;
 import com.weav.workspace.domain.exception.UserNotFoundException;
@@ -195,6 +196,9 @@ public class GlobalExceptionHandler {
             return HttpStatus.SERVICE_UNAVAILABLE;
         }
         if (exception instanceof ResourceNotFoundException) {
+            return HttpStatus.NOT_FOUND;
+        }
+        if (exception instanceof MembershipNotFoundException) {
             return HttpStatus.NOT_FOUND;
         }
         if (exception instanceof UserNotFoundException) {

@@ -4,6 +4,7 @@ import com.weav.workspace.TestcontainersConfiguration;
 import com.weav.workspace.application.dto.UpdateMemberPermissionsCommand;
 import com.weav.workspace.application.port.out.AfterCommitExecutor;
 import com.weav.workspace.application.port.out.TransactionRunner;
+import com.weav.workspace.domain.exception.MembershipNotFoundException;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
 import com.weav.workspace.domain.model.Membership;
 import com.weav.workspace.domain.model.Workspace;
@@ -127,7 +128,7 @@ class MembershipCacheInvalidationIntegrationTest {
         assertThat(redis.hasKey(key(fixture.workspace().getId(), fixture.memberId()))).isFalse();
         assertThatThrownBy(() -> resolveWorkspaceAccessUseCase.execute(
                 fixture.workspace().getId(), fixture.memberId()))
-                .isInstanceOf(ResourceNotFoundException.class);
+                .isInstanceOf(MembershipNotFoundException.class);
         assertThat(membershipRepository.findByWorkspaceIdAndUserId(
                 fixture.workspace().getId(), fixture.memberId())).isEmpty();
     }
@@ -143,7 +144,7 @@ class MembershipCacheInvalidationIntegrationTest {
         assertThat(redis.hasKey(key(fixture.workspace().getId(), fixture.memberId()))).isFalse();
         assertThatThrownBy(() -> resolveWorkspaceAccessUseCase.execute(
                 fixture.workspace().getId(), fixture.memberId()))
-                .isInstanceOf(ResourceNotFoundException.class);
+                .isInstanceOf(MembershipNotFoundException.class);
         assertThat(membershipRepository.findByWorkspaceIdAndUserId(
                 fixture.workspace().getId(), fixture.memberId())).isEmpty();
     }
@@ -225,7 +226,7 @@ class MembershipCacheInvalidationIntegrationTest {
         })).isInstanceOf(IllegalStateException.class);
 
         assertThatThrownBy(() -> resolveWorkspaceAccessUseCase.execute(workspace.getId(), memberId))
-                .isInstanceOf(ResourceNotFoundException.class);
+                .isInstanceOf(MembershipNotFoundException.class);
         assertThat(authorizationCache.get(workspace.getId(), memberId)).isEmpty();
     }
 
@@ -294,7 +295,7 @@ class MembershipCacheInvalidationIntegrationTest {
             assertThat(authorizationCache.get(fixture.workspace().getId(), fixture.memberId())).isEmpty();
             assertThatThrownBy(() -> resolveWorkspaceAccessUseCase.execute(
                     fixture.workspace().getId(), fixture.memberId()))
-                    .isInstanceOf(ResourceNotFoundException.class);
+                    .isInstanceOf(MembershipNotFoundException.class);
         } finally {
             blocking.releaseRead.countDown();
             executor.shutdownNow();

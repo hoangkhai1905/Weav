@@ -2,7 +2,7 @@ package com.weav.workspace.application.usecase;
 
 import com.weav.workspace.application.port.out.AfterCommitExecutor;
 import com.weav.workspace.application.port.out.TransactionRunner;
-import com.weav.workspace.domain.exception.ResourceNotFoundException;
+import com.weav.workspace.domain.exception.MembershipNotFoundException;
 import com.weav.workspace.domain.model.Membership;
 import com.weav.workspace.domain.model.WorkspaceAccessSnapshot;
 import com.weav.workspace.domain.port.out.MembershipRepository;
@@ -60,7 +60,7 @@ public final class ResolveWorkspaceAccessUseCase {
         Optional<String> generation = readGenerationForFill(workspaceId, userId);
         return transactionRunner.required(() -> {
             Membership membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Membership not found", userId));
+                    .orElseThrow(() -> new MembershipNotFoundException(userId));
             WorkspaceAccessSnapshot snapshot = new WorkspaceAccessSnapshot(
                     workspaceId,
                     userId,

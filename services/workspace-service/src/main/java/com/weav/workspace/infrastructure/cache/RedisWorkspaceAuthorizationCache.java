@@ -75,11 +75,11 @@ public final class RedisWorkspaceAuthorizationCache implements WorkspaceAuthoriz
                         workspaceId, userId);
                 return Optional.empty();
             }
-            CachePayload cached = objectMapper.readValue(payload, CachePayload.class);
-            if (!generation.equals(cached.generation())) {
+            WorkspaceAccessSnapshot snapshot = snapshotFrom(tree);
+            String payloadGeneration = tree.get("generation").asText();
+            if (!generation.equals(payloadGeneration)) {
                 return Optional.empty();
             }
-            WorkspaceAccessSnapshot snapshot = cached.snapshot();
             if (!workspaceId.equals(snapshot.workspaceId())
                     || !userId.equals(snapshot.userId())
                     || !snapshot.hasValidAuthorizationSchema()) {
@@ -214,15 +214,27 @@ public final class RedisWorkspaceAuthorizationCache implements WorkspaceAuthoriz
         return true;
     }
 
+    private WorkspaceAccessSnapshot snapshotFrom(JsonNode tree) {
+        UUID workspaceId = UUID.fromString(tree.get("workspaceId").asText());
+        UUID userId = UUID.fromString(tree.get("userId").asText());
+        MembershipRole role = MembershipRole.valueOf(tree.get("role").asText());
+        Set<WorkspaceCapability> capabilities = new HashSet<>();
+        for (JsonNode capability : tree.get("capabilities")) {
+            try {
+                capabilities.add(WorkspaceCapability.valueOf(capability.asText()));
+            } catch (IllegalArgumentException ignored) {
+                // Capability values are additive. Unknown values are ignored by
+                // this V1 consumer and the remaining known schema is validated below.
+            }
+        }
+        return new WorkspaceAccessSnapshot(workspaceId, userId, role, capabilities);
+    }
+
     private record CachePayload(
             UUID workspaceId,
             UUID userId,
             MembershipRole role,
             Set<WorkspaceCapability> capabilities,
             String generation) {
-
-        private WorkspaceAccessSnapshot snapshot() {
-            return new WorkspaceAccessSnapshot(workspaceId, userId, role, capabilities);
-        }
     }
 }

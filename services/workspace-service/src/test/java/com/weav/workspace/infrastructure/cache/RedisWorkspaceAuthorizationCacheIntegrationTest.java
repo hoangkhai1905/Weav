@@ -3,6 +3,7 @@ package com.weav.workspace.infrastructure.cache;
 import com.weav.workspace.TestcontainersConfiguration;
 import com.weav.workspace.domain.model.Membership;
 import com.weav.workspace.domain.model.WorkspaceAccessSnapshot;
+import com.weav.workspace.domain.model.WorkspaceCapability;
 import com.weav.workspace.domain.policy.WorkspaceAuthorizationPolicy;
 import com.weav.workspace.domain.valueobject.MembershipRole;
 import org.junit.jupiter.api.BeforeEach;
@@ -119,6 +120,20 @@ class RedisWorkspaceAuthorizationCacheIntegrationTest {
         setPayload(WORKSPACE, USER, "[\"WORKSPACE_VIEW\"]", GENERATION);
 
         assertTrue(cache.get(WORKSPACE, USER).isEmpty());
+    }
+
+    @Test
+    void unknownFutureCapabilityIsIgnoredByTolerantCacheReader() {
+        setGeneration(GENERATION);
+        setPayload(WORKSPACE, USER,
+                "[\"WORKSPACE_VIEW\",\"MEMBER_VIEW\",\"WORKFLOW_CREATE\","
+                        + "\"WORKFLOW_EDIT\",\"WORKFLOW_RUN\",\"WORKFLOW_MONITOR\","
+                        + "\"WORKFLOW_PUBLISH\",\"WORKFLOW_FUTURE\"]",
+                GENERATION);
+
+        WorkspaceAccessSnapshot snapshot = cache.get(WORKSPACE, USER).orElseThrow();
+
+        assertTrue(snapshot.capabilities().contains(WorkspaceCapability.WORKFLOW_PUBLISH));
     }
 
     @Test
