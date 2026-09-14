@@ -220,6 +220,26 @@ VALKEY_USERNAME=
 VALKEY_PASSWORD=
 ```
 
+### Workspace service-to-service and authorization
+
+Workspace uses the following non-secret names. Keep the two internal service
+keys in the local secret store and configure the Identity key to match on both
+the Identity and Workspace containers. When using Compose, `REDIS_URL` may be
+left unset if it should inherit the root `VALKEY_URL`.
+
+```env
+IDENTITY_SERVICE_URL=http://identity-service:8080
+IDENTITY_INTERNAL_SERVICE_KEY=
+WEAV_INTERNAL_SERVICE_KEY=
+IDENTITY_CONNECT_TIMEOUT=3s
+IDENTITY_READ_TIMEOUT=5s
+REDIS_URL=
+WORKSPACE_AUTHORIZATION_CACHE_TTL=PT5M
+JWT_ISSUER=weav-identity
+JWT_AUDIENCE=weav-api
+JWT_CLOCK_SKEW=30s
+```
+
 ### RabbitMQ
 
 ```env
