@@ -1,5 +1,6 @@
 package com.weav.identity.infrastructure.security;
 
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,7 +18,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Configuration
 @EnableMethodSecurity
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, InternalServiceKeyProperties.class})
 public class SecurityConfig {
 
     @Bean
@@ -26,7 +27,8 @@ public class SecurityConfig {
             ApiAuthenticationEntryPoint authenticationEntryPoint,
             ApiAccessDeniedHandler accessDeniedHandler,
             AuthRateLimiter authRateLimiter,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            InternalServiceKeyFilter internalServiceKeyFilter
     ) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -57,6 +59,7 @@ public class SecurityConfig {
                                 "/auth/oauth/google/callback",
                                 "/auth/web/csrf"
                         ).permitAll()
+                        .requestMatchers("/internal/directory/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
                         .anyRequest().authenticated()
                 )
@@ -72,8 +75,24 @@ public class SecurityConfig {
                 new AuthRateLimitFilter(authRateLimiter, objectMapper),
                 UsernamePasswordAuthenticationFilter.class
         );
+        http.addFilterBefore(internalServiceKeyFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public InternalServiceKeyFilter internalServiceKeyFilter(
+            InternalServiceKeyProperties properties,
+            ApiAuthenticationEntryPoint authenticationEntryPoint) {
+        return new InternalServiceKeyFilter(properties, authenticationEntryPoint);
+    }
+
+    @Bean
+    public FilterRegistrationBean<InternalServiceKeyFilter> internalServiceKeyFilterRegistration(
+            InternalServiceKeyFilter filter) {
+        FilterRegistrationBean<InternalServiceKeyFilter> registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean

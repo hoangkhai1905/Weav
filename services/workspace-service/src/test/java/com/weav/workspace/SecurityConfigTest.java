@@ -20,8 +20,8 @@ import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -48,10 +48,9 @@ class SecurityConfigTest {
     }
 
     @Test
-    void allowsPublicAuthRoute() throws Exception {
+    void rejectsLocalAuthRoute() throws Exception {
         mockMvc.perform(get("/auth/ping"))
-                .andExpect(status().isOk())
-                .andExpect(content().string("ok"));
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -67,6 +66,12 @@ class SecurityConfigTest {
     }
 
     @Test
+    void doesNotAcceptHttpBasicAsWorkspaceAuthentication() throws Exception {
+        mockMvc.perform(get("/protected").with(httpBasic("user", "password")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void exposesBcryptPasswordEncoder() {
         String encodedPassword = passwordEncoder.encode("test-password");
 
@@ -78,6 +83,8 @@ class SecurityConfigTest {
     void bindsJwtConfigurationProperties() {
         assertEquals(Duration.ofMinutes(15), jwtProperties.accessExpiresIn());
         assertEquals(Duration.ofDays(7), jwtProperties.refreshExpiresIn());
+        assertEquals("weav-identity", jwtProperties.issuer());
+        assertEquals("weav-api", jwtProperties.audience());
     }
 
     @TestConfiguration(proxyBeanMethods = false)

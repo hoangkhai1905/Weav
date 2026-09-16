@@ -1,6 +1,7 @@
 package com.weav.workspace.infrastructure.web;
 
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
+import com.weav.workspace.domain.exception.UserNotFoundException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,20 +37,29 @@ class GlobalExceptionHandlerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error.code").value("VALIDATION_ERROR"))
-                .andExpect(jsonPath("$.error.message").value("Request validation failed"))
-                .andExpect(jsonPath("$.error.details[0].field").value("name"))
-                .andExpect(jsonPath("$.status").value(400))
-                .andExpect(jsonPath("$.path").value("/test/validation"));
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Request validation failed"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty())
+                .andExpect(jsonPath("$.error").doesNotExist())
+                .andExpect(jsonPath("$.status").doesNotExist())
+                .andExpect(jsonPath("$.path").doesNotExist());
     }
 
     @Test
     void mapsDomainNotFoundToErrorResponse() throws Exception {
         mockMvc.perform(get("/test/not-found"))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"))
-                .andExpect(jsonPath("$.error.message").value("Workspace not found: 123"))
-                .andExpect(jsonPath("$.status").value(404));
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("Workspace not found: 123"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
+    }
+
+    @Test
+    void mapsMissingIdentityUserToNotFoundForMemberAddition() throws Exception {
+        mockMvc.perform(get("/test/identity-not-found"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("USER_NOT_FOUND"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
     }
 
     @RestController
@@ -62,6 +72,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/not-found")
         void notFound() {
             throw new ResourceNotFoundException("Workspace", 123);
+        }
+
+        @GetMapping("/test/identity-not-found")
+        void identityNotFound() {
+            throw new UserNotFoundException();
         }
     }
 

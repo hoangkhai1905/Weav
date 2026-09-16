@@ -1,5 +1,6 @@
 package com.weav.workspace.domain.model;
 
+import com.weav.workspace.domain.exception.InvalidStateException;
 import com.weav.workspace.domain.valueobject.MembershipRole;
 import java.time.Instant;
 import java.util.Objects;
@@ -9,7 +10,7 @@ public class Membership {
     private final UUID id;
     private final UUID workspaceId;
     private final UUID userId;
-    private MembershipRole role;
+    private final MembershipRole role;
     private boolean canPublishWorkflow;
     private boolean canManageWorkflowState;
     private final Instant joinedAt;
@@ -33,9 +34,45 @@ public class Membership {
         return new Membership(UUID.randomUUID(), workspaceId, userId, role, false, false, now, now);
     }
 
-    public void changeRole(MembershipRole role) { this.role = Objects.requireNonNull(role); this.updatedAt = Instant.now(); }
-    public void grantPublishPermission() { canPublishWorkflow = true; updatedAt = Instant.now(); }
-    public void grantStateManagementPermission() { canManageWorkflowState = true; updatedAt = Instant.now(); }
+    public static Membership owner(UUID workspaceId, UUID userId) {
+        return createNew(workspaceId, userId, MembershipRole.OWNER);
+    }
+
+    public static Membership member(UUID workspaceId, UUID userId) {
+        return member(workspaceId, userId, false, false);
+    }
+
+    public static Membership member(
+            UUID workspaceId,
+            UUID userId,
+            boolean canPublishWorkflow,
+            boolean canManageWorkflowState) {
+        Instant now = Instant.now();
+        return new Membership(
+                UUID.randomUUID(),
+                workspaceId,
+                userId,
+                MembershipRole.MEMBER,
+                canPublishWorkflow,
+                canManageWorkflowState,
+                now,
+                now);
+    }
+
+    public void updateOptionalPermissions(boolean canPublishWorkflow, boolean canManageWorkflowState) {
+        if (role == MembershipRole.OWNER) {
+            throw new InvalidStateException("Owner permissions are immutable");
+        }
+        this.canPublishWorkflow = canPublishWorkflow;
+        this.canManageWorkflowState = canManageWorkflowState;
+        this.updatedAt = Instant.now();
+    }
+
+    public void assertCanLeave() {
+        if (role == MembershipRole.OWNER) {
+            throw new InvalidStateException("Owner cannot leave the workspace");
+        }
+    }
 
     public UUID getId() { return id; }
     public UUID getWorkspaceId() { return workspaceId; }

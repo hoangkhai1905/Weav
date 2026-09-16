@@ -27,6 +27,10 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      JWT_ISSUER: ${JWT_ISSUER:-weav-identity}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-weav-api}
+      JWT_CLOCK_SKEW: ${JWT_CLOCK_SKEW:-30s}
+      IDENTITY_INTERNAL_SERVICE_KEY: ${IDENTITY_INTERNAL_SERVICE_KEY:-}
 
       # Optional Google OAuth. Compose interpolation forwards root .env values
       # into the container; blank credentials keep the provider disabled.
@@ -111,6 +115,22 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      JWT_ISSUER: ${JWT_ISSUER:-weav-identity}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-weav-api}
+      JWT_CLOCK_SKEW: ${JWT_CLOCK_SKEW:-30s}
+
+      # Identity directory and internal authorization boundary
+      IDENTITY_SERVICE_URL: ${IDENTITY_SERVICE_URL:-http://identity-service:8080}
+      IDENTITY_INTERNAL_SERVICE_KEY: ${IDENTITY_INTERNAL_SERVICE_KEY:-}
+      WEAV_INTERNAL_SERVICE_KEY: ${WEAV_INTERNAL_SERVICE_KEY:-}
+      IDENTITY_CONNECT_TIMEOUT: ${IDENTITY_CONNECT_TIMEOUT:-3s}
+      IDENTITY_READ_TIMEOUT: ${IDENTITY_READ_TIMEOUT:-5s}
+
+      # Redis/Valkey authorization cache. Prefer REDIS_URL; VALKEY_URL is the
+      # root-template fallback used by the other Valkey-backed services.
+      REDIS_URL: ${REDIS_URL:-${VALKEY_URL:-redis://localhost:6379}}
+      WORKSPACE_AUTHORIZATION_CACHE_TTL: ${WORKSPACE_AUTHORIZATION_CACHE_TTL:-PT5M}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
 
     develop:
       watch:

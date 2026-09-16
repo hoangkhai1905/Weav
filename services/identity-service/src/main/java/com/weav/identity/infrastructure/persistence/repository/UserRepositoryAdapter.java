@@ -10,6 +10,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import java.util.Optional;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.stereotype.Repository;
@@ -59,6 +61,11 @@ public class UserRepositoryAdapter implements UserRepository {
     @Override
     public boolean existsByEmail(String email) {
         return repository.existsByCanonicalEmail(email);
+    }
+
+    @Override
+    public List<User> findAllByIds(Collection<UUID> ids) {
+        return repository.findAllById(ids).stream().map(mapper::toDomain).toList();
     }
 
     @Override

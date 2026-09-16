@@ -16,6 +16,7 @@ tags:
   - name: Authentication
   - name: Users
   - name: Admin
+  - name: Internal Directory
 security:
   - bearerAuth: []
 paths:
@@ -1092,6 +1093,138 @@ paths:
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
 
+  /internal/directory/users/by-email:
+    post:
+      tags: [Internal Directory]
+      operationId: lookupDirectoryUserByEmail
+      summary: Look up one Identity user by normalized email
+      security:
+        - internalServiceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DirectoryEmailLookupRequest'
+      responses:
+        '200':
+          description: Matching user summary, including inactive users.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityUserSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /internal/directory/users/match:
+    post:
+      tags: [Internal Directory]
+      operationId: matchDirectoryUserIds
+      summary: Match candidate Identity user IDs by email or display name
+      description: >-
+        Returns only matching user IDs for one bounded candidate chunk. The
+        candidate limit is a transport bound per request, not a product cap:
+        Workspace must partition the complete membership candidate set into
+        chunks of at most 500 IDs, issue every chunk, and union the exact
+        responses. Identity never silently truncates a chunk or its result.
+      security:
+        - internalServiceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DirectoryMatchRequest'
+      responses:
+        '200':
+          description: Exact matching IDs from the supplied candidate chunk.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityUserIdSet'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /internal/directory/users/search:
+    post:
+      tags: [Internal Directory]
+      operationId: searchDirectoryUsers
+      summary: Search candidate Identity users by email or display name
+      description: >-
+        Searches one bounded candidate chunk and returns an exact page for
+        that chunk. Results use the deterministic key of non-null,
+        Locale.ROOT-case-folded displayName followed by userId ascending;
+        null displayName values sort after non-null values for both directions.
+        For a global displayName-sorted Workspace page, the caller must issue
+        every bounded chunk and every page in each chunk, then perform a
+        k-way merge of those sorted streams using the same key, sum the exact
+        per-chunk totals, and slice the requested global page. Chunk pages must
+        not be concatenated, and no arbitrary aggregate cap may be applied.
+      security:
+        - internalServiceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DirectorySearchRequest'
+      responses:
+        '200':
+          description: Stable page of matching candidate user summaries with exact chunk totals.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityUserPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /internal/directory/users/batch:
+    post:
+      tags: [Internal Directory]
+      operationId: getDirectoryUsersByIds
+      summary: Fetch Identity summaries for requested user IDs
+      description: >-
+        Fetches one bounded ID chunk. Callers with more IDs must partition the
+        complete set and aggregate the responses; this transport bound is not
+        a product membership limit and missing IDs are not silently substituted.
+      security:
+        - internalServiceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DirectoryBatchRequest'
+      responses:
+        '200':
+          description: Summaries for requested IDs that exist.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IdentityUserSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1101,6 +1234,11 @@ components:
       description: >-
         HS256 access JWT issued by Identity. Refresh tokens are opaque values
         supplied only in JSON request bodies and are never bearer credentials.
+    internalServiceKey:
+      type: apiKey
+      in: header
+      name: X-Internal-Service-Key
+      description: V1 service-to-service key; never embed a real secret in this contract.
 
   headers:
     CacheControlNoStore:
@@ -1953,6 +2091,160 @@ components:
           type: [string, 'null']
           maxLength: 512
           description: Bounded client metadata; null for legacy sessions.
+
+    DirectoryEmailLookupRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          type: string
+          minLength: 1
+          maxLength: 320
+          description: ASCII email canonicalized by Identity before lookup.
+
+    DirectoryMatchRequest:
+      type: object
+      additionalProperties: false
+      required: [candidateUserIds]
+      properties:
+        candidateUserIds:
+          type: array
+          minItems: 1
+          maxItems: 500
+          uniqueItems: true
+          description: >-
+            One bounded transport chunk. The 500-ID limit is per request and
+            is not a product membership cap; callers must send all chunks.
+          items:
+            type: string
+            format: uuid
+        search:
+          type: [string, 'null']
+          maxLength: 120
+
+    IdentityUserIdSet:
+      type: object
+      additionalProperties: false
+      required: [matchingUserIds]
+      properties:
+        matchingUserIds:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          description: Exact matching IDs from the supplied candidate chunk.
+          items:
+            type: string
+            format: uuid
+
+    DirectorySearchRequest:
+      description: >-
+        One bounded candidate chunk for displayName-owned search and ordering.
+        Each response has exact page and totalElements values for that chunk.
+        To produce a global page, callers iterate every chunk and page, then
+        k-way merge streams by non-null case-folded displayName, null-last,
+        userId-ascending order, sum exact totals, and slice the requested page.
+        This preserves exact global ordering and totals without concatenating
+        chunk pages or imposing an arbitrary aggregate cap.
+      type: object
+      additionalProperties: false
+      required: [candidateUserIds, page, size, direction]
+      properties:
+        candidateUserIds:
+          type: array
+          minItems: 1
+          maxItems: 500
+          uniqueItems: true
+          description: >-
+            One bounded transport chunk; callers must partition the complete
+            candidate set and issue every chunk. There is no product cap.
+          items:
+            type: string
+            format: uuid
+        search:
+          type: [string, 'null']
+          maxLength: 120
+        page:
+          type: integer
+          minimum: 0
+          default: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+        direction:
+          type: string
+          enum: [asc, desc]
+          default: asc
+        sort:
+          type: string
+          const: displayName
+          default: displayName
+
+    DirectoryBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [userIds]
+      properties:
+        userIds:
+          type: array
+          minItems: 1
+          maxItems: 500
+          uniqueItems: true
+          description: >-
+            One bounded transport chunk; callers must partition larger sets.
+            The limit is not a product membership cap.
+          items:
+            type: string
+            format: uuid
+
+    IdentityUserSummary:
+      type: object
+      additionalProperties: false
+      required: [userId, email, displayName, active]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          maxLength: 320
+        displayName:
+          type: [string, 'null']
+          maxLength: 120
+          description: Null values sort after non-null values in displayName ordering.
+        active:
+          type: boolean
+
+    IdentityUserPage:
+      description: >-
+        Exact page and total for one candidate chunk. Display-name ordering is
+        case-folded with null values last and userId ascending as the stable
+        tie-breaker, regardless of direction.
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/IdentityUserSummary'
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
 
     ApiErrorResponse:
       type: object
