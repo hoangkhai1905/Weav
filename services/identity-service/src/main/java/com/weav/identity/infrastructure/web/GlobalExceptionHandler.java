@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.List;
 import java.util.Objects;
@@ -204,6 +205,20 @@ public class GlobalExceptionHandler {
                 request.getRequestURI(),
                 List.of()
         ));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleMaxUploadSize(
+            MaxUploadSizeExceededException exception,
+            HttpServletRequest request
+    ) {
+        return respond(
+                HttpStatus.BAD_REQUEST,
+                "PAYLOAD_TOO_LARGE",
+                "Uploaded file is too large",
+                List.of(),
+                request
+        );
     }
 
     @ExceptionHandler(Exception.class)

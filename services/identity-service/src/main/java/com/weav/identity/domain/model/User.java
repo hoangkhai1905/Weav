@@ -63,7 +63,25 @@ public class User {
         }
     }
 
-    public void deactivate() { this.status = UserStatus.DISABLED; touch(); }
+    public void deactivate() { changeStatus(UserStatus.DISABLED, Instant.now()); }
+
+    public void changeStatus(UserStatus status, Instant updatedAt) {
+        this.status = Objects.requireNonNull(status, "status must not be null");
+        touch(updatedAt);
+    }
+
+    public void replaceAvatarStorageKey(String avatarStorageKey, Instant updatedAt) {
+        if (avatarStorageKey == null || avatarStorageKey.isBlank()) {
+            throw new IllegalArgumentException("avatarStorageKey must not be blank");
+        }
+        this.avatarStorageKey = avatarStorageKey;
+        touch(updatedAt);
+    }
+
+    public void clearAvatarStorageKey(Instant updatedAt) {
+        this.avatarStorageKey = null;
+        touch(updatedAt);
+    }
 
     private void touch(Instant updatedAt) {
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");

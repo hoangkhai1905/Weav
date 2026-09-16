@@ -2,8 +2,13 @@ package com.weav.identity.infrastructure.persistence.repository;
 
 import com.weav.identity.domain.exception.ConflictException;
 import com.weav.identity.domain.model.User;
+import com.weav.identity.domain.model.UserPage;
 import com.weav.identity.domain.port.out.UserRepository;
+import com.weav.identity.domain.valueobject.UserStatus;
 import com.weav.identity.infrastructure.persistence.mapper.UserPersistenceMapper;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import java.util.Optional;
 import java.util.UUID;
 import org.hibernate.exception.ConstraintViolationException;
@@ -54,6 +59,22 @@ public class UserRepositoryAdapter implements UserRepository {
     @Override
     public boolean existsByEmail(String email) {
         return repository.existsByCanonicalEmail(email);
+    }
+
+    @Override
+    public UserPage findPage(String search, UserStatus status, int page, int size) {
+        Page<com.weav.identity.infrastructure.persistence.entity.UserJpaEntity> result = repository.search(
+                search,
+                status,
+                PageRequest.of(page, size, Sort.by(
+                        Sort.Order.desc("createdAt"),
+                        Sort.Order.asc("id"))));
+        return new UserPage(
+                result.getContent().stream().map(mapper::toDomain).toList(),
+                result.getNumber(),
+                result.getSize(),
+                result.getTotalElements(),
+                result.getTotalPages());
     }
 
     private ConstraintViolationException findConstraintViolation(Throwable throwable) {
