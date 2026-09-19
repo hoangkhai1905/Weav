@@ -1,7 +1,9 @@
 import { Controller, Param, Post, Req, Res } from '@nestjs/common';
 import { OcrService } from './ocr.service';
+import { AuthPolicy, OcrDevelopmentAuth } from '../auth/auth-policy.decorator';
 
 export interface FastifyReply {
+  raw?: unknown;
   header(key: string, value: any): this;
   status(statusCode: number): this;
   send(payload?: any): any;
@@ -18,12 +20,18 @@ export class OcrController {
   constructor(private readonly ocrService: OcrService) {}
 
   @Post('extractions')
+  @AuthPolicy('required')
+  @OcrDevelopmentAuth()
   async proxyExtraction(
     @Param('workspaceId') workspaceId: string,
     @Req() req: FastifyRequest,
     @Res() reply: FastifyReply,
   ): Promise<any> {
-    const result = await this.ocrService.proxyExtraction(workspaceId, req);
+    const result = await this.ocrService.proxyExtraction(
+      workspaceId,
+      req,
+      reply,
+    );
 
     if (result.headers) {
       for (const [key, value] of Object.entries(result.headers)) {

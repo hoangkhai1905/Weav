@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Injectable,
+  Logger,
   Module,
   Param,
   Patch,
@@ -13,6 +14,17 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { GatewayConfig } from '../config/gateway.config';
+import { AuthPolicy } from '../auth/auth-policy.decorator';
+import {
+  collectSafeUpstreamResponseHeaders,
+  createUpstreamAbortHandle,
+  getRequestHeader,
+  getRequestId,
+  isValidTraceparent,
+  setResponseRequestId,
+  type RequestContextCarrier,
+} from '../common/request-context';
 
 type AuthMode = 'none' | 'optional' | 'required';
 
@@ -23,6 +35,8 @@ interface ForwardOptions {
 
 @Injectable()
 export class IdentityProxyService {
+  private readonly logger = new Logger(IdentityProxyService.name);
+
   constructor(private readonly config: ConfigService) {}
 
   async forward(
@@ -32,28 +46,42 @@ export class IdentityProxyService {
     body?: unknown,
     options: ForwardOptions = {},
   ) {
+    const request = req as RequestContextCarrier;
+    const requestId = getRequestId(request);
+    setResponseRequestId(reply, requestId);
     reply.header('Cache-Control', 'no-store');
-    const fail = (status: number, code: string, message: string) =>
-      reply.code(status).send({
+    const fail = (status: number, code: string, message: string) => {
+      reply.header('Content-Type', 'application/json; charset=utf-8');
+      setResponseRequestId(reply, requestId);
+      reply.header('Cache-Control', 'no-store');
+      return reply.code(status).send({
         error: { code, message, details: [] },
         status,
+        requestId,
       });
+    };
 
     const authMode = options.auth ?? 'none';
-    const authorization = req.headers.authorization;
+    const authorization = getRequestHeader(req.headers, 'authorization');
     if (authorization) {
-      if (
-        authorization.length > 8192 ||
-        !/^Bearer \S+$/i.test(authorization)
-      ) {
+      if (authorization.length > 8192 || !/^Bearer \S+$/i.test(authorization)) {
         return fail(401, 'UNAUTHORIZED', 'Bearer token required');
       }
     } else if (authMode === 'required') {
       return fail(401, 'UNAUTHORIZED', 'Bearer token required');
     }
 
-    const headers: Record<string, string> = { accept: 'application/json' };
+    const headers: Record<string, string> = {
+      accept: 'application/json',
+      'x-correlation-id': requestId,
+      'x-request-id': requestId,
+    };
     if (authorization) headers.authorization = authorization;
+
+    const traceparent = getRequestHeader(req.headers, 'traceparent');
+    if (isValidTraceparent(traceparent)) {
+      headers.traceparent = traceparent;
+    }
 
     let serializedBody: string | undefined;
     if (req.method === 'POST' || req.method === 'PATCH') {
@@ -67,35 +95,62 @@ export class IdentityProxyService {
       headers['content-type'] = 'application/json';
     }
 
-    const userAgent = req.headers['user-agent'];
+    const userAgent = getRequestHeader(req.headers, 'user-agent');
     if (userAgent) headers['user-agent'] = userAgent.slice(0, 512);
 
     const targetPath = this.withAllowedQuery(req, path, options.queryKeys);
+    const gateway = this.config.get<GatewayConfig>('gateway');
     const base =
+      gateway?.upstreams?.identity ??
       this.config.get<string>('IDENTITY_SERVICE_URL') ??
       'http://identity-service:8080';
 
+    const abortHandle = createUpstreamAbortHandle(request, reply, 10_000);
     try {
-      const response = await fetch(
-        `${base.replace(/\/+$/, '')}${targetPath}`,
-        {
-          method: req.method,
-          headers,
-          body: serializedBody,
-          redirect: 'error',
-          signal: AbortSignal.timeout(10000),
-        },
+      const response = await fetch(`${base.replace(/\/+$/, '')}${targetPath}`, {
+        method: req.method,
+        headers,
+        body: serializedBody,
+        redirect: 'error',
+        signal: abortHandle.signal,
+      });
+      const responseHeaders = collectSafeUpstreamResponseHeaders(
+        response.headers,
       );
-      const retryAfter = response.headers.get('retry-after');
-      if (retryAfter && /^\d{1,6}$/.test(retryAfter))
-        reply.header('Retry-After', retryAfter);
-      if (response.status === 204) return reply.code(204).send();
-      if (!response.headers.get('content-type')?.includes('application/json')) {
+      if (response.status === 204) {
+        setResponseRequestId(reply, requestId);
+        reply.header('Cache-Control', 'no-store');
+        return reply.code(204).send();
+      }
+      if (
+        !responseHeaders['content-type']
+          ?.toLowerCase()
+          .includes('application/json')
+      ) {
+        try {
+          await response.body?.cancel();
+        } catch {
+          // The upstream connection is already being discarded.
+        }
         return fail(502, 'BAD_GATEWAY', 'Invalid Identity response');
       }
-      return reply.code(response.status).send(await response.json());
+      for (const [name, value] of Object.entries(responseHeaders)) {
+        if (name !== 'cache-control') {
+          reply.header(name, value);
+        }
+      }
+      setResponseRequestId(reply, requestId);
+      reply.header('Cache-Control', 'no-store');
+      try {
+        return reply.code(response.status).send(await response.json());
+      } catch {
+        return fail(502, 'BAD_GATEWAY', 'Invalid Identity response');
+      }
     } catch {
+      this.logger.error(`Identity upstream failed requestId=${requestId}`);
       return fail(503, 'SERVICE_UNAVAILABLE', 'Identity service unavailable');
+    } finally {
+      abortHandle.cleanup();
     }
   }
 
@@ -123,61 +178,120 @@ export class IdentityProxyService {
 }
 
 @Controller('api/auth')
+@AuthPolicy('required')
 export class IdentityAuthProxyController {
   constructor(private readonly proxy: IdentityProxyService) {}
 
   @Post('login')
-  login(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Body() body: unknown) {
+  @AuthPolicy('public')
+  login(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
     return this.proxy.forward(req, reply, '/auth/login', body);
   }
 
   @Post('register')
-  register(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Body() body: unknown) {
+  @AuthPolicy('public')
+  register(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
     return this.proxy.forward(req, reply, '/auth/register', body);
   }
 
   @Post('refresh')
-  refresh(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Body() body: unknown) {
+  @AuthPolicy('public')
+  refresh(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
     return this.proxy.forward(req, reply, '/auth/refresh', body);
   }
 
   @Post('logout')
-  logout(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Body() body: unknown) {
+  @AuthPolicy('public')
+  logout(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
     return this.proxy.forward(req, reply, '/auth/logout', body);
   }
 
   @Get('me')
   me(@Req() req: FastifyRequest, @Res() reply: FastifyReply) {
-    return this.proxy.forward(req, reply, '/users/me', undefined, { auth: 'required' });
+    return this.proxy.forward(req, reply, '/users/me', undefined, {
+      auth: 'required',
+    });
   }
 
   @Patch('me')
-  updateMe(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Body() body: unknown) {
-    return this.proxy.forward(req, reply, '/users/me', body, { auth: 'required' });
+  updateMe(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    return this.proxy.forward(req, reply, '/users/me', body, {
+      auth: 'required',
+    });
   }
 
   @Post('change-password')
-  changePassword(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Body() body: unknown) {
-    return this.proxy.forward(req, reply, '/auth/change-password', body, { auth: 'required' });
+  changePassword(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    return this.proxy.forward(req, reply, '/auth/change-password', body, {
+      auth: 'required',
+    });
   }
 
   @Post('otp/request')
-  requestOtp(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Body() body: unknown) {
-    return this.proxy.forward(req, reply, '/auth/otp/request', body, { auth: 'optional' });
+  @AuthPolicy('optional')
+  requestOtp(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    return this.proxy.forward(req, reply, '/auth/otp/request', body, {
+      auth: 'optional',
+    });
   }
 
   @Post('otp/verify')
-  verifyOtp(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Body() body: unknown) {
-    return this.proxy.forward(req, reply, '/auth/otp/verify', body, { auth: 'optional' });
+  @AuthPolicy('optional')
+  verifyOtp(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    return this.proxy.forward(req, reply, '/auth/otp/verify', body, {
+      auth: 'optional',
+    });
   }
 
   @Post('forgot-password')
-  forgotPassword(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Body() body: unknown) {
+  @AuthPolicy('public')
+  forgotPassword(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
     return this.proxy.forward(req, reply, '/auth/forgot-password', body);
   }
 
   @Post('reset-password')
-  resetPassword(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Body() body: unknown) {
+  @AuthPolicy('public')
+  resetPassword(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
     return this.proxy.forward(req, reply, '/auth/reset-password', body);
   }
 
@@ -191,7 +305,9 @@ export class IdentityAuthProxyController {
 
   @Delete('sessions')
   revokeAllSessions(@Req() req: FastifyRequest, @Res() reply: FastifyReply) {
-    return this.proxy.forward(req, reply, '/users/me/sessions', undefined, { auth: 'required' });
+    return this.proxy.forward(req, reply, '/users/me/sessions', undefined, {
+      auth: 'required',
+    });
   }
 
   @Delete('sessions/:sessionId')
@@ -211,17 +327,26 @@ export class IdentityAuthProxyController {
 }
 
 @Controller('api/users')
+@AuthPolicy('required')
 export class IdentityUsersProxyController {
   constructor(private readonly proxy: IdentityProxyService) {}
 
   @Get('me')
   me(@Req() req: FastifyRequest, @Res() reply: FastifyReply) {
-    return this.proxy.forward(req, reply, '/users/me', undefined, { auth: 'required' });
+    return this.proxy.forward(req, reply, '/users/me', undefined, {
+      auth: 'required',
+    });
   }
 
   @Patch('me')
-  updateMe(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Body() body: unknown) {
-    return this.proxy.forward(req, reply, '/users/me', body, { auth: 'required' });
+  updateMe(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    return this.proxy.forward(req, reply, '/users/me', body, {
+      auth: 'required',
+    });
   }
 
   @Get('me/sessions')
@@ -234,7 +359,9 @@ export class IdentityUsersProxyController {
 
   @Delete('me/sessions')
   revokeAllSessions(@Req() req: FastifyRequest, @Res() reply: FastifyReply) {
-    return this.proxy.forward(req, reply, '/users/me/sessions', undefined, { auth: 'required' });
+    return this.proxy.forward(req, reply, '/users/me/sessions', undefined, {
+      auth: 'required',
+    });
   }
 
   @Delete('me/sessions/:sessionId')

@@ -27,13 +27,13 @@ describe('notification gateway routes', () => {
   afterEach(() => jest.restoreAllMocks());
   afterAll(async () => app.close());
   it.each(['/api/notifications', '/api/v1/notifications'])(
-    'forwards %s with only the bearer token',
+    'forwards %s with only allowlisted headers',
     async (prefix) => {
-      const request = jest
-        .spyOn(globalThis, 'fetch')
-        .mockResolvedValue(
-          new Response(JSON.stringify({ items: [], nextCursor: null })),
-        );
+      const request = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), {
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
       const response = await app.inject({
         url: `${prefix}?limit=4&unreadOnly=true`,
         headers: {
@@ -46,7 +46,11 @@ describe('notification gateway routes', () => {
       expect(request).toHaveBeenCalledWith(
         'http://notification.internal:3000/api/v1/notifications?limit=4&unreadOnly=true',
         expect.objectContaining({
-          headers: { authorization: 'Bearer opaque-token' },
+          headers: expect.objectContaining({
+            authorization: 'Bearer opaque-token',
+            'x-request-id': expect.any(String),
+            'x-correlation-id': expect.any(String),
+          }),
           signal: expect.any(AbortSignal) as AbortSignal,
         }),
       );
@@ -60,6 +64,7 @@ describe('notification gateway routes', () => {
     jest.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ error: { code: 'NOT_FOUND' } }), {
         status: 404,
+        headers: { 'content-type': 'application/json' },
       }),
     );
     const response = await app.inject({

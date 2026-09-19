@@ -1,56 +1,19 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'node:crypto';
+import type { GatewayConfig } from '../config/gateway.config';
+import {
+  collectSafeUpstreamResponseHeaders,
+  createUpstreamAbortHandle,
+  getRequestHeader,
+  getRequestId,
+  isValidTraceparent,
+  type RequestContextCarrier,
+} from '../common/request-context';
 
 export interface ProxyExtractionResult {
   status: number;
   data: unknown;
   headers: Record<string, string>;
-}
-
-function toHeaderString(val: unknown): string | undefined {
-  if (typeof val === 'string') {
-    return val;
-  }
-  if (typeof val === 'number' || typeof val === 'boolean') {
-    return String(val);
-  }
-  if (Array.isArray(val) && val.length > 0) {
-    const first: unknown = val[0];
-    if (typeof first === 'string') {
-      return first;
-    }
-    if (typeof first === 'number' || typeof first === 'boolean') {
-      return String(first);
-    }
-  }
-  return undefined;
-}
-
-function getHeader(
-  headers: Record<string, unknown> | undefined,
-  name: string,
-): string | undefined {
-  if (!headers) {
-    return undefined;
-  }
-  const direct = headers[name];
-  if (direct !== undefined && direct !== null) {
-    const parsed = toHeaderString(direct);
-    if (parsed !== undefined) {
-      return parsed;
-    }
-  }
-  const lower = name.toLowerCase();
-  for (const [key, val] of Object.entries(headers)) {
-    if (key.toLowerCase() === lower && val !== undefined && val !== null) {
-      const parsed = toHeaderString(val);
-      if (parsed !== undefined) {
-        return parsed;
-      }
-    }
-  }
-  return undefined;
 }
 
 function isReadableStream(val: unknown): boolean {
@@ -64,6 +27,46 @@ function isReadableStream(val: unknown): boolean {
     typeof candidate['getReader'] === 'function' ||
     typeof candidate['_read'] === 'function'
   );
+}
+
+async function readUpstreamResponseBody(
+  response: Response,
+  signal: AbortSignal,
+): Promise<string> {
+  if (!response.body) {
+    return '';
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  const onAbort = () => {
+    void reader.cancel().catch(() => undefined);
+  };
+
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (signal.aborted) {
+        throw new Error(
+          'OCR upstream request aborted during response body read',
+        );
+      }
+      if (done) {
+        break;
+      }
+      if (value) {
+        chunks.push(value);
+      }
+    }
+
+    return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString(
+      'utf8',
+    );
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+    reader.releaseLock();
+  }
 }
 
 @Injectable()
@@ -88,12 +91,28 @@ export class OcrService {
       body?: unknown;
       raw?: unknown;
     },
+    reply?: { raw?: unknown },
   ): Promise<ProxyExtractionResult> {
-    const incomingRequestId = getHeader(req?.headers, 'x-request-id');
-    const requestId =
-      incomingRequestId && incomingRequestId.trim() !== ''
-        ? incomingRequestId.trim()
-        : randomUUID();
+    const request = req as RequestContextCarrier;
+    const requestId = getRequestId(request);
+    const errorHeaders = {
+      'content-type': 'application/json; charset=utf-8',
+      'x-correlation-id': requestId,
+      'x-request-id': requestId,
+    };
+
+    const busyResult = (): ProxyExtractionResult => ({
+      status: 503,
+      data: {
+        error: {
+          code: 'OCR_BUSY',
+          message: 'OCR service is temporarily unavailable',
+          retryable: true,
+        },
+        requestId,
+      },
+      headers: errorHeaders,
+    });
 
     if (
       !workspaceId ||
@@ -110,18 +129,19 @@ export class OcrService {
           },
           requestId,
         },
-        headers: { 'x-request-id': requestId },
+        headers: errorHeaders,
       };
     }
 
-    const appEnv = this.configService.get<string>('APP_ENV');
-    const devBypass = this.configService.get<string | boolean>(
-      'OCR_ALLOW_UNAUTHENTICATED_DEV',
-    );
+    const gateway = this.configService.get<GatewayConfig>('gateway');
+    const appEnv = gateway?.appEnv ?? this.configService.get<string>('APP_ENV');
+    const devBypass =
+      gateway?.ocr?.allowUnauthenticatedDev ??
+      this.configService.get<string | boolean>('OCR_ALLOW_UNAUTHENTICATED_DEV');
     const isDevBypass =
       appEnv === 'development' && (devBypass === 'true' || devBypass === true);
 
-    const authHeader = getHeader(req?.headers, 'authorization');
+    const authHeader = getRequestHeader(req?.headers, 'authorization');
 
     if (!isDevBypass) {
       if (
@@ -139,12 +159,13 @@ export class OcrService {
             },
             requestId,
           },
-          headers: { 'x-request-id': requestId },
+          headers: errorHeaders,
         };
       }
     }
 
     const forwardHeaders: Record<string, string> = {
+      'x-correlation-id': requestId,
       'x-workspace-id': workspaceId,
       'x-request-id': requestId,
     };
@@ -153,12 +174,12 @@ export class OcrService {
       forwardHeaders['authorization'] = authHeader;
     }
 
-    const traceparent = getHeader(req?.headers, 'traceparent');
-    if (traceparent && traceparent.trim() !== '') {
-      forwardHeaders['traceparent'] = traceparent.trim();
+    const traceparent = getRequestHeader(req?.headers, 'traceparent');
+    if (isValidTraceparent(traceparent)) {
+      forwardHeaders.traceparent = traceparent;
     }
 
-    const contentType = getHeader(req?.headers, 'content-type');
+    const contentType = getRequestHeader(req?.headers, 'content-type');
     if (contentType && contentType.trim() !== '') {
       forwardHeaders['content-type'] = contentType.trim();
     }
@@ -189,7 +210,8 @@ export class OcrService {
     }
 
     const ocrBaseUrl = (
-      this.configService.get<string>('OCR_SERVICE_URL') ||
+      gateway?.upstreams?.ocr ??
+      this.configService.get<string>('OCR_SERVICE_URL') ??
       'http://ocr-service:8000'
     ).replace(/\/+$/, '');
     const targetUrl = `${ocrBaseUrl}/v1/extractions`;
@@ -198,61 +220,94 @@ export class OcrService {
       method: 'POST',
       headers: forwardHeaders,
       body: body as BodyInit,
+      redirect: 'error',
+      signal: undefined,
       ...(duplex ? { duplex } : {}),
     };
 
-    let response: Response;
+    const abortHandle = createUpstreamAbortHandle(request, reply, 10_000);
+    init.signal = abortHandle.signal;
+    const diagnosticStart = performance.now();
+    const diagnostic = (phase: string) =>
+      this.logger.warn({
+        phase,
+        elapsedMs: Math.round(performance.now() - diagnosticStart),
+        aborted: abortHandle.signal.aborted,
+      });
+    abortHandle.signal.addEventListener('abort', () =>
+      diagnostic('deadline-or-disconnect'),
+    );
+
     try {
-      response = await this.fetch(targetUrl, init);
+      const response = await this.fetch(targetUrl, init);
+      diagnostic('headers-received');
+
+      const responseHeaders = collectSafeUpstreamResponseHeaders(
+        response.headers,
+      );
+      responseHeaders['x-request-id'] = requestId;
+      responseHeaders['x-correlation-id'] = requestId;
+
+      let responseData: unknown;
+      if (response.status !== 204) {
+        const resContentType = responseHeaders['content-type'] ?? '';
+        if (
+          response.status >= 400 &&
+          !resContentType.toLowerCase().includes('application/json')
+        ) {
+          try {
+            await response.body?.cancel();
+          } catch {
+            // The upstream connection is already being discarded.
+          }
+          return busyResult();
+        }
+        if (resContentType.toLowerCase().includes('application/json')) {
+          try {
+            const text = await readUpstreamResponseBody(
+              response,
+              abortHandle.signal,
+            );
+            responseData = JSON.parse(text) as unknown;
+            diagnostic('json-completed');
+          } catch (error) {
+            diagnostic('json-rejected');
+            if (abortHandle.signal.aborted) {
+              throw error;
+            }
+            responseData = null;
+          }
+        } else {
+          const text = await readUpstreamResponseBody(
+            response,
+            abortHandle.signal,
+          );
+          try {
+            responseData = JSON.parse(text) as unknown;
+          } catch {
+            responseData = text;
+          }
+        }
+      }
+
+      if (abortHandle.signal.aborted) {
+        throw new Error(
+          'OCR upstream request aborted during response handling',
+        );
+      }
+
+      return {
+        status: response.status,
+        data: responseData,
+        headers: responseHeaders,
+      };
     } catch {
       this.logger.error('OCR service upstream connection failed', {
         requestId,
       });
-      return {
-        status: 503,
-        data: {
-          error: {
-            code: 'OCR_BUSY',
-            message: 'OCR service is temporarily unavailable',
-            retryable: true,
-          },
-          requestId,
-        },
-        headers: { 'x-request-id': requestId },
-      };
+      return busyResult();
+    } finally {
+      abortHandle.cleanup();
     }
-
-    const responseHeaders: Record<string, string> = {};
-    if (response.headers && typeof response.headers.forEach === 'function') {
-      response.headers.forEach((value, key) => {
-        responseHeaders[key.toLowerCase()] = value;
-      });
-    }
-    if (!responseHeaders['x-request-id']) {
-      responseHeaders['x-request-id'] = requestId;
-    }
-
-    let responseData: unknown;
-    const resContentType = responseHeaders['content-type'] ?? '';
-    if (resContentType.includes('application/json')) {
-      try {
-        responseData = (await response.json()) as unknown;
-      } catch {
-        responseData = null;
-      }
-    } else {
-      const text = await response.text();
-      try {
-        responseData = JSON.parse(text) as unknown;
-      } catch {
-        responseData = text;
-      }
-    }
-
-    return {
-      status: response.status,
-      data: responseData,
-      headers: responseHeaders,
-    };
   }
 }

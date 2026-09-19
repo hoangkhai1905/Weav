@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpException,
+  Logger,
   Module,
   Param,
   Patch,
@@ -13,9 +14,23 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { GatewayConfig } from '../config/gateway.config';
+import { AuthPolicy } from '../auth/auth-policy.decorator';
+import {
+  collectSafeUpstreamResponseHeaders,
+  createUpstreamAbortHandle,
+  getRequestHeader,
+  getRequestId,
+  isValidTraceparent,
+  setResponseRequestId,
+  type RequestContextCarrier,
+} from '../common/request-context';
 
 @Controller(['api/v1/notifications', 'api/notifications'])
+@AuthPolicy('required')
 export class NotificationProxyController {
+  private readonly logger = new Logger(NotificationProxyController.name);
+
   constructor(private readonly config: ConfigService) {}
   @Get() list(
     @Req() request: FastifyRequest,
@@ -56,37 +71,89 @@ export class NotificationProxyController {
     path: string,
     query = '',
   ) {
-    const authorization = req.headers.authorization;
+    const request = req as RequestContextCarrier;
+    const requestId = getRequestId(request);
+    setResponseRequestId(reply, requestId);
+    const authorization = getRequestHeader(req.headers, 'authorization');
     if (
       !authorization ||
       authorization.length > 8192 ||
       !/^Bearer \S+$/i.test(authorization)
     )
       throw new HttpException('Bearer token required', 401);
+    const gateway = this.config.get<GatewayConfig>('gateway');
     const base =
+      gateway?.upstreams?.notification ??
       this.config.get<string>('NOTIFICATION_SERVICE_URL') ??
       'http://notification-service:3000';
+    const headers: Record<string, string> = {
+      accept: 'application/json',
+      authorization,
+      'x-correlation-id': requestId,
+      'x-request-id': requestId,
+    };
+    const traceparent = getRequestHeader(req.headers, 'traceparent');
+    if (isValidTraceparent(traceparent)) {
+      headers.traceparent = traceparent;
+    }
+
+    const fail = (status: number, code: string, message: string) => {
+      reply.header('Content-Type', 'application/json; charset=utf-8');
+      setResponseRequestId(reply, requestId);
+      return reply.code(status).send({
+        error: { code, message, details: [] },
+        status,
+        requestId,
+      });
+    };
+    const abortHandle = createUpstreamAbortHandle(request, reply, 10_000);
     try {
       const response = await fetch(
         `${base.replace(/\/$/, '')}/api/v1/notifications${path}${query ? `?${query}` : ''}`,
         {
           method: req.method,
           redirect: 'error',
-          signal: AbortSignal.timeout(10000),
-          headers: { authorization },
+          signal: abortHandle.signal,
+          headers,
         },
       );
-      const body = (await response.json()) as unknown;
-      return reply.code(response.status).send(body);
+      const responseHeaders = collectSafeUpstreamResponseHeaders(
+        response.headers,
+      );
+      if (response.status === 204) {
+        setResponseRequestId(reply, requestId);
+        return reply.code(204).send();
+      }
+      if (
+        response.headers.get('content-type') &&
+        !response.headers.get('content-type')?.includes('application/json')
+      ) {
+        try {
+          await response.body?.cancel();
+        } catch {
+          // The upstream connection is already being discarded.
+        }
+        return fail(502, 'BAD_GATEWAY', 'Invalid Notification response');
+      }
+      for (const [name, value] of Object.entries(responseHeaders)) {
+        reply.header(name, value);
+      }
+      setResponseRequestId(reply, requestId);
+      try {
+        const body = (await response.json()) as unknown;
+        return reply.code(response.status).send(body);
+      } catch {
+        return fail(502, 'BAD_GATEWAY', 'Invalid Notification response');
+      }
     } catch {
-      return reply.code(503).send({
-        error: {
-          code: 'SERVICE_UNAVAILABLE',
-          message: 'Notification service unavailable',
-          details: [],
-        },
-        status: 503,
-      });
+      this.logger.error(`Notification upstream failed requestId=${requestId}`);
+      return fail(
+        503,
+        'SERVICE_UNAVAILABLE',
+        'Notification service unavailable',
+      );
+    } finally {
+      abortHandle.cleanup();
     }
   }
 }
