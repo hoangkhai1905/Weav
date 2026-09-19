@@ -1,0 +1,318 @@
+openapi: 3.1.0
+info:
+  title: Weav API Gateway Workspace API
+  version: 1.0.0
+  description: >-
+    Gateway-scoped contract for the public Workspace operations. The gateway
+    validates access-token transport and request shape, then forwards the
+    request to the Workspace service without changing downstream business
+    authorization or response status/body semantics.
+servers:
+  - url: http://localhost:3000
+    description: Local API Gateway
+tags:
+  - name: Workspaces
+  - name: Members
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/workspaces:
+    post:
+      tags: [Workspaces]
+      operationId: gatewayCreateWorkspace
+      summary: Create a workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../workspace/openapi.yaml#/components/schemas/CreateWorkspaceRequest"
+      responses:
+        "201":
+          description: Workspace service response.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/WorkspaceResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+    get:
+      tags: [Workspaces]
+      operationId: gatewayListMyWorkspaces
+      summary: List the caller's workspaces
+      parameters:
+        - $ref: "../workspace/openapi.yaml#/components/parameters/Search"
+        - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceRole"
+        - $ref: "../workspace/openapi.yaml#/components/parameters/Page"
+        - $ref: "../workspace/openapi.yaml#/components/parameters/Size"
+        - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceSort"
+        - $ref: "../workspace/openapi.yaml#/components/parameters/Direction"
+      responses:
+        "200":
+          description: Workspace service response.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/WorkspacePageResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /api/v1/workspaces/{workspaceId}:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+    get:
+      tags: [Workspaces]
+      operationId: gatewayGetWorkspace
+      summary: Get an accessible workspace
+      responses:
+        "200":
+          description: Workspace service response.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/WorkspaceResponse"
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+    patch:
+      tags: [Workspaces]
+      operationId: gatewayRenameWorkspace
+      summary: Rename a workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../workspace/openapi.yaml#/components/schemas/RenameWorkspaceRequest"
+      responses:
+        "200":
+          description: Workspace service response.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/WorkspaceResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /api/v1/workspaces/{workspaceId}/members:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+    get:
+      tags: [Members]
+      operationId: gatewayListWorkspaceMembers
+      summary: List workspace members
+      parameters:
+        - $ref: "../workspace/openapi.yaml#/components/parameters/Search"
+        - $ref: "../workspace/openapi.yaml#/components/parameters/MemberRole"
+        - name: canPublishWorkflow
+          in: query
+          required: false
+          schema: { type: boolean }
+        - name: canManageWorkflowState
+          in: query
+          required: false
+          schema: { type: boolean }
+        - $ref: "../workspace/openapi.yaml#/components/parameters/Page"
+        - $ref: "../workspace/openapi.yaml#/components/parameters/Size"
+        - $ref: "../workspace/openapi.yaml#/components/parameters/MemberSort"
+        - $ref: "../workspace/openapi.yaml#/components/parameters/Direction"
+      responses:
+        "200":
+          description: Member page from the Workspace service.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/MemberPageResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+    post:
+      tags: [Members]
+      operationId: gatewayAddWorkspaceMember
+      summary: Add a member to a workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../workspace/openapi.yaml#/components/schemas/AddMemberRequest"
+      responses:
+        "201":
+          description: Member created by the Workspace service.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/MemberView"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /api/v1/workspaces/{workspaceId}/members/{userId}/permissions:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+      - $ref: "../workspace/openapi.yaml#/components/parameters/UserId"
+    patch:
+      tags: [Members]
+      operationId: gatewayUpdateWorkspaceMemberPermissions
+      summary: Update a member's workflow permissions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../workspace/openapi.yaml#/components/schemas/UpdateMemberPermissionsRequest"
+      responses:
+        "200":
+          description: Updated member from the Workspace service.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/MemberView"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /api/v1/workspaces/{workspaceId}/members/{userId}:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+      - $ref: "../workspace/openapi.yaml#/components/parameters/UserId"
+    delete:
+      tags: [Members]
+      operationId: gatewayRemoveWorkspaceMember
+      summary: Remove a member from a workspace
+      responses:
+        "204":
+          description: Member removed; no response body.
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /api/v1/workspaces/{workspaceId}/members/me:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+    delete:
+      tags: [Members]
+      operationId: gatewayLeaveWorkspace
+      summary: Leave a workspace as the authenticated user
+      responses:
+        "204":
+          description: Membership left; no response body.
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    GatewayBadRequest:
+      description: Gateway validation failure or a preserved Workspace 400 body.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: "#/components/schemas/GatewayErrorResponse"
+              - $ref: "../workspace/openapi.yaml#/components/schemas/ErrorResponse"
+    GatewayUnauthorized:
+      description: Gateway authentication failure or a preserved Workspace 401 body.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: "#/components/schemas/GatewayErrorResponse"
+              - $ref: "../workspace/openapi.yaml#/components/schemas/ErrorResponse"
+    GatewayBadGateway:
+      description: The upstream response was invalid JSON or had an unsafe media type.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/GatewayErrorResponse"
+    GatewayUnavailable:
+      description: Workspace upstream timeout, disconnect, or connection failure.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/GatewayErrorResponse"
+    GatewayInternalError:
+      description: Gateway failure or a preserved Workspace 500 body.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: "#/components/schemas/GatewayErrorResponse"
+              - $ref: "../workspace/openapi.yaml#/components/schemas/ErrorResponse"
+  schemas:
+    GatewayErrorResponse:
+      type: object
+      required: [error, requestId]
+      properties:
+        error:
+          type: object
+          required: [code, message, details]
+          properties:
+            code: { type: string, pattern: "^[A-Z0-9_:-]{1,64}$" }
+            message: { type: string, maxLength: 512 }
+            details: { type: array }
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        requestId:
+          type: string
+          minLength: 1
+          maxLength: 128

@@ -210,6 +210,7 @@ NOTIFICATION_DB_USERNAME=
 NOTIFICATION_DB_PASSWORD=
 NOTIFICATION_DB_SSL_MODE=require
 ```
+
 ### Aiven Valkey
 
 ```env
@@ -387,6 +388,54 @@ pnpm --dir services/api-gateway build
 pnpm --dir services/bot-service build
 pnpm --dir services/notification-service build
 ```
+
+### API Gateway development setup
+
+Gateway chạy bằng NestJS/Fastify và nhận cấu hình từ process environment,
+Compose hoặc secret store được phê duyệt. Chỉ ghi tên biến, không ghi secret
+value vào file này hoặc vào shell history:
+
+```text
+APP_ENV, PORT
+JWT_ACCESS_SECRET, JWT_ISSUER, JWT_AUDIENCE, JWT_CLOCK_SKEW
+IDENTITY_SERVICE_URL, WORKSPACE_SERVICE_URL, WORKFLOW_SERVICE_URL
+AI_SERVICE_URL, BOT_SERVICE_URL, NOTIFICATION_SERVICE_URL, OCR_SERVICE_URL
+CORS_ALLOWED_ORIGINS, OCR_ALLOW_UNAUTHENTICATED_DEV
+GATEWAY_GENERAL_RATE_LIMIT, GATEWAY_AUTH_RATE_LIMIT, GATEWAY_OCR_RATE_LIMIT
+GATEWAY_RATE_LIMIT_WINDOW_MS
+```
+
+Từ repository root, sau khi đã cung cấp các tên cấu hình cần thiết:
+
+```powershell
+pnpm --dir services/api-gateway start:dev
+```
+
+Kiểm tra source-level Gateway mà không cần upstream thật:
+
+```powershell
+pnpm --dir services/api-gateway test -- --runInBand --silent
+pnpm --dir services/api-gateway test:e2e -- --runInBand --silent
+pnpm --dir services/api-gateway exec tsc --noEmit
+pnpm --dir services/api-gateway build
+pnpm --dir services/api-gateway exec eslint "{src,test}/**/*.ts"
+```
+
+`GET /health` là liveness public và không gọi Identity/Workspace. `GET /ready`
+là readiness public, probe song song hai service này qua
+`/actuator/health/readiness`, đọc cả response body trong deadline hai giây và
+trả aggregate `200`/`503` đã được sanitize. Notification và OCR không làm
+Gateway unready. Rate limiter dùng in-memory storage cho một Gateway replica;
+không coi đây là enforcement phân tán khi scale nhiều replica.
+
+Route matrix, mapping Workspace, auth policy, error contract, OCR streaming
+risk và rollback được ghi tại `services/api-gateway/README.md`. Contract
+Workspace phía Gateway nằm ở `packages/contracts/http/gateway/openapi.yaml`.
+
+Fixture E2E không thay thế real-service proof. Để kiểm tra login Identity →
+Workspace qua Gateway hoặc browser smoke, phải có deployment được ủy quyền,
+test account chuyên dụng và dữ liệu test có cleanup rõ ràng; không tự tạo dữ
+liệu production hoặc đọc/paste credential.
 
 ---
 

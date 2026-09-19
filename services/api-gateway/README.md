@@ -1,98 +1,185 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Weav API Gateway
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+The API Gateway is the public NestJS/Fastify ingress for the Identity,
+Workspace, Notification, and OCR services. It owns transport authentication,
+explicit route registration, request correlation, safe header forwarding,
+request deadlines, rate limiting, and operational endpoints. Domain
+authorization and persistence remain in the downstream services.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+The Gateway contract published at
+`packages/contracts/http/gateway/openapi.yaml` is intentionally scoped to the
+public Workspace surface. It is not a declaration that every Gateway route is
+covered by that document.
 
-## Description
+## Local development
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+From the repository root:
 
-## Project setup
-
-```bash
-$ pnpm install
+```powershell
+pnpm install
+pnpm --dir services/api-gateway start:dev
 ```
 
-## Compile and run the project
+Supply the validated environment variable names through the local shell,
+Compose, or an approved secret store. Do not commit `.env` files or put secret
+values in scripts, logs, or this README.
 
-```bash
-# development
-$ pnpm run start
+Runtime and authentication names:
 
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+```text
+APP_ENV
+PORT
+JWT_ACCESS_SECRET
+JWT_ISSUER
+JWT_AUDIENCE
+JWT_CLOCK_SKEW
 ```
 
-## Run tests
+Validated upstream and CORS names:
 
-```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+```text
+IDENTITY_SERVICE_URL
+WORKSPACE_SERVICE_URL
+WORKFLOW_SERVICE_URL
+AI_SERVICE_URL
+BOT_SERVICE_URL
+NOTIFICATION_SERVICE_URL
+OCR_SERVICE_URL
+CORS_ALLOWED_ORIGINS
+OCR_ALLOW_UNAUTHENTICATED_DEV
 ```
 
-## Deployment
+Rate-limit names:
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+```text
+GATEWAY_GENERAL_RATE_LIMIT
+GATEWAY_AUTH_RATE_LIMIT
+GATEWAY_OCR_RATE_LIMIT
+GATEWAY_RATE_LIMIT_WINDOW_MS
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+The validated defaults and production-only configuration checks live in
+`src/config/gateway.config.ts`. The local development OCR bypass is permitted
+only for the explicit development environment and only when the request has no
+Authorization header.
 
-## Resources
+## Route and authentication matrix
 
-Check out a few resources that may come in handy when working with NestJS:
+Gateway route declarations are explicit. Unknown paths, internal service paths,
+and unsupported methods are not forwarded.
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+| Gateway route                                                                    | Methods                         | Auth policy                                                            | Upstream                            |
+| -------------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------- | ----------------------------------- |
+| `/`                                                                              | `GET`                           | Public                                                                 | Gateway                             |
+| `/health`, `/ready`                                                              | `GET`                           | Public                                                                 | Gateway                             |
+| `/api/auth/login`, `/api/auth/register`, `/api/auth/refresh`, `/api/auth/logout` | `POST`                          | Public                                                                 | Identity                            |
+| `/api/auth/forgot-password`, `/api/auth/reset-password`                          | `POST`                          | Public                                                                 | Identity                            |
+| `/api/auth/otp/request`, `/api/auth/otp/verify`                                  | `POST`                          | Optional bearer                                                        | Identity                            |
+| `/api/auth/me`                                                                   | `GET`, `PATCH`                  | Required bearer                                                        | Identity                            |
+| `/api/auth/change-password`                                                      | `POST`                          | Required bearer                                                        | Identity                            |
+| `/api/auth/sessions`                                                             | `GET`, `DELETE`                 | Required bearer                                                        | Identity                            |
+| `/api/auth/sessions/{sessionId}`                                                 | `DELETE`                        | Required bearer                                                        | Identity                            |
+| `/api/users/me`                                                                  | `GET`, `PATCH`                  | Required bearer                                                        | Identity                            |
+| `/api/users/me/sessions`                                                         | `GET`, `DELETE`                 | Required bearer                                                        | Identity                            |
+| `/api/users/me/sessions/{sessionId}`                                             | `DELETE`                        | Required bearer                                                        | Identity                            |
+| `/api/v1/notifications/**`, `/api/notifications/**`                              | Registered notification methods | Required bearer                                                        | Notification                        |
+| `/api/v1/workspaces`                                                             | `POST`, `GET`                   | Required bearer                                                        | `/workspaces`                       |
+| `/api/v1/workspaces/{workspaceId}`                                               | `GET`, `PATCH`                  | Required bearer                                                        | `/workspaces/{workspaceId}`         |
+| `/api/v1/workspaces/{workspaceId}/members`                                       | `GET`, `POST`                   | Required bearer                                                        | `/workspaces/{workspaceId}/members` |
+| `/api/v1/workspaces/{workspaceId}/members/{userId}/permissions`                  | `PATCH`                         | Required bearer                                                        | Matching Workspace suffix           |
+| `/api/v1/workspaces/{workspaceId}/members/{userId}`                              | `DELETE`                        | Required bearer                                                        | Matching Workspace suffix           |
+| `/api/v1/workspaces/{workspaceId}/members/me`                                    | `DELETE`                        | Required bearer                                                        | Matching Workspace suffix           |
+| `/api/v1/workspaces/{workspaceId}/ocr/extractions`                               | `POST`                          | Required bearer, or the existing development-only missing-token bypass | OCR `/v1/extractions`               |
 
-## Support
+The Workspace rows are exactly the nine public operations in the Workspace
+OpenAPI contract. The internal Workspace access operation is deliberately not a
+Gateway route. The literal `members/me` route is registered separately from the
+generic `{userId}` route so route precedence cannot widen the API.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+## Transport and response behavior
 
-## Stay in touch
+- A supplied bearer token is verified at the edge using the configured issuer,
+  audience, algorithm, signature, and time claims. Optional routes may omit a
+  token, but a malformed or invalid supplied token is rejected rather than
+  treated as anonymous.
+- The original verified `Authorization` value, canonical request/correlation
+  ID, and valid trace context are forwarded as allowed. Cookies, internal
+  service keys, forged user/role headers, forwarded-IP spoofing, and hop-by-hop
+  headers are not forwarded.
+- Workspace input is validated before the proxy runs. UUIDs, strict bodies,
+  allow-listed query values, pagination bounds, and boolean filters follow the
+  Workspace contract. Rejected input does not call the upstream.
+- Successful downstream JSON, documented business-error status/body pairs, and
+  bodyless `204` responses are preserved. Gateway-generated errors use the
+  correlated `{ error: { code, message, details }, status, requestId }`
+  envelope.
+- Redirects are rejected. Upstream connection failures, deadline expiry, or
+  client disconnects return the existing sanitized service-unavailable contract;
+  mutating requests are not retried. `429` responses include `Retry-After`.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## Health, readiness, and rate limits
 
-## License
+`GET /health` is process liveness. It is public, exempt from throttling, and
+does not call an upstream service.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+`GET /ready` is public and probes Identity and Workspace in parallel at their
+verified `/actuator/health/readiness` paths. Each probe has a two-second
+deadline that includes reading the response body. Both services must report
+HTTP 200 for Gateway `200`; a down, failed, redirected, or stalled probe yields
+Gateway `503`. The response exposes only aggregate `up`/`down` status and the
+correlation ID. Notification and OCR are not readiness dependencies.
+
+The limiter is intentionally in-memory and single-replica:
+
+- General traffic uses one socket-IP budget across routes.
+- Public authentication mutations use a separate socket-IP budget.
+- OCR uses the verified JWT `principal.sub`; IP fallback exists only for the
+  explicit development OCR bypass.
+- `trustProxy` is false, forwarded headers do not choose a bucket, and health
+  plus CORS preflight are exempt.
+
+Distributed rate storage and multi-replica enforcement require a separate
+design and rollout decision.
+
+## OCR streaming risk
+
+OCR preserves the accepted progressive multipart/raw-stream behavior and uses a
+ten-second upstream deadline covering response-body reads, plus disconnect
+cancellation. The established response is sanitized `503 OCR_BUSY` when the
+upstream cannot complete in time.
+
+The existing raw-stream path may bypass the ordinary Fastify parser body-size
+limit. This compatibility risk is intentionally not changed here; a strict
+stream cap needs a separate measurement, client-compatibility review, and
+rollout plan before being enabled.
+
+## Verification commands
+
+```powershell
+pnpm --dir services/api-gateway test -- --runInBand --silent
+pnpm --dir services/api-gateway test:e2e -- --runInBand --silent
+pnpm --dir services/api-gateway exec tsc --noEmit
+pnpm --dir services/api-gateway build
+pnpm --dir services/api-gateway exec eslint "{src,test}/**/*.ts"
+```
+
+The package E2E fixtures prove Gateway-boundary behavior. They do not replace
+real Identity/Workspace deployment or an authenticated browser smoke test.
+
+## Deferred features
+
+Workflow, AI, and Bot public routes; distributed throttling; OAuth browser
+cookie migration; realtime; client/database changes; admin/avatar expansion;
+and production stream-cap changes are outside this Gateway slice. Real-service
+login, Workspace mutation/access, and authenticated browser compatibility proof
+remain deployment-gated follow-up checks.
+
+## Rollback
+
+The Gateway has no database migration in this slice. If rollout verification
+fails, route traffic back to the previous Gateway artifact or revert the
+isolated Gateway change set through the normal reviewed VCS process. Keep the
+Identity, Workspace, Notification, and OCR services unchanged while rolling
+back the ingress. Re-evaluate the readiness and limiter configuration before a
+retry; do not compensate by widening routes, disabling JWT verification, or
+removing deadline checks.
