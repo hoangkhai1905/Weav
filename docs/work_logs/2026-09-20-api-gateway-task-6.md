@@ -168,10 +168,41 @@ Complete for the authorized final verification, documentation, and handoff scope
   regenerable GitNexus/dependency/build content. Cleanup was clean with
   108,003 ignored dependency/cache/build entries and no unique user documents.
 - Main preservation target remains 922 unrelated staged paths, 4 original
-  unrelated unstaged edits, and 5 untracked paths. No blanket staging,
+  unrelated unstaged edits, and 2 unrelated untracked paths; the 3 Gateway
+  planning documents were consolidated into the scoped documentation commits.
+  No blanket staging,
   stash/autostash, reset, checkout, clean, branch deletion, or push is used.
 - Worktree removal is authorized only after the manifest/hash verification and
   ancestry checks pass. Removal targets are exactly
   `D:/End/Weav-worktrees/api-gateway-v1` and
   `D:/End/Weav-worktrees/api-gateway-cleanup`; main and the prior integration
   backup are not removal targets.
+
+## Worktree removal completed — 2026-09-20
+
+- Archive verification passed for all 17 source-document/ledger pairs with
+  zero SHA-256 mismatches. No ignored real `.env` names were present in either
+  target, and cleanup contained no sensitive or unique documentation files.
+- Ordinary `git worktree remove` refused v1 because of its backed-up dirty and
+  untracked documents. Cleanup's ordinary removal deregistered it but hit a
+  Windows filename-length error while deleting regenerable ignored output.
+- Git force-removal was used only for the exact authorized v1 path. The
+  cleanup registration was already gone; its remaining exact physical path was
+  removed only after the inventory/archive checks using the validated target
+  path. No parent directory, main checkout, branch, or integration backup was
+  removed.
+- Final `git worktree list --porcelain` contains only `D:/End/Weav` on
+  `api-gateway` at `29dc042dbbcbf725a637316eecaea1c0118f9c93`; both target
+  paths are absent. The source and cleanup commits remain ancestors of main.
+- The main index still has 922 staged paths with staged-list SHA-256
+  `942542b7febd6c4d64192a70244dbfd32a9476e66c24e81866e7b3a63deb7987`.
+  Comparing all non-Gateway index entries before/after consolidation produced
+  the same 2053-entry SHA-256
+  `268d40502a0f78a7001e8bab2dd6038b39a51839a01c1054fef201bccb08d39d`.
+  Remaining unrelated state is four unstaged files and two untracked
+  directories; the Gateway paths, `.env.example`, and SETUP are clean.
+- Recovery: use
+  `D:/End/Weav-gateway-worktree-archive-20260920-final/MANIFEST.md` and its
+  SHA-256-listed files to restore any archived plan, report, worklog, or
+  template. Gateway source is available in main at the recorded HEAD;
+  dependencies/build/GitNexus caches are intentionally regenerable.
