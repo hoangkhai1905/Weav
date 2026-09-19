@@ -80,7 +80,11 @@ function writeJson(
 async function readBody(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    chunks.push(
+      Buffer.isBuffer(chunk)
+        ? chunk
+        : Buffer.from(chunk as string | Uint8Array),
+    );
   }
   return Buffer.concat(chunks).toString('utf8');
 }
@@ -533,7 +537,6 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
       body: string;
     }>((resolve, reject) => {
       let settled = false;
-      let delayTimer: ReturnType<typeof setTimeout> | undefined;
       const client = httpRequest(
         {
           host: '127.0.0.1',
@@ -568,7 +571,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
         }
       });
       client.write(firstChunk);
-      delayTimer = setTimeout(() => {
+      const delayTimer = setTimeout(() => {
         client.end(remainingBody);
       }, 100);
     });
@@ -829,7 +832,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
           );
           resolve();
         } catch (error) {
-          reject(error);
+          reject(error instanceof Error ? error : new Error(String(error)));
         }
       })();
     });
@@ -861,7 +864,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
         error: expect.objectContaining({
           code: 'BAD_REQUEST',
           details: [],
-        }),
+        }) as unknown,
         requestId: 'req-invalid-json',
       }),
     );
@@ -885,7 +888,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
         error: expect.objectContaining({
           code: 'UNSUPPORTED_MEDIA_TYPE',
           details: [],
-        }),
+        }) as unknown,
         requestId: 'req-unsupported-media',
       }),
     );
@@ -909,7 +912,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
         error: expect.objectContaining({
           code: 'PAYLOAD_TOO_LARGE',
           details: [],
-        }),
+        }) as unknown,
         requestId: 'req-too-large',
       }),
     );

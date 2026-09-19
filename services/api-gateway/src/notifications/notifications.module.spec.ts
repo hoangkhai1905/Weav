@@ -48,9 +48,9 @@ describe('notification gateway routes', () => {
         expect.objectContaining({
           headers: expect.objectContaining({
             authorization: 'Bearer opaque-token',
-            'x-request-id': expect.any(String),
-            'x-correlation-id': expect.any(String),
-          }),
+            'x-request-id': expect.any(String) as unknown,
+            'x-correlation-id': expect.any(String) as unknown,
+          }) as unknown,
           signal: expect.any(AbortSignal) as AbortSignal,
         }),
       );

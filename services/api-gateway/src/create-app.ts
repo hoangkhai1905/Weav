@@ -10,7 +10,6 @@ import {
   attachRequestContext,
   resolveRequestId,
   setResponseRequestId,
-  type RequestContextCarrier,
 } from './common/request-context';
 
 export async function createApp(): Promise<NestFastifyApplication> {
@@ -24,10 +23,8 @@ export async function createApp(): Promise<NestFastifyApplication> {
 
   const fastify = app.getHttpAdapter().getInstance();
   fastify.addHook('onRequest', (request, reply, done) => {
-    const requestId = resolveRequestId(
-      request.headers as Record<string, unknown>,
-    );
-    attachRequestContext(request as RequestContextCarrier, requestId);
+    const requestId = resolveRequestId(request.headers);
+    attachRequestContext(request, requestId);
     setResponseRequestId(reply, requestId);
     done();
   });

@@ -94,7 +94,7 @@ describe('AccessTokenService real signatures', () => {
     ['aud', ['wrong']],
   ])('rejects invalid %s=%s', async (claim, value) => {
     await expect(
-      service.verify(sign({ ...claims(), [claim as string]: value })),
+      service.verify(sign({ ...claims(), [claim]: value })),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
   it.each(['iat', 'nbf'])(

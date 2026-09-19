@@ -65,10 +65,10 @@ describe('JWT route policy through real Fastify and HTTP upstream', () => {
         const principal = context
           .switchToHttp()
           .getRequest<{ principal?: { sub: string } }>().principal;
-        context
-          .switchToHttp()
-          .getResponse()
-          .header('x-test-principal', principal?.sub ?? 'anonymous');
+        const response = context.switchToHttp().getResponse<{
+          header(name: string, value: string): void;
+        }>();
+        response.header('x-test-principal', principal?.sub ?? 'anonymous');
         return next.handle();
       },
     });

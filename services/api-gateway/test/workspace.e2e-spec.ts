@@ -107,7 +107,11 @@ function writeJson(
 async function readBody(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    chunks.push(
+      Buffer.isBuffer(chunk)
+        ? chunk
+        : Buffer.from(chunk as string | Uint8Array),
+    );
   }
   return Buffer.concat(chunks).toString('utf8');
 }
@@ -324,12 +328,12 @@ function extractOperations(document: string): string[] {
   const operations: string[] = [];
   let path: string | undefined;
   for (const line of document.split(/\r?\n/)) {
-    const pathMatch = /^  (\/[^:]+):$/.exec(line);
+    const pathMatch = /^ {2}(\/[^:]+):$/.exec(line);
     if (pathMatch) {
       path = pathMatch[1];
       continue;
     }
-    const methodMatch = /^    (get|post|patch|delete):$/.exec(line);
+    const methodMatch = /^ {4}(get|post|patch|delete):$/.exec(line);
     if (path && methodMatch) {
       operations.push(`${methodMatch[1].toUpperCase()} ${path}`);
     }
@@ -487,7 +491,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
           ...(operation.payload === undefined
             ? {}
             : { payload: operation.payload }),
-        } as any);
+        });
 
       expect(response.statusCode).toBe(operation.status);
       expect(response.headers['x-request-id']).toBe(requestId);
@@ -530,7 +534,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     const invalidRequests: Array<{
       method: 'GET' | 'POST' | 'PATCH';
       url: string;
-      payload?: unknown;
+      payload?: Record<string, unknown>;
     }> = [
       { method: 'GET', url: '/api/v1/workspaces/not-a-uuid' },
       { method: 'GET', url: '/api/v1/workspaces?page=-1' },
@@ -579,11 +583,13 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
           ...(invalidRequest.payload === undefined
             ? {}
             : { payload: invalidRequest.payload }),
-        } as any);
+        });
       expect(response.statusCode).toBe(400);
       expect(response.json()).toEqual(
         expect.objectContaining({
-          error: expect.objectContaining({ code: 'BAD_REQUEST' }),
+          error: expect.objectContaining({
+            code: 'BAD_REQUEST',
+          }) as unknown,
         }),
       );
     }
@@ -802,7 +808,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
         } catch (error) {
           if (!settled) {
             settled = true;
-            reject(error);
+            reject(error instanceof Error ? error : new Error(String(error)));
           }
         }
       })();

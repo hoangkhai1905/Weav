@@ -10,7 +10,7 @@ function createHost(request: RequestContextCarrier) {
   const reply = {
     code: jest.fn().mockReturnThis(),
     header: jest.fn().mockReturnThis(),
-    send: jest.fn(),
+    send: jest.fn<void, [Record<string, unknown>]>(),
   };
 
   const host = {
@@ -98,7 +98,7 @@ describe('GatewayExceptionFilter', () => {
 
     new GatewayExceptionFilter().catch(new Error(secret), host);
 
-    const body = reply.send.mock.calls[0][0] as Record<string, unknown>;
+    const body = reply.send.mock.calls[0][0];
     expect(body).toEqual({
       error: {
         code: 'INTERNAL_SERVER_ERROR',
@@ -132,7 +132,7 @@ describe('GatewayExceptionFilter', () => {
       host,
     );
 
-    const body = reply.send.mock.calls[0][0] as Record<string, unknown>;
+    const body = reply.send.mock.calls[0][0];
     expect(body).toEqual({
       error: {
         code: 'SERVICE_UNAVAILABLE',
