@@ -344,6 +344,41 @@ docker compose --env-file .env -f compose.yml -f compose.dev.yml config --quiet
 docker compose --env-file .env -f compose.yml -f compose.dev.yml --profile app up identity-service
 ```
 
+### Kaggle OCR development mode
+
+When OCR is running in a Kaggle notebook and exposed through a temporary
+tunnel, point the Gateway at that URL in the local `.env`:
+
+```env
+OCR_SERVICE_URL=https://your-kaggle-tunnel.example
+OCR_ALLOW_UNAUTHENTICATED_DEV=true
+```
+
+Start the application profile with the Kaggle OCR override so the local
+`ocr-service` container is not started:
+
+```powershell
+docker compose --env-file .env `
+  -f compose.yml `
+  -f compose.dev.yml `
+  -f compose.kaggle-ocr.dev.yml `
+  --profile app up -d --build
+```
+
+The local OCR container remains available for fallback testing. Run it by
+using the normal compose files with both profiles enabled:
+
+```powershell
+docker compose --env-file .env `
+  -f compose.yml `
+  -f compose.dev.yml `
+  -f compose.ocr-models.dev.yml `
+  --profile app --profile local-ocr up -d --build ocr-service
+```
+
+Do not commit the real tunnel URL or any authentication token. The Kaggle
+tunnel is temporary and should only receive non-sensitive test documents.
+
 For direct Maven startup, inject the same names into the process environment through the local shell or secret manager before starting `services/identity-service`; do not pass secret values on the command line or commit `.env`.
 
 The Identity-local OpenAPI contract is published at `packages/contracts/http/auth/openapi.yaml`. Version 1.1 adds the M1 contract target for profile display-name updates, self-service session listing/revocation, revoke-all, and local password change. These additions are contract-first: do not treat them as runtime-ready until the matching M1 implementation and HTTP tests pass. OTP/recovery, admin, avatar, Gateway, and mobile operations remain deferred; the M3 Google OAuth web transport still requires real-provider/browser acceptance.
@@ -387,6 +422,54 @@ pnpm --dir services/api-gateway build
 pnpm --dir services/bot-service build
 pnpm --dir services/notification-service build
 ```
+
+### API Gateway development setup
+
+Gateway chạy bằng NestJS/Fastify và nhận cấu hình từ process environment,
+Compose hoặc secret store được phê duyệt. Chỉ ghi tên biến, không ghi secret
+value vào file này hoặc vào shell history:
+
+```text
+APP_ENV, PORT
+JWT_ACCESS_SECRET, JWT_ISSUER, JWT_AUDIENCE, JWT_CLOCK_SKEW
+IDENTITY_SERVICE_URL, WORKSPACE_SERVICE_URL, WORKFLOW_SERVICE_URL
+AI_SERVICE_URL, BOT_SERVICE_URL, NOTIFICATION_SERVICE_URL, OCR_SERVICE_URL
+CORS_ALLOWED_ORIGINS, OCR_ALLOW_UNAUTHENTICATED_DEV
+GATEWAY_GENERAL_RATE_LIMIT, GATEWAY_AUTH_RATE_LIMIT, GATEWAY_OCR_RATE_LIMIT
+GATEWAY_RATE_LIMIT_WINDOW_MS
+```
+
+Từ repository root, sau khi đã cung cấp các tên cấu hình cần thiết:
+
+```powershell
+pnpm --dir services/api-gateway start:dev
+```
+
+Kiểm tra source-level Gateway mà không cần upstream thật:
+
+```powershell
+pnpm --dir services/api-gateway test -- --runInBand --silent
+pnpm --dir services/api-gateway test:e2e -- --runInBand --silent
+pnpm --dir services/api-gateway exec tsc --noEmit
+pnpm --dir services/api-gateway build
+pnpm --dir services/api-gateway exec eslint "{src,test}/**/*.ts"
+```
+
+`GET /health` là liveness public và không gọi Identity/Workspace. `GET /ready`
+là readiness public, probe song song hai service này qua
+`/actuator/health/readiness`, đọc cả response body trong deadline hai giây và
+trả aggregate `200`/`503` đã được sanitize. Notification và OCR không làm
+Gateway unready. Rate limiter dùng in-memory storage cho một Gateway replica;
+không coi đây là enforcement phân tán khi scale nhiều replica.
+
+Route matrix, mapping Workspace, auth policy, error contract, OCR streaming
+risk và rollback được ghi tại `services/api-gateway/README.md`. Contract
+Workspace phía Gateway nằm ở `packages/contracts/http/gateway/openapi.yaml`.
+
+Fixture E2E không thay thế real-service proof. Để kiểm tra login Identity →
+Workspace qua Gateway hoặc browser smoke, phải có deployment được ủy quyền,
+test account chuyên dụng và dữ liệu test có cleanup rõ ràng; không tự tạo dữ
+liệu production hoặc đọc/paste credential.
 
 ---
 
