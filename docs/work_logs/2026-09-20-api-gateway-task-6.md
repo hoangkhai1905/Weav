@@ -159,10 +159,10 @@ Complete for the authorized final verification, documentation, and handoff scope
   planning set without flattening or overwriting same-name documents. The
   identical design specification was retained once. Main's unrelated planning
   log was preserved as a historical document.
-- Documentation commit is intentionally scoped to the Gateway plan/spec,
-  Task 4 plan, planning log, and focused worklog. It must be recorded here
-  with its SHA after the isolated-index commit; no unrelated staged path is
-  eligible for that commit.
+- Documentation commit `c47380b390e7d6aff29d9bad4a1afcd68c3a7f52`
+  (`docs(api-gateway): consolidate Gateway handoff records`) is intentionally
+  scoped to the Gateway plan/spec, Task 4 plan, planning log, and focused
+  worklog. No unrelated staged path was eligible for that commit.
 - Before removal, source inventory was 0 staged, 2 tracked edits, 3 untracked
   documents, and 36,644 ignored entries: 12 meaningful SDD files plus
   regenerable GitNexus/dependency/build content. Cleanup was clean with

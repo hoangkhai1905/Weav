@@ -178,8 +178,8 @@ ledger and task reports were archived with SHA-256 hashes before worktree
 removal; no ignored report, credential, real environment file, or uncertain
 user document was discarded.
 
-Current final state: `api-gateway` remains at `a984069`; the Gateway code and
-configuration are unchanged, and the real-service/browser gates remain
+Current final state: Gateway code/configuration remains at `a984069`, and the
+documentation consolidation is committed as `c47380b`. The real-service/browser gates remain
 explicitly blocked pending authorized infrastructure. The focused worklog
 records the documentation commit, archive manifest, preserved main index
 state, and exact worktree-removal recovery path.
