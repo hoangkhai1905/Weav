@@ -41,6 +41,38 @@ directory search is bounded to candidate membership IDs in chunks of at most
 500; display-name ordering remains deterministic across chunks, including
 case-folded non-null names, null-last ordering, and user-ID tie-breaking.
 
+## Connections and credentials
+
+Public `/workspaces/{workspaceId}/connections` routes use the same JWT security
+rule as the workspace and membership routes. The JWT subject is the only actor
+identity accepted by Workspace. Members can read connection metadata, while
+`config` is returned as `null` when the caller cannot manage that connection.
+Credential values are write-only on public routes; responses expose only
+`hasCredential` and the safe `credentialExpiresAt` timestamp.
+
+Connection create, update, credential replacement/removal, provider test,
+manual disable, and Google OAuth start are separate operations in
+[`openapi.yaml`](./openapi.yaml). New connections start `DISABLED`; only a
+successful provider verification activates them. Known credential fields and
+sensitive headers are rejected in provider configuration; credential values
+belong in the write-only credential route. Google OAuth redirect and frontend
+return URLs are server-configured. The callback consumes Redis-backed one-time state, and
+redirects only to the configured frontend URL with an allow-listed outcome.
+Invalid state has no trusted connection identifier, so its failure redirect
+omits `connectionId`. Workspace requests only the Gmail metadata or Sheets
+scopes documented by the service and never grants Gmail send or broad Drive
+access.
+
+Workflow-facing `/internal/workspaces/{workspaceId}/connections/{connectionId}`
+routes require `X-Internal-Service-Key`. Attachment authorization checks the
+requested member's relationship to the connection. Runtime resolution is
+available only for an `ACTIVE` connection and returns the minimum provider
+authentication needed to run it. That internal response includes secrets, is
+marked `Cache-Control: no-store`, and never contains a Google refresh token.
+Only a confirmed `AUTHENTICATION_REJECTED` report can mark a connection
+`INVALID`; transient provider errors must not be reported as authentication
+failures.
+
 ## Errors and request correlation
 
 Every response carries `X-Correlation-Id`. Safe incoming values are reused and
@@ -75,7 +107,7 @@ instant revocation during that outage. No profile cache exists in V1.
 
 ## Deferred scope
 
-Connection and Credential implementation, invitations, ownership transfer,
-workspace delete/archive, and generic RBAC/custom roles are outside this V1
-contract. Future archive/soft-delete and explicit hard-delete flows must remain
-additive to the current create/read/member operations.
+Invitations, ownership transfer, workspace delete/archive, and generic
+RBAC/custom roles are outside this V1 contract. Future archive/soft-delete and
+explicit hard-delete flows must remain additive to the current
+create/read/member/connection operations.

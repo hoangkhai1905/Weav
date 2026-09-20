@@ -26,7 +26,21 @@ class WorkspaceContractValidationTest {
             "updateWorkspaceMemberPermissions",
             "removeWorkspaceMember",
             "leaveWorkspace",
-            "getInternalWorkspaceAccess");
+            "getInternalWorkspaceAccess",
+            "createConnection",
+            "listConnections",
+            "getConnection",
+            "updateConnection",
+            "deleteConnection",
+            "saveConnectionCredential",
+            "deleteConnectionCredential",
+            "testConnection",
+            "disableConnection",
+            "startGoogleConnectionOAuth",
+            "completeGoogleConnectionOAuth",
+            "authorizeConnectionAttachment",
+            "resolveConnectionCredential",
+            "reportConnectionAuthFailure");
 
     private static final Set<String> HTTP_METHODS = Set.of(
             "get", "post", "put", "patch", "delete", "head", "options", "trace");
@@ -77,6 +91,54 @@ class WorkspaceContractValidationTest {
         Map<String, Object> internalOperation = operations.get("getInternalWorkspaceAccess");
         assertThat(list(internalOperation, "security")).anySatisfy(security ->
                 assertThat(mapValue(security, "internalServiceKey")).isNotNull());
+        assertLocalReferencesResolve(contract);
+    }
+
+    @Test
+    void connectionContractSeparatesPublicAndInternalCredentialsAndBoundsOAuthRedirects() throws Exception {
+        Map<String, Object> contract = loadContract(workspaceContractPath());
+        Map<String, Object> paths = map(contract, "paths");
+        Map<String, Map<String, Object>> operations = operations(paths);
+        Map<String, Object> schemas = map(map(contract, "components"), "schemas");
+
+        assertThat(operations.keySet()).containsAll(List.of(
+                "createConnection", "listConnections", "getConnection", "updateConnection",
+                "deleteConnection", "saveConnectionCredential", "deleteConnectionCredential",
+                "testConnection", "disableConnection", "startGoogleConnectionOAuth",
+                "completeGoogleConnectionOAuth", "authorizeConnectionAttachment",
+                "resolveConnectionCredential", "reportConnectionAuthFailure"));
+
+        Map<String, Object> connectionProperties = map(map(schemas, "ConnectionResponse"), "properties");
+        assertThat(connectionProperties.keySet()).doesNotContain(
+                "credential", "credentialSecret", "accessToken", "refreshToken", "encryptedPayload");
+        assertThat(map(connectionProperties, "config")).containsKey("oneOf");
+        assertThat(map(connectionProperties, "credentialExpiresAt").get("type"))
+                .isEqualTo(List.of("string", "null"));
+
+        Map<String, Object> callback = operations.get("completeGoogleConnectionOAuth");
+        assertThat(callback.get("security")).isEqualTo(List.of());
+        Map<String, Object> callbackResponses = map(callback, "responses");
+        assertThat(callbackResponses).containsKey("302");
+        String callbackDescription = map(callbackResponses, "302").get("description").toString();
+        assertThat(callbackDescription).contains("state_invalid", "authorization_denied",
+                "authorization_changed", "token_exchange_failed", "verification_failed");
+        Map<String, Object> startResponse = map(
+                map(operations.get("startGoogleConnectionOAuth"), "responses"), "200");
+        assertThat(map(startResponse, "headers")).containsKey("Cache-Control");
+
+        for (String operationId : List.of(
+                "authorizeConnectionAttachment", "resolveConnectionCredential", "reportConnectionAuthFailure")) {
+            assertThat(list(operations.get(operationId), "security"))
+                    .anySatisfy(security -> assertThat(mapValue(security, "internalServiceKey")).isNotNull());
+        }
+
+        Map<String, Object> resolveResponse = map(map(operations.get("resolveConnectionCredential"), "responses"), "200");
+        assertThat(map(resolveResponse, "headers")).containsKey("Cache-Control");
+        Map<String, Object> runtimeCredentialProperties = map(
+                map(schemas, "ResolvedConnectionHttpResponse"), "properties");
+        assertThat(map(runtimeCredentialProperties, "auth").get("description").toString())
+                .contains("accessToken")
+                .contains("refresh token is never returned");
         assertLocalReferencesResolve(contract);
     }
 
