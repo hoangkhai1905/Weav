@@ -6,6 +6,8 @@ import java.util.UUID;
 
 public interface CredentialRepository {
     Credential save(Credential credential);
-    Optional<Credential> findById(UUID id);
+
     Optional<Credential> findByConnectionId(UUID connectionId);
+
+    void deleteByConnectionId(UUID connectionId);
 }

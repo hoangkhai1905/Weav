@@ -1,6 +1,7 @@
 package com.weav.workspace.infrastructure.persistence;
 
 import com.weav.workspace.application.port.out.TransactionRunner;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Objects;
@@ -30,6 +31,11 @@ public final class SpringTransactionRunner implements TransactionRunner {
         } catch (RuntimeException exception) {
             throw WorkspacePersistenceExceptionTranslator.translate(exception);
         }
+    }
+
+    @Override
+    public boolean hasAmbientTransaction() {
+        return TransactionSynchronizationManager.isActualTransactionActive();
     }
 
     @Override
