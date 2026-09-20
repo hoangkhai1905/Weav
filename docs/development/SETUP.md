@@ -345,40 +345,44 @@ docker compose --env-file .env -f compose.yml -f compose.dev.yml config --quiet
 docker compose --env-file .env -f compose.yml -f compose.dev.yml --profile app up identity-service
 ```
 
-### Kaggle OCR development mode
+### Google Colab OCR development mode
 
-When OCR is running in a Kaggle notebook and exposed through a temporary
-tunnel, point the Gateway at that URL in the local `.env`:
+When OCR is running in a Google Colab notebook and exposed through a temporary
+HTTPS tunnel, point the Gateway at that URL in the local `.env`:
 
 ```env
-OCR_SERVICE_URL=https://your-kaggle-tunnel.example
+OCR_SERVICE_URL=https://your-colab-tunnel.example
 OCR_ALLOW_UNAUTHENTICATED_DEV=true
 ```
 
-Start the application profile with the Kaggle OCR override so the local
-`ocr-service` container is not started:
+Commit the generic Compose override from
+`compose.colab-ocr.dev.yml`, but never commit the real tunnel URL or an
+authentication token. Start only the services needed by the local Gateway so
+the local `ocr-service` container is not started:
 
 ```powershell
 docker compose --env-file .env `
   -f compose.yml `
   -f compose.dev.yml `
-  -f compose.kaggle-ocr.dev.yml `
-  --profile app up -d --build
+  -f compose.colab-ocr.dev.yml `
+  --profile app up -d --build identity-service workspace-service api-gateway
 ```
 
 The local OCR container remains available for fallback testing. Run it by
-using the normal compose files with both profiles enabled:
+using the normal Compose files and the local model override; omit the Colab
+override so Gateway uses the internal `http://ocr-service:8000` URL:
 
 ```powershell
 docker compose --env-file .env `
   -f compose.yml `
   -f compose.dev.yml `
   -f compose.ocr-models.dev.yml `
-  --profile app --profile local-ocr up -d --build ocr-service
+  --profile app up -d --build ocr-service api-gateway
 ```
 
-Do not commit the real tunnel URL or any authentication token. The Kaggle
-tunnel is temporary and should only receive non-sensitive test documents.
+The Colab tunnel is temporary and should only receive non-sensitive test
+documents. If the notebook restarts, update the local `.env` URL and recreate
+the Gateway container.
 
 For direct Maven startup, inject the same names into the process environment through the local shell or secret manager before starting `services/identity-service`; do not pass secret values on the command line or commit `.env`.
 

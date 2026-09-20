@@ -206,3 +206,17 @@ Complete for the authorized final verification, documentation, and handoff scope
   SHA-256-listed files to restore any archived plan, report, worklog, or
   template. Gateway source is available in main at the recorded HEAD;
   dependencies/build/GitNexus caches are intentionally regenerable.
+
+## Colab OCR routing smoke — 2026-09-20
+
+- Added a generic `compose.colab-ocr.dev.yml` override. The temporary tunnel
+  URL stays in the ignored local `.env`; the generic override contains no URL
+  or secret and is safe to publish.
+- `docker compose ... config --quiet` passed. Gateway, Identity, and Workspace
+  containers rebuilt and started; Gateway received the configured Colab OCR URL.
+- Runtime evidence: `GET http://127.0.0.1:3000/health` returned `200`; after
+  Identity startup, `GET /ready` returned `200` with Identity and Workspace up.
+- Container-to-Colab probe returned upstream status `200` for `/openapi.json`.
+- End-to-end OCR smoke through Gateway returned `200` for
+  `POST /api/v1/workspaces/colab-smoke/ocr/extractions` and a PaddleOCR result
+  with `processingTimeMs=528`; no secrets or temporary URL were recorded.
