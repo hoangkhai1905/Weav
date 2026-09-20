@@ -23,7 +23,7 @@
 
 ## 4. Bối cảnh và giả định
 
-- Prior untracked `docs/work_logs/2026-09-06-worker-probe.md` preserved.
+- Prior untracked `docs/work_logs/T/2026-09-06-worker-probe.md` preserved.
 - Antigravity 1.1.27 catalog confirms `gemini-3.8-flash-high`; explicitly selected for all new Anti probes.
 - OpenCode 1.18.21 uses `opencode/big-pickle`.
 - Skills: brainstorming, writing-plans, GitNexus impact, parallel-execution-optimizer, dispatching-parallel-agents, verification-before-completion.
@@ -92,7 +92,7 @@
 ## 12. Tham chiếu
 
 - docs/agent-cli-operations.md
-- docs/work_logs/2026-09-06-worker-probe.md
+- docs/work_logs/T/2026-09-06-worker-probe.md
 - docs/superpowers/specs/2026-09-06-agent-worker-hardening-design.md
 - docs/superpowers/plans/2026-09-06-agent-worker-hardening.md
 - Installed agy --help/models; installed OpenCode help/debug/embedded permission implementation.

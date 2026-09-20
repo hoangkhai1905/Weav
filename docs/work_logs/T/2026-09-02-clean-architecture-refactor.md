@@ -13,8 +13,8 @@
 | Người thực hiện              | `Khải`                                                                                                                                    |
 | Người review / nhận bàn giao | `Developer`                                                                                                                               |
 | Trạng thái cuối ngày         | `Đang tiếp tục`                                                                                                                           |
-| Phạm vi session              | Refactor phase 1-3 theo `docs/plans/2026-09-02-clean-architecture-refactor.md`; sau đó sửa compile error IDE, chỉ giữ warning chưa xử lý. |
-| Liên kết liên quan           | `docs/plans/2026-09-02-clean-architecture-refactor.md`; `docs/work_logs/log_template.md`                                                  |
+| Phạm vi session              | Refactor phase 1-3 theo `docs/superpowers/plans/2026-09-02-clean-architecture-refactor.md`; sau đó sửa compile error IDE, chỉ giữ warning chưa xử lý. |
+| Liên kết liên quan           | `docs/superpowers/plans/2026-09-02-clean-architecture-refactor.md`; `docs/work_logs/log_template.md`                                                  |
 
 ## 2. Tóm tắt điều hành
 
@@ -72,7 +72,7 @@
 - **Bối cảnh hệ thống:** Ba service đã có persistence foundation và package cũ còn trộn config, web, exception, request và JPA entity.
 - **Giả định đã dùng:** Tên bảng/cột và behavior persistence phải giữ nguyên; đổi tên class JPA chỉ nhằm phân biệt với domain model.
 - **Ràng buộc:** Chỉ code trong `domain`; các layer còn lại không triển khai behavior mới. Làm việc qua workspace alias `E:\WeavSub` khi runner path chính gặp `helper_unknown_error`.
-- **Nguồn sự thật:** `docs/plans/2026-09-02-clean-architecture-refactor.md` và `docs/work_logs/log_template.md`.
+- **Nguồn sự thật:** `docs/superpowers/plans/2026-09-02-clean-architecture-refactor.md` và `docs/work_logs/log_template.md`.
 
 ## 5. Nhật ký theo session / thời gian
 
@@ -212,9 +212,9 @@ Lỗi trên đã được xử lý bằng ArchUnit `1.5.0`. Warning IDE không p
 
 ## 12. Tham chiếu
 
-- [`docs/plans/2026-09-02-clean-architecture-refactor.md`](../plans/2026-09-02-clean-architecture-refactor.md)
-- [`docs/work_logs/log_template.md`](log_template.md)
-- [`docs/work_logs/2026-09-02.md`](2026-09-02.md) - log foundation trước refactor
+- [`docs/superpowers/plans/2026-09-02-clean-architecture-refactor.md`](../../superpowers/plans/2026-09-02-clean-architecture-refactor.md)
+- [`docs/work_logs/log_template.md`](../log_template.md)
+- [`docs/work_logs/T/2026-09-02.md`](2026-09-02.md) - log foundation trước refactor
 - [ArchUnit releases](https://github.com/TNG/ArchUnit/releases)
 
 ## 13. Kết thúc session

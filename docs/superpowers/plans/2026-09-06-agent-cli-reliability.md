@@ -95,7 +95,7 @@ Expected: resolved OpenCode `plugin` is empty, `plugins\claude-mem.js.disabled` 
 ### Task 4: End-to-end smoke and handoff log
 
 **Files:**
-- Create: `docs/work_logs/2026-09-06-agent-cli-reliability.md`
+- Create: `docs/work_logs/T/2026-09-06-agent-cli-reliability.md`
 
 - [ ] **Step 1: Run bounded runtime checks.**
 

@@ -16,7 +16,7 @@ Added the approved project context and collaboration rules to AGENTS.md, then mi
 - Keep the existing GitNexus block in both files.
 - Treat Ponytail as the default coding-quality policy while retaining validation, security, accessibility, logging, error handling, and tests.
 - Require bounded refactoring, backward-compatible API/schema evolution, affected-service tests, real Playwright verification for web/Expo Web, and work-log updates.
-- Use focused same-day logging so the existing docs/work_logs/2026-09-02.md remains untouched.
+- Use focused same-day logging so the existing docs/work_logs/T/2026-09-02.md remains untouched.
 
 ## 4. Changed files
 

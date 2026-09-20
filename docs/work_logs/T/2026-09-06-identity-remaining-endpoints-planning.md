@@ -45,9 +45,9 @@ Tiêu chí:
 ## 4. Bối cảnh và nguồn sự thật
 
 Các file đã đọc:
-- docs/work_logs/2026-09-05-identity-core-auth.md
+- docs/work_logs/K/identity-core-auth-readiness.md#source-2026-09-05-identity-core-auth
 - docs/superpowers/specs/2026-09-05-identity-core-auth-design.md
-- docs/work_logs/2026-09-05-identity-readiness.md
+- docs/work_logs/K/identity-core-auth-readiness.md#source-2026-09-05-identity-readiness
 - packages/contracts/http/auth/README.md
 - docs/work_logs/log_template.md và docs/development/SETUP.md
 
@@ -111,7 +111,7 @@ Chỉ mô tả endpoint contract, active-session/current-role checks, password/s
 | Loại | Path | Mục đích |
 | --- | --- | --- |
 | Add | docs/superpowers/plans/2026-09-06-identity-remaining-endpoints.md | Plan v1 và acceptance |
-| Add | docs/work_logs/2026-09-06-identity-remaining-endpoints-planning.md | Bối cảnh và handoff |
+| Add | docs/work_logs/T/2026-09-06-identity-remaining-endpoints-planning.md | Bối cảnh và handoff |
 
 ## 9. Kiểm tra và evidence
 
@@ -147,9 +147,9 @@ Người tiếp nhận đọc plan, core contract, source model và git status t
 
 ## 12. Tham chiếu
 
-- [Plan](../superpowers/plans/2026-09-06-identity-remaining-endpoints.md)
-- [Core auth log](2026-09-05-identity-core-auth.md)
-- [Core design](../superpowers/specs/2026-09-05-identity-core-auth-design.md)
+- [Plan](../../superpowers/plans/2026-09-06-identity-remaining-endpoints.md)
+- [Core auth log](../K/identity-core-auth-readiness.md#source-2026-09-05-identity-core-auth)
+- [Core design](../../superpowers/specs/2026-09-05-identity-core-auth-design.md)
 - [Notion Identity schema](https://app.notion.com/p/3bd8722217d580b7b5d3c26e86ffaab3)
 - [Notion model](https://app.notion.com/p/3cd8722217d58188a279e4aed16b657e)
 - [Google Docs, đến hết chương 3](https://docs.google.com/document/d/15b2BPSs9HFyN2Ki3spTWXw6To7_QpmWiAKm58qek5cA/edit?tab=t.0)

@@ -20,7 +20,7 @@ Updated `AGENTS.md` with the requested execution and communication rules:
 ## Changed files
 
 - `AGENTS.md`: added communication/execution rules and adjusted commit guidance.
-- `docs/work_logs/2026-09-10-agents-guidance.md`: recorded this change.
+- `docs/work_logs/T/2026-09-10-agents-guidance.md`: recorded this change.
 
 ## Verification
 

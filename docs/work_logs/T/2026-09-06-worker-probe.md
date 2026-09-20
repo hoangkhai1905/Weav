@@ -51,7 +51,7 @@
 
 ## 8. Danh sách file ảnh hưởng
 
-- Added `docs/work_logs/2026-09-06-worker-probe.md`.
+- Added `docs/work_logs/T/2026-09-06-worker-probe.md`.
 
 ## 9. Kiểm tra và bằng chứng
 
@@ -80,7 +80,7 @@
 
 - `AGENTS.md`
 - `docs/agent-cli-operations.md`
-- `docs/work_logs/2026-09-06-agent-cli-reliability.md`
+- `docs/work_logs/T/2026-09-06-agent-cli-reliability.md`
 - `docs/work_logs/log_template.md`
 
 ## 13. Kết thúc session
