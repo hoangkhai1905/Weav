@@ -1,5 +1,6 @@
 package com.weav.workspace.infrastructure.persistence.entity;
 
+import com.weav.workspace.domain.model.Connection;
 import com.weav.workspace.domain.valueobject.ConnectionAuthType;
 import com.weav.workspace.domain.valueobject.ConnectionProvider;
 import com.weav.workspace.domain.valueobject.ConnectionStatus;
@@ -17,6 +18,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -35,6 +37,9 @@ public class ConnectionJpaEntity {
 
     @Column(nullable = false, length = 255)
     private String name;
+
+    @Column(name = "name_normalized", nullable = false, length = 255)
+    private String nameNormalized;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
@@ -72,20 +77,55 @@ public class ConnectionJpaEntity {
             ConnectionAuthType authType,
             ConnectionStatus status,
             JsonNode config) {
-        this.id = UUID.randomUUID();
-        this.workspaceId = workspaceId;
-        this.createdBy = createdBy;
-        this.name = name;
-        this.provider = provider;
-        this.authType = authType;
-        this.status = status;
+        this(
+                UUID.randomUUID(),
+                workspaceId,
+                createdBy,
+                name,
+                Connection.normalizeName(name),
+                provider,
+                authType,
+                status,
+                config,
+                null,
+                null,
+                null);
+    }
+
+    public ConnectionJpaEntity(
+            UUID id,
+            UUID workspaceId,
+            UUID createdBy,
+            String name,
+            String nameNormalized,
+            ConnectionProvider provider,
+            ConnectionAuthType authType,
+            ConnectionStatus status,
+            JsonNode config,
+            Instant lastVerifiedAt,
+            Instant createdAt,
+            Instant updatedAt) {
+        this.id = Objects.requireNonNull(id, "id must not be null");
+        this.workspaceId = Objects.requireNonNull(workspaceId, "workspaceId must not be null");
+        this.createdBy = Objects.requireNonNull(createdBy, "createdBy must not be null");
+        this.name = Objects.requireNonNull(name, "name must not be null");
+        this.nameNormalized = Objects.requireNonNull(nameNormalized, "nameNormalized must not be null");
+        this.provider = Objects.requireNonNull(provider, "provider must not be null");
+        this.authType = Objects.requireNonNull(authType, "authType must not be null");
+        this.status = Objects.requireNonNull(status, "status must not be null");
         this.config = config;
+        this.lastVerifiedAt = lastVerifiedAt;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
     }
 
     @PrePersist
     void onCreate() {
         if (id == null) {
             id = UUID.randomUUID();
+        }
+        if (nameNormalized == null && name != null) {
+            nameNormalized = Connection.normalizeName(name);
         }
         Instant now = Instant.now();
         if (createdAt == null) {
@@ -117,8 +157,13 @@ public class ConnectionJpaEntity {
         return name;
     }
 
+    public String getNameNormalized() {
+        return nameNormalized;
+    }
+
     public void setName(String name) {
         this.name = name;
+        this.nameNormalized = Connection.normalizeName(name);
     }
 
     public ConnectionProvider getProvider() {

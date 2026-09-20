@@ -20,8 +20,12 @@ import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -62,6 +66,35 @@ class SecurityConfigTest {
     @Test
     void protectsRoutesByDefault() throws Exception {
         mockMvc.perform(get("/protected"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void permitsOnlyTheServerConfiguredGoogleOAuthCallbackWithoutJwt() throws Exception {
+        mockMvc.perform(get("/oauth/google/callback"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location",
+                        startsWith("http://localhost:3000/connections?oauth=failed&reason=state_invalid")))
+                .andExpect(header().string("Cache-Control", containsString("no-store")));
+    }
+
+    @Test
+    void internalServiceKeyDoesNotAuthenticatePublicConnectionApi() throws Exception {
+        mockMvc.perform(get("/workspaces/10000000-0000-0000-0000-000000000001/connections")
+                        .header("X-Internal-Service-Key", "test-workspace-key"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void connectionResolveRequiresInternalServiceKey() throws Exception {
+        String resolvePath = "/internal/workspaces/10000000-0000-0000-0000-000000000001"
+                + "/connections/30000000-0000-0000-0000-000000000001/resolve";
+
+        mockMvc.perform(post(resolvePath).servletPath(resolvePath))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post(resolvePath)
+                        .servletPath(resolvePath)
+                        .header("X-Internal-Service-Key", "wrong-service-key"))
                 .andExpect(status().isUnauthorized());
     }
 

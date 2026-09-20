@@ -1,0 +1,78 @@
+openapi: 3.1.0
+info:
+  title: Weav Workflow Internal Connection Usage API
+  version: 1.0.0
+  description: >-
+    Internal contract used by Workspace Service to determine whether a
+    connection is referenced by a workflow. Workflow Service owns workflow
+    definitions and remains the authority for this answer.
+servers:
+  - url: http://localhost:8082
+    description: Local Workflow service
+tags:
+  - name: Internal
+    description: Service-to-service operations
+paths:
+  /internal/workspaces/{workspaceId}/connections/{connectionId}/usage:
+    get:
+      tags: [Internal]
+      operationId: getConnectionUsage
+      summary: Check whether a workspace connection is referenced by a workflow
+      security:
+        - internalServiceKey: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/ConnectionId'
+      responses:
+        '200':
+          description: Authoritative usage state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionUsageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  securitySchemes:
+    internalServiceKey:
+      type: apiKey
+      in: header
+      name: X-Internal-Service-Key
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ConnectionId:
+      name: connectionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    ConnectionUsageResponse:
+      type: object
+      additionalProperties: false
+      required: [inUse]
+      properties:
+        inUse:
+          type: boolean
+  responses:
+    Unauthorized:
+      description: Missing or invalid internal service key.
+    NotFound:
+      description: Workspace or connection is not known to Workflow Service.
+    TooManyRequests:
+      description: Workflow usage lookup was rate limited.
+    InternalError:
+      description: Workflow usage lookup failed inside Workflow Service.

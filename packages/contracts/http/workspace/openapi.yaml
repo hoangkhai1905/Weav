@@ -12,6 +12,8 @@ servers:
 tags:
   - name: Workspaces
   - name: Members
+  - name: Connections
+  - name: OAuth
   - name: Internal
 security:
   - bearerAuth: []
@@ -265,6 +267,427 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /workspaces/{workspaceId}/connections:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Connections]
+      operationId: createConnection
+      summary: Create a disabled workspace connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConnectionRequest'
+      responses:
+        '201':
+          description: Connection created in DISABLED state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    get:
+      tags: [Connections]
+      operationId: listConnections
+      summary: List connections visible to the authenticated workspace member
+      responses:
+        '200':
+          description: Connection metadata; config is null when the caller cannot manage the connection.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConnectionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/{workspaceId}/connections/{connectionId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionId'
+    get:
+      tags: [Connections]
+      operationId: getConnection
+      summary: Get a workspace-scoped connection
+      responses:
+        '200':
+          description: Secret-safe connection metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags: [Connections]
+      operationId: updateConnection
+      summary: Update connection name or provider configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateConnectionRequest'
+      responses:
+        '200':
+          description: Connection updated; a configuration change disables it pending another verification.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Connections]
+      operationId: deleteConnection
+      summary: Delete a connection after Workflow confirms it is unused
+      responses:
+        '204':
+          description: Connection deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/{workspaceId}/connections/{connectionId}/credential:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionId'
+    put:
+      tags: [Connections]
+      operationId: saveConnectionCredential
+      summary: Replace a write-only connection credential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveCredentialRequest'
+      responses:
+        '200':
+          description: Credential replaced and connection left DISABLED pending a provider test.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Connections]
+      operationId: deleteConnectionCredential
+      summary: Remove a stored credential
+      responses:
+        '200':
+          description: Credential removed; the response contains metadata only.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/{workspaceId}/connections/{connectionId}/test:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionId'
+    post:
+      tags: [Connections]
+      operationId: testConnection
+      summary: Verify a connection credential with its provider
+      responses:
+        '200':
+          description: Verification outcome; a confirmed authentication rejection marks the connection INVALID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionTestResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/InvalidState'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/{workspaceId}/connections/{connectionId}/disable:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionId'
+    post:
+      tags: [Connections]
+      operationId: disableConnection
+      summary: Manually disable a connection without changing its credential
+      responses:
+        '200':
+          description: Connection is DISABLED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/{workspaceId}/connections/{connectionId}/oauth/authorize:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionId'
+    post:
+      tags: [OAuth]
+      operationId: startGoogleConnectionOAuth
+      summary: Start Google authorization for a Gmail or Google Sheets connection
+      responses:
+        '200':
+          description: Google authorization URL containing one-time state; the URL is sensitive and must not be logged.
+          headers:
+            Cache-Control:
+              description: Set to no-store because the response contains one-time state.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthAuthorizationHttpResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /oauth/google/callback:
+    get:
+      tags: [OAuth]
+      operationId: completeGoogleConnectionOAuth
+      summary: Complete Google authorization using the one-time server-stored state
+      description: >-
+        This server-owned callback is the only unauthenticated application route. It consumes state once,
+        rechecks current Workspace authorization, stores verified credentials encrypted, and redirects only
+        to the configured frontend return URL. Client-supplied redirect targets are ignored. When state is
+        invalid there is no trusted connection identifier, so the redirect omits connectionId.
+      security: []
+      parameters:
+        - name: state
+          in: query
+          required: false
+          description: Opaque one-time state returned by Google; never accepted as a connection identifier.
+          schema:
+            type: string
+            maxLength: 128
+        - name: code
+          in: query
+          required: false
+          description: Google authorization code; consumed server-side and never reflected in a redirect.
+          schema:
+            type: string
+            maxLength: 8192
+        - name: error
+          in: query
+          required: false
+          description: Provider denial indicator; its value is never reflected to the client.
+          schema:
+            type: string
+            maxLength: 128
+      responses:
+        '302':
+          description: >-
+            Redirect to the configured frontend return URL. Failures use only state_invalid, authorization_denied,
+            authorization_changed, token_exchange_failed, or verification_failed. Invalid state omits connectionId.
+          headers:
+            Location:
+              description: Server-configured frontend return URL with safe OAuth result query parameters.
+              schema:
+                type: string
+                format: uri
+            Cache-Control:
+              description: Set to no-store.
+              schema:
+                type: string
+                const: no-store
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /internal/workspaces/{workspaceId}/connections/{connectionId}/authorize-attachment:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionId'
+    post:
+      tags: [Internal]
+      operationId: authorizeConnectionAttachment
+      summary: Authorize an authenticated workspace member to attach a connection to a workflow
+      security:
+        - internalServiceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizeConnectionAttachmentRequest'
+      responses:
+        '204':
+          description: Attachment is allowed for the requested member.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /internal/workspaces/{workspaceId}/connections/{connectionId}/resolve:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionId'
+    post:
+      tags: [Internal]
+      operationId: resolveConnectionCredential
+      summary: Resolve minimum runtime authentication for an ACTIVE connection
+      security:
+        - internalServiceKey: []
+      responses:
+        '200':
+          description: >-
+            Runtime authentication only. This response contains secrets, omits Google refresh tokens,
+            and is returned with Cache-Control: no-store.
+          headers:
+            Cache-Control:
+              description: Set to no-store to prevent credential caching.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolvedConnectionHttpResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/InvalidState'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /internal/workspaces/{workspaceId}/connections/{connectionId}/auth-failure:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionId'
+    post:
+      tags: [Internal]
+      operationId: reportConnectionAuthFailure
+      summary: Mark an ACTIVE connection INVALID after confirmed provider authentication rejection
+      security:
+        - internalServiceKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportConnectionAuthFailureRequest'
+      responses:
+        '204':
+          description: Confirmed authentication failure recorded; transient failures must not use this route.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /internal/workspaces/{workspaceId}/users/{userId}/access:
     parameters:
       - $ref: '#/components/parameters/WorkspaceId'
@@ -312,6 +735,13 @@ components:
         format: uuid
     UserId:
       name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ConnectionId:
+      name: connectionId
       in: path
       required: true
       schema:
@@ -409,7 +839,13 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     DependencyUnavailable:
-      description: Required Identity dependency is temporarily unavailable.
+      description: Required Identity, Workflow, Redis/Valkey, or provider dependency is temporarily unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InvalidState:
+      description: Resource state does not allow the requested operation.
       content:
         application/json:
           schema:
@@ -428,6 +864,180 @@ components:
                 requestId: request-id
 
   schemas:
+    CreateConnectionRequest:
+      type: object
+      additionalProperties: false
+      required: [name, provider, authType]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        provider:
+          $ref: '#/components/schemas/ConnectionProvider'
+        authType:
+          $ref: '#/components/schemas/ConnectionAuthType'
+        config:
+          type: object
+          additionalProperties: true
+          description: Provider metadata; known credential fields and sensitive headers are rejected.
+    UpdateConnectionRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      anyOf:
+        - required: [name]
+        - required: [config]
+          properties:
+            config:
+              type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          pattern: '\S'
+        config:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: 'null'
+          description: Provider metadata; known credential fields and sensitive headers are rejected; null is treated as omitted.
+    SaveCredentialRequest:
+      type: object
+      additionalProperties: false
+      required: [payload]
+      properties:
+        payload:
+          type: object
+          additionalProperties: true
+          description: Write-only provider authentication values; never returned in public responses.
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+    AuthorizeConnectionAttachmentRequest:
+      type: object
+      additionalProperties: false
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+    ReportConnectionAuthFailureRequest:
+      type: object
+      additionalProperties: false
+      required: [failureCode]
+      properties:
+        failureCode:
+          type: string
+          enum: [AUTHENTICATION_REJECTED]
+          description: Only a confirmed authentication rejection may mark an ACTIVE connection INVALID.
+    ConnectionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - workspaceId
+        - createdBy
+        - name
+        - provider
+        - authType
+        - status
+        - config
+        - hasCredential
+        - credentialExpiresAt
+        - lastVerifiedAt
+        - canManage
+        - canAttach
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        createdBy:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 120
+        provider:
+          $ref: '#/components/schemas/ConnectionProvider'
+        authType:
+          $ref: '#/components/schemas/ConnectionAuthType'
+        status:
+          $ref: '#/components/schemas/ConnectionStatus'
+        config:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: 'null'
+          description: Null when the caller may see metadata but cannot manage this connection.
+        hasCredential:
+          type: boolean
+          description: Safe presence metadata; no credential identifier or secret is exposed.
+        credentialExpiresAt:
+          type: [string, 'null']
+          format: date-time
+          description: Safe credential-expiry metadata.
+        lastVerifiedAt:
+          type: [string, 'null']
+          format: date-time
+        canManage:
+          type: boolean
+        canAttach:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ConnectionProvider:
+      type: string
+      enum: [TELEGRAM, HTTP, GMAIL, GOOGLE_SHEETS]
+    ConnectionAuthType:
+      type: string
+      enum: [NONE, TOKEN, API_KEY, BASIC, OAUTH2]
+    ConnectionStatus:
+      type: string
+      enum: [DISABLED, ACTIVE, INVALID]
+    ConnectionTestResponse:
+      type: object
+      additionalProperties: false
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [VERIFIED, AUTH_INVALID]
+    OAuthAuthorizationHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [authorizationUrl]
+      properties:
+        authorizationUrl:
+          type: string
+          format: uri
+          description: Server-built Google authorization URL containing one-time state; do not log it.
+    ResolvedConnectionHttpResponse:
+      type: object
+      additionalProperties: false
+      required: [provider, authType, auth]
+      properties:
+        provider:
+          $ref: '#/components/schemas/ConnectionProvider'
+        authType:
+          $ref: '#/components/schemas/ConnectionAuthType'
+        auth:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Internal runtime authentication only. Google OAuth returns accessToken; the refresh token is never returned.
+            Callers must not log or cache this response.
     CreateWorkspaceRequest:
       type: object
       additionalProperties: false

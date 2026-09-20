@@ -9,6 +9,15 @@ public interface TransactionRunner {
     <T> T required(Supplier<T> work);
 
     /**
+     * Reports whether the current thread already owns an ambient transaction.
+     * Implementations that cannot observe infrastructure transaction state
+     * retain the safe no-ambient default used by in-memory test runners.
+     */
+    default boolean hasAmbientTransaction() {
+        return false;
+    }
+
+    /**
      * Runs work in a new transaction even when the caller already has one.
      * Create retries use this boundary so a rolled-back attempt cannot poison
      * the next attempt.

@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -49,11 +50,31 @@ public class CredentialJpaEntity {
             byte[] encryptedPayload,
             String encryptionKeyVersion,
             Instant expiresAt) {
-        this.id = UUID.randomUUID();
-        this.connectionId = connectionId;
-        this.encryptedPayload = encryptedPayload;
+        this(
+                UUID.randomUUID(),
+                connectionId,
+                encryptedPayload,
+                encryptionKeyVersion,
+                expiresAt,
+                null,
+                null);
+    }
+
+    public CredentialJpaEntity(
+            UUID id,
+            UUID connectionId,
+            byte[] encryptedPayload,
+            String encryptionKeyVersion,
+            Instant expiresAt,
+            Instant createdAt,
+            Instant updatedAt) {
+        this.id = Objects.requireNonNull(id, "id must not be null");
+        this.connectionId = Objects.requireNonNull(connectionId, "connectionId must not be null");
+        this.encryptedPayload = Objects.requireNonNull(encryptedPayload, "encryptedPayload must not be null").clone();
         this.encryptionKeyVersion = encryptionKeyVersion;
         this.expiresAt = expiresAt;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
     }
 
     @PrePersist
@@ -84,11 +105,11 @@ public class CredentialJpaEntity {
     }
 
     public byte[] getEncryptedPayload() {
-        return encryptedPayload;
+        return encryptedPayload.clone();
     }
 
     public void setEncryptedPayload(byte[] encryptedPayload) {
-        this.encryptedPayload = encryptedPayload;
+        this.encryptedPayload = Objects.requireNonNull(encryptedPayload, "encryptedPayload must not be null").clone();
     }
 
     public String getEncryptionKeyVersion() {
