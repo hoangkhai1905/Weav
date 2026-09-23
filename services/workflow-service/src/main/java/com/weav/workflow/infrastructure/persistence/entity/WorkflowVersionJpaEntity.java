@@ -40,7 +40,7 @@ public class WorkflowVersionJpaEntity {
     private Integer versionNumber;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(nullable = false, columnDefinition = "jsonb")
+    @Column(nullable = false, columnDefinition = "jsonb", updatable = false)
     private JsonNode definition;
 
     @Column(name = "schema_version", nullable = false, length = 32, updatable = false)
@@ -56,12 +56,19 @@ public class WorkflowVersionJpaEntity {
     }
 
     public WorkflowVersionJpaEntity(UUID workflowId, Integer versionNumber, JsonNode definition, String schemaVersion, UUID publishedBy) {
-        this.id = UUID.randomUUID();
+        this(UUID.randomUUID(), workflowId, versionNumber, definition, schemaVersion, publishedBy, null);
+    }
+
+    /** Restores an explicit domain identity and creation instant for persistence mapping. */
+    public WorkflowVersionJpaEntity(UUID id, UUID workflowId, Integer versionNumber, JsonNode definition,
+                                    String schemaVersion, UUID publishedBy, Instant createdAt) {
+        this.id = id;
         this.workflowId = workflowId;
         this.versionNumber = versionNumber;
         this.definition = definition;
         this.schemaVersion = schemaVersion;
         this.publishedBy = publishedBy;
+        this.createdAt = createdAt;
     }
 
     @PrePersist

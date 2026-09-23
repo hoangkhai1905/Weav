@@ -1,4 +1,45 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+async function clickEmptyWorkflowCanvas(page: Page) {
+  const point = await page.evaluate(() => {
+    type CanvasBounds = { left: number; top: number; width: number; height: number };
+    type CanvasPane = { getBoundingClientRect: () => CanvasBounds };
+    const browserDocument = (globalThis as unknown as {
+      document: {
+        querySelector: (selector: string) => CanvasPane | null;
+        elementFromPoint: (x: number, y: number) => unknown;
+      };
+    }).document;
+    const pane = browserDocument.querySelector('.react-flow__pane');
+    const bounds = pane?.getBoundingClientRect();
+    if (!pane || !bounds) return null;
+
+    const candidates = [
+      [0.05, 0.05],
+      [0.95, 0.05],
+      [0.05, 0.95],
+      [0.95, 0.95],
+      [0.5, 0.95],
+      [0.05, 0.5],
+      [0.95, 0.5],
+      [0.5, 0.05],
+      [0.25, 0.75],
+      [0.75, 0.75],
+    ];
+
+    for (const [xRatio, yRatio] of candidates) {
+      const x = bounds.left + bounds.width * xRatio;
+      const y = bounds.top + bounds.height * yRatio;
+      if (browserDocument.elementFromPoint(x, y) === pane) {
+        return { x: bounds.width * xRatio, y: bounds.height * yRatio };
+      }
+    }
+    return null;
+  });
+
+  if (!point) throw new Error('No unobstructed empty point found on the workflow canvas');
+  await page.locator('.react-flow__pane').click({ position: point });
+}
 
 test.describe('industrial workflow shell', () => {
   test('uses the refreshed WEAV mark in the shell and auth brand', async ({ page }) => {
@@ -159,10 +200,13 @@ test.describe('workflow responsive layout', () => {
     const toolbar = page.locator('select').first().locator('xpath=ancestor::div[contains(@class, "rounded-xl")][1]');
     await expect(toolbar).toBeVisible();
 
-    const dimensions = await toolbar.evaluate((element) => ({
-      clientWidth: element.clientWidth,
-      scrollWidth: element.scrollWidth,
-    }));
+    const dimensions = await toolbar.evaluate((element) => {
+      const htmlElement = element as unknown as { clientWidth: number; scrollWidth: number };
+      return {
+        clientWidth: htmlElement.clientWidth,
+        scrollWidth: htmlElement.scrollWidth,
+      };
+    });
 
     expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
   });
@@ -210,18 +254,26 @@ test.describe('workflow builder execution motion', () => {
     await expect(viewportMask).toHaveCSS('stroke', /rgb\((100, 116, 139|148, 163, 184)\)/);
   });
 
-  test('communicates execution state through nodes and edges', async ({ page }) => {
+  test('keeps the visual preview separate from workflow execution', async ({ page }) => {
     await page.goto('/workflows/wf-001/builder');
-    await page.getByRole('button', { name: 'Run test workflow' }).first().click();
+    const previewButton = page.getByRole('button', { name: 'Preview workflow (visual only)' }).first();
+    await expect(previewButton).toBeVisible();
+    await expect(page.getByTestId('workflow-preview-notice')).toContainText('no workflow or provider calls');
 
-    await expect(page.getByTestId('workflow-node').filter({ hasText: 'AI Extract Core' }))
-      .toHaveAttribute('data-status', /processing|success/);
+    const aiNode = page.getByTestId('workflow-node').filter({ hasText: 'AI Extract Core' });
+    await expect(aiNode).toHaveAttribute('data-readiness', 'unavailable');
+    await expect(aiNode).toHaveAttribute('data-status', 'idle');
+    await previewButton.click();
     await expect(page.getByTestId('execution-edge-active')).toBeVisible();
+    await expect(aiNode).toHaveAttribute('data-status', 'idle');
+    await expect(page.getByTestId('workflow-telemetry-preview-notice'))
+      .toContainText('does not call the Workflow Service or node integrations');
+    await expect(page.getByText(/Workflow finished successfully|Resolved 4 schema parameters/)).toHaveCount(0);
   });
 
-  test('keeps the active packet visible for the full edge transition', async ({ page }) => {
+  test('shows an active connection while previewing an edge', async ({ page }) => {
     await page.goto('/workflows/wf-001/builder');
-    await page.getByRole('button', { name: 'Run test workflow' }).first().click();
+    await page.getByRole('button', { name: 'Preview workflow (visual only)' }).first().click();
 
     const activeEdge = page.getByTestId('execution-edge-active');
     await expect(activeEdge).toBeVisible();
@@ -232,7 +284,7 @@ test.describe('workflow builder execution motion', () => {
     await page.goto('/workflows/wf-001/builder');
 
     const flowPreview = page.getByTestId('execution-edge-flow');
-    await expect(flowPreview).toHaveCount(3);
+    await expect(flowPreview).toHaveCount(4);
     await expect(flowPreview.first().locator('animate')).toHaveAttribute('repeatCount', 'indefinite');
   });
 
@@ -245,7 +297,7 @@ test.describe('workflow builder execution motion', () => {
     await page.getByTestId('workflow-node').filter({ hasText: 'AI Extract Core' }).click();
     await expect(inspector).toBeVisible();
 
-    await page.locator('.react-flow__pane').click({ position: { x: 120, y: 120 } });
+    await clickEmptyWorkflowCanvas(page);
     await expect(inspector).toHaveCount(0);
   });
 
@@ -261,7 +313,7 @@ test.describe('workflow builder execution motion', () => {
     expect(open?.x).toBe(before?.x);
     expect(open?.width).toBe(before?.width);
 
-    await page.locator('.react-flow__pane').click({ position: { x: 120, y: 120 } });
+    await clickEmptyWorkflowCanvas(page);
     await expect(page.getByTestId('workflow-inspector')).toHaveCount(0);
     const after = await canvas.boundingBox();
     expect(after?.width).toBe(before?.width);
@@ -273,17 +325,17 @@ test.describe('workflow builder execution motion', () => {
     const canvas = page.getByTestId('workflow-canvas');
     const nodes = page.getByTestId('workflow-node');
     const inspector = page.getByTestId('workflow-inspector');
-    await expect(nodes).toHaveCount(4);
+    await expect(nodes).toHaveCount(5);
 
     await nodes.nth(1).click();
     await expect(inspector).toBeVisible();
 
     await page.keyboard.press('Backspace');
-    await expect(nodes).toHaveCount(3);
+    await expect(nodes).toHaveCount(4);
     await expect(inspector).toHaveCount(0);
     await expect(canvas).toBeVisible();
 
-    for (const expectedCount of [2, 1]) {
+    for (const expectedCount of [3, 2]) {
       await nodes.first().click();
       await page.keyboard.press('Backspace');
       await expect(nodes).toHaveCount(expectedCount);
@@ -292,14 +344,16 @@ test.describe('workflow builder execution motion', () => {
     }
   });
 
-  test('keeps state feedback when reduced motion is enabled', async ({ page }) => {
+  test('keeps preview truthful when reduced motion is enabled', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/workflows/wf-001/builder');
-    await page.getByRole('button', { name: 'Run test workflow' }).first().click();
+    await page.getByRole('button', { name: 'Preview workflow (visual only)' }).first().click();
 
     await expect(page.getByTestId('workflow-node').filter({ hasText: 'AI Extract Core' }))
-      .toHaveAttribute('data-status', 'success');
+      .toHaveAttribute('data-status', 'idle');
     await expect(page.getByTestId('execution-edge-active')).toHaveCount(0);
+    await expect(page.getByTestId('workflow-telemetry-preview-notice'))
+      .toContainText('does not call the Workflow Service or node integrations');
   });
 });
 

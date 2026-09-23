@@ -2,7 +2,7 @@ export type WorkflowStatus = 'DRAFT' | 'PUBLISHED' | 'PAUSED';
 
 export type ExecutionStatus = 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
 
-export type NodeCategory = 'trigger' | 'action' | 'ai' | 'ocr';
+export type NodeCategory = 'trigger' | 'action' | 'logic' | 'ai' | 'ocr';
 
 export interface WorkflowPosition {
   x: number;
@@ -51,6 +51,7 @@ export interface NodeCatalogItem {
   defaultConfig: Record<string, unknown>;
   inputs: Array<{ name: string; type: string }>;
   outputs: Array<{ name: string; type: string }>;
+  sourcePorts?: Array<{ id: string; label: string }>;
 }
 
 export interface ExecutionLog {

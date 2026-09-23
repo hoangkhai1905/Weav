@@ -28,7 +28,8 @@ class WorkflowContractValidationTest {
                 .anySatisfy(security -> assertThat(mapValue(security, "internalServiceKey")).isNotNull());
 
         Map<String, Object> responses = map(operation, "responses");
-        assertThat(responses).containsKeys("200", "401", "404", "429", "500");
+        assertThat(responses).containsKeys("200", "401", "429", "500")
+                .doesNotContainKey("404");
         Map<String, Object> successSchema = map(
                 map(map(responses, "200"), "content"), "application/json");
         assertThat(map(successSchema, "schema").get("$ref"))
@@ -39,6 +40,44 @@ class WorkflowContractValidationTest {
         assertThat(usage.get("required")).isEqualTo(List.of("inUse"));
         assertThat(map(map(usage, "properties"), "inUse").get("type"))
                 .isEqualTo("boolean");
+    }
+
+    @Test
+    void workflowDetailContractAddsOnlyTheSafeTriggerProjection() throws IOException {
+        Map<String, Object> document = loadContract();
+        Map<String, Object> paths = map(document, "paths");
+        Map<String, Object> detail = map(map(paths, "/workspaces/{workspaceId}/workflows/{workflowId}"), "get");
+        Map<String, Object> responses = map(detail, "responses");
+        Map<String, Object> successSchema = map(
+                map(map(responses, "200"), "content"), "application/json");
+        assertThat(map(successSchema, "schema").get("$ref"))
+                .isEqualTo("#/components/schemas/Workflow");
+
+        Map<String, Object> schemas = map(map(document, "components"), "schemas");
+        Map<String, Object> workflow = map(schemas, "Workflow");
+        assertThat(workflow.get("additionalProperties")).isEqualTo(true);
+        assertThat(workflow.get("required")).isEqualTo(List.of("workflowId", "status"));
+
+        Map<String, Object> triggerList = map(map(workflow, "properties"), "triggers");
+        assertThat(triggerList.get("type")).isEqualTo("array");
+        Map<String, Object> registration = mapValue(triggerList.get("items"), "triggers.items");
+        assertThat(registration.get("additionalProperties")).isEqualTo(false);
+        assertThat(registration.get("required")).isEqualTo(List.of(
+                "triggerId", "type", "status", "reasonCode", "nextRunAt", "lastTriggeredAt"));
+
+        Map<String, Object> properties = map(registration, "properties");
+        assertThat(properties).containsOnlyKeys(
+                "triggerId", "type", "status", "reasonCode", "nextRunAt", "lastTriggeredAt");
+        assertThat(map(properties, "triggerId").get("format")).isEqualTo("uuid");
+        assertThat(map(properties, "type").get("enum")).isEqualTo(List.of("SCHEDULE", "WEBHOOK", "TELEGRAM"));
+        assertThat(map(properties, "status").get("enum")).isEqualTo(List.of("ACTIVE", "DISABLED"));
+        assertThat(map(properties, "reasonCode").get("enum"))
+                .isEqualTo(List.of("DEPENDENCY_NOT_CONFIGURED", "SCHEDULE_ADMISSION_FAILED"));
+        assertThat(map(properties, "reasonCode").get("nullable")).isEqualTo(true);
+        assertThat(map(properties, "nextRunAt").get("format")).isEqualTo("date-time");
+        assertThat(map(properties, "nextRunAt").get("nullable")).isEqualTo(true);
+        assertThat(map(properties, "lastTriggeredAt").get("format")).isEqualTo("date-time");
+        assertThat(map(properties, "lastTriggeredAt").get("nullable")).isEqualTo(true);
     }
 
     private Map<String, Object> loadContract() throws IOException {

@@ -23,6 +23,10 @@ import {
   Filter,
 } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
+import { NODE_CATALOG } from '../../lib/constants/nodeCatalog';
+import { getNodeReadinessBadge } from '../../lib/nodeReadiness';
+
+const SUPPORTED_NODE_TYPES = new Set(NODE_CATALOG.map((item) => item.type));
 
 const ICON_MAP: Record<string, React.ElementType> = {
   'trigger.manual': Play,
@@ -55,7 +59,7 @@ export interface CustomNodeData {
   nameKey?: string;
   nodeType?: string;
   config?: Record<string, unknown>;
-  status?: 'idle' | 'processing' | 'success' | 'error';
+  status?: 'idle' | 'processing' | 'success' | 'error' | 'tested';
   executionTime?: string;
   selected?: boolean;
 }
@@ -67,7 +71,11 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
   const name = data.nameKey ? t(String(data.nameKey)) : (data.name as string) || t('builder.node.default');
   const status = (data.status as CustomNodeData['status']) || 'idle';
   const executionTime = (data.executionTime as string) || '';
+  const config = (data.config as Record<string, unknown>) || {};
+  const readiness = getNodeReadinessBadge(nodeType, config);
   const isNodeSelected = Boolean(selected || data.selected);
+  const isUnsupported = !SUPPORTED_NODE_TYPES.has(nodeType);
+  const sourcePorts = NODE_CATALOG.find((item) => item.type === nodeType)?.sourcePorts;
 
   const Icon = ICON_MAP[nodeType] || AlertCircle;
   const isTrigger = nodeType.startsWith('trigger');
@@ -92,6 +100,14 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
         </span>
       );
     }
+    if (status === 'tested') {
+      return (
+        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+          <CheckCircle2 size={10} className="text-emerald-500" />
+          {`${nodeType === 'ocr.extract' ? 'OCR test passed' : 'Test passed'}${executionTime ? ` · ${executionTime}` : ''}`}
+        </span>
+      );
+    }
     if (status === 'error') {
       return (
         <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
@@ -100,9 +116,18 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
         </span>
       );
     }
+    const readinessClass = readiness.state === 'unsupported'
+      ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20'
+      : readiness.state === 'ready' || readiness.state === 'draft'
+        ? 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700/60'
+        : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20';
     return (
-      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60">
-        {t('builder.status.ready')}
+      <span
+        data-testid="workflow-node-readiness"
+        data-readiness={readiness.state}
+        className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${readinessClass}`}
+      >
+        {readiness.label}
       </span>
     );
   };
@@ -142,7 +167,9 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
   return (
     <motion.div
       data-testid="workflow-node"
+      data-node-type={nodeType}
       data-status={status}
+      data-readiness={readiness.state}
       initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.985, y: 4 }}
       animate={prefersReducedMotion ? { opacity: 1, scale: 1 } : { opacity: 1, scale: 1, y: isNodeSelected ? -1 : 0 }}
       transition={{ duration: prefersReducedMotion ? 0.01 : 0.18, ease: [0.16, 1, 0.3, 1] }}
@@ -188,6 +215,16 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
         </div>
       </div>
 
+      {isUnsupported && (
+        <div
+          data-testid="unsupported-node-warning"
+          role="note"
+          className="mt-2 rounded border border-rose-500/20 bg-rose-500/10 px-2 py-1 text-[9px] font-medium text-rose-700 dark:text-rose-300"
+        >
+          Unsupported in Workflow V1 · preserved from draft
+        </div>
+      )}
+
       {/* Footer Info */}
       <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[10px]">
         <span className="text-slate-500 dark:text-slate-400 font-mono">
@@ -196,12 +233,33 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
         {renderStatusBadge()}
       </div>
 
-      {/* Source Handle (Right) */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="w-2.5 h-2.5 !bg-blue-500 !border-2 !border-white dark:!border-slate-900 !rounded-full !-right-1.5 cursor-crosshair"
-      />
+      {sourcePorts?.length ? (
+        sourcePorts.map((port, index) => (
+          <React.Fragment key={port.id}>
+            <Handle
+              id={port.id}
+              data-testid={`condition-source-${port.id}`}
+              type="source"
+              position={Position.Right}
+              style={{ top: `${42 + index * 24}%` }}
+              className="w-2.5 h-2.5 !bg-blue-500 !border-2 !border-white dark:!border-slate-900 !rounded-full !-right-1.5 cursor-crosshair"
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute right-2 text-[9px] font-medium text-slate-500 dark:text-slate-400"
+              style={{ top: `calc(${42 + index * 24}% - 6px)` }}
+            >
+              {port.label}
+            </span>
+          </React.Fragment>
+        ))
+      ) : (
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="w-2.5 h-2.5 !bg-blue-500 !border-2 !border-white dark:!border-slate-900 !rounded-full !-right-1.5 cursor-crosshair"
+        />
+      )}
     </motion.div>
   );
 });

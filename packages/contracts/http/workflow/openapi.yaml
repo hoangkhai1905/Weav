@@ -1,18 +1,324 @@
 openapi: 3.1.0
 info:
-  title: Weav Workflow Internal Connection Usage API
+  title: Weav Workflow Service API
   version: 1.0.0
   description: >-
-    Internal contract used by Workspace Service to determine whether a
-    connection is referenced by a workflow. Workflow Service owns workflow
-    definitions and remains the authority for this answer.
+    Workflow resource, execution, schedule, and webhook contract. The API
+    Gateway adds the /api/v1 prefix to public resource paths; Workflow Service
+    receives the paths shown here. The internal usage operation below is also
+    consumed by Workspace Service.
 servers:
-  - url: http://localhost:8082
+  - url: http://localhost:8080
     description: Local Workflow service
 tags:
+  - name: Workflows
+    description: Workspace-scoped workflow authoring and lifecycle operations
+  - name: Executions
+    description: Manual execution admission and authorized monitoring
   - name: Internal
     description: Service-to-service operations
 paths:
+  /workspaces/{workspaceId}/workflows:
+    post:
+      tags: [Workflows]
+      operationId: createWorkflow
+      summary: Create a workflow draft
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWorkflowRequest' }
+      responses:
+        '201':
+          description: Draft created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    get:
+      tags: [Workflows]
+      operationId: listWorkflows
+      summary: List workflows visible in a workspace
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+      responses:
+        '200':
+          description: Paged workflow summaries.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}:
+    get:
+      tags: [Workflows]
+      operationId: getWorkflow
+      summary: Get a workflow
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+      responses:
+        '200':
+          description: Workflow metadata and editable state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Workflow' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/draft:
+    put:
+      tags: [Workflows]
+      operationId: saveWorkflowDraft
+      summary: Save a workflow draft
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveWorkflowDraftRequest' }
+      responses:
+        '200':
+          description: Draft saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Workflow' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/publish:
+    post:
+      tags: [Workflows]
+      operationId: publishWorkflow
+      summary: Publish an immutable workflow version
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+      responses:
+        '200':
+          description: Published version. Each webhook registration is provisioned with a new endpoint key and secret; plaintext secrets are returned once and are write-only thereafter.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowPublication' }
+          headers:
+            Cache-Control:
+              description: Prevents storage of a response containing one-time webhook secrets.
+              schema: { type: string, const: no-store }
+        '400':
+          description: Validation failure with bounded field or node diagnostics.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503':
+          description: A required trigger or connection-reference dependency is unavailable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/pause:
+    post:
+      tags: [Workflows]
+      operationId: pauseWorkflow
+      summary: Pause a published workflow
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+      responses:
+        '200':
+          description: Workflow paused; new manual and automatic triggers are rejected.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Workflow' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/StateConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/resume:
+    post:
+      tags: [Workflows]
+      operationId: resumeWorkflow
+      summary: Resume a paused workflow
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+      responses:
+        '200':
+          description: Workflow resumed for its current published version.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Workflow' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/StateConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/executions:
+    post:
+      tags: [Executions]
+      operationId: createManualExecution
+      summary: Start a manual execution
+      description: >-
+        Requires WORKFLOW_RUN. The workflow must be PUBLISHED. The execution,
+        initial node rows, and durable outbox intent are committed before 202
+        is returned. The request input must be a JSON object.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ManualExecutionRequest' }
+      responses:
+        '202':
+          description: Execution and outbox intent committed and queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExecutionAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '422': { $ref: '#/components/responses/StateConflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    get:
+      tags: [Executions]
+      operationId: listExecutions
+      summary: List execution summaries
+      description: Requires WORKFLOW_MONITOR and exact workspace/workflow scoping.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+      responses:
+        '200':
+          description: Stable page ordered by created time and ID.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExecutionPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /workspaces/{workspaceId}/workflows/{workflowId}/executions/{executionId}:
+    get:
+      tags: [Executions]
+      operationId: getExecution
+      summary: Get execution state and sanitized logs
+      description: >-
+        Requires WORKFLOW_MONITOR. The tuple workspaceId, workflowId, and
+        executionId is checked together. Logs default to page 0 and size 20,
+        accept at most 100 entries per page, and expose hasNext. Persisted
+        output, errors, metadata, and messages are deeply sanitized before
+        serialization; credentials are never returned.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+        - { $ref: '#/components/parameters/ExecutionId' }
+        - $ref: '#/components/parameters/LogPage'
+        - $ref: '#/components/parameters/LogSize'
+      responses:
+        '200':
+          description: Execution, node states, attempts, and bounded log page.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExecutionDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /webhooks/{endpointKey}:
+    post:
+      tags: [Executions]
+      operationId: receiveWebhook
+      summary: Receive a workflow webhook
+      description: >-
+        Authenticates the opaque endpoint identifier with X-Webhook-Secret;
+        no user JWT is required. The accepted JSON value becomes trigger.input.
+        Unknown, missing, wrong, inactive, paused, or superseded registrations
+        all return the same generic 404. The endpoint identifier and secret
+        must be redacted from logs, metrics, and traces. Request bodies are
+        limited to 1 MiB and ingress requests are rate limited.
+      security: []
+      parameters:
+        - name: endpointKey
+          in: path
+          required: true
+          description: Opaque 24-byte random identifier encoded as unpadded base64url.
+          schema: { type: string, minLength: 32, maxLength: 32, pattern: '^[A-Za-z0-9_-]{32}$' }
+        - name: X-Webhook-Secret
+          in: header
+          required: true
+          description: Required high-entropy webhook secret; never returned after one-time publication.
+          schema: { type: string, minLength: 43, maxLength: 43, pattern: '^[A-Za-z0-9_-]{43}$', writeOnly: true }
+      requestBody:
+        required: false
+        description: Any JSON value; raw request bodies larger than 1 MiB are rejected before parsing.
+        content:
+          application/json:
+            schema:
+              description: Any JSON value, including null. An empty body is treated as null.
+              oneOf:
+                - { type: object, additionalProperties: true }
+                - { type: array, items: {} }
+                - { type: string }
+                - { type: number }
+                - { type: boolean }
+                - { type: 'null' }
+      responses:
+        '202':
+          description: Execution, pending node rows, and outbox intent committed after durable admission.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExecutionAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/WebhookNotFound' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /internal/workspaces/{workspaceId}/connections/{connectionId}/usage:
     get:
       tags: [Internal]
@@ -30,16 +336,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ConnectionUsageResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/InternalError'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
 components:
   securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
     internalServiceKey:
       type: apiKey
       in: header
@@ -49,30 +355,305 @@ components:
       name: workspaceId
       in: path
       required: true
-      schema:
-        type: string
-        format: uuid
+      schema: { type: string, format: uuid }
+    WorkflowId:
+      name: workflowId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ExecutionId:
+      name: executionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
     ConnectionId:
       name: connectionId
       in: path
       required: true
-      schema:
-        type: string
-        format: uuid
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 0, default: 0 }
+    Size:
+      name: size
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    LogPage:
+      name: logPage
+      in: query
+      required: false
+      schema: { type: integer, minimum: 0, default: 0 }
+    LogSize:
+      name: logSize
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
   schemas:
     ConnectionUsageResponse:
       type: object
       additionalProperties: false
       required: [inUse]
       properties:
-        inUse:
-          type: boolean
+        inUse: { type: boolean }
+    CreateWorkflowRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: string, maxLength: 2000 }
+    SaveWorkflowDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [name, definition]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: string, maxLength: 2000 }
+        definition: { type: object, additionalProperties: true }
+        editorState: { type: object, additionalProperties: true }
+    WorkflowCreated:
+      type: object
+      additionalProperties: false
+      required: [workflowId, status]
+      properties:
+        workflowId: { type: string, format: uuid }
+        status: { type: string, enum: [DRAFT, PUBLISHED, PAUSED] }
+    Workflow:
+      type: object
+      additionalProperties: true
+      required: [workflowId, status]
+      properties:
+        workflowId: { type: string, format: uuid }
+        status: { type: string, enum: [DRAFT, PUBLISHED, PAUSED] }
+        triggers:
+          type: array
+          description: Safe readiness and timing projection for the workflow's current trigger registrations.
+          items:
+            type: object
+            additionalProperties: false
+            required: [triggerId, type, status, reasonCode, nextRunAt, lastTriggeredAt]
+            properties:
+              triggerId: { type: string, format: uuid }
+              type: { type: string, enum: [SCHEDULE, WEBHOOK, TELEGRAM] }
+              status: { type: string, enum: [ACTIVE, DISABLED] }
+              reasonCode:
+                type: string
+                enum: [DEPENDENCY_NOT_CONFIGURED, SCHEDULE_ADMISSION_FAILED]
+                nullable: true
+              nextRunAt: { type: string, format: date-time, nullable: true }
+              lastTriggeredAt: { type: string, format: date-time, nullable: true }
+    WorkflowSummary:
+      type: object
+      additionalProperties: true
+      required: [workflowId, status]
+      properties:
+        workflowId: { type: string, format: uuid }
+        status: { type: string, enum: [DRAFT, PUBLISHED, PAUSED] }
+    WorkflowPage:
+      type: object
+      required: [items, page, size, totalElements]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/WorkflowSummary' } }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+        totalElements: { type: integer, format: int64, minimum: 0 }
+    WorkflowPublication:
+      type: object
+      required: [workflowId, versionId, version, status, webhooks]
+      properties:
+        workflowId: { type: string, format: uuid }
+        versionId: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        status: { type: string, enum: [PUBLISHED] }
+        webhooks:
+          type: array
+          description: Newly provisioned webhook registrations. Each secret is returned only once.
+          items: { $ref: '#/components/schemas/WebhookProvisioning' }
+    WebhookProvisioning:
+      type: object
+      required: [triggerId, endpointKey, secret]
+      properties:
+        triggerId: { type: string, format: uuid }
+        endpointKey: { type: string, minLength: 32, maxLength: 32, pattern: '^[A-Za-z0-9_-]{32}$' }
+        secret:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          writeOnly: true
+          description: One-time plaintext provisioning value. Never returned by later reads.
+    ManualExecutionRequest:
+      type: object
+      additionalProperties: false
+      required: [input]
+      properties:
+        input: { type: object, additionalProperties: true }
+    ExecutionAccepted:
+      type: object
+      required: [executionId, workflowId, workflowVersionId, status]
+      properties:
+        executionId: { type: string, format: uuid }
+        workflowId: { type: string, format: uuid }
+        workflowVersionId: { type: string, format: uuid }
+        status: { type: string, enum: [QUEUED] }
+    ExecutionSummary:
+      type: object
+      required: [executionId, workflowId, workflowVersionId, status, triggerType, createdAt]
+      properties:
+        executionId: { type: string, format: uuid }
+        workflowId: { type: string, format: uuid }
+        workflowVersionId: { type: string, format: uuid }
+        status: { type: string, enum: [QUEUED, RUNNING, WAITING, SUCCESS, FAILED, CANCELLED] }
+        triggerType: { type: string, enum: [MANUAL, SCHEDULE, WEBHOOK, TELEGRAM] }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+    ExecutionPage:
+      type: object
+      required: [items, page, size, totalElements, hasNext]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ExecutionSummary' } }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+        totalElements: { type: integer, format: int64, minimum: 0 }
+        hasNext: { type: boolean }
+    ExecutionDetail:
+      allOf:
+        - $ref: '#/components/schemas/ExecutionSummary'
+        - type: object
+          required: [nodes, logs]
+          properties:
+            nodes: { type: array, items: { $ref: '#/components/schemas/NodeState' } }
+            logs: { $ref: '#/components/schemas/LogPage' }
+    NodeState:
+      type: object
+      required: [nodeExecutionId, nodeId, nodeType, status, attemptCount, attempts]
+      properties:
+        nodeExecutionId: { type: string, format: uuid }
+        nodeId: { type: string }
+        nodeType: { type: string }
+        status: { type: string, enum: [PENDING, READY, RUNNING, WAITING, SUCCESS, FAILED, SKIPPED, CANCELLED] }
+        attemptCount: { type: integer, minimum: 0 }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        output:
+          nullable: true
+          description: Sanitized JSON value; provider credentials are removed.
+        error:
+          nullable: true
+          description: Sanitized JSON value; provider credentials are removed.
+        attempts: { type: array, items: { $ref: '#/components/schemas/AttemptState' } }
+    AttemptState:
+      type: object
+      required: [attemptId, attemptNumber, status, startedAt]
+      properties:
+        attemptId: { type: string, format: uuid }
+        attemptNumber: { type: integer, minimum: 1 }
+        status: { type: string, enum: [RUNNING, SUCCESS, FAILED, CANCELLED] }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        output:
+          nullable: true
+          description: Sanitized JSON value; provider credentials are removed.
+        error:
+          nullable: true
+          description: Sanitized JSON value; provider credentials are removed.
+    LogPage:
+      type: object
+      required: [items, page, size, totalElements, hasNext]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/LogEntry' } }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+        totalElements: { type: integer, format: int64, minimum: 0 }
+        hasNext: { type: boolean }
+    LogEntry:
+      type: object
+      required: [id, level, eventType, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        nodeExecutionId: { type: string, format: uuid, nullable: true }
+        attemptId: { type: string, format: uuid, nullable: true }
+        level: { type: string, enum: [DEBUG, INFO, WARN, ERROR] }
+        eventType: { type: string }
+        message: { type: string, nullable: true }
+        metadata: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error, timestamp, status, path]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, details]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required: [field, message]
+                properties:
+                  field: { type: string }
+                  message: { type: string }
+        timestamp: { type: string, format: date-time }
+        status: { type: integer }
+        path: { type: string }
   responses:
+    BadRequest:
+      description: Malformed JSON, invalid UUID, validation, or pagination bounds.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
     Unauthorized:
-      description: Missing or invalid internal service key.
+      description: Missing or invalid user JWT or internal service key.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: The authenticated principal lacks the operation capability.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
     NotFound:
-      description: Workspace or connection is not known to Workflow Service.
+      description: The resource or exact scoped execution tuple was not found.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    WebhookNotFound:
+      description: The endpoint is unknown or its secret is invalid, missing, inactive, paused, or superseded. The same response is used for all these cases.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: Concurrent draft or persistence state conflict.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    StateConflict:
+      description: The requested lifecycle or execution operation is invalid for the current state.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    RequestTooLarge:
+      description: Raw request body exceeded the bounded request size before JSON binding.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
     TooManyRequests:
-      description: Workflow usage lookup was rate limited.
+      description: A bounded process-wide ingress or usage lookup rate limit was exceeded.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
     InternalError:
-      description: Workflow usage lookup failed inside Workflow Service.
+      description: Workflow Service failed internally. Details are sanitized.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }

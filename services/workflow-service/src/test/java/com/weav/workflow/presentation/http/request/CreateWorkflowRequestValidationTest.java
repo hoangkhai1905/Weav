@@ -7,8 +7,6 @@ import jakarta.validation.ValidatorFactory;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.json.JsonMapper;
-
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,30 +30,17 @@ class CreateWorkflowRequestValidationTest {
 
     @Test
     void rejectsInvalidWorkflowRequest() throws Exception {
-        CreateWorkflowRequest request = new CreateWorkflowRequest(
-                "",
-                null,
-                "",
-                new JsonMapper().readTree("{}"),
-                null
-        );
+        CreateWorkflowRequest request = new CreateWorkflowRequest("", null);
 
         Set<ConstraintViolation<CreateWorkflowRequest>> violations = validator.validate(request);
 
-        assertEquals(2, violations.size());
+        assertEquals(1, violations.size());
         assertTrue(violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals("name")));
-        assertTrue(violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals("schemaVersion")));
     }
 
     @Test
     void acceptsValidWorkflowRequest() throws Exception {
-        CreateWorkflowRequest request = new CreateWorkflowRequest(
-                "Invoice Workflow",
-                "Processes invoices",
-                "1.0",
-                new JsonMapper().readTree("{\"nodes\":[],\"edges\":[]}"),
-                new JsonMapper().readTree("{\"viewport\":{\"zoom\":1}}")
-        );
+        CreateWorkflowRequest request = new CreateWorkflowRequest("Invoice Workflow", "Processes invoices");
 
         assertTrue(validator.validate(request).isEmpty());
     }

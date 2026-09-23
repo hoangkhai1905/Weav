@@ -1,0 +1,235 @@
+services:
+  schema-bootstrap-identity:
+    profiles: ["schema-bootstrap"]
+    image: postgres:17-alpine
+    environment:
+      PGHOST: ${IDENTITY_DB_HOST}
+      PGPORT: ${IDENTITY_DB_PORT:-5432}
+      PGDATABASE: ${IDENTITY_DB_NAME}
+      PGUSER: ${IDENTITY_DB_USERNAME}
+      PGPASSWORD: ${IDENTITY_DB_PASSWORD}
+      PGSSLMODE: ${IDENTITY_DB_SSL_MODE:-require}
+      PGCONNECT_TIMEOUT: "10"
+      PGOPTIONS: "-c search_path=${WORKFLOW_TEST_IDENTITY_SCHEMA}"
+    entrypoint: ["psql"]
+    command:
+      - -X
+      - -qAt
+      - --set=ON_ERROR_STOP=1
+      - --command
+      - CREATE SCHEMA IF NOT EXISTS ${WORKFLOW_TEST_IDENTITY_SCHEMA}
+      - --command
+      - SELECT current_schema()
+
+  schema-bootstrap-workspace:
+    profiles: ["schema-bootstrap"]
+    image: postgres:17-alpine
+    environment:
+      PGHOST: ${WORKSPACE_DB_HOST}
+      PGPORT: ${WORKSPACE_DB_PORT:-5432}
+      PGDATABASE: ${WORKSPACE_DB_NAME}
+      PGUSER: ${WORKSPACE_DB_USERNAME}
+      PGPASSWORD: ${WORKSPACE_DB_PASSWORD}
+      PGSSLMODE: ${WORKSPACE_DB_SSL_MODE:-require}
+      PGCONNECT_TIMEOUT: "10"
+      PGOPTIONS: "-c search_path=${WORKFLOW_TEST_WORKSPACE_SCHEMA}"
+    entrypoint: ["psql"]
+    command:
+      - -X
+      - -qAt
+      - --set=ON_ERROR_STOP=1
+      - --command
+      - CREATE SCHEMA IF NOT EXISTS ${WORKFLOW_TEST_WORKSPACE_SCHEMA}
+      - --command
+      - SELECT current_schema()
+
+  schema-bootstrap-workflow:
+    profiles: ["schema-bootstrap"]
+    image: postgres:17-alpine
+    environment:
+      PGHOST: ${WORKFLOW_DB_HOST}
+      PGPORT: ${WORKFLOW_DB_PORT:-5432}
+      PGDATABASE: ${WORKFLOW_DB_NAME}
+      PGUSER: ${WORKFLOW_DB_USERNAME}
+      PGPASSWORD: ${WORKFLOW_DB_PASSWORD}
+      PGSSLMODE: ${WORKFLOW_DB_SSL_MODE:-require}
+      PGCONNECT_TIMEOUT: "10"
+      PGOPTIONS: "-c search_path=${WORKFLOW_TEST_WORKFLOW_SCHEMA}"
+    entrypoint: ["psql"]
+    command:
+      - -X
+      - -qAt
+      - --set=ON_ERROR_STOP=1
+      - --command
+      - CREATE SCHEMA IF NOT EXISTS ${WORKFLOW_TEST_WORKFLOW_SCHEMA}
+      - --command
+      - SELECT current_schema()
+
+  valkey:
+    image: valkey/valkey:8.1.10-alpine
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - rabbitmq_smoke_data:/var/lib/rabbitmq
+
+  mailpit:
+    image: axllent/mailpit:v1.31.1
+    environment:
+      MP_MAX_MESSAGES: "20"
+    ports:
+      - "127.0.0.1:${WORKFLOW_SMOKE_MAILPIT_PORT}:8025"
+
+  identity-service:
+    build:
+      context: ./services/identity-service
+      dockerfile: Dockerfile.dev
+    ports:
+      - "127.0.0.1:${WORKFLOW_SMOKE_IDENTITY_PORT}:8080"
+    environment:
+      APP_ENV: development
+      DB_HOST: ${IDENTITY_DB_HOST}
+      DB_PORT: ${IDENTITY_DB_PORT:-5432}
+      DB_NAME: ${IDENTITY_DB_NAME}
+      DB_USERNAME: ${IDENTITY_DB_USERNAME}
+      DB_PASSWORD: ${IDENTITY_DB_PASSWORD}
+      DB_SSL_MODE: ${IDENTITY_DB_SSL_MODE:-require}
+      DB_SCHEMA: ${WORKFLOW_TEST_IDENTITY_SCHEMA}
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://${IDENTITY_DB_HOST}:${IDENTITY_DB_PORT:-5432}/${IDENTITY_DB_NAME}?sslmode=${IDENTITY_DB_SSL_MODE:-require}&currentSchema=${WORKFLOW_TEST_IDENTITY_SCHEMA}"
+      SPRING_DATASOURCE_USERNAME: ${IDENTITY_DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${IDENTITY_DB_PASSWORD}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 30m
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      JWT_CLOCK_SKEW: 30s
+      IDENTITY_INTERNAL_SERVICE_KEY: ${IDENTITY_INTERNAL_SERVICE_KEY}
+      GOOGLE_OAUTH_ENABLED: "false"
+      VALKEY_URL: redis://valkey:6379
+      OTP_HMAC_SECRET: ${OTP_HMAC_SECRET}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      SMTP_FROM_ADDRESS: smoke@weav.local
+      SMTP_AUTH_ENABLED: "false"
+      SMTP_STARTTLS_ENABLED: "false"
+      SMTP_STARTTLS_REQUIRED: "false"
+      SMTP_SSL_ENABLED: "false"
+      AVATAR_S3_ENDPOINT: ""
+    depends_on:
+      valkey:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  workspace-service:
+    build:
+      context: ./services/workspace-service
+      dockerfile: Dockerfile.dev
+    ports:
+      - "127.0.0.1:${WORKFLOW_SMOKE_WORKSPACE_PORT}:8080"
+    environment:
+      APP_ENV: development
+      DB_HOST: ${WORKSPACE_DB_HOST}
+      DB_PORT: ${WORKSPACE_DB_PORT:-5432}
+      DB_NAME: ${WORKSPACE_DB_NAME}
+      DB_USERNAME: ${WORKSPACE_DB_USERNAME}
+      DB_PASSWORD: ${WORKSPACE_DB_PASSWORD}
+      DB_SSL_MODE: ${WORKSPACE_DB_SSL_MODE:-require}
+      DB_SCHEMA: ${WORKFLOW_TEST_WORKSPACE_SCHEMA}
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://${WORKSPACE_DB_HOST}:${WORKSPACE_DB_PORT:-5432}/${WORKSPACE_DB_NAME}?sslmode=${WORKSPACE_DB_SSL_MODE:-require}&currentSchema=${WORKFLOW_TEST_WORKSPACE_SCHEMA}"
+      SPRING_DATASOURCE_USERNAME: ${WORKSPACE_DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${WORKSPACE_DB_PASSWORD}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 30m
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      JWT_CLOCK_SKEW: 30s
+      IDENTITY_SERVICE_URL: http://identity-service:8080
+      IDENTITY_INTERNAL_SERVICE_KEY: ${IDENTITY_INTERNAL_SERVICE_KEY}
+      WEAV_INTERNAL_SERVICE_KEY: ${WEAV_INTERNAL_SERVICE_KEY}
+      REDIS_URL: redis://valkey:6379
+      WORKSPACE_AUTHORIZATION_CACHE_TTL: PT1M
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY}
+      CREDENTIAL_ENCRYPTION_KEY_VERSION: smoke
+      WORKFLOW_SERVICE_URL: http://workflow-service:8080
+      WORKFLOW_INTERNAL_SERVICE_KEY: ${WORKFLOW_INTERNAL_SERVICE_KEY}
+      GOOGLE_OAUTH_CLIENT_ID: ""
+      GOOGLE_OAUTH_CLIENT_SECRET: ""
+    depends_on:
+      valkey:
+        condition: service_healthy
+      identity-service:
+        condition: service_started
+
+  workflow-service:
+    build:
+      context: ./services/workflow-service
+      dockerfile: Dockerfile.dev
+    ports:
+      - "127.0.0.1:${WORKFLOW_SMOKE_WORKFLOW_PORT}:8080"
+    environment:
+      APP_ENV: development
+      DB_HOST: ${WORKFLOW_DB_HOST}
+      DB_PORT: ${WORKFLOW_DB_PORT:-5432}
+      DB_NAME: ${WORKFLOW_DB_NAME}
+      DB_USERNAME: ${WORKFLOW_DB_USERNAME}
+      DB_PASSWORD: ${WORKFLOW_DB_PASSWORD}
+      DB_SSL_MODE: ${WORKFLOW_DB_SSL_MODE:-require}
+      DB_SCHEMA: ${WORKFLOW_TEST_WORKFLOW_SCHEMA}
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://${WORKFLOW_DB_HOST}:${WORKFLOW_DB_PORT:-5432}/${WORKFLOW_DB_NAME}?sslmode=${WORKFLOW_DB_SSL_MODE:-require}&currentSchema=${WORKFLOW_TEST_WORKFLOW_SCHEMA}"
+      SPRING_DATASOURCE_USERNAME: ${WORKFLOW_DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${WORKFLOW_DB_PASSWORD}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 30m
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      JWT_CLOCK_SKEW: 30s
+      WORKFLOW_INTERNAL_SERVICE_KEY: ${WORKFLOW_INTERNAL_SERVICE_KEY}
+      WORKSPACE_SERVICE_URL: http://workspace-service:8080
+      WEAV_INTERNAL_SERVICE_KEY: ${WEAV_INTERNAL_SERVICE_KEY}
+      WORKFLOW_SCHEDULE_SCANNER_ENABLED: "true"
+      WORKFLOW_SCHEDULE_SCANNER_BATCH_SIZE: "100"
+      WORKFLOW_SCHEDULE_SCANNER_POLL_INTERVAL_MS: "1000"
+      WORKFLOW_EXECUTION_WORKER_ENABLED: "true"
+      WORKFLOW_EXECUTION_WORKER_OWNER: workflow-live-smoke
+      WORKFLOW_HTTP_CONNECT_TIMEOUT: 5s
+      WORKFLOW_HTTP_CALL_TIMEOUT: 10s
+      WORKFLOW_OCR_ENABLED: "false"
+      WORKFLOW_OCR_URL_SOURCE_ENABLED: "false"
+      WORKFLOW_OCR_ARTIFACT_SOURCE_ENABLED: "false"
+      WORKFLOW_OCR_SERVICE_CLAIMS_VERIFIED: "false"
+      WORKFLOW_OCR_URL_ALLOWLIST_VERIFIED: "false"
+      WORKFLOW_OCR_ARTIFACT_RESOLVER_VERIFIED: "false"
+      OCR_SERVICE_PRIVATE_URL: http://127.0.0.1:1
+      VALKEY_URL: redis://valkey:6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  rabbitmq_smoke_data: {}

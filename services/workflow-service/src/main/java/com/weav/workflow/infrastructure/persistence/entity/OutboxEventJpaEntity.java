@@ -1,17 +1,6 @@
 package com.weav.workflow.infrastructure.persistence.entity;
 
-import com.weav.workflow.domain.valueobject.WorkflowStatus;
-import com.weav.workflow.domain.valueobject.TriggerType;
-import com.weav.workflow.domain.valueobject.TriggerStatus;
-import com.weav.workflow.domain.valueobject.ExecutionStatus;
-import com.weav.workflow.domain.valueobject.ExecutionTriggerType;
-import com.weav.workflow.domain.valueobject.NodeExecutionStatus;
-import com.weav.workflow.domain.valueobject.AttemptStatus;
-import com.weav.workflow.domain.valueobject.LogLevel;
 import com.weav.workflow.domain.valueobject.OutboxStatus;
-import com.weav.workflow.domain.valueobject.AgentRunStatus;
-import com.weav.workflow.domain.valueobject.AgentStepStatus;
-import com.weav.workflow.domain.valueobject.AgentStepDecisionType;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -61,17 +50,39 @@ public class OutboxEventJpaEntity {
     @Column(name = "retry_count", nullable = false)
     private Integer retryCount;
 
+    @Column(name = "publisher_lease_token")
+    private UUID publisherLeaseToken;
+
+    @Column(name = "publisher_lease_until")
+    private Instant publisherLeaseUntil;
+
+    @Column(name = "next_attempt_at", nullable = false)
+    private Instant nextAttemptAt;
+
     protected OutboxEventJpaEntity() {
     }
 
     public OutboxEventJpaEntity(String aggregateType, UUID aggregateId, String eventType, JsonNode payload) {
-        this.id = UUID.randomUUID();
+        this(UUID.randomUUID(), aggregateType, aggregateId, eventType, payload, OutboxStatus.PENDING,
+                null, null, 0, null, null, null);
+    }
+
+    public OutboxEventJpaEntity(UUID id, String aggregateType, UUID aggregateId, String eventType,
+                                JsonNode payload, OutboxStatus status, Instant createdAt,
+                                Instant publishedAt, Integer retryCount, UUID publisherLeaseToken,
+                                Instant publisherLeaseUntil, Instant nextAttemptAt) {
+        this.id = id;
         this.aggregateType = aggregateType;
         this.aggregateId = aggregateId;
         this.eventType = eventType;
         this.payload = payload;
-        this.status = OutboxStatus.PENDING;
-        this.retryCount = 0;
+        this.status = status;
+        this.createdAt = createdAt;
+        this.publishedAt = publishedAt;
+        this.retryCount = retryCount;
+        this.publisherLeaseToken = publisherLeaseToken;
+        this.publisherLeaseUntil = publisherLeaseUntil;
+        this.nextAttemptAt = nextAttemptAt;
     }
 
     @PrePersist
@@ -79,6 +90,7 @@ public class OutboxEventJpaEntity {
         if (id == null) id = UUID.randomUUID();
         if (retryCount == null) retryCount = 0;
         if (createdAt == null) createdAt = Instant.now();
+        if (nextAttemptAt == null) nextAttemptAt = createdAt;
     }
 
     public UUID getId() { return id; }
@@ -90,8 +102,14 @@ public class OutboxEventJpaEntity {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getPublishedAt() { return publishedAt; }
     public Integer getRetryCount() { return retryCount; }
+    public UUID getPublisherLeaseToken() { return publisherLeaseToken; }
+    public Instant getPublisherLeaseUntil() { return publisherLeaseUntil; }
+    public Instant getNextAttemptAt() { return nextAttemptAt; }
 
     public void setStatus(OutboxStatus status) { this.status = status; }
     public void setPublishedAt(Instant publishedAt) { this.publishedAt = publishedAt; }
     public void setRetryCount(Integer retryCount) { this.retryCount = retryCount; }
+    public void setPublisherLeaseToken(UUID publisherLeaseToken) { this.publisherLeaseToken = publisherLeaseToken; }
+    public void setPublisherLeaseUntil(Instant publisherLeaseUntil) { this.publisherLeaseUntil = publisherLeaseUntil; }
+    public void setNextAttemptAt(Instant nextAttemptAt) { this.nextAttemptAt = nextAttemptAt; }
 }

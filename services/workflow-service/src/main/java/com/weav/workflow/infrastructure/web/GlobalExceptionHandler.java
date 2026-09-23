@@ -4,8 +4,12 @@ import com.weav.workflow.domain.exception.ConflictException;
 import com.weav.workflow.domain.exception.DomainException;
 import com.weav.workflow.domain.exception.ForbiddenException;
 import com.weav.workflow.domain.exception.InvalidStateException;
+import com.weav.workflow.domain.exception.RateLimitExceededException;
 import com.weav.workflow.domain.exception.ResourceNotFoundException;
 import com.weav.workflow.domain.exception.UnauthorizedException;
+import com.weav.workflow.domain.exception.WebhookNotFoundException;
+import com.weav.workflow.domain.exception.WebhookRateLimitExceededException;
+import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
@@ -37,6 +41,28 @@ public class GlobalExceptionHandler {
     ) {
         HttpStatus status = statusFor(exception);
         return respond(status, exception.getCode(), exception.getMessage(), List.of(), request);
+    }
+
+    @ExceptionHandler(WebhookNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleWebhookNotFound(
+            WebhookNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        return respond(HttpStatus.NOT_FOUND, "WEBHOOK_NOT_FOUND", "Webhook was not found", List.of(), request);
+    }
+
+    @ExceptionHandler(WorkspaceDependencyUnavailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleWorkspaceUnavailable(
+            WorkspaceDependencyUnavailableException exception,
+            HttpServletRequest request
+    ) {
+        return respond(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "DEPENDENCY_UNAVAILABLE",
+                "Workspace authorization is temporarily unavailable",
+                List.of(),
+                request
+        );
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -151,7 +177,8 @@ public class GlobalExceptionHandler {
             DataIntegrityViolationException exception,
             HttpServletRequest request
     ) {
-        log.warn("Data integrity violation on {}", request.getRequestURI(), exception);
+        log.warn("event=data_integrity_violation requestId={} errorType={}",
+                CorrelationIdFilter.requestId(request), exception.getClass().getSimpleName());
         return respond(
                 HttpStatus.CONFLICT,
                 "CONFLICT",
@@ -166,7 +193,8 @@ public class GlobalExceptionHandler {
             Exception exception,
             HttpServletRequest request
     ) {
-        log.error("Unhandled exception on {}", request.getRequestURI(), exception);
+        log.error("event=unhandled_request_failure requestId={} errorType={}",
+                CorrelationIdFilter.requestId(request), exception.getClass().getSimpleName());
         return respond(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 "INTERNAL_ERROR",
@@ -183,9 +211,15 @@ public class GlobalExceptionHandler {
             List<ApiErrorResponse.ErrorDetail> details,
             HttpServletRequest request
     ) {
-        return ResponseEntity.status(status).body(
-                ApiErrorResponse.of(code, message, status.value(), request.getRequestURI(), details)
-        );
+        String correlationId = CorrelationIdFilter.requestId(request);
+        return ResponseEntity.status(status)
+                .header(CorrelationIdFilter.HEADER_NAME, correlationId)
+                .headers(headers -> {
+                    if (WebhookRequestPath.isWebhookPath(request)) {
+                        headers.set("Cache-Control", "no-store");
+                    }
+                })
+                .body(ApiErrorResponse.of(code, message, status.value(), WebhookRequestPath.sanitizedPath(request), details));
     }
 
     private HttpStatus statusFor(DomainException exception) {
@@ -203,6 +237,12 @@ public class GlobalExceptionHandler {
         }
         if (exception instanceof InvalidStateException) {
             return HttpStatus.UNPROCESSABLE_CONTENT;
+        }
+        if (exception instanceof RateLimitExceededException) {
+            return HttpStatus.TOO_MANY_REQUESTS;
+        }
+        if (exception instanceof WebhookRateLimitExceededException) {
+            return HttpStatus.TOO_MANY_REQUESTS;
         }
         return HttpStatus.BAD_REQUEST;
     }

@@ -20,23 +20,20 @@ import {
   ArrowLeft,
   Save,
   Play,
+  Clock,
+  Webhook,
+  Send,
   Sparkles,
-  SlidersHorizontal,
+  Tags,
   Search,
   Grid,
   Map,
   Terminal,
-  Zap,
-  CheckCircle2,
   Loader2,
   Globe,
   GitBranch,
   Mail,
-  FileCode,
-  ShieldCheck,
   ChevronDown,
-  ChevronRight,
-  FileImage,
   FileSpreadsheet,
   FileText,
   Scan,
@@ -50,21 +47,78 @@ import { useI18nStore } from '../store/useI18nStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG } from '../lib/constants/nodeCatalog';
+import { getNodeReadinessBadge } from '../lib/nodeReadiness';
+
+const SUPPORTED_NODE_TYPES = new Set(NODE_CATALOG.map((item) => item.type));
+
+const PALETTE_PRESENTATION: Record<
+  string,
+  { nameKey?: string; descKey?: string; icon: React.ElementType }
+> = {
+  'trigger.manual': { nameKey: 'builder.node.manual', descKey: 'builder.node.manual_desc', icon: Play },
+  'trigger.schedule': { nameKey: 'builder.node.schedule', descKey: 'builder.node.schedule_desc', icon: Clock },
+  'trigger.webhook': { nameKey: 'builder.node.webhook', descKey: 'builder.node.webhook_desc', icon: Webhook },
+  'trigger.telegram': { icon: Send },
+  'http.request': { nameKey: 'builder.node.http', descKey: 'builder.node.http_desc', icon: Globe },
+  'email.send': { nameKey: 'builder.node.email', descKey: 'builder.node.email_desc', icon: Mail },
+  'google.sheets': { nameKey: 'builder.node.google_sheets', descKey: 'builder.node.google_sheets_desc', icon: FileSpreadsheet },
+  'telegram.send_message': { icon: Send },
+  'logic.condition': { nameKey: 'builder.node.condition', descKey: 'builder.node.condition_desc', icon: GitBranch },
+  'ai.extract': { nameKey: 'builder.node.ai_extract', descKey: 'builder.node.ai_extract_desc', icon: Sparkles },
+  'ai.classify': { nameKey: 'builder.node.ai_classify', descKey: 'builder.node.ai_classify_desc', icon: Tags },
+  'ai.summarize': { nameKey: 'builder.node.ai_summarize', descKey: 'builder.node.ai_summarize_desc', icon: FileText },
+  'ocr.extract': { nameKey: 'builder.node.ocr', descKey: 'builder.node.ocr_desc', icon: Scan },
+};
+
+const PALETTE_CATEGORY_KEYS = {
+  trigger: 'builder.category.triggers',
+  action: 'builder.category.integrations',
+  logic: 'builder.category.logic',
+  ai: 'builder.category.ai',
+  ocr: 'builder.category.documents',
+} as const;
+
+const PALETTE_CATALOG = (Object.keys(PALETTE_CATEGORY_KEYS) as Array<keyof typeof PALETTE_CATEGORY_KEYS>)
+  .map((category) => ({
+    categoryKey: PALETTE_CATEGORY_KEYS[category],
+    items: NODE_CATALOG.filter((item) => item.category === category).map((item) => ({
+      ...item,
+      ...PALETTE_PRESENTATION[item.type],
+    })),
+  }))
+  .filter((category) => category.items.length > 0);
+
+const catalogDefaultConfig = (type: string): Record<string, unknown> => ({
+  ...(NODE_CATALOG.find((item) => item.type === type)?.defaultConfig ?? {}),
+});
 
 // Preset Nodes for Initial Canvas State
 const INITIAL_NODES: Node[] = [
   {
+    id: 'node-manual',
+    type: 'customNode',
+    position: { x: 80, y: 80 },
+    data: {
+      id: 'manual_trigger_v1',
+      nameKey: 'builder.node.manual',
+      nodeType: 'trigger.manual',
+      status: 'idle',
+      executionTime: '',
+      config: catalogDefaultConfig('trigger.manual'),
+    },
+  },
+  {
     id: 'node-webhook',
     type: 'customNode',
-    position: { x: 80, y: 180 },
+    position: { x: 80, y: 300 },
     data: {
       id: 'webhook_inbound_v1',
       name: 'Webhook Trigger',
       nameKey: 'builder.node.webhook',
       nodeType: 'trigger.webhook',
-      status: 'success',
-      executionTime: '120ms',
-      config: { endpoint: '/api/v1/webhooks/orders', method: 'POST' },
+      status: 'idle',
+      executionTime: '',
+      config: catalogDefaultConfig('trigger.webhook'),
     },
   },
   {
@@ -77,13 +131,8 @@ const INITIAL_NODES: Node[] = [
       nameKey: 'builder.node.ai_extract',
       nodeType: 'ai.extract',
       status: 'idle',
-      executionTime: '850ms',
-      config: {
-        model: 'gpt-4o-mini',
-        inputPayload: '{{ $json.body.order_payload }}',
-        prompt: 'Extract order items, quantities, customer address, and calculate total price.',
-        schema: ['order_id', 'items[]', 'total_amount', 'shipping_address'],
-      },
+      executionTime: '',
+      config: catalogDefaultConfig('ai.extract'),
     },
   },
   {
@@ -96,8 +145,8 @@ const INITIAL_NODES: Node[] = [
       nameKey: 'builder.node.condition',
       nodeType: 'logic.condition',
       status: 'idle',
-      executionTime: '45ms',
-      config: { condition: '{{ $json.total_amount > 500 }}' },
+      executionTime: '',
+      config: catalogDefaultConfig('logic.condition'),
     },
   },
   {
@@ -110,13 +159,21 @@ const INITIAL_NODES: Node[] = [
       nameKey: 'builder.node.email',
       nodeType: 'email.send',
       status: 'idle',
-      executionTime: '210ms',
-      config: { channel: '#priority-orders', template: 'order_alert_v2' },
+      executionTime: '',
+      config: catalogDefaultConfig('email.send'),
     },
   },
 ];
 
 const INITIAL_EDGES: Edge[] = [
+  {
+    id: 'edge-manual-extract',
+    source: 'node-manual',
+    target: 'node-extract',
+    type: 'execution',
+    animated: false,
+    style: { stroke: '#94a3b8', strokeWidth: 1.75 },
+  },
   {
     id: 'edge-1-2',
     source: 'node-webhook',
@@ -136,6 +193,7 @@ const INITIAL_EDGES: Edge[] = [
   {
     id: 'edge-3-4',
     source: 'node-condition',
+    sourceHandle: 'true',
     target: 'node-notify',
     type: 'execution',
     animated: false,
@@ -143,47 +201,78 @@ const INITIAL_EDGES: Edge[] = [
   },
 ];
 
-// Step Palette Catalog Items
-const PALETTE_CATALOG = [
-  {
-    categoryKey: 'builder.category.triggers',
-    items: [
-      { type: 'trigger.webhook', nameKey: 'builder.node.webhook', descKey: 'builder.node.webhook_desc', icon: Globe },
-      { type: 'trigger.schedule', nameKey: 'builder.node.schedule', descKey: 'builder.node.schedule_desc', icon: Zap },
-      { type: 'trigger.manual', nameKey: 'builder.node.manual', descKey: 'builder.node.manual_desc', icon: Play },
-    ],
-  },
-  {
-    categoryKey: 'builder.category.ai',
-    items: [
-      { type: 'ai.extract', nameKey: 'builder.node.ai_extract', descKey: 'builder.node.ai_extract_desc', icon: Sparkles },
-      { type: 'ai.classify', nameKey: 'builder.node.ai_classify', descKey: 'builder.node.ai_classify_desc', icon: ShieldCheck },
-      { type: 'ai.summarize', nameKey: 'builder.node.ai_summarize', descKey: 'builder.node.ai_summarize_desc', icon: FileCode },
-    ],
-  },
-  {
-    categoryKey: 'builder.category.documents',
-    items: [
-      { type: 'ocr.extract', nameKey: 'builder.node.ocr', descKey: 'builder.node.ocr_desc', icon: FileImage },
-    ],
-  },
-  {
-    categoryKey: 'builder.category.logic',
-    items: [
-      { type: 'logic.condition', nameKey: 'builder.node.condition', descKey: 'builder.node.condition_desc', icon: GitBranch },
-      { type: 'logic.filter', nameKey: 'builder.node.filter', descKey: 'builder.node.filter_desc', icon: SlidersHorizontal },
-    ],
-  },
-  {
-    categoryKey: 'builder.category.integrations',
-    items: [
-      { type: 'email.send', nameKey: 'builder.node.email', descKey: 'builder.node.email_desc', icon: Mail },
-      { type: 'http.request', nameKey: 'builder.node.http', descKey: 'builder.node.http_desc', icon: Globe },
-      { type: 'google.sheets', nameKey: 'builder.node.google_sheets', descKey: 'builder.node.google_sheets_desc', icon: FileSpreadsheet },
-      { type: 'google.docs', nameKey: 'builder.node.google_docs', descKey: 'builder.node.google_docs_desc', icon: FileText },
-    ],
-  },
-];
+const CONDITION_OPERATORS = [
+  { value: 'eq', label: 'Equals' },
+  { value: 'ne', label: 'Does not equal' },
+  { value: 'gt', label: 'Greater than' },
+  { value: 'gte', label: 'Greater than or equal' },
+  { value: 'lt', label: 'Less than' },
+  { value: 'lte', label: 'Less than or equal' },
+] as const;
+
+const getNodeReadinessMessage = (type: string, config: Record<string, unknown>): string | undefined => {
+  if (!SUPPORTED_NODE_TYPES.has(type)) return `Unsupported node type "${type}" is preserved from this draft.`;
+  if (type === 'trigger.webhook') return 'Draft: the system-managed webhook endpoint is provisioned after publication.';
+  if (type === 'google.sheets') {
+    return String(config.connectionId ?? '').trim()
+      ? 'Workspace must authorize this Google Sheets connection before publication.'
+      : 'Not configured: select an authorized Google Sheets connection before publication.';
+  }
+  if (type === 'trigger.telegram') return 'Unavailable: the Bot Service trigger contract has not been approved.';
+  if (type === 'telegram.send_message') return 'Unavailable: the Telegram sender contract is not implemented.';
+  if (type === 'email.send') return 'Unavailable: Gmail send capability is not configured.';
+  if (type.startsWith('ai.')) return 'Unavailable: the AI provider contract is not implemented.';
+  if (type === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
+    return 'Not configured: set both condition values before publication.';
+  }
+  if (type === 'trigger.schedule') {
+    const fields = String(config.cron ?? '').trim().split(/\s+/);
+    if (fields.length !== 6 || !String(config.timezone ?? '').trim()) {
+      return 'Not configured: use a six-field cron expression and an IANA timezone.';
+    }
+  }
+  if (type === 'http.request' && !String(config.url ?? '').trim()) return 'Not configured: enter a request URL.';
+  if (type === 'ocr.extract') {
+    return 'Unavailable: OCR JWT verification, URL allowlist, and artifact resolution are not verified.';
+  }
+  return undefined;
+};
+
+const getPublishBlockers = (nodes: Node[]): string[] => {
+  const blockers = new Set<string>();
+  for (const node of nodes) {
+    const type = String(node.data?.nodeType ?? '');
+    const config = (node.data?.config ?? {}) as Record<string, unknown>;
+    if (!SUPPORTED_NODE_TYPES.has(type)) {
+      blockers.add(`Unsupported node type ${type || '(missing type)'}`);
+      continue;
+    }
+    if (type === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
+      blockers.add('Condition nodes require both left and right values');
+    }
+    if (type === 'trigger.schedule') {
+      const fields = String(config.cron ?? '').trim().split(/\s+/);
+      if (fields.length !== 6 || !String(config.timezone ?? '').trim()) {
+        blockers.add('Schedule nodes require six-field cron and an IANA timezone');
+      }
+    }
+    if (type === 'http.request' && !String(config.url ?? '').trim()) {
+      blockers.add('HTTP request nodes require a URL');
+    }
+    if (type === 'google.sheets' && !String(config.connectionId ?? '').trim()) {
+      blockers.add('Google Sheets requires an authorized Workspace connection');
+    }
+    if (type === 'trigger.telegram' || type === 'telegram.send_message' || type === 'email.send' || type.startsWith('ai.') || type === 'ocr.extract') {
+      blockers.add(getNodeReadinessMessage(type, config) ?? `${type} is not configured`);
+    }
+    if (type === 'ocr.extract') {
+      const hasArtifactId = Boolean(String(config.artifactId ?? '').trim());
+      const hasFileUrl = Boolean(String(config.fileUrl ?? '').trim());
+      if (hasArtifactId === hasFileUrl) blockers.add('OCR requires exactly one of artifactId or fileUrl');
+    }
+  }
+  return [...blockers];
+};
 
 export const WorkflowBuilderPage: React.FC = () => {
   const { theme } = useUIStore();
@@ -191,7 +280,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   const { activeWorkspace } = useAuthStore();
   const prefersReducedMotion = useReducedMotion();
   const nodeSequenceRef = useRef(INITIAL_NODES.length);
-  const logSequenceRef = useRef(4);
+  const logSequenceRef = useRef(0);
   const executionTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const inspectorRef = useRef<HTMLElement | null>(null);
 
@@ -202,12 +291,22 @@ export const WorkflowBuilderPage: React.FC = () => {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const selectedNodeType = String(selectedNode?.data?.nodeType ?? '');
   const selectedNodeConfig = (selectedNode?.data?.config ?? {}) as Record<string, unknown>;
+  const unsupportedNodeTypes = useMemo(
+    () => [...new Set(nodes.map((node) => String(node.data?.nodeType ?? '')).filter((type) => !SUPPORTED_NODE_TYPES.has(type)))],
+    [nodes]
+  );
+  const publishBlockers = useMemo(() => getPublishBlockers(nodes), [nodes]);
+  const selectedNodeReadiness = selectedNode
+    ? getNodeReadinessBadge(selectedNodeType, selectedNodeConfig)
+    : undefined;
+  const selectedNodeReadinessMessage = selectedNode
+    ? getNodeReadinessMessage(selectedNodeType, selectedNodeConfig)
+    : undefined;
+  const isUnsupportedNode = Boolean(selectedNodeType) && !SUPPORTED_NODE_TYPES.has(selectedNodeType);
   const isGoogleSheetsNode = selectedNodeType === 'google.sheets';
   const isGoogleDocsNode = selectedNodeType === 'google.docs';
-  const isGoogleNode = isGoogleSheetsNode || isGoogleDocsNode;
-  const googleOperation = String(
-    selectedNodeConfig.operation ?? (isGoogleSheetsNode ? 'read' : isGoogleDocsNode ? 'create' : '')
-  );
+  const isGoogleNode = isGoogleSheetsNode;
+  const googleOperation = String(selectedNodeConfig.operation ?? 'read');
 
   // Canvas State & Controls
   const [showGrid, setShowGrid] = useState(true);
@@ -218,13 +317,10 @@ export const WorkflowBuilderPage: React.FC = () => {
   // Workflow Metadata & Status
   const [workflowTitle, setWorkflowTitle] = useState('Order processing & notification');
   const [isSaved, setIsSaved] = useState(true);
-  const [isRunning, setIsRunning] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null);
 
   // Inspector Form State (for selected node)
-  const [llmModel, setLlmModel] = useState('gpt-4o-mini');
-  const [payloadVar, setPayloadVar] = useState('{{ $json.body.order_payload }}');
-  const [promptText, setPromptText] = useState('Extract order items, quantities, customer address, and calculate total price.');
   const [ocrLanguage, setOcrLanguage] = useState('vi+en');
   const [ocrDetectTables, setOcrDetectTables] = useState(true);
   const [ocrFile, setOcrFile] = useState<File | null>(null);
@@ -249,11 +345,7 @@ export const WorkflowBuilderPage: React.FC = () => {
 
   // Telemetry Console State
   const [telemetryOpen, setTelemetryOpen] = useState(true);
-  const [logs, setLogs] = useState<Array<{ id: string; time: string; level: 'info' | 'success' | 'warn'; msg: string }>>([
-    { id: '1', time: '11:04:12.102', level: 'info', msg: 'builder.log.webhook_received' },
-    { id: '2', time: '11:04:12.224', level: 'success', msg: 'builder.log.webhook_validated' },
-    { id: '3', time: '11:04:12.250', level: 'info', msg: 'builder.log.ai_dispatching' },
-  ]);
+  const [logs, setLogs] = useState<Array<{ id: string; time: string; level: 'info' | 'success' | 'warn'; msg: string }>>([]);
 
   const nodeTypes = useMemo(() => ({ customNode: CustomWorkflowNode }), []);
   const edgeTypes = useMemo(() => ({ execution: ExecutionEdge }), []);
@@ -353,7 +445,6 @@ export const WorkflowBuilderPage: React.FC = () => {
     setOcrFile(file);
     setOcrResult(null);
     setOcrError(null);
-    if (file) updateSelectedNodeConfig({ fileName: file.name });
   };
 
   const handleRunOcr = async () => {
@@ -378,9 +469,6 @@ export const WorkflowBuilderPage: React.FC = () => {
       updateSelectedNodeConfig({
         language: ocrLanguage,
         detectTables: ocrDetectTables,
-        pages: result.document.pages,
-        confidence: result.confidence,
-        rawText: result.text.rawText,
       });
       setNodes((nds) =>
         nds.map((node) =>
@@ -389,7 +477,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                 ...node,
                 data: {
                   ...node.data,
-                  status: 'success',
+                  status: 'tested',
                   executionTime: `${result.metadata.processingTimeMs}ms`,
                 },
               }
@@ -402,9 +490,9 @@ export const WorkflowBuilderPage: React.FC = () => {
         ...prev,
         {
           id: String(++logSequenceRef.current),
-          time: '11:04:13.850',
+          time: new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date()),
           level: result.metadata.quality === 'OK' ? 'success' : 'warn',
-          msg: `[OCR] Extracted ${result.document.pages} page${result.document.pages === 1 ? '' : 's'} (${result.metadata.quality}) at ${displayConfidence} confidence`,
+          msg: `[OCR test] Extracted ${result.document.pages} page${result.document.pages === 1 ? '' : 's'} (${result.metadata.quality}) at ${displayConfidence} confidence`,
         },
       ]);
     } catch (error) {
@@ -469,102 +557,33 @@ export const WorkflowBuilderPage: React.FC = () => {
   };
 
 
-  // Signature WEAV Execution Sequence Animation
-  const handleRunExecution = () => {
-    if (isRunning) return;
+  // This previews the graph connections only; it does not execute workflow nodes.
+  const handlePreviewFlow = () => {
+    if (isPreviewing) return;
     clearExecutionTimers();
-    setIsRunning(true);
+    setActiveEdgeId(null);
+    setIsPreviewing(true);
+    const time = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date());
+    setLogs((prev) => [
+      ...prev,
+      {
+        id: String(++logSequenceRef.current),
+        time,
+        level: 'info',
+        msg: 'Preview only; this action does not call the Workflow Service or node integrations.',
+      },
+    ]);
 
-    // Reset all nodes except trigger to idle
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.id === 'node-webhook'
-          ? { ...n, data: { ...n.data, status: 'success', executionTime: '120ms' } }
-          : { ...n, data: { ...n.data, status: 'idle' } }
-      )
-    );
-
-    if (prefersReducedMotion) {
-      // Reduced motion: immediate state transitions without packet animation
-      setNodes((nds) =>
-        nds.map((n) => ({
-          ...n,
-          data: { ...n.data, status: 'success', executionTime: '120ms' },
-        }))
-      );
-      setLogs((prev) => [
-        ...prev,
-        { id: String(++logSequenceRef.current), time: '11:04:14.000', level: 'success', msg: '[Execution] Completed in 1.4s (reduced motion enabled)' },
-      ]);
-      setIsRunning(false);
+    if (prefersReducedMotion || edges.length === 0) {
+      setIsPreviewing(false);
       return;
     }
 
-    // Step 1: Webhook active -> Packet travels along edge 1
-    setActiveEdgeId('edge-1-2');
-    setLogs((prev) => [
-      ...prev,
-      { id: String(++logSequenceRef.current), time: '11:04:13.100', level: 'info', msg: '[Execution] Packet traveling: Webhook ➔ AI Extract' },
-    ]);
-
-    scheduleExecutionStep(() => {
-      // Step 2: AI Extract becomes processing
-      setActiveEdgeId(null);
-      setNodes((nds) =>
-        nds.map((n) => (n.id === 'node-extract' ? { ...n, data: { ...n.data, status: 'processing' } } : n))
-      );
-      setLogs((prev) => [
-        ...prev,
-        { id: String(++logSequenceRef.current), time: '11:04:13.400', level: 'info', msg: '[AI Extract] Processing JSON extraction schema...' },
-      ]);
-    }, 900);
-
-    scheduleExecutionStep(() => {
-      // Step 3: AI Extract success -> Packet travels along edge 2
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === 'node-extract' ? { ...n, data: { ...n.data, status: 'success', executionTime: '850ms' } } : n
-        )
-      );
-      setActiveEdgeId('edge-2-3');
-      setLogs((prev) => [
-        ...prev,
-        { id: String(++logSequenceRef.current), time: '11:04:14.250', level: 'success', msg: '[AI Extract] Resolved 4 schema parameters' },
-      ]);
-    }, 1900);
-
-    scheduleExecutionStep(() => {
-      // Step 4: Condition check processing
-      setActiveEdgeId(null);
-      setNodes((nds) =>
-        nds.map((n) => (n.id === 'node-condition' ? { ...n, data: { ...n.data, status: 'processing' } } : n))
-      );
-    }, 2700);
-
-    scheduleExecutionStep(() => {
-      // Step 5: Condition success -> Packet travels along edge 3
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === 'node-condition' ? { ...n, data: { ...n.data, status: 'success', executionTime: '45ms' } } : n
-        )
-      );
-      setActiveEdgeId('edge-3-4');
-    }, 3400);
-
-    scheduleExecutionStep(() => {
-      // Step 6: Final node notify success
-      setActiveEdgeId(null);
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === 'node-notify' ? { ...n, data: { ...n.data, status: 'success', executionTime: '210ms' } } : n
-        )
-      );
-      setLogs((prev) => [
-        ...prev,
-        { id: String(++logSequenceRef.current), time: '11:04:15.010', level: 'success', msg: '[Execution #EX-8492] Workflow finished successfully' },
-      ]);
-      setIsRunning(false);
-    }, 4200);
+    edges.forEach((edge, index) => {
+      scheduleExecutionStep(() => setActiveEdgeId(edge.id), index * 500);
+    });
+    scheduleExecutionStep(() => setActiveEdgeId(null), edges.length * 500);
+    scheduleExecutionStep(() => setIsPreviewing(false), edges.length * 500 + 300);
   };
 
   return (
@@ -625,59 +644,80 @@ export const WorkflowBuilderPage: React.FC = () => {
             <span>{t('builder.save')}</span>
           </button>
 
-          <button className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md transition-colors">
+          <button
+            data-testid="workflow-publish"
+            aria-describedby={publishBlockers.length > 0 ? 'publish-blocker-summary' : undefined}
+            title={publishBlockers.length > 0 ? publishBlockers.join('; ') : undefined}
+            disabled={publishBlockers.length > 0}
+            className="hidden sm:flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-800 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          >
             <span>{t('builder.publish')}</span>
           </button>
 
           <motion.button
-            onClick={handleRunExecution}
-            disabled={isRunning}
-            aria-label="Run test workflow"
-            aria-busy={isRunning}
+            data-testid="workflow-preview"
+            onClick={handlePreviewFlow}
+            disabled={isPreviewing}
+            title="Visual preview only. No Workflow Service run or node provider is called."
+            aria-label="Preview workflow (visual only)"
+            aria-busy={isPreviewing}
             whileHover={prefersReducedMotion ? undefined : { y: -1, scale: 1.01 }}
             whileTap={prefersReducedMotion ? undefined : { scale: 0.97 }}
             className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground shadow-sm shadow-blue-600/25 transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-80"
           >
-            {isRunning ? (
+            {isPreviewing ? (
               <>
                 <span className="relative flex size-3.5 items-center justify-center"><span className="absolute size-3.5 animate-ping rounded-full bg-white/45 motion-reduce:animate-none" /><Loader2 size={13} className="relative motion-safe:animate-spin" /></span>
-                <span>{t('builder.running')}</span>
+                <span>Previewing…</span>
               </>
             ) : (
               <>
                 <Play size={13} className="fill-white" />
-                <span>{t('builder.run_test')}</span>
+                <span>Preview flow</span>
               </>
             )}
           </motion.button>
         </div>
       </header>
 
+      {publishBlockers.length > 0 && (
+        <div
+          id="publish-blocker-summary"
+          data-testid="publish-blocker-summary"
+          role="status"
+          className="border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-300"
+        >
+          Publish unavailable: {publishBlockers[0]}
+          {publishBlockers.length > 1 ? ` (+${publishBlockers.length - 1} more)` : ''}
+        </div>
+      )}
+
+      {unsupportedNodeTypes.length > 0 && (
+        <div
+          data-testid="unsupported-draft-warning"
+          role="alert"
+          className="border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800 dark:border-rose-900/70 dark:bg-rose-950/25 dark:text-rose-300"
+        >
+          Unsupported V1 nodes are preserved in this draft: {unsupportedNodeTypes.join(', ')}. Remove or replace them before publishing.
+        </div>
+      )}
+
       {/* COMPACT EDITOR TOOLBAR / SUB-HEADER (~40px) */}
       <div className="h-10 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 px-3 flex items-center justify-between text-xs shrink-0 z-10">
         <div className="flex items-center gap-3 font-mono text-[11px] text-slate-600 dark:text-slate-400">
           <span className="flex items-center gap-1 text-slate-700 dark:text-slate-300 font-medium">
             <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-            {t('builder.version_production')}
+            Draft
           </span>
           <span className="text-slate-400 dark:text-slate-600">|</span>
-          <span className="text-slate-500 dark:text-slate-400">{t('builder.live_test')}</span>
+          <span data-testid="workflow-preview-notice" className="text-slate-500 dark:text-slate-400">
+            Visual preview only · no workflow or provider calls
+          </span>
         </div>
 
-        {/* Step Sequence Breadcrumb */}
-        <div className="hidden lg:flex items-center gap-1.5 text-[11px] font-mono">
-          <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 size={11} /> {t('builder.breadcrumb.webhook')} (120ms)
-          </span>
-          <ChevronRight size={12} className="text-slate-400" />
-          <span className="flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400">
-            ● {t('builder.breadcrumb.ai_extract')} (850ms)
-          </span>
-          <ChevronRight size={12} className="text-slate-400" />
-          <span className="text-slate-500">{t('builder.breadcrumb.condition')}</span>
-          <ChevronRight size={12} className="text-slate-400" />
-          <span className="text-slate-500">{t('builder.breadcrumb.notify')}</span>
-        </div>
+        <span className="hidden lg:flex text-[11px] font-mono text-slate-500 dark:text-slate-400">
+          No Workflow Service execution history
+        </span>
 
         {/* Right Toolbar View Toggles */}
         <div className="flex items-center gap-1">
@@ -711,7 +751,7 @@ export const WorkflowBuilderPage: React.FC = () => {
               <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 {t('builder.add_step')}
               </span>
-              <span className="text-[10px] text-slate-400 font-mono">{PALETTE_CATALOG.reduce((total, category) => total + category.items.length, 0)} {t('builder.available')}</span>
+              <span data-testid="workflow-palette-count" className="text-[10px] text-slate-400 font-mono">{PALETTE_CATALOG.reduce((total, category) => total + category.items.length, 0)} {t('builder.available')}</span>
             </div>
 
             <div className="relative">
@@ -734,22 +774,27 @@ export const WorkflowBuilderPage: React.FC = () => {
                 </span>
                 <div className="space-y-1">
                   {cat.items
-                    .filter((item) => t(item.nameKey).toLowerCase().includes(searchQuery.toLowerCase()))
+                    .filter((item) => {
+                      const name = item.nameKey ? t(item.nameKey) : item.title;
+                      return name.toLowerCase().includes(searchQuery.toLowerCase());
+                    })
                     .map((item) => {
                       const ItemIcon = item.icon;
                       return (
                         <button
                           key={item.type}
-                          onClick={() => handleAddCatalogItem(item.type, t(item.nameKey), item.nameKey)}
-                          aria-label={t(item.nameKey)}
+                          data-testid="workflow-palette-item"
+                          data-node-type={item.type}
+                          onClick={() => handleAddCatalogItem(item.type, item.nameKey ? t(item.nameKey) : item.title, item.nameKey ?? '')}
+                          aria-label={item.nameKey ? t(item.nameKey) : item.title}
                           className="group flex w-full cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-left transition-[background-color,border-color,transform] hover:-translate-y-px hover:border-blue-400/60 hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:border-slate-700/50 dark:bg-slate-800/40 dark:hover:bg-blue-950/25 motion-reduce:hover:translate-y-0"
                         >
                           <ItemIcon size={14} className="mt-0.5 shrink-0 text-slate-500 transition-colors group-hover:text-blue-600 dark:group-hover:text-blue-400" />
                           <div className="flex flex-col min-w-0 flex-1">
                             <span className="truncate text-xs font-medium text-slate-800 transition-colors group-hover:text-blue-700 dark:text-slate-200 dark:group-hover:text-blue-300">
-                              {t(item.nameKey)}
+                              {item.nameKey ? t(item.nameKey) : item.title}
                             </span>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{t(item.descKey)}</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{item.descKey ? t(item.descKey) : item.description}</span>
                           </div>
                         </button>
                       );
@@ -832,10 +877,28 @@ export const WorkflowBuilderPage: React.FC = () => {
                 {(selectedNode.data.id as string) || 'extract_order_v1'}
               </span>
             </div>
-            <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-              ● {t('builder.ready')}
+            <span className={selectedNodeReadiness?.state === 'ready'
+              ? 'rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+              : 'rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-700 dark:text-amber-400'}>
+              ● {selectedNodeReadiness?.label ?? t('builder.ready')}
             </span>
           </div>
+
+          {selectedNodeReadinessMessage && (
+            <div
+              data-testid="integration-readiness"
+              role="status"
+              className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-300"
+            >
+              {selectedNodeReadinessMessage}
+              {isUnsupportedNode && <span className="block">Existing configuration is preserved and read-only.</span>}
+            </div>
+          )}
+          {selectedNodeType === 'trigger.webhook' && (
+            <div data-testid="webhook-endpoint-readiness" role="status" className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+              The endpoint key and secret are provisioned on publish. The public path is system-managed.
+            </div>
+          )}
 
           {/* Inspector Tabs */}
           <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 text-xs">
@@ -857,7 +920,165 @@ export const WorkflowBuilderPage: React.FC = () => {
           {/* Inspector Body Content */}
           <div className="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
             {inspectorTab === 'config' && (
-              selectedNodeType === 'ocr.extract' ? (
+              isUnsupportedNode ? (
+                <div data-testid="unsupported-node-config" className="space-y-3">
+                  <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                    This node is outside Workflow V1. Its saved configuration stays intact and cannot be edited or published here.
+                  </p>
+                  <pre className="max-h-72 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 font-mono text-[10px] text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                    {JSON.stringify(selectedNodeConfig, null, 2)}
+                  </pre>
+                </div>
+              ) : selectedNodeType === 'logic.condition' ? (
+                <div data-testid="condition-config" className="space-y-3">
+                  <div>
+                    <label htmlFor="condition-left" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Left value</label>
+                    <input
+                      id="condition-left"
+                      data-testid="condition-left"
+                      value={String(selectedNodeConfig.left ?? '')}
+                      placeholder="{{ trigger.input.email }}"
+                      onChange={(event) => updateSelectedNodeConfig({ left: event.target.value })}
+                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="condition-operator" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Operator</label>
+                    <select
+                      id="condition-operator"
+                      data-testid="condition-operator"
+                      value={String(selectedNodeConfig.operator ?? 'eq')}
+                      onChange={(event) => updateSelectedNodeConfig({ operator: event.target.value })}
+                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    >
+                      {CONDITION_OPERATORS.map((operator) => <option key={operator.value} value={operator.value}>{operator.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="condition-right" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Right value</label>
+                    <input
+                      id="condition-right"
+                      data-testid="condition-right"
+                      value={String(selectedNodeConfig.right ?? '')}
+                      placeholder="500 or {{ variables.threshold }}"
+                      onChange={(event) => updateSelectedNodeConfig({ right: event.target.value })}
+                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">Use JSON values or V1 mappings. Expressions, operators, and code are not accepted as values.</p>
+                </div>
+              ) : selectedNodeType === 'trigger.schedule' ? (
+                <div data-testid="schedule-config" className="space-y-3">
+                  <div>
+                    <label htmlFor="schedule-cron" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Six-field cron</label>
+                    <input
+                      id="schedule-cron"
+                      data-testid="schedule-cron"
+                      value={String(selectedNodeConfig.cron ?? '')}
+                      placeholder="0 0 9 * * *"
+                      onChange={(event) => updateSelectedNodeConfig({ cron: event.target.value })}
+                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="schedule-timezone" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">IANA timezone</label>
+                    <input
+                      id="schedule-timezone"
+                      data-testid="schedule-timezone"
+                      value={String(selectedNodeConfig.timezone ?? '')}
+                      placeholder="Asia/Ho_Chi_Minh"
+                      onChange={(event) => updateSelectedNodeConfig({ timezone: event.target.value })}
+                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+              ) : selectedNodeType === 'trigger.webhook' ? (
+                <div data-testid="webhook-config" className="space-y-3">
+                  <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">The endpoint key and secret are provisioned on publish and shown once. This draft does not choose a public path.</p>
+                  <div className="rounded border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                    Method: <span className="font-mono">POST</span>
+                  </div>
+                </div>
+              ) : selectedNodeType === 'trigger.manual' ? (
+                <div>
+                  <label htmlFor="manual-button-label" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Button label</label>
+                  <input
+                    id="manual-button-label"
+                    value={String(selectedNodeConfig.buttonLabel ?? '')}
+                    onChange={(event) => updateSelectedNodeConfig({ buttonLabel: event.target.value })}
+                    className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                  />
+                </div>
+              ) : selectedNodeType === 'trigger.telegram' ? (
+                <div data-testid="telegram-trigger-config" className="rounded border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-300">
+                  This trigger can be saved as a draft. Bot Service owns Telegram event normalization; no payload or ingress contract is available yet.
+                </div>
+              ) : selectedNodeType === 'telegram.send_message' ? (
+                <div data-testid="telegram-send-config" className="space-y-3">
+                  <div>
+                    <label htmlFor="telegram-chat-id" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Chat ID</label>
+                    <input id="telegram-chat-id" value={String(selectedNodeConfig.chatId ?? '')} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                  </div>
+                  <div>
+                    <label htmlFor="telegram-text" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Message</label>
+                    <textarea id="telegram-text" rows={3} value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full resize-y rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                  </div>
+                </div>
+              ) : selectedNodeType === 'http.request' ? (
+                <div data-testid="http-request-config" className="space-y-3">
+                  <div>
+                    <label htmlFor="http-method" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Method</label>
+                    <select id="http-method" value={String(selectedNodeConfig.method ?? 'GET')} onChange={(event) => updateSelectedNodeConfig({ method: event.target.value })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                      {['GET', 'POST', 'PUT', 'DELETE'].map((method) => <option key={method}>{method}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="http-url" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">URL</label>
+                    <input id="http-url" value={String(selectedNodeConfig.url ?? '')} onChange={(event) => updateSelectedNodeConfig({ url: event.target.value })} placeholder="https://example.com/api" className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                  </div>
+                  <div>
+                    <label htmlFor="http-body" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Body</label>
+                    <textarea id="http-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} placeholder="JSON or mapping" className="w-full resize-y rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">Successful responses expose their body as output.data.</p>
+                </div>
+              ) : selectedNodeType === 'email.send' ? (
+                <div data-testid="email-config" className="space-y-3">
+                  <div>
+                    <label htmlFor="email-to" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Recipient</label>
+                    <input id="email-to" value={String(selectedNodeConfig.to ?? '')} onChange={(event) => updateSelectedNodeConfig({ to: event.target.value })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                  </div>
+                  <div>
+                    <label htmlFor="email-subject" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Subject</label>
+                    <input id="email-subject" value={String(selectedNodeConfig.subject ?? '')} onChange={(event) => updateSelectedNodeConfig({ subject: event.target.value })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                  </div>
+                  <div>
+                    <label htmlFor="email-body" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Body</label>
+                    <textarea id="email-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} className="w-full resize-y rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                  </div>
+                </div>
+              ) : selectedNodeType.startsWith('ai.') ? (
+                <div data-testid="ai-config" className="space-y-3">
+                  {selectedNodeType === 'ai.extract' && (
+                    <div>
+                      <label htmlFor="ai-schema-description" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Schema description</label>
+                      <textarea id="ai-schema-description" rows={4} value={String(selectedNodeConfig.schemaDescription ?? '')} onChange={(event) => updateSelectedNodeConfig({ schemaDescription: event.target.value })} className="w-full resize-y rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                    </div>
+                  )}
+                  {selectedNodeType === 'ai.classify' && (
+                    <div>
+                      <label htmlFor="ai-categories" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Categories (comma separated)</label>
+                      <input id="ai-categories" value={Array.isArray(selectedNodeConfig.categories) ? selectedNodeConfig.categories.join(', ') : ''} onChange={(event) => updateSelectedNodeConfig({ categories: event.target.value.split(',').map((value) => value.trim()).filter(Boolean) })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                    </div>
+                  )}
+                  {selectedNodeType === 'ai.summarize' && (
+                    <div>
+                      <label htmlFor="ai-max-length" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Maximum length</label>
+                      <input id="ai-max-length" type="number" min="1" value={String(selectedNodeConfig.maxLength ?? 200)} onChange={(event) => updateSelectedNodeConfig({ maxLength: Number(event.target.value) })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                    </div>
+                  )}
+                </div>
+              ) : selectedNodeType === 'ocr.extract' ? (
                 <div className="space-y-4">
                   <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-900/70 dark:bg-blue-950/25">
                     <div className="flex items-start gap-2">
@@ -869,9 +1090,35 @@ export const WorkflowBuilderPage: React.FC = () => {
                     </div>
                   </div>
 
+                  <div data-testid="ocr-workflow-source" className="space-y-2 rounded border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-800 dark:bg-slate-950/60">
+                    <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">Workflow source (choose exactly one)</p>
+                    <div>
+                      <label htmlFor="ocr-artifact-id" className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-400">Workspace artifact ID</label>
+                      <input
+                        id="ocr-artifact-id"
+                        data-testid="ocr-artifact-id"
+                        value={String(selectedNodeConfig.artifactId ?? '')}
+                        onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value, fileUrl: '' })}
+                        className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="ocr-file-url" className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-400">File URL</label>
+                      <input
+                        id="ocr-file-url"
+                        data-testid="ocr-file-url"
+                        value={String(selectedNodeConfig.fileUrl ?? '')}
+                        onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value, artifactId: '' })}
+                        placeholder="https://..."
+                        className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+                    <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">Leave both empty while drafting; filling one clears the other. URL execution stays disabled until its security checks are verified.</p>
+                  </div>
+
                   <div>
                     <label htmlFor="ocr-file-input" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                      {t('ocr.file_input')}
+                      Try OCR now (separate from the workflow source)
                     </label>
                     <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed border-slate-300 bg-slate-50 px-2.5 py-2 text-xs text-slate-600 transition-colors hover:border-blue-400 hover:bg-blue-50/60 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:border-blue-500/60 dark:hover:bg-blue-950/25">
                       <Upload size={14} className="shrink-0 text-blue-600 dark:text-blue-400" />
@@ -1044,13 +1291,18 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <label htmlFor="google-connection" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
                       {t('builder.google.connection')}
                     </label>
-                    <input
+                    <select
                       id="google-connection"
-                      type="text"
+                      data-testid="google-connection"
                       value={String(selectedNodeConfig.connectionId ?? '')}
                       onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value })}
                       className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
-                    />
+                    >
+                      <option value="">Select an authorized connection</option>
+                      {String(selectedNodeConfig.connectionId ?? '').trim() && (
+                        <option value={String(selectedNodeConfig.connectionId)}>Existing connection reference</option>
+                      )}
+                    </select>
                   </div>
 
                   <div>
@@ -1201,119 +1453,27 @@ export const WorkflowBuilderPage: React.FC = () => {
                   <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">{t('builder.google.id_hint')}</p>
                 </div>
               ) : (
-              <>
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                    {t('builder.llm_engine')}
-                  </label>
-                  <select
-                    value={llmModel}
-                    onChange={(e) => setLlmModel(e.target.value)}
-                    className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
-                  >
-                    <option value="gpt-4o-mini">gpt-4o-mini (Recommended)</option>
-                    <option value="gpt-4o">gpt-4o</option>
-                    <option value="claude-3-5-sonnet">claude-3-5-sonnet</option>
-                    <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-                  </select>
+                <div data-testid="node-config-fallback" className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                  No editable V1 configuration is defined for this node.
                 </div>
-
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                    {t('builder.input_payload')}
-                  </label>
-                  <input
-                    type="text"
-                    value={payloadVar}
-                    onChange={(e) => setPayloadVar(e.target.value)}
-                    className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                    {t('builder.extraction_prompt')}
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={promptText}
-                    onChange={(e) => setPromptText(e.target.value)}
-                    className="w-full resize-none rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1.5">
-                    {t('builder.schema_attributes')}
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {['order_id', 'items[]', 'total_amount', 'shipping_address'].map((attr) => (
-                      <span
-                        key={attr}
-                        className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px] rounded border border-slate-200 dark:border-slate-700"
-                      >
-                        {attr}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
-                  <span className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                    {t('builder.json_schema_output')}
-                  </span>
-                  <pre className="p-2.5 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded font-mono text-[10px] text-slate-800 dark:text-slate-300 overflow-x-auto">
-{`{
-  "type": "object",
-  "properties": {
-    "order_id": { "type": "string" },
-    "items": { "type": "array" },
-    "total_amount": { "type": "number" },
-    "shipping_address": { "type": "string" }
-  },
-  "required": ["order_id", "total_amount"]
-}`}
-                  </pre>
-                </div>
-              </>
               )
             )}
 
             {inspectorTab === 'input' && (
-              <div className="space-y-2 font-mono text-[11px]">
-                <span className="text-[10px] text-slate-500">Incoming JSON Body Payload</span>
-                <pre className="p-2.5 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-300 overflow-x-auto">
-{`{
-  "event": "stripe.charge.succeeded",
-  "order_payload": {
-    "id": "ord_9941",
-    "amount": 540.00,
-    "customer": "Enterprise Corp"
-  }
-}`}
-                </pre>
+              <div data-testid="workflow-no-input" className="text-[11px] text-slate-500 dark:text-slate-400">
+                No workflow input data is available because this draft has not been executed.
               </div>
             )}
 
             {inspectorTab === 'output' && (
-              <div className="space-y-2 font-mono text-[11px]">
-                <span className="text-[10px] text-emerald-600 dark:text-emerald-400">Extracted JSON Structure</span>
-                <pre className="p-2.5 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded text-slate-800 dark:text-slate-300 overflow-x-auto">
-{`{
-  "order_id": "ord_9941",
-  "total_amount": 540.00,
-  "items": ["License Key", "Support Addon"],
-  "shipping_address": "742 Evergreen Terrace"
-}`}
-                </pre>
+              <div data-testid="workflow-no-output" className="text-[11px] text-slate-500 dark:text-slate-400">
+                No workflow output data is available because this draft has not been executed.
               </div>
             )}
 
             {inspectorTab === 'logs' && (
-              <div className="space-y-1.5 font-mono text-[10px] text-slate-600 dark:text-slate-400">
-                <p>[11:04:12.250] Initializing AI Extract node...</p>
-                <p>[11:04:12.800] Token usage: 142 prompt / 68 completion</p>
-                <p className="text-emerald-600 dark:text-emerald-400">[11:04:13.100] Execution finished in 850ms</p>
+              <div data-testid="workflow-no-node-logs" className="text-[11px] text-slate-500 dark:text-slate-400">
+                No Workflow Service node logs are available for this draft.
               </div>
             )}
           </div>
@@ -1321,11 +1481,13 @@ export const WorkflowBuilderPage: React.FC = () => {
           {/* Inspector Footer Actions */}
           <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50">
             <button
-              onClick={handleRunExecution}
-              aria-label="Run test workflow"
+              data-testid="workflow-preview-inspector"
+              onClick={handlePreviewFlow}
+              disabled={isPreviewing}
+              aria-label="Preview workflow (visual only)"
               className="px-2.5 py-1 text-xs font-medium bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded transition-colors"
             >
-              {t('builder.test_step')}
+              Preview flow
             </button>
             <button className="rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
               {t('builder.save_changes')}
@@ -1346,14 +1508,10 @@ export const WorkflowBuilderPage: React.FC = () => {
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-semibold">
               <Terminal size={12} className="text-blue-500" />
-              {t('builder.telemetry.execution')} #EX-8492
+              Draft activity
             </span>
             <span className="text-slate-400">|</span>
-            <span className="text-slate-500">{t('builder.telemetry.started')}</span>
-            <span className="text-slate-400">|</span>
-            <span className="text-slate-500">{t('builder.telemetry.elapsed')}</span>
-            <span className="text-slate-400">|</span>
-            <span className="text-emerald-600 dark:text-emerald-400">{t('builder.telemetry.stages')} (4)</span>
+            <span className="text-slate-500">No V1 execution history</span>
           </div>
 
           <div className="flex items-center gap-2 text-slate-400">
@@ -1372,29 +1530,16 @@ export const WorkflowBuilderPage: React.FC = () => {
 
         {/* Console Log Content */}
         {telemetryOpen && (
-          <div className="h-28 p-2.5 font-mono text-[11px] overflow-y-auto bg-slate-950 text-slate-300 flex gap-4">
-            {/* Pipeline Stage List */}
-            <div className="w-48 border-r border-slate-800 pr-3 space-y-1 shrink-0 text-[10px]">
-              <div className="flex items-center justify-between text-emerald-400">
-                <span>✓ Webhook</span>
-                <span>120ms</span>
-              </div>
-              <div className="flex items-center justify-between font-bold text-blue-400">
-                <span>● AI Extract</span>
-                <span>850ms</span>
-              </div>
-              <div className="flex items-center justify-between text-slate-500">
-                <span>○ Condition</span>
-                <span>45ms</span>
-              </div>
-              <div className="flex items-center justify-between text-slate-500">
-                <span>○ Send Notification</span>
-                <span>210ms</span>
-              </div>
-            </div>
-
-            {/* Log Stream */}
-            <div className="flex-1 space-y-1 text-[11px]">
+          <div className="h-28 p-2.5 font-mono text-[11px] overflow-y-auto bg-slate-950 text-slate-300">
+            <p data-testid="workflow-telemetry-preview-notice" role="note" className="mb-2 text-slate-400">
+              Visual preview only. This action does not call the Workflow Service or node integrations.
+            </p>
+            <div className="space-y-1 text-[11px]">
+              {logs.length === 0 && (
+                <p data-testid="workflow-telemetry-empty" className="text-slate-500">
+                  No execution telemetry is available for this draft.
+                </p>
+              )}
               {logs.map((log) => (
                 <div key={log.id} className="flex items-center gap-2">
                   <span className="text-slate-500 text-[10px]">{log.time}</span>
@@ -1407,7 +1552,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         : 'text-slate-300'
                     }
                   >
-                    {t(log.msg)}
+                    {log.msg}
                   </span>
                 </div>
               ))}
