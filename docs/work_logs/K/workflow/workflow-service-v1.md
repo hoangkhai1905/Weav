@@ -11,7 +11,14 @@
 | Status | Workflow V1 implementation committed locally; direct service smoke and integrated tests passed; external activation gates remain closed |
 | Canonical documents | `docs/superpowers/specs/workflow-service-spec.md`, `docs/superpowers/plans/2026-09-21-workflow-service-v1.md`, `services/workflow-service/README.md` |
 
-This replaces 29 per-task and review logs in `docs/work_logs/K/`. Their full historical detail remains available in commit `18b6dfa`; use `git show 18b6dfa:docs/work_logs/K/<old-name>.md` if an exact worker command or intermediate result is needed. The status below reflects the final integrated result, not every earlier provisional handoff.
+This overview is backed by six detailed records that preserve all 29 original task, review, CLI, and smoke-test notes from commit `18b6dfa`. They retain file inventories, decisions, milestone test commands/results, review findings, and handoffs; earlier test counts are historical snapshots, while the final integrated evidence is summarized below. The four unrelated K logs remain unchanged.
+
+- [Planning and foundation (Tasks 1–4)](workflow-service-foundation.md)
+- [Authoring and connection usage (Tasks 5–7)](workflow-service-authoring-and-connections.md)
+- [Admission, delivery, and execution (Tasks 8–12)](workflow-service-admission-and-execution.md)
+- [HTTP and provider integrations (Tasks 13–15)](workflow-service-providers-and-http.md)
+- [Schedules, webhooks, and readiness (Tasks 16–18)](workflow-service-triggers-and-readiness.md)
+- [UI, direct smoke, and release review (Tasks 20–21)](workflow-service-acceptance-and-release.md)
 
 ## Delivered behavior and decisions
 
@@ -39,7 +46,7 @@ Task 19 Gateway routing belongs to the user's partner and is excluded from this 
 | Direct live smoke | Identity registration/login, Workspace create, Workflow draft create/save/get/list, publish, manual admission, persisted SUCCESS, condition active/inactive states, expected skipped HTTP/join nodes; zero outbound HTTP calls | Isolated test schemas on the shared project database remain. The helper removed its containers/network/volume and never drops schemas. |
 | Schema and contract | Testcontainers applied V2–V4; migration/backfill, webhook duplicate preflight, JSON/schema fixtures, and OpenAPI parsing passed | Migration compatibility is covered by tests, not a production upgrade rehearsal. |
 | Git review | `git diff --cached --check` passed before commit `18b6dfa`. GitNexus pre-commit scan covered 241 staged files, 3,216 changed symbols and 157 affected processes; `critical` blast radius was corroborated with source/test review | Symbol listing was capped at 1,000, so it was not an exhaustive per-symbol inspection. Post-commit graph/embeddings indexing succeeded; full-text/BM25 index failed on invalid UTF-8 and remains a GitNexus maintenance item. |
-| 2026-09-24 log and local config maintenance | 29 Workflow logs replaced by this file; four other K logs were hash-checked unchanged. All 57 missing Workflow-related keys are present once in ignored `.env`; Docker Compose config with `.env`, base and dev overlay passed | Existing `.env` lines/values were preserved exactly. Blank internal keys still require local provisioning before cross-service use. |
+| 2026-09-24 log and local config maintenance | 29 original Workflow notes grouped into six detailed records plus this overview; four other K logs were hash-checked unchanged. All 57 missing Workflow-related keys are present once in ignored `.env`; Docker Compose config with `.env`, base and dev overlay passed | Existing `.env` lines/values were preserved exactly. Blank internal keys still require local provisioning before cross-service use. |
 
 The direct smoke scripts now call Workflow Service without Gateway. The earlier Gateway-oriented attempt stopped during database bootstrap and is superseded by the passing direct smoke. Earlier worker-level test counts were provisional; use the final integrated results above for this commit.
 
