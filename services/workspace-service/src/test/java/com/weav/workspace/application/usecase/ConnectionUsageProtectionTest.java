@@ -519,6 +519,73 @@ class ConnectionUsageProtectionTest {
     }
 
     @Test
+    void connectionDeletionUsesTheHttpClientAndAllowsAnUnusedConnection() throws Exception {
+        Connection connection = connection(ConnectionStatus.ACTIVE, MEMBER);
+        ConnectionRepository connections = mock(ConnectionRepository.class);
+        MembershipRepository memberships = mock(MembershipRepository.class);
+        when(memberships.findByWorkspaceIdAndUserId(WORKSPACE, OWNER))
+                .thenReturn(Optional.of(Membership.owner(WORKSPACE, OWNER)));
+        when(connections.findByWorkspaceIdAndId(WORKSPACE, CONNECTION_ID))
+                .thenReturn(Optional.of(connection));
+
+        AtomicReference<String> path = new AtomicReference<>();
+        AtomicReference<String> internalKey = new AtomicReference<>();
+        AtomicInteger requests = new AtomicInteger();
+        startServer(exchange -> {
+            requests.incrementAndGet();
+            path.set(exchange.getRequestURI().getPath());
+            internalKey.set(exchange.getRequestHeaders().getFirst("X-Internal-Service-Key"));
+            respond(exchange, 200, "{\"inUse\":false}");
+        });
+        var delete = new DeleteConnectionUseCase(
+                connections,
+                new ConnectionUsageProtection(
+                        connections,
+                        memberships,
+                        authorizationPolicy,
+                        client(Duration.ofSeconds(1), Duration.ofSeconds(1), SERVICE_KEY),
+                        new DirectTransactionRunner()));
+
+        delete.execute(OWNER, WORKSPACE, CONNECTION_ID);
+
+        assertThat(path).hasValue("/internal/workspaces/" + WORKSPACE
+                + "/connections/" + CONNECTION_ID + "/usage");
+        assertThat(internalKey).hasValue(SERVICE_KEY);
+        assertThat(requests).hasValue(1);
+        verify(connections).delete(connection);
+    }
+
+    @Test
+    void connectionDeletionFailsClosedWhenTheHttpClientGetsAWorkflowFailure() throws Exception {
+        Connection connection = connection(ConnectionStatus.ACTIVE, MEMBER);
+        ConnectionRepository connections = mock(ConnectionRepository.class);
+        MembershipRepository memberships = mock(MembershipRepository.class);
+        when(memberships.findByWorkspaceIdAndUserId(WORKSPACE, OWNER))
+                .thenReturn(Optional.of(Membership.owner(WORKSPACE, OWNER)));
+        when(connections.findByWorkspaceIdAndId(WORKSPACE, CONNECTION_ID))
+                .thenReturn(Optional.of(connection));
+
+        AtomicInteger requests = new AtomicInteger();
+        startServer(exchange -> {
+            requests.incrementAndGet();
+            respond(exchange, 500, "synthetic downstream failure");
+        });
+        var delete = new DeleteConnectionUseCase(
+                connections,
+                new ConnectionUsageProtection(
+                        connections,
+                        memberships,
+                        authorizationPolicy,
+                        client(Duration.ofSeconds(1), Duration.ofSeconds(1), SERVICE_KEY),
+                        new DirectTransactionRunner()));
+
+        assertThatThrownBy(() -> delete.execute(OWNER, WORKSPACE, CONNECTION_ID))
+                .isInstanceOf(DependencyUnavailableException.class);
+        assertThat(requests).hasValue(1);
+        verify(connections, never()).delete(any());
+    }
+
+    @Test
     void workflowClientFailsClosedForInvalidStatusesBodiesAndMissingKey() throws Exception {
         for (int status : new int[] {401, 404, 429, 500}) {
             stopServer();

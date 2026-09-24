@@ -133,6 +133,6 @@ GitNexus refresh succeeded locally, but FTS remains unavailable and the long-liv
 - [Identity tech stack](https://app.notion.com/p/3bf8722217d580679395c56c0c1ec82a).
 - [Current service boundaries](https://app.notion.com/p/3ba8722217d580afb13aed54d596463e).
 - [Class ownership in Diagrams](https://app.notion.com/p/3ba8722217d580809d5dd3e3fac9dfd8).
-- `docs/work_logs/2026-09-01.md`, `docs/work_logs/2026-09-02-clean-architecture-refactor.md`, `docs/development/SETUP.md` and inspected source.
+- `docs/work_logs/T/2026-09-01.md`, `docs/work_logs/T/2026-09-02-clean-architecture-refactor.md`, `docs/development/SETUP.md` and inspected source.
 - [Spring Security JWT configuration](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html): encoder/decoder/resource-server wiring and issuer/audience validation.
 - [Spring Security password storage](https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html): password encoder integration and adaptive hashing.

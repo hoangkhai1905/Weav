@@ -1,6 +1,9 @@
 /// <reference types="node" />
 import { defineConfig, devices } from '@playwright/test';
 
+const webPort = Number(process.env.WEAV_E2E_PORT ?? 4175);
+const webUrl = `http://127.0.0.1:${webPort}`;
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -9,7 +12,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: webUrl,
     trace: 'on-first-retry',
   },
   projects: [
@@ -27,8 +30,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'pnpm dev',
-    url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
+    command: `pnpm dev --host 127.0.0.1 --port ${webPort} --strictPort`,
+    url: webUrl,
+    reuseExistingServer: false,
   },
 });

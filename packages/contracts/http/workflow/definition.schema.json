@@ -1,0 +1,509 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Workflow Service V1 definition draft",
+  "description": "The draft definition envelope and supported node configuration shapes. Publish completeness and graph semantics are enforced by the Java domain validator.",
+  "$comment": "The Java validator additionally enforces the 1 MiB UTF-8 size limit, 32-container JSON depth limit, unique identifiers, node and edge count limits, credential safety, connection UUID rules, complete publish configuration, schedule validation, DAG constraints, trigger rules, reachability, and publish-time mapping grammar and static upstream references. This schema intentionally does not require publish-complete node fields so incomplete drafts remain editable.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "nodes",
+    "edges"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "nodes": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    },
+    "variables": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "trigger.manual",
+            "trigger.schedule",
+            "trigger.webhook",
+            "trigger.telegram",
+            "http.request",
+            "email.send",
+            "google.sheets",
+            "telegram.send_message",
+            "logic.condition",
+            "ai.extract",
+            "ai.classify",
+            "ai.summarize",
+            "ocr.extract"
+          ]
+        },
+        "config": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "trigger.manual"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "buttonLabel": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "trigger.schedule"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "cron": {
+                    "type": "string"
+                  },
+                  "timezone": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "trigger.webhook",
+                  "trigger.telegram"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "maxProperties": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "http.request"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "query": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "body": {},
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "email.send"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "google.sheets"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "operation": {
+                    "type": "string",
+                    "enum": [
+                      "read",
+                      "append",
+                      "update"
+                    ]
+                  },
+                  "spreadsheetId": {
+                    "type": "string"
+                  },
+                  "range": {
+                    "type": "string"
+                  },
+                  "values": {}
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "telegram.send_message"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "chatId": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "logic.condition"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "left": {},
+                  "operator": {
+                    "type": "string",
+                    "enum": [
+                      "eq",
+                      "ne",
+                      "gt",
+                      "gte",
+                      "lt",
+                      "lte"
+                    ]
+                  },
+                  "right": {}
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ai.extract"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "schemaDescription": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ai.classify"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string"
+                  },
+                  "categories": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ai.summarize"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "inputText": {
+                    "type": "string"
+                  },
+                  "maxLength": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ocr.extract"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "artifactId": {
+                    "type": "string"
+                  },
+                  "fileUrl": {
+                    "type": "string"
+                  },
+                  "language": {
+                    "type": "string"
+                  },
+                  "detectTables": {
+                    "type": "boolean"
+                  }
+                },
+                "not": {
+                  "required": [
+                    "artifactId",
+                    "fileUrl"
+                  ]
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      ]
+    },
+    "edge": {
+      "type": "object",
+      "required": [
+        "id",
+        "source",
+        "target"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "sourcePort": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "true",
+            "false",
+            null
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "connectionId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    }
+  }
+}

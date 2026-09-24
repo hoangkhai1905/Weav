@@ -1,5 +1,6 @@
 package com.weav.workflow.domain.model.aggregate.execution;
 
+import com.weav.workflow.domain.definition.JsonValues;
 import com.weav.workflow.domain.valueobject.LogLevel;
 import java.time.Instant;
 import java.util.Map;
@@ -12,7 +13,7 @@ public class ExecutionLog {
     public ExecutionLog(UUID id, UUID executionId, UUID nodeExecutionId, UUID attemptId, LogLevel level, String eventType,
                         String message, Map<String,Object> metadata, Instant createdAt) {
         this.id=Objects.requireNonNull(id); this.executionId=Objects.requireNonNull(executionId); this.nodeExecutionId=nodeExecutionId; this.attemptId=attemptId;
-        this.level=Objects.requireNonNull(level); this.eventType=Objects.requireNonNull(eventType); this.message=message; this.metadata=metadata==null?Map.of():Map.copyOf(metadata); this.createdAt=Objects.requireNonNull(createdAt);
+        this.level=Objects.requireNonNull(level); this.eventType=Objects.requireNonNull(eventType); this.message=message; this.metadata=JsonValues.freezeMap(metadata); this.createdAt=Objects.requireNonNull(createdAt);
     }
     public static ExecutionLog record(UUID executionId, LogLevel level, String eventType, String message, Map<String,Object> metadata) {
         return new ExecutionLog(UUID.randomUUID(), executionId, null, null, level, eventType, message, metadata, Instant.now());

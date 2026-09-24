@@ -42,11 +42,11 @@ public class WorkflowTriggerJpaEntity {
     @Column(name = "workflow_version_id", nullable = false, updatable = false)
     private UUID workflowVersionId;
 
-    @Column(name = "trigger_node_id", nullable = false, length = 255)
+    @Column(name = "trigger_node_id", nullable = false, length = 255, updatable = false)
     private String triggerNodeId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 32)
+    @Column(nullable = false, length = 32, updatable = false)
     private TriggerType type;
 
     @Enumerated(EnumType.STRING)
@@ -54,7 +54,7 @@ public class WorkflowTriggerJpaEntity {
     private TriggerStatus status;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
+    @Column(columnDefinition = "jsonb", updatable = false)
     private JsonNode config;
 
     @Column(name = "endpoint_key", length = 255)
@@ -83,13 +83,29 @@ public class WorkflowTriggerJpaEntity {
     }
 
     public WorkflowTriggerJpaEntity(UUID workflowId, UUID workflowVersionId, String triggerNodeId, TriggerType type, JsonNode config) {
-        this.id = UUID.randomUUID();
+        this(UUID.randomUUID(), workflowId, workflowVersionId, triggerNodeId, type, TriggerStatus.ACTIVE,
+                config, null, null, null, null, null, null, null);
+    }
+
+    /** Restores a complete trigger registration while preserving its explicit identity and timestamps. */
+    public WorkflowTriggerJpaEntity(UUID id, UUID workflowId, UUID workflowVersionId, String triggerNodeId,
+                                    TriggerType type, TriggerStatus status, JsonNode config, String endpointKey,
+                                    String secretHash, Instant nextRunAt, Instant lastTriggeredAt, JsonNode lastError,
+                                    Instant createdAt, Instant updatedAt) {
+        this.id = id;
         this.workflowId = workflowId;
         this.workflowVersionId = workflowVersionId;
         this.triggerNodeId = triggerNodeId;
         this.type = type;
-        this.status = TriggerStatus.ACTIVE;
+        this.status = status;
         this.config = config;
+        this.endpointKey = endpointKey;
+        this.secretHash = secretHash;
+        this.nextRunAt = nextRunAt;
+        this.lastTriggeredAt = lastTriggeredAt;
+        this.lastError = lastError;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
     }
 
     @PrePersist

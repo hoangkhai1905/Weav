@@ -1,17 +1,6 @@
 package com.weav.workflow.infrastructure.persistence.entity;
 
-import com.weav.workflow.domain.valueobject.WorkflowStatus;
-import com.weav.workflow.domain.valueobject.TriggerType;
-import com.weav.workflow.domain.valueobject.TriggerStatus;
-import com.weav.workflow.domain.valueobject.ExecutionStatus;
-import com.weav.workflow.domain.valueobject.ExecutionTriggerType;
 import com.weav.workflow.domain.valueobject.NodeExecutionStatus;
-import com.weav.workflow.domain.valueobject.AttemptStatus;
-import com.weav.workflow.domain.valueobject.LogLevel;
-import com.weav.workflow.domain.valueobject.OutboxStatus;
-import com.weav.workflow.domain.valueobject.AgentRunStatus;
-import com.weav.workflow.domain.valueobject.AgentStepStatus;
-import com.weav.workflow.domain.valueobject.AgentStepDecisionType;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -72,17 +61,34 @@ public class NodeExecutionJpaEntity {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    @Column(name = "next_attempt_at")
+    private Instant nextAttemptAt;
+
     protected NodeExecutionJpaEntity() {
     }
 
     public NodeExecutionJpaEntity(UUID executionId, String nodeId, String nodeType, JsonNode input) {
-        this.id = UUID.randomUUID();
+        this(UUID.randomUUID(), executionId, nodeId, nodeType, NodeExecutionStatus.PENDING,
+                input, null, null, 0, null, null, null, null);
+    }
+
+    public NodeExecutionJpaEntity(UUID id, UUID executionId, String nodeId, String nodeType,
+                                  NodeExecutionStatus status, JsonNode input, JsonNode output,
+                                  JsonNode error, Integer attemptCount, Instant startedAt,
+                                  Instant finishedAt, Instant createdAt, Instant nextAttemptAt) {
+        this.id = id;
         this.executionId = executionId;
         this.nodeId = nodeId;
         this.nodeType = nodeType;
+        this.status = status;
         this.input = input;
-        this.status = NodeExecutionStatus.PENDING;
-        this.attemptCount = 0;
+        this.output = output;
+        this.error = error;
+        this.attemptCount = attemptCount;
+        this.startedAt = startedAt;
+        this.finishedAt = finishedAt;
+        this.createdAt = createdAt;
+        this.nextAttemptAt = nextAttemptAt;
     }
 
     @PrePersist
@@ -104,6 +110,7 @@ public class NodeExecutionJpaEntity {
     public Instant getStartedAt() { return startedAt; }
     public Instant getFinishedAt() { return finishedAt; }
     public Instant getCreatedAt() { return createdAt; }
+    public Instant getNextAttemptAt() { return nextAttemptAt; }
 
     public void setStatus(NodeExecutionStatus status) { this.status = status; }
     public void setOutput(JsonNode output) { this.output = output; }
@@ -111,4 +118,5 @@ public class NodeExecutionJpaEntity {
     public void setAttemptCount(Integer attemptCount) { this.attemptCount = attemptCount; }
     public void setStartedAt(Instant startedAt) { this.startedAt = startedAt; }
     public void setFinishedAt(Instant finishedAt) { this.finishedAt = finishedAt; }
+    public void setNextAttemptAt(Instant nextAttemptAt) { this.nextAttemptAt = nextAttemptAt; }
 }

@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "1.0",
+  "nodes": [
+    {
+      "id": "manual-root",
+      "type": "trigger.manual",
+      "config": {}
+    },
+    {
+      "id": "webhook-root",
+      "type": "trigger.webhook",
+      "config": {}
+    },
+    {
+      "id": "schedule-root",
+      "type": "trigger.schedule",
+      "config": {
+        "cron": "0 0 9 * * *",
+        "timezone": "Asia/Ho_Chi_Minh"
+      }
+    },
+    {
+      "id": "condition",
+      "type": "logic.condition",
+      "config": {
+        "left": true,
+        "operator": "eq",
+        "right": false
+      }
+    },
+    {
+      "id": "left-http",
+      "type": "http.request",
+      "config": {
+        "method": "GET",
+        "url": "https://workflow-acceptance.example.test/left"
+      }
+    },
+    {
+      "id": "right-http",
+      "type": "http.request",
+      "config": {
+        "method": "GET",
+        "url": "https://workflow-acceptance.example.test/right"
+      }
+    },
+    {
+      "id": "inactive-branch",
+      "type": "logic.condition",
+      "config": {
+        "left": true,
+        "operator": "eq",
+        "right": true
+      }
+    },
+    {
+      "id": "join-http",
+      "type": "http.request",
+      "config": {
+        "method": "POST",
+        "url": "https://workflow-acceptance.example.test/join",
+        "body": {
+          "left": "{{ nodes.left-http.output.value }}",
+          "right": "{{ nodes.right-http.output.value }}"
+        }
+      }
+    }
+  ],
+  "edges": [
+    { "id": "manual-condition", "source": "manual-root", "target": "condition" },
+    { "id": "webhook-condition", "source": "webhook-root", "target": "condition" },
+    { "id": "schedule-condition", "source": "schedule-root", "target": "condition" },
+    { "id": "condition-left", "source": "condition", "target": "left-http", "sourcePort": "true" },
+    { "id": "condition-right", "source": "condition", "target": "right-http", "sourcePort": "true" },
+    { "id": "condition-inactive", "source": "condition", "target": "inactive-branch", "sourcePort": "false" },
+    { "id": "left-join", "source": "left-http", "target": "join-http" },
+    { "id": "right-join", "source": "right-http", "target": "join-http" }
+  ],
+  "variables": {}
+}

@@ -133,17 +133,19 @@ export const CreateWorkflowPage: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [aiPrompt, setAiPrompt] = useState<string>('');
   const [isCreating, setIsCreating] = useState<boolean>(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const handleStartBlank = async () => {
     setIsCreating(true);
+    setCreateError(null);
     try {
       const newWf = await workflowApi.createWorkflow({
         name: 'Untitled Automation Pipeline',
         description: 'Custom blank workflow created from canvas editor.',
       });
       navigate(`/workflows/${newWf.id}/builder`);
-    } catch {
-      navigate('/workflows/wf-prod-8492/builder');
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Workflow could not be created.');
     } finally {
       setIsCreating(false);
     }
@@ -151,14 +153,15 @@ export const CreateWorkflowPage: React.FC = () => {
 
   const handleUseTemplate = async (templateTitle: string) => {
     setIsCreating(true);
+    setCreateError(null);
     try {
       const newWf = await workflowApi.createWorkflow({
         name: templateTitle,
         description: `Workflow bootstrapped from template: ${templateTitle}`,
       });
       navigate(`/workflows/${newWf.id}/builder`);
-    } catch {
-      navigate('/workflows/wf-prod-8492/builder');
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : 'Workflow could not be created.');
     } finally {
       setIsCreating(false);
     }
@@ -179,6 +182,11 @@ export const CreateWorkflowPage: React.FC = () => {
 
   return (
     <div className="space-y-6 text-slate-900 dark:text-slate-100 font-sans">
+      {createError && (
+        <div role="alert" data-testid="workflow-create-error" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-300">
+          {createError}
+        </div>
+      )}
       {/* Top Breadcrumb & Page Heading */}
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">

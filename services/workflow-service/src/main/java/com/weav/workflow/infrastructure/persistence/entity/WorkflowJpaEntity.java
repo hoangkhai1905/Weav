@@ -94,6 +94,27 @@ public class WorkflowJpaEntity {
         this.status = WorkflowStatus.DRAFT;
     }
 
+    public WorkflowJpaEntity(UUID id, UUID workspaceId, String name, String description, WorkflowStatus status,
+                             String schemaVersion, JsonNode draftDefinition, JsonNode editorState,
+                             UUID currentVersionId, UUID createdBy, Instant createdAt, Instant updatedAt,
+                             Instant publishedAt, Instant deletedAt, UUID deletedBy) {
+        this.id = id;
+        this.workspaceId = workspaceId;
+        this.name = name;
+        this.description = description;
+        this.status = status;
+        this.schemaVersion = schemaVersion;
+        this.draftDefinition = draftDefinition;
+        this.editorState = editorState;
+        this.currentVersionId = currentVersionId;
+        this.createdBy = createdBy;
+        this.createdAt = createdAt;
+        this.updatedAt = updatedAt;
+        this.publishedAt = publishedAt;
+        this.deletedAt = deletedAt;
+        this.deletedBy = deletedBy;
+    }
+
     @PrePersist
     void onCreate() {
         if (id == null) {
@@ -129,8 +150,10 @@ public class WorkflowJpaEntity {
     public Instant getDeletedAt() { return deletedAt; }
     public UUID getDeletedBy() { return deletedBy; }
 
+    public void setName(String name) { this.name = name; }
     public void setDescription(String description) { this.description = description; }
     public void setStatus(WorkflowStatus status) { this.status = status; }
+    public void setSchemaVersion(String schemaVersion) { this.schemaVersion = schemaVersion; }
     public void setDraftDefinition(JsonNode draftDefinition) { this.draftDefinition = draftDefinition; }
     public void setEditorState(JsonNode editorState) { this.editorState = editorState; }
     public void setCurrentVersionId(UUID currentVersionId) { this.currentVersionId = currentVersionId; }

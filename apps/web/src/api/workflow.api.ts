@@ -1,8 +1,11 @@
 import { delay, getStorage, setStorage, STORAGE_KEYS } from './client';
 import type { WorkflowDefinition, ExecutionDetail } from '../types/workflow.types';
 import { executionApi } from './execution.api';
+import { workflowV1Api, type WorkflowPublication, type WorkflowRunReceipt } from './workflow-v1.api';
 
-export const workflowApi = {
+export const isWorkflowMockMode = import.meta.env.VITE_API_MODE === 'mock';
+
+const mockWorkflowApi = {
   async getWorkflows(): Promise<WorkflowDefinition[]> {
     await delay(200);
     return getStorage<WorkflowDefinition[]>(STORAGE_KEYS.WORKFLOWS, []);
@@ -110,5 +113,57 @@ export const workflowApi = {
     const workflows = getStorage<WorkflowDefinition[]>(STORAGE_KEYS.WORKFLOWS, []);
     const filtered = workflows.filter((w) => w.id !== id);
     setStorage(STORAGE_KEYS.WORKFLOWS, filtered);
+  },
+};
+
+export const workflowApi = {
+  getWorkflows(): Promise<WorkflowDefinition[]> {
+    return isWorkflowMockMode ? mockWorkflowApi.getWorkflows() : workflowV1Api.getWorkflows();
+  },
+
+  getWorkflow(id: string): Promise<WorkflowDefinition | null> {
+    return isWorkflowMockMode ? mockWorkflowApi.getWorkflow(id) : workflowV1Api.getWorkflow(id);
+  },
+
+  createWorkflow(payload: Partial<WorkflowDefinition>): Promise<WorkflowDefinition> {
+    if (isWorkflowMockMode) return mockWorkflowApi.createWorkflow(payload);
+    return workflowV1Api.createWorkflow({ name: payload.name ?? 'Untitled Workflow', description: payload.description });
+  },
+
+  updateWorkflow(id: string, updates: Partial<WorkflowDefinition>): Promise<WorkflowDefinition> {
+    return isWorkflowMockMode
+      ? mockWorkflowApi.updateWorkflow(id, updates)
+      : workflowV1Api.updateWorkflow(id, updates);
+  },
+
+  async publishWorkflow(id: string): Promise<WorkflowPublication> {
+    if (isWorkflowMockMode) {
+      return { workflow: await mockWorkflowApi.publishWorkflow(id), webhooks: [] };
+    }
+    return workflowV1Api.publishWorkflow(id);
+  },
+
+  pauseWorkflow(id: string): Promise<WorkflowDefinition> {
+    return isWorkflowMockMode ? mockWorkflowApi.pauseWorkflow(id) : workflowV1Api.pauseWorkflow(id);
+  },
+
+  resumeWorkflow(id: string): Promise<WorkflowDefinition> {
+    return isWorkflowMockMode ? mockWorkflowApi.resumeWorkflow(id) : workflowV1Api.resumeWorkflow(id);
+  },
+
+  async runWorkflow(id: string, input: Record<string, unknown> = {}): Promise<WorkflowRunReceipt> {
+    if (isWorkflowMockMode) {
+      const execution = await mockWorkflowApi.runWorkflow(id);
+      return { executionId: execution.id, workflowId: id, workflowVersionId: '', status: 'QUEUED' };
+    }
+    return workflowV1Api.runWorkflow(id, input);
+  },
+
+  duplicateWorkflow(id: string): Promise<WorkflowDefinition> {
+    return isWorkflowMockMode ? mockWorkflowApi.duplicateWorkflow(id) : workflowV1Api.duplicateWorkflow(id);
+  },
+
+  deleteWorkflow(id: string): Promise<void> {
+    return isWorkflowMockMode ? mockWorkflowApi.deleteWorkflow(id) : workflowV1Api.deleteWorkflow();
   },
 };

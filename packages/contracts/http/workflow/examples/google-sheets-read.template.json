@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "1.0",
+  "nodes": [
+    {
+      "id": "manual-root",
+      "type": "trigger.manual",
+      "config": {}
+    },
+    {
+      "id": "read-sheet",
+      "type": "google.sheets",
+      "config": {
+        "operation": "read",
+        "connectionId": "__WORKFLOW_TEST_GOOGLE_SHEETS_CONNECTION_ID__",
+        "spreadsheetId": "__WORKFLOW_TEST_GOOGLE_SHEETS_SPREADSHEET_ID__",
+        "range": "Sheet1!A1:B2"
+      }
+    }
+  ],
+  "edges": [
+    { "id": "manual-sheet", "source": "manual-root", "target": "read-sheet" }
+  ],
+  "variables": {}
+}

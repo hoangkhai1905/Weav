@@ -23,6 +23,8 @@ import {
   Activity,
 } from 'lucide-react';
 import { useI18nStore } from '../store/useI18nStore';
+import { isWorkflowMockMode } from '../api/workflow.api';
+import { LiveWorkflowExecutionsPage } from './LiveWorkflowExecutionsPage';
 
 export interface ExecutionItem {
   id: string;
@@ -167,6 +169,10 @@ const INITIAL_EXECUTION_LIST: ExecutionItem[] = [
 ];
 
 export function ExecutionsPage() {
+  return isWorkflowMockMode ? <MockExecutionsPage /> : <LiveWorkflowExecutionsPage />;
+}
+
+function MockExecutionsPage() {
   const navigate = useNavigate();
   const { t } = useI18nStore();
   const [executions, setExecutions] = useState<ExecutionItem[]>(INITIAL_EXECUTION_LIST);

@@ -14,4 +14,7 @@ RUN chmod +x mvnw
 
 COPY src/ src/
 
+# Shared API contracts are a separate build context so root-level secrets stay outside the image build.
+COPY --from=contracts . /packages/contracts/
+
 CMD ["./mvnw", "spring-boot:run"]

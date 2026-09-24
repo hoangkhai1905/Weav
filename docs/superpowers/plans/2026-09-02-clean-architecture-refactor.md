@@ -12,7 +12,7 @@
 - **AI & OCR (Python/TS):** Python 3.12, FastAPI, PaddleOCR 3.7.0, OpenCV 5.0.0, Pytest, Ruff; Anthropic SDK, OpenAI SDK.
 - **Code Intelligence & Impact:** GitNexus MCP (`impact`, `detect_changes`, `context`).
 
-**Spec:** Notion `Class Model Source of Truth — V1`, Notion `Full Tree Diagram`, `docs/work_logs/2026-09-01.md`, `docs/work_logs/2026-09-02.md`, `AGENTS.md`.
+**Spec:** Notion `Class Model Source of Truth — V1`, Notion `Full Tree Diagram`, `docs/work_logs/T/2026-09-01.md`, `docs/work_logs/T/2026-09-02.md`, `AGENTS.md`.
 
 ## Global Constraints
 

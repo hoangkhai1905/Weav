@@ -31,7 +31,16 @@ The contract defines two complementary ingress boundaries:
   - `scope`: `ocr:extract`
   - `workspace_id`: target workspace UUID
   - `mode`: `preview` or `execution`
-  - Maximum TTL: 120 seconds.
+- For Workflow execution tokens, `execution_id` and `node_execution_id`: required UUIDs identifying the current execution and attempt.
+- Maximum TTL: 120 seconds; Workflow currently signs a 60-second token with `kid`, `iat`, `exp`, and unique `jti`.
+- The OCR verifier must validate the asymmetric signature, key ID, issuer, audience, scope, mode, workspace and execution claims, `iat`, and expiry. It must derive tenant context from the verified `workspace_id` claim and reject missing or mismatched claims. `X-Workspace-ID` is not an authorization source.
+- Private callers must send a UUID `X-Request-ID`; the service must reject a missing or malformed value rather than silently generate a replacement. A valid W3C `traceparent` may be propagated.
+
+### Workflow Runtime Gate
+- Workflow's OCR executor and URL/artifact source gates are disabled by default. URL execution requires `WORKFLOW_OCR_ENABLED`, `WORKFLOW_OCR_URL_SOURCE_ENABLED`, `WORKFLOW_OCR_SERVICE_CLAIMS_VERIFIED`, and `WORKFLOW_OCR_URL_ALLOWLIST_VERIFIED`; all default to `false`. The last two settings are operator attestations after independent review, not runtime detection.
+- Artifact execution requires `WORKFLOW_OCR_ENABLED`, `WORKFLOW_OCR_ARTIFACT_SOURCE_ENABLED`, `WORKFLOW_OCR_SERVICE_CLAIMS_VERIFIED`, and `WORKFLOW_OCR_ARTIFACT_RESOLVER_VERIFIED`; all default to `false`. The artifact gate additionally requires a written, reviewed descriptor/download contract, a concrete OCR artifact-resolver adapter, and verified ownership, expiry, and download checks. The contract does not define a descriptor route or download payload; none may be inferred from `artifactId` alone.
+- Keep `OCR_SERVICE_PRIVATE_URL` on the internal service network and provide an explicit signing key ID plus a mounted PKCS#8 RSA private-key file. No production activation values are included in this repository change.
+- The current OCR route checks Bearer-token presence but does not validate its signature or claims; it accepts `X-Workspace-ID` as context and generates a request ID when absent. The current dependency wiring also sets `artifact_resolver=None`. These are explicit production blockers. Workflow's local feature flags do not repair or prove the OCR service prerequisites.
 
 ## 3. Request Formats and Source Discrimination
 
@@ -70,7 +79,7 @@ Or for allowlisted external URLs:
 ```
 
 The `source` field uses a strict discriminator on `type`:
-- `type: "artifact"`: Requires `artifactId` (UUID string). The service resolves this through the Workflow Service artifact descriptor.
+- `type: "artifact"`: Requires `artifactId` (UUID string). This request shape is documented, but Workflow artifact execution stays disabled until the descriptor/download contract and concrete OCR resolver are approved and implemented.
 - `type: "url"`: Requires `fileUrl` (HTTPS URI, max 4096 characters).
 
 ## 4. Security & SSRF Defense Rules

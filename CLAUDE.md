@@ -122,7 +122,7 @@ Use only skills relevant to the current task. If a skill is unavailable or not c
 
 ## Work logs
 
-After every meaningful task or before handoff, update the work log using `docs/work_logs/log_template.md`. Normally append to `docs/work_logs/YYYY-MM-DD.md`; use a focused same-day file when the main log is owned by another workstream.
+After every meaningful task or before handoff, update the work log using `docs/work_logs/log_template.md`. Keep work logs under the matching member folder in `docs/work_logs/K/` or `docs/work_logs/T/`; keep `log_template.md` at the `docs/work_logs/` root.
 
 Record decisions, changed files, commands and results, runtime/browser evidence, risks, blockers, and next steps. Keep raw output short and reproducible. Clearly distinguish complete/tested, in progress, and blocked work. Redact all secrets, tokens, connection strings, cookies, and sensitive personal data.
 

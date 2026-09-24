@@ -397,9 +397,9 @@ ADMIN enable -> 200; testUser old refresh still 401; fresh login -> 200
 
 ## 8. Sources
 
-- [Core auth work log](../../work_logs/2026-09-05-identity-core-auth.md)
+- [Core auth work log](../../work_logs/K/identity-core-auth-readiness.md#source-2026-09-05-identity-core-auth)
 - [Core auth design](../specs/2026-09-05-identity-core-auth-design.md)
-- [Readiness history](../../work_logs/2026-09-05-identity-readiness.md)
+- [Readiness history](../../work_logs/K/identity-core-auth-readiness.md#source-2026-09-05-identity-readiness)
 - [Current auth contract](../../../packages/contracts/http/auth/README.md)
 - [Google Docs thesis — chỉ đến hết chương 3](https://docs.google.com/document/d/15b2BPSs9HFyN2Ki3spTWXw6To7_QpmWiAKm58qek5cA/edit?tab=t.0)
 - [Notion Identity schema](https://app.notion.com/p/3bd8722217d580b7b5d3c26e86ffaab3)

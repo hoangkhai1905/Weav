@@ -1,5 +1,6 @@
 package com.weav.workflow.domain.model.aggregate.workflow;
 
+import com.weav.workflow.domain.definition.JsonValues;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Objects;
@@ -17,7 +18,7 @@ public class WorkflowVersion {
     public WorkflowVersion(UUID id, UUID workflowId, Integer versionNumber, Map<String, Object> definition,
                            String schemaVersion, UUID publishedBy, Instant createdAt) {
         this.id = Objects.requireNonNull(id); this.workflowId = Objects.requireNonNull(workflowId);
-        this.versionNumber = Objects.requireNonNull(versionNumber); this.definition = definition == null ? Map.of() : Map.copyOf(definition);
+        this.versionNumber = Objects.requireNonNull(versionNumber); this.definition = JsonValues.freezeMap(definition);
         this.schemaVersion = Objects.requireNonNull(schemaVersion); this.publishedBy = Objects.requireNonNull(publishedBy);
         this.createdAt = Objects.requireNonNull(createdAt);
     }

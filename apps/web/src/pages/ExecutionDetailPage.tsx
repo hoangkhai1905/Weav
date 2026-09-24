@@ -30,6 +30,8 @@ import {
 import type { ExecutionDetail, WorkflowDefinition, NodeExecutionResult } from '../types/workflow.types';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { useUIStore } from '../store/useUIStore';
+import { isWorkflowMockMode } from '../api/workflow.api';
+import { LiveExecutionDetailPage } from './LiveExecutionDetailPage';
 
 // Rich Mock Executions Store for realistic debugging
 const MOCK_EXECUTION_DATA: Record<string, { execution: ExecutionDetail; workflow: WorkflowDefinition }> = {
@@ -268,6 +270,10 @@ const MOCK_EXECUTION_DATA: Record<string, { execution: ExecutionDetail; workflow
 };
 
 export function ExecutionDetailPage() {
+  return isWorkflowMockMode ? <MockExecutionDetailPage /> : <LiveExecutionDetailPage />;
+}
+
+function MockExecutionDetailPage() {
   const { executionId } = useParams<{ executionId: string }>();
   const navigate = useNavigate();
   const { theme } = useUIStore();
