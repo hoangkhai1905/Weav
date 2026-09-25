@@ -130,6 +130,10 @@ class AuthApiError extends Error {
   }
 }
 
+export function getAuthApiErrorStatus(error: unknown): number | null {
+  return error instanceof AuthApiError ? error.status : null;
+}
+
 async function request<T>(client: typeof apiClient, config: AxiosRequestConfig): Promise<T> {
   try {
     return (await client.request<T>(config)).data;

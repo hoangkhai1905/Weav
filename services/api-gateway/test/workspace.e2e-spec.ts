@@ -19,6 +19,7 @@ const ORIGINAL_ENVIRONMENT = { ...process.env };
 const fixtureSecret = randomBytes(48).toString('hex');
 const WORKSPACE_ID = '3fa85f64-5717-4562-b3fc-2c963f66afa6';
 const USER_ID = '5fa85f64-5717-4562-b3fc-2c963f66afa6';
+const CONNECTION_ID = '9fa85f64-5717-4562-b3fc-2c963f66afa6';
 const VALID_TRACEPARENT =
   '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 
@@ -42,6 +43,30 @@ const memberResponse = {
   updatedAt: '2026-09-19T00:00:00Z',
 };
 
+const connectionResponse = {
+  id: CONNECTION_ID,
+  workspaceId: WORKSPACE_ID,
+  createdBy: USER_ID,
+  name: 'Gmail',
+  provider: 'GMAIL',
+  authType: 'OAUTH2',
+  status: 'DISABLED',
+  config: null,
+  hasCredential: false,
+  credentialExpiresAt: null,
+  lastVerifiedAt: null,
+  canManage: true,
+  canAttach: true,
+  createdAt: '2026-09-19T00:00:00Z',
+  updatedAt: '2026-09-19T00:00:00Z',
+};
+
+const connectionTestResponse = { outcome: 'VERIFIED' };
+const oauthAuthorizationResponse = {
+  authorizationUrl:
+    'https://accounts.google.com/o/oauth2/v2/auth?state=fixture-state',
+};
+
 const signedAuthorization: Record<string, string> = Object.fromEntries(
   [
     'normal-token',
@@ -53,6 +78,11 @@ const signedAuthorization: Record<string, string> = Object.fromEntries(
     'status-403-token',
     'status-404-token',
     'status-409-token',
+    'connection-status-403-token',
+    'connection-status-404-token',
+    'connection-status-409-token',
+    'connection-status-422-token',
+    'connection-status-503-token',
   ].map((label) => {
     const now = Math.floor(Date.now() / 1000);
     const claims = {
@@ -229,6 +259,25 @@ function handleFixtureRequest(
       return;
     }
 
+    const connectionStatus = [403, 404, 409, 422, 503].find(
+      (status) =>
+        authorization ===
+        signedAuthorization[`connection-status-${status}-token`],
+    );
+    if (
+      url.pathname.startsWith(`/workspaces/${WORKSPACE_ID}/connections`) &&
+      connectionStatus
+    ) {
+      writeJson(response, connectionStatus, {
+        error: {
+          code: `WORKSPACE_${connectionStatus}`,
+          message: 'downstream response',
+        },
+        downstreamField: 'preserve-me',
+      });
+      return;
+    }
+
     switch (`${request.method} ${url.pathname}`) {
       case 'POST /workspaces':
         writeJson(response, 201, workspaceResponse, {
@@ -265,6 +314,42 @@ function handleFixtureRequest(
       case `DELETE /workspaces/${WORKSPACE_ID}/members/me`:
         response.writeHead(204, { 'x-upstream-secret': 'never-forward' });
         response.end();
+        return;
+      case `POST /workspaces/${WORKSPACE_ID}/connections`:
+        writeJson(response, 201, connectionResponse, {
+          'x-upstream-secret': 'never-forward',
+        });
+        return;
+      case `GET /workspaces/${WORKSPACE_ID}/connections`:
+        writeJson(response, 200, [connectionResponse], {
+          'x-upstream-secret': 'never-forward',
+        });
+        return;
+      case `GET /workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`:
+      case `PATCH /workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`:
+        writeJson(response, 200, connectionResponse, {
+          'x-upstream-secret': 'never-forward',
+        });
+        return;
+      case `DELETE /workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`:
+        response.writeHead(204, { 'x-upstream-secret': 'never-forward' });
+        response.end();
+        return;
+      case `POST /workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/test`:
+        writeJson(response, 200, connectionTestResponse, {
+          'x-upstream-secret': 'never-forward',
+        });
+        return;
+      case `POST /workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/disable`:
+        writeJson(response, 200, connectionResponse, {
+          'x-upstream-secret': 'never-forward',
+        });
+        return;
+      case `POST /workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/authorize`:
+        writeJson(response, 200, oauthAuthorizationResponse, {
+          'cache-control': 'no-store',
+          'x-upstream-secret': 'never-forward',
+        });
         return;
       case 'POST /v1/extractions':
         writeJson(response, 200, { accepted: true });
@@ -372,13 +457,14 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     restoreEnvironment();
   });
 
-  it('proxies all nine public operations with exact paths and preserved responses', async () => {
+  it('proxies all seventeen public operations with exact paths and preserved responses', async () => {
     const operations: Array<{
       method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
       url: string;
       upstreamPath: string;
       status: number;
       payload?: Record<string, unknown>;
+      expectedPayload?: Record<string, unknown>;
       expectedBody?: unknown;
       expectedQuery?: Record<string, string>;
     }> = [
@@ -468,6 +554,74 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
         upstreamPath: `/workspaces/${WORKSPACE_ID}/members/me`,
         status: 204,
       },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections`,
+        status: 201,
+        payload: {
+          name: '  Gmail  ',
+          provider: 'GMAIL',
+          authType: 'OAUTH2',
+          config: { accountHint: 'work', nested: { retained: true } },
+        },
+        expectedPayload: {
+          name: 'Gmail',
+          provider: 'GMAIL',
+          authType: 'OAUTH2',
+          config: { accountHint: 'work', nested: { retained: true } },
+        },
+        expectedBody: connectionResponse,
+      },
+      {
+        method: 'GET',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections`,
+        status: 200,
+        expectedBody: [connectionResponse],
+      },
+      {
+        method: 'GET',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+        status: 200,
+        expectedBody: connectionResponse,
+      },
+      {
+        method: 'PATCH',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+        status: 200,
+        payload: { name: 'Work Gmail' },
+        expectedBody: connectionResponse,
+      },
+      {
+        method: 'DELETE',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+        status: 204,
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/test`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/test`,
+        status: 200,
+        expectedBody: connectionTestResponse,
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/disable`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/disable`,
+        status: 200,
+        expectedBody: connectionResponse,
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/authorize`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/authorize`,
+        status: 200,
+        expectedBody: oauthAuthorizationResponse,
+      },
     ];
 
     for (const [index, operation] of operations.entries()) {
@@ -496,6 +650,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       expect(response.statusCode).toBe(operation.status);
       expect(response.headers['x-request-id']).toBe(requestId);
       expect(response.headers['x-correlation-id']).toBe(requestId);
+      expect(response.headers['cache-control']).toBe('no-store');
       expect(response.headers['x-upstream-secret']).toBeUndefined();
       if (operation.status === 204) {
         expect(response.payload).toBe('');
@@ -517,7 +672,9 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       expect(forwarded?.headers['x-user-id']).toBeUndefined();
       expect(forwarded?.headers['x-user-role']).toBeUndefined();
       if (operation.payload !== undefined) {
-        expect(JSON.parse(forwarded?.body ?? '')).toEqual(operation.payload);
+        expect(JSON.parse(forwarded?.body ?? '')).toEqual(
+          operation.expectedPayload ?? operation.payload,
+        );
       }
       if (operation.expectedQuery) {
         expect(
@@ -527,6 +684,34 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
         expect(forwarded?.search).toBe('');
       }
     }
+  });
+
+  it('forwards all Workspace provider and auth type values without business-rule validation', async () => {
+    const providers = ['TELEGRAM', 'HTTP', 'GMAIL', 'GOOGLE_SHEETS'] as const;
+    const authTypes = ['NONE', 'TOKEN', 'API_KEY', 'BASIC', 'OAUTH2'] as const;
+
+    for (const provider of providers) {
+      for (const authType of authTypes) {
+        const payload = { name: 'Enum connection', provider, authType };
+        const response = await app
+          .getHttpAdapter()
+          .getInstance()
+          .inject({
+            method: 'POST',
+            url: `/api/v1/workspaces/${WORKSPACE_ID}/connections`,
+            headers: { authorization: signedAuthorization['normal-token'] },
+            payload,
+          });
+
+        expect(response.statusCode).toBe(201);
+        expect(fixtureRequests.at(-1)?.path).toBe(
+          `/workspaces/${WORKSPACE_ID}/connections`,
+        );
+        expect(JSON.parse(fixtureRequests.at(-1)?.body ?? '')).toEqual(payload);
+      }
+    }
+
+    expect(fixtureRequests).toHaveLength(providers.length * authTypes.length);
   });
 
   it('rejects invalid UUID/query/body inputs before any upstream request', async () => {
@@ -570,6 +755,75 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
         url: `/api/v1/workspaces/${WORKSPACE_ID}/members/${USER_ID}/permissions`,
         payload: { canPublishWorkflow: true },
       },
+      {
+        method: 'GET',
+        url: '/api/v1/workspaces/not-a-uuid/connections',
+      },
+      {
+        method: 'GET',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/not-a-uuid`,
+      },
+      {
+        method: 'DELETE',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/not-a-uuid`,
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/not-a-uuid/test`,
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/not-a-uuid/disable`,
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections`,
+        payload: { name: ' ', provider: 'GMAIL', authType: 'OAUTH2' },
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections`,
+        payload: {
+          name: 'valid',
+          provider: 'GOOGLE_DRIVE',
+          authType: 'OAUTH2',
+        },
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections`,
+        payload: { name: 'valid', provider: 'GMAIL', authType: 'PASSWORD' },
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections`,
+        payload: {
+          name: 'valid',
+          provider: 'GMAIL',
+          authType: 'OAUTH2',
+          arbitraryTopLevel: true,
+        },
+      },
+      {
+        method: 'PATCH',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+        payload: {},
+      },
+      {
+        method: 'PATCH',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+        payload: { name: '   ' },
+      },
+      {
+        method: 'PATCH',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+        payload: { config: null },
+      },
+      {
+        method: 'PATCH',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+        payload: { unexpected: true },
+      },
     ];
 
     for (const invalidRequest of invalidRequests) {
@@ -601,12 +855,12 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     const missing = await app
       .getHttpAdapter()
       .getInstance()
-      .inject({ url: `/api/v1/workspaces/${WORKSPACE_ID}` });
+      .inject({ url: `/api/v1/workspaces/${WORKSPACE_ID}/connections` });
     const invalid = await app
       .getHttpAdapter()
       .getInstance()
       .inject({
-        url: `/api/v1/workspaces/${WORKSPACE_ID}`,
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections`,
         headers: { authorization: 'Bearer invalid' },
       });
 
@@ -639,6 +893,26 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       {
         method: 'POST' as const,
         url: `/api/v1/workspaces/${WORKSPACE_ID}`,
+      },
+      {
+        method: 'PUT' as const,
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/credential`,
+      },
+      {
+        method: 'DELETE' as const,
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/credential`,
+      },
+      {
+        method: 'POST' as const,
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/callback`,
+      },
+      {
+        method: 'GET' as const,
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/arbitrary`,
+      },
+      {
+        method: 'GET' as const,
+        url: '/oauth/google/callback',
       },
     ];
 
@@ -736,6 +1010,71 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     }
   });
 
+  it('preserves connection 403, 404, 409, 422, and 503 responses', async () => {
+    const cases = [
+      {
+        status: 403,
+        method: 'POST' as const,
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections`,
+        payload: { name: 'Gmail', provider: 'GMAIL', authType: 'OAUTH2' },
+      },
+      {
+        status: 404,
+        method: 'GET' as const,
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+      },
+      {
+        status: 409,
+        method: 'DELETE' as const,
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
+      },
+      {
+        status: 422,
+        method: 'POST' as const,
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/test`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/test`,
+      },
+      {
+        status: 503,
+        method: 'POST' as const,
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/authorize`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/authorize`,
+      },
+    ];
+
+    for (const testCase of cases) {
+      fixtureRequests.length = 0;
+      const response = await app
+        .getHttpAdapter()
+        .getInstance()
+        .inject({
+          method: testCase.method,
+          url: testCase.url,
+          headers: {
+            authorization:
+              signedAuthorization[`connection-status-${testCase.status}-token`],
+          },
+          ...(testCase.payload === undefined
+            ? {}
+            : { payload: testCase.payload }),
+        });
+
+      expect(response.statusCode).toBe(testCase.status);
+      expect(response.json()).toEqual({
+        error: {
+          code: `WORKSPACE_${testCase.status}`,
+          message: 'downstream response',
+        },
+        downstreamField: 'preserve-me',
+      });
+      expect(fixtureRequests).toHaveLength(1);
+      expect(fixtureRequests[0].path).toBe(testCase.upstreamPath);
+    }
+  });
+
   it('applies the ten-second deadline while reading an upstream response body', async () => {
     const startedAt = Date.now();
     const response = await app
@@ -824,7 +1163,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     ).toBe(true);
   });
 
-  it('keeps the gateway contract to exactly nine Workspace method/path pairs and resolvable refs', () => {
+  it('keeps the gateway contract to exactly seventeen Workspace method/path pairs and resolvable refs', () => {
     const gatewayPath = resolve(
       __dirname,
       '../../../packages/contracts/http/gateway/openapi.yaml',
@@ -840,6 +1179,14 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       'PATCH /api/v1/workspaces/{workspaceId}/members/{userId}/permissions',
       'DELETE /api/v1/workspaces/{workspaceId}/members/{userId}',
       'DELETE /api/v1/workspaces/{workspaceId}/members/me',
+      'POST /api/v1/workspaces/{workspaceId}/connections',
+      'GET /api/v1/workspaces/{workspaceId}/connections',
+      'GET /api/v1/workspaces/{workspaceId}/connections/{connectionId}',
+      'PATCH /api/v1/workspaces/{workspaceId}/connections/{connectionId}',
+      'DELETE /api/v1/workspaces/{workspaceId}/connections/{connectionId}',
+      'POST /api/v1/workspaces/{workspaceId}/connections/{connectionId}/test',
+      'POST /api/v1/workspaces/{workspaceId}/connections/{connectionId}/disable',
+      'POST /api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/authorize',
     ];
     const actual = extractOperations(gatewayDocument);
 

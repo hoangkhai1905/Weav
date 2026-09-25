@@ -137,7 +137,7 @@ services:
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
       GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
       GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8082/oauth/google/callback}
-      GOOGLE_OAUTH_FRONTEND_RETURN_URL: ${GOOGLE_OAUTH_FRONTEND_RETURN_URL:-http://localhost:3000/connections}
+      GOOGLE_OAUTH_FRONTEND_RETURN_URL: ${GOOGLE_OAUTH_FRONTEND_RETURN_URL:-http://localhost:5173/connections}
       GOOGLE_OAUTH_STATE_TTL: ${GOOGLE_OAUTH_STATE_TTL:-PT10M}
 
       # Workspace calls Workflow to confirm whether a Connection is in use.

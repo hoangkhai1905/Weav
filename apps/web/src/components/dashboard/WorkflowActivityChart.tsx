@@ -23,6 +23,7 @@ const CHART_DATA: DataPoint[] = [
 
 export const WorkflowActivityChart: React.FC = () => {
   const { t } = useI18nStore();
+  const localizedDay = (day: string) => t(`dashboard.day.${day.toLowerCase()}`);
   // Default hoveredIdx to 5 (Fri) to match reference.png
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(5);
 
@@ -66,7 +67,7 @@ export const WorkflowActivityChart: React.FC = () => {
           }}
         >
           <div className="font-semibold text-white leading-tight">
-            {activeItem.day}: {activeItem.count} {t('dashboard.runs')}
+            {localizedDay(activeItem.day)}: {activeItem.count} {t('dashboard.runs')}
           </div>
           <div className="text-emerald-400 text-[10px] leading-tight mt-0.5">
             {activeItem.successRate} {t('dashboard.success_rate')}
@@ -153,7 +154,7 @@ export const WorkflowActivityChart: React.FC = () => {
                     : 'hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
-                {d.day}
+                {localizedDay(d.day)}
               </span>
             );
           })}

@@ -1,9 +1,19 @@
 import React from 'react';
 import { Stack, Redirect } from 'expo-router';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useAuthStore } from '../../stores/auth.store';
 
 export default function AppLayout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isHydrating = useAuthStore((s) => s.isHydrating);
+
+  if (isHydrating) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator color="#38bdf8" />
+      </View>
+    );
+  }
 
   if (!isAuthenticated) {
     return <Redirect href="/(auth)/login" />;
@@ -22,3 +32,12 @@ export default function AppLayout() {
     </Stack>
   );
 }
+
+const styles = StyleSheet.create({
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#090d16',
+  },
+});

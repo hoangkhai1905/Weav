@@ -10,6 +10,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { workflowApi } from '../api/workflow.api';
+import { useI18nStore } from '../store/useI18nStore';
 
 interface TemplateCard {
   id: string;
@@ -126,8 +127,18 @@ const TEMPLATES: TemplateCard[] = [
   },
 ];
 
+const TEMPLATE_CATEGORY_KEYS: Record<string, string> = {
+  'tpl-1': 'create.category.ecommerce',
+  'tpl-2': 'create.category.devops',
+  'tpl-3': 'create.category.crm',
+  'tpl-4': 'create.category.support',
+  'tpl-5': 'create.category.pipeline',
+  'tpl-6': 'create.category.document_ai',
+};
+
 export const CreateWorkflowPage: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useI18nStore();
 
   const [selectedMethod, setSelectedMethod] = useState<'blank' | 'template' | 'ai'>('blank');
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -191,31 +202,31 @@ export const CreateWorkflowPage: React.FC = () => {
       <div className="space-y-2">
         <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
           <Link to="/workspace" className="hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
-            Workspace
+            {t('create.workspace')}
           </Link>
           <span>/</span>
           <Link to="/workflows" className="hover:text-slate-900 dark:hover:text-slate-100 transition-colors flex items-center gap-1">
             <ArrowLeft size={12} />
-            <span>Workflows</span>
+            <span>{t('nav.workflows')}</span>
           </Link>
           <span>/</span>
-          <span className="text-slate-900 dark:text-slate-100 font-semibold">Create workflow</span>
+          <span className="text-slate-900 dark:text-slate-100 font-semibold">{t('create.title')}</span>
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pt-1">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              Create workflow
+              {t('create.title')}
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Choose how you want to start building your automated pipeline.
+              {t('create.subtitle')}
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-mono border border-slate-200 dark:border-slate-700">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              Production Cluster (us-east-1)
+              {t('create.production_cluster')} (us-east-1)
             </span>
           </div>
         </div>
@@ -240,20 +251,20 @@ export const CreateWorkflowPage: React.FC = () => {
               <span className="font-mono text-[10px] text-slate-400">v2.4 engine</span>
             </div>
 
-            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Blank workflow</h3>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t('create.blank')}</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed min-h-[40px]">
-              Start from an empty canvas and assemble triggers, custom logic, and target actions from scratch.
+              {t('create.blank_description')}
             </p>
 
             <div className="flex flex-wrap gap-1.5 pt-1">
               <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                Full control
+                {t('create.full_control')}
               </span>
               <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                Custom triggers
+                {t('create.custom_triggers')}
               </span>
               <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                Any payload
+                {t('create.any_payload')}
               </span>
             </div>
           </div>
@@ -268,7 +279,7 @@ export const CreateWorkflowPage: React.FC = () => {
               className="w-full h-8 px-3 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
             >
               <Plus size={14} />
-              <span>{isCreating ? 'Creating...' : 'Start blank'}</span>
+              <span>{isCreating ? t('create.creating') : t('create.start_blank')}</span>
             </button>
           </div>
         </div>
@@ -288,24 +299,24 @@ export const CreateWorkflowPage: React.FC = () => {
                 <LayoutGrid size={20} />
               </div>
               <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                30+ recipes
+                {t('create.recipes')}
               </span>
             </div>
 
-            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">From template</h3>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t('create.from_template')}</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed min-h-[40px]">
-              Jumpstart with battle-tested automation templates tailored for modern data & engineering stacks.
+              {t('create.templates_description')}
             </p>
 
             <div className="flex flex-wrap gap-1.5 pt-1">
               <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                Pre-configured
+                {t('create.preconfigured')}
               </span>
               <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                Schema verified
+                {t('create.schema_verified')}
               </span>
               <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                Zero latency
+                {t('create.zero_latency')}
               </span>
             </div>
           </div>
@@ -316,7 +327,7 @@ export const CreateWorkflowPage: React.FC = () => {
               className="w-full h-8 px-3 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
             >
               <LayoutGrid size={14} />
-              <span>Browse templates</span>
+              <span>{t('create.browse_templates')}</span>
             </a>
           </div>
         </div>
@@ -336,26 +347,26 @@ export const CreateWorkflowPage: React.FC = () => {
                 <Sparkles size={20} />
               </div>
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-[#2563EB]/10 text-[#2563EB]">
-                Beta
+                {t('create.beta')}
               </span>
             </div>
 
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-              <span>Create with AI</span>
+              <span>{t('create.with_ai')}</span>
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed min-h-[40px]">
-              Describe your target automation in natural language and let WEAV compile nodes, code, and routing.
+              {t('create.ai_description')}
             </p>
 
             <div className="flex flex-wrap gap-1.5 pt-1">
               <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                Prompt-to-pipeline
+                {t('create.prompt_to_pipeline')}
               </span>
               <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                Auto-mapping
+                {t('create.auto_mapping')}
               </span>
               <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                Dry run preview
+                {t('create.dry_run_preview')}
               </span>
             </div>
           </div>
@@ -366,7 +377,7 @@ export const CreateWorkflowPage: React.FC = () => {
               className="w-full h-8 px-3 rounded bg-[#2563EB] hover:bg-[#1d4ed8] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
             >
               <Zap size={14} />
-              <span>Synthesize pipeline</span>
+              <span>{t('create.synthesize')}</span>
             </Link>
           </div>
         </div>
@@ -376,7 +387,7 @@ export const CreateWorkflowPage: React.FC = () => {
       <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-center gap-3">
         <div className="flex items-center gap-2 text-[#2563EB] shrink-0">
           <Sparkles size={16} />
-          <span className="text-xs font-medium text-slate-900 dark:text-slate-100">Quick prompt:</span>
+          <span className="text-xs font-medium text-slate-900 dark:text-slate-100">{t('create.quick_prompt')}</span>
         </div>
 
         <div className="relative flex-1 w-full">
@@ -384,7 +395,7 @@ export const CreateWorkflowPage: React.FC = () => {
             type="text"
             value={aiPrompt}
             onChange={(e) => setAiPrompt(e.target.value)}
-            placeholder="e.g. Ingest Stripe charge.failed webhooks, query PostgreSQL users table, format alert and post to #incident-ops in Slack..."
+            placeholder={t('create.prompt_placeholder')}
             className="w-full h-9 pl-3 pr-8 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 rounded-lg placeholder:text-slate-400 focus:outline-none focus:border-[#2563EB] border border-slate-200 dark:border-slate-700"
           />
         </div>
@@ -393,7 +404,7 @@ export const CreateWorkflowPage: React.FC = () => {
           onClick={handleGenerateAiCanvas}
           className="w-full sm:w-auto h-9 px-4 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-medium text-slate-900 dark:text-slate-100 transition-colors flex items-center justify-center gap-1.5 shrink-0"
         >
-          <span>Generate canvas</span>
+          <span>{t('create.generate_canvas')}</span>
           <ArrowRight size={14} />
         </button>
       </div>
@@ -402,17 +413,17 @@ export const CreateWorkflowPage: React.FC = () => {
       <div className="pt-2 space-y-4" id="templates-list">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">Popular templates</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Select a verified blueprint to customize and trigger directly.</p>
+            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{t('create.popular_templates')}</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{t('create.select_template')}</p>
           </div>
 
           {/* Filter Pills */}
           <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-lg self-start sm:self-auto overflow-x-auto">
             {[
-              { id: 'all', label: 'All' },
-              { id: 'data-etl', label: 'Data & ETL' },
-              { id: 'customer-ops', label: 'Customer Ops' },
-              { id: 'ai-vectors', label: 'AI & Vectors' },
+              { id: 'all', label: t('create.filter.all') },
+              { id: 'data-etl', label: t('create.filter.data_etl') },
+              { id: 'customer-ops', label: t('create.filter.customer_ops') },
+              { id: 'ai-vectors', label: t('create.filter.ai_vectors') },
             ].map((filter) => (
               <button
                 key={filter.id}
@@ -439,7 +450,7 @@ export const CreateWorkflowPage: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                    {tpl.categoryLabel}
+                    {t(TEMPLATE_CATEGORY_KEYS[tpl.id])}
                   </span>
                   <span className="font-mono text-[10px] text-slate-400 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />
@@ -451,7 +462,7 @@ export const CreateWorkflowPage: React.FC = () => {
                   {tpl.title}
                 </h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                  {tpl.description}
+                  {t(`create.template.${tpl.id}.description`)}
                 </p>
 
                 {/* Graph Flow Sequence Preview */}
@@ -480,13 +491,13 @@ export const CreateWorkflowPage: React.FC = () => {
 
               <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
                 <span className="font-mono text-[10px] text-slate-400">
-                  {tpl.stepsCount} steps • {tpl.avgDuration}
+                  {tpl.stepsCount} {t('create.steps')} • {tpl.avgDuration}
                 </span>
                 <button
                   onClick={() => handleUseTemplate(tpl.title)}
                   className="h-7 px-2.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-[#2563EB] hover:text-white text-slate-800 dark:text-slate-200 text-xs font-medium transition-colors flex items-center gap-1"
                 >
-                  <span>Use template</span>
+                  <span>{t('create.use_template')}</span>
                   <ArrowRight size={12} />
                 </button>
               </div>

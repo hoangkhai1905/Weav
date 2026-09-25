@@ -30,7 +30,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm dev --host 127.0.0.1 --port ${webPort} --strictPort`,
+    command: `node ./node_modules/vite/bin/vite.js --host 127.0.0.1 --port ${webPort} --strictPort`,
     url: webUrl,
     reuseExistingServer: false,
   },

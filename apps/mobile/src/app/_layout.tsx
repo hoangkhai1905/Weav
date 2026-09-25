@@ -4,6 +4,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ToastContainer } from '../components/ui/ToastContainer';
+import {
+  useWorkspace,
+  useWorkspaceSessionCleanup,
+} from '../features/workspace/hooks/useWorkspace';
+import {
+  useAuthSessionBootstrap,
+  useAuthSessionCacheCleanup,
+} from '../features/auth/useAuthSession';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -14,10 +22,19 @@ const queryClient = new QueryClient({
   },
 });
 
+function WorkspaceRuntimeBoundary() {
+  useAuthSessionBootstrap();
+  useAuthSessionCacheCleanup();
+  useWorkspaceSessionCleanup();
+  useWorkspace();
+  return null;
+}
+
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
+        <WorkspaceRuntimeBoundary />
         <StatusBar style="light" />
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#090d16' } }}>
           <Stack.Screen name="(auth)" />

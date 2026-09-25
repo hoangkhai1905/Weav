@@ -30,8 +30,38 @@ import {
 import type { ExecutionDetail, WorkflowDefinition, NodeExecutionResult } from '../types/workflow.types';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { useUIStore } from '../store/useUIStore';
+import { useI18nStore } from '../store/useI18nStore';
+import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
 import { isWorkflowMockMode } from '../api/workflow.api';
 import { LiveExecutionDetailPage } from './LiveExecutionDetailPage';
+
+const MOCK_LOG_MESSAGE_KEYS: Record<string, string> = {
+  'Webhook endpoint POST /stripe called by Stripe IP 54.187.205.1': 'execution_detail.mock_log.stripe_webhook_called',
+  'Step 1 (Stripe Order Webhook) validated signature & parsed payload.': 'execution_detail.mock_log.stripe_webhook_validated',
+  'Step 2 (PostgreSQL Store Order) inserted record db_rec_884912.': 'execution_detail.mock_log.order_saved',
+  'Step 3 (AI Extract & Profile Customer) calling OpenAI gpt-4o API...': 'execution_detail.mock_log.ai_calling',
+  'Step 3 streaming response chunk 2/3 (elapsed 10.2s).': 'execution_detail.mock_log.stream_progress',
+  'Cron trigger fired on schedule 0 9 * * *.': 'execution_detail.mock_log.cron_triggered',
+  'Database dump generated successfully (14.1 MB).': 'execution_detail.mock_log.database_dump_generated',
+  'S3 upload attempt 1 failed: Connection timeout. Retrying in 1s...': 'execution_detail.mock_log.s3_retry_one',
+  'S3 upload attempt 2 failed: Connection timeout. Retrying in 2s...': 'execution_detail.mock_log.s3_retry_two',
+  'S3 upload attempt 3 failed: ETIMEDOUT (host s3.us-east-1.amazonaws.com unreachable). Execution halted.': 'execution_detail.mock_log.s3_failed',
+  'Daily customer onboarding batch starting.': 'execution_detail.mock_log.onboarding_started',
+  'Clearbit API enriched 14 customer profiles.': 'execution_detail.mock_log.clearbit_enriched',
+  'AI Lead Scoring identified 3 high-value enterprise prospects.': 'execution_detail.mock_log.lead_scoring_complete',
+  'Execution EX-8491 completed in 4.2s.': 'execution_detail.mock_log.execution_completed',
+};
+
+const EXECUTION_TRIGGER_DETAIL_KEYS: Record<string, string> = {
+  'Webhook (POST /stripe)': 'executions.trigger_detail.webhook_stripe',
+  'Schedule (Cron 0 9 * * *)': 'executions.trigger_detail.schedule_cron_expression',
+  'Schedule (Daily)': 'executions.trigger_detail.schedule_daily',
+};
+
+const getExecutionLogMessage = (message: string, translate: (key: string) => string) => {
+  const key = MOCK_LOG_MESSAGE_KEYS[message];
+  return key ? translate(key) : message;
+};
 
 // Rich Mock Executions Store for realistic debugging
 const MOCK_EXECUTION_DATA: Record<string, { execution: ExecutionDetail; workflow: WorkflowDefinition }> = {
@@ -277,6 +307,8 @@ function MockExecutionDetailPage() {
   const { executionId } = useParams<{ executionId: string }>();
   const navigate = useNavigate();
   const { theme } = useUIStore();
+  const { language, t } = useI18nStore();
+  const ariaLabelConfig = useMemo(() => createReactFlowAriaLabelConfig(t, language), [language, t]);
 
   const [execution, setExecution] = useState<ExecutionDetail | null>(null);
   const [workflow, setWorkflow] = useState<WorkflowDefinition | null>(null);
@@ -340,7 +372,7 @@ function MockExecutionDetailPage() {
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     setCopySuccess(label);
-    triggerToast(`Copied ${label} to clipboard`);
+    triggerToast(t('execution_detail.copied').replace('{label}', t(label)));
     setTimeout(() => setCopySuccess(null), 2000);
   };
 
@@ -360,7 +392,19 @@ function MockExecutionDetailPage() {
           : 'idle'
         : 'idle';
 
-      const executionTime = result ? (result.durationMs ? `${result.durationMs}ms` : result.status) : '';
+      const executionTime = result
+        ? result.durationMs
+          ? `${result.durationMs}ms`
+          : result.status === 'SUCCESS'
+            ? t('status.success')
+            : result.status === 'FAILED'
+              ? t('status.failed')
+              : result.status === 'RUNNING'
+                ? t('status.running')
+                : result.status === 'PENDING'
+                  ? t('execution_detail.status.pending')
+                  : result.status
+        : '';
 
       return {
         id: node.id,
@@ -419,7 +463,7 @@ function MockExecutionDetailPage() {
     });
 
     return { nodes: rfNodes, edges: rfEdges };
-  }, [workflow, execution, selectedNodeId, theme]);
+  }, [workflow, execution, selectedNodeId, theme, t]);
 
   // Trigger Signature Data Flow Packet Animation
   const startPacketAnimation = useCallback(() => {
@@ -458,7 +502,7 @@ function MockExecutionDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[70vh] gap-3 text-slate-500">
         <RefreshCw size={24} className="animate-spin text-[#2563EB]" />
-        <span className="font-mono text-xs">Loading execution telemetry & graph AST...</span>
+        <span className="font-mono text-xs">{t('executions.loading_detail')}</span>
       </div>
     );
   }
@@ -476,6 +520,7 @@ function MockExecutionDetailPage() {
     const q = logSearchQuery.toLowerCase();
     return (
       log.message.toLowerCase().includes(q) ||
+      getExecutionLogMessage(log.message, t).toLowerCase().includes(q) ||
       log.timestamp.toLowerCase().includes(q) ||
       log.level.toLowerCase().includes(q)
     );
@@ -505,14 +550,14 @@ function MockExecutionDetailPage() {
           <button
             onClick={() => navigate('/executions')}
             className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Back to Executions"
+            title={t('execution_detail.back')}
           >
             <ArrowLeft size={18} />
           </button>
 
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 font-medium">Workspace / Executions</span>
+              <span className="text-xs text-slate-400 font-medium">{t('nav.workspace')} / {t('nav.executions')}</span>
               <span className="text-slate-300 dark:text-slate-700">/</span>
               <span className="font-mono text-xs font-bold text-[#2563EB] dark:text-blue-400">{execution.id}</span>
             </div>
@@ -532,19 +577,19 @@ function MockExecutionDetailPage() {
             {execution.status === 'RUNNING' && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-blue-950 text-[#2563EB] dark:text-blue-300 font-semibold text-[11px]">
                 <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-ping"></span>
-                Running
+                {t('status.running')}
               </span>
             )}
             {execution.status === 'SUCCESS' && (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-semibold text-[11px]">
                 <CheckCircle2 size={13} />
-                Success
+                {t('status.success')}
               </span>
             )}
             {execution.status === 'FAILED' && (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950 text-rose-600 dark:text-rose-400 font-semibold text-[11px]">
                 <AlertTriangle size={13} />
-                Failed
+                {t('status.failed')}
               </span>
             )}
           </div>
@@ -554,7 +599,7 @@ function MockExecutionDetailPage() {
           {/* Started */}
           <div className="flex items-center gap-1 text-slate-500 font-mono text-[11px]">
             <Clock size={13} className="text-slate-400" />
-            <span>Started {new Date(execution.startedAt).toLocaleTimeString()}</span>
+            <span>{t('execution_detail.started_at')} {new Date(execution.startedAt).toLocaleTimeString()}</span>
           </div>
 
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
@@ -568,7 +613,11 @@ function MockExecutionDetailPage() {
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-800"></div>
 
           {/* Trigger */}
-          <div className="text-[11px] font-mono text-slate-500 truncate max-w-[180px]">{execution.triggerType}</div>
+          <div className="text-[11px] font-mono text-slate-500 truncate max-w-[180px]">
+            {EXECUTION_TRIGGER_DETAIL_KEYS[execution.triggerType]
+              ? t(EXECUTION_TRIGGER_DETAIL_KEYS[execution.triggerType])
+              : execution.triggerType}
+          </div>
         </div>
 
         {/* Right Header Actions */}
@@ -580,25 +629,25 @@ function MockExecutionDetailPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-blue-950/60 text-[#2563EB] dark:text-blue-300 hover:bg-[#2563EB] hover:text-white transition-all text-xs font-medium border border-indigo-200 dark:border-blue-800/60 shadow-xs"
           >
             <Sparkles size={13} className={isPlayingAnimation ? 'animate-spin' : ''} />
-            <span>{isPlayingAnimation ? 'Simulating flow...' : 'Replay Data Flow'}</span>
+            <span>{isPlayingAnimation ? t('execution_detail.simulating') : t('execution_detail.replay')}</span>
           </button>
 
           {/* Copy Execution ID */}
           <button
-            onClick={() => copyToClipboard(execution.id, 'Execution ID')}
+            onClick={() => copyToClipboard(execution.id, 'execution_detail.id')}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs font-medium"
           >
-            {copySuccess === 'Execution ID' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
-            <span>Copy ID</span>
+            {copySuccess === 'execution_detail.id' ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+            <span>{t('execution_detail.copy_id')}</span>
           </button>
 
           {/* Re-run / Retry Button */}
           <button
-            onClick={() => triggerToast(`Re-running execution ${execution.id}...`)}
+            onClick={() => triggerToast(t('execution_detail.rerun_toast').replace('{id}', execution.id))}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2563EB] hover:bg-blue-600 text-white transition-colors text-xs font-semibold shadow-xs"
           >
             <RotateCcw size={13} />
-            <span>Re-run</span>
+            <span>{t('executions.rerun')}</span>
           </button>
         </div>
       </div>
@@ -608,6 +657,7 @@ function MockExecutionDetailPage() {
         {/* Canvas Pane */}
         <div className="flex-1 h-full bg-slate-100 dark:bg-slate-950 relative">
           <ReactFlow
+            ariaLabelConfig={ariaLabelConfig}
             nodes={nodes}
             edges={edges}
             onNodeClick={(_, node) => setSelectedNodeId(node.id)}
@@ -627,7 +677,7 @@ function MockExecutionDetailPage() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2563EB]"></span>
               </span>
-              <span className="font-mono">Tracing executed data path: {packetProgress}%</span>
+              <span className="font-mono">{t('execution_detail.tracing')} {packetProgress}%</span>
             </div>
           )}
 
@@ -635,19 +685,19 @@ function MockExecutionDetailPage() {
           <div className="absolute bottom-4 left-4 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-4 text-[11px] font-medium text-slate-600 dark:text-slate-400">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-              <span>Completed</span>
+              <span>{t('execution_detail.completed')}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-[#2563EB] animate-pulse"></span>
-              <span>Processing</span>
+              <span>{t('execution_detail.processing')}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-              <span>Failed</span>
+              <span>{t('execution_detail.failed')}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
-              <span>Skipped</span>
+              <span>{t('execution_detail.skipped')}</span>
             </div>
           </div>
         </div>
@@ -664,7 +714,7 @@ function MockExecutionDetailPage() {
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
-              Step Inspector
+              {t('execution_detail.step_inspector')}
             </button>
             <button
               onClick={() => setInspectorTab('LOGS')}
@@ -674,7 +724,7 @@ function MockExecutionDetailPage() {
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
-              Logs ({execution.logs.length})
+              {t('execution_detail.logs').replace('{count}', String(execution.logs.length))}
             </button>
             <button
               onClick={() => setInspectorTab('PAYLOAD')}
@@ -684,7 +734,7 @@ function MockExecutionDetailPage() {
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
-              Raw Payload
+              {t('execution_detail.raw_payload')}
             </button>
           </div>
 
@@ -709,27 +759,33 @@ function MockExecutionDetailPage() {
                               : 'bg-slate-100 text-slate-500 border-slate-200'
                           }`}
                         >
-                          {selectedNodeResult.status}
+                          {selectedNodeResult.status === 'SUCCESS'
+                            ? t('status.success')
+                            : selectedNodeResult.status === 'FAILED'
+                            ? t('status.failed')
+                            : selectedNodeResult.status === 'RUNNING'
+                            ? t('execution_detail.processing')
+                            : t('execution_detail.status.pending')}
                         </span>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/80 dark:border-slate-800 text-[11px] font-mono">
                         <div>
-                          <span className="text-slate-400 text-[10px]">Step ID:</span>
+                          <span className="text-slate-400 text-[10px]">{t('execution_detail.step_id')}</span>
                           <div className="font-semibold text-slate-800 dark:text-slate-200">{selectedNodeResult.nodeId}</div>
                         </div>
                         <div>
-                          <span className="text-slate-400 text-[10px]">Duration:</span>
+                          <span className="text-slate-400 text-[10px]">{t('execution_detail.duration')}</span>
                           <div className="font-semibold text-[#2563EB] dark:text-blue-400">
                             {selectedNodeResult.durationMs ? `${selectedNodeResult.durationMs}ms` : '—'}
                           </div>
                         </div>
                         <div>
-                          <span className="text-slate-400 text-[10px]">Started At:</span>
+                          <span className="text-slate-400 text-[10px]">{t('execution_detail.started_at')}</span>
                           <div className="text-slate-700 dark:text-slate-300">{selectedNodeResult.startedAt || '10:42:15'}</div>
                         </div>
                         <div>
-                          <span className="text-slate-400 text-[10px]">Retry Count:</span>
+                          <span className="text-slate-400 text-[10px]">{t('execution_detail.retry_count')}</span>
                           <div className="text-slate-700 dark:text-slate-300">{selectedNodeResult.retryCount || 0} of 3</div>
                         </div>
                       </div>
@@ -740,13 +796,13 @@ function MockExecutionDetailPage() {
                       <div className="p-3.5 bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900/60 rounded-xl space-y-1.5">
                         <div className="flex items-center gap-1.5 text-xs font-bold text-rose-600 dark:text-rose-400">
                           <AlertTriangle size={14} />
-                          <span>Step Execution Failure Trace</span>
+                          <span>{t('execution_detail.failure_trace')}</span>
                         </div>
                         <p className="font-mono text-[11px] text-rose-700 dark:text-rose-300 leading-relaxed">
                           {selectedNodeResult.error}
                         </p>
                         <div className="pt-2 text-[10px] font-mono text-slate-500 border-t border-rose-200 dark:border-rose-900/40">
-                          Error Code: <span className="font-bold text-rose-500">ETIMEDOUT</span> • Host: s3.us-east-1.amazonaws.com
+                          {t('execution_detail.error_code')} <span className="font-bold text-rose-500">ETIMEDOUT</span> • {t('execution_detail.host')} s3.us-east-1.amazonaws.com
                         </div>
                       </div>
                     )}
@@ -755,13 +811,13 @@ function MockExecutionDetailPage() {
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          Input Payload
+                          {t('execution_detail.input_payload')}
                         </span>
                         <button
-                          onClick={() => copyToClipboard(JSON.stringify(selectedNodeResult.input, null, 2), 'Input Payload')}
+                          onClick={() => copyToClipboard(JSON.stringify(selectedNodeResult.input, null, 2), 'execution_detail.input_payload')}
                           className="text-[10px] text-[#2563EB] hover:underline font-mono"
                         >
-                          Copy Input
+                          {t('execution_detail.copy_input')}
                         </button>
                       </div>
                       <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl text-[10px] font-mono overflow-x-auto border border-slate-800 max-h-48 leading-tight">
@@ -773,13 +829,13 @@ function MockExecutionDetailPage() {
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          Output Payload
+                          {t('execution_detail.output_payload')}
                         </span>
                         <button
-                          onClick={() => copyToClipboard(JSON.stringify(selectedNodeResult.output, null, 2), 'Output Payload')}
+                          onClick={() => copyToClipboard(JSON.stringify(selectedNodeResult.output, null, 2), 'execution_detail.output_payload')}
                           className="text-[10px] text-[#2563EB] hover:underline font-mono"
                         >
-                          Copy Output
+                          {t('execution_detail.copy_output')}
                         </button>
                       </div>
                       <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl text-[10px] font-mono overflow-x-auto border border-slate-800 max-h-48 leading-tight">
@@ -789,7 +845,7 @@ function MockExecutionDetailPage() {
                   </div>
                 ) : (
                   <div className="p-8 text-center text-slate-400 text-xs italic">
-                    Click any node on the workflow graph canvas to inspect its step input, output, duration, and error trace.
+                    {t('execution_detail.empty_canvas')}
                   </div>
                 )}
               </>
@@ -799,18 +855,18 @@ function MockExecutionDetailPage() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                    Execution Telemetry Logs
+                    {t('execution_detail.telemetry_logs')}
                   </span>
                   <button
                     onClick={() =>
                       copyToClipboard(
-                        execution.logs.map((l) => `[${l.timestamp}] [${l.level}] ${l.message}`).join('\n'),
-                        'All Logs'
+                        execution.logs.map((l) => `[${l.timestamp}] [${l.level}] ${getExecutionLogMessage(l.message, t)}`).join('\n'),
+                        'execution_detail.all_logs'
                       )
                     }
                     className="text-[10px] text-[#2563EB] hover:underline font-mono"
                   >
-                    Copy All Logs
+                    {t('execution_detail.copy_all_logs')}
                   </button>
                 </div>
 
@@ -831,10 +887,10 @@ function MockExecutionDetailPage() {
                               : 'text-indigo-400'
                           }
                         >
-                          {log.level}
+                          {log.level === 'SUCCESS' ? t('status.success') : log.level === 'ERROR' ? t('status.failed') : log.level}
                         </span>
                       </div>
-                      <div className="text-slate-200 leading-snug">{log.message}</div>
+                      <div className="text-slate-200 leading-snug">{getExecutionLogMessage(log.message, t)}</div>
                     </div>
                   ))}
                 </div>
@@ -845,13 +901,13 @@ function MockExecutionDetailPage() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                    Trigger Payload (Raw JSON)
+                    {t('execution_detail.trigger_payload')}
                   </span>
                   <button
-                    onClick={() => copyToClipboard(JSON.stringify(execution.nodeResults['node-1']?.input || {}, null, 2), 'Trigger JSON')}
+                    onClick={() => copyToClipboard(JSON.stringify(execution.nodeResults['node-1']?.input || {}, null, 2), 'execution_detail.trigger_payload')}
                     className="text-[10px] text-[#2563EB] hover:underline font-mono"
                   >
-                    Copy Raw JSON
+                    {t('execution_detail.copy_raw_json')}
                   </button>
                 </div>
 
@@ -872,9 +928,9 @@ function MockExecutionDetailPage() {
         >
           <div className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200">
             <Terminal size={14} className="text-[#2563EB]" />
-            <span>Execution Telemetry Console</span>
+            <span>{t('execution_detail.console')}</span>
             <span className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono text-[10px]">
-              {filteredLogs.length} events
+              {filteredLogs.length} {t('execution_detail.events')}
             </span>
           </div>
 
@@ -888,11 +944,11 @@ function MockExecutionDetailPage() {
                 type="text"
                 value={logSearchQuery}
                 onChange={(e) => setLogSearchQuery(e.target.value)}
-                placeholder="Filter logs..."
+                placeholder={t('execution_detail.filter_logs')}
                 className="bg-transparent text-[11px] font-mono text-slate-800 dark:text-slate-200 focus:outline-none w-28"
               />
             </div>
-            <span className="text-[10px] font-mono text-slate-400">Click to {isConsoleOpen ? 'collapse' : 'expand'}</span>
+            <span className="text-[10px] font-mono text-slate-400">{isConsoleOpen ? t('execution_detail.collapse') : t('execution_detail.expand')}</span>
             {isConsoleOpen ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronUp size={14} className="text-slate-400" />}
           </div>
         </div>
@@ -913,7 +969,7 @@ function MockExecutionDetailPage() {
                 >
                   [{log.level}]
                 </span>
-                <span className="text-slate-300">{log.message}</span>
+                <span className="text-slate-300">{getExecutionLogMessage(log.message, t)}</span>
               </div>
             ))}
           </div>

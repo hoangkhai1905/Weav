@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Bell, Check, CheckCheck, RefreshCw, LoaderCircle } from 'lucide-react';
 import {
@@ -14,6 +15,7 @@ export function NotificationsPage() {
   const unread = useNotificationUnreadCount();
   const markRead = useMarkNotificationRead();
   const markAllRead = useMarkAllNotificationsRead();
+  const mutationInFlight = useRef(false);
   const notifications = inbox.data ?? [];
   const updating = markRead.isPending || markAllRead.isPending;
   const busy = inbox.isFetching || unread.isFetching;
@@ -25,12 +27,24 @@ export function NotificationsPage() {
     void unread.refetch();
   };
   const handleMarkRead = (id: string) => {
+    if (mutationInFlight.current || updating) return;
+    mutationInFlight.current = true;
     markAllRead.reset();
-    markRead.mutate(id);
+    markRead.mutate(id, {
+      onSettled: () => {
+        mutationInFlight.current = false;
+      },
+    });
   };
   const handleMarkAllRead = () => {
+    if (mutationInFlight.current || updating) return;
+    mutationInFlight.current = true;
     markRead.reset();
-    markAllRead.mutate();
+    markAllRead.mutate(undefined, {
+      onSettled: () => {
+        mutationInFlight.current = false;
+      },
+    });
   };
   const retryUpdate = () => {
     if (markRead.isError && markRead.variables)

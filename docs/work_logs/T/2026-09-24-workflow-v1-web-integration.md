@@ -296,3 +296,309 @@
 
 - Target vẫn `api-gateway` / `7e14de0`, expanded status 160 path entries (146 compact entries), 8 overlaps giữ đúng fingerprint baseline; hai stash objects cũ không đổi. Chưa tạo recovery stash, chưa đổi file target, chưa commit/merge/push.
 - Tiếp theo: chạy lại `detect-changes` sau cập nhật plan/log, xác nhận đúng index và structured array counts; commit merge milestone trong isolated worktree. Sau đó mới xác minh lại baseline, tạo path-limited stash cho đúng 8 overlaps, verify object/tree, fast-forward merge vào target, và chỉ reapply/reconcile các overlap sau preservation checks. Tuyệt đối không drop stash. Full Maven/Testcontainers gap phải tiếp tục được báo rõ.
+
+## 16. Main fast-forward and overlap recovery stop
+
+| Trường | Giá trị |
+| --- | --- |
+| Thời điểm ghi | `2026-09-25 (Asia/Saigon)` |
+| Target | `D:\End\Weav`, branch `api-gateway`, HEAD `b44332d93057dac01d1bb2657bc37868a2bbeb27` |
+| Merge commit | `b44332d93057dac01d1bb2657bc37868a2bbeb27`, parents `7e14de05ec9886db8d9beacf3dc6c69f12a6fd02` and `688eb6d8cceb58a2feb59048afd819496ca3102d` |
+| Trạng thái | Full ancestry fast-forward đã vào target. Dừng trước khi resolve ba content conflicts lúc reapply local overlap changes. Không push. |
+
+### Preservation và recovery
+
+- Trước stash và merge, đối chiếu đầy đủ 160 path-level status/hash entries của main với baseline; tất cả khớp. Sau path-limited stash, 152 non-overlap entries tiếp tục khớp; sau fast-forward và stash apply, cả 152 non-overlap entry này vẫn khớp. Directory untracked `examples/motion-primitives-website/` được kiểm tra đúng là directory (mode `16822`), không bị xem nhầm như file.
+- Recovery stash mới: `af82524c6c695d6425119a135810c6cdf0673cb4`, message `pre-workflow-full-merge-overlaps-20260925`. Diff tree chứa đúng 8 overlap paths; patch fingerprints của cả tám khớp baseline; hai stash objects cũ vẫn còn, tổng stash count `3`. Không drop stash.
+- Với `.env.example`, stash blob raw hash khác raw working-tree hash baseline, đồng thời Git báo `LF will be replaced by CRLF`; patch fingerprint vẫn khớp. Do line-ending/filter behavior chưa chứng minh được byte-identical restoration, không tuyên bố khôi phục byte-for-byte file này.
+
+### Trạng thái reapply
+
+- `git merge --ff-only b44332d93057dac01d1bb2657bc37868a2bbeb27` fast-forward thành công; HEAD main có source commit `688eb6d` là ancestor. Không có `MERGE_HEAD`, không có unmerged path do fast-forward.
+- `git stash apply af82524c6c695d6425119a135810c6cdf0673cb4` tự apply được `.env.example`, `CreateWorkflowPage.tsx`, `ExecutionsPage.tsx`, `workflow.types.ts`, `compose.dev.yml`. Git báo content conflicts ở `ExecutionDetailPage.tsx`, `WorkflowBuilderPage.tsx`, `WorkflowsPage.tsx`. Recovery stash vẫn còn nguyên.
+- Dừng ở đúng state Git này: không resolve/unstage/retry/drop. Ba path trên đang unmerged; năm path tự apply đang staged theo output Git. Sau khi append mục work log này, main status là 147 compact / 161 expanded entries (146 original entries + 1 work-log entry); toàn bộ 152 non-overlap baseline entries vẫn khớp hash/status. Tám overlap patch đã lưu trong stash; không khẳng định byte-identical cho `.env.example` như ghi ở trên. Không chạy build/Playwright trên main khi ba path còn conflict.
+- Cần reviewer xem xét ba conflict và quyết định cách giữ thay đổi local cùng Workflow integration; sau quyết định mới tiếp tục reconciliation và main-checkout verification. Isolated checks vẫn là: Web typecheck/build pass, mock UI 33/33, API fixture 4/4, Gateway focused 4/4/build pass, Java 25 focused fixtures 9/9. Full Maven/Testcontainers suite không xanh/không xác minh; 116 Testcontainers cases còn unverified.
+
+## 17. Main overlap conflicts reconciled — review pending
+
+| Trường | Giá trị |
+| --- | --- |
+| Thời điểm ghi | `2026-09-25 (Asia/Saigon)` |
+| Checkout | `D:\End\Weav`, branch `api-gateway`, HEAD `b44332d93057dac01d1bb2657bc37868a2bbeb27` |
+| Trạng thái | Đã resolve ba content conflicts và giữ toàn bộ thay đổi overlap ở trạng thái unstaged; chưa commit/push. |
+
+### Hòa giải ba file
+
+- `apps/web/src/pages/ExecutionDetailPage.tsx`: giữ router real-mode sang live execution detail cùng translations/localized ReactFlow accessibility cho mock view.
+- `apps/web/src/pages/WorkflowBuilderPage.tsx`: giữ Workflow Service thật cho load/save/publish/manual run và phần local workspace/auth/i18n. Giữ OCR theo workspace snapshot, abort signal, reset/status/result guards, save config và logout khi 401. Không phục hồi simulator giả cho execution/provider status, bởi nó có thể hiển thị thành công giả và xung đột với V1 chưa thực thi node.
+- `apps/web/src/pages/WorkflowsPage.tsx`: giữ trạng thái và dữ liệu từ API làm nguồn thật; unknown stats hiện `—`, không tạo số liệu execution giả; giữ localization/local card behavior và yêu cầu publish trước khi chạy.
+- `git ls-files -u`: 0. Quét `<<<<<<<`, `=======`, `>>>>>>>` trong ba file: 0 markers.
+
+### Kiểm tra bảo toàn và trạng thái Git
+
+- Đối chiếu manifest/fingerprint đã lưu: 152/152 non-overlap dirty/untracked entries khớp status và SHA-256 trước khi reconcile; không có path bất ngờ. `examples/motion-primitives-website/` vẫn là untracked directory.
+- Cả 8 overlap paths còn ở working tree và đều unstaged: `.env.example`, năm page Workflow/Create/Executions, `workflow.types.ts`, `compose.dev.yml`. `git diff --cached --name-only` rỗng. Thay đổi người dùng còn uncommitted để review.
+- `.env.example` kiểm tra không in giá trị nhạy cảm: hiện có đủ 165 keys của HEAD và 113 keys từng nằm trong recovery stash; không thiếu key stash, giá trị common khớp stash. Khác biệt giá trị so HEAD duy nhất là `GOOGLE_OAUTH_FRONTEND_RETURN_URL`, giữ URL local `5173` từ stash. Raw bytes không giống: working copy CRLF, stash blob LF; ngoài khác line ending còn có keys Workflow từ merge. Không tuyên bố byte-identical.
+- Recovery stash `af82524c6c695d6425119a135810c6cdf0673cb4` còn ở `stash@{0}`; hai stash cũ vẫn nguyên, tổng 3. Không drop stash, không commit/push.
+- `git diff --check`: exit 0; chỉ có warning line-ending CRLF của `apps/mobile/src/app/(app)/workspace/index.tsx`. TypeScript `pnpm --dir apps/web exec tsc -b`: PASS. Vite `pnpm --dir apps/web exec vite build --outDir <external temp>`: PASS (2,516 modules); có cảnh báo bundle JS >500 kB.
+
+### Browser/runtime verification và giới hạn
+
+- Chạy thử Chromium với `WEAV_E2E_PORT` riêng cho từng suite, không reuse dev server. Các Playwright process không đưa ra kết quả cuối ổn định và phải dừng; không tính các lượt này là PASS. Một lỗi cụ thể ở API fixture test `workflow-api-v1.spec.ts:159`: `getByRole('status')` strict-mode match đồng thời execution status và topbar “Loading workspaces…” từ thay đổi workspace/localization có sẵn. Không sửa selector hoặc UI trong lượt reconcile này.
+- Lượt UI/catalog dừng trước summary; console/error context cho thấy một số builder assertions tìm label English trong khi app đang dùng locale VI. OCR-builder exploratory suite bị disabled palette tại các test đòi OCR active; V1 catalog hiện thể hiện gate chưa bật. Đây không chứng minh production regression và test/user files không bị sửa.
+- Không chạy Docker/live Gateway+Workflow trên main; không có live API/browser proof ở checkout này. Full Maven/Testcontainers còn nguyên gap: 116 Testcontainers cases chưa xác minh; không dùng Testcontainers Cloud/socket.
+
+### Bước review
+
+- Reviewer xem diff tám overlap paths, nhất là semantic choices ở builder (không mang simulator giả trở lại) và `.env.example` line endings. Các thay đổi vẫn unstaged để review/reconcile.
+- Sau review, có thể sửa riêng test selector/localization assumptions nếu user yêu cầu; cần chạy lại Playwright tuần tự khi browser runner ổn định. Không coi test suite bị dừng là xanh. Chạy live smoke chỉ khi được phép dùng một stack test cô lập.
+
+## 18. Main focused browser diagnosis — deterministic test setup
+
+| Trường | Giá trị |
+| --- | --- |
+| Thời điểm ghi | `2026-09-25 (Asia/Saigon)` |
+| Checkout | `D:\End\Weav`, `api-gateway`, HEAD `b44332d93057dac01d1bb2657bc37868a2bbeb27` |
+| Trạng thái | Đã sửa hai lỗi test-only hẹp; chưa commit/push. Production locale/readiness gate không đổi. |
+
+### Root cause và thay đổi test
+
+- `apps/web/e2e/workflow-api-v1.spec.ts:159`: RED tái hiện với focused Chromium test. `getByRole('status')` khớp hai element: execution toast và `topbar-workspace-loading`; lỗi là strict-mode locator ambiguity. GREEN thay bằng cùng role nhưng filter theo execution ID, chỉ sửa assertion test.
+- `apps/web/e2e/workflow-ui.spec.ts`: RED tái hiện trong nhóm `workflow builder execution motion`. Artifact DOM cho thấy locale VI thật (`Quy trình`, `Trích xuất dữ liệu bằng AI`) trong khi assertions dùng English (`AI Extract Core`). Nhóm này không có setup locale; thêm `beforeEach` chỉ cho nhóm test để đặt `weav_lang_v1=EN`. Không ép production default, không đổi assertion semantics.
+- GitNexus impact cho filename test không tìm thấy target (`UNKNOWN`, 0 callers); đã xác nhận bằng text search rằng thay đổi không chạm production symbol. Không sửa shared i18n hook/component.
+
+### Fresh Playwright evidence
+
+- Focused API RED: `workflow-api-v1.spec.ts` history test fail đúng strict-mode ambiguity ở line 159.
+- Focused API after test fix: test body `1 passed`; process exit `1` vì runner teardown `Timed out waiting 30s for the teardown for plugin setup to run`.
+- Focused UI locale after setup: test body `1 passed`; cùng teardown timeout 30s.
+- Full `workflow-catalog-v1.spec.ts`, Chromium serial, mock mode, isolated port: **8 passed** test bodies; process exit `1` vì `Timed out waiting 60s for the teardown for plugin setup to run`.
+- Full `workflow-api-v1.spec.ts`, Chromium serial, HTTP fixture mode with unreachable gateway, isolated port: **4 passed** test bodies; process exit `1` vì cùng teardown timeout 60s. Đây là fixture/contract tests, không live Gateway.
+- Relevant `workflow-ui.spec.ts` groups (`workflow builder execution motion|OCR workflow node`), Chromium serial, mock mode, isolated port: **9 passed** test bodies; process exit `1` vì cùng teardown timeout 60s. Không coi các suite này là process-level green do runner teardown lỗi.
+
+### OCR builder diagnosis — not a production regression
+
+- Fresh HTTP-mode focused OCR test (isolated port, gateway deliberately unreachable) failed at click because the OCR palette button was disabled. Artifact DOM proves the cause: alert `Workflow service is temporarily unavailable`, disabled Save/Publish/palette, and no loaded workflow. The palette code disables items only while `isLoadingWorkflow || !workflow`; the OCR readiness function independently marks `ocr.extract` as `unavailable` but does not disable the palette.
+- The OCR fixture does not route the Workflow Service detail request in HTTP mode, so the test cannot reach the inspector. Mock mode loads a different mock workspace (`ws-main`) than the fixture's expected ID and then fails URL assertion. This is test setup/environment mismatch, not evidence that the production OCR readiness gate is wrong.
+- `apps/web/e2e/ocr-builder.spec.ts` was not changed in this session. No production gate was changed and no mock fallback was introduced. A future fix needs an explicit choice: add a Workflow Service detail fixture for HTTP mode or run against an approved isolated live stack.
+
+### Verification limits and handoff
+
+- Web TypeScript/build must be rechecked after these test-only edits; no Docker/live Gateway smoke was run on main. Full Maven/Testcontainers remains unverified, including 116 Testcontainers cases.
+- Existing user dirties and recovery stash were preserved. Recheck `git ls-files -u`, conflict markers, `git diff --check`, the 152-entry baseline, and stash list before handoff.
+
+## 19. Windows Playwright webServer teardown — direct Vite entrypoint
+
+| Trường | Giá trị |
+| --- | --- |
+| Thời điểm ghi | `2026-09-25 (Asia/Saigon)` |
+| Checkout | `D:\End\Weav`, `api-gateway`, HEAD `b44332d93057dac01d1bb2657bc37868a2bbeb27` |
+| Phạm vi | Chỉ `apps/web/playwright.config.ts` và verification/work log; không đổi production Workflow/OCR hoặc test fixture OCR. |
+| Trạng thái | Đã sửa tối thiểu, focused teardown GREEN; chưa commit/push. |
+
+### RED và root cause
+
+- Repro tối giản trước sửa: `VITE_API_MODE=http VITE_API_GATEWAY_URL=http://127.0.0.1:1 WEAV_E2E_PORT=4210 pnpm --dir apps/web exec playwright test e2e/workflow-api-v1.spec.ts --grep "workflow list comes from" --project=chromium --workers=1 --reporter=line --timeout=10000 --global-timeout=15000`. Test body `1 passed`, nhưng Playwright exit lỗi `Timed out waiting 15s for the teardown for plugin setup to run` sau log `Terminating the WebServer`.
+- Trong run RED, port cô lập `4210` còn LISTEN bởi Vite PID `31032`; PID `32688` là Node process thứ hai sinh cùng run. Cả hai không nằm trong baseline Node PID trước test. Chỉ sau khi xác nhận port/PID thuộc run này, đã dừng đúng `31032,32688`; không đụng process user có trước.
+- Đọc Playwright 1.62.1 local cho thấy `webServer` dùng `shell: true`; Windows cleanup gọi `taskkill /pid <spawned shell> /T /F` rồi chờ `close`. Command cũ `pnpm dev` tạo process lồng `pnpm -> vite`, nên Vite có thể sống sau cleanup của shell. Đây là process-tree leak, không phải reporter hay test body.
+- GitNexus impact trước edit cho `File:apps/web/playwright.config.ts`: `risk LOW`, `impactedCount 0`, không có caller/process/module trực tiếp. `context` tìm thấy file với incoming/outgoing/processes rỗng. `query Playwright` chạy được nhưng cảnh báo FTS index thiếu, keyword search degraded; không dùng kết quả rỗng đó để suy luận an toàn. Text search xác nhận config chỉ được tham chiếu bởi tsconfig và Playwright runtime.
+
+### GREEN fix và runtime evidence
+
+- Thay đúng một dòng `webServer.command` từ `pnpm dev ...` thành `node ./node_modules/vite/bin/vite.js --host 127.0.0.1 --port ${webPort} --strictPort`. Path `apps/web/node_modules/vite/bin/vite.js` đã tồn tại; không dùng `require.resolve('vite/bin/vite.js')` vì package export chặn subpath đó.
+- Focused regression sau sửa cùng test: `WEAV_E2E_PORT=4211`, `1 passed (6.6s)`, exit `0`; log có `Terminated the WebServer`; port `4211` không còn LISTEN và không còn Node PID mới sau teardown.
+- Chromium serial, isolated port, không reuse dev server: API fixture `workflow-api-v1.spec.ts` **4/4, exit 0, port 4212 đóng**; catalog mock `workflow-catalog-v1.spec.ts` **8/8, exit 0, port 4213 đóng**; nhóm builder + OCR UI `workflow-ui.spec.ts --grep "workflow builder execution motion|OCR workflow node"` **9/9, exit 0, port 4214 đóng**.
+- Full `workflow-ui.spec.ts`, Chromium serial, mock, port `4215`: **20 passed, 5 failed test bodies, process exit 1**, nhưng teardown hoàn tất và port đóng. Năm failure là assertion UI đã tồn tại ngoài phạm vi teardown (logo/navigation, language-switch control, responsive workflow row, workspace invite); không có `Timed out waiting ... teardown`. Không sửa chúng trong task này.
+
+### Build, preservation và giới hạn
+
+- `pnpm --dir apps/web exec tsc -b`: PASS, exit 0.
+- `pnpm --dir apps/web exec vite build --outDir <TEMP>`: PASS, 2,516 modules; chỉ còn warning bundle JS lớn hơn 500 kB. Build output nằm ngoài repository.
+- `git diff --check`: exit 0; Git chỉ cảnh báo line-ending CRLF đã có trên `apps/mobile/src/app/(app)/workspace/index.tsx`.
+- Baseline bảo toàn: **152/152** non-overlap entries khớp status và SHA-256; cả 8 overlap paths vẫn unstaged. `git ls-files -u` rỗng, không còn conflict marker. Recovery stash `af82524c6c695d6425119a135810c6cdf0673cb4` vẫn `stash@{0}`, hai stash cũ vẫn tồn tại; không drop/stash/reset/commit.
+- Không chạy Docker/live Gateway, không dùng Testcontainers/socket, không chạm OCR Colab. Full UI vẫn chưa xanh do 5 body failures nêu trên; đây không phải bằng chứng thất bại của webServer teardown. Không chạy `detect_changes` vì chưa commit và user yêu cầu giữ diff để review.
+
+### Next review step
+
+- Reviewer xem một-line config diff và quyết định có chấp nhận direct Vite entrypoint. Nếu cần làm xanh full UI, đó là task riêng để xử lý 5 assertion/setup failures; không nên trộn vào teardown fix.
+
+## 20. Five locale/vocabulary assertions — partial GREEN, next stale assertion blocked
+
+| Trường | Giá trị |
+| --- | --- |
+| Thời điểm ghi | `2026-09-25 (Asia/Saigon)` |
+| Checkout | `D:\End\Weav`, `api-gateway`, HEAD `b44332d93057dac01d1bb2657bc37868a2bbeb27` |
+| Phạm vi | Chỉ `apps/web/e2e/workflow-ui.spec.ts` và work log; không đổi production UI/i18n, Playwright config, OCR hoặc Workflow integration. |
+| Trạng thái | 4/5 mục tiêu pass; mục tiêu thứ năm lộ thêm một assertion locale ngoài phạm vi; chưa commit/push. |
+
+### Pre-edit evidence and bounded changes
+
+- GitNexus `context`/`impact` cho `apps/web/e2e/workflow-ui.spec.ts` trả `UNKNOWN`/không tìm thấy symbol file trong index. Không coi đây là an toàn; đã targeted-search và đọc trực tiếp test, `Logo`, topbar language toggle, workspace member action và translation keys trước khi sửa.
+- Đã sửa tối thiểu năm giả định stale: dùng locale EN + accessible name chính xác cho logo/navigation; dùng locale VI + cả hai hướng language switch (`Chuyển sang tiếng Anh`/`Switch to Vietnamese`); dùng `/^Chọn /` cho checkbox workflow row trong VI; dùng nút `Thêm thành viên` trong VI. Các assertion vẫn kiểm tra đúng control/behavior, không dùng selector chung.
+
+### Focused verification and blocker
+
+- Command: `$env:VITE_API_MODE='mock'; Remove-Item Env:VITE_API_GATEWAY_URL -ErrorAction SilentlyContinue; $env:WEAV_E2E_PORT='4218'; pnpm --dir apps/web exec playwright test e2e/workflow-ui.spec.ts --grep "uses the refreshed WEAV mark|shows readable navigation|translates the dashboard shell|keeps selected workflow actions|keeps workspace, profile settings" --project=chromium --workers=1 --reporter=line --output=$env:TEMP\weav-ui-five-fix-20260925 --global-timeout=240000`.
+- Result: **4 passed, 1 failed**, process exit **1**. The fifth test passed the repaired `Thêm thành viên` assertion, then failed at line 461 on `getByRole('link', { name: /open guide/i })`.
+- Failure artifact `C:\Users\nguye\AppData\Local\Temp\weav-ui-five-fix-20260925\workflow-ui-workspace-acco-c492f--help-surfaces-discoverable-chromium\error-context.md` shows the actual VI link `Mở hướng dẫn`; `apps/web/src/pages/HelpPage.tsx` and the VI translation confirm this is a sixth stale locale assertion. Per the approved bounded scope, no sixth assertion was edited and no broader failure was hidden.
+- Full `workflow-ui.spec.ts`, typecheck and build were intentionally not rerun after this red focused run; they must not be reported as green. The direct-Vite webServer teardown remained clean: no timeout, and port `4218` had no listener after the run.
+
+### Preservation and follow-up
+
+- Existing one-line `apps/web/playwright.config.ts` teardown fix, production files, OCR/Colab path, dirty user files, and recovery stash `af82524c6c695d6425119a135810c6cdf0673cb4` were untouched. No process outside this test run was stopped; no commit/push.
+- Independent `LiveExecutionPanel` SVG console error (`<circle>` `cx` undefined) remains noted for later and was not changed in this task.
+- Next step requires reviewer authorization for the separate Help-page locale assertion, followed by a fresh full-file serial run; do not broaden this task silently.
+
+## 21. Help-page locale assertion — GREEN
+
+| Trường | Giá trị |
+| --- | --- |
+| Thời điểm ghi | `2026-09-25 (Asia/Saigon)` |
+| Checkout | `D:\End\Weav`, `api-gateway`, HEAD `b44332d93057dac01d1bb2657bc37868a2bbeb27` |
+| Phạm vi | Chỉ `apps/web/e2e/workflow-ui.spec.ts` và work log; không đổi production UI/i18n, Playwright config, OCR hoặc Workflow integration. |
+| Trạng thái | Đã sửa assertion locale stale và xác minh full file GREEN; chưa commit/push. |
+
+### RED evidence and root cause
+
+- GitNexus `context`/`impact` cho test file vẫn trả `UNKNOWN`/không tìm thấy file symbol; đã xác nhận bằng targeted search và đọc trực tiếp DOM/source trước edit. Không có HIGH/CRITICAL risk được báo; UNKNOWN không được coi là all-clear.
+- Focused RED trên port `4220`: `keeps workspace, profile settings, and help surfaces discoverable` **1 failed**, exit **1**, đúng line 461 với `getByRole('link', { name: /open guide/i })`.
+- Failure artifact DOM hiển thị link `Mở hướng dẫn`; `HelpPage.tsx` render `t('help.open_guide')`, và `translations.ts` xác nhận VI `Mở hướng dẫn` / EN `Open guide`. Đây là stale locale assertion, không phải product/API failure.
+
+### Minimal fix and verification
+
+- Đổi duy nhất locator thành `getByRole('link', { name: 'Mở hướng dẫn', exact: true })`, giữ nguyên semantic assertion về đúng Help guide link.
+- Focused GREEN trên port `4221`: **1 passed**, exit **0**; không còn listener sau teardown.
+- Full `workflow-ui.spec.ts`, Chromium serial, mock mode, port `4222`: **25 passed**, exit **0**; không còn listener sau teardown. Không có failure tiếp theo cần phân loại hoặc sửa.
+- `pnpm --dir apps/web exec tsc -b`: exit **0**. `pnpm --dir apps/web exec vite build --outDir <external temp>`: exit **0**, 2,516 modules; chỉ warning bundle JS >500 kB. Một lệnh cleanup temp trước đó bị shell policy từ chối trước khi chạy, không tác động checkout; build rerun dùng thư mục temp mới.
+
+### Preservation and known follow-up
+
+- `apps/web/playwright.config.ts`, production UI/i18n, OCR/Workflow behavior, user dirty files và recovery stash `af82524c6c695d6425119a135810c6cdf0673cb4` không bị thay đổi. Không commit/push.
+- Independent `LiveExecutionPanel` SVG console warning (`<circle>` `cx` undefined) vẫn chỉ được ghi nhận, không sửa trong task này.
+
+## 22. Dashboard HTTP real-data slice — verified
+
+| Trường | Giá trị |
+| --- | --- |
+| Thời điểm ghi | `2026-09-25 (Asia/Saigon)` |
+| Checkout | `D:\End\Weav`, `api-gateway`, HEAD `b44332d93057dac01d1bb2657bc37868a2bbeb27` |
+| Phạm vi | Dashboard HTTP mode: workflow list/counts/status/Run thật; mock demo giữ nguyên; không đổi AI/Bot/OCR/Playwright config. |
+| Trạng thái | Đã triển khai và kiểm tra; chưa commit/push, dirty user tree giữ nguyên. |
+
+### Quyết định và thay đổi
+
+- GitNexus impact trước edit: `DashboardPage` risk `LOW` (caller/process `App`); translation file risk `LOW` với các consumer hiện hữu; không có `HIGH`/`CRITICAL`. Các file chart/live panel không sửa. Test file mới không có symbol indexed; targeted search xác nhận chỉ là fixture mới.
+- RED trước production edit: `VITE_API_MODE=http`, `WEAV_E2E_PORT=4223`, `dashboard-real-data.spec.ts`: 3 test body fail vì các testids HTTP chưa tồn tại (exit 1). Đây là fixture RED dự kiến.
+- `apps/web/src/pages/DashboardPage.tsx`: giữ `workflowApi.getWorkflows()` làm nguồn dữ liệu; HTTP mode lưu loading/error/workflows, render total/published derivable counts, localized loading/error/empty, workflow name/real ID/status, và chỉ cho Run với `PUBLISHED`. Execution/activity/metric chưa có API đầy đủ hiện là localized unavailable placeholders. Không fallback sang mock khi HTTP lỗi.
+- `apps/web/src/lib/i18n/translations.ts`: thêm cặp VI/EN cho loading/error/retry/empty/unavailable và status `PUBLISHED`/`PAUSED`/`DRAFT`.
+- `apps/web/e2e/dashboard-real-data.spec.ts`: thêm fixture browser tests populated/empty/503; populated kiểm tra POST path dùng đúng workflow ID thật, draft không có Run, và demo values không xuất hiện. Sửa assertion harness từ biến callback sang awaited request URL sau red evidence; không đổi production.
+- `docs/superpowers/plans/2026-09-25-dashboard-real-data-slice.md`: plan đã lưu trước implementation.
+
+### Verification
+
+- HTTP fixture Playwright: `VITE_API_MODE=http WEAV_E2E_PORT=4226 pnpm --dir apps/web exec playwright test e2e/dashboard-real-data.spec.ts --project=chromium --workers=1` → **3 passed, exit 0**; request evidence xác nhận `POST /api/v1/workspaces/{workspaceId}/workflows/{publishedWorkflowId}/executions`; port `4226` đã đóng.
+- Existing mock regression: `VITE_API_MODE=mock WEAV_E2E_PORT=4227 pnpm --dir apps/web exec playwright test e2e/workflow-ui.spec.ts --project=chromium --workers=1` → **25 passed, exit 0**; teardown sạch, port `4227` đã đóng. Có warning reduced-motion đã biết, không có failure.
+- `pnpm --dir apps/web exec tsc -b` → **exit 0**.
+- `pnpm --dir apps/web run build` → **exit 0**, Vite transformed 2,516 modules; chỉ warning bundle JS >500 kB.
+- `git diff --check` → **exit 0**; chỉ warning line-ending đã tồn tại ở mobile workspace file. `git ls-files -u` rỗng.
+
+### Giới hạn, fake surfaces và bảo toàn
+
+- Docker stack được kiểm tra read-only bằng `docker compose -f compose.dev.yml ps`: Gateway `3000`, Workflow `8083`, Identity/Workspace và RabbitMQ đang `Up`; `/health` của Gateway và `/actuator/health` của Workflow trả `200`. GET `/api/v1/workspaces?page=0&size=1` không có auth trả `401`, nên chưa chạy authenticated Dashboard live smoke; không dùng credential/cookie không được cấp và không tạo/xóa dữ liệu.
+- Browser fixture evidence ở trên không được gọi là live proof. Không khởi động/dừng Docker stack, không chạm Testcontainers.
+- Các demo chart/table/`LiveExecutionPanel` vẫn tồn tại trong code nhưng chỉ render khi `VITE_API_MODE=mock`; HTTP Dashboard không mount chúng. AI preview dùng local `setTimeout` và SVG `cx` warning của `LiveExecutionPanel` vẫn là follow-up riêng, không sửa trong slice này.
+- Không commit/push/reset/stash/drop stash. Recovery stash `af82524c6c695d6425119a135810c6cdf0673cb4` vẫn ở `stash@{0}`, hai stash cũ vẫn còn; các dirty user files/8 overlap paths và untracked data được giữ nguyên. Full Maven/Testcontainers gap, gồm 116 cases chưa xác minh, không được coi là pass.
+
+### Bàn giao
+
+- Reviewer kiểm tra 4 file thuộc slice: `apps/web/src/pages/DashboardPage.tsx`, `apps/web/src/lib/i18n/translations.ts`, `apps/web/e2e/dashboard-real-data.spec.ts`, và work log này; plan nằm ở `docs/superpowers/plans/2026-09-25-dashboard-real-data-slice.md`.
+- Bước tiếp theo nếu cần: live read-only Dashboard smoke trên stack test cô lập với auth/workspace đã cấp; sau đó mới cân nhắc thay thế chart/live panel bằng API đầy đủ. Không mở rộng sang AI/OCR/Bot trong task này.
+
+## 23. Runtime refresh — Gateway Workflow proxy route restored
+
+| Trường | Giá trị |
+| --- | --- |
+| Thời điểm ghi | `2026-09-25 (Asia/Saigon)` |
+| Checkout | `D:\\End\\Weav`, `api-gateway`, HEAD `b44332d` |
+| Phạm vi | Chỉ rebuild/recreate Docker Compose service `api-gateway`; không sửa source, Quick Actions, DB, volume hoặc service khác. |
+| Trạng thái | Đã hoàn thành runtime fix; chưa commit/push. |
+
+### Stack và preflight
+
+- Container labels của project `weav` xác nhận working directory `D:\\End\\Weav`, service `api-gateway`, và compose files `compose.yml`, `compose.dev.yml`, `compose.colab-ocr.dev.yml`; cả ba file đều tồn tại. Lệnh mutation dùng đúng stack này với `--profile app`.
+- Trước mutation, `api-gateway` là image `weav-api-gateway`, container cũ chạy khoảng 33 giờ; identity, workspace, workflow, notification và RabbitMQ đều đang `Up` (identity/RabbitMQ healthy). Git status và `stash@{0}` recovery `af82524c...` được giữ nguyên.
+
+### Runtime action và evidence
+
+- Build: `docker compose -p weav -f compose.yml -f compose.dev.yml -f compose.colab-ocr.dev.yml --profile app build api-gateway` → **exit 0**; image mới được tạo từ source hiện tại. Không có source edit trong task.
+- Recreate: `docker compose -p weav -f compose.yml -f compose.dev.yml -f compose.colab-ocr.dev.yml --profile app up -d --no-deps --force-recreate api-gateway` → **exit 0**. Không chạy `down`, không xóa volume, không recreate dependency.
+- Gateway mới chạy với image ID `sha256:b34129c4...`, trạng thái `Up`; startup log có `WorkflowProxyController {/api/v1/workspaces/:workspaceId/workflows}` và các mapping GET/POST/detail/draft/publish/pause/resume/executions.
+- `GET http://127.0.0.1:3000/health` → **200**, `application/json`.
+- Exact unauthenticated probe `GET /api/v1/workspaces/af71aa56-ad13-43c1-ac7a-1740b077c0c7/workflows?page=0&size=100` → **401**, JSON `UNAUTHORIZED`, `Bearer token required`. Đây là auth response đúng kỳ vọng, không còn Gateway `Cannot GET` 404.
+- Sau recreate, identity, workspace, workflow, notification và RabbitMQ vẫn giữ trạng thái `Up`; không có data mutation.
+
+### Giới hạn và bàn giao
+
+- Đây là runtime verification unauthenticated; chưa chứng minh authenticated list data vì không sử dụng token/cookie. Không chạy Quick Actions, không chạy OCR/Colab, không chạy Testcontainers.
+- Quick Actions vẫn ở trạng thái partial theo các mục trước; task này chỉ làm mới Gateway image để route Workflow hiện diện. Full Maven/Testcontainers gap vẫn chưa được coi là pass.
+- `git diff --check` sau khi cập nhật log: chạy ở bước bàn giao; không commit/push. Recovery stash và toàn bộ dirty/untracked user files phải tiếp tục được giữ nguyên.
+
+## 24. Runtime refresh — Workflow Service image and Flyway migrations
+
+| Trường | Giá trị |
+| --- | --- |
+| Thời điểm ghi | `2026-09-25 (Asia/Saigon)` |
+| Checkout | `D:\\End\\Weav`, `api-gateway`, HEAD `b44332d` |
+| Phạm vi | Chỉ build/recreate Docker Compose service `workflow-service`; không sửa source, Quick Actions, Gateway, DB schema thủ công hoặc service khác. |
+| Trạng thái | Runtime đã cập nhật và health GREEN; chưa commit/push. |
+
+### Preflight và migration safety
+
+- Target labels của `weav-workflow-service-1` xác nhận project `weav`, working directory `D:\\End\\Weav`, và stack đang chạy bằng `compose.yml, compose.dev.yml`. Mutation dùng đúng hai file này; `compose.colab-ocr.dev.yml` không thuộc labels của target.
+- Image cũ trước recreate: `weav-workflow-service`, ID `sha256:868ee68df1a69ee7b9344b756ba6a6335dee6340602339b656405724a0471a20`, tạo `2026-09-15`. Container không mount source.
+- Source có migration `V1`–`V4`; runtime cũ chỉ có `V1`, database history read-only là `null:true,1:true`, schema current version `1`.
+- V2–V4 được đọc trước startup: chỉ tạo bảng/index, thêm cột có default, và unique index có guard. Không có DROP/TRUNCATE. Read-only DB probe xác nhận `DUPLICATE_ENDPOINT_KEY_GROUPS=0`, nên V4 không bị chặn bởi dữ liệu hiện tại.
+
+### Build, recreate và verification
+
+- Build: `docker compose -p weav -f compose.yml -f compose.dev.yml --profile app build workflow-service` → **exit 0**; Docker build log xác nhận named `contracts` context được nạp.
+- Recreate: `docker compose -p weav -f compose.yml -f compose.dev.yml --profile app up -d --no-deps --force-recreate workflow-service` → **exit 0**. Không chạy `down`, `--volumes`, prune, broad restart hoặc schema reset.
+- Có outage ngắn trong thời gian container compile/start; app start lúc `16:57:44` và `/actuator/health` → **200**.
+- Startup log: validate `5` migrations, migrate lần lượt `V2`, `V3`, `V4`, rồi `Started WorkflowServiceApplication`.
+- Runtime có `V1__...` đến `V4__...`; compiled `WorkflowController.class` hiện diện và public method `WorkflowResponse.Page list(...)` hiện diện.
+- Read-only DB history sau startup: `null:true,1:true,2:true,3:true,4:true`; duplicate endpoint groups vẫn `0`.
+- Gateway exact unauthenticated workflow GET → **401 `UNAUTHORIZED`**; không dùng credential nên chưa chứng minh authenticated response. Các container khác vẫn `Up` (Gateway, Identity, Workspace, Notification, RabbitMQ).
+
+### Recovery, limits và handoff
+
+- Image ID cũ đã được ghi nhận trước mutation nhưng sau build/recreate Docker daemon không còn tra cứu được ID đó (`No such image`); không chạy prune/rollback/workaround. Image mới là `sha256:dcd567b87fa5309ddb2619a6a70ff0fcac16a74e8e7a2ffd25a56d09b037ab38`.
+- Không có source edit, không đụng Quick Actions/OCR/Colab, không dùng token/cookie, không commit/push. Nếu authenticated GET vẫn 502, cần response đã redact gồm status, `error.code`, `error.message`, và correlation/request id để tiếp tục chẩn đoán; không suy đoán từ unauthenticated 401.
+
+## 25. Runtime config refresh — Workspace internal service key
+
+| Trường | Giá trị |
+| --- | --- |
+| Thời điểm ghi | `2026-09-26 (Asia/Saigon)` |
+| Checkout | `D:\\End\\Weav`, `api-gateway`, HEAD không đổi |
+| Phạm vi | Chỉ recreate `workspace-service` và `workflow-service` để nạp key runtime; không sửa `.env`, source, Quick Actions hoặc DB. |
+| Trạng thái | Đã nạp config và xác minh service health; chờ user refresh authenticated Dashboard. |
+
+### Preflight và action
+
+- `.env` được quét theo boolean/count-only: file tồn tại, `WEAV_INTERNAL_SERVICE_KEY` có đúng **1 assignment**, non-empty count **1**, `KEY_VALID=True`; không in giá trị hoặc nội dung `.env`.
+- Target stack giữ nguyên `docker compose -p weav -f compose.yml -f compose.dev.yml --profile app`; preflight các service đang `Up`.
+- Đã chạy đúng lệnh bounded: `docker compose -p weav -f compose.yml -f compose.dev.yml --profile app up -d --no-deps --force-recreate workspace-service workflow-service` → **exit 0**. Không build, `down`, volume/prune hoặc broad restart.
+- Chỉ hai target container đổi ID; `api-gateway`, `identity-service`, `notification-service`, `rabbitmq` giữ nguyên ID và vẫn `running`.
+
+### Verification
+
+- Runtime presence-only: `WEAV_INTERNAL_SERVICE_KEY` là `SET` ở cả Workflow và Workspace; không show/hash value.
+- Health: Workspace `8082/actuator/health` → **200**; Workflow `8083/actuator/health` → **200**; Gateway `/health` → **200**.
+- Internal route probe từ Workflow với key runtime và dummy UUID → **404** (đã qua key filter, dummy resource không tồn tại); cùng route không header → **401**. Không tạo/sửa DB row.
+- Gateway exact unauthenticated Workflow GET → **401** (auth gate bình thường); chưa claim authenticated GET vì user chưa refresh lại browser.
+- Sau startup, Workflow/Workspace logs có `0` dòng `WorkspaceDependencyUnavailableException`/dependency failure trong cửa sổ kiểm tra; chưa có authenticated retry mới để correlate.
+
+### Handoff
+
+- User cần refresh Dashboard và kiểm tra lại authenticated Workflow GET. Nếu vẫn lỗi, gửi chỉ HTTP status, `error.code`, `error.message`, `x-request-id`/`x-correlation-id` đã redact; không gửi token/cookie/auth header.
+- Quick Actions vẫn paused/untouched; không tiếp tục coding trong session này. No commit/push.

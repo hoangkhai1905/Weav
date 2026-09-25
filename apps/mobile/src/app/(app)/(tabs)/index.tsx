@@ -35,7 +35,10 @@ import {
   Layers,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../../stores/auth.store';
-import { useWorkspaceStore } from '../../../stores/workspace.store';
+import {
+  selectActiveWorkspace,
+  useWorkspaceStore,
+} from '../../../stores/workspace.store';
 import { useWorkflows } from '../../../features/workflows/hooks/useWorkflows';
 import { useExecutions } from '../../../features/executions/hooks/useExecutions';
 import { useNotificationUnreadCount } from '../../../features/notifications/hooks/useNotifications';
@@ -50,7 +53,7 @@ export default function HomeScreen() {
   const colors = useThemeColors();
   const { t } = useTranslation();
   const user = useAuthStore((s) => s.user);
-  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
+  const activeWorkspace = useWorkspaceStore(selectActiveWorkspace);
 
   const { data: workflows, isLoading: loadingWfs, refetch: refetchWfs } = useWorkflows();
   const { data: executions, isLoading: loadingExecs, refetch: refetchExecs } = useExecutions();
@@ -148,8 +151,14 @@ export default function HomeScreen() {
               <Building2 color={colors.primary} size={16} />
             </View>
             <View style={styles.wsTitleGroup}>
-              <Text style={[styles.wsName, { color: colors.text }]}>{activeWorkspace.name}</Text>
-              <Text style={[styles.wsEnv, { color: colors.textSubtle }]}>Production Environment • {activeWorkspace.memberCount} Members</Text>
+              <Text style={[styles.wsName, { color: colors.text }]}>
+                {activeWorkspace?.name || 'Select a workspace'}
+              </Text>
+              <Text style={[styles.wsEnv, { color: colors.textSubtle }]}>
+                {activeWorkspace
+                  ? `Production Environment • ${activeWorkspace.memberCount ?? '—'} Members`
+                  : 'Choose a workspace to continue'}
+              </Text>
             </View>
           </View>
           <ChevronRight color={colors.textSubtle} size={16} />

@@ -21,7 +21,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { User, Mail, Lock, Eye, EyeOff, ArrowRight, Check } from 'lucide-react-native';
 import { authRepository } from '../../infrastructure/repository-factory';
-import { useAuthStore } from '../../stores/auth.store';
+import {
+  beginAuthOperation,
+  establishAuthSession,
+} from '../../features/auth/auth-session.runtime';
 import { useUIStore } from '../../stores/ui.store';
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { useTranslation } from '../../hooks/useTranslation';
@@ -35,7 +38,6 @@ export default function RegisterScreen() {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 768;
 
-  const setAuthSession = useAuthStore((s) => s.setAuthSession);
   const showToast = useUIStore((s) => s.showToast);
 
   const [name, setName] = useState('');
@@ -96,10 +98,12 @@ export default function RegisterScreen() {
       return;
     }
     setLoading(true);
+    const operation = beginAuthOperation();
     try {
       const session = await authRepository.register(email, name, password);
+      const applied = await establishAuthSession(session, operation);
+      if (!applied) return;
       setIsSuccess(true);
-      setAuthSession(session.user, session.tokens);
       showToast({ type: 'success', title: 'Account Created 🎉', message: `Welcome to WEAV, ${session.user.name}` });
       setTimeout(() => {
         router.replace('/(app)/(tabs)');

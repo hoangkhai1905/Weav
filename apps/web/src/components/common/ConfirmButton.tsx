@@ -11,6 +11,7 @@ export interface ConfirmButtonProps {
   cancelText?: string;
   variant?: ConfirmModalProps['variant'];
   className?: string;
+  dataTestId?: string;
   titleTooltip?: string;
   disabled?: boolean;
 }
@@ -24,6 +25,7 @@ export function ConfirmButton({
   cancelText,
   variant = 'danger',
   className = '',
+  dataTestId,
   titleTooltip,
   disabled = false,
 }: ConfirmButtonProps) {
@@ -54,6 +56,7 @@ export function ConfirmButton({
         whileTap={{ scale: disabled ? 1 : 0.95 }}
         onClick={handleOpen}
         disabled={disabled}
+        data-testid={dataTestId}
         title={titleTooltip}
         className={className}
       >

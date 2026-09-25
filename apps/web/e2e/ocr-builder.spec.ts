@@ -1,10 +1,84 @@
 import { test, expect } from '@playwright/test';
 
+const OCR_WORKSPACE_ID = '00000000-0000-4000-8000-000000000001';
+
+function ocrSuccessResponse(fileName = 'fixture.png') {
+  return {
+    schemaVersion: '1.0',
+    requestId: 'b9d3f820-2f1a-4c28-98e3-f65a4891b012',
+    document: {
+      fileName,
+      mimeType: 'image/png',
+      pages: 1,
+      pageInfo: [{ page: 1, width: 800, height: 1100, dpi: null }],
+    },
+    text: { rawText: 'Fixture OCR result' },
+    confidence: 0.91,
+    blocks: [],
+    tables: [],
+    metadata: {
+      language: 'vi+en',
+      processingTimeMs: 120,
+      quality: 'OK',
+      warnings: [],
+    },
+  };
+}
+
 test.describe('OCR Builder Inspector Gateway Integration', () => {
   test.beforeEach(async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.addInitScript({ content: "window.localStorage.setItem('weav_token', 'test-bearer-token-12345')" });
+    await page.route('**/api/auth/me', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: '10000000-0000-4000-8000-000000000001',
+          email: 'fixture@example.com',
+          displayName: 'Fixture User',
+          avatarStorageKey: null,
+          systemRole: 'USER',
+          status: 'ACTIVE',
+        }),
+      });
+    });
+    await page.route('**/api/notifications/unread-count', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ count: 0 }) });
+    });
+    await page.route('**/api/v1/workspaces**', async (route) => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (pathname === '/api/v1/workspaces') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            items: [{
+              id: OCR_WORKSPACE_ID,
+              name: 'OCR Fixture Workspace',
+              createdBy: '10000000-0000-4000-8000-000000000001',
+              createdAt: '2026-08-01T00:00:00Z',
+              updatedAt: '2026-08-01T00:00:00Z',
+            }],
+            page: 0,
+            size: 20,
+            totalElements: 1,
+            totalPages: 1,
+          }),
+        });
+        return;
+      }
+      if (pathname === `/api/v1/workspaces/${OCR_WORKSPACE_ID}/members`) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ items: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
   });
 
   test('sends typed multipart request to API Gateway public route and renders contract fields', async ({ page }) => {
@@ -12,6 +86,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     let capturedMethod = '';
     let capturedAuthHeader: string | null = null;
     let capturedRequestIdHeader: string | null = null;
+    let capturedContentTypeHeader: string | null = null;
     let capturedBody: string | null = null;
 
     await page.route('**/api/v1/workspaces/*/ocr/extractions', async (route) => {
@@ -20,6 +95,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       capturedMethod = request.method();
       capturedAuthHeader = request.headers()['authorization'] || null;
       capturedRequestIdHeader = request.headers()['x-request-id'] || null;
+      capturedContentTypeHeader = request.headers()['content-type'] || null;
       capturedBody = request.postData() || '';
 
       await route.fulfill({
@@ -108,9 +184,10 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
 
     // Verify request attributes
     expect(capturedMethod).toBe('POST');
-    expect(capturedUrl).toContain('/api/v1/workspaces/ws-main/ocr/extractions');
+    expect(capturedUrl).toContain(`/api/v1/workspaces/${OCR_WORKSPACE_ID}/ocr/extractions`);
     expect(capturedAuthHeader).toBe('Bearer test-bearer-token-12345');
     expect(capturedRequestIdHeader).toBeTruthy();
+    expect(capturedContentTypeHeader).toMatch(/^multipart\/form-data; boundary=/);
     expect(capturedBody).toContain('name="language"');
     expect(capturedBody).toContain('vi+en');
     expect(capturedBody).toContain('name="detectTables"');
@@ -429,5 +506,192 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     await expect(errorAlert).toBeVisible();
     await expect(errorAlert).toContainText('OCR_BUSY');
     await expect(errorAlert).toContainText('Retryable');
+  });
+
+  test('retries a retryable OCR failure only after the user clicks retry', async ({ page }) => {
+    let requestCount = 0;
+    await page.route('**/api/v1/workspaces/*/ocr/extractions', async (route) => {
+      requestCount += 1;
+      if (requestCount === 1) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: { code: 'OCR_BUSY', message: 'OCR is busy.', retryable: true },
+            requestId: 'retry-req-1',
+          }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ocrSuccessResponse('retry.png')) });
+    });
+
+    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
+    const inspector = page.getByTestId('workflow-inspector');
+    await page.getByRole('button', { name: 'OCR Text Extract' }).click();
+    await inspector.getByTestId('ocr-file-input').setInputFiles({
+      name: 'retry.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('png data'),
+    });
+    await inspector.getByRole('button', { name: 'Extract text' }).click();
+
+    await expect(inspector.getByTestId('ocr-error')).toContainText('OCR is busy.');
+    await expect(inspector.getByTestId('ocr-retry')).toBeVisible();
+    expect(requestCount).toBe(1);
+
+    await inspector.getByTestId('ocr-retry').click();
+    await expect(inspector.getByTestId('ocr-result')).toContainText('Fixture OCR result');
+    expect(requestCount).toBe(2);
+  });
+
+  test('sends only one OCR request for repeated submit events', async ({ page }) => {
+    let requestCount = 0;
+    await page.route('**/api/v1/workspaces/*/ocr/extractions', async (route) => {
+      requestCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ocrSuccessResponse('duplicate.png')) });
+    });
+
+    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
+    const inspector = page.getByTestId('workflow-inspector');
+    await page.getByRole('button', { name: 'OCR Text Extract' }).click();
+    await inspector.getByTestId('ocr-file-input').setInputFiles({
+      name: 'duplicate.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('png data'),
+    });
+
+    await inspector.getByTestId('ocr-submit').evaluate((button) => {
+      button.click();
+      button.click();
+    });
+    await expect(inspector.getByTestId('ocr-result')).toBeVisible();
+    expect(requestCount).toBe(1);
+  });
+
+  test('maps Gateway 422 and 429 errors without automatic retry', async ({ page }) => {
+    let requestCount = 0;
+    await page.route('**/api/v1/workspaces/*/ocr/extractions', async (route) => {
+      requestCount += 1;
+      const response = requestCount === 1
+        ? { status: 422, code: 'CORRUPT_FILE', message: 'Document cannot be processed.', retryable: false }
+        : { status: 429, code: 'RATE_LIMITED', message: 'Too many requests.', retryable: true };
+      await route.fulfill({
+        status: response.status,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: response.code, message: response.message, retryable: response.retryable }, requestId: `status-${requestCount}` }),
+      });
+    });
+
+    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
+    const inspector = page.getByTestId('workflow-inspector');
+    await page.getByRole('button', { name: 'OCR Text Extract' }).click();
+    await inspector.getByTestId('ocr-file-input').setInputFiles({
+      name: 'status.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('png data'),
+    });
+    await inspector.getByRole('button', { name: 'Extract text' }).click();
+
+    await expect(inspector.getByTestId('ocr-error')).toContainText('CORRUPT_FILE');
+    await expect(inspector.getByTestId('ocr-retry')).toHaveCount(0);
+    expect(requestCount).toBe(1);
+
+    await inspector.getByRole('button', { name: 'Extract text' }).click();
+    await expect(inspector.getByTestId('ocr-error')).toContainText('RATE_LIMITED');
+    await expect(inspector.getByTestId('ocr-retry')).toBeVisible();
+    expect(requestCount).toBe(2);
+  });
+
+  test('routes OCR 401 through the existing auth lifecycle', async ({ page }) => {
+    await page.route('**/api/auth/logout', async (route) => {
+      await route.fulfill({ status: 204, body: '' });
+    });
+    await page.route('**/api/v1/workspaces/*/ocr/extractions', async (route) => {
+      await route.fulfill({
+        status: 401,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: { code: 'UNAUTHENTICATED', message: 'Session expired.', retryable: false },
+          requestId: 'auth-expired',
+        }),
+      });
+    });
+
+    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
+    const inspector = page.getByTestId('workflow-inspector');
+    await page.getByRole('button', { name: 'OCR Text Extract' }).click();
+    await inspector.getByTestId('ocr-file-input').setInputFiles({
+      name: 'auth.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('png data'),
+    });
+    await inspector.getByRole('button', { name: 'Extract text' }).click();
+
+    await expect(page).toHaveURL(/\/login$/);
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('weav_token'))).toBeNull();
+  });
+
+  test('does not render a late OCR result after logout while the request is pending', async ({ page }) => {
+    let releaseRequest: () => void = () => {};
+    const requestReleased = new Promise<void>((resolve) => {
+      releaseRequest = resolve;
+    });
+    await page.route('**/api/v1/workspaces/*/ocr/extractions', async (route) => {
+      await requestReleased;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ocrSuccessResponse('late.png')) });
+    });
+    await page.route('**/api/auth/logout', async (route) => {
+      await route.fulfill({ status: 204, body: '' });
+    });
+
+    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
+    const inspector = page.getByTestId('workflow-inspector');
+    await page.getByRole('button', { name: 'OCR Text Extract' }).click();
+    await inspector.getByTestId('ocr-file-input').setInputFiles({
+      name: 'late.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('png data'),
+    });
+    await inspector.getByRole('button', { name: 'Extract text' }).click();
+    await expect(inspector.getByRole('button', { name: 'Recognizing…' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Logout' }).click();
+    releaseRequest();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByTestId('ocr-result')).toHaveCount(0);
+  });
+
+  test('does not send an OCR request when no workspace is selected', async ({ page }) => {
+    let networkCalled = false;
+    await page.route('**/api/v1/workspaces**', async (route) => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (pathname === '/api/v1/workspaces') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ items: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+    await page.route('**/api/v1/workspaces/*/ocr/extractions', async (route) => {
+      networkCalled = true;
+      await route.abort();
+    });
+
+    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
+    const inspector = page.getByTestId('workflow-inspector');
+    await page.getByRole('button', { name: 'OCR Text Extract' }).click();
+    await inspector.getByTestId('ocr-file-input').setInputFiles({
+      name: 'no-workspace.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('png data'),
+    });
+
+    await expect(inspector.getByTestId('ocr-error')).toContainText('Select a workspace');
+    expect(networkCalled).toBe(false);
   });
 });

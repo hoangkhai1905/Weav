@@ -107,6 +107,7 @@ export interface WorkspaceMember {
   email: string;
   role: 'OWNER' | 'MEMBER';
   canPublishWorkflow: boolean;
+  canManageWorkflowState?: boolean;
   avatar?: string;
   joinedAt: string;
 }

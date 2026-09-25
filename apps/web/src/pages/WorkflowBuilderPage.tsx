@@ -45,11 +45,14 @@ import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
 import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
+import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
+import { useWorkspaceContext } from '../hooks/useWorkspace';
+import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG } from '../lib/constants/nodeCatalog';
 import { getNodeReadinessBadge } from '../lib/nodeReadiness';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
-import { getActiveWorkflowWorkspaceId, type WebhookProvisioning } from '../api/workflow-v1.api';
+import type { WebhookProvisioning } from '../api/workflow-v1.api';
 import { workflowToReactFlow, reactFlowToWorkflow } from '../lib/mappers/workflowMapper';
 import type { WorkflowDefinition } from '../types/workflow.types';
 
@@ -186,11 +189,16 @@ const getPublishBlockers = (nodes: Node[]): string[] => {
   return [...blockers];
 };
 
+type OcrErrorState = { code: string; message: string; retryable?: boolean };
+type OcrScope = { userId: string | null; workspaceId: string | null };
+
 export const WorkflowBuilderPage: React.FC = () => {
   const { workflowId } = useParams<{ workflowId: string }>();
   const navigate = useNavigate();
   const { theme } = useUIStore();
-  const { t } = useI18nStore();
+  const { language, t } = useI18nStore();
+  const ariaLabelConfig = useMemo(() => createReactFlowAriaLabelConfig(t, language), [language, t]);
+  const { activeWorkspaceId, userId } = useWorkspaceContext();
   const prefersReducedMotion = useReducedMotion();
   const nodeSequenceRef = useRef(INITIAL_NODES.length);
   const logSequenceRef = useRef(0);
@@ -243,9 +251,74 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [ocrLanguage, setOcrLanguage] = useState('vi+en');
   const [ocrDetectTables, setOcrDetectTables] = useState(true);
   const [ocrFile, setOcrFile] = useState<File | null>(null);
+  const [ocrFileUserId, setOcrFileUserId] = useState<string | null>(null);
   const [ocrResult, setOcrResult] = useState<OcrExtractionResult | null>(null);
-  const [ocrError, setOcrError] = useState<{ code: string; message: string; retryable?: boolean } | null>(null);
+  const [ocrResultScope, setOcrResultScope] = useState<OcrScope | null>(null);
+  const [ocrError, setOcrError] = useState<OcrErrorState | null>(null);
+  const [ocrErrorScope, setOcrErrorScope] = useState<OcrScope | null>(null);
   const [isOcrRunning, setIsOcrRunning] = useState(false);
+  const ocrRequestSequenceRef = useRef(0);
+  const ocrRequestRef = useRef<{
+    requestId: number;
+    userId: string | null;
+    workspaceId: string;
+    controller: AbortController;
+  } | null>(null);
+  const ocrScopeRef = useRef<{ userId: string | null; workspaceId: string | null }>({
+    userId,
+    workspaceId: activeWorkspaceId,
+  });
+  const currentOcrScope: OcrScope = { userId, workspaceId: activeWorkspaceId };
+  const currentUserOcrFile = ocrFileUserId === userId ? ocrFile : null;
+  const visibleOcrResult =
+    ocrResultScope?.userId === userId && ocrResultScope.workspaceId === activeWorkspaceId
+      ? ocrResult
+      : null;
+  const visibleOcrError =
+    ocrErrorScope?.userId === userId && ocrErrorScope.workspaceId === activeWorkspaceId
+      ? ocrError
+      : null;
+
+  const clearOcrResult = () => {
+    setOcrResult(null);
+    setOcrResultScope(null);
+  };
+
+  const setScopedOcrError = (error: OcrErrorState | null, scope = currentOcrScope) => {
+    setOcrError(error);
+    setOcrErrorScope(error ? scope : null);
+  };
+
+  const isCurrentOcrRequest = useCallback(
+    (requestId: number, requestUserId: string | null, requestWorkspaceId: string) => {
+      const request = ocrRequestRef.current;
+      return Boolean(
+        request &&
+          request.requestId === requestId &&
+          ocrScopeRef.current.userId === requestUserId &&
+          ocrScopeRef.current.workspaceId === requestWorkspaceId,
+      );
+    },
+    [],
+  );
+
+  useEffect(() => {
+    ocrScopeRef.current = { userId, workspaceId: activeWorkspaceId };
+    const request = ocrRequestRef.current;
+    if (
+      request &&
+      (request.userId !== userId || request.workspaceId !== activeWorkspaceId)
+    ) {
+      request.controller.abort();
+      ocrRequestRef.current = null;
+      setIsOcrRunning(false);
+    }
+  }, [activeWorkspaceId, userId]);
+
+  useEffect(() => () => {
+    ocrRequestRef.current?.controller.abort();
+    ocrRequestRef.current = null;
+  }, []);
 
   const clearExecutionTimers = useCallback(() => {
     executionTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
@@ -438,8 +511,9 @@ export const WorkflowBuilderPage: React.FC = () => {
       setOcrLanguage(String(config.language ?? 'vi+en'));
       setOcrDetectTables(Boolean(config.detectTables ?? true));
       setOcrFile(null);
-      setOcrResult(null);
-      setOcrError(null);
+      setOcrFileUserId(null);
+      clearOcrResult();
+      setScopedOcrError(null);
     }
     setNodes((nds) =>
       nds.map((n) => ({
@@ -469,14 +543,37 @@ export const WorkflowBuilderPage: React.FC = () => {
 
   const handleOcrFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
+    if (file && !activeWorkspaceId) {
+      event.target.value = '';
+      setOcrFile(null);
+      setOcrFileUserId(null);
+      clearOcrResult();
+      setScopedOcrError({
+        code: 'WORKSPACE_REQUIRED',
+        message: t('ocr.workspace_required'),
+        retryable: false,
+      });
+      return;
+    }
     setOcrFile(file);
-    setOcrResult(null);
-    setOcrError(null);
+    setOcrFileUserId(file ? userId : null);
+    clearOcrResult();
+    setScopedOcrError(null);
+    if (file) updateSelectedNodeConfig({ fileName: file.name });
   };
 
   const handleRunOcr = async () => {
-    if (!ocrFile) {
-      setOcrError({
+    if (ocrRequestRef.current || isOcrRunning) return;
+    if (!activeWorkspaceId) {
+      setScopedOcrError({
+        code: 'WORKSPACE_REQUIRED',
+        message: t('ocr.workspace_required'),
+        retryable: false,
+      });
+      return;
+    }
+    if (!currentUserOcrFile) {
+      setScopedOcrError({
         code: 'INVALID_REQUEST',
         message: t('ocr.file_required'),
         retryable: false,
@@ -484,16 +581,27 @@ export const WorkflowBuilderPage: React.FC = () => {
       return;
     }
 
+    const requestId = ++ocrRequestSequenceRef.current;
+    const requestUserId = userId;
+    const requestWorkspaceId = activeWorkspaceId;
+    const controller = new AbortController();
+    ocrRequestRef.current = {
+      requestId,
+      userId: requestUserId,
+      workspaceId: requestWorkspaceId,
+      controller,
+    };
     setIsOcrRunning(true);
-    setOcrError(null);
+    setScopedOcrError(null);
     try {
-      const workspaceId = isWorkflowMockMode ? 'ws-main' : await getActiveWorkflowWorkspaceId();
       const result = await ocrApi.extractText(
-        ocrFile,
+        currentUserOcrFile,
         { language: ocrLanguage, detectTables: ocrDetectTables },
-        { workspaceId }
+        { workspaceId: requestWorkspaceId, signal: controller.signal }
       );
+      if (!isCurrentOcrRequest(requestId, requestUserId, requestWorkspaceId)) return;
       setOcrResult(result);
+      setOcrResultScope({ userId: requestUserId, workspaceId: requestWorkspaceId });
       updateSelectedNodeConfig({
         language: ocrLanguage,
         detectTables: ocrDetectTables,
@@ -524,28 +632,41 @@ export const WorkflowBuilderPage: React.FC = () => {
         },
       ]);
     } catch (error) {
+      if (!isCurrentOcrRequest(requestId, requestUserId, requestWorkspaceId)) return;
+      if (controller.signal.aborted) return;
+      if (error instanceof OcrApiError && error.statusCode === 401) {
+        useAuthStore.getState().logout();
+        return;
+      }
       if (error instanceof OcrApiError) {
-        setOcrError({
+        setScopedOcrError({
           code: error.code,
           message: error.message,
           retryable: error.retryable,
         });
       } else if (error instanceof Error) {
-        setOcrError({
+        setScopedOcrError({
           code: 'OCR_ERROR',
           message: error.message,
           retryable: false,
         });
       } else {
-        setOcrError({
+        setScopedOcrError({
           code: 'OCR_FAILED',
           message: t('ocr.failed'),
           retryable: false,
         });
       }
     } finally {
-      setIsOcrRunning(false);
+      if (isCurrentOcrRequest(requestId, requestUserId, requestWorkspaceId)) {
+        ocrRequestRef.current = null;
+        setIsOcrRunning(false);
+      }
     }
+  };
+
+  const handleRetryOcr = () => {
+    void handleRunOcr();
   };
 
   const handleAddCatalogItem = (type: string, name: string, nameKey: string) => {
@@ -584,8 +705,9 @@ export const WorkflowBuilderPage: React.FC = () => {
       setOcrLanguage('vi+en');
       setOcrDetectTables(true);
       setOcrFile(null);
-      setOcrResult(null);
-      setOcrError(null);
+      setOcrFileUserId(null);
+      clearOcrResult();
+      setScopedOcrError(null);
     }
     setIsSaved(false);
   };
@@ -787,6 +909,12 @@ export const WorkflowBuilderPage: React.FC = () => {
           <span data-testid="workflow-preview-notice" className="text-slate-500 dark:text-slate-400">
             Visual preview only · no workflow or provider calls
           </span>
+          <span data-testid="builder-workspace-context" className="text-slate-500 dark:text-slate-400">
+            {t('builder.workspace_context').replace(
+              '{workspace}',
+              activeWorkspaceId ?? t('builder.workspace_not_selected'),
+            )}
+          </span>
         </div>
 
         <span className="hidden lg:flex text-[11px] font-mono text-slate-500 dark:text-slate-400">
@@ -883,6 +1011,7 @@ export const WorkflowBuilderPage: React.FC = () => {
         {/* WORKFLOW CANVAS (CENTER) */}
         <main data-testid="workflow-canvas" className="flex-1 h-full bg-slate-100 dark:bg-slate-950 relative overflow-hidden">
           <ReactFlow
+            ariaLabelConfig={ariaLabelConfig}
             nodes={nodes}
             edges={renderedEdges}
             onNodesChange={handleNodesChange}
@@ -907,7 +1036,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             {showMinimap && (
               <MiniMap
                 data-testid="workflow-minimap"
-                aria-label="Workflow minimap"
+                aria-label={t('builder.workflow_minimap')}
                 className="workflow-minimap hidden sm:block !bottom-3 !right-3 !m-0 !h-28 !w-44 !rounded-md !border-slate-300 !bg-slate-200/90 !shadow-lg dark:!border-slate-700 dark:!bg-slate-950/90"
                 style={{ width: 176, height: 112, borderRadius: 6 }}
                 nodeColor={(node) => {
@@ -1197,13 +1326,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                     </label>
                     <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed border-slate-300 bg-slate-50 px-2.5 py-2 text-xs text-slate-600 transition-colors hover:border-blue-400 hover:bg-blue-50/60 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:border-blue-500/60 dark:hover:bg-blue-950/25">
                       <Upload size={14} className="shrink-0 text-blue-600 dark:text-blue-400" />
-                      <span className="min-w-0 flex-1 truncate">{ocrFile?.name ?? t('ocr.choose_file')}</span>
+                      <span className="min-w-0 flex-1 truncate">{currentUserOcrFile?.name ?? t('ocr.choose_file')}</span>
                       <input
                         id="ocr-file-input"
                         data-testid="ocr-file-input"
                         type="file"
                         accept=".pdf,.png,.jpg,.jpeg,.webp,image/*,application/pdf"
                         onChange={handleOcrFileChange}
+                        disabled={isOcrRunning}
                         className="sr-only"
                       />
                     </label>
@@ -1224,9 +1354,9 @@ export const WorkflowBuilderPage: React.FC = () => {
                         }}
                         className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
                       >
-                        <option value="vi+en">Tiếng Việt + English</option>
-                        <option value="vi">Tiếng Việt</option>
-                        <option value="en">English</option>
+                        <option value="vi+en">{t('builder.language.vi_en')}</option>
+                        <option value="vi">{t('settings.vietnamese')}</option>
+                        <option value="en">{t('settings.english')}</option>
                       </select>
                     </div>
                     <label className="mt-5 flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
@@ -1243,7 +1373,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     </label>
                   </div>
 
-                  {ocrError && (
+                  {visibleOcrError && (
                     <div
                       role="alert"
                       data-testid="ocr-error"
@@ -1251,20 +1381,32 @@ export const WorkflowBuilderPage: React.FC = () => {
                     >
                       <div className="flex items-center justify-between gap-1.5">
                         <span className="font-mono text-[10px] font-semibold uppercase bg-rose-200/70 dark:bg-rose-900/60 px-1 py-0.5 rounded">
-                          {ocrError.code}
+                          {visibleOcrError.code}
                         </span>
-                        {ocrError.retryable && (
+                        {visibleOcrError.retryable && (
                           <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
                             Retryable
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 leading-relaxed">{ocrError.message}</p>
+                      <p className="mt-1 leading-relaxed">{visibleOcrError.message}</p>
+                      {visibleOcrError.retryable && currentUserOcrFile && activeWorkspaceId && (
+                        <button
+                          type="button"
+                          data-testid="ocr-retry"
+                          onClick={handleRetryOcr}
+                          disabled={isOcrRunning}
+                          className="mt-2 rounded border border-rose-300 px-2 py-1 text-[10px] font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-wait disabled:opacity-70 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                        >
+                          Retry OCR
+                        </button>
+                      )}
                     </div>
                   )}
 
                   <button
                     type="button"
+                    data-testid="ocr-submit"
                     onClick={handleRunOcr}
                     disabled={isOcrRunning}
                     className="flex w-full items-center justify-center gap-1.5 rounded bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
@@ -1273,22 +1415,22 @@ export const WorkflowBuilderPage: React.FC = () => {
                     {isOcrRunning ? t('ocr.processing') : t('ocr.extract_text')}
                   </button>
 
-                  {ocrResult && (
+                  {visibleOcrResult && (
                     <div data-testid="ocr-result" className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-900/40">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{t('ocr.result')}</span>
-                          {ocrResult.metadata.quality === 'OK' && (
+                          {visibleOcrResult.metadata.quality === 'OK' && (
                             <span data-testid="ocr-quality-badge" className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
                               ● OK
                             </span>
                           )}
-                          {ocrResult.metadata.quality === 'LOW_CONFIDENCE' && (
+                          {visibleOcrResult.metadata.quality === 'LOW_CONFIDENCE' && (
                             <span data-testid="ocr-quality-badge" className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-amber-600 dark:text-amber-400">
                               ▲ Low Confidence
                             </span>
                           )}
-                          {ocrResult.metadata.quality === 'EMPTY' && (
+                          {visibleOcrResult.metadata.quality === 'EMPTY' && (
                             <span data-testid="ocr-quality-badge" className="rounded border border-slate-400/20 bg-slate-400/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-500 dark:text-slate-400">
                               ○ Empty
                             </span>
@@ -1296,7 +1438,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         </div>
                         <button
                           type="button"
-                          onClick={() => setOcrResult(null)}
+                          onClick={clearOcrResult}
                           className="rounded p-0.5 text-slate-500 transition-colors hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800"
                           aria-label={t('ocr.dismiss_result')}
                         >
@@ -1304,31 +1446,31 @@ export const WorkflowBuilderPage: React.FC = () => {
                         </button>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-[10px]">
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">{t('ocr.pages')}: <strong>{ocrResult.document.pages}</strong></span>
+                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">{t('ocr.pages')}: <strong>{visibleOcrResult.document.pages}</strong></span>
                         <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-                          {t('ocr.confidence')}: <strong>{ocrResult.confidence !== null ? `${(ocrResult.confidence * 100).toFixed(1)}%` : '—'}</strong>
+                          {t('ocr.confidence')}: <strong>{visibleOcrResult.confidence !== null ? `${(visibleOcrResult.confidence * 100).toFixed(1)}%` : '—'}</strong>
                         </span>
                         <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-                          {t('ocr.mime_type')}: <strong>{ocrResult.document.mimeType}</strong>
+                          {t('ocr.mime_type')}: <strong>{visibleOcrResult.document.mimeType}</strong>
                         </span>
                         <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-                          {t('ocr.tables')}: <strong>{ocrResult.tables?.length ?? 0}</strong>
+                          {t('ocr.tables')}: <strong>{visibleOcrResult.tables?.length ?? 0}</strong>
                         </span>
                       </div>
 
-                      {ocrResult.metadata.quality === 'EMPTY' && (
+                      {visibleOcrResult.metadata.quality === 'EMPTY' && (
                         <div data-testid="ocr-empty-note" className="rounded border border-amber-200/60 bg-amber-50/50 p-2 text-[11px] text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
                           {t('ocr.empty_text')}
                         </div>
                       )}
 
-                      {ocrResult.metadata.warnings && ocrResult.metadata.warnings.length > 0 && (
+                      {visibleOcrResult.metadata.warnings && visibleOcrResult.metadata.warnings.length > 0 && (
                         <div data-testid="ocr-warnings" className="space-y-1">
                           <span className="block text-[10px] font-medium text-amber-700 dark:text-amber-400">
-                            {t('ocr.warnings')} ({ocrResult.metadata.warnings.length})
+                            {t('ocr.warnings')} ({visibleOcrResult.metadata.warnings.length})
                           </span>
                           <div className="space-y-1">
-                            {ocrResult.metadata.warnings.map((w, idx) => (
+                            {visibleOcrResult.metadata.warnings.map((w, idx) => (
                               <div key={idx} className="rounded border border-amber-200/80 bg-amber-50/70 px-2 py-1 text-[10px] text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
                                 <span className="font-mono font-semibold">[{w.code}]</span>{' '}
                                 {w.page ? `(p.${w.page}) ` : ''}
@@ -1341,7 +1483,7 @@ export const WorkflowBuilderPage: React.FC = () => {
 
                       <div>
                         <span className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-400">{t('ocr.raw_text')}</span>
-                        <pre data-testid="ocr-raw-text" className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-slate-200 bg-white/70 p-2 font-mono text-[10px] leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">{ocrResult.text.rawText || '(No text detected)'}</pre>
+                        <pre data-testid="ocr-raw-text" className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-slate-200 bg-white/70 p-2 font-mono text-[10px] leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">{visibleOcrResult.text.rawText || '(No text detected)'}</pre>
                       </div>
                     </div>
                   )}

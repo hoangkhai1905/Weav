@@ -201,6 +201,12 @@ variables.
 | `WORKFLOW_INTERNAL_SERVICE_KEY` | Key Workspace sends to Workflow's internal usage endpoint; keep it in a secret manager and configure the matching Workflow-side key |
 | `WORKFLOW_CONNECT_TIMEOUT`, `WORKFLOW_READ_TIMEOUT` | Finite Workflow HTTP deadlines; defaults are `3s` and `5s` |
 
+The local Compose development example points `GOOGLE_OAUTH_FRONTEND_RETURN_URL`
+to the Vite web app at `http://localhost:5173/connections`. Set this URL to the
+deployed web app's Connections page in each deployed environment. Register the
+configured `GOOGLE_OAUTH_REDIRECT_URI` (the Workspace callback endpoint) with
+the Google OAuth client; it is separate from the frontend return URL.
+
 The OAuth redirect URI comes from service configuration, never from an API
 client. Redis/Valkey is required to store and consume OAuth state; the OAuth
 flow fails closed during a Redis outage. OAuth state contains only workspace,

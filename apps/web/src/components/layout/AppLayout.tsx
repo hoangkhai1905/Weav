@@ -4,10 +4,14 @@ import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUIStore } from '../../store/useUIStore';
+import { useWorkspaceSessionCleanup } from '../../hooks/useWorkspace';
+import { useNotificationSessionCleanup } from '../../hooks/useNotifications';
 
 export const AppLayout: React.FC = () => {
   const { isAuthenticated } = useAuthStore();
   const { initTheme } = useUIStore();
+  useWorkspaceSessionCleanup();
+  useNotificationSessionCleanup();
 
   useEffect(() => {
     initTheme();

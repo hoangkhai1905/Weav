@@ -241,7 +241,7 @@ export function mapStatusToErrorMessage(status: number): { code: string; message
 }
 
 export interface ExtractTextOptions {
-  workspaceId?: string;
+  workspaceId: string;
   token?: string;
   signal?: AbortSignal;
 }
@@ -250,12 +250,22 @@ export const ocrApi = {
   async extractText(
     file: File,
     config: OcrConfig,
-    options?: ExtractTextOptions
+    options: ExtractTextOptions
   ): Promise<OcrExtractionResult> {
     // 1. Client-side pre-validation
     validateOcrFile(file);
 
-    const workspaceId = options?.workspaceId || 'ws-main';
+    const workspaceId = options.workspaceId.trim();
+    if (!workspaceId) {
+      throw new OcrApiError(
+        {
+          code: 'WORKSPACE_REQUIRED',
+          message: 'Select a workspace before uploading a document.',
+          retryable: false,
+        },
+        400
+      );
+    }
     const baseUrl = getOcrApiBaseUrl();
     const endpoint = `${baseUrl}/api/v1/workspaces/${encodeURIComponent(workspaceId)}/ocr/extractions`;
 

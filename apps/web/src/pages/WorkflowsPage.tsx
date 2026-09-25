@@ -42,7 +42,7 @@ interface WorkflowItem {
 }
 
 export function WorkflowsPage() {
-  const { t } = useI18nStore();
+  const { language, t } = useI18nStore();
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const menuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -86,7 +86,9 @@ export function WorkflowsPage() {
         executions: null,
         successRate: '—',
         lastRun: '—',
-        updated: wf.updatedAt ? new Date(wf.updatedAt).toLocaleString() : '—',
+        updated: wf.updatedAt
+          ? new Date(wf.updatedAt).toLocaleString(language === 'VI' ? 'vi-VN' : 'en-US')
+          : '—',
         triggerType: wf.triggerType,
       }));
       setWorkflowsList(mapped);
@@ -96,7 +98,7 @@ export function WorkflowsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [language]);
 
   useEffect(() => {
     void loadWorkflows();
@@ -227,13 +229,49 @@ export function WorkflowsPage() {
 
   const pageSize = 6;
   const paginatedWorkflows = filteredWorkflows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const localizedRelativeTime = (value: string) => {
+    const keys: Record<string, string> = {
+      '1 min ago': 'relative.min_1',
+      '2 min ago': 'relative.min_2',
+      '3 min ago': 'relative.min_3',
+      '5 min ago': 'relative.min_5',
+      '18 min ago': 'relative.min_18',
+      '1 hour ago': 'relative.hour_1',
+      '2 hours ago': 'relative.hour_2',
+      Yesterday: 'relative.yesterday',
+      '3 days ago': 'relative.days_3',
+      '5 days ago': 'relative.days_5',
+      Never: 'relative.never',
+    };
+    return keys[value] ? t(keys[value]) : value;
+  };
+
+  const localizedUpdatedTime = (value: string) => {
+    if (language === 'EN') return value;
+
+    const dateTime = value.match(/^(Today|Yesterday), (\d{1,2}):(\d{2}) (AM|PM)$/);
+    if (dateTime) {
+      const dayKey = dateTime[1] === 'Today' ? 'relative.today' : 'relative.yesterday';
+      const hour24 = (Number(dateTime[2]) % 12) + (dateTime[4] === 'PM' ? 12 : 0);
+      return `${t(dayKey)}, ${String(hour24).padStart(2, '0')}:${dateTime[3]}`;
+    }
+
+    if (value === 'Today') return t('relative.today');
+    if (value === 'Yesterday') return t('relative.yesterday');
+    if (value === 'Never') return t('relative.never');
+
+    const daysAgo = value.match(/^(\d+) days ago$/);
+    if (daysAgo) return t('relative.days_count').replace('{count}', daysAgo[1]);
+    if (value === '1 week ago') return t('relative.week_1');
+    return value;
+  };
 
   const renderStatusBadge = (status: WorkflowItem['status']) => {
     if (status === 'PUBLISHED') {
       return (
         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-semibold text-[11px]">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-          Published
+          {t('workflows.tab_active')}
         </span>
       );
     }
@@ -241,14 +279,14 @@ export function WorkflowsPage() {
       return (
         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-semibold text-[11px]">
           <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-          Paused
+          {t('workflows.tab_paused')}
         </span>
       );
     }
     return (
       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-semibold text-[11px]">
         <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-        Draft
+        {t('workflows.tab_draft')}
       </span>
     );
   };
@@ -383,7 +421,7 @@ export function WorkflowsPage() {
                   ? 'bg-card text-primary font-semibold shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
-              title="Preview empty view state"
+              title={t('workflows.preview_empty')}
             >
               <FilterX size={13} />
               <span>{t('workflows.empty_view')}</span>
@@ -418,7 +456,7 @@ export function WorkflowsPage() {
             className="h-8 px-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 hidden md:flex items-center gap-1 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
           >
             <span className="text-slate-400 font-normal">{t('workflows.owner')}</span>
-            <span className="font-semibold">{ownerFilter}</span>
+            <span className="font-semibold">{ownerFilter === 'ALL' ? t('workflows.all') : ownerFilter}</span>
             <ChevronDown size={14} className="text-slate-400" />
           </button>
 
@@ -434,7 +472,7 @@ export function WorkflowsPage() {
                   ? 'bg-card text-primary shadow-sm'
                   : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
-              title="Dense Table View"
+              title={t('workflows.table_view')}
             >
               <LayoutList size={15} />
             </button>
@@ -446,7 +484,7 @@ export function WorkflowsPage() {
                   ? 'bg-card text-primary shadow-sm'
                   : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
-              title="Grid View"
+              title={t('workflows.grid_view')}
             >
               <LayoutGrid size={15} />
             </button>
@@ -508,17 +546,17 @@ export function WorkflowsPage() {
             <Inbox size={24} />
           </div>
           <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-            No workflows found
+            {t('workflows.no_results')}
           </h3>
           <p className="text-xs text-slate-500 max-w-sm">
-            No workflows matched your search filters or selected tab. Try adjusting your query or create a new workflow.
+            {t('workflows.no_results_description')}
           </p>
           <button
             onClick={handleCreate}
             className="mt-2 flex cursor-pointer items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Plus size={15} />
-            <span>Create workflow</span>
+            <span>{t('dashboard.new_workflow')}</span>
           </button>
         </div>
       ) : viewMode === 'grid' ? (
@@ -550,28 +588,28 @@ export function WorkflowsPage() {
               </div>
 
               <div className="flex items-center justify-between text-xs text-slate-500 font-mono border-t border-b border-slate-100 dark:border-slate-800/80 py-2">
-                <span>{wf.executions === null ? '—' : `${wf.executions} runs`}</span>
+                <span>{wf.executions === null ? '—' : `${wf.executions} ${t('workflows.runs')}`}</span>
                 <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
                   {wf.successRate}
                 </span>
-                <span>{wf.lastRun}</span>
+                <span>{localizedRelativeTime(wf.lastRun)}</span>
               </div>
 
               <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-slate-400">{wf.updated}</span>
+                <span className="text-[11px] text-slate-400">{localizedUpdatedTime(wf.updated)}</span>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => handleRun(wf.id)}
                     disabled={wf.status !== 'PUBLISHED'}
                     className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-                    title={wf.status === 'PUBLISHED' ? 'Run workflow' : 'Publish this workflow before running it'}
+                    title={wf.status === 'PUBLISHED' ? t('workflows.trigger_execution') : t('workflows.btn_publish')}
                   >
                     <Play size={14} />
                   </button>
                   <Link
                     to={`/workflows/${wf.id}/builder`}
                     className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-primary"
-                    title="Edit"
+                    title={t('workflows.edit_studio')}
                   >
                     <Edit3 size={14} />
                   </Link>
@@ -593,7 +631,7 @@ export function WorkflowsPage() {
                       checked={selectedIds.size === filteredWorkflows.length && filteredWorkflows.length > 0}
                       onChange={handleToggleSelectAll}
                       className="h-3.5 w-3.5 cursor-pointer rounded accent-blue-600"
-                      aria-label="Select all workflows"
+                      aria-label={t('workflows.select_all')}
                     />
                   </th>
                 <th className="px-3 py-2.5 min-w-[260px]">{t('workflows.col_name')}</th>
@@ -632,7 +670,7 @@ export function WorkflowsPage() {
                             checked={isSelected}
                             onChange={() => handleToggleSelectRow(wf.id)}
                             className="h-3.5 w-3.5 cursor-pointer rounded accent-blue-600"
-                            aria-label={`Select ${wf.name}`}
+                            aria-label={`${t('workflows.select')} ${wf.name}`}
                           />
                         </td>
 
@@ -659,7 +697,7 @@ export function WorkflowsPage() {
 
                         {/* Executions */}
                         <td className="px-3 py-3 align-middle font-mono text-xs text-slate-700 dark:text-slate-300">
-                          {wf.executions === null ? '—' : `${wf.executions} runs`}
+                          {wf.executions === null ? '—' : `${wf.executions} ${t('workflows.runs')}`}
                         </td>
 
                         {/* Success Rate */}
@@ -685,12 +723,12 @@ export function WorkflowsPage() {
 
                         {/* Last Run */}
                         <td className="px-3 py-3 align-middle text-slate-500 text-[11px]">
-                          {wf.lastRun}
+                          {localizedRelativeTime(wf.lastRun)}
                         </td>
 
                         {/* Updated */}
                         <td className="px-3 py-3 align-middle text-slate-500 text-[11px]">
-                          {wf.updated}
+                          {localizedUpdatedTime(wf.updated)}
                         </td>
 
                         {/* Actions */}
@@ -700,7 +738,7 @@ export function WorkflowsPage() {
                               onClick={() => handleRun(wf.id)}
                               disabled={wf.status !== 'PUBLISHED'}
                               className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
-                              title={wf.status === 'PUBLISHED' ? 'Trigger execution' : 'Publish this workflow before running it'}
+                              title={wf.status === 'PUBLISHED' ? t('workflows.trigger_execution') : t('workflows.btn_publish')}
                             >
                               <Play size={14} />
                             </button>
@@ -708,7 +746,7 @@ export function WorkflowsPage() {
                             <Link
                               to={`/workflows/${wf.id}/builder`}
                               className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                              title="Edit Workflow Studio"
+                              title={t('workflows.edit_studio')}
                             >
                               <Edit3 size={14} />
                             </Link>
@@ -719,8 +757,8 @@ export function WorkflowsPage() {
                               }}
                               onClick={() => setActiveMenuId(activeMenuId === wf.id ? null : wf.id)}
                               className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                              title="More workflow actions"
-                              aria-label="More workflow actions"
+                              title={t('workflows.more_actions')}
+                              aria-label={t('workflows.more_actions')}
                               aria-haspopup="menu"
                               aria-expanded={activeMenuId === wf.id}
                             >
@@ -744,14 +782,14 @@ export function WorkflowsPage() {
                                 className="px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
                               >
                                 <History size={14} className="text-slate-400" />
-                                <span>Executions</span>
+                                <span>{t('nav.executions')}</span>
                               </Link>
                               <button
                                 onClick={() => void handleDuplicate(wf.id)}
                                 className="px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 text-left"
                               >
                                 <Copy size={14} className="text-slate-400" />
-                                <span>Duplicate</span>
+                                <span>{t('workflows.btn_duplicate')}</span>
                               </button>
                               <button
                                 onClick={() => void handleTogglePause(wf)}
@@ -762,12 +800,12 @@ export function WorkflowsPage() {
                                 {wf.status === 'PAUSED' ? (
                                   <>
                                     <PlayCircle size={14} className="text-emerald-500" />
-                                    <span>Resume</span>
+                                    <span>{t('workflows.btn_resume')}</span>
                                   </>
                                 ) : (
                                   <>
                                     <PauseCircle size={14} className="text-amber-500" />
-                                    <span>Pause</span>
+                                    <span>{t('workflows.btn_pause')}</span>
                                   </>
                                 )}
                               </button>
@@ -782,7 +820,7 @@ export function WorkflowsPage() {
                                 className="px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center gap-2 text-left font-medium disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 <Trash2 size={14} />
-                                <span>Delete</span>
+                                <span>{t('workflows.btn_delete')}</span>
                               </button>
                             </motion.div>
                             )}
@@ -800,14 +838,14 @@ export function WorkflowsPage() {
           <div className="px-4 py-2.5 bg-slate-50/60 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
             <div className="flex items-center gap-3">
               <span>
-                Showing <strong className="text-slate-900 dark:text-slate-100 font-semibold">{paginatedWorkflows.length}</strong> of{' '}
-                <strong className="text-slate-900 dark:text-slate-100 font-semibold">{filteredWorkflows.length}</strong> workflows
+                {t('workflows.showing')} <strong className="text-slate-900 dark:text-slate-100 font-semibold">{paginatedWorkflows.length}</strong> {t('workflows.of')}{' '}
+                <strong className="text-slate-900 dark:text-slate-100 font-semibold">{filteredWorkflows.length}</strong> {t('workflows.workflow_count')}
               </span>
               <div className="flex items-center gap-1 text-[11px]">
-                <span>Rows:</span>
+                <span>{t('workflows.rows')}</span>
                 <select className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded px-1.5 py-0.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none">
-                  <option value="25">25 per page</option>
-                  <option value="50">50 per page</option>
+                  <option value="25">25 {t('connections.page_size')}</option>
+                  <option value="50">50 {t('connections.page_size')}</option>
                 </select>
               </div>
             </div>
@@ -818,7 +856,7 @@ export function WorkflowsPage() {
                 onClick={() => setCurrentPage(1)}
                 className="px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
               >
-                Previous
+                {t('workflows.previous')}
               </button>
               <button
                 onClick={() => setCurrentPage(1)}
@@ -845,7 +883,7 @@ export function WorkflowsPage() {
                 onClick={() => setCurrentPage(2)}
                 className="px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
               >
-                Next
+                {t('workflows.next')}
               </button>
             </div>
           </div>

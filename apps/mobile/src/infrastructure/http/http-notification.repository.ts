@@ -10,7 +10,14 @@ import {
   mapNotificationPage,
   type NotificationPage,
 } from './notification.mapper';
+import {
+  buildNotificationListRequest,
+  buildNotificationReadAllRequest,
+  buildNotificationReadRequest,
+  buildNotificationUnreadCountRequest,
+} from './notification.http.contract';
 import { useAuthStore } from '../../stores/auth.store';
+import { expirePersistedAuthSession } from '../auth/auth-session.persistence';
 
 async function requestNotification<T>(config: AxiosRequestConfig): Promise<T> {
   const token = useAuthStore.getState().tokens?.accessToken;
@@ -21,16 +28,12 @@ async function requestNotification<T>(config: AxiosRequestConfig): Promise<T> {
       throw { code: 'CANCELED', message: 'Notification request canceled.' };
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       if (useAuthStore.getState().tokens?.accessToken === token) {
-        useAuthStore.getState().clearAuthSession();
+        void expirePersistedAuthSession();
       }
-      throw { code: 'UNAUTHORIZED', message: 'Please sign in again.' };
+      throw normalizeApiError(error);
     }
-    const normalized = normalizeApiError(error);
     // Do not retain raw Axios responses, which may include request credentials.
-    throw {
-      code: normalized.code,
-      message: 'Unable to update notifications. Please try again.',
-    };
+    throw normalizeApiError(error);
   }
 }
 
@@ -43,11 +46,9 @@ export class HttpNotificationRepository implements NotificationRepository {
     query: NotificationQuery = {},
     signal?: AbortSignal,
   ): Promise<NotificationInboxPage> {
-    const page = await requestNotification<NotificationPage>({
-      url: '/api/notifications',
-      params: { limit: 20, ...query },
-      signal,
-    });
+    const page = await requestNotification<NotificationPage>(
+      buildNotificationListRequest(query, signal),
+    );
     if (
       !page ||
       !Array.isArray(page.items) ||
@@ -62,10 +63,9 @@ export class HttpNotificationRepository implements NotificationRepository {
   }
 
   async getUnreadCount(signal?: AbortSignal): Promise<number> {
-    const result = await requestNotification<{ count: number }>({
-      url: '/api/notifications/unread-count',
-      signal,
-    });
+    const result = await requestNotification<{ count: number }>(
+      buildNotificationUnreadCountRequest(signal),
+    );
     if (!Number.isSafeInteger(result?.count) || result.count < 0) {
       throw {
         code: 'INVALID_RESPONSE',
@@ -76,16 +76,10 @@ export class HttpNotificationRepository implements NotificationRepository {
   }
 
   async markRead(id: string): Promise<void> {
-    await requestNotification({
-      method: 'PATCH',
-      url: `/api/notifications/${encodeURIComponent(id)}/read`,
-    });
+    await requestNotification(buildNotificationReadRequest(id));
   }
 
   async markAllRead(): Promise<void> {
-    await requestNotification({
-      method: 'POST',
-      url: '/api/notifications/read-all',
-    });
+    await requestNotification(buildNotificationReadAllRequest());
   }
 }

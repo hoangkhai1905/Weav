@@ -168,13 +168,23 @@ const INITIAL_EXECUTION_LIST: ExecutionItem[] = [
   },
 ];
 
+const EXECUTION_TRIGGER_DETAIL_KEYS: Record<string, string> = {
+  'Webhook (POST /stripe)': 'executions.trigger_detail.webhook_stripe',
+  'Schedule (Daily)': 'executions.trigger_detail.schedule_daily',
+  'Schedule (Cron)': 'executions.trigger_detail.schedule_cron',
+  'Schedule (Hourly)': 'executions.trigger_detail.schedule_hourly',
+  'Webhook (Zendesk)': 'executions.trigger_detail.webhook_zendesk',
+  'Manual (Admin)': 'executions.trigger_detail.manual_admin',
+  'Event (HubSpot)': 'executions.trigger_detail.event_hubspot',
+};
+
 export function ExecutionsPage() {
   return isWorkflowMockMode ? <MockExecutionsPage /> : <LiveWorkflowExecutionsPage />;
 }
 
 function MockExecutionsPage() {
   const navigate = useNavigate();
-  const { t } = useI18nStore();
+  const { t, language } = useI18nStore();
   const [executions, setExecutions] = useState<ExecutionItem[]>(INITIAL_EXECUTION_LIST);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED'>('ALL');
@@ -185,6 +195,14 @@ function MockExecutionsPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [activeLogModal, setActiveLogModal] = useState<ExecutionItem | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const formatStartedRelative = (value: string) => {
+    if (language !== 'VI') return value;
+    const match = /^(\d+)(s|m|h) ago$/.exec(value);
+    if (!match) return value;
+    if (Number(match[1]) === 0) return t('connections.time.just_now');
+    const unit = match[2] === 's' ? 'giây' : match[2] === 'm' ? 'phút' : 'giờ';
+    return `${match[1]} ${unit} trước`;
+  };
 
   // Live timer tick for running executions duration & auto-refresh
   useEffect(() => {
@@ -232,7 +250,7 @@ function MockExecutionsPage() {
     };
 
     setExecutions((prev) => [newExec, ...prev]);
-    triggerToast(`Re-running execution ${execution.id} as ${newId}`);
+    triggerToast(t('executions.rerunning').replace('{id}', execution.id).replace('{newId}', newId));
   };
 
   // Stop running execution
@@ -243,12 +261,12 @@ function MockExecutionsPage() {
           ? {
               ...item,
               status: 'CANCELLED',
-              error: 'User cancelled execution',
+              error: t('executions.user_cancelled'),
             }
           : item
       )
     );
-    triggerToast(`Execution ${id} was cancelled.`);
+    triggerToast(t('executions.stopped').replace('{id}', id));
   };
 
   // CSV Export
@@ -276,7 +294,7 @@ function MockExecutionsPage() {
     link.click();
     document.body.removeChild(link);
 
-    triggerToast('Executions exported to CSV');
+    triggerToast(t('executions.exported'));
   };
 
   // Unique workflow names for dropdown filter
@@ -409,7 +427,7 @@ function MockExecutionsPage() {
             onClick={() => {
               const failed = executions.find((e) => e.status === 'FAILED');
               if (failed) handleReRun(failed);
-              else triggerToast('No failed executions to re-run');
+              else triggerToast(t('executions.no_failed'));
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs font-medium shadow-sm"
           >
@@ -431,7 +449,7 @@ function MockExecutionsPage() {
             <Cloud size={13} className="text-[#2563EB]" />
             <span className="font-mono font-medium">us-east-1</span>
             <span className="text-slate-400">/</span>
-            <span className="font-semibold text-slate-900 dark:text-slate-100">Production</span>
+            <span className="font-semibold text-slate-900 dark:text-slate-100">{t('connections.environment.production')}</span>
           </div>
         </div>
       </div>
@@ -442,7 +460,7 @@ function MockExecutionsPage() {
         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Total Runs (24h)
+              {t('executions.metric_total')}
             </span>
             <Clock size={16} className="text-slate-400" />
           </div>
@@ -462,7 +480,7 @@ function MockExecutionsPage() {
         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Active Executions
+              {t('executions.metric_active')}
             </span>
             <span className="relative flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-60"></span>
@@ -474,10 +492,10 @@ function MockExecutionsPage() {
               <span className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100 tracking-tight">
                 {counts.RUNNING}
               </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">running now</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">{t('executions.running_now')}</span>
             </div>
             <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-blue-950/60 text-[#2563EB] dark:text-blue-300 text-[11px] font-semibold">
-              12 queued
+              12 {t('executions.queued')}
             </span>
           </div>
           <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
@@ -489,13 +507,13 @@ function MockExecutionsPage() {
         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Success Rate
+              {t('executions.metric_success')}
             </span>
             <CheckCircle2 size={16} className="text-emerald-500" />
           </div>
           <div className="flex items-baseline justify-between mt-2">
             <span className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100 tracking-tight">98.6%</span>
-            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">38 failed (2.4%)</span>
+            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">38 {t('executions.failed_count')} (2.4%)</span>
           </div>
           <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden flex">
             <div className="bg-emerald-500 h-full" style={{ width: '98.6%' }}></div>
@@ -507,7 +525,7 @@ function MockExecutionsPage() {
         <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Avg Execution Time
+              {t('executions.metric_avg_time')}
             </span>
             <Zap size={16} className="text-amber-500" />
           </div>
@@ -532,7 +550,7 @@ function MockExecutionsPage() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2563EB]"></span>
             </span>
-            <span className="text-xs font-bold uppercase tracking-wider text-[#2563EB]">Live Run in Progress</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-[#2563EB]">{t('executions.live_run')}</span>
             <span className="text-slate-300 dark:text-slate-700">•</span>
             <span className="font-mono text-xs font-bold text-slate-900 dark:text-slate-100">{activeRunning.id}</span>
             <span className="text-slate-300 dark:text-slate-700">—</span>
@@ -546,8 +564,8 @@ function MockExecutionsPage() {
             <div className="flex items-center gap-1.5 font-mono text-slate-500 dark:text-slate-400">
               <Clock size={13} className="text-slate-400" />
               <span>
-                Started {activeRunning.startedTime} (
-                <span className="text-[#2563EB] font-medium">{activeRunning.startedRelative}</span>)
+                {t('executions.started_at')} {activeRunning.startedTime} (
+                <span className="text-[#2563EB] font-medium">{formatStartedRelative(activeRunning.startedRelative)}</span>)
               </span>
             </div>
             <span className="text-slate-200 dark:text-slate-800">|</span>
@@ -556,14 +574,14 @@ function MockExecutionsPage() {
               className="flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-50 dark:bg-blue-950/60 text-[#2563EB] dark:text-blue-300 text-[11px] font-semibold hover:bg-[#2563EB] hover:text-white transition-colors"
             >
               <Activity size={13} />
-              <span>View live trace</span>
+              <span>{t('executions.view_trace')}</span>
             </button>
             <button
               onClick={() => handleStopExecution(activeRunning.id)}
               className="flex items-center gap-1 px-2.5 py-1 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 text-[11px] font-medium hover:bg-rose-600 hover:text-white transition-colors"
             >
               <StopCircle size={13} />
-              <span>Cancel</span>
+              <span>{t('executions.cancel')}</span>
             </button>
           </div>
         </div>
@@ -590,7 +608,7 @@ function MockExecutionsPage() {
               <CheckCircle2 size={16} className="text-emerald-500" />
               <div className="flex flex-col">
                 <span className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">2. PostgreSQL</span>
-                <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">45ms • Rows parsed</span>
+                <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">45ms • {t('executions.rows_parsed')}</span>
               </div>
             </div>
 
@@ -607,7 +625,7 @@ function MockExecutionsPage() {
               </span>
               <div className="flex flex-col">
                 <span className="text-[11px] font-semibold text-[#2563EB]">3. AI Extract</span>
-                <span className="font-mono text-[10px] text-slate-500 animate-pulse">processing chunk 2...</span>
+                <span className="font-mono text-[10px] text-slate-500 animate-pulse">{t('executions.processing_chunk')} 2...</span>
               </div>
             </div>
 
@@ -621,15 +639,15 @@ function MockExecutionsPage() {
               <div className="w-3.5 h-3.5 rounded-full border border-slate-400"></div>
               <div className="flex flex-col">
                 <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">4. Slack Notify</span>
-                <span className="font-mono text-[10px] text-slate-400">pending input</span>
+                <span className="font-mono text-[10px] text-slate-400">{t('executions.pending_input')}</span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-3 pl-4 shrink-0 border-l border-slate-200 dark:border-slate-800">
             <div className="flex flex-col items-end">
-              <span className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">3 / 4 completed</span>
-              <span className="font-mono text-[10px] text-slate-400">75% elapsed</span>
+              <span className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">3 / 4 {t('executions.completed_steps')}</span>
+              <span className="font-mono text-[10px] text-slate-400">75% {t('executions.elapsed')}</span>
             </div>
             <div className="w-16 bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
               <div className="bg-[#2563EB] h-full rounded-full" style={{ width: '75%' }}></div>
@@ -702,7 +720,7 @@ function MockExecutionsPage() {
                 onChange={(e) => setWorkflowFilter(e.target.value)}
                 className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer max-w-[160px] truncate"
               >
-                <option value="ALL">{t('workflows.all')} Workflows</option>
+                <option value="ALL">{t('executions.all_workflows')}</option>
                 {workflowNames.map((name) => (
                   <option key={name} value={name}>
                     {name}
@@ -716,11 +734,11 @@ function MockExecutionsPage() {
                 onChange={(e) => setTriggerFilter(e.target.value)}
                 className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer"
               >
-                <option value="ALL">{t('workflows.all')} Triggers</option>
-                <option value="Webhook">Webhook</option>
-                <option value="Schedule">Schedule</option>
-                <option value="Manual">Manual</option>
-                <option value="Event">Event</option>
+                <option value="ALL">{t('executions.all_triggers')}</option>
+                <option value="Webhook">{t('executions.trigger.webhook')}</option>
+                <option value="Schedule">{t('executions.trigger.schedule')}</option>
+                <option value="Manual">{t('executions.trigger.manual')}</option>
+                <option value="Event">{t('executions.trigger.event')}</option>
               </select>
 
               {/* Time Range Filter */}
@@ -729,10 +747,10 @@ function MockExecutionsPage() {
                 onChange={(e) => setTimeRangeFilter(e.target.value)}
                 className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer"
               >
-                <option value="24h">Last 24 hours</option>
-                <option value="1h">Last 1 hour</option>
-                <option value="7d">Last 7 days</option>
-                <option value="custom">Custom range</option>
+                <option value="24h">{t('executions.range.24h')}</option>
+                <option value="1h">{t('executions.range.1h')}</option>
+                <option value="7d">{t('executions.range.7d')}</option>
+                <option value="custom">{t('executions.range.custom')}</option>
               </select>
 
               {/* Clear Filters */}
@@ -745,7 +763,7 @@ function MockExecutionsPage() {
                     setSearchQuery('');
                   }}
                   className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  title="Clear filters"
+                  title={t('executions.clear_filters')}
                 >
                   <X size={15} />
                 </button>
@@ -784,7 +802,7 @@ function MockExecutionsPage() {
                     <td colSpan={9} className="py-12 text-center text-slate-500 dark:text-slate-400">
                       <div className="flex flex-col items-center justify-center gap-2">
                         <Terminal size={24} className="text-slate-300 dark:text-slate-600" />
-                        <p className="font-medium text-xs">No executions match your search or filter criteria.</p>
+                        <p className="font-medium text-xs">{t('executions.no_matches')}</p>
                         <button
                           onClick={() => {
                             setStatusFilter('ALL');
@@ -794,7 +812,7 @@ function MockExecutionsPage() {
                           }}
                           className="mt-1 text-xs text-[#2563EB] hover:underline font-medium"
                         >
-                          Clear filters
+                          {t('executions.reset_filters')}
                         </button>
                       </div>
                     </td>
@@ -843,25 +861,25 @@ function MockExecutionsPage() {
                           {exec.status === 'RUNNING' && (
                             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-blue-950/80 text-[#2563EB] dark:text-blue-300 font-semibold text-[11px]">
                               <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-ping"></span>
-                              Running
+                              {t('status.running')}
                             </span>
                           )}
                           {exec.status === 'SUCCESS' && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-semibold text-[11px]">
                               <CheckCircle2 size={12} />
-                              Success
+                              {t('status.success')}
                             </span>
                           )}
                           {exec.status === 'FAILED' && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-semibold text-[11px]">
                               <AlertTriangle size={12} />
-                              Failed
+                              {t('status.failed')}
                             </span>
                           )}
                           {exec.status === 'CANCELLED' && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium text-[11px]">
                               <XCircle size={12} />
-                              Cancelled
+                              {t('executions.status_cancelled')}
                             </span>
                           )}
                         </td>
@@ -870,7 +888,7 @@ function MockExecutionsPage() {
                         <td className="py-2.5 px-3">
                           <div className="flex flex-col">
                             <span className="font-mono text-[11px] text-slate-900 dark:text-slate-100">{exec.startedTime}</span>
-                            <span className="text-[10px] text-slate-400">{exec.startedRelative}</span>
+                            <span className="text-[10px] text-slate-400">{formatStartedRelative(exec.startedRelative)}</span>
                           </div>
                         </td>
 
@@ -910,7 +928,7 @@ function MockExecutionsPage() {
                                 </span>
                               </div>
                               <span className="font-mono text-[10px] text-slate-400 truncate max-w-[180px]">
-                                {exec.error || 'User stopped execution'}
+                                {exec.error || t('executions.user_cancelled')}
                               </span>
                             </div>
                           ) : (
@@ -936,7 +954,11 @@ function MockExecutionsPage() {
                             {exec.triggerType === 'Schedule' && <Clock size={12} className="text-amber-500" />}
                             {exec.triggerType === 'Manual' && <Play size={12} className="text-emerald-500" />}
                             {exec.triggerType === 'Event' && <Activity size={12} className="text-blue-500" />}
-                            <span className="truncate max-w-[140px]">{exec.triggerDetail}</span>
+                            <span className="truncate max-w-[140px]">
+                              {EXECUTION_TRIGGER_DETAIL_KEYS[exec.triggerDetail]
+                                ? t(EXECUTION_TRIGGER_DETAIL_KEYS[exec.triggerDetail])
+                                : exec.triggerDetail}
+                            </span>
                           </div>
                         </td>
 
@@ -947,7 +969,7 @@ function MockExecutionsPage() {
                               onClick={() => navigate(`/executions/${exec.id.replace('#', '')}`)}
                               className="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-[11px] font-medium transition-colors"
                             >
-                              View trace
+                              {t('executions.view_trace')}
                             </button>
 
                             {exec.status === 'RUNNING' && (
@@ -955,7 +977,7 @@ function MockExecutionsPage() {
                                 onClick={() => handleStopExecution(exec.id)}
                                 className="px-2.5 py-1 rounded bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-600 hover:text-white text-rose-600 dark:text-rose-400 text-[11px] font-medium transition-colors"
                               >
-                                Stop
+                                {t('executions.stop')}
                               </button>
                             )}
 
@@ -964,7 +986,7 @@ function MockExecutionsPage() {
                                 onClick={() => setActiveLogModal(exec)}
                                 className="px-2.5 py-1 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-600 hover:text-white text-[11px] font-semibold transition-colors"
                               >
-                                Debug log
+                                {t('executions.debug_log')}
                               </button>
                             )}
 
@@ -973,14 +995,14 @@ function MockExecutionsPage() {
                                 onClick={() => handleReRun(exec)}
                                 className="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 text-[11px] transition-colors"
                               >
-                                Re-run
+                                {t('executions.rerun')}
                               </button>
                             )}
 
                             <button
                               onClick={() => setActiveLogModal(exec)}
                               className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600"
-                              title="Logs"
+                              title={t('executions.logs')}
                             >
                               <Terminal size={14} />
                             </button>
@@ -998,15 +1020,15 @@ function MockExecutionsPage() {
           <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-slate-500 dark:text-slate-400 text-xs">
             <div className="flex items-center gap-4">
               <span>
-                Showing <span className="font-semibold font-mono text-slate-900 dark:text-slate-100">1–{filteredExecutions.length}</span> of{' '}
-                <span className="font-semibold font-mono text-slate-900 dark:text-slate-100">1,482</span> executions
+                {t('executions.showing')} <span className="font-semibold font-mono text-slate-900 dark:text-slate-100">1–{filteredExecutions.length}</span> {t('executions.of')}{' '}
+                <span className="font-semibold font-mono text-slate-900 dark:text-slate-100">1,482</span> {t('executions.count_label')}
               </span>
               <div className="flex items-center gap-1.5">
-                <span className="text-slate-400">Rows:</span>
+                <span className="text-slate-400">{t('executions.rows')}</span>
                 <select className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded px-2 py-0.5 focus:outline-none cursor-pointer">
-                  <option>25 per page</option>
-                  <option>50 per page</option>
-                  <option>100 per page</option>
+                  <option>25 {t('executions.per_page')}</option>
+                  <option>50 {t('executions.per_page')}</option>
+                  <option>100 {t('executions.per_page')}</option>
                 </select>
               </div>
             </div>
@@ -1016,7 +1038,7 @@ function MockExecutionsPage() {
                 disabled
                 className="px-2.5 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-400 text-xs disabled:opacity-50"
               >
-                Previous
+                {t('executions.previous')}
               </button>
               <button className="px-2.5 py-1 rounded bg-[#2563EB] text-white font-bold text-xs">1</button>
               <button className="px-2.5 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs transition-colors">
@@ -1030,7 +1052,7 @@ function MockExecutionsPage() {
                 59
               </button>
               <button className="px-2.5 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-                Next
+                {t('executions.next')}
               </button>
             </div>
           </div>
@@ -1051,7 +1073,7 @@ function MockExecutionsPage() {
               <div className="px-4 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Terminal size={16} className="text-[#2563EB]" />
-                  <span className="font-mono font-bold text-xs text-white">{activeLogModal.id} Telemetry & Debug Logs</span>
+                  <span className="font-mono font-bold text-xs text-white">{activeLogModal.id} {t('executions.telemetry_debug')}</span>
                   <span
                     className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                       activeLogModal.status === 'FAILED'
@@ -1061,7 +1083,7 @@ function MockExecutionsPage() {
                         : 'bg-indigo-950 text-blue-300'
                     }`}
                   >
-                    {activeLogModal.status}
+                    {activeLogModal.status === 'RUNNING' ? t('status.running') : activeLogModal.status === 'SUCCESS' ? t('status.success') : activeLogModal.status === 'FAILED' ? t('status.failed') : t('executions.status_cancelled')}
                   </span>
                 </div>
                 <button
@@ -1076,54 +1098,57 @@ function MockExecutionsPage() {
               <div className="p-4 space-y-3 font-mono text-xs max-h-[420px] overflow-y-auto">
                 <div className="p-3 rounded bg-slate-950 border border-slate-800 space-y-1 text-slate-300">
                   <div>
-                    <span className="text-slate-500">Workflow:</span> {activeLogModal.workflowName} ({activeLogModal.version})
+                    <span className="text-slate-500">{t('executions.workflow')}</span> {activeLogModal.workflowName} ({activeLogModal.version})
                   </div>
                   <div>
-                    <span className="text-slate-500">Trigger:</span> {activeLogModal.triggerDetail}
+                    <span className="text-slate-500">{t('executions.trigger')}</span>{' '}
+                    {EXECUTION_TRIGGER_DETAIL_KEYS[activeLogModal.triggerDetail]
+                      ? t(EXECUTION_TRIGGER_DETAIL_KEYS[activeLogModal.triggerDetail])
+                      : activeLogModal.triggerDetail}
                   </div>
                   <div>
-                    <span className="text-slate-500">Duration:</span> {activeLogModal.durationMs}ms
+                    <span className="text-slate-500">{t('executions.duration_label')}</span> {activeLogModal.durationMs}ms
                   </div>
                   {activeLogModal.error && (
                     <div className="text-rose-400 font-semibold pt-1 border-t border-slate-800/80">
-                      Error: {activeLogModal.error}
+                      {t('executions.error_label')} {activeLogModal.error}
                     </div>
                   )}
                 </div>
 
                 <div className="space-y-2 pt-2">
-                  <div className="text-[11px] font-sans font-semibold text-slate-400 uppercase tracking-wider">Trace Events</div>
+                  <div className="text-[11px] font-sans font-semibold text-slate-400 uppercase tracking-wider">{t('executions.trace_events')}</div>
 
                   <div className="space-y-1.5 text-[11px]">
                     <div className="p-2 rounded bg-slate-950/80 border border-slate-800/60 flex items-start gap-2">
                       <span className="text-slate-500 shrink-0">10:42:15.001</span>
                       <span className="text-blue-400 font-semibold shrink-0">[INFO]</span>
-                      <span className="text-slate-200">Trigger received. Ingestion pipeline initiated.</span>
+                      <span className="text-slate-200">{t('executions.trace.trigger_received')}</span>
                     </div>
 
                     <div className="p-2 rounded bg-slate-950/80 border border-slate-800/60 flex items-start gap-2">
                       <span className="text-slate-500 shrink-0">10:42:15.120</span>
                       <span className="text-emerald-400 font-semibold shrink-0">[SUCCESS]</span>
-                      <span className="text-slate-200">Step 1 (Webhook) completed with status 200 OK.</span>
+                      <span className="text-slate-200">{t('executions.trace.webhook_completed')}</span>
                     </div>
 
                     <div className="p-2 rounded bg-slate-950/80 border border-slate-800/60 flex items-start gap-2">
                       <span className="text-slate-500 shrink-0">10:42:15.165</span>
                       <span className="text-emerald-400 font-semibold shrink-0">[SUCCESS]</span>
-                      <span className="text-slate-200">Step 2 (PostgreSQL) retrieved 14 rows in 45ms.</span>
+                      <span className="text-slate-200">{t('executions.trace.postgres_rows')}</span>
                     </div>
 
                     {activeLogModal.status === 'FAILED' ? (
                       <div className="p-2 rounded bg-rose-950/40 border border-rose-900/60 flex items-start gap-2 text-rose-300">
                         <span className="text-slate-500 shrink-0">10:42:18.100</span>
                         <span className="text-rose-400 font-semibold shrink-0">[ERROR]</span>
-                        <span>Step 3 failed: {activeLogModal.error}. Stack trace at S3Client.connect (node:net:312).</span>
+                        <span>{t('executions.trace.step_failed')} {activeLogModal.error}. Stack trace at S3Client.connect (node:net:312).</span>
                       </div>
                     ) : (
                       <div className="p-2 rounded bg-slate-950/80 border border-slate-800/60 flex items-start gap-2">
                         <span className="text-slate-500 shrink-0">10:42:16.400</span>
                         <span className="text-emerald-400 font-semibold shrink-0">[SUCCESS]</span>
-                        <span className="text-slate-200">Step 3 (AI Extract) structured payload successfully.</span>
+                        <span className="text-slate-200">{t('executions.trace.ai_completed')}</span>
                       </div>
                     )}
                   </div>
@@ -1139,14 +1164,14 @@ function MockExecutionsPage() {
                   }}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#2563EB] text-white font-sans text-xs font-semibold hover:bg-blue-600 transition-colors"
                 >
-                  <span>Open Full Execution Detail</span>
+                  <span>{t('executions.open_detail')}</span>
                   <ExternalLink size={13} />
                 </button>
                 <button
                   onClick={() => setActiveLogModal(null)}
                   className="px-3 py-1.5 rounded bg-slate-800 text-slate-300 font-sans text-xs hover:bg-slate-700 transition-colors"
                 >
-                  Close
+                  {t('executions.close')}
                 </button>
               </div>
             </motion.div>

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import {
   useInfiniteQuery,
   useMutation,
@@ -15,14 +16,43 @@ import { getStoredAuthToken } from '../api/ocr.api';
 import { useAuthStore } from '../store/useAuthStore';
 import type { NotificationItem } from '../types/workflow.types';
 
+export const notificationKeys = {
+  session: (userId: string) => ['notifications', userId] as const,
+};
+
 function useNotificationSession() {
-  const userId = useAuthStore((state) => state.user?.id);
+  const userId = useAuthStore((state) => state.user?.id ?? null);
   const authenticated = useAuthStore((state) => state.isAuthenticated);
   return {
-    queryKey: ['notifications', userId ?? 'anonymous'],
+    userId,
+    queryKey: notificationKeys.session(userId ?? 'anonymous'),
     enabled:
-      authenticated && (isNotificationMockMode || !!getStoredAuthToken()),
+      Boolean(
+        authenticated &&
+          userId &&
+          (isNotificationMockMode || !!getStoredAuthToken()),
+      ),
   };
+}
+
+export function useNotificationSessionCleanup() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const queryClient = useQueryClient();
+  const previousUserId = useRef<string | null>(null);
+
+  useEffect(() => {
+    const previous = previousUserId.current;
+    if (previous === userId) return;
+
+    if (previous) {
+      void queryClient.removeQueries({ queryKey: notificationKeys.session(previous) });
+    }
+    if (!userId) {
+      void queryClient.removeQueries({ queryKey: ['notifications'] });
+    }
+
+    previousUserId.current = userId;
+  }, [queryClient, userId]);
 }
 
 const retryNotification = (count: number, error: Error) =>
@@ -81,21 +111,25 @@ export function useNotificationUnreadCount() {
 export function useMarkNotificationRead() {
   const queryClient = useQueryClient();
   const { queryKey } = useNotificationSession();
+  const invalidate = () => queryClient.invalidateQueries({ queryKey });
   return useMutation({
     mutationFn: (id: string) => notificationApi.markAsRead(id),
     retry: false,
     onMutate: () => queryClient.cancelQueries({ queryKey }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: invalidate,
+    onError: invalidate,
   });
 }
 
 export function useMarkAllNotificationsRead() {
   const queryClient = useQueryClient();
   const { queryKey } = useNotificationSession();
+  const invalidate = () => queryClient.invalidateQueries({ queryKey });
   return useMutation({
     mutationFn: () => notificationApi.markAllAsRead(),
     retry: false,
     onMutate: () => queryClient.cancelQueries({ queryKey }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: invalidate,
+    onError: invalidate,
   });
 }

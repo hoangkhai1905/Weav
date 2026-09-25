@@ -11,7 +11,7 @@ import {
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -21,7 +21,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, Check } from 'lucide-react-native';
 import { authRepository } from '../../infrastructure/repository-factory';
-import { useAuthStore } from '../../stores/auth.store';
+import {
+  beginAuthOperation,
+  establishAuthSession,
+} from '../../features/auth/auth-session.runtime';
 import { useUIStore } from '../../stores/ui.store';
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { useTranslation } from '../../hooks/useTranslation';
@@ -35,7 +38,6 @@ export default function LoginScreen() {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 768;
 
-  const setAuthSession = useAuthStore((s) => s.setAuthSession);
   const showToast = useUIStore((s) => s.showToast);
 
   const [email, setEmail] = useState('truong@example.com');
@@ -70,10 +72,12 @@ export default function LoginScreen() {
       return;
     }
     setLoading(true);
+    const operation = beginAuthOperation();
     try {
       const session = await authRepository.login(email, password);
+      const applied = await establishAuthSession(session, operation);
+      if (!applied) return;
       setIsSuccess(true);
-      setAuthSession(session.user, session.tokens);
       showToast({ type: 'success', title: 'Welcome Back 👋', message: `Logged in as ${session.user.name}` });
       setTimeout(() => {
         router.replace('/(app)/(tabs)');
@@ -242,6 +246,10 @@ export default function LoginScreen() {
               </Animated.View>
 
               {/* REGISTER LINK */}
+              <Pressable testID="password-recovery-link" onPress={() => router.push('/forgot-password' as Href)} style={styles.linkBtn}>
+                <Text style={[styles.linkText, { color: colors.primary }]}>Forgot password?</Text>
+              </Pressable>
+
               <Pressable onPress={() => router.push('/(auth)/register')} style={styles.linkBtn}>
                 <Text style={[styles.linkText, { color: colors.textMuted }]}>
                   {t('auth.no_account')}{' '}

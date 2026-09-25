@@ -11,13 +11,18 @@ import type {
   NotificationInboxPage,
   NotificationItem,
 } from '../../../domain/notification/notification.types';
+import {
+  getNextNotificationCursor,
+  notificationQueryKey,
+  type NotificationPageParam,
+} from '../notification.query';
 
 function useNotificationSession() {
   const userId = useAuthStore((state) => state.user?.id);
   const authenticated = useAuthStore((state) => state.isAuthenticated);
   const hasToken = useAuthStore((state) => !!state.tokens?.accessToken);
   return {
-    queryKey: ['notifications', userId ?? 'anonymous'],
+    queryKey: notificationQueryKey(userId),
     enabled:
       authenticated &&
       (process.env.EXPO_PUBLIC_API_MODE === 'mock' || hasToken),
@@ -34,7 +39,7 @@ const retryNotification = (count: number, error: unknown) =>
   );
 
 const flattenPages = (
-  data: InfiniteData<NotificationInboxPage>,
+  data: InfiniteData<NotificationInboxPage, NotificationPageParam>,
 ): NotificationItem[] => {
   const unique = new Map<string, NotificationItem>();
   for (const page of data.pages) {
@@ -46,16 +51,19 @@ const flattenPages = (
 
 export function useNotifications() {
   const session = useNotificationSession();
-  return useInfiniteQuery({
+  return useInfiniteQuery<
+    NotificationInboxPage,
+    unknown,
+    NotificationItem[],
+    readonly unknown[],
+    NotificationPageParam
+  >({
     queryKey: [...session.queryKey, 'list'],
     enabled: session.enabled,
-    initialPageParam: undefined as string | undefined,
+    initialPageParam: undefined,
     queryFn: ({ pageParam, signal }) =>
       notificationRepository.getNotificationPage({ cursor: pageParam }, signal),
-    getNextPageParam: (page, _pages, cursor) =>
-      page.nextCursor && page.nextCursor !== cursor
-        ? page.nextCursor
-        : undefined,
+    getNextPageParam: getNextNotificationCursor,
     select: flattenPages,
     gcTime: 0,
     retry: retryNotification,

@@ -156,7 +156,7 @@ test('execution history loads service data and queues reruns through the real AP
   await expect(page.getByText('Order processing & notification', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Run again' }).click();
   await expect.poll(() => manualRunBody).toEqual({ input: {} });
-  await expect(page.getByRole('status')).toContainText('00000000-0000-4000-8000-000000000005');
+  await expect(page.getByRole('status').filter({ hasText: '00000000-0000-4000-8000-000000000005' })).toBeVisible();
 });
 
 test('execution detail renders service node results and logs, without falling back to seeded telemetry', async ({ page }) => {

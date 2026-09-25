@@ -7,7 +7,6 @@ import { getStoredAuthToken } from '../api/ocr.api';
 interface AuthState {
   user: UserProfile | null;
   isAuthenticated: boolean;
-  activeWorkspace: { id: string; name: string };
   setUser: (user: UserProfile | null) => void;
   loginMock: () => void;
   logout: () => void;
@@ -18,7 +17,6 @@ initMockStorage();
 export const useAuthStore = create<AuthState>((set) => ({
   user: isAuthMockMode ? MOCK_USER : null,
   isAuthenticated: isAuthMockMode || !!getStoredAuthToken(),
-  activeWorkspace: { id: 'ws-main', name: 'WEAV Workspace' },
   setUser: (user) => set({ user, isAuthenticated: !!user }),
   loginMock: () => {
     if (!isAuthMockMode) return;
