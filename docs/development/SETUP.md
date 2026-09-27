@@ -478,7 +478,88 @@ liệu production hoặc đọc/paste credential.
 
 ---
 
-## 10. Mobile
+## 10. Dev Mode (Watch Mode)
+
+Watch mode cho phép hot-reload khi thay đổi source — không cần restart container hay dev server thủ công.
+
+### Frontend (Vite)
+
+Chạy từ thư mục `apps/web`:
+
+```powershell
+# Setup .env lần đầu (chỉ cần làm 1 lần)
+Copy-Item apps\web\.env.example apps\web\.env
+
+# Chạy dev server
+pnpm --dir apps/web dev
+```
+
+Web app sẽ chạy tại `http://localhost:5173`.
+
+> **Quan trọng:** `apps/web/.env` phải tồn tại. Nếu thiếu, `VITE_API_MODE` sẽ là `undefined` và web sẽ cố gọi real API mà không có auth token, gây `ERR_FAILED` trên console.
+
+### Backend — Docker Watch Mode
+
+Phải chạy từ **root repository** (`T:\Weav`), **không phải** từ subdirectory:
+
+```powershell
+# Lần đầu hoặc sau khi sửa .env
+docker compose -f compose.yml -f compose.dev.yml --profile app build --no-cache
+
+# Chạy watch mode (hot-reload tất cả services)
+docker compose -f compose.yml -f compose.dev.yml --profile app watch
+```
+
+`compose.yml` cung cấp infrastructure (RabbitMQ), `compose.dev.yml` cung cấp các app services với `develop.watch` config.
+
+> **Lưu ý:** Nếu chạy lệnh từ sai thư mục (vd: `apps/web`), Docker sẽ báo lỗi `compose.yml not found`.
+
+### Sau khi sửa `.env`
+
+Compose không tự reload env khi file thay đổi. Cần force-recreate:
+
+```powershell
+docker compose -f compose.yml -f compose.dev.yml --profile app up --force-recreate -d
+```
+
+### Lưu ý: Flyway và Neon Connection Pooler
+
+Workflow service dùng **Neon PostgreSQL**. Flyway không tương thích với Neon connection pooler (pgBouncer transaction mode). Cấu hình đã được tách:
+
+- `DB_HOST` (pooler endpoint) → HikariCP runtime connection pool
+- `DB_DIRECT_HOST` (direct endpoint, bỏ `-pooler` khỏi hostname) → Flyway migrations
+
+Khi thêm Neon database mới cho một service, phải cung cấp cả hai biến trong `.env` và `compose.dev.yml`.
+
+### Rebuild khi dist/ bị thiếu module
+
+NestJS services (api-gateway, notification-service, v.v.) đôi khi bị thiếu file compiled trong `dist/` nếu image cũ không rebuild đúng. Triệu chứng: chỉ thấy `AppController {/}` trong log, không thấy các module khác.
+
+Fix:
+
+```powershell
+docker compose -f compose.yml -f compose.dev.yml --profile app build --no-cache
+docker compose -f compose.yml -f compose.dev.yml --profile app watch
+```
+
+### Tóm tắt — Chạy toàn bộ stack
+
+**Terminal 1 (Backend):**
+
+```powershell
+cd T:\Weav
+docker compose -f compose.yml -f compose.dev.yml --profile app watch
+```
+
+**Terminal 2 (Frontend):**
+
+```powershell
+pnpm --dir apps/web dev
+```
+
+---
+
+## 11. Mobile
 
 Mobile app đã được scaffold bằng Expo.
 
