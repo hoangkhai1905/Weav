@@ -22,6 +22,9 @@ import {
 import { useWorkspaceListContext } from "../hooks/useWorkspace";
 import { useI18nStore } from "../store/useI18nStore";
 import { useWorkspaceStore } from "../store/useWorkspaceStore";
+import { captureNotificationSession, isCurrentNotificationSession } from "../lib/notifications/session";
+import { showSuccessToast } from "../lib/feedback/toast";
+import { useNotificationMilestoneRefresh } from "../hooks/useNotificationMilestoneRefresh";
 
 const OAUTH_PENDING_CONTEXT_KEY = "weav.workspaceConnectionOAuth.pending";
 const OAUTH_PENDING_CONTEXT_MAX_AGE_MS = 10 * 60 * 1000;
@@ -293,6 +296,7 @@ function ConnectionRow({
 }
 
 export function ConnectionsPage() {
+  const refreshNotifications = useNotificationMilestoneRefresh();
   const { t } = useI18nStore();
   const {
     userId,
@@ -424,65 +428,74 @@ export function ConnectionsPage() {
   ) => {
     event.preventDefault();
     if (renameConnection.isPending) return;
+    const mutationSession = captureNotificationSession();
     try {
       await renameConnection.mutateAsync({
         workspaceId: connection.workspaceId,
         connectionId: connection.id,
         name: renameValue,
       });
+      if (!isCurrentNotificationSession(mutationSession)) return;
       setRenamingConnectionId(null);
       setRenameValue("");
-      setActionMessage(connection.id, t("connections.rename.success"));
+      setActionMessage(connection.id, "");
+      showSuccessToast("toast.connection.updated", mutationSession);
     } catch (error) {
-      setActionMessage(connection.id, getErrorMessage(error, t));
+      if (isCurrentNotificationSession(mutationSession)) setActionMessage(connection.id, getErrorMessage(error, t));
     }
   };
 
   const handleTest = async (connection: ConnectionResponse) => {
+    const mutationSession = captureNotificationSession();
     try {
       const result = await testConnection.mutateAsync({
         workspaceId: connection.workspaceId,
         connectionId: connection.id,
       });
-      setActionMessage(
-        connection.id,
-        t(
-          result.outcome === "VERIFIED"
-            ? "connections.test.verified"
-            : "connections.test.auth_invalid",
-        ),
-      );
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      if (result.outcome === "VERIFIED") {
+        setActionMessage(connection.id, "");
+        showSuccessToast("toast.connection.verified", mutationSession);
+        refreshNotifications(mutationSession);
+      } else {
+        setActionMessage(connection.id, t("connections.test.auth_invalid"));
+      }
     } catch (error) {
-      setActionMessage(connection.id, getErrorMessage(error, t));
+      if (isCurrentNotificationSession(mutationSession)) setActionMessage(connection.id, getErrorMessage(error, t));
     }
   };
 
   const handleDisable = async (connection: ConnectionResponse) => {
+    const mutationSession = captureNotificationSession();
     try {
       await disableConnection.mutateAsync({
         workspaceId: connection.workspaceId,
         connectionId: connection.id,
       });
-      setActionMessage(connection.id, t("connections.disable.success"));
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      setActionMessage(connection.id, "");
+      showSuccessToast("toast.connection.disabled", mutationSession);
     } catch (error) {
-      setActionMessage(connection.id, getErrorMessage(error, t));
+      if (isCurrentNotificationSession(mutationSession)) setActionMessage(connection.id, getErrorMessage(error, t));
     }
   };
 
   const handleRemove = async (connection: ConnectionResponse) => {
     if (!window.confirm(t("connections.delete.confirm"))) return;
+    const mutationSession = captureNotificationSession();
     try {
       await removeConnection.mutateAsync({
         workspaceId: connection.workspaceId,
         connectionId: connection.id,
       });
+      if (!isCurrentNotificationSession(mutationSession)) return;
       setActionMessages((current) => {
         const next = { ...current };
         delete next[connection.id];
         return next;
       });
     } catch (error) {
-      setActionMessage(connection.id, getErrorMessage(error, t));
+      if (isCurrentNotificationSession(mutationSession)) setActionMessage(connection.id, getErrorMessage(error, t));
     }
   };
 
@@ -494,11 +507,13 @@ export function ConnectionsPage() {
       setActionMessage(connection.id, t("connections.error.unauthenticated"));
       return;
     }
+    const mutationSession = captureNotificationSession();
     try {
       const result = await startGoogleOAuth.mutateAsync({
         workspaceId: connection.workspaceId,
         connectionId: connection.id,
       });
+      if (!isCurrentNotificationSession(mutationSession)) return;
       const pendingContext: OAuthPendingContext = {
         userId,
         workspaceId: connection.workspaceId,
@@ -511,7 +526,7 @@ export function ConnectionsPage() {
       );
       window.location.assign(result.authorizationUrl);
     } catch (error) {
-      setActionMessage(connection.id, getErrorMessage(error, t));
+      if (isCurrentNotificationSession(mutationSession)) setActionMessage(connection.id, getErrorMessage(error, t));
     }
   };
 
@@ -524,17 +539,20 @@ export function ConnectionsPage() {
     }
     if (!activeWorkspaceId || createConnection.isPending) return;
 
+    const mutationSession = captureNotificationSession();
     setCreateError("");
     try {
       await createConnection.mutateAsync({
         workspaceId: activeWorkspaceId,
         input: { name: normalizedName, provider, authType: "OAUTH2" },
       });
+      if (!isCurrentNotificationSession(mutationSession)) return;
       setName("");
       setProvider("GMAIL");
       setIsCreateOpen(false);
+      showSuccessToast("toast.connection.created", mutationSession);
     } catch (error) {
-      setCreateError(getErrorMessage(error, t));
+      if (isCurrentNotificationSession(mutationSession)) setCreateError(getErrorMessage(error, t));
     }
   };
 

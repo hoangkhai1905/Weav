@@ -4,17 +4,24 @@ import { LoaderCircle } from 'lucide-react';
 import { authApi } from '../api/auth.api';
 import { useAuthStore } from '../store/useAuthStore';
 import { useI18nStore } from '../store/useI18nStore';
+import { getStoredAuthToken } from '../api/ocr.api';
+import { showSuccessToast } from '../lib/feedback/toast';
+import { captureNotificationSession } from '../lib/notifications/session';
+import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 
 export function GoogleOAuthCallbackPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const setUser = useAuthStore((state) => state.setUser);
   const { t } = useI18nStore();
+  const refreshNotifications = useNotificationMilestoneRefresh();
   const [error, setError] = useState('');
   const exchangeRef = useRef<ReturnType<typeof authApi.completeGoogleLogin> | null>(null);
+  const accessTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!exchangeRef.current) {
+      accessTokenRef.current = getStoredAuthToken();
       exchangeRef.current = authApi.completeGoogleLogin({
         transactionId: searchParams.get('transaction_id') ?? '',
         handoffCode: searchParams.get('handoff_code') ?? '',
@@ -32,6 +39,10 @@ export function GoogleOAuthCallbackPage() {
           setUser(session.user);
           navigate('/dashboard', { replace: true });
         } else {
+          if (accessTokenRef.current && getStoredAuthToken() === accessTokenRef.current) {
+            showSuccessToast('toast.google.linked');
+            refreshNotifications(captureNotificationSession());
+          }
           navigate('/settings/profile', { replace: true });
         }
       } catch {
@@ -42,7 +53,7 @@ export function GoogleOAuthCallbackPage() {
     return () => {
       active = false;
     };
-  }, [navigate, searchParams, setUser, t]);
+  }, [navigate, refreshNotifications, searchParams, setUser, t]);
 
   if (error) {
     return (

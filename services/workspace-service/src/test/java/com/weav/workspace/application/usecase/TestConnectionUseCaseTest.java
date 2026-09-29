@@ -1,9 +1,13 @@
 package com.weav.workspace.application.usecase;
 
 import com.weav.workspace.application.dto.ConnectionTestResult;
+import com.weav.workspace.application.notification.ConnectionNotificationRecorder;
+import com.weav.workspace.application.notification.WorkspaceNotificationEvent;
 import com.weav.workspace.application.port.out.ConnectionProviderPort;
 import com.weav.workspace.application.port.out.CredentialCryptoPort;
+import com.weav.workspace.application.port.out.NotificationOutboxPort;
 import com.weav.workspace.application.port.out.TransactionRunner;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.service.ConnectionAuthorizationPolicy;
 import com.weav.workspace.application.service.ConnectionProviderPolicy;
 import com.weav.workspace.application.service.ConnectionProviderRegistry;
@@ -15,9 +19,11 @@ import com.weav.workspace.domain.exception.ResourceNotFoundException;
 import com.weav.workspace.domain.model.Connection;
 import com.weav.workspace.domain.model.Credential;
 import com.weav.workspace.domain.model.Membership;
+import com.weav.workspace.domain.model.Workspace;
 import com.weav.workspace.domain.port.out.ConnectionRepository;
 import com.weav.workspace.domain.port.out.CredentialRepository;
 import com.weav.workspace.domain.port.out.MembershipRepository;
+import com.weav.workspace.domain.port.out.WorkspaceRepository;
 import com.weav.workspace.domain.valueobject.ConnectionAuthType;
 import com.weav.workspace.domain.valueobject.ConnectionProvider;
 import com.weav.workspace.domain.valueobject.ConnectionStatus;
@@ -26,6 +32,10 @@ import com.weav.workspace.infrastructure.credential.AesGcmCredentialCrypto;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.time.Clock;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -69,6 +79,9 @@ class TestConnectionUseCaseTest {
         assertEquals(ConnectionStatus.ACTIVE, connection.getStatus());
         assertTrue(connection.getLastVerifiedAt() != null);
         verify(fixtures.connections()).save(connection);
+        assertEquals("connection.connected", fixtures.outbox().events.getFirst().eventType());
+        assertEquals(OWNER, fixtures.outbox().events.getFirst().actorUserId());
+        assertEquals(List.of(OWNER), fixtures.outbox().events.getFirst().recipientUserIds());
     }
 
     @Test
@@ -82,6 +95,9 @@ class TestConnectionUseCaseTest {
         assertEquals(ConnectionTestResult.ConnectionTestOutcome.AUTH_INVALID, result.outcome());
         assertEquals(ConnectionStatus.INVALID, connection.getStatus());
         verify(fixtures.connections()).save(connection);
+        assertEquals("connection.invalid", fixtures.outbox().events.getFirst().eventType());
+        assertEquals(OWNER, fixtures.outbox().events.getFirst().actorUserId());
+        assertEquals(List.of(OWNER), fixtures.outbox().events.getFirst().recipientUserIds());
     }
 
     @Test
@@ -149,7 +165,26 @@ class TestConnectionUseCaseTest {
             assertEquals(ConnectionStatus.INVALID, connection.getStatus());
             assertEquals(0, provider.testCalls);
             verify(fixtures.connections()).save(connection);
+            assertEquals(List.of("connection.invalid"), fixtures.outbox().events.stream()
+                    .map(WorkspaceNotificationEvent::eventType).toList());
         }
+    }
+
+    @Test
+    void alreadyActiveAndAlreadyInvalidOutcomesDoNotCreateDuplicateEvents() {
+        TestFixtures activeFixtures = fixtures(
+                connection(ConnectionStatus.ACTIVE, ConnectionAuthType.NONE),
+                provider(ConnectionTestResult.verified(), null),
+                Membership.owner(WORKSPACE, OWNER));
+        activeFixtures.useCase().execute(OWNER, WORKSPACE, CONNECTION_ID);
+        assertEquals(List.of(), activeFixtures.outbox().events);
+
+        TestFixtures invalidFixtures = fixtures(
+                connection(ConnectionStatus.INVALID, ConnectionAuthType.NONE),
+                provider(ConnectionTestResult.authInvalid(), null),
+                Membership.owner(WORKSPACE, OWNER));
+        invalidFixtures.useCase().execute(OWNER, WORKSPACE, CONNECTION_ID);
+        assertEquals(List.of(), invalidFixtures.outbox().events);
     }
 
     @Test
@@ -194,11 +229,25 @@ class TestConnectionUseCaseTest {
         ConnectionRepository connections = mock(ConnectionRepository.class);
         MembershipRepository memberships = mock(MembershipRepository.class);
         CredentialRepository credentials = mock(CredentialRepository.class);
+        WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
+        when(workspaces.findById(WORKSPACE)).thenReturn(Optional.of(new Workspace(
+                WORKSPACE,
+                "Test workspace",
+                OWNER,
+                Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-01-01T00:00:00Z"))));
         when(connections.findByWorkspaceIdAndId(WORKSPACE, CONNECTION_ID))
                 .thenReturn(Optional.of(connection));
         when(memberships.findByWorkspaceIdAndUserId(membership.getWorkspaceId(), membership.getUserId()))
                 .thenReturn(Optional.of(membership));
         when(connections.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        RecordingOutbox outbox = new RecordingOutbox();
+        ConnectionNotificationRecorder recorder = new ConnectionNotificationRecorder(
+                outbox,
+                workspaces,
+                memberships,
+                authorizationPolicy,
+                Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC));
         ConnectionProviderRegistry registry = new ConnectionProviderRegistry(provider);
         TestConnectionUseCase useCase = new TestConnectionUseCase(
                 connections,
@@ -209,8 +258,10 @@ class TestConnectionUseCaseTest {
                 codec,
                 crypto,
                 (workspaceId, connectionId) -> false,
-                new DirectTransactionRunner());
-        return new TestFixtures(useCase, connections, credentials, provider);
+                new DirectTransactionRunner(),
+                workspaceId -> { },
+                recorder);
+        return new TestFixtures(useCase, connections, credentials, provider, outbox);
     }
 
     private RecordingProvider provider(
@@ -239,7 +290,17 @@ class TestConnectionUseCaseTest {
             TestConnectionUseCase useCase,
             ConnectionRepository connections,
             CredentialRepository credentials,
-            RecordingProvider provider) {
+            RecordingProvider provider,
+            RecordingOutbox outbox) {
+    }
+
+    private static final class RecordingOutbox implements NotificationOutboxPort {
+        private final List<WorkspaceNotificationEvent> events = new ArrayList<>();
+
+        @Override
+        public void append(WorkspaceNotificationEvent event) {
+            events.add(event);
+        }
     }
 
     private static final class RecordingProvider implements ConnectionProviderPort {

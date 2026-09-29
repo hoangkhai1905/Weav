@@ -1,11 +1,13 @@
 package com.weav.workspace.application.usecase;
 
+import com.weav.workspace.application.notification.ConnectionNotificationRecorder;
 import com.weav.workspace.application.dto.GoogleOAuthRefreshResponse;
 import com.weav.workspace.application.dto.GoogleOAuthTokenResponse;
 import com.weav.workspace.application.dto.ResolvedConnectionCredential;
 import com.weav.workspace.application.port.out.CredentialCryptoPort;
 import com.weav.workspace.application.port.out.GoogleOAuthPort;
 import com.weav.workspace.application.port.out.TransactionRunner;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.service.CredentialPayloadCodec;
 import com.weav.workspace.application.service.GoogleOAuthScopePolicy;
 import com.weav.workspace.domain.exception.AuthenticationRejectedException;
@@ -40,6 +42,8 @@ public final class ResolveConnectionUseCase {
     private final GoogleOAuthScopePolicy scopePolicy;
     private final TransactionRunner transactionRunner;
     private final Clock clock;
+    private final WorkspaceMutationLock workspaceMutationLock;
+    private final ConnectionNotificationRecorder notificationRecorder;
 
     public ResolveConnectionUseCase(
             ConnectionRepository connectionRepository,
@@ -49,7 +53,9 @@ public final class ResolveConnectionUseCase {
             GoogleOAuthPort googleOAuthPort,
             GoogleOAuthScopePolicy scopePolicy,
             TransactionRunner transactionRunner,
-            Clock clock) {
+            Clock clock,
+            WorkspaceMutationLock workspaceMutationLock,
+            ConnectionNotificationRecorder notificationRecorder) {
         this.connectionRepository = Objects.requireNonNull(connectionRepository);
         this.credentialRepository = Objects.requireNonNull(credentialRepository);
         this.crypto = Objects.requireNonNull(crypto);
@@ -58,6 +64,8 @@ public final class ResolveConnectionUseCase {
         this.scopePolicy = Objects.requireNonNull(scopePolicy);
         this.transactionRunner = Objects.requireNonNull(transactionRunner);
         this.clock = Objects.requireNonNull(clock);
+        this.workspaceMutationLock = Objects.requireNonNull(workspaceMutationLock);
+        this.notificationRecorder = Objects.requireNonNull(notificationRecorder);
     }
 
     public ResolvedConnectionCredential execute(UUID workspaceId, UUID connectionId) {
@@ -150,6 +158,7 @@ public final class ResolveConnectionUseCase {
         }
 
         return transactionRunner.required(() -> {
+            workspaceMutationLock.lock(connection.getWorkspaceId());
             Connection currentConnection = connectionRepository
                     .findByWorkspaceIdAndId(connection.getWorkspaceId(), connection.getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Connection not found"));
@@ -185,6 +194,7 @@ public final class ResolveConnectionUseCase {
             String originalRefreshToken,
             String refreshTokenFromResponse) {
         transactionRunner.required(() -> {
+            workspaceMutationLock.lock(originalConnection.getWorkspaceId());
             Connection currentConnection = connectionRepository
                     .findByWorkspaceIdAndId(originalConnection.getWorkspaceId(), originalConnection.getId())
                     .orElse(null);
@@ -205,6 +215,7 @@ public final class ResolveConnectionUseCase {
             if (stillSameGrant && !anotherRefreshAlreadySucceeded) {
                 currentConnection.markInvalid();
                 connectionRepository.save(currentConnection);
+                notificationRecorder.recordInvalid(currentConnection, null);
             }
             return Boolean.TRUE;
         });

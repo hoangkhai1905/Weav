@@ -1,9 +1,13 @@
 import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Prisma, PrismaClient } from '../../node_modules/.prisma/notification';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { z } from 'zod';
 import { databaseOptions, SETTINGS } from '../config/settings';
 import type { Settings } from '../config/settings';
-import { DeliveryRepository } from '../domain/notification';
+import {
+  DeliveryRepository,
+  executionEventSchema,
+} from '../domain/notification';
 import type {
   Delivery,
   DeliveryPatch,
@@ -11,6 +15,34 @@ import type {
   ListQuery,
   Payload,
 } from '../domain/notification';
+import {
+  assertDeliveryEventIdentity,
+  assertInboxEventIdentity,
+  InboxPersistenceConflictError,
+  persistLegacyInboxGroup,
+} from './inbox.persistence';
+
+const uuidSchema = z.uuid();
+
+function normalizeLegacyEvent(event: ExecutionEvent): ExecutionEvent {
+  const validated = executionEventSchema.parse(event);
+  return {
+    ...validated,
+    eventId: uuidSchema.parse(validated.eventId).toLowerCase(),
+    aggregateId: uuidSchema.parse(validated.aggregateId).toLowerCase(),
+    payload: {
+      ...validated.payload,
+      executionId: uuidSchema
+        .parse(validated.payload.executionId)
+        .toLowerCase(),
+      workflowId: uuidSchema.parse(validated.payload.workflowId).toLowerCase(),
+      workspaceId: uuidSchema
+        .parse(validated.payload.workspaceId)
+        .toLowerCase(),
+      userId: uuidSchema.parse(validated.payload.userId).toLowerCase(),
+    },
+  };
+}
 
 @Injectable()
 export class PrismaDeliveryRepository
@@ -38,28 +70,70 @@ export class PrismaDeliveryRepository
     }
   }
   async ingest(event: ExecutionEvent, payload: Payload) {
+    const normalized = normalizeLegacyEvent(event);
+    const safePayload: Payload = {
+      ...payload,
+      workflowId: normalized.payload.workflowId,
+      workspaceId: normalized.payload.workspaceId,
+    };
     await this.client.$transaction(async (tx) => {
       // Serialize complete-event ingestion; a replay cannot add new destinations to an existing event.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${event.eventId}, 0))`;
-      if (
-        await tx.notificationDelivery.findFirst({
-          where: { sourceEventId: event.eventId },
-          select: { id: true },
-        })
-      )
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${normalized.eventId}, 0))`;
+      const existingInbox = await tx.notificationInbox.findMany({
+        where: { sourceEventId: normalized.eventId },
+      });
+      if (existingInbox.length > 0) {
+        assertInboxEventIdentity(existingInbox, {
+          eventType: normalized.eventType,
+          executionId: normalized.payload.executionId,
+        });
+      }
+
+      const existingDeliveries = await tx.notificationDelivery.findMany({
+        where: { sourceEventId: normalized.eventId },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
+      if (existingDeliveries.length > 0) {
+        assertDeliveryEventIdentity(existingDeliveries, {
+          eventType: normalized.eventType,
+          executionId: normalized.payload.executionId,
+        });
+        const groups = new Map<string, typeof existingDeliveries>();
+        for (const row of existingDeliveries) {
+          const userId = row.userId.toLowerCase();
+          const group = groups.get(userId) ?? [];
+          group.push(row);
+          groups.set(userId, group);
+        }
+        for (const rows of groups.values())
+          await persistLegacyInboxGroup(tx, rows, 'throw');
         return;
+      }
+
+      if (existingInbox.length > 0) return;
+
       await tx.notificationDelivery.createMany({
         skipDuplicates: true,
-        data: event.payload.recipients.map((r) => ({
-          sourceEventId: event.eventId,
-          userId: event.payload.userId,
-          executionId: event.payload.executionId,
+        data: normalized.payload.recipients.map((r) => ({
+          sourceEventId: normalized.eventId,
+          userId: normalized.payload.userId,
+          executionId: normalized.payload.executionId,
           provider: r.provider,
           destination: r.destination,
-          eventType: event.eventType,
-          payload: payload as Prisma.InputJsonObject,
+          eventType: normalized.eventType,
+          payload: safePayload as Prisma.InputJsonObject,
         })),
       });
+      const storedRows = await tx.notificationDelivery.findMany({
+        where: { sourceEventId: normalized.eventId },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
+      if (storedRows.length === 0) throw new InboxPersistenceConflictError();
+      assertDeliveryEventIdentity(storedRows, {
+        eventType: normalized.eventType,
+        executionId: normalized.payload.executionId,
+      });
+      await persistLegacyInboxGroup(tx, storedRows, 'throw');
     });
   }
   async list(userId: string, q: ListQuery): Promise<Delivery[]> {

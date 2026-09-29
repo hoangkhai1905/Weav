@@ -19,6 +19,7 @@ public interface MembershipRepository {
 
     Optional<Membership> findById(UUID id);
     Optional<Membership> findByWorkspaceIdAndUserId(UUID workspaceId, UUID userId);
+    List<UUID> findUserIdsByWorkspaceId(UUID workspaceId);
     boolean existsByWorkspaceIdAndUserId(UUID workspaceId, UUID userId);
     List<Membership> findCandidates(UUID workspaceId, MemberListQuery filter);
     PageResult<Membership> pageCandidatesByWorkspaceOwnedSort(

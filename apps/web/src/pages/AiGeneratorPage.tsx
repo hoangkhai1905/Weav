@@ -30,8 +30,7 @@ export function AiGeneratorPage() {
 
   // Initial prompt state (passed from CreateWorkflowPage or default)
   const [prompt, setPrompt] = useState<string>(
-    (location.state as { initialPrompt?: string })?.initialPrompt ||
-      'When a new order is received via Stripe webhook, check inventory in PostgreSQL, extract customer profile details using AI, verify order threshold (> $100), and dispatch a structured notification to Slack #sales-alerts.'
+    (location.state as { initialPrompt?: string })?.initialPrompt ?? t('ai_gen.default_prompt')
   );
 
   // Generation Stages & Animation State
@@ -89,11 +88,11 @@ export function AiGeneratorPage() {
   };
 
   const PROMPT_STARTERS = [
-    'Process incoming orders',
-    'Sync customer data',
-    'Generate daily reports',
-    'Notify team on failed payments',
-    'Parse invoice PDF to BigQuery',
+    { label: 'ai_gen.starter.orders', prompt: 'ai_gen.starter_prompt.orders' },
+    { label: 'ai_gen.starter.customers', prompt: 'ai_gen.starter_prompt.customers' },
+    { label: 'ai_gen.starter.reports', prompt: 'ai_gen.starter_prompt.reports' },
+    { label: 'ai_gen.starter.payments', prompt: 'ai_gen.starter_prompt.payments' },
+    { label: 'ai_gen.starter.invoices', prompt: 'ai_gen.starter_prompt.invoices' },
   ];
 
   return (
@@ -134,7 +133,7 @@ export function AiGeneratorPage() {
             </label>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('ai_gen.prompt_hint')}</p>
           </div>
-          <span className="shrink-0 font-mono text-[10px] text-slate-400">{prompt.length} chars</span>
+          <span className="shrink-0 font-mono text-[10px] text-slate-400">{t('ai_gen.characters').replace('{count}', String(prompt.length))}</span>
         </div>
 
         <div className="rounded-lg border border-blue-500/60 bg-slate-100 p-3 transition-colors focus-within:border-blue-600 dark:bg-slate-800/80">
@@ -151,14 +150,14 @@ export function AiGeneratorPage() {
             <span className="shrink-0 text-[11px] font-medium text-slate-500 dark:text-slate-300">{t('ai_gen.try_example')}</span>
             {PROMPT_STARTERS.slice(0, 3).map((starter) => (
               <motion.button
-                key={starter}
+                key={starter.label}
                 type="button"
-                onClick={() => setPrompt(`When triggered, ${starter.toLowerCase()} and log execution results.`)}
+                onClick={() => setPrompt(t(starter.prompt))}
                 whileHover={prefersReducedMotion ? undefined : { y: -1 }}
                 whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
                 className="shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:border-blue-500/60 dark:hover:bg-blue-950/40 dark:hover:text-blue-200"
               >
-                {starter}
+                {t(starter.label)}
               </motion.button>
             ))}
           </div>
@@ -251,12 +250,12 @@ export function AiGeneratorPage() {
           <div className="absolute top-3 left-4 flex items-center gap-2 bg-white/90 dark:bg-slate-800/95 backdrop-blur rounded px-2.5 py-1 border border-slate-200 dark:border-slate-700 text-[10px] font-mono text-slate-600 dark:text-slate-300 shadow-xs">
             <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              Deterministic Flow
+              {t('ai_gen.diagram.deterministic')}
             </span>
             <span>•</span>
-            <span>Zoom: 100%</span>
+            <span>{t('ai_gen.diagram.zoom')}</span>
             <span>•</span>
-            <span>Linear Execution Mode</span>
+            <span>{t('ai_gen.diagram.linear_mode')}</span>
           </div>
 
           {/* Sequential Pipeline Row (5 Node Cards Connected) */}
@@ -267,24 +266,24 @@ export function AiGeneratorPage() {
                 <div className="h-8 px-3 bg-amber-500/10 rounded-t-lg flex items-center justify-between border-b border-amber-500/20">
                   <div className="flex items-center gap-2">
                     <Globe size={14} className="text-amber-600 dark:text-amber-400" />
-                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">Webhook Trigger</span>
+                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">{t('ai_gen.diagram.node.webhook')}</span>
                   </div>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400">
-                    TRIGGER
+                    {t('ai_gen.diagram.badge_trigger')}
                   </span>
                 </div>
                 <div className="p-2.5 space-y-2 text-xs">
                   <div>
                     <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">POST /stripe-orders</p>
-                    <p className="font-mono text-[10px] text-slate-500 truncate">Listen for payment_intent.succeeded</p>
+                    <p className="font-mono text-[10px] text-slate-500 truncate">{t('ai_gen.diagram.listen_for')}: payment_intent.succeeded</p>
                   </div>
                 <div className="p-1.5 bg-slate-50 dark:bg-slate-700 rounded font-mono text-[10px] text-slate-600 dark:text-slate-300 flex items-center justify-between">
-                    <span>Output: $json.body</span>
+                    <span>{t('ai_gen.diagram.output')}: $json.body</span>
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    <span>Auth: HMAC SHA256</span>
-                    <span className="text-emerald-500 font-semibold font-mono">Ready</span>
+                    <span>{t('ai_gen.diagram.auth')}: HMAC SHA256</span>
+                    <span className="text-emerald-500 font-semibold font-mono">{t('ai_gen.ready')}</span>
                   </div>
                 </div>
               </div>
@@ -312,24 +311,24 @@ export function AiGeneratorPage() {
                 <div className="h-8 px-3 bg-sky-500/10 rounded-t-lg flex items-center justify-between border-b border-sky-500/20">
                   <div className="flex items-center gap-2">
                     <Database size={14} className="text-sky-600 dark:text-sky-400" />
-                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">PostgreSQL Store</span>
+                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">{t('ai_gen.diagram.node.postgres')}</span>
                   </div>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-sky-500/20 text-sky-600 dark:text-sky-400">
-                    DATABASE
+                    {t('ai_gen.diagram.badge_database')}
                   </span>
                 </div>
                 <div className="p-2.5 space-y-2 text-xs">
                   <div>
-                    <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">Query Inventory Status</p>
+                    <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">{t('ai_gen.diagram.query_inventory')}</p>
                     <p className="font-mono text-[10px] text-slate-500 truncate">SELECT stock FROM items WHERE id = :id</p>
                   </div>
                 <div className="p-1.5 bg-slate-50 dark:bg-slate-700 rounded font-mono text-[10px] text-slate-600 dark:text-slate-300 flex items-center justify-between">
-                    <span>Input: {`{{$json.item_id}}`}</span>
+                    <span>{t('ai_gen.diagram.input')}: {`{{$json.item_id}}`}</span>
                     <span className="text-emerald-500 font-mono">200 OK</span>
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    <span>Pool: pg-warehouse</span>
-                    <span className="text-emerald-500 font-semibold font-mono">Configured</span>
+                    <span>{t('ai_gen.diagram.pool')}: pg-warehouse</span>
+                    <span className="text-emerald-500 font-semibold font-mono">{t('ai_gen.diagram.configured')}</span>
                   </div>
                 </div>
               </div>
@@ -357,24 +356,24 @@ export function AiGeneratorPage() {
                 <div className="h-8 px-3 bg-[#2563EB] rounded-t-[6px] flex items-center justify-between text-white">
                   <div className="flex items-center gap-2">
                     <Sparkles size={14} className="fill-white" />
-                    <span className="text-xs font-semibold">AI Extract & Profile</span>
+                    <span className="text-xs font-semibold">{t('ai_gen.diagram.node.ai_extract')}</span>
                   </div>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-white/20 text-white">
-                    SYNTHESIZED
+                    {t('ai_gen.diagram.badge_synthesized')}
                   </span>
                 </div>
                 <div className="p-2.5 space-y-2 text-xs">
                   <div>
-                    <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">Extract Customer Meta</p>
-                    <p className="font-mono text-[10px] text-slate-500">Model: gpt-4o-mini (Structured)</p>
+                    <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">{t('ai_gen.diagram.extract_customer')}</p>
+                    <p className="font-mono text-[10px] text-slate-500">{t('ai_gen.diagram.model')}: gpt-4o-mini ({t('ai_gen.diagram.structured')})</p>
                   </div>
                   <div className="p-1.5 bg-[#2563EB]/10 border border-[#2563EB]/20 rounded font-mono text-[10px] space-y-0.5">
-                    <span className="text-[#2563EB] font-semibold block">Schema: customer_schema_v1</span>
-                    <span className="text-slate-600 dark:text-slate-400 block truncate">Yields: {`{{$json.customer_profile}}`}</span>
+                    <span className="text-[#2563EB] font-semibold block">{t('ai_gen.diagram.schema')}: customer_schema_v1</span>
+                    <span className="text-slate-600 dark:text-slate-400 block truncate">{t('ai_gen.diagram.yields')}: {`{{$json.customer_profile}}`}</span>
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    <span className="text-[#2563EB] font-medium">Auto-bound schema</span>
-                    <span className="text-emerald-500 font-semibold font-mono">Valid</span>
+                    <span className="text-[#2563EB] font-medium">{t('ai_gen.diagram.auto_bound_schema')}</span>
+                    <span className="text-emerald-500 font-semibold font-mono">{t('ai_gen.diagram.valid')}</span>
                   </div>
                 </div>
               </div>
@@ -402,7 +401,7 @@ export function AiGeneratorPage() {
                 <div className="h-8 px-3 bg-sky-500/10 rounded-t-lg flex items-center justify-between border-b border-sky-500/20">
                   <div className="flex items-center gap-2">
                     <GitBranch size={14} className="text-sky-600 dark:text-sky-400" />
-                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">Conditional Gate</span>
+                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">{t('ai_gen.diagram.node.condition')}</span>
                   </div>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-sky-500/20 text-sky-600 dark:text-sky-400">
                     LOGIC
@@ -410,16 +409,16 @@ export function AiGeneratorPage() {
                 </div>
                 <div className="p-2.5 space-y-2 text-xs">
                   <div>
-                    <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">Order Total &gt; $100</p>
+                    <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">{t('ai_gen.diagram.order_total')}</p>
                     <p className="font-mono text-[10px] text-slate-500 truncate">eval({`{{$json.amount}}`} &gt; 10000)</p>
                   </div>
                 <div className="p-1.5 bg-slate-50 dark:bg-slate-700 rounded font-mono text-[10px] text-slate-600 dark:text-slate-300 flex items-center justify-between">
-                    <span>Branch: true</span>
-                    <span className="text-emerald-500 font-semibold font-mono">Passed</span>
+                    <span>{t('ai_gen.diagram.branch')}: true</span>
+                    <span className="text-emerald-500 font-semibold font-mono">{t('ai_gen.diagram.passed')}</span>
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    <span>Operator: GreaterThan</span>
-                    <span className="text-emerald-500 font-semibold font-mono">Evaluated</span>
+                    <span>{t('ai_gen.diagram.operator')}: GreaterThan</span>
+                    <span className="text-emerald-500 font-semibold font-mono">{t('ai_gen.diagram.evaluated')}</span>
                   </div>
                 </div>
               </div>
@@ -447,7 +446,7 @@ export function AiGeneratorPage() {
                 <div className="h-8 px-3 bg-emerald-500/10 rounded-t-lg flex items-center justify-between border-b border-emerald-500/20">
                   <div className="flex items-center gap-2">
                     <Send size={14} className="text-emerald-600 dark:text-emerald-400" />
-                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">Slack Dispatch</span>
+                    <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">{t('ai_gen.diagram.node.slack')}</span>
                   </div>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
                     ACTION
@@ -455,16 +454,16 @@ export function AiGeneratorPage() {
                 </div>
                 <div className="p-2.5 space-y-2 text-xs">
                   <div>
-                    <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">Notify #sales-alerts</p>
-                    <p className="font-mono text-[10px] text-slate-500 truncate">BlockKit: Order VIP Notification</p>
+                    <p className="font-semibold text-slate-900 dark:text-slate-100 text-[11px]">{t('ai_gen.diagram.notify_channel')}</p>
+                    <p className="font-mono text-[10px] text-slate-500 truncate">BlockKit: {t('ai_gen.diagram.order_vip_notification')}</p>
                   </div>
                 <div className="p-1.5 bg-slate-50 dark:bg-slate-700 rounded font-mono text-[10px] text-slate-600 dark:text-slate-300 flex items-center justify-between">
-                    <span>Channel: #sales-alerts</span>
+                    <span>{t('ai_gen.diagram.channel')}: #sales-alerts</span>
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    <span>Webhook Bot: Active</span>
-                    <span className="text-emerald-500 font-semibold font-mono">Ready</span>
+                    <span>{t('ai_gen.diagram.webhook_bot_active')}</span>
+                    <span className="text-emerald-500 font-semibold font-mono">{t('ai_gen.ready')}</span>
                   </div>
                 </div>
               </div>
@@ -488,13 +487,13 @@ export function AiGeneratorPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Code2 size={16} className="text-[#2563EB]" />
-              <span className="text-xs font-bold text-slate-900 dark:text-slate-100">Variable Bindings</span>
+              <span className="text-xs font-bold text-slate-900 dark:text-slate-100">{t('ai_gen.diagram.variable_bindings')}</span>
             </div>
-            <span className="font-mono text-[10px] text-slate-400">3 parameters auto-bound</span>
+            <span className="font-mono text-[10px] text-slate-400">{t('ai_gen.diagram.parameters_bound').replace('{count}', '3')}</span>
           </div>
 
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            Input paths mapped dynamically across node boundaries via downstream AST deduction:
+            {t('ai_gen.diagram.variable_bindings_description')}
           </p>
 
           <div className="space-y-2 font-mono text-xs">
@@ -505,7 +504,7 @@ export function AiGeneratorPage() {
                   UUIDv4
                 </span>
               </div>
-              <p className="text-[10px] text-slate-500">From Node 1 (Webhook) ➔ Node 2 parameter :id</p>
+              <p className="text-[10px] text-slate-500">{t('ai_gen.diagram.mapping.node_1')}</p>
             </div>
 
             <div className="p-2.5 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 space-y-1">
@@ -515,7 +514,7 @@ export function AiGeneratorPage() {
                   Object
                 </span>
               </div>
-              <p className="text-[10px] text-slate-500">From Node 3 (AI Extract) ➔ Node 5 Slack template</p>
+              <p className="text-[10px] text-slate-500">{t('ai_gen.diagram.mapping.node_3')}</p>
             </div>
 
             <div className="p-2.5 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 space-y-1">
@@ -525,16 +524,16 @@ export function AiGeneratorPage() {
                   Boolean
                 </span>
               </div>
-              <p className="text-[10px] text-slate-500">From Node 2 (Postgres) ➔ Node 4 Condition check</p>
+              <p className="text-[10px] text-slate-500">{t('ai_gen.diagram.mapping.node_2')}</p>
             </div>
           </div>
 
           <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500">
             <span className="flex items-center gap-1">
               <Lock size={12} className="text-emerald-500" />
-              Zero secret leakages detected
+              {t('ai_gen.diagram.no_secret_leaks')}
             </span>
-            <button className="text-[#2563EB] hover:underline font-medium text-[11px]">View Map</button>
+            <button className="text-[#2563EB] hover:underline font-medium text-[11px]">{t('ai_gen.diagram.view_map')}</button>
           </div>
         </div>
 
@@ -544,7 +543,7 @@ export function AiGeneratorPage() {
             <div className="flex items-center gap-2">
               <Terminal size={16} className="text-[#2563EB]" />
               <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                Synthesized Workflow Definition
+                {t('ai_gen.diagram.synthesized_definition')}
               </span>
             </div>
 
@@ -554,11 +553,11 @@ export function AiGeneratorPage() {
                 className="h-6 px-2 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors flex items-center gap-1"
               >
                 <Copy size={11} />
-                <span>{copiedCode ? 'Copied!' : 'Copy JSON'}</span>
+                <span>{copiedCode ? t('ai_gen.diagram.copied') : t('ai_gen.diagram.copy_json')}</span>
               </button>
               <span className="text-emerald-600 dark:text-emerald-400 font-mono text-[10px] font-semibold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                Valid RFC 8259
+                {t('ai_gen.diagram.valid_rfc').replace('{number}', '8259')}
               </span>
             </div>
           </div>

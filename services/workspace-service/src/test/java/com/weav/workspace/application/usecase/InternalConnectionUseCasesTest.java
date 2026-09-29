@@ -36,6 +36,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Clock;
@@ -45,6 +46,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -88,6 +91,9 @@ class InternalConnectionUseCasesTest {
     private TransactionRunner transactionRunner;
 
     @Autowired
+    private JdbcTemplate jdbc;
+
+    @Autowired
     private GoogleOAuthScopePolicy scopePolicy;
 
     @Autowired
@@ -98,6 +104,12 @@ class InternalConnectionUseCasesTest {
 
     @Autowired
     private ReportConnectionAuthFailureUseCase reportAuthFailure;
+
+    @Autowired
+    private TestConnectionUseCase testConnection;
+
+    @Autowired
+    private DisableConnectionUseCase disableConnection;
 
     @Autowired
     private FixtureGoogleOAuthPort googleOAuth;
@@ -296,6 +308,14 @@ class InternalConnectionUseCasesTest {
 
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
                 .isEqualTo(ConnectionStatus.INVALID);
+        assertThat(notificationCount(connection.getId(), "connection.invalid")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select payload ->> 'actorUserId' from workspace.notification_outbox "
+                + "where event_type = 'connection.invalid' and payload -> 'entity' ->> 'id' = ?",
+                String.class, connection.getId().toString())).isNull();
+        assertThat(jdbc.queryForObject("select payload::text from workspace.notification_outbox "
+                + "where event_type = 'connection.invalid' and payload -> 'entity' ->> 'id' = ?",
+                String.class, connection.getId().toString()))
+                .doesNotContain(OLD_ACCESS_TOKEN, OLD_REFRESH_TOKEN);
         Credential retained = credentialRepository.findByConnectionId(connection.getId()).orElseThrow();
         assertThat(retained.getId()).isEqualTo(original.getId());
         assertThat(retained.getEncryptedPayload()).containsExactly(original.getEncryptedPayload());
@@ -324,6 +344,7 @@ class InternalConnectionUseCasesTest {
                 .hasMessage("A required dependency is temporarily unavailable");
         assertUnchanged(connection, original);
         assertThat(googleOAuth.refreshCalls.get()).isEqualTo(2);
+        assertThat(notificationCount(connection.getId(), "connection.invalid")).isZero();
     }
 
     @Test
@@ -344,6 +365,7 @@ class InternalConnectionUseCasesTest {
                 .isEqualTo(ConnectionStatus.INVALID);
         assertThat(credentialRepository.findByConnectionId(connection.getId()).orElseThrow().getEncryptedPayload())
                 .containsExactly(original.getEncryptedPayload());
+        assertThat(notificationCount(connection.getId(), "connection.invalid")).isEqualTo(1);
     }
 
     @Test
@@ -501,11 +523,21 @@ class InternalConnectionUseCasesTest {
 
         reportAuthFailure.execute(workspace.getId(), active.getId(),
                 ConnectionAuthFailureCode.AUTHENTICATION_REJECTED);
+        reportAuthFailure.execute(workspace.getId(), active.getId(),
+                ConnectionAuthFailureCode.AUTHENTICATION_REJECTED);
         reportAuthFailure.execute(workspace.getId(), disabled.getId(),
                 ConnectionAuthFailureCode.AUTHENTICATION_REJECTED);
 
         assertThat(connectionRepository.findById(active.getId()).orElseThrow().getStatus())
                 .isEqualTo(ConnectionStatus.INVALID);
+        assertThat(notificationCount(active.getId(), "connection.invalid")).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select payload ->> 'actorUserId' from workspace.notification_outbox "
+                + "where event_type = 'connection.invalid' and payload -> 'entity' ->> 'id' = ?",
+                String.class, active.getId().toString())).isNull();
+        assertThat(jdbc.queryForObject("select payload -> 'recipientUserIds' ->> 0 "
+                + "from workspace.notification_outbox where event_type = 'connection.invalid' "
+                + "and payload -> 'entity' ->> 'id' = ?", String.class, active.getId().toString()))
+                .isEqualTo(ownerId.toString());
         Connection retainedDisabled = connectionRepository.findById(disabled.getId()).orElseThrow();
         assertThat(retainedDisabled.getStatus()).isEqualTo(ConnectionStatus.DISABLED);
         assertThat(retainedDisabled.getUpdatedAt()).isEqualTo(disabledUpdatedAt);
@@ -518,11 +550,80 @@ class InternalConnectionUseCasesTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
+    @Test
+    void concurrentRepeatedConnectionMutationsWriteOnlyOneEventPerRealTransition() throws Exception {
+        UUID ownerId = UUID.randomUUID();
+        UUID creatorId = UUID.randomUUID();
+        Workspace workspace = createWorkspace(ownerId);
+        membershipRepository.save(Membership.member(workspace.getId(), creatorId));
+        Connection toConnect = createConnection(
+                workspace, creatorId, ConnectionProvider.HTTP, ConnectionAuthType.NONE,
+                ConnectionStatus.DISABLED, Map.of("baseUrl", "https://connection.example.test"));
+        Connection toDisable = createConnection(
+                workspace, creatorId, ConnectionProvider.HTTP, ConnectionAuthType.NONE,
+                ConnectionStatus.ACTIVE, Map.of());
+        Connection toInvalidate = createConnection(
+                workspace, creatorId, ConnectionProvider.HTTP, ConnectionAuthType.NONE,
+                ConnectionStatus.ACTIVE, Map.of());
+
+        CountDownLatch ready = new CountDownLatch(6);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(6);
+        List<java.util.concurrent.Future<?>> tasks = new ArrayList<>();
+        try {
+            for (int index = 0; index < 2; index++) {
+                tasks.add(executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    testConnection.execute(ownerId, workspace.getId(), toConnect.getId());
+                    return null;
+                }));
+                tasks.add(executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    disableConnection.execute(ownerId, workspace.getId(), toDisable.getId());
+                    return null;
+                }));
+                tasks.add(executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    reportAuthFailure.execute(workspace.getId(), toInvalidate.getId(),
+                            ConnectionAuthFailureCode.AUTHENTICATION_REJECTED);
+                    return null;
+                }));
+            }
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            for (java.util.concurrent.Future<?> task : tasks) {
+                task.get(20, TimeUnit.SECONDS);
+            }
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(connectionRepository.findById(toConnect.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.ACTIVE);
+        assertThat(connectionRepository.findById(toDisable.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.DISABLED);
+        assertThat(connectionRepository.findById(toInvalidate.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.INVALID);
+        assertThat(notificationCount(toConnect.getId(), "connection.connected")).isEqualTo(1);
+        assertThat(notificationCount(toDisable.getId(), "connection.disabled")).isEqualTo(1);
+        assertThat(notificationCount(toInvalidate.getId(), "connection.invalid")).isEqualTo(1);
+    }
+
     private Workspace createWorkspace(UUID ownerId) {
         Workspace workspace = workspaceRepository.save(
                 Workspace.createNew("Runtime connections " + UUID.randomUUID(), ownerId));
         membershipRepository.save(Membership.owner(workspace.getId(), ownerId));
         return workspace;
+    }
+
+    private int notificationCount(UUID connectionId, String eventType) {
+        return jdbc.queryForObject("select count(*) from workspace.notification_outbox "
+                + "where event_type = ? and payload -> 'entity' ->> 'id' = ?",
+                Integer.class, eventType, connectionId.toString());
     }
 
     private Connection createConnection(

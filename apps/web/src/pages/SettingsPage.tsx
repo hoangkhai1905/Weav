@@ -21,6 +21,9 @@ import { useI18nStore } from '../store/useI18nStore';
 import { useUIStore } from '../store/useUIStore';
 import { getStoredAuthToken } from '../api/ocr.api';
 import { buttonPress, pageVariants, reducedMotionVariants } from '../lib/motion';
+import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
+import { showSuccessToast } from '../lib/feedback/toast';
+import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 
 const MAX_PROFILE_NAME_LENGTH = 120;
 const MIN_PASSWORD_LENGTH = 8;
@@ -88,6 +91,7 @@ function sessionErrorMessage(error: unknown, translate: (key: string) => string)
 }
 
 export function SettingsPage() {
+  const refreshNotifications = useNotificationMilestoneRefresh();
   const { user, isAuthenticated, setUser, logout } = useAuthStore();
   const { language, setLanguage, t } = useI18nStore();
   const { theme, setTheme } = useUIStore();
@@ -97,14 +101,12 @@ export function SettingsPage() {
     dirty: false,
   }));
   const [savingProfile, setSavingProfile] = useState(false);
-  const [profileMessage, setProfileMessage] = useState('');
   const [profileError, setProfileError] = useState('');
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
-  const [passwordMessage, setPasswordMessage] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const passwordRequestInFlight = useRef(false);
 
@@ -219,15 +221,14 @@ export function SettingsPage() {
     if (!currentUser || profileLoading) return;
 
     if (name.length > MAX_PROFILE_NAME_LENGTH) {
-      setProfileMessage('');
       setProfileError(t('settings.profile_name_too_long'));
       return;
     }
 
     const requestUserId = currentUser.id;
     const requestToken = getStoredAuthToken();
+    const mutationSession = captureNotificationSession();
     setSavingProfile(true);
-    setProfileMessage('');
     setProfileError('');
     try {
       const displayName = name.trim() || null;
@@ -245,10 +246,12 @@ export function SettingsPage() {
       }
 
       setProfileDraft({ userId: updated.id, value: updated.name, dirty: false });
+      showSuccessToast('toast.profile.saved', mutationSession);
       setUser(updated);
-      setProfileMessage(t('settings.saved'));
     } catch (error) {
-      setProfileError(error instanceof Error ? error.message : t('settings.save_error'));
+      if (isCurrentNotificationSession(mutationSession)) {
+        setProfileError(error instanceof Error ? error.message : t('settings.save_error'));
+      }
     } finally {
       setSavingProfile(false);
     }
@@ -258,7 +261,6 @@ export function SettingsPage() {
     const currentUser = user;
     if (!currentUser || !isAuthenticated || passwordRequestInFlight.current) return;
 
-    setPasswordMessage('');
     setPasswordError('');
     if (!isIdentityPassword(currentPassword) || !isIdentityPassword(newPassword)) {
       setPasswordError(t('settings.password_length'));
@@ -271,6 +273,7 @@ export function SettingsPage() {
 
     const requestUserId = currentUser.id;
     const requestToken = getStoredAuthToken();
+    const mutationSession = captureNotificationSession();
     const isCurrentRequest = () => {
       const currentState = useAuthStore.getState();
       return currentState.isAuthenticated
@@ -284,7 +287,7 @@ export function SettingsPage() {
       await authApi.changePassword(currentPassword, newPassword);
       if (!isCurrentRequest()) return;
 
-      setPasswordMessage(t('settings.password_changed'));
+      showSuccessToast('toast.password.changed', mutationSession);
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -447,15 +450,21 @@ export function SettingsPage() {
   };
 
   const unlinkGoogleAccount = async (accountId: string) => {
+    const mutationSession = captureNotificationSession();
     setOauthError('');
     setOauthAction(accountId);
     try {
       await authApi.unlinkOAuthAccount(accountId, oauthPassword);
+      if (!isCurrentNotificationSession(mutationSession)) return;
       setOauthAccounts((items) => items.filter((item) => item.id !== accountId));
+      showSuccessToast('toast.google.unlinked', mutationSession);
+      refreshNotifications(mutationSession);
     } catch (error) {
-      setOauthError(error instanceof Error ? error.message : t('settings.oauth_error'));
+      if (isCurrentNotificationSession(mutationSession)) {
+        setOauthError(error instanceof Error ? error.message : t('settings.oauth_error'));
+      }
     } finally {
-      setOauthAction(null);
+      if (isCurrentNotificationSession(mutationSession)) setOauthAction(null);
     }
   };
 
@@ -518,7 +527,6 @@ export function SettingsPage() {
           </div>
           {profileLoading && <p data-testid="profile-loading" className="text-xs font-medium text-slate-500 dark:text-slate-400" aria-live="polite">{t('settings.loading')}</p>}
           <motion.button data-testid="profile-save-button" onClick={() => void handleSaveProfile()} disabled={profileLoading || savingProfile} variants={buttonPress} whileHover="hover" whileTap="tap" className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm shadow-blue-600/20 transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"><Save size={14} />{savingProfile ? t('settings.saving') : t('settings.save')}</motion.button>
-          {profileMessage && <SuccessText>{profileMessage}</SuccessText>}
           {profileError && <div data-testid="profile-error"><ErrorText>{profileError}</ErrorText></div>}
         </div>
 
@@ -539,7 +547,7 @@ export function SettingsPage() {
           <input aria-label={t('settings.new_password')} type="password" autoComplete="new-password" maxLength={MAX_PASSWORD_LENGTH} placeholder={t('settings.new_password')} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs dark:border-slate-700 dark:bg-slate-800" />
           <input aria-label={t('settings.confirm_password')} type="password" autoComplete="new-password" maxLength={MAX_PASSWORD_LENGTH} placeholder={t('settings.confirm_password')} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs dark:border-slate-700 dark:bg-slate-800" />
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-3"><button data-testid="change-password-button" onClick={() => void handleChangePassword()} disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-60"><KeyRound size={14} />{changingPassword ? t('settings.changing_password') : t('settings.change_password')}</button>{passwordMessage && <div data-testid="password-message"><SuccessText>{passwordMessage}</SuccessText></div>}{passwordError && <div data-testid="password-error"><ErrorText>{passwordError}</ErrorText></div>}</div>
+        <div className="mt-4 flex flex-wrap items-center gap-3"><button data-testid="change-password-button" onClick={() => void handleChangePassword()} disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-60"><KeyRound size={14} />{changingPassword ? t('settings.changing_password') : t('settings.change_password')}</button>{passwordError && <div data-testid="password-error"><ErrorText>{passwordError}</ErrorText></div>}</div>
 
         <div className="mt-6 border-t border-slate-200 pt-6 dark:border-slate-800">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t('settings.active_sessions')}</h3><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('settings.active_sessions_desc')}</p></div><ConfirmButton dataTestId="revoke-all-sessions-button" onConfirm={revokeAllSessions} title={t('settings.revoke_all_title')} description={t('settings.revoke_all_desc')} confirmText={t('settings.confirm')} cancelText={t('settings.cancel')} disabled={sessionsLoading || currentSessionAction !== null || isAuthMockMode} className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-400/30 dark:text-rose-300"><LogOut size={14} />{currentSessionAction === 'all' ? t('settings.revoking') : t('settings.revoke_all')}</ConfirmButton></div>

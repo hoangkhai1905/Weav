@@ -7,6 +7,8 @@ import com.weav.workflow.application.port.out.WorkflowTriggerPort;
 import com.weav.workflow.application.port.out.WebhookSecretPort;
 import com.weav.workflow.application.port.out.WorkflowVersionPort;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
+import com.weav.workflow.application.notification.WorkflowNotificationEvent;
+import com.weav.workflow.application.port.out.WorkflowNotificationOutboxPort;
 import com.weav.workflow.application.node.IntegrationReadiness;
 import com.weav.workflow.domain.definition.DefinitionValidator;
 import com.weav.workflow.domain.definition.ValidationIssue;
@@ -20,6 +22,7 @@ import com.weav.workflow.domain.port.out.WorkflowRepository;
 import com.weav.workflow.domain.valueobject.TriggerType;
 import com.weav.workflow.domain.valueobject.WorkflowStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
@@ -50,6 +53,7 @@ public class WorkflowPublicationService {
     private final ScheduleValidationPort schedules;
     private final WebhookSecretPort webhookSecrets;
     private final DefinitionValidator definitionValidator;
+    private final WorkflowNotificationOutboxPort notificationOutbox;
 
     public WorkflowPublicationService(
             WorkflowRepository workflowRepository,
@@ -60,6 +64,21 @@ public class WorkflowPublicationService {
             Optional<ConnectionReferencePort> connectionReferences,
             ScheduleValidationPort schedules,
             WebhookSecretPort webhookSecrets) {
+        this(workflowRepository, versions, triggers, workspaceAuthorization, workspaceConnections,
+                connectionReferences, schedules, webhookSecrets, event -> { });
+    }
+
+    @Autowired
+    public WorkflowPublicationService(
+            WorkflowRepository workflowRepository,
+            WorkflowVersionPort versions,
+            WorkflowTriggerPort triggers,
+            WorkspaceAuthorization workspaceAuthorization,
+            WorkspaceConnectionPort workspaceConnections,
+            Optional<ConnectionReferencePort> connectionReferences,
+            ScheduleValidationPort schedules,
+            WebhookSecretPort webhookSecrets,
+            WorkflowNotificationOutboxPort notificationOutbox) {
         this.workflowRepository = Objects.requireNonNull(workflowRepository, "workflowRepository must not be null");
         this.versions = Objects.requireNonNull(versions, "versions must not be null");
         this.triggers = Objects.requireNonNull(triggers, "triggers must not be null");
@@ -72,6 +91,8 @@ public class WorkflowPublicationService {
         this.schedules = Objects.requireNonNull(schedules, "schedules must not be null");
         this.webhookSecrets = Objects.requireNonNull(webhookSecrets, "webhookSecrets must not be null");
         this.definitionValidator = new DefinitionValidator(schedules);
+        this.notificationOutbox = Objects.requireNonNull(notificationOutbox,
+                "notificationOutbox must not be null");
     }
 
     @Transactional
@@ -109,6 +130,8 @@ public class WorkflowPublicationService {
                 previousStatus == WorkflowStatus.PAUSED, publishedAt, webhookProvisionings);
         triggers.replaceCurrent(workflowId, version.getId(), newTriggers);
         connectionReferences.ifPresent(port -> port.appendVersion(workflowId, version.getId(), referencedConnections));
+        notificationOutbox.record(WorkflowNotificationEvent.lifecycle("workflow.published", locked.getWorkspaceId(),
+                actorId, locked.getId(), locked.getName(), publishedAt));
 
         return new Publication(workflowId, version.getId(), versionNumber, locked.getStatus(), webhookProvisionings);
     }
@@ -140,6 +163,7 @@ public class WorkflowPublicationService {
                     ? "A workflow must have a published version before it can be paused"
                     : "A workflow must have a published version before it can be resumed");
         }
+        WorkflowStatus previousStatus = workflow.getStatus();
 
         if (pause) {
             workflow.pause();
@@ -158,7 +182,14 @@ public class WorkflowPublicationService {
             }
             triggers.setCurrentEnabled(workflowId, workflow.getCurrentVersionId(), true, resumedAt, nextRuns);
         }
-        return workflowRepository.save(workflow);
+        Workflow saved = workflowRepository.save(workflow);
+        if (saved.getStatus() != previousStatus) {
+            String eventType = saved.getStatus() == WorkflowStatus.PAUSED
+                    ? "workflow.paused" : "workflow.resumed";
+            notificationOutbox.record(WorkflowNotificationEvent.lifecycle(eventType, saved.getWorkspaceId(),
+                    actorId, saved.getId(), saved.getName(), Instant.now()));
+        }
+        return saved;
     }
 
     private boolean samePublishSnapshot(Workflow first, Workflow current) {

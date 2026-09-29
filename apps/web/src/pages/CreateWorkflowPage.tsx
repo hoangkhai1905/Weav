@@ -11,6 +11,9 @@ import {
 } from 'lucide-react';
 import { workflowApi } from '../api/workflow.api';
 import { useI18nStore } from '../store/useI18nStore';
+import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
+import { showSuccessToast } from '../lib/feedback/toast';
+import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 
 interface TemplateCard {
   id: string;
@@ -139,6 +142,7 @@ const TEMPLATE_CATEGORY_KEYS: Record<string, string> = {
 export const CreateWorkflowPage: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useI18nStore();
+  const refreshNotifications = useNotificationMilestoneRefresh();
 
   const [selectedMethod, setSelectedMethod] = useState<'blank' | 'template' | 'ai'>('blank');
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -147,6 +151,7 @@ export const CreateWorkflowPage: React.FC = () => {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const handleStartBlank = async () => {
+    const mutationSession = captureNotificationSession();
     setIsCreating(true);
     setCreateError(null);
     try {
@@ -154,15 +159,21 @@ export const CreateWorkflowPage: React.FC = () => {
         name: 'Untitled Automation Pipeline',
         description: 'Custom blank workflow created from canvas editor.',
       });
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast('toast.workflow.created', mutationSession);
+      refreshNotifications(mutationSession);
       navigate(`/workflows/${newWf.id}/builder`);
     } catch (error) {
-      setCreateError(error instanceof Error ? error.message : 'Workflow could not be created.');
+      if (isCurrentNotificationSession(mutationSession)) {
+        setCreateError(error instanceof Error ? error.message : 'Workflow could not be created.');
+      }
     } finally {
       setIsCreating(false);
     }
   };
 
   const handleUseTemplate = async (templateTitle: string) => {
+    const mutationSession = captureNotificationSession();
     setIsCreating(true);
     setCreateError(null);
     try {
@@ -170,9 +181,14 @@ export const CreateWorkflowPage: React.FC = () => {
         name: templateTitle,
         description: `Workflow bootstrapped from template: ${templateTitle}`,
       });
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast('toast.workflow.created', mutationSession);
+      refreshNotifications(mutationSession);
       navigate(`/workflows/${newWf.id}/builder`);
     } catch (error) {
-      setCreateError(error instanceof Error ? error.message : 'Workflow could not be created.');
+      if (isCurrentNotificationSession(mutationSession)) {
+        setCreateError(error instanceof Error ? error.message : 'Workflow could not be created.');
+      }
     } finally {
       setIsCreating(false);
     }

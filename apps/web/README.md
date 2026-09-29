@@ -6,18 +6,31 @@ React + TypeScript + Vite web application for WEAV platform.
 
 ## Notification API
 
-Notifications default to HTTP through `/api/notifications` on the API Gateway.
+Notifications use the authenticated v2 inbox at `/api/v2/notifications` on the API Gateway.
 Configure `VITE_API_BASE_URL` (default `http://localhost:3000`); the existing
 `VITE_API_GATEWAY_URL` override takes precedence. Set `VITE_API_MODE=mock` to use
-the localStorage notification demo. Other mock repositories are unchanged.
-Restart Vite after changing environment variables.
+an account-isolated localStorage demo inbox. It starts empty and does not seed
+synthetic notifications. Other mock repositories are unchanged. Restart Vite
+after changing environment variables.
 
-The inbox includes refresh, cursor pagination, read actions and delivery status.
-The topbar and inbox share an unread count query (10-second polling); the list
-refreshes every 30 seconds. Requests use the existing `weav_token`; HTTP 401 uses
-the existing logout/login redirect. The existing login/register forms now use
-Identity's core email/password contract through `/api/auth/*`, verified against
-`origin/codex/identity-m3`. Registration explicitly logs in after creating the user.
+The inbox provides localized category/unread filters, cursor pagination,
+explicit read/read-all actions, and allowlisted in-app target navigation. The
+topbar count is global for the authenticated user, independent of inbox filters.
+
+## Notification E2E
+
+`notification-live-runtime.spec.ts` is intentionally skipped by ordinary
+Playwright discovery. Run it only against the disposable Task 8 stack with
+`WEAV_E2E_LIVE_NOTIFICATIONS` explicitly enabled and `WEAV_TASK8_JWT_SECRET`
+configured in the test process. The live spec fails with a configuration
+message when opted in without that secret; it never reads `.env`. Intercepted
+contract specs remain part of the default E2E suite.
+It does not show provider delivery status or retry controls. The topbar and inbox
+share an unread-count query (10-second polling); the list refreshes every 30
+seconds. Requests use the existing `weav_token`, isolate cache by session, and
+use `readAt` as the read-state source. HTTP errors never fall back to demo data.
+The existing login/register forms use Identity's core email/password contract
+through `/api/auth/*`; registration explicitly logs in after creating the user.
 HTTP mode does not expose demo login. The current user is reloaded via
 `/api/auth/me` when a stored access token exists.
 

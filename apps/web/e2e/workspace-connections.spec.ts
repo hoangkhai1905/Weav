@@ -98,7 +98,7 @@ async function installAuthFixture(page: Page, workspaces = [workspace]) {
   await page.route("**/api/auth/logout", (route) =>
     route.fulfill({ status: 204, body: "" }),
   );
-  await page.route("**/api/notifications/unread-count", (route) =>
+  await page.route("**/api/v2/notifications/unread-count", (route) =>
     fulfillJson(route, { count: 0 }),
   );
   await page.route("**/api/v1/workspaces**", async (route) => {
@@ -389,6 +389,7 @@ test.describe("workspace connection API adapter", () => {
     await expect(page.getByTestId("connections-workspace-name")).toHaveText(
       "Alpha workspace",
     );
+    await expect(page.getByText("Connection created.", { exact: true })).toHaveCount(0);
     await expect(page.getByTestId("connections-empty-state")).toBeVisible();
     await expect(page.getByTestId("connection-row")).toHaveCount(0);
     await expect(page.getByText("PostgreSQL", { exact: true })).toHaveCount(0);
@@ -891,6 +892,7 @@ test.describe("workspace connection API adapter", () => {
     await expect(
       page.getByTestId(`connection-row-${CONNECTION_GMAIL_ID}`),
     ).toContainText("Renamed Gmail");
+    await expect(page.getByText("Connection updated.", { exact: true })).toHaveCount(1);
     expect(renameBody).toEqual({ name: "Renamed Gmail" });
 
     await page.getByTestId(`connection-test-${CONNECTION_GMAIL_ID}`).click();
@@ -905,6 +907,7 @@ test.describe("workspace connection API adapter", () => {
     await expect(
       page.getByTestId(`connection-status-${CONNECTION_GMAIL_ID}`),
     ).toHaveAttribute("data-status", "DISABLED");
+    await expect(page.getByText("Connection disabled.", { exact: true })).toHaveCount(1);
 
     page.on("dialog", (dialog) => dialog.accept());
     await page.getByTestId(`connection-delete-${CONNECTION_GMAIL_ID}`).click();

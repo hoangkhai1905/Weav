@@ -50,15 +50,13 @@ export default function WorkspaceScreen() {
     leaveWorkspaceMutation,
   } = useWorkspace();
   const sessionUserId = useAuthStore((state) => state.user?.id ?? null);
+  const sessionGeneration = useAuthStore((state) => state.sessionGeneration);
   const [createName, setCreateName] = React.useState('');
   const [createError, setCreateError] = React.useState<string | null>(null);
-  const [createSuccess, setCreateSuccess] = React.useState<string | null>(null);
   const [renameName, setRenameName] = React.useState('');
   const [renameError, setRenameError] = React.useState<string | null>(null);
-  const [renameSuccess, setRenameSuccess] = React.useState<string | null>(null);
   const [memberEmail, setMemberEmail] = React.useState('');
   const [memberError, setMemberError] = React.useState<string | null>(null);
-  const [memberSuccess, setMemberSuccess] = React.useState<string | null>(null);
   const [memberActionError, setMemberActionError] = React.useState<string | null>(null);
   const [confirmation, setConfirmation] = React.useState<
     { kind: 'remove'; member: WorkspaceMember } | { kind: 'leave'; member: WorkspaceMember } | null
@@ -70,10 +68,8 @@ export default function WorkspaceScreen() {
   React.useEffect(() => {
     setRenameName(activeWorkspace?.name ?? '');
     setRenameError(null);
-    setRenameSuccess(null);
     setMemberEmail('');
     setMemberError(null);
-    setMemberSuccess(null);
     setMemberActionError(null);
     setConfirmation(null);
   }, [activeWorkspace?.id, sessionUserId]);
@@ -87,34 +83,29 @@ export default function WorkspaceScreen() {
     const validationError = validateWorkspaceName(createName, false);
     if (validationError) {
       setCreateError(validationError);
-      setCreateSuccess(null);
       return;
     }
 
     const mutationUserId = useAuthStore.getState().user?.id ?? null;
     if (!mutationUserId || !useAuthStore.getState().isAuthenticated) {
       setCreateError('Please sign in again before creating a workspace.');
-      setCreateSuccess(null);
       return;
     }
 
     createSubmissionRef.current = true;
     setCreateError(null);
-    setCreateSuccess(null);
 
     try {
-      const created = await createWorkspaceMutation.mutateAsync(createWorkspaceInput(createName));
+      await createWorkspaceMutation.mutateAsync(createWorkspaceInput(createName));
       const auth = useAuthStore.getState();
-      if (!isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated)) {
+      if (auth.sessionGeneration !== sessionGeneration || !isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated)) {
         return;
       }
       setCreateName('');
-      setCreateSuccess(`Workspace “${created.name}” created.`);
     } catch (error) {
       const auth = useAuthStore.getState();
-      if (isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated)) {
+      if (auth.sessionGeneration === sessionGeneration && isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated)) {
         setCreateError(messageFor(error, 'Unable to create this workspace.'));
-        setCreateSuccess(null);
       }
     } finally {
       createSubmissionRef.current = false;
@@ -127,7 +118,6 @@ export default function WorkspaceScreen() {
     const validationError = validateWorkspaceName(renameName, true);
     if (validationError) {
       setRenameError(validationError);
-      setRenameSuccess(null);
       return;
     }
 
@@ -135,13 +125,11 @@ export default function WorkspaceScreen() {
     const mutationWorkspaceId = activeWorkspaceId;
     if (!mutationUserId || !useAuthStore.getState().isAuthenticated) {
       setRenameError('Please sign in again before renaming a workspace.');
-      setRenameSuccess(null);
       return;
     }
 
     renameSubmissionRef.current = true;
     setRenameError(null);
-    setRenameSuccess(null);
 
     try {
       const renamed = await renameWorkspaceMutation.mutateAsync({
@@ -149,16 +137,14 @@ export default function WorkspaceScreen() {
         input: { name: renameName.trim() },
       });
       const auth = useAuthStore.getState();
-      if (!isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated)) {
+      if (auth.sessionGeneration !== sessionGeneration || !isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated)) {
         return;
       }
       setRenameName(renamed.name);
-      setRenameSuccess('Workspace name updated.');
     } catch (error) {
       const auth = useAuthStore.getState();
-      if (isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated)) {
+      if (auth.sessionGeneration === sessionGeneration && isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated)) {
         setRenameError(messageFor(error, 'Unable to rename this workspace.'));
-        setRenameSuccess(null);
       }
     } finally {
       renameSubmissionRef.current = false;
@@ -170,24 +156,21 @@ export default function WorkspaceScreen() {
     const validationError = validateMemberEmail(memberEmail);
     if (validationError) {
       setMemberError(validationError);
-      setMemberSuccess(null);
       return;
     }
     const mutationUserId = useAuthStore.getState().user?.id ?? null;
     const mutationWorkspaceId = activeWorkspaceId;
     if (!mutationUserId || !useAuthStore.getState().isAuthenticated) {
       setMemberError('Please sign in again before adding a member.');
-      setMemberSuccess(null);
       return;
     }
 
     memberSubmissionRef.current = true;
     setMemberError(null);
-    setMemberSuccess(null);
     try {
-      const added = await addMemberMutation.mutateAsync({ email: memberEmail.trim() });
+      await addMemberMutation.mutateAsync({ email: memberEmail.trim() });
       const auth = useAuthStore.getState();
-      if (!isWorkspaceMemberMutationScopeCurrent(
+      if (auth.sessionGeneration !== sessionGeneration || !isWorkspaceMemberMutationScopeCurrent(
         mutationUserId,
         mutationWorkspaceId,
         auth.user?.id ?? null,
@@ -195,10 +178,9 @@ export default function WorkspaceScreen() {
         auth.isAuthenticated,
       )) return;
       setMemberEmail('');
-      setMemberSuccess(`${added.name} was added to this workspace.`);
     } catch (error) {
       const auth = useAuthStore.getState();
-      if (isWorkspaceMemberMutationScopeCurrent(
+      if (auth.sessionGeneration === sessionGeneration && isWorkspaceMemberMutationScopeCurrent(
         mutationUserId,
         mutationWorkspaceId,
         auth.user?.id ?? null,
@@ -206,7 +188,6 @@ export default function WorkspaceScreen() {
         auth.isAuthenticated,
       )) {
         setMemberError(messageFor(error, 'Unable to add this member.'));
-        setMemberSuccess(null);
       }
     } finally {
       memberSubmissionRef.current = false;
@@ -231,7 +212,7 @@ export default function WorkspaceScreen() {
     } catch (error) {
       const auth = useAuthStore.getState();
       if (
-        isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated) &&
+        auth.sessionGeneration === sessionGeneration && isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated) &&
         useWorkspaceStore.getState().activeWorkspaceId === mutationWorkspaceId
       ) {
         setMemberActionError(messageFor(error, 'Unable to update member permissions.'));
@@ -259,7 +240,7 @@ export default function WorkspaceScreen() {
         await leaveWorkspaceMutation.mutateAsync(mutationWorkspaceId);
       }
       const auth = useAuthStore.getState();
-      if (isWorkspaceMemberMutationScopeCurrent(
+      if (auth.sessionGeneration === sessionGeneration && isWorkspaceMemberMutationScopeCurrent(
         mutationUserId,
         mutationWorkspaceId,
         auth.user?.id ?? null,
@@ -270,7 +251,7 @@ export default function WorkspaceScreen() {
       }
     } catch (error) {
       const auth = useAuthStore.getState();
-      if (isWorkspaceMemberMutationScopeCurrent(
+      if (auth.sessionGeneration === sessionGeneration && isWorkspaceMemberMutationScopeCurrent(
         mutationUserId,
         mutationWorkspaceId,
         auth.user?.id ?? null,
@@ -402,7 +383,6 @@ export default function WorkspaceScreen() {
             <Text style={styles.formButtonText}>{createWorkspaceMutation.isPending ? 'Creating…' : 'Create workspace'}</Text>
           </Pressable>
           {createError && <Text testID="workspace-create-error" accessibilityRole="alert" style={[styles.formError, { color: colors.danger || colors.text }]}>{createError}</Text>}
-          {createSuccess && <Text testID="workspace-create-success" style={[styles.successText, { color: colors.primary }]}>{createSuccess}</Text>}
 
           {activeWorkspace && (
             <>
@@ -430,7 +410,6 @@ export default function WorkspaceScreen() {
                 <Text style={styles.formButtonText}>{renameWorkspaceMutation.isPending ? 'Saving…' : 'Save workspace name'}</Text>
               </Pressable>
               {renameError && <Text testID="workspace-rename-error" accessibilityRole="alert" style={[styles.formError, { color: colors.danger || colors.text }]}>{renameError}</Text>}
-              {renameSuccess && <Text testID="workspace-rename-success" style={[styles.successText, { color: colors.primary }]}>{renameSuccess}</Text>}
             </>
           )}
         </View>
@@ -490,7 +469,6 @@ export default function WorkspaceScreen() {
                     <Text style={styles.formButtonText}>{addMemberMutation.isPending ? 'Adding…' : 'Add member'}</Text>
                   </Pressable>
                   {memberError && <Text testID="workspace-member-error" accessibilityRole="alert" style={[styles.formError, { color: colors.danger || colors.text }]}>{memberError}</Text>}
-                  {memberSuccess && <Text testID="workspace-member-success" style={[styles.successText, { color: colors.primary }]}>{memberSuccess}</Text>}
                 </>
               )}
             </View>
@@ -680,5 +658,4 @@ const styles = StyleSheet.create({
   disabledButton: { opacity: 0.6 },
   formButtonText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
   formError: { fontSize: 12, lineHeight: 17 },
-  successText: { fontSize: 12, lineHeight: 17 },
 });

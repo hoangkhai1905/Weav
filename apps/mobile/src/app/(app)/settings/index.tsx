@@ -17,6 +17,11 @@ import { authRepository } from '../../../infrastructure/repository-factory';
 import { useAuthStore } from '../../../stores/auth.store';
 import { useAuthSessions } from '../../../features/auth/hooks/useAuthSessions';
 import { isAuthSessionScopeCurrent } from '../../../features/auth/session-management.utils';
+import {
+  captureAuthSessionScope,
+  isAuthSessionScopeCurrent as isNotificationAuthSessionScopeCurrent,
+} from '../../../features/auth/auth-session.scope';
+import { showMilestoneToastForSession } from '../../../features/feedback/milestone-toast';
 
 function formatSessionDate(value: string | null): string {
   if (!value) return 'Not available';
@@ -102,7 +107,8 @@ export default function SettingsScreen() {
     const capturedAuth = useAuthStore.getState();
     const capturedUserId = capturedAuth.user?.id;
     const capturedRefreshToken = capturedAuth.tokens?.refreshToken;
-    if (!capturedAuth.isAuthenticated || !capturedUserId || !capturedRefreshToken) {
+    const capturedScope = captureAuthSessionScope();
+    if (!capturedAuth.isAuthenticated || !capturedUserId || !capturedRefreshToken || !capturedScope) {
       setChangePasswordError('Your session is no longer valid. Please sign in again.');
       changePasswordGate.current.finish();
       return;
@@ -116,6 +122,7 @@ export default function SettingsScreen() {
       await authRepository.changePassword(currentPassword, newPassword);
       const current = useAuthStore.getState();
       if (
+        !isNotificationAuthSessionScopeCurrent(capturedScope) ||
         !isChangePasswordScopeCurrent(
           capturedUserId,
           capturedRefreshToken,
@@ -130,16 +137,13 @@ export default function SettingsScreen() {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      showMilestoneToastForSession(capturedScope, 'auth.password_changed');
       await expireAuthSession();
-      showToast({
-        type: 'success',
-        title: 'Password changed / Đã đổi mật khẩu',
-        message: 'All sessions were revoked. Please sign in again.',
-      });
       router.replace('/(auth)/login');
     } catch (error: unknown) {
       const current = useAuthStore.getState();
       if (
+        isNotificationAuthSessionScopeCurrent(capturedScope) &&
         isChangePasswordScopeCurrent(
           capturedUserId,
           capturedRefreshToken,

@@ -43,7 +43,7 @@ test.describe('Vietnamese and English web localization', () => {
         }),
       });
     });
-    await page.route('**/api/notifications**', async (route) => {
+    await page.route('**/api/v2/notifications**', async (route) => {
       const requestPath = new URL(route.request().url()).pathname;
       const body = requestPath.endsWith('/unread-count')
         ? { count: 0 }

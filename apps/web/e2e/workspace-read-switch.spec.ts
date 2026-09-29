@@ -75,7 +75,7 @@ async function installAuthFixture(page: Page, token = 'token-a') {
   await page.route('**/api/auth/logout', async (route) => {
     await route.fulfill({ status: 204, body: '' });
   });
-  await page.route('**/api/notifications/unread-count', async (route) => {
+  await page.route('**/api/v2/notifications/unread-count', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ count: 0 }) });
   });
 }
@@ -434,7 +434,7 @@ test.describe('workspace create and rename mutations', () => {
     });
     expect(createCalls).toBe(1);
     releaseCreate();
-    await expect(page.getByTestId('workspace-create-success')).toBeVisible();
+    await expect(page.getByText('Workspace created.', { exact: true })).toHaveCount(1);
   });
 
   test('keeps create input and shows the actual conflict without success', async ({ page }) => {
@@ -465,7 +465,7 @@ test.describe('workspace create and rename mutations', () => {
     await page.getByTestId('workspace-create-submit').click();
     await expect(page.getByTestId('workspace-create-error')).toContainText('already exists');
     await expect(page.getByTestId('workspace-create-name')).toHaveValue('Duplicate Workspace');
-    await expect(page.getByTestId('workspace-create-success')).toHaveCount(0);
+    await expect(page.getByText('Workspace created.', { exact: true })).toHaveCount(0);
     expect(successCount).toBe(0);
   });
 
@@ -498,7 +498,7 @@ test.describe('workspace create and rename mutations', () => {
     await expect(page.getByTestId('workspace-selector')).toHaveValue(WORKSPACE_A);
     await expect(page.getByTestId('workspace-selector').locator('option')).toHaveText(['Renamed Workspace']);
     await expect(page.getByTestId('workspace-selected-heading')).toHaveText('Renamed Workspace');
-    await expect(page.getByTestId('workspace-rename-success')).toBeVisible();
+    await expect(page.getByText('Workspace renamed.', { exact: true })).toHaveCount(1);
   });
 
   test('keeps rename input and active state unchanged on forbidden response', async ({ page }) => {
@@ -529,7 +529,7 @@ test.describe('workspace create and rename mutations', () => {
     await expect(page.getByTestId('workspace-rename-error')).toContainText('owner');
     await expect(page.getByTestId('workspace-rename-name')).toHaveValue('Forbidden Rename');
     await expect(page.getByTestId('workspace-selector')).toHaveValue(WORKSPACE_A);
-    await expect(page.getByTestId('workspace-rename-success')).toHaveCount(0);
+    await expect(page.getByText('Workspace renamed.', { exact: true })).toHaveCount(0);
   });
 
   test('refreshes selection when rename reports that the workspace is no longer accessible', async ({ page }) => {

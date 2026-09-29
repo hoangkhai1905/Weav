@@ -3,7 +3,9 @@ package com.weav.workspace.application.usecase;
 import com.weav.workspace.TestcontainersConfiguration;
 import com.weav.workspace.application.dto.CreateWorkspaceCommand;
 import com.weav.workspace.application.dto.WorkspaceResponse;
+import com.weav.workspace.application.notification.WorkspaceNotificationRecorder;
 import com.weav.workspace.application.port.out.TransactionRunner;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.domain.exception.WorkspaceNameAlreadyExistsException;
 import com.weav.workspace.domain.model.Membership;
 import com.weav.workspace.domain.model.PageResult;
@@ -56,6 +58,12 @@ class WorkspaceUseCasePersistenceIntegrationTest {
 
     @Autowired
     private TransactionRunner transactionRunner;
+
+    @Autowired
+    private WorkspaceMutationLock mutationLock;
+
+    @Autowired
+    private WorkspaceNotificationRecorder notificationRecorder;
 
     @Test
     void createCommitsWorkspaceAndExactlyOneOwnerInOnePostgresTransaction() {
@@ -114,7 +122,7 @@ class WorkspaceUseCasePersistenceIntegrationTest {
                 .thenThrow(new IllegalStateException("membership write failed"));
 
         CreateWorkspaceUseCase useCase = new CreateWorkspaceUseCase(
-                recordingWorkspaceRepository, failingMembershipRepository, transactionRunner);
+                recordingWorkspaceRepository, failingMembershipRepository, transactionRunner, notificationRecorder);
 
         assertThrows(IllegalStateException.class, () -> useCase.execute(
                 new CreateWorkspaceCommand(actor, "Rollback Workspace")));
@@ -135,7 +143,9 @@ class WorkspaceUseCasePersistenceIntegrationTest {
         RenameWorkspaceUseCase useCase = new RenameWorkspaceUseCase(
                 new FirstPrecheckBypassWorkspaceRepository(workspaceRepository),
                 membershipRepository,
-                transactionRunner);
+                transactionRunner,
+                mutationLock,
+                notificationRecorder);
 
         WorkspaceNameAlreadyExistsException exception = assertThrows(
                 WorkspaceNameAlreadyExistsException.class,
@@ -165,7 +175,8 @@ class WorkspaceUseCasePersistenceIntegrationTest {
                             }
                         }),
                 membershipRepository,
-                transactionRunner);
+                transactionRunner,
+                notificationRecorder);
 
         WorkspaceResponse response = transactionRunner.required(() -> useCase.execute(
                 new CreateWorkspaceCommand(owner, null)));
@@ -217,7 +228,7 @@ class WorkspaceUseCasePersistenceIntegrationTest {
         });
 
         CreateWorkspaceUseCase useCase = new CreateWorkspaceUseCase(
-                recordingWorkspaceRepository, failingMembershipRepository, transactionRunner);
+                recordingWorkspaceRepository, failingMembershipRepository, transactionRunner, notificationRecorder);
 
         assertThrows(DataIntegrityViolationException.class, () -> useCase.execute(
                 new CreateWorkspaceCommand(actor, null)));

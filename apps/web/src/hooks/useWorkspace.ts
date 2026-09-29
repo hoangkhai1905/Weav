@@ -8,6 +8,7 @@ import {
 import { getStoredAuthToken } from '../api/ocr.api';
 import { useAuthStore } from '../store/useAuthStore';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
+import { captureNotificationSession, notificationSessionKey } from '../lib/notifications/session';
 
 export const workspaceKeys = {
   list: (userId: string) => ['workspaces', userId, 'list'] as const,
@@ -53,7 +54,8 @@ function useWorkspaceListData() {
   const authenticated = useAuthStore((state) => state.isAuthenticated);
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
-  const setWorkspaces = useWorkspaceStore((state) => state.setWorkspaces);
+  const reconcileWorkspaceList = useWorkspaceStore((state) => state.reconcileWorkspaceList);
+  const sessionKey = notificationSessionKey(captureNotificationSession());
 
   const sessionEnabled = Boolean(authenticated && userId && (isWorkspaceMockMode || getStoredAuthToken()));
   const workspacesQuery = useQuery({
@@ -65,8 +67,8 @@ function useWorkspaceListData() {
   });
 
   useEffect(() => {
-    if (workspacesQuery.isSuccess) setWorkspaces(workspacesQuery.data.items);
-  }, [setWorkspaces, workspacesQuery.data, workspacesQuery.isSuccess]);
+    if (workspacesQuery.isSuccess) reconcileWorkspaceList(workspacesQuery.data.items, sessionKey);
+  }, [reconcileWorkspaceList, sessionKey, workspacesQuery.data, workspacesQuery.isSuccess]);
 
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null;
 

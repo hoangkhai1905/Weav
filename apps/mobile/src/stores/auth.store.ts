@@ -7,6 +7,7 @@ interface AuthState {
   isHydrating: boolean;
   user: UserProfile | null;
   tokens: AuthTokens | null;
+  sessionGeneration: number;
   authError: string | null;
   setAuthSession: (user: UserProfile, tokens: AuthTokens) => void;
   setUserProfileIfCurrent: (user: UserProfile, expectedUserId: string) => boolean;
@@ -29,10 +30,18 @@ export const useAuthStore = create<AuthState>((set) => ({
     accessToken: 'mock_token_demo',
     refreshToken: 'mock_refresh_demo',
   } : null,
+  sessionGeneration: 0,
   authError: null,
   setAuthSession: (user, tokens) => {
     setHttpClientToken(tokens.accessToken);
-    set({ isAuthenticated: true, user, tokens, authError: null, isHydrating: false });
+    set((state) => ({
+      isAuthenticated: true,
+      user,
+      tokens,
+      sessionGeneration: state.sessionGeneration + 1,
+      authError: null,
+      isHydrating: false,
+    }));
   },
   setUserProfileIfCurrent: (user, expectedUserId) => {
     let applied = false;
@@ -51,7 +60,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   clearAuthSession: () => {
     setHttpClientToken(null);
-    set({ isAuthenticated: false, user: null, tokens: null, isHydrating: false });
+    set((state) => ({
+      isAuthenticated: false,
+      user: null,
+      tokens: null,
+      sessionGeneration: state.sessionGeneration + 1,
+      isHydrating: false,
+    }));
   },
   setHydrating: (isHydrating) => set({ isHydrating }),
   setAuthError: (authError) => set({ authError }),

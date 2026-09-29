@@ -7,6 +7,7 @@ import com.weav.workspace.application.dto.ConnectionResponse;
 import com.weav.workspace.application.dto.SaveCredentialCommand;
 import com.weav.workspace.application.port.out.CredentialCryptoPort;
 import com.weav.workspace.application.port.out.TransactionRunner;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.service.ConnectionAuthorizationPolicy;
 import com.weav.workspace.application.service.ConnectionViewAssembler;
 import com.weav.workspace.application.service.CredentialPayloadCodec;
@@ -87,6 +88,9 @@ class CredentialUseCasesPersistenceIntegrationTest {
 
     @Autowired
     private DeleteCredentialUseCase deleteCredentialUseCase;
+
+    @Autowired
+    private WorkspaceMutationLock workspaceMutationLock;
 
     @Autowired
     private CredentialCryptoPort credentialCrypto;
@@ -197,7 +201,8 @@ class CredentialUseCasesPersistenceIntegrationTest {
                 credentialCrypto,
                 viewAssembler,
                 (workspaceId, connectionId) -> false,
-                transactionRunner);
+                transactionRunner,
+                workspaceMutationLock);
 
         assertThatThrownBy(() -> useCase.execute(new SaveCredentialCommand(
                 workspace.getId(), ownerId, active.getId(), Map.of("apiKey", "rollback-api-key"), null)))
@@ -232,7 +237,8 @@ class CredentialUseCasesPersistenceIntegrationTest {
                 credentialCrypto,
                 viewAssembler,
                 (workspaceId, connectionId) -> false,
-                transactionRunner);
+                transactionRunner,
+                workspaceMutationLock);
 
         assertThatThrownBy(() -> useCase.execute(new SaveCredentialCommand(
                 workspace.getId(), ownerId, active.getId(), Map.of("apiKey", "rollback-api-key"), null)))

@@ -2,6 +2,8 @@ package com.weav.identity.infrastructure.persistence;
 
 import com.weav.identity.TestcontainersConfiguration;
 import com.weav.identity.application.dto.ChangePasswordCommand;
+import com.weav.identity.application.notification.IdentityNotificationEvent;
+import com.weav.identity.application.notification.IdentitySecurityNotificationRecorder;
 import com.weav.identity.application.port.out.PasswordHasher;
 import com.weav.identity.application.port.out.TransactionRunner;
 import com.weav.identity.application.security.CurrentIdentityGuard;
@@ -34,7 +36,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Objects;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -61,6 +65,7 @@ class PasswordChangeConcurrencyIntegrationTest {
     private static final String OLD_PASSWORD = "correct-horse-battery-staple";
     private static final String REQUESTED_PASSWORD = "requested-replacement-password";
     private static final String CONCURRENT_PASSWORD = "concurrent-replacement-password";
+    private static final List<IdentityNotificationEvent> RECORDED_EVENTS = new CopyOnWriteArrayList<>();
 
     @Autowired
     private ChangePasswordUseCase changePasswordUseCase;
@@ -89,6 +94,7 @@ class PasswordChangeConcurrencyIntegrationTest {
 
     @BeforeEach
     void createActiveIdentity() {
+        RECORDED_EVENTS.clear();
         springDataUserSessionRepository.deleteAll();
         springDataUserRepository.deleteAll();
         userId = userRepository.save(new User(
@@ -136,6 +142,7 @@ class PasswordChangeConcurrencyIntegrationTest {
         assertInstanceOf(UnauthorizedException.class, outcome.failure());
         assertEquals(CONCURRENT_PASSWORD, userRepository.findById(userId).orElseThrow().getPasswordHash());
         assertTrue(sessionRepository.findById(sessionId).orElseThrow().isActive(NOW));
+        assertTrue(RECORDED_EVENTS.isEmpty());
     }
 
     private ChangeOutcome changePassword() {
@@ -200,13 +207,19 @@ class PasswordChangeConcurrencyIntegrationTest {
         }
 
         @Bean
+        IdentitySecurityNotificationRecorder notificationRecorder(Clock clock) {
+            return new IdentitySecurityNotificationRecorder(RECORDED_EVENTS::add, clock);
+        }
+
+        @Bean
         ChangePasswordUseCase changePasswordUseCase(
                 CurrentIdentityGuard identityGuard,
                 UserRepositoryAdapter userRepository,
                 UserSessionRepositoryAdapter sessionRepository,
                 PasswordHasher passwordHasher,
                 GateTransactionRunner transactionRunner,
-                Clock clock
+                Clock clock,
+                IdentitySecurityNotificationRecorder notificationRecorder
         ) {
             return new ChangePasswordUseCase(
                     identityGuard,
@@ -215,7 +228,8 @@ class PasswordChangeConcurrencyIntegrationTest {
                     passwordHasher,
                     transactionRunner,
                     new AuthInputPolicy(),
-                    clock
+                    clock,
+                    notificationRecorder
             );
         }
     }

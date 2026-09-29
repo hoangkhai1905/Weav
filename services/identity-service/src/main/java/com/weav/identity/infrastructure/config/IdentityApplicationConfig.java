@@ -4,12 +4,14 @@ import com.weav.identity.application.port.out.AccessTokenIssuer;
 import com.weav.identity.application.port.out.AuthMailDispatcher;
 import com.weav.identity.application.port.out.AuthMailSender;
 import com.weav.identity.application.port.out.AvatarStorage;
+import com.weav.identity.application.port.out.IdentityNotificationOutboxPort;
 import com.weav.identity.application.port.out.KeyedFingerprint;
 import com.weav.identity.application.port.out.OtpChallengeStore;
 import com.weav.identity.application.port.out.PasswordHasher;
 import com.weav.identity.application.port.out.RefreshTokenGenerator;
 import com.weav.identity.application.port.out.TransactionRunner;
 import com.weav.identity.application.security.CurrentIdentityGuard;
+import com.weav.identity.application.notification.IdentitySecurityNotificationRecorder;
 import com.weav.identity.application.usecase.ChangeUserStatusUseCase;
 import com.weav.identity.application.usecase.CompleteGoogleLoginUseCase;
 import com.weav.identity.application.usecase.DeleteAvatarUseCase;
@@ -53,6 +55,7 @@ import com.weav.identity.infrastructure.security.JwtProperties;
 import com.weav.identity.infrastructure.security.SecureRefreshTokenGenerator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.amqp.autoconfigure.RabbitTemplateCustomizer;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -100,6 +103,23 @@ public class IdentityApplicationConfig {
     @Bean
     public Clock clock() {
         return Clock.systemUTC();
+    }
+
+    @Bean
+    public IdentitySecurityNotificationRecorder identitySecurityNotificationRecorder(
+            IdentityNotificationOutboxPort outbox,
+            Clock clock) {
+        return new IdentitySecurityNotificationRecorder(outbox, clock);
+    }
+
+    @Bean
+    public RabbitTemplateCustomizer identityNotificationRabbitTemplateCustomizer() {
+        return rabbitTemplate -> {
+            rabbitTemplate.setMandatory(true);
+            rabbitTemplate.setReturnsCallback(returned -> {
+                // CorrelationData captures the return; event payloads are never logged.
+            });
+        };
     }
 
     @Bean
@@ -227,7 +247,8 @@ public class IdentityApplicationConfig {
             TransactionRunner transactionRunner,
             AuthInputPolicy authInputPolicy,
             OtpInputPolicy otpInputPolicy,
-            Clock clock
+            Clock clock,
+            IdentitySecurityNotificationRecorder notificationRecorder
     ) {
         return new ResetPasswordUseCase(
                 userRepository,
@@ -238,7 +259,8 @@ public class IdentityApplicationConfig {
                 transactionRunner,
                 authInputPolicy,
                 otpInputPolicy,
-                clock
+                clock,
+                notificationRecorder
         );
     }
 
@@ -318,7 +340,8 @@ public class IdentityApplicationConfig {
             KeyedFingerprint fingerprint,
             TransactionRunner transactionRunner,
             AuthInputPolicy inputPolicy,
-            Clock clock
+            Clock clock,
+            IdentitySecurityNotificationRecorder notificationRecorder
     ) {
         return new LinkGoogleAccountUseCase(
                 identityGuard,
@@ -328,7 +351,8 @@ public class IdentityApplicationConfig {
                 fingerprint,
                 transactionRunner,
                 inputPolicy,
-                clock);
+                clock,
+                notificationRecorder);
     }
 
     @Bean
@@ -346,7 +370,8 @@ public class IdentityApplicationConfig {
             OAuthAccountRepository oauthAccountRepository,
             PasswordHasher passwordHasher,
             TransactionRunner transactionRunner,
-            AuthInputPolicy inputPolicy
+            AuthInputPolicy inputPolicy,
+            IdentitySecurityNotificationRecorder notificationRecorder
     ) {
         return new UnlinkOAuthAccountUseCase(
                 identityGuard,
@@ -354,7 +379,8 @@ public class IdentityApplicationConfig {
                 oauthAccountRepository,
                 passwordHasher,
                 transactionRunner,
-                inputPolicy);
+                inputPolicy,
+                notificationRecorder);
     }
 
     @Bean
@@ -381,7 +407,8 @@ public class IdentityApplicationConfig {
             PasswordHasher passwordHasher,
             TransactionRunner transactionRunner,
             AuthInputPolicy inputPolicy,
-            Clock clock
+            Clock clock,
+            IdentitySecurityNotificationRecorder notificationRecorder
     ) {
         return new ChangePasswordUseCase(
                 identityGuard,
@@ -390,7 +417,8 @@ public class IdentityApplicationConfig {
                 passwordHasher,
                 transactionRunner,
                 inputPolicy,
-                clock
+                clock,
+                notificationRecorder
         );
     }
 

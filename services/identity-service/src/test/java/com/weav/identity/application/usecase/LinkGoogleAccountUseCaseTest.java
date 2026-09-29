@@ -2,6 +2,8 @@ package com.weav.identity.application.usecase;
 
 import com.weav.identity.application.dto.OAuthAccountMetadata;
 import com.weav.identity.application.dto.OAuthSecret;
+import com.weav.identity.application.notification.IdentitySecurityEventType;
+import com.weav.identity.application.notification.IdentitySecurityNotificationRecorder;
 import com.weav.identity.application.port.out.KeyedFingerprint;
 import com.weav.identity.application.port.out.OAuthProviderClient;
 import com.weav.identity.application.port.out.OAuthTransactionStore;
@@ -63,6 +65,8 @@ class LinkGoogleAccountUseCaseTest {
     private final OAuthAccountRepository oauthAccountRepository = mock(OAuthAccountRepository.class);
     private final PasswordHasher passwordHasher = mock(PasswordHasher.class);
     private final KeyedFingerprint fingerprint = mock(KeyedFingerprint.class);
+    private final IdentitySecurityNotificationRecorder notificationRecorder =
+            mock(IdentitySecurityNotificationRecorder.class);
     private final TransactionRunner transactionRunner = new ImmediateTransactionRunner();
     private final CurrentIdentityGuard identityGuard = new CurrentIdentityGuard(
             userRepository, sessionRepository, CLOCK);
@@ -74,7 +78,8 @@ class LinkGoogleAccountUseCaseTest {
             fingerprint,
             transactionRunner,
             new AuthInputPolicy(),
-            CLOCK);
+            CLOCK,
+            notificationRecorder);
     private final ListOAuthAccountsUseCase listUseCase = new ListOAuthAccountsUseCase(
             identityGuard, oauthAccountRepository);
     private final UnlinkOAuthAccountUseCase unlinkUseCase = new UnlinkOAuthAccountUseCase(
@@ -83,7 +88,8 @@ class LinkGoogleAccountUseCaseTest {
             oauthAccountRepository,
             passwordHasher,
             transactionRunner,
-            new AuthInputPolicy());
+            new AuthInputPolicy(),
+            notificationRecorder);
 
     @BeforeEach
     void stubActiveLocalIdentity() {
@@ -164,6 +170,7 @@ class LinkGoogleAccountUseCaseTest {
         verify(userRepository).findByIdForUpdate(USER_ID);
         verify(userRepository).save(user);
         verify(oauthAccountRepository).save(any(OAuthAccount.class));
+        verify(notificationRecorder).record(IdentitySecurityEventType.GOOGLE_LINKED, USER_ID);
         verify(sessionRepository, never()).save(any(UserSession.class));
     }
 
@@ -196,6 +203,7 @@ class LinkGoogleAccountUseCaseTest {
 
         assertUnauthorized(() -> linkUseCase.complete(UUID.randomUUID(), SESSION_ID, handoff));
         verify(userRepository, never()).findByIdForUpdate(any());
+        verify(notificationRecorder, never()).record(any(), any());
 
         OAuthAccount owner = account(UUID.randomUUID(), "owned-subject", "owner@example.com");
         when(oauthAccountRepository.findByProviderAndProviderUserId(OAuthProvider.GOOGLE, "owned-subject"))
@@ -234,6 +242,7 @@ class LinkGoogleAccountUseCaseTest {
         unlinkUseCase.execute(USER_ID, SESSION_ID, ACCOUNT_ID, PASSWORD);
 
         verify(oauthAccountRepository).deleteByIdAndUserId(ACCOUNT_ID, USER_ID);
+        verify(notificationRecorder).record(IdentitySecurityEventType.GOOGLE_UNLINKED, USER_ID);
         verify(sessionRepository, never()).save(any(UserSession.class));
     }
 
@@ -255,6 +264,7 @@ class LinkGoogleAccountUseCaseTest {
 
         assertUnauthorized(() -> unlinkUseCase.execute(USER_ID, SESSION_ID, ACCOUNT_ID, "wrong-password"));
         verify(oauthAccountRepository, never()).deleteByIdAndUserId(any(), any());
+        verify(notificationRecorder, never()).record(any(), any());
     }
 
     @Test
@@ -272,6 +282,7 @@ class LinkGoogleAccountUseCaseTest {
         assertEquals("OAUTH_LAST_LOGIN_METHOD", failure.getCode());
         verify(oauthAccountRepository, never()).deleteByIdAndUserId(any(), any());
         verify(passwordHasher, never()).matches(any(), any());
+        verify(notificationRecorder, never()).record(any(), any());
     }
 
     private void stubLockedActiveUser(User user) {

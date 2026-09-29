@@ -30,6 +30,9 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { ConfirmButton } from '../components/common/ConfirmButton';
 import { buttonPress, pageVariants, reducedMotionVariants, staggerContainer, staggerItem } from '../lib/motion';
+import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
+import { showSuccessToast } from '../lib/feedback/toast';
+import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 
 function getWorkspaceErrorMessage(error: unknown, t: (key: string) => string): string {
   if (error instanceof WorkspaceApiError) {
@@ -112,11 +115,10 @@ interface WorkspaceRenameFormProps {
   workspace: WorkspaceSummary;
   isPending: boolean;
   error: string;
-  success: string;
   onSubmit: (name: string) => void;
 }
 
-function WorkspaceRenameForm({ workspace, isPending, error, success, onSubmit }: WorkspaceRenameFormProps) {
+function WorkspaceRenameForm({ workspace, isPending, error, onSubmit }: WorkspaceRenameFormProps) {
   const { t } = useI18nStore();
   const [name, setName] = useState(workspace.name);
 
@@ -141,7 +143,6 @@ function WorkspaceRenameForm({ workspace, isPending, error, success, onSubmit }:
           className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
         />
         {error && <p data-testid="workspace-rename-error" className="mt-1 text-xs text-rose-700 dark:text-rose-300" role="alert">{error}</p>}
-        {success && <p data-testid="workspace-rename-success" className="mt-1 text-xs text-emerald-700 dark:text-emerald-300" role="status">{success}</p>}
       </div>
       <button
         type="submit"
@@ -166,20 +167,18 @@ export function WorkspacePage() {
     membersQuery,
   } = useWorkspaceContext();
   const queryClient = useQueryClient();
+  const refreshNotifications = useNotificationMilestoneRefresh();
   const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
   const removeWorkspace = useWorkspaceStore((state) => state.removeWorkspace);
   const workspaceAccessError = useWorkspaceStore((state) => state.workspaceAccessError);
   const [inviteEmail, setInviteEmail] = useState('');
   const [memberActionError, setMemberActionError] = useState('');
-  const [memberActionSuccess, setMemberActionSuccess] = useState('');
   const [memberMutationKey, setMemberMutationKey] = useState<string | null>(null);
   const [createName, setCreateName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState('');
-  const [createSuccess, setCreateSuccess] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameError, setRenameError] = useState('');
-  const [renameSuccess, setRenameSuccess] = useState('');
   const prefersReducedMotion = useReducedMotion();
   const pageMotion = prefersReducedMotion ? reducedMotionVariants : pageVariants;
   const listMotion = prefersReducedMotion ? reducedMotionVariants : staggerContainer;
@@ -206,18 +205,19 @@ export function WorkspacePage() {
     const validationError = validateWorkspaceName(createName, false);
     if (validationError) {
       setCreateError(t(createName.trim().length > 255 ? 'workspace.error.name_too_long' : 'workspace.error.name_required'));
-      setCreateSuccess('');
       return;
     }
     if (!userId || isCreating) return;
 
     const mutationUserId = userId;
+    const mutationSession = captureNotificationSession();
     setIsCreating(true);
     setCreateError('');
-    setCreateSuccess('');
     try {
       const created = await workspaceApi.createWorkspace(createName.trim() || undefined);
-      if (!isCurrentUser(mutationUserId)) return;
+      if (!isCurrentUser(mutationUserId) || !isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast('toast.workspace.created', mutationSession);
+      refreshNotifications(mutationSession);
 
       const listKey = workspaceKeys.list(mutationUserId);
       const detailKey = workspaceKeys.detail(mutationUserId, created.id);
@@ -233,7 +233,7 @@ export function WorkspacePage() {
       }, created).items);
       useWorkspaceStore.getState().selectWorkspace(created.id);
       await queryClient.invalidateQueries({ queryKey: listKey });
-      if (isCurrentUser(mutationUserId)) {
+      if (isCurrentUser(mutationUserId) && isCurrentNotificationSession(mutationSession)) {
         queryClient.setQueryData<WorkspacePageResult>(listKey, (page) => mergeWorkspacePage(page, created));
         useWorkspaceStore.getState().setWorkspaces(
           mergeWorkspacePage({
@@ -246,12 +246,10 @@ export function WorkspacePage() {
         );
         useWorkspaceStore.getState().selectWorkspace(created.id);
         setCreateName('');
-        setCreateSuccess(t('workspace.created').replace('{name}', created.name));
       }
     } catch (error) {
-      if (isCurrentUser(mutationUserId)) {
+      if (isCurrentUser(mutationUserId) && isCurrentNotificationSession(mutationSession)) {
         setCreateError(getWorkspaceErrorMessage(error, t));
-        setCreateSuccess('');
       }
     } finally {
       setIsCreating(false);
@@ -262,19 +260,19 @@ export function WorkspacePage() {
     const validationError = validateWorkspaceName(name, true);
     if (validationError) {
       setRenameError(t(name.trim() ? 'workspace.error.name_too_long' : 'workspace.error.name_required'));
-      setRenameSuccess('');
       return;
     }
     if (!userId || !activeWorkspaceId || isRenaming) return;
 
     const mutationUserId = userId;
+    const mutationSession = captureNotificationSession();
     const workspaceId = activeWorkspaceId;
     setIsRenaming(true);
     setRenameError('');
-    setRenameSuccess('');
     try {
       const renamed = await workspaceApi.renameWorkspace(workspaceId, { name: name.trim() });
-      if (!isCurrentUser(mutationUserId)) return;
+      if (!isCurrentUser(mutationUserId) || !isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast('toast.workspace.renamed', mutationSession);
 
       const listKey = workspaceKeys.list(mutationUserId);
       const detailKey = workspaceKeys.detail(mutationUserId, workspaceId);
@@ -284,15 +282,13 @@ export function WorkspacePage() {
         useWorkspaceStore.getState().workspaces.map((workspace) => workspace.id === renamed.id ? renamed : workspace),
       );
       await queryClient.invalidateQueries({ queryKey: listKey });
-      if (isCurrentUser(mutationUserId)) setRenameSuccess(t('workspace.renamed').replace('{name}', renamed.name));
     } catch (error) {
-      if (isCurrentUser(mutationUserId)) {
+      if (isCurrentUser(mutationUserId) && isCurrentNotificationSession(mutationSession)) {
         if (error instanceof WorkspaceApiError && error.status === 404) {
           useWorkspaceStore.getState().removeWorkspace(workspaceId, getWorkspaceErrorMessage(error, t));
           await queryClient.invalidateQueries({ queryKey: workspaceKeys.list(mutationUserId) });
         }
         setRenameError(getWorkspaceErrorMessage(error, t));
-        setRenameSuccess('');
       }
     } finally {
       setIsRenaming(false);
@@ -307,8 +303,9 @@ export function WorkspacePage() {
     ]);
   };
 
-  const isCurrentMemberContext = (mutationUserId: string, workspaceId: string) => (
+  const isCurrentMemberContext = (mutationUserId: string, workspaceId: string, session: ReturnType<typeof captureNotificationSession>) => (
     isCurrentUser(mutationUserId)
+    && isCurrentNotificationSession(session)
     && useWorkspaceStore.getState().activeWorkspaceId === workspaceId
   );
 
@@ -320,9 +317,9 @@ export function WorkspacePage() {
     const mutationUserId = userId;
     const workspaceId = activeWorkspaceId;
     if (!mutationUserId) return;
+    const mutationSession = captureNotificationSession();
     setMemberMutationKey(`permissions:${member.id}:${permission}`);
     setMemberActionError('');
-    setMemberActionSuccess('');
     try {
       const updated = await workspaceApi.updateMemberPermissions(workspaceId, member.id, {
         canPublishWorkflow: permission === 'canPublishWorkflow'
@@ -332,7 +329,8 @@ export function WorkspacePage() {
           ? !member.canManageWorkflowState
           : Boolean(member.canManageWorkflowState),
       });
-      if (isCurrentMemberContext(mutationUserId, workspaceId)) {
+      if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) {
+        showSuccessToast('toast.workspace.permission_updated', mutationSession);
         await invalidateMemberScope(mutationUserId, workspaceId);
         queryClient.setQueryData<WorkspaceMemberPage>(
           workspaceKeys.members(mutationUserId, workspaceId),
@@ -340,7 +338,7 @@ export function WorkspacePage() {
         );
       }
     } catch (error) {
-      if (isCurrentMemberContext(mutationUserId, workspaceId)) {
+      if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) {
         setMemberActionError(getWorkspaceErrorMessage(error, t));
       }
     } finally {
@@ -353,25 +351,24 @@ export function WorkspacePage() {
     const validationError = validateWorkspaceMemberEmail(inviteEmail);
     if (validationError) {
       setMemberActionError(t(inviteEmail.trim() ? 'workspace.error.email_too_long' : 'workspace.error.member_email_required'));
-      setMemberActionSuccess('');
       return;
     }
     if (!activeWorkspaceId || !canManageMembers || memberMutationKey) return;
     const mutationUserId = userId;
     const workspaceId = activeWorkspaceId;
     if (!mutationUserId) return;
+    const mutationSession = captureNotificationSession();
     setMemberMutationKey(`add:${workspaceId}`);
     setMemberActionError('');
-    setMemberActionSuccess('');
     try {
-      const added = await workspaceApi.addMember(workspaceId, { email: inviteEmail.trim() });
-      if (isCurrentMemberContext(mutationUserId, workspaceId)) {
+      await workspaceApi.addMember(workspaceId, { email: inviteEmail.trim() });
+      if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) {
+        showSuccessToast('toast.workspace.member_added', mutationSession);
         setInviteEmail('');
-        setMemberActionSuccess(t('workspace.member_added').replace('{name}', added.name));
         await invalidateMemberScope(mutationUserId, workspaceId);
       }
     } catch (error) {
-      if (isCurrentMemberContext(mutationUserId, workspaceId)) {
+      if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) {
         setMemberActionError(getWorkspaceErrorMessage(error, t));
       }
     } finally {
@@ -384,12 +381,13 @@ export function WorkspacePage() {
     const mutationUserId = userId;
     const workspaceId = activeWorkspaceId;
     if (!mutationUserId) return;
+    const mutationSession = captureNotificationSession();
     setMemberMutationKey(`remove:${memberId}`);
     setMemberActionError('');
-    setMemberActionSuccess('');
     try {
       await workspaceApi.removeMember(workspaceId, memberId);
-      if (isCurrentMemberContext(mutationUserId, workspaceId)) {
+      if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) {
+        showSuccessToast('toast.workspace.member_removed', mutationSession);
         await invalidateMemberScope(mutationUserId, workspaceId);
         queryClient.setQueryData<WorkspaceMemberPage>(
           workspaceKeys.members(mutationUserId, workspaceId),
@@ -397,7 +395,7 @@ export function WorkspacePage() {
         );
       }
     } catch (error) {
-      if (isCurrentMemberContext(mutationUserId, workspaceId)) {
+      if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) {
         setMemberActionError(getWorkspaceErrorMessage(error, t));
       }
     } finally {
@@ -410,18 +408,19 @@ export function WorkspacePage() {
     const mutationUserId = userId;
     const workspaceId = activeWorkspaceId;
     if (!mutationUserId) return;
+    const mutationSession = captureNotificationSession();
     setMemberMutationKey(`leave:${workspaceId}`);
     setMemberActionError('');
-    setMemberActionSuccess('');
     try {
       await workspaceApi.leaveWorkspace(workspaceId);
-      if (!isCurrentMemberContext(mutationUserId, workspaceId)) return;
+      if (!isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) return;
+      showSuccessToast('toast.workspace.left', mutationSession);
       queryClient.removeQueries({ queryKey: workspaceKeys.members(mutationUserId, workspaceId) });
       queryClient.removeQueries({ queryKey: workspaceKeys.detail(mutationUserId, workspaceId) });
       removeWorkspace(workspaceId);
       await queryClient.invalidateQueries({ queryKey: workspaceKeys.list(mutationUserId) });
     } catch (error) {
-      if (isCurrentMemberContext(mutationUserId, workspaceId)) {
+      if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) {
         setMemberActionError(getWorkspaceErrorMessage(error, t));
       }
     } finally {
@@ -524,14 +523,12 @@ export function WorkspacePage() {
               onChange={(event) => {
                 setCreateName(event.target.value);
                 setCreateError('');
-                setCreateSuccess('');
               }}
               placeholder={t('workspace.name_placeholder')}
               disabled={isCreating}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
             />
             {createError && <p data-testid="workspace-create-error" className="mt-1 text-xs text-rose-700 dark:text-rose-300" role="alert">{createError}</p>}
-            {createSuccess && <p data-testid="workspace-create-success" className="mt-1 text-xs text-emerald-700 dark:text-emerald-300" role="status">{createSuccess}</p>}
           </div>
           <button
             type="submit"
@@ -588,7 +585,6 @@ export function WorkspacePage() {
                 workspace={activeWorkspace}
                 isPending={isRenaming}
                 error={renameError}
-                success={renameSuccess}
                 onSubmit={(name) => void handleRename(name)}
               />
             </div>
@@ -605,7 +601,6 @@ export function WorkspacePage() {
                 onChange={(event) => {
                   setInviteEmail(event.target.value);
                   setMemberActionError('');
-                  setMemberActionSuccess('');
                 }}
                 disabled={memberActionsDisabled}
                 title={memberActionsDisabled ? t('workspace.owner_manage_locked') : undefined}
@@ -634,7 +629,6 @@ export function WorkspacePage() {
             </p>
           )}
           {memberActionError && <p data-testid="workspace-member-error" className="text-xs text-rose-700 dark:text-rose-300" role="alert">{memberActionError}</p>}
-          {memberActionSuccess && <p data-testid="workspace-member-success" className="text-xs text-emerald-700 dark:text-emerald-300" role="status">{memberActionSuccess}</p>}
 
           <motion.section variants={itemMotion} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">

@@ -4,6 +4,8 @@ import com.weav.workspace.TestcontainersConfiguration;
 import com.weav.workspace.application.dto.UpdateMemberPermissionsCommand;
 import com.weav.workspace.application.port.out.AfterCommitExecutor;
 import com.weav.workspace.application.port.out.TransactionRunner;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
+import com.weav.workspace.application.notification.WorkspaceNotificationRecorder;
 import com.weav.workspace.domain.exception.MembershipNotFoundException;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
 import com.weav.workspace.domain.model.Membership;
@@ -11,17 +13,20 @@ import com.weav.workspace.domain.model.Workspace;
 import com.weav.workspace.domain.model.WorkspaceAccessSnapshot;
 import com.weav.workspace.domain.model.WorkspaceCapability;
 import com.weav.workspace.domain.model.PageResult;
+import com.weav.workspace.domain.model.WorkspaceMembershipView;
 import com.weav.workspace.domain.port.out.MembershipRepository;
 import com.weav.workspace.domain.port.out.WorkspaceAuthorizationCache;
 import com.weav.workspace.domain.port.out.WorkspaceRepository;
 import com.weav.workspace.domain.policy.WorkspaceAuthorizationPolicy;
 import com.weav.workspace.domain.query.MemberListQuery;
+import com.weav.workspace.domain.query.WorkspaceListQuery;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
@@ -82,7 +87,16 @@ class MembershipCacheInvalidationIntegrationTest {
     private WorkspaceAuthorizationCache authorizationCache;
 
     @Autowired
+    private WorkspaceMutationLock mutationLock;
+
+    @Autowired
+    private WorkspaceNotificationRecorder notificationRecorder;
+
+    @Autowired
     private StringRedisTemplate redis;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @DynamicPropertySource
     static void redisProperties(DynamicPropertyRegistry registry) {
@@ -196,7 +210,8 @@ class MembershipCacheInvalidationIntegrationTest {
             }
         };
         UpdateMemberPermissionsUseCase useCase = new UpdateMemberPermissionsUseCase(
-                membershipRepository, transactionRunner, afterCommitExecutor, failingCache);
+                membershipRepository, transactionRunner, afterCommitExecutor, failingCache,
+                workspaceRepository, mutationLock, notificationRecorder);
 
         useCase.execute(new UpdateMemberPermissionsCommand(
                 fixture.workspace().getId(), fixture.ownerId(), fixture.memberId(), true, true));
@@ -311,7 +326,10 @@ class MembershipCacheInvalidationIntegrationTest {
                 blocking,
                 transactionRunner,
                 afterCommitExecutor,
-                authorizationCache);
+                authorizationCache,
+                workspaceRepository,
+                mutationLock,
+                notificationRecorder);
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
             Future<Throwable> update = executor.submit(() -> {
@@ -328,15 +346,15 @@ class MembershipCacheInvalidationIntegrationTest {
                 }
             });
             assertThat(blocking.readStarted.await(10, TimeUnit.SECONDS)).isTrue();
-
-            removeMemberUseCase.execute(
-                    fixture.workspace().getId(), fixture.ownerId(), fixture.memberId());
+            Future<Throwable> remove = executor.submit(() -> invokeRemove(removeMemberUseCase, fixture));
             blocking.releaseRead.countDown();
 
-            assertThat(update.get(10, TimeUnit.SECONDS))
-                    .isInstanceOf(ResourceNotFoundException.class);
+            assertThat(update.get(10, TimeUnit.SECONDS)).isNull();
+            assertThat(remove.get(10, TimeUnit.SECONDS)).isNull();
             assertThat(membershipRepository.findByWorkspaceIdAndUserId(
                     fixture.workspace().getId(), fixture.memberId())).isEmpty();
+            assertThat(outboxCount(fixture.workspace().getId(), "workspace.member_permissions_updated")).isEqualTo(1);
+            assertThat(outboxCount(fixture.workspace().getId(), "workspace.member_removed")).isEqualTo(1);
         } finally {
             blocking.releaseRead.countDown();
             executor.shutdownNow();
@@ -344,31 +362,74 @@ class MembershipCacheInvalidationIntegrationTest {
     }
 
     @Test
+    void concurrentIdenticalRenameRecordsOnlyOneEffectiveTransition() throws Exception {
+        Fixture fixture = fixture();
+        CountDownLatch bothWorkspaceReads = new CountDownLatch(2);
+        WorkspaceRepository coordinatedWorkspaceRepository = new CoordinatedWorkspaceRepository(
+                workspaceRepository, fixture.workspace().getId(), bothWorkspaceReads);
+        RenameWorkspaceUseCase useCase = new RenameWorkspaceUseCase(
+                coordinatedWorkspaceRepository, membershipRepository, transactionRunner,
+                mutationLock, notificationRecorder);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch startTogether = new CountDownLatch(1);
+        try {
+            Future<Throwable> first = executor.submit(() -> runRenameAfter(startTogether, useCase, fixture));
+            Future<Throwable> second = executor.submit(() -> runRenameAfter(startTogether, useCase, fixture));
+            startTogether.countDown();
+
+            assertThat(first.get(10, TimeUnit.SECONDS)).isNull();
+            assertThat(second.get(10, TimeUnit.SECONDS)).isNull();
+            assertThat(workspaceRepository.findById(fixture.workspace().getId()).orElseThrow().getName())
+                    .isEqualTo("Renamed concurrently");
+            assertThat(outboxCount(fixture.workspace().getId(), "workspace.renamed")).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentIdenticalPermissionUpdatesRecordOnlyOneEffectiveTransition() throws Exception {
+        Fixture fixture = fixture();
+        CountDownLatch bothMembershipReads = new CountDownLatch(2);
+        MembershipRepository coordinatedMembershipRepository = new BlockingMembershipRepository(
+                membershipRepository, fixture.workspace().getId(), fixture.memberId(), bothMembershipReads);
+        UpdateMemberPermissionsUseCase useCase = new UpdateMemberPermissionsUseCase(
+                coordinatedMembershipRepository, transactionRunner, afterCommitExecutor,
+                authorizationCache, workspaceRepository, mutationLock, notificationRecorder);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch startTogether = new CountDownLatch(1);
+        try {
+            Future<Throwable> first = executor.submit(() -> runPermissionUpdateAfter(startTogether, useCase, fixture));
+            Future<Throwable> second = executor.submit(() -> runPermissionUpdateAfter(startTogether, useCase, fixture));
+            startTogether.countDown();
+
+            assertThat(first.get(10, TimeUnit.SECONDS)).isNull();
+            assertThat(second.get(10, TimeUnit.SECONDS)).isNull();
+            Membership persisted = membershipRepository.findByWorkspaceIdAndUserId(
+                    fixture.workspace().getId(), fixture.memberId()).orElseThrow();
+            assertThat(persisted.isCanPublishWorkflow()).isTrue();
+            assertThat(persisted.isCanManageWorkflowState()).isFalse();
+            assertThat(outboxCount(
+                    fixture.workspace().getId(), "workspace.member_permissions_updated")).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void concurrentRemoveIsIdempotentWhenBothTransactionsReadBeforeDelete() throws Exception {
         Fixture fixture = fixture();
-        CyclicBarrier barrier = new CyclicBarrier(2);
-        RemoveMemberUseCase first = new RemoveMemberUseCase(
-                new BlockingMembershipRepository(
-                        membershipRepository,
-                        fixture.workspace().getId(),
-                        fixture.memberId(),
-                        barrier),
-                transactionRunner,
-                afterCommitExecutor,
-                authorizationCache);
-        RemoveMemberUseCase second = new RemoveMemberUseCase(
-                new BlockingMembershipRepository(
-                        membershipRepository,
-                        fixture.workspace().getId(),
-                        fixture.memberId(),
-                        barrier),
-                transactionRunner,
-                afterCommitExecutor,
-                authorizationCache);
+        CyclicBarrier startTogether = new CyclicBarrier(2);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
-            Future<Throwable> firstResult = executor.submit(() -> invokeRemove(first, fixture));
-            Future<Throwable> secondResult = executor.submit(() -> invokeRemove(second, fixture));
+            Future<Throwable> firstResult = executor.submit(() -> {
+                startTogether.await(10, TimeUnit.SECONDS);
+                return invokeRemove(removeMemberUseCase, fixture);
+            });
+            Future<Throwable> secondResult = executor.submit(() -> {
+                startTogether.await(10, TimeUnit.SECONDS);
+                return invokeRemove(removeMemberUseCase, fixture);
+            });
 
             List<Throwable> outcomes = java.util.Arrays.asList(
                     firstResult.get(10, TimeUnit.SECONDS),
@@ -379,6 +440,7 @@ class MembershipCacheInvalidationIntegrationTest {
                     .isInstanceOf(ResourceNotFoundException.class);
             assertThat(membershipRepository.findByWorkspaceIdAndUserId(
                     fixture.workspace().getId(), fixture.memberId())).isEmpty();
+            assertThat(outboxCount(fixture.workspace().getId(), "workspace.member_removed")).isEqualTo(1);
         } finally {
             executor.shutdownNow();
         }
@@ -391,6 +453,36 @@ class MembershipCacheInvalidationIntegrationTest {
         } catch (Throwable exception) {
             return exception;
         }
+    }
+
+    private Throwable runRenameAfter(
+            CountDownLatch start, RenameWorkspaceUseCase useCase, Fixture fixture) throws InterruptedException {
+        start.await(10, TimeUnit.SECONDS);
+        try {
+            useCase.execute(fixture.ownerId(), fixture.workspace().getId(), "Renamed concurrently");
+            return null;
+        } catch (Throwable exception) {
+            return exception;
+        }
+    }
+
+    private Throwable runPermissionUpdateAfter(
+            CountDownLatch start, UpdateMemberPermissionsUseCase useCase, Fixture fixture)
+            throws InterruptedException {
+        start.await(10, TimeUnit.SECONDS);
+        try {
+            useCase.execute(new UpdateMemberPermissionsCommand(
+                    fixture.workspace().getId(), fixture.ownerId(), fixture.memberId(), true, false));
+            return null;
+        } catch (Throwable exception) {
+            return exception;
+        }
+    }
+
+    private int outboxCount(UUID workspaceId, String eventType) {
+        return jdbcTemplate.queryForObject("select count(*) from workspace.notification_outbox "
+                        + "where event_type = ? and payload ->> 'workspaceId' = ?",
+                Integer.class, eventType, workspaceId.toString());
     }
 
     private Fixture fixture() {
@@ -419,12 +511,13 @@ class MembershipCacheInvalidationIntegrationTest {
         private final CountDownLatch readStarted = new CountDownLatch(1);
         private final CountDownLatch releaseRead = new CountDownLatch(1);
         private final CyclicBarrier coordinatedRead;
+        private final CountDownLatch bothReads;
 
         private BlockingMembershipRepository(
                 MembershipRepository delegate,
                 UUID workspaceId,
                 UUID userId) {
-            this(delegate, workspaceId, userId, null);
+            this(delegate, workspaceId, userId, null, null);
         }
 
         private BlockingMembershipRepository(
@@ -432,10 +525,28 @@ class MembershipCacheInvalidationIntegrationTest {
                 UUID workspaceId,
                 UUID userId,
                 CyclicBarrier coordinatedRead) {
+            this(delegate, workspaceId, userId, coordinatedRead, null);
+        }
+
+        private BlockingMembershipRepository(
+                MembershipRepository delegate,
+                UUID workspaceId,
+                UUID userId,
+                CountDownLatch bothReads) {
+            this(delegate, workspaceId, userId, null, bothReads);
+        }
+
+        private BlockingMembershipRepository(
+                MembershipRepository delegate,
+                UUID workspaceId,
+                UUID userId,
+                CyclicBarrier coordinatedRead,
+                CountDownLatch bothReads) {
             this.delegate = delegate;
             this.workspaceId = workspaceId;
             this.userId = userId;
             this.coordinatedRead = coordinatedRead;
+            this.bothReads = bothReads;
         }
 
         @Override
@@ -457,7 +568,15 @@ class MembershipCacheInvalidationIntegrationTest {
         public Optional<Membership> findByWorkspaceIdAndUserId(UUID workspaceId, UUID userId) {
             Optional<Membership> result = delegate.findByWorkspaceIdAndUserId(workspaceId, userId);
             if (this.workspaceId.equals(workspaceId) && this.userId.equals(userId)) {
-                if (coordinatedRead != null) {
+                if (bothReads != null) {
+                    bothReads.countDown();
+                    try {
+                        bothReads.await(1, TimeUnit.SECONDS);
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("coordinated membership read interrupted", exception);
+                    }
+                } else if (coordinatedRead != null) {
                     try {
                         coordinatedRead.await(10, TimeUnit.SECONDS);
                     } catch (Exception exception) {
@@ -476,6 +595,11 @@ class MembershipCacheInvalidationIntegrationTest {
                 }
             }
             return result;
+        }
+
+        @Override
+        public List<UUID> findUserIdsByWorkspaceId(UUID workspaceId) {
+            return delegate.findUserIdsByWorkspaceId(workspaceId);
         }
 
         @Override
@@ -499,6 +623,54 @@ class MembershipCacheInvalidationIntegrationTest {
         @Override
         public void delete(Membership membership) {
             delegate.delete(membership);
+        }
+    }
+
+    private static final class CoordinatedWorkspaceRepository implements WorkspaceRepository {
+        private final WorkspaceRepository delegate;
+        private final UUID workspaceId;
+        private final CountDownLatch bothReads;
+
+        private CoordinatedWorkspaceRepository(
+                WorkspaceRepository delegate, UUID workspaceId, CountDownLatch bothReads) {
+            this.delegate = delegate;
+            this.workspaceId = workspaceId;
+            this.bothReads = bothReads;
+        }
+
+        @Override
+        public Workspace save(Workspace workspace) {
+            return delegate.save(workspace);
+        }
+
+        @Override
+        public Optional<Workspace> findById(UUID workspaceId) {
+            Optional<Workspace> result = delegate.findById(workspaceId);
+            if (this.workspaceId.equals(workspaceId)) {
+                bothReads.countDown();
+                try {
+                    bothReads.await(1, TimeUnit.SECONDS);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("coordinated workspace read interrupted", exception);
+                }
+            }
+            return result;
+        }
+
+        @Override
+        public boolean existsOwnedNameNormalized(UUID ownerId, String normalizedName, UUID excludeWorkspaceId) {
+            return delegate.existsOwnedNameNormalized(ownerId, normalizedName, excludeWorkspaceId);
+        }
+
+        @Override
+        public int findMaxDefaultWorkspaceNumberByOwner(UUID ownerId) {
+            return delegate.findMaxDefaultWorkspaceNumberByOwner(ownerId);
+        }
+
+        @Override
+        public PageResult<WorkspaceMembershipView> findAccessibleWorkspaces(UUID userId, WorkspaceListQuery query) {
+            return delegate.findAccessibleWorkspaces(userId, query);
         }
     }
 }

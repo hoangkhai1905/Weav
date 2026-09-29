@@ -2,6 +2,7 @@ package com.weav.workspace.application.service;
 
 import com.weav.workspace.application.port.out.TransactionRunner;
 import com.weav.workspace.application.port.out.WorkflowConnectionUsagePort;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.domain.exception.ConflictException;
 import com.weav.workspace.domain.exception.ForbiddenException;
 import com.weav.workspace.domain.exception.InvalidStateException;
@@ -27,18 +28,21 @@ public final class ConnectionUsageProtection {
     private final ConnectionAuthorizationPolicy authorizationPolicy;
     private final WorkflowConnectionUsagePort workflowConnectionUsagePort;
     private final TransactionRunner transactionRunner;
+    private final WorkspaceMutationLock workspaceMutationLock;
 
     public ConnectionUsageProtection(
             ConnectionRepository connectionRepository,
             MembershipRepository membershipRepository,
             ConnectionAuthorizationPolicy authorizationPolicy,
             WorkflowConnectionUsagePort workflowConnectionUsagePort,
-            TransactionRunner transactionRunner) {
+            TransactionRunner transactionRunner,
+            WorkspaceMutationLock workspaceMutationLock) {
         this.connectionRepository = Objects.requireNonNull(connectionRepository);
         this.membershipRepository = Objects.requireNonNull(membershipRepository);
         this.authorizationPolicy = Objects.requireNonNull(authorizationPolicy);
         this.workflowConnectionUsagePort = Objects.requireNonNull(workflowConnectionUsagePort);
         this.transactionRunner = Objects.requireNonNull(transactionRunner);
+        this.workspaceMutationLock = Objects.requireNonNull(workspaceMutationLock);
     }
 
     public Authorization authorize(UUID actorUserId, UUID workspaceId, UUID connectionId) {
@@ -80,6 +84,7 @@ public final class ConnectionUsageProtection {
         Objects.requireNonNull(scope, "scope must not be null");
         Objects.requireNonNull(mutation, "mutation must not be null");
         return transactionRunner.required(() -> {
+            workspaceMutationLock.lock(workspaceId);
             Membership membership = loadMembership(workspaceId, actorUserId);
             Connection connection = loadConnection(workspaceId, connectionId);
             assertCanManage(membership, connection);

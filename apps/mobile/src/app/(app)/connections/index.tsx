@@ -8,6 +8,7 @@ import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { useUIStore } from '../../../stores/ui.store';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import type { ConnectionProvider } from '../../../domain/connection/connection.types';
+import { captureAuthSessionScope, isAuthSessionScopeCurrent } from '../../../features/auth/auth-session.scope';
 
 export default function ConnectionsScreen() {
   const router = useRouter();
@@ -26,16 +27,18 @@ export default function ConnectionsScreen() {
   };
 
   const handleTest = async (id: string, name: string) => {
+    const scope = captureAuthSessionScope();
     setTestingId(id);
     try {
       const res = await testMutation.mutateAsync(id);
-      if (res.success) {
-        showToast({ type: 'success', title: 'Ping Test Successful ⚡', message: res.message });
-      } else {
+      if (res.success) return;
+      if (isAuthSessionScopeCurrent(scope)) {
         showToast({ type: 'warning', title: 'Connection Warning', message: res.message });
       }
     } catch (err: any) {
-      showToast({ type: 'error', title: 'Ping Test Failed', message: err.message || 'Could not test connection.' });
+      if (isAuthSessionScopeCurrent(scope)) {
+        showToast({ type: 'error', title: 'Ping Test Failed', message: err.message || 'Could not test connection.' });
+      }
     } finally {
       setTestingId(null);
     }

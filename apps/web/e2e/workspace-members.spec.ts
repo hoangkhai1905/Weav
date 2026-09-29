@@ -68,7 +68,7 @@ async function installAuthFixture(page: Page, token = 'token-a') {
     });
   });
   await page.route('**/api/auth/logout', async (route) => route.fulfill({ status: 204, body: '' }));
-  await page.route('**/api/notifications/unread-count', async (route) => (
+  await page.route('**/api/v2/notifications/unread-count', async (route) => (
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ count: 0 }) })
   ));
 }

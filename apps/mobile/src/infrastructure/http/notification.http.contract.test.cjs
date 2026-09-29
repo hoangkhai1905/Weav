@@ -7,33 +7,59 @@ const {
   buildNotificationReadAllRequest,
 } = require('./notification.http.contract.ts');
 
-test('builds the Gateway list request with cursor pagination and filters', () => {
+const NOTIFICATION_ID = '00000000-0000-4000-8000-000000000010';
+
+test('builds only the v2 inbox allowlist and defaults the requested locale', () => {
   const signal = new AbortController().signal;
   assert.deepEqual(
-    buildNotificationListRequest(
-      { limit: 5, cursor: 'cursor-2', unreadOnly: true },
-      signal,
-    ),
+    buildNotificationListRequest({
+      limit: 5,
+      cursor: 'opaque-cursor_2',
+      unreadOnly: true,
+      category: 'WORKSPACE',
+    }, signal),
     {
-      url: '/api/notifications',
-      params: { limit: 5, cursor: 'cursor-2', unreadOnly: true },
+      url: '/api/v2/notifications',
+      params: {
+        limit: 5,
+        cursor: 'opaque-cursor_2',
+        unreadOnly: true,
+        category: 'WORKSPACE',
+        locale: 'vi',
+      },
       signal,
     },
   );
 });
 
-test('builds unread, read-one and read-all requests on the existing routes', () => {
-  const signal = new AbortController().signal;
+test('supports explicit locale and rejects invalid or legacy query fields', () => {
   assert.deepEqual(
-    buildNotificationUnreadCountRequest(signal),
-    { url: '/api/notifications/unread-count', signal },
+    buildNotificationListRequest({ locale: 'en', category: 'SECURITY' }),
+    {
+      url: '/api/v2/notifications',
+      params: { limit: 20, unreadOnly: false, category: 'SECURITY', locale: 'en' },
+    },
   );
-  assert.deepEqual(buildNotificationReadRequest('id/with-slash'), {
+  assert.throws(() => buildNotificationListRequest({ status: 'SENT' }), /query/i);
+  assert.throws(() => buildNotificationListRequest({ eventType: 'workflow.completed' }), /query/i);
+  assert.throws(() => buildNotificationListRequest({ limit: 101 }), /query/i);
+  assert.throws(() => buildNotificationListRequest({ cursor: 'x'.repeat(513) }), /query/i);
+});
+
+test('uses v2 unread/read routes, validates UUIDs, and localizes explicit read', () => {
+  const signal = new AbortController().signal;
+  assert.deepEqual(buildNotificationUnreadCountRequest(signal), {
+    url: '/api/v2/notifications/unread-count',
+    signal,
+  });
+  assert.deepEqual(buildNotificationReadRequest(NOTIFICATION_ID, 'en'), {
     method: 'PATCH',
-    url: '/api/notifications/id%2Fwith-slash/read',
+    url: `/api/v2/notifications/${NOTIFICATION_ID}/read`,
+    params: { locale: 'en' },
   });
   assert.deepEqual(buildNotificationReadAllRequest(), {
     method: 'POST',
-    url: '/api/notifications/read-all',
+    url: '/api/v2/notifications/read-all',
   });
+  assert.throws(() => buildNotificationReadRequest('not-an-id', 'vi'), /id/i);
 });

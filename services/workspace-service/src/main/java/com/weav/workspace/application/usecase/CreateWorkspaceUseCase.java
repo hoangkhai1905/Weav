@@ -2,6 +2,7 @@ package com.weav.workspace.application.usecase;
 
 import com.weav.workspace.application.dto.CreateWorkspaceCommand;
 import com.weav.workspace.application.dto.WorkspaceResponse;
+import com.weav.workspace.application.notification.WorkspaceNotificationRecorder;
 import com.weav.workspace.application.port.out.TransactionRunner;
 import com.weav.workspace.domain.exception.BadRequestException;
 import com.weav.workspace.domain.exception.InvalidStateException;
@@ -22,14 +23,17 @@ public final class CreateWorkspaceUseCase {
     private final WorkspaceRepository workspaceRepository;
     private final MembershipRepository membershipRepository;
     private final TransactionRunner transactionRunner;
+    private final WorkspaceNotificationRecorder notifications;
 
     public CreateWorkspaceUseCase(
             WorkspaceRepository workspaceRepository,
             MembershipRepository membershipRepository,
-            TransactionRunner transactionRunner) {
+            TransactionRunner transactionRunner,
+            WorkspaceNotificationRecorder notifications) {
         this.workspaceRepository = Objects.requireNonNull(workspaceRepository);
         this.membershipRepository = Objects.requireNonNull(membershipRepository);
         this.transactionRunner = Objects.requireNonNull(transactionRunner);
+        this.notifications = Objects.requireNonNull(notifications);
     }
 
     public WorkspaceResponse execute(CreateWorkspaceCommand command) {
@@ -68,6 +72,7 @@ public final class CreateWorkspaceUseCase {
         Workspace workspace = Workspace.createNew(name, command.actorUserId());
         Workspace persisted = workspaceRepository.save(workspace);
         membershipRepository.save(Membership.owner(persisted.getId(), command.actorUserId()));
+        notifications.recordCreated(persisted.getId(), command.actorUserId(), persisted.getName());
         return WorkspaceResponse.from(persisted);
     }
 

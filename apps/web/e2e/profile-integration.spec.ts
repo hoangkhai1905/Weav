@@ -55,7 +55,7 @@ async function installAuthFixture(page: Page, token = 'token-a') {
     await fulfillJson(route, { items: [], page: 0, size: 20, totalItems: 0, totalPages: 0 });
   });
 
-  await page.route('**/api/notifications**', async (route) => {
+  await page.route('**/api/v2/notifications**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname.endsWith('/unread-count')) {
       await fulfillJson(route, { count: 0 });
@@ -102,10 +102,12 @@ test.describe('web profile HTTP integration', () => {
     await expect(emailInput).toHaveAttribute('readonly', '');
     await expect(nameInput).toHaveAttribute('maxlength', '120');
 
-    await nameInput.fill('Updated Web Name');
-    await page.getByRole('button', { name: 'Save profile' }).click();
+    await page.getByRole('button', { name: 'Switch to Vietnamese' }).click();
 
-    await expect(page.getByText('Profile saved.', { exact: true })).toBeVisible();
+    await nameInput.fill('Updated Web Name');
+    await page.getByTestId('profile-save-button').click();
+
+    await expect(page.getByText('Đã cập nhật hồ sơ.', { exact: true })).toHaveCount(1);
     expect(patchBody).toEqual({ displayName: 'Updated Web Name' });
     await expect(page.getByTestId('sidebar-profile-name')).toHaveText('Updated Web Name');
     await expect(page.getByTestId('topbar-user-avatar')).toHaveText('UW');
@@ -195,7 +197,7 @@ test.describe('web profile HTTP integration', () => {
     await expect.poll(() => patchCalls).toBe(1);
     await expect(page.getByTestId('profile-error')).toBeVisible();
     await expect(page.locator('#profile-name')).toHaveValue('Keep this input');
-    await expect(page.getByText('Profile saved.', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Profile updated.', { exact: true })).toHaveCount(0);
   });
 
   test('allows only one profile PATCH while the first request is pending', async ({ page }) => {
@@ -228,7 +230,7 @@ test.describe('web profile HTTP integration', () => {
     expect(patchCalls).toBe(1);
 
     releasePatch();
-    await expect(page.getByText('Profile saved.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Profile updated.', { exact: true })).toBeVisible();
   });
 
   test('blocks a displayName longer than the Identity contract without sending PATCH', async ({ page }) => {

@@ -25,6 +25,8 @@ import { useUIStore } from '../../stores/ui.store';
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { Logo } from '../../components/common/Logo';
 import { AnimatedNodeVisual } from '../../components/common/AnimatedNodeVisual';
+import { captureAuthSessionScope, isAuthSessionScopeCurrent } from '../../features/auth/auth-session.scope';
+import { showMilestoneToast } from '../../features/feedback/milestone-toast';
 
 function getRecoveryErrorMessage(error: unknown): string {
   if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') {
@@ -134,6 +136,7 @@ export default function ForgotPasswordScreen() {
     }
 
     const generation = startFlow();
+    const capturedScope = captureAuthSessionScope();
     setIsPending(true);
     setValidationErrors({});
     setError(null);
@@ -146,13 +149,18 @@ export default function ForgotPasswordScreen() {
       await authRepository.resetPassword(verification.resetToken, newPassword);
       if (!isCurrentFlow(generation)) return;
 
-      const wasAuthenticated = useAuthStore.getState().isAuthenticated;
-      if (wasAuthenticated) await expireAuthSession();
+      const current = useAuthStore.getState();
+      if (capturedScope) {
+        if (!isAuthSessionScopeCurrent(capturedScope)) return;
+        await expireAuthSession();
+      } else if (current.isAuthenticated) {
+        return;
+      }
       if (!isCurrentFlow(generation)) return;
       setCode('');
       setNewPassword('');
       setConfirmPassword('');
-      showToast({ type: 'success', title: 'Password reset', message: 'You can sign in with your new password.' });
+      showMilestoneToast('auth.password_reset');
       router.replace('/(auth)/login');
     } catch (resetError: unknown) {
       if (!isCurrentFlow(generation)) return;

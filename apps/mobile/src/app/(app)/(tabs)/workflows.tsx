@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { Search, Play, Pause, ExternalLink, X, Sparkles } from 'lucide-react-native';
 import { useWorkflows, usePauseWorkflow, useResumeWorkflow } from '../../../features/workflows/hooks/useWorkflows';
 import { useRunWorkflow } from '../../../features/workflows/hooks/useRunWorkflow';
+import { completeWorkflowRunInCurrentSession } from '../../../features/workflows/run-workflow.session';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
@@ -49,7 +50,11 @@ export default function WorkflowsScreen() {
         input = { rawPayload: payloadInput };
       }
     }
-    const res = await runMutation.mutateAsync({ id: selectedWfToRun.id, input });
+    const completion = await completeWorkflowRunInCurrentSession(
+      () => runMutation.mutateAsync({ id: selectedWfToRun.id, input }),
+    );
+    if (completion.status !== 'success') return;
+    const res = completion.result;
     setSelectedWfToRun(null);
     setPayloadInput('');
     if (res?.executionId) {

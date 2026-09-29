@@ -4,13 +4,15 @@ import { authRepository } from '../../../infrastructure/repository-factory';
 import { useAuthStore } from '../../../stores/auth.store';
 import { expireAuthSession } from '../../auth/auth-session.runtime';
 import type { UserProfile } from '../../../domain/auth/auth.types';
+import type { NotificationSessionScope } from '../../../domain/notification/notification.types';
 import {
   canApplyProfileResponse,
   createProfileSubmissionGate,
-  isProfileScopeCurrent,
   normalizeDisplayName,
   validateDisplayName,
 } from '../profile.utils';
+import { captureAuthSessionScope, isAuthSessionScopeCurrent } from '../../auth/auth-session.scope';
+import { showMilestoneToastForSession } from '../../feedback/milestone-toast';
 
 export const profileKeys = {
   current: (userId: string) => ['current-user', userId] as const,
@@ -41,7 +43,6 @@ export function useProfile() {
   const [displayName, setDisplayNameState] = useState(user?.name ?? '');
   const [validationError, setValidationError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [saveSucceeded, setSaveSucceeded] = useState(false);
   const dirtyRef = useRef(false);
   const previousUserId = useRef(userId);
   const submissionGate = useRef(createProfileSubmissionGate());
@@ -60,7 +61,6 @@ export function useProfile() {
     setDisplayNameState(user?.name ?? '');
     setValidationError(null);
     setSubmitError(null);
-    setSaveSucceeded(false);
   }, [user?.name, userId]);
 
   useEffect(() => {
@@ -89,11 +89,10 @@ export function useProfile() {
   const updateMutation = useMutation<
     UserProfile,
     unknown,
-    { displayName: string | null; userId: string }
+    { displayName: string | null; scope: NotificationSessionScope }
   >({
-    mutationFn: async ({ displayName: nextDisplayName }) => {
-      const current = useAuthStore.getState();
-      if (!current.isAuthenticated || current.user?.id !== userId) {
+    mutationFn: async ({ displayName: nextDisplayName, scope }) => {
+      if (!isAuthSessionScopeCurrent(scope)) {
         throw { code: 'UNAUTHORIZED', message: 'Please sign in again.' };
       }
       return authRepository.updateCurrentUser(nextDisplayName);
@@ -102,8 +101,9 @@ export function useProfile() {
     onSuccess: (updated, variables) => {
       const current = useAuthStore.getState();
       if (
+        !isAuthSessionScopeCurrent(variables.scope) ||
         !canApplyProfileResponse(
-          variables.userId,
+          variables.scope.userId,
           current.user?.id ?? null,
           current.isAuthenticated,
           updated,
@@ -111,8 +111,9 @@ export function useProfile() {
       ) {
         return;
       }
-      current.setUserProfileIfCurrent(updated, variables.userId);
-      queryClient.setQueryData(profileKeys.current(variables.userId), updated);
+      current.setUserProfileIfCurrent(updated, variables.scope.userId);
+      queryClient.setQueryData(profileKeys.current(variables.scope.userId), updated);
+      showMilestoneToastForSession(variables.scope, 'profile.updated');
     },
   });
 
@@ -121,7 +122,6 @@ export function useProfile() {
     setDisplayNameState(value);
     setValidationError(null);
     setSubmitError(null);
-    setSaveSucceeded(false);
   };
 
   const save = async (): Promise<void> => {
@@ -129,20 +129,24 @@ export function useProfile() {
     const validation = validateDisplayName(displayName);
     setValidationError(validation);
     setSubmitError(null);
-    setSaveSucceeded(false);
     if (validation || !userId || !isAuthenticated) return;
     if (!submissionGate.current.tryStart()) return;
 
-    const capturedUserId = userId;
+    const capturedScope = captureAuthSessionScope();
+    if (!capturedScope || capturedScope.userId !== userId) {
+      submissionGate.current.finish();
+      return;
+    }
     try {
       const updated = await updateMutation.mutateAsync({
         displayName: nextDisplayName,
-        userId: capturedUserId,
+        scope: capturedScope,
       });
       const current = useAuthStore.getState();
       if (
+        isAuthSessionScopeCurrent(capturedScope) &&
         canApplyProfileResponse(
-          capturedUserId,
+          capturedScope.userId,
           current.user?.id ?? null,
           current.isAuthenticated,
           updated,
@@ -150,27 +154,14 @@ export function useProfile() {
       ) {
         dirtyRef.current = false;
         setDisplayNameState(updated.name);
-        setSaveSucceeded(true);
       }
     } catch (error) {
-      const current = useAuthStore.getState();
       if (
-        isUnauthorizedError(error) &&
-        isProfileScopeCurrent(
-          capturedUserId,
-          current.user?.id ?? null,
-          current.isAuthenticated,
-        )
+        isUnauthorizedError(error) && isAuthSessionScopeCurrent(capturedScope)
       ) {
         void expireAuthSession();
       }
-      if (
-        isProfileScopeCurrent(
-          capturedUserId,
-          current.user?.id ?? null,
-          current.isAuthenticated,
-        )
-      ) {
+      if (isAuthSessionScopeCurrent(capturedScope)) {
         setSubmitError(errorMessage(error, 'Could not save your profile. Please try again.'));
       }
     } finally {
@@ -194,7 +185,6 @@ export function useProfile() {
     loadError,
     validationError,
     submitError,
-    saveSucceeded,
     retryLoad: currentUserQuery.refetch,
   };
 }

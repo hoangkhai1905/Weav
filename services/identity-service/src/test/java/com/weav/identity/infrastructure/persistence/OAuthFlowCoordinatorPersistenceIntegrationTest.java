@@ -10,6 +10,7 @@ import com.weav.identity.application.dto.OAuthExchangeResult;
 import com.weav.identity.application.dto.OAuthSecret;
 import com.weav.identity.application.dto.OAuthStartCommand;
 import com.weav.identity.application.dto.OAuthStartResult;
+import com.weav.identity.application.notification.IdentitySecurityNotificationRecorder;
 import com.weav.identity.application.port.out.AccessTokenIssuer;
 import com.weav.identity.application.port.out.KeyedFingerprint;
 import com.weav.identity.application.port.out.OAuthProviderClient;
@@ -658,7 +659,8 @@ class OAuthFlowCoordinatorPersistenceIntegrationTest {
                 PasswordHasher passwordHasher,
                 KeyedFingerprint fingerprint,
                 TransactionRunner transactionRunner,
-                Clock clock) {
+                Clock clock,
+                IdentitySecurityNotificationRecorder notificationRecorder) {
             return new LinkGoogleAccountUseCase(
                     identityGuard,
                     userRepository,
@@ -667,7 +669,13 @@ class OAuthFlowCoordinatorPersistenceIntegrationTest {
                     fingerprint,
                     transactionRunner,
                     new AuthInputPolicy(),
-                    clock);
+                    clock,
+                    notificationRecorder);
+        }
+
+        @Bean
+        IdentitySecurityNotificationRecorder notificationRecorder(Clock clock) {
+            return new IdentitySecurityNotificationRecorder(event -> { }, clock);
         }
 
         @Bean

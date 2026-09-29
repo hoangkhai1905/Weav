@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, LoaderCircle, Mail, ShieldCheck } from 'lucide-react';
 import { authApi, getAuthApiErrorStatus } from '../api/auth.api';
 import { useI18nStore } from '../store/useI18nStore';
+import { showSuccessToast } from '../lib/feedback/toast';
 
 type RecoveryStep = 'request' | 'verify';
 type RecoveryPhase = 'request' | 'verify' | 'reset';
@@ -165,10 +166,11 @@ export function ForgotPasswordPage() {
       phase = 'reset';
       await authApi.resetPassword(verification.resetToken, newPassword);
       if (!isCurrentOperation(operation)) return;
+      showSuccessToast('toast.password.reset');
       setCode('');
       setNewPassword('');
       setConfirmPassword('');
-      navigate('/login', { replace: true, state: { message: t('forgot.password_reset_success') } });
+      navigate('/login', { replace: true });
     } catch (resetError) {
       if (isCurrentOperation(operation)) setError(recoveryErrorMessage(resetError, phase, t));
     } finally {

@@ -1,5 +1,7 @@
 package com.weav.identity.application.usecase;
 
+import com.weav.identity.application.notification.IdentitySecurityEventType;
+import com.weav.identity.application.notification.IdentitySecurityNotificationRecorder;
 import com.weav.identity.application.port.out.PasswordHasher;
 import com.weav.identity.application.port.out.TransactionRunner;
 import com.weav.identity.application.security.CurrentIdentityGuard;
@@ -11,6 +13,7 @@ import com.weav.identity.domain.model.OAuthAccount;
 import com.weav.identity.domain.model.User;
 import com.weav.identity.domain.port.out.OAuthAccountRepository;
 import com.weav.identity.domain.port.out.UserRepository;
+import com.weav.identity.domain.valueobject.OAuthProvider;
 
 import java.util.List;
 import java.util.Objects;
@@ -27,6 +30,7 @@ public final class UnlinkOAuthAccountUseCase {
     private final PasswordHasher passwordHasher;
     private final TransactionRunner transactionRunner;
     private final AuthInputPolicy inputPolicy;
+    private final IdentitySecurityNotificationRecorder notificationRecorder;
 
     public UnlinkOAuthAccountUseCase(
             CurrentIdentityGuard identityGuard,
@@ -34,7 +38,8 @@ public final class UnlinkOAuthAccountUseCase {
             OAuthAccountRepository oauthAccountRepository,
             PasswordHasher passwordHasher,
             TransactionRunner transactionRunner,
-            AuthInputPolicy inputPolicy
+            AuthInputPolicy inputPolicy,
+            IdentitySecurityNotificationRecorder notificationRecorder
     ) {
         this.identityGuard = Objects.requireNonNull(identityGuard, "identityGuard must not be null");
         this.userRepository = Objects.requireNonNull(userRepository, "userRepository must not be null");
@@ -43,6 +48,8 @@ public final class UnlinkOAuthAccountUseCase {
         this.passwordHasher = Objects.requireNonNull(passwordHasher, "passwordHasher must not be null");
         this.transactionRunner = Objects.requireNonNull(transactionRunner, "transactionRunner must not be null");
         this.inputPolicy = Objects.requireNonNull(inputPolicy, "inputPolicy must not be null");
+        this.notificationRecorder = Objects.requireNonNull(
+                notificationRecorder, "notificationRecorder must not be null");
     }
 
     public void execute(UUID userId, UUID sessionId, UUID accountId, String currentPassword) {
@@ -73,6 +80,9 @@ public final class UnlinkOAuthAccountUseCase {
             }
             if (!oauthAccountRepository.deleteByIdAndUserId(accountId, userId)) {
                 throw new ResourceNotFoundException("Resource not found");
+            }
+            if (target.getProvider() == OAuthProvider.GOOGLE) {
+                notificationRecorder.record(IdentitySecurityEventType.GOOGLE_UNLINKED, userId);
             }
             return null;
         });

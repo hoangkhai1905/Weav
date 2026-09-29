@@ -55,6 +55,9 @@ import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
 import { workflowToReactFlow, reactFlowToWorkflow } from '../lib/mappers/workflowMapper';
 import type { WorkflowDefinition } from '../types/workflow.types';
+import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
+import { showSuccessToast } from '../lib/feedback/toast';
+import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 
 const SUPPORTED_NODE_TYPES = new Set(NODE_CATALOG.map((item) => item.type));
 
@@ -193,6 +196,7 @@ type OcrErrorState = { code: string; message: string; retryable?: boolean };
 type OcrScope = { userId: string | null; workspaceId: string | null };
 
 export const WorkflowBuilderPage: React.FC = () => {
+  const refreshNotifications = useNotificationMilestoneRefresh();
   const { workflowId } = useParams<{ workflowId: string }>();
   const navigate = useNavigate();
   const { theme } = useUIStore();
@@ -242,7 +246,6 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(true);
   const [isSavingWorkflow, setIsSavingWorkflow] = useState(false);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
-  const [workflowNotice, setWorkflowNotice] = useState<string | null>(null);
   const [publishedWebhooks, setPublishedWebhooks] = useState<WebhookProvisioning[]>([]);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null);
@@ -389,13 +392,17 @@ export const WorkflowBuilderPage: React.FC = () => {
 
   const handleSaveDraft = async () => {
     setWorkflowError(null);
-    setWorkflowNotice(null);
+    const mutationSession = captureNotificationSession();
     setIsSavingWorkflow(true);
     try {
       await saveDraft();
-      setWorkflowNotice('Draft saved to Workflow Service.');
+      if (isCurrentNotificationSession(mutationSession)) {
+        showSuccessToast('toast.workflow.draft_saved', mutationSession);
+      }
     } catch (error) {
-      setWorkflowError(error instanceof Error ? error.message : 'Draft could not be saved.');
+      if (isCurrentNotificationSession(mutationSession)) {
+        setWorkflowError(error instanceof Error ? error.message : 'Draft could not be saved.');
+      }
     } finally {
       setIsSavingWorkflow(false);
     }
@@ -403,19 +410,23 @@ export const WorkflowBuilderPage: React.FC = () => {
 
   const handlePublishWorkflow = async () => {
     setWorkflowError(null);
-    setWorkflowNotice(null);
+    const mutationSession = captureNotificationSession();
     setPublishedWebhooks([]);
     setIsSavingWorkflow(true);
     try {
       const saved = isSaved ? workflow : await saveDraft();
       if (!saved) throw new Error('Workflow is not loaded.');
       const publication = await workflowApi.publishWorkflow(saved.id);
+      if (!isCurrentNotificationSession(mutationSession)) return;
       setWorkflow(publication.workflow);
       setIsSaved(true);
       setPublishedWebhooks(publication.webhooks);
-      setWorkflowNotice('Workflow published.');
+      showSuccessToast('toast.workflow.published', mutationSession);
+      refreshNotifications(mutationSession);
     } catch (error) {
-      setWorkflowError(error instanceof Error ? error.message : 'Workflow could not be published.');
+      if (isCurrentNotificationSession(mutationSession)) {
+        setWorkflowError(error instanceof Error ? error.message : 'Workflow could not be published.');
+      }
     } finally {
       setIsSavingWorkflow(false);
     }
@@ -424,11 +435,16 @@ export const WorkflowBuilderPage: React.FC = () => {
   const handleRunWorkflow = async () => {
     if (!workflow) return;
     setWorkflowError(null);
+    const mutationSession = captureNotificationSession();
     try {
       const accepted = await workflowApi.runWorkflow(workflow.id, {});
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast('toast.workflow.run_accepted', mutationSession);
       navigate(`/executions?workflowId=${encodeURIComponent(workflow.id)}&executionId=${encodeURIComponent(accepted.executionId)}`);
     } catch (error) {
-      setWorkflowError(error instanceof Error ? error.message : 'Workflow execution could not be queued.');
+      if (isCurrentNotificationSession(mutationSession)) {
+        setWorkflowError(error instanceof Error ? error.message : 'Workflow execution could not be queued.');
+      }
     }
   };
 
@@ -857,7 +873,6 @@ export const WorkflowBuilderPage: React.FC = () => {
 
       {isLoadingWorkflow && <div role="status" className="border-b border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">Loading workflow…</div>}
       {workflowError && <div role="alert" data-testid="workflow-builder-error" className="border-b border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">{workflowError}</div>}
-      {workflowNotice && <div role="status" data-testid="workflow-builder-notice" className="border-b border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{workflowNotice}</div>}
       {publishedWebhooks.length > 0 && (
         <section aria-label="One-time webhook credentials" className="space-y-2 border-b border-amber-300 bg-amber-50 px-3 py-3 text-xs text-amber-950">
           <div className="flex items-center justify-between gap-3">

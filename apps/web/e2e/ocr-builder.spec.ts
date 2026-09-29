@@ -44,7 +44,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
         }),
       });
     });
-    await page.route('**/api/notifications/unread-count', async (route) => {
+    await page.route('**/api/v2/notifications/unread-count', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ count: 0 }) });
     });
     await page.route('**/api/v1/workspaces**', async (route) => {

@@ -59,7 +59,7 @@ async function installAuthFixture(page: Page, token = 'token-a') {
     await fulfillJson(route, []);
   });
 
-  await page.route('**/api/notifications**', async (route) => {
+  await page.route('**/api/v2/notifications**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname.endsWith('/unread-count')) {
       await fulfillJson(route, { count: 0 });
@@ -116,6 +116,7 @@ test.describe('web change-password HTTP integration', () => {
       newPassword: 'new-password',
     });
     await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByText('Password changed.', { exact: true })).toHaveCount(1);
     expect(await page.evaluate(() => localStorage.getItem('weav_token'))).toBeNull();
   });
 

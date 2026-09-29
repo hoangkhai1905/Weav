@@ -22,6 +22,10 @@ import {
   mergeWorkspaceList,
   mergeWorkspacePage,
 } from '../workspace.mutations';
+import type { NotificationSessionScope } from '../../../domain/notification/notification.types';
+import { isAuthSessionScopeCurrent } from '../../auth/auth-session.scope';
+import { showMilestoneToastForSession } from '../../feedback/milestone-toast';
+import { notificationQueryKey } from '../../notifications/notification.query';
 
 export const workspaceKeys = {
   list: (userId: string) => ['workspaces', userId, 'list'] as const,
@@ -42,6 +46,7 @@ function isCurrentWorkspaceScope(userId: string, workspaceId?: string): boolean 
 function isCurrentMemberMutationScope(context: MemberMutationContext): boolean {
   return (
     context.userId !== null &&
+    isAuthSessionScopeCurrent({ userId: context.userId, generation: context.sessionGeneration }) &&
     isWorkspaceMemberMutationScopeCurrent(
       context.userId,
       context.workspaceId,
@@ -74,6 +79,7 @@ function errorMessage(error: unknown, fallback: string): string {
 
 interface WorkspaceMutationContext {
   userId: string | null;
+  sessionGeneration: number;
   workspaceId?: string;
 }
 
@@ -84,6 +90,7 @@ interface RenameWorkspaceMutation {
 
 interface AddMemberMutationContext {
   userId: string | null;
+  sessionGeneration: number;
   workspaceId: string;
 }
 
@@ -100,8 +107,24 @@ interface MemberTargetMutation {
 
 interface MemberMutationContext {
   userId: string | null;
+  sessionGeneration: number;
   workspaceId: string;
   userIdTarget?: string;
+}
+
+function showWorkspaceMilestone(
+  queryClient: ReturnType<typeof useQueryClient>,
+  context: WorkspaceMutationContext | MemberMutationContext,
+  key: 'workspace.created' | 'workspace.renamed' | 'workspace.member_added' | 'workspace.permissions_updated' | 'workspace.member_removed' | 'workspace.left',
+): void {
+  if (!context.userId) return;
+  const scope: NotificationSessionScope = {
+    userId: context.userId,
+    generation: context.sessionGeneration,
+  };
+  showMilestoneToastForSession(scope, key, () => {
+    void queryClient.invalidateQueries({ queryKey: notificationQueryKey(scope.userId, scope.generation) });
+  });
 }
 
 async function loadWorkspaces(
@@ -197,10 +220,14 @@ export function useWorkspace() {
       return workspaceRepository.createWorkspace(input);
     },
     retry: false,
-    onMutate: () => ({ userId: useAuthStore.getState().user?.id ?? null }),
+    onMutate: () => {
+      const auth = useAuthStore.getState();
+      return { userId: auth.user?.id ?? null, sessionGeneration: auth.sessionGeneration };
+    },
     onSuccess: (created, _input, context) => {
       if (
         !context?.userId ||
+        !isAuthSessionScopeCurrent({ userId: context.userId, generation: context.sessionGeneration }) ||
         !isWorkspaceMutationScopeCurrent(
           context.userId,
           useAuthStore.getState().user?.id ?? null,
@@ -223,6 +250,7 @@ export function useWorkspace() {
         .setWorkspaces(mergeWorkspaceList(useWorkspaceStore.getState().workspaces, created));
       useWorkspaceStore.getState().selectWorkspace(created.id);
       void queryClient.invalidateQueries({ queryKey: listKey });
+      showWorkspaceMilestone(queryClient, context, 'workspace.created');
     },
   });
 
@@ -237,11 +265,13 @@ export function useWorkspace() {
     retry: false,
     onMutate: ({ workspaceId }) => ({
       userId: useAuthStore.getState().user?.id ?? null,
+      sessionGeneration: useAuthStore.getState().sessionGeneration,
       workspaceId,
     }),
     onSuccess: (renamed, variables, context) => {
       if (
         !context?.userId ||
+        !isAuthSessionScopeCurrent({ userId: context.userId, generation: context.sessionGeneration }) ||
         !isWorkspaceMutationScopeCurrent(
           context.userId,
           useAuthStore.getState().user?.id ?? null,
@@ -263,6 +293,7 @@ export function useWorkspace() {
         .setWorkspaces(mergeWorkspaceList(useWorkspaceStore.getState().workspaces, renamed));
       void queryClient.invalidateQueries({ queryKey: listKey });
       void queryClient.invalidateQueries({ queryKey: detailKey });
+      showWorkspaceMilestone(queryClient, context, 'workspace.renamed');
     },
   });
 
@@ -283,11 +314,13 @@ export function useWorkspace() {
     retry: false,
     onMutate: () => ({
       userId: useAuthStore.getState().user?.id ?? null,
+      sessionGeneration: useAuthStore.getState().sessionGeneration,
       workspaceId: useWorkspaceStore.getState().activeWorkspaceId ?? '',
     }),
     onSuccess: (_member, _input, context) => {
       if (!context || !isCurrentMemberMutationScope(context)) return;
       void invalidateWorkspaceMemberScope(queryClient, context.userId as string, context.workspaceId);
+      showWorkspaceMilestone(queryClient, context, 'workspace.member_added');
     },
   });
 
@@ -302,12 +335,14 @@ export function useWorkspace() {
     retry: false,
     onMutate: ({ workspaceId, userId: targetUserId }) => ({
       userId: useAuthStore.getState().user?.id ?? null,
+      sessionGeneration: useAuthStore.getState().sessionGeneration,
       workspaceId,
       userIdTarget: targetUserId,
     }),
     onSuccess: (_member, _variables, context) => {
       if (!context || !isCurrentMemberMutationScope(context)) return;
       void invalidateWorkspaceMemberScope(queryClient, context.userId as string, context.workspaceId);
+      showWorkspaceMilestone(queryClient, context, 'workspace.permissions_updated');
     },
   });
 
@@ -322,17 +357,20 @@ export function useWorkspace() {
     retry: false,
     onMutate: ({ workspaceId, userId: targetUserId }) => ({
       userId: useAuthStore.getState().user?.id ?? null,
+      sessionGeneration: useAuthStore.getState().sessionGeneration,
       workspaceId,
       userIdTarget: targetUserId,
     }),
     onSuccess: (_result, variables, context) => {
       if (!context || !isCurrentMemberMutationScope(context)) return;
       if (context.userIdTarget === context.userId) {
+        showWorkspaceMilestone(queryClient, context, 'workspace.member_removed');
         removeWorkspaceAfterMembershipLoss(queryClient, context.userId as string, context.workspaceId);
         return;
       }
       void invalidateWorkspaceMemberScope(queryClient, context.userId as string, context.workspaceId);
       void queryClient.invalidateQueries({ queryKey: workspaceKeys.detail(context.userId as string, variables.workspaceId) });
+      showWorkspaceMilestone(queryClient, context, 'workspace.member_removed');
     },
   });
 
@@ -346,10 +384,12 @@ export function useWorkspace() {
     retry: false,
     onMutate: (workspaceId) => ({
       userId: useAuthStore.getState().user?.id ?? null,
+      sessionGeneration: useAuthStore.getState().sessionGeneration,
       workspaceId,
     }),
     onSuccess: (_result, _workspaceId, context) => {
       if (!context || !isCurrentMemberMutationScope(context)) return;
+      showWorkspaceMilestone(queryClient, context, 'workspace.left');
       removeWorkspaceAfterMembershipLoss(queryClient, context.userId as string, context.workspaceId);
     },
     onError: (error, _workspaceId, context) => {

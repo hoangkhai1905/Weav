@@ -202,6 +202,37 @@ test.describe('web password recovery HTTP integration', () => {
     await expect(page.getByLabel('Confirm new password')).toHaveValue('new-password-123');
   });
 
+  test('shows one success toast only after the password reset API confirms completion', async ({ page }) => {
+    await page.route('**/api/auth/forgot-password', async (route) => {
+      await fulfillJson(route, { challengeId: CHALLENGE_ID, expiresIn: 300, retryAfter: 0 }, 202);
+    });
+    await page.route('**/api/auth/otp/verify', async (route) => {
+      await fulfillJson(route, { purpose: 'PASSWORD_RESET', resetToken: RESET_TOKEN, expiresIn: 300 });
+    });
+    await page.route('**/api/auth/reset-password', async (route) => {
+      await route.fulfill({ status: 204, body: '' });
+    });
+
+    await gotoRecovery(page);
+    await page.getByLabel('Email address').fill('person@example.com');
+    const requestResponse = page.waitForResponse((response) =>
+      response.url().includes('/api/auth/forgot-password') && response.request().method() === 'POST',
+    );
+    await page.getByTestId('request-reset-button').click();
+    await requestResponse;
+    await page.getByLabel('Verification code').fill('123456');
+    await page.getByLabel('New password', { exact: true }).fill('new-password-123');
+    await page.getByLabel('Confirm new password').fill('new-password-123');
+    const resetResponse = page.waitForResponse((response) =>
+      response.url().includes('/api/auth/reset-password') && response.request().method() === 'POST',
+    );
+    await page.getByTestId('complete-reset-button').click();
+    await resetResponse;
+
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByText('Password reset. You can sign in now.', { exact: true })).toHaveCount(1);
+  });
+
   test('ignores a late forgot response after the recovery flow is unmounted', async ({ page }) => {
     let resolveRequest: (() => void) | undefined;
     await page.route('**/api/auth/forgot-password', async (route) => {

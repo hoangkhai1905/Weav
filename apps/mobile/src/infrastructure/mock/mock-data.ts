@@ -3,7 +3,6 @@ import type { Workflow } from '../../domain/workflow/workflow.types';
 import type { Execution } from '../../domain/execution/execution.types';
 import type { ConnectionItem } from '../../domain/connection/connection.types';
 import type { Workspace, WorkspaceMember } from '../../domain/workspace/workspace.types';
-import type { NotificationItem } from '../../domain/notification/notification.types';
 import type { TelegramStatus } from '../../domain/telegram/telegram.types';
 
 export const MOCK_USER: UserProfile = {
@@ -250,7 +249,17 @@ export const MOCK_CONNECTIONS: ConnectionItem[] = [
   { id: 'conn-5', provider: 'gmail', name: 'Support Mailbox Backup', status: 'EXPIRED', createdBy: 'Trần Thị Bích', createdAt: '2026-08-01T00:00:00Z' },
 ];
 
-export const MOCK_NOTIFICATIONS: NotificationItem[] = [
+interface LegacyMockNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+  link?: string;
+}
+
+export const MOCK_NOTIFICATIONS: LegacyMockNotification[] = [
   { id: 'notif-1', type: 'WORKFLOW_COMPLETED', title: 'Execution Succeeded ⚡', message: 'Workflow "Invoice OCR → AI Extract → Google Sheets" completed in 4.2s.', timestamp: '10 phút trước', read: false, link: '/(app)/executions/exec-101' },
   { id: 'notif-2', type: 'WORKFLOW_FAILED', title: 'Execution Failed ⚠️', message: 'Workflow "Invoice OCR → AI Extract → Google Sheets" failed at OCR step.', timestamp: '1 giờ trước', read: false, link: '/(app)/executions/exec-103' },
   { id: 'notif-3', type: 'TELEGRAM_LINKED', title: 'Telegram Linked 🤖', message: 'Telegram Bot @weav_automation_bot linked to workspace.', timestamp: 'Hôm qua', read: true, link: '/(app)/telegram' },

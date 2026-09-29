@@ -22,11 +22,15 @@ import { verify } from 'jsonwebtoken';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Notifications } from '../application/notifications';
+import { InboxNotifications } from '../application/inbox-notifications';
 import {
   DeliveryRepository,
   eventTypeSchema,
   statusSchema,
 } from '../domain/notification';
+import { InboxRepository } from '../domain/inbox';
+import type { InboxQuery } from '../domain/inbox';
+import type { NotificationLocale } from '../domain/notification-catalog';
 import { RabbitConsumer } from '../infrastructure/rabbit.consumer';
 import { SETTINGS } from '../config/settings';
 import type { Settings } from '../config/settings';
@@ -93,6 +97,28 @@ const querySchema = z
     status: statusSchema.optional(),
   })
   .strict();
+
+const inboxListQuerySchema = z
+  .object({
+    limit: z
+      .string()
+      .regex(/^(?:[1-9]\d?|100)$/)
+      .optional(),
+    cursor: z.string().max(512).optional(),
+    unreadOnly: z.enum(['true', 'false']).optional(),
+    category: z
+      .enum(['WORKFLOW', 'WORKSPACE', 'CONNECTION', 'SECURITY'])
+      .optional(),
+    locale: z.enum(['vi', 'en']).optional(),
+  })
+  .strict();
+const inboxReadQuerySchema = z
+  .object({ locale: z.enum(['vi', 'en']).optional() })
+  .strict();
+const emptyQuerySchema = z.object({}).strict();
+const inboxCursorSchema = z
+  .object({ id: z.uuid(), createdAt: z.iso.datetime({ offset: true }) })
+  .strict();
 @Controller(['api/v1/notifications', 'api/notifications'])
 @UseGuards(AccessGuard)
 export class NotificationsController {
@@ -132,17 +158,92 @@ export class NotificationsController {
     return this.notifications.markRead(req.userId, id);
   }
 }
+
+@Controller('api/v2/notifications')
+@UseGuards(AccessGuard)
+export class InboxNotificationsController {
+  constructor(private readonly notifications: InboxNotifications) {}
+
+  @Get()
+  async list(@Req() req: Request, @Query() query: unknown) {
+    const result = inboxListQuerySchema.safeParse(query);
+    if (!result.success)
+      throw new BadRequestException('Invalid notification query');
+    const locale: NotificationLocale = result.data.locale ?? 'vi';
+    let cursor: InboxQuery['cursor'];
+    if (result.data.cursor !== undefined) {
+      try {
+        const encoded = result.data.cursor;
+        if (!/^[A-Za-z0-9_-]+$/.test(encoded)) throw new Error();
+        const decoded = Buffer.from(encoded, 'base64url');
+        if (decoded.toString('base64url') !== encoded) throw new Error();
+        const parsed = inboxCursorSchema.parse(
+          JSON.parse(decoded.toString('utf8')),
+        );
+        cursor = { id: parsed.id, createdAt: new Date(parsed.createdAt) };
+      } catch {
+        throw new BadRequestException('Invalid notification cursor');
+      }
+    }
+    const filters: InboxQuery = {
+      limit: result.data.limit === undefined ? 20 : Number(result.data.limit),
+      unreadOnly: result.data.unreadOnly === 'true',
+      ...(result.data.category ? { category: result.data.category } : {}),
+      ...(cursor ? { cursor } : {}),
+    };
+    return this.notifications.list(req.userId, filters, locale);
+  }
+
+  @Get('unread-count')
+  unreadCount(@Req() req: Request, @Query() query: unknown) {
+    if (!emptyQuerySchema.safeParse(query).success)
+      throw new BadRequestException('Invalid notification query');
+    return this.notifications.unreadCount(req.userId);
+  }
+
+  @Post('read-all')
+  @HttpCode(200)
+  markAllRead(@Req() req: Request, @Query() query: unknown) {
+    if (!emptyQuerySchema.safeParse(query).success)
+      throw new BadRequestException('Invalid notification query');
+    return this.notifications.markAllRead(req.userId);
+  }
+
+  @Patch(':id/read')
+  markRead(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Query() query: unknown,
+  ) {
+    if (!z.uuid().safeParse(id).success)
+      throw new BadRequestException('Invalid notification id');
+    const result = inboxReadQuerySchema.safeParse(query);
+    if (!result.success)
+      throw new BadRequestException('Invalid notification query');
+    return this.notifications.markRead(
+      req.userId,
+      id,
+      result.data.locale ?? 'vi',
+    );
+  }
+}
+
 @Controller()
 export class HealthController {
   constructor(
     private readonly repo: DeliveryRepository,
+    private readonly inboxRepository: InboxRepository,
     private readonly rabbit: RabbitConsumer,
   ) {}
   @Get('health') health() {
     return { status: 'UP' };
   }
   @Get('ready') async ready() {
-    if (!this.rabbit.isReady || !(await this.repo.ready()))
+    if (
+      !this.rabbit.isReady ||
+      !(await this.repo.ready()) ||
+      !(await this.inboxRepository.ready())
+    )
       throw new HttpException('Dependencies unavailable', 503);
     return { status: 'UP' };
   }

@@ -5,6 +5,7 @@ import com.weav.workspace.application.dto.SaveCredentialCommand;
 import com.weav.workspace.application.port.out.CredentialCryptoPort;
 import com.weav.workspace.application.port.out.TransactionRunner;
 import com.weav.workspace.application.port.out.WorkflowConnectionUsagePort;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.service.ConnectionAuthorizationPolicy;
 import com.weav.workspace.application.service.ConnectionViewAssembler;
 import com.weav.workspace.application.service.ConnectionUsageProtection;
@@ -48,7 +49,8 @@ public final class SaveCredentialUseCase {
             CredentialCryptoPort crypto,
             ConnectionViewAssembler viewAssembler,
             WorkflowConnectionUsagePort workflowConnectionUsagePort,
-            TransactionRunner transactionRunner) {
+            TransactionRunner transactionRunner,
+            WorkspaceMutationLock workspaceMutationLock) {
         this(
                 connectionRepository,
                 membershipRepository,
@@ -62,7 +64,8 @@ public final class SaveCredentialUseCase {
                         membershipRepository,
                         authorizationPolicy,
                         workflowConnectionUsagePort,
-                        transactionRunner));
+                        transactionRunner,
+                        workspaceMutationLock));
     }
 
     private SaveCredentialUseCase(

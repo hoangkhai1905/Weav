@@ -36,7 +36,6 @@ export default function ProfileScreen() {
     loadError,
     validationError,
     submitError,
-    saveSucceeded,
     retryLoad,
   } = useProfile();
   const activeWorkspace = useWorkspaceStore(selectActiveWorkspace);
@@ -101,8 +100,6 @@ export default function ProfileScreen() {
           {(validationError || submitError) && (
             <Text style={[styles.inlineError, { color: colors.danger }]}>{validationError || submitError}</Text>
           )}
-          {saveSucceeded && <Text style={[styles.successText, { color: colors.success }]}>Profile saved.</Text>}
-
           <Pressable
             onPress={() => void save()}
             disabled={isProfileSaving}
@@ -229,7 +226,6 @@ const styles = StyleSheet.create({
   profileInput: { borderRadius: 10, borderWidth: 1, minHeight: 44, paddingHorizontal: 12, fontSize: 14 },
   inlineError: { fontSize: 12, lineHeight: 17, flexShrink: 1 },
   retryLink: { fontSize: 12, fontWeight: '800' },
-  successText: { fontSize: 12, fontWeight: '700' },
   saveButton: { minHeight: 42, borderRadius: 10, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 14 },
   saveButtonText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
   disabledButton: { opacity: 0.65 },

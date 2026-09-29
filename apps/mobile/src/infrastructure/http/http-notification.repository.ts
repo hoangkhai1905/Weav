@@ -4,12 +4,11 @@ import type {
   NotificationItem,
   NotificationQuery,
   NotificationInboxPage,
+  NotificationLocale,
+  NotificationSessionScope,
 } from '../../domain/notification/notification.types';
 import { httpClient, normalizeApiError } from './http-client';
-import {
-  mapNotificationPage,
-  type NotificationPage,
-} from './notification.mapper';
+import { mapNotificationItem, mapNotificationPage } from './notification.mapper';
 import {
   buildNotificationListRequest,
   buildNotificationReadAllRequest,
@@ -19,67 +18,171 @@ import {
 import { useAuthStore } from '../../stores/auth.store';
 import { expirePersistedAuthSession } from '../auth/auth-session.persistence';
 
-async function requestNotification<T>(config: AxiosRequestConfig): Promise<T> {
-  const token = useAuthStore.getState().tokens?.accessToken;
+interface CapturedSession extends NotificationSessionScope {
+  token: string;
+}
+
+function captureSession(scope: NotificationSessionScope): CapturedSession {
+  const auth = useAuthStore.getState();
+  const token = auth.tokens?.accessToken;
+  if (
+    !auth.isAuthenticated ||
+    !token ||
+    auth.user?.id !== scope.userId ||
+    auth.sessionGeneration !== scope.generation
+  ) {
+    throw { code: 'STALE_SESSION', message: 'Notification session changed.' };
+  }
+  return { ...scope, token };
+}
+
+function isCapturedSessionCurrent(session: CapturedSession): boolean {
+  const auth = useAuthStore.getState();
+  return (
+    auth.isAuthenticated &&
+    auth.user?.id === session.userId &&
+    auth.sessionGeneration === session.generation &&
+    auth.tokens?.accessToken === session.token
+  );
+}
+
+function safeError(error: unknown): { code: string; message: string; status?: number } {
+  if (axios.isCancel(error)) {
+    return { code: 'CANCELED', message: 'Notification request canceled.' };
+  }
+  const normalized = normalizeApiError(error);
+  const rawCode = typeof normalized.code === 'string' ? normalized.code : 'INTERNAL_ERROR';
+  const code = /^[A-Z0-9_]{1,64}$/.test(rawCode) ? rawCode : 'INTERNAL_ERROR';
+  const status =
+    typeof normalized.status === 'number' &&
+    Number.isInteger(normalized.status) &&
+    normalized.status >= 400 &&
+    normalized.status <= 599
+      ? normalized.status
+      : undefined;
+  const messages: Record<string, string> = {
+    BAD_REQUEST: 'The notification request was invalid.',
+    UNAUTHORIZED: 'Please sign in again to load notifications.',
+    FORBIDDEN: 'This notification action is not allowed.',
+    NOT_FOUND: 'The notification is no longer available.',
+    SERVICE_UNAVAILABLE: 'Notifications are temporarily unavailable.',
+    CANCELED: 'Notification request canceled.',
+  };
+  return {
+    code,
+    message: messages[code] ?? 'Notification request failed. Please try again.',
+    ...(status !== undefined ? { status } : {}),
+  };
+}
+
+async function requestNotification<T>(
+  scope: NotificationSessionScope,
+  config: AxiosRequestConfig,
+): Promise<T> {
+  const session = captureSession(scope);
   try {
-    return (await httpClient.request<T>(config)).data;
+    const response = await httpClient.request<T>({
+      ...config,
+      headers: { ...config.headers, Authorization: `Bearer ${session.token}` },
+    });
+    if (!isCapturedSessionCurrent(session)) {
+      throw { code: 'STALE_SESSION', message: 'Notification session changed.' };
+    }
+    return response.data;
   } catch (error) {
-    if (axios.isCancel(error))
-      throw { code: 'CANCELED', message: 'Notification request canceled.' };
+    if (axios.isCancel(error)) throw safeError(error);
     if (axios.isAxiosError(error) && error.response?.status === 401) {
-      if (useAuthStore.getState().tokens?.accessToken === token) {
+      if (isCapturedSessionCurrent(session)) {
         void expirePersistedAuthSession();
       }
-      throw normalizeApiError(error);
+      throw safeError(error);
     }
-    // Do not retain raw Axios responses, which may include request credentials.
-    throw normalizeApiError(error);
+    if (!isCapturedSessionCurrent(session)) {
+      throw { code: 'STALE_SESSION', message: 'Notification session changed.' };
+    }
+    throw safeError(error);
   }
 }
 
+function invalidResponse(message: string): never {
+  throw { code: 'INVALID_RESPONSE', message };
+}
+
 export class HttpNotificationRepository implements NotificationRepository {
-  async getNotifications(): Promise<NotificationItem[]> {
-    return (await this.getNotificationPage()).items;
+  async getNotifications(
+    scope: NotificationSessionScope,
+    locale: NotificationLocale = 'vi',
+  ): Promise<NotificationItem[]> {
+    return (await this.getNotificationPage(scope, { locale })).items;
   }
 
   async getNotificationPage(
+    scope: NotificationSessionScope,
     query: NotificationQuery = {},
     signal?: AbortSignal,
   ): Promise<NotificationInboxPage> {
-    const page = await requestNotification<NotificationPage>(
+    const page = await requestNotification<unknown>(
+      scope,
       buildNotificationListRequest(query, signal),
     );
-    if (
-      !page ||
-      !Array.isArray(page.items) ||
-      (page.nextCursor !== null && typeof page.nextCursor !== 'string')
-    ) {
-      throw {
-        code: 'INVALID_RESPONSE',
-        message: 'Invalid notification response.',
-      };
+    try {
+      return mapNotificationPage(page);
+    } catch {
+      return invalidResponse('Invalid notification response.');
     }
-    return { items: mapNotificationPage(page), nextCursor: page.nextCursor };
   }
 
-  async getUnreadCount(signal?: AbortSignal): Promise<number> {
-    const result = await requestNotification<{ count: number }>(
+  async getUnreadCount(
+    scope: NotificationSessionScope,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    const result = await requestNotification<unknown>(
+      scope,
       buildNotificationUnreadCountRequest(signal),
     );
-    if (!Number.isSafeInteger(result?.count) || result.count < 0) {
-      throw {
-        code: 'INVALID_RESPONSE',
-        message: 'Invalid unread count response.',
-      };
+    if (
+      typeof result !== 'object' ||
+      result === null ||
+      !Number.isSafeInteger((result as { count?: unknown }).count) ||
+      (result as { count: number }).count < 0
+    ) {
+      return invalidResponse('Invalid unread count response.');
     }
-    return result.count;
+    return (result as { count: number }).count;
   }
 
-  async markRead(id: string): Promise<void> {
-    await requestNotification(buildNotificationReadRequest(id));
+  async markRead(
+    id: string,
+    scope: NotificationSessionScope,
+    locale: NotificationLocale,
+  ): Promise<NotificationItem> {
+    const result = await requestNotification<unknown>(
+      scope,
+      buildNotificationReadRequest(id, locale),
+    );
+    if (typeof result !== 'object' || result === null || !('item' in result)) {
+      return invalidResponse('Invalid notification read response.');
+    }
+    try {
+      return mapNotificationItem((result as { item: unknown }).item);
+    } catch {
+      return invalidResponse('Invalid notification read response.');
+    }
   }
 
-  async markAllRead(): Promise<void> {
-    await requestNotification(buildNotificationReadAllRequest());
+  async markAllRead(scope: NotificationSessionScope): Promise<number> {
+    const result = await requestNotification<unknown>(
+      scope,
+      buildNotificationReadAllRequest(),
+    );
+    if (
+      typeof result !== 'object' ||
+      result === null ||
+      !Number.isSafeInteger((result as { updatedCount?: unknown }).updatedCount) ||
+      (result as { updatedCount: number }).updatedCount < 0
+    ) {
+      return invalidResponse('Invalid notification read-all response.');
+    }
+    return (result as { updatedCount: number }).updatedCount;
   }
 }

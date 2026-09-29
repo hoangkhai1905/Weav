@@ -42,7 +42,8 @@ export const executionEventSchema = z
   })
   .superRefine((event, ctx) => {
     if (
-      event.aggregateId !== event.payload.executionId ||
+      event.aggregateId.toLowerCase() !==
+        event.payload.executionId.toLowerCase() ||
       (event.eventType === 'workflow.completed') !==
         (event.payload.status === 'SUCCESS')
     ) {

@@ -6,6 +6,10 @@ import com.weav.workspace.application.port.out.CredentialCryptoPort;
 import com.weav.workspace.application.port.out.GoogleOAuthPort;
 import com.weav.workspace.application.port.out.OAuthStateStore;
 import com.weav.workspace.application.port.out.WorkflowConnectionUsagePort;
+import com.weav.workspace.application.notification.WorkspaceNotificationRecorder;
+import com.weav.workspace.application.notification.ConnectionNotificationRecorder;
+import com.weav.workspace.application.port.out.NotificationOutboxPort;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.service.ConnectionUsageProtection;
 import com.weav.workspace.application.service.ConnectionProviderRegistry;
 import com.weav.workspace.application.service.ConnectionAuthorizationPolicy;
@@ -32,6 +36,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.boot.amqp.autoconfigure.RabbitTemplateCustomizer;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -45,6 +51,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 
 @Configuration(proxyBeanMethods = false)
+@EnableScheduling
 @EnableConfigurationProperties({
         WorkspaceAuthorizationCacheProperties.class,
         CredentialEncryptionProperties.class,
@@ -58,6 +65,36 @@ public class WorkspaceApplicationConfig {
         TransactionTemplate requiresNew = new TransactionTemplate(transactionManager);
         requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         return new SpringTransactionRunner(required, requiresNew);
+    }
+
+    @Bean
+    public WorkspaceNotificationRecorder workspaceNotificationRecorder(
+            NotificationOutboxPort outbox) {
+        return new WorkspaceNotificationRecorder(outbox, java.time.Clock.systemUTC());
+    }
+
+    @Bean
+    public ConnectionNotificationRecorder connectionNotificationRecorder(
+            NotificationOutboxPort outbox,
+            com.weav.workspace.domain.port.out.WorkspaceRepository workspaceRepository,
+            com.weav.workspace.domain.port.out.MembershipRepository membershipRepository,
+            ConnectionAuthorizationPolicy authorizationPolicy) {
+        return new ConnectionNotificationRecorder(
+                outbox,
+                workspaceRepository,
+                membershipRepository,
+                authorizationPolicy,
+                java.time.Clock.systemUTC());
+    }
+
+    @Bean
+    public RabbitTemplateCustomizer workspaceNotificationRabbitTemplateCustomizer() {
+        return rabbitTemplate -> {
+            rabbitTemplate.setMandatory(true);
+            rabbitTemplate.setReturnsCallback(returned -> {
+                // CorrelationData captures the returned message; do not log its payload.
+            });
+        };
     }
 
     @Bean
@@ -152,13 +189,15 @@ public class WorkspaceApplicationConfig {
             com.weav.workspace.domain.port.out.MembershipRepository membershipRepository,
             ConnectionAuthorizationPolicy authorizationPolicy,
             WorkflowConnectionUsagePort workflowConnectionUsagePort,
-            TransactionRunner transactionRunner) {
+            TransactionRunner transactionRunner,
+            WorkspaceMutationLock workspaceMutationLock) {
         return new ConnectionUsageProtection(
                 connectionRepository,
                 membershipRepository,
                 authorizationPolicy,
                 workflowConnectionUsagePort,
-                transactionRunner);
+                transactionRunner,
+                workspaceMutationLock);
     }
 
     @Bean

@@ -28,7 +28,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(properties = "management.health.rabbit.enabled=false")
 @Import({TestcontainersConfiguration.class, SecurityConfigTest.TestControllerConfiguration.class})
 class SecurityConfigTest {
 

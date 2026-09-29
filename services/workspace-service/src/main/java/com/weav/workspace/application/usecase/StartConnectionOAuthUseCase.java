@@ -6,6 +6,7 @@ import com.weav.workspace.application.port.out.GoogleOAuthPort;
 import com.weav.workspace.application.port.out.OAuthStateStore;
 import com.weav.workspace.application.service.ConnectionUsageProtection;
 import com.weav.workspace.domain.exception.BadRequestException;
+import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
 import com.weav.workspace.domain.model.Connection;
 import com.weav.workspace.domain.port.out.ConnectionRepository;
@@ -17,6 +18,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** Starts a one-time, membership-authorized Google connection authorization. */
 @Service
@@ -57,6 +59,7 @@ public final class StartConnectionOAuthUseCase {
         usageProtection.requireUnused(authorization, ConnectionUsageProtection.UsageScope.MEMBER_ONLY);
         OAuthPendingState pendingState = new OAuthPendingState(
                 workspaceId, connectionId, actorUserId, connection.getProvider());
+        AtomicReference<DependencyUnavailableException> stateWriteFailure = new AtomicReference<>();
         usageProtection.reauthorizeAndMutate(
                 actorUserId,
                 workspaceId,
@@ -65,14 +68,23 @@ public final class StartConnectionOAuthUseCase {
                 ConnectionUsageProtection.UsageScope.MEMBER_ONLY,
                 (membership, currentConnection) -> {
                     validateGoogleConnection(currentConnection);
+                    boolean activeAtLockedStart = currentConnection.getStatus()
+                            == com.weav.workspace.domain.valueobject.ConnectionStatus.ACTIVE;
                     currentConnection.markDisabled();
                     connectionRepository.save(currentConnection);
+                    try {
+                        stateStore.saveForStart(state, pendingState, activeAtLockedStart);
+                    } catch (DependencyUnavailableException exception) {
+                        // Keep the existing fail-closed behavior: commit the disable, but never
+                        // return an authorization URL whose one-time callback state was not saved.
+                        stateWriteFailure.set(exception);
+                    }
                     return Boolean.TRUE;
                 });
 
-        // Redis is the only callback state authority. If it is unavailable, the connection
-        // stays safely disabled and the authorization URL is not returned.
-        stateStore.save(state, pendingState);
+        if (stateWriteFailure.get() != null) {
+            throw stateWriteFailure.get();
+        }
         return new OAuthAuthorizationResponse(authorizationUrl);
     }
 

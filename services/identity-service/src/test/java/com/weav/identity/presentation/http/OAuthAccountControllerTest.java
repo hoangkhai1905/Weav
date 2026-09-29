@@ -5,6 +5,7 @@ import com.weav.identity.application.dto.OAuthConfiguration;
 import com.weav.identity.application.dto.OAuthSecret;
 import com.weav.identity.application.port.out.PasswordHasher;
 import com.weav.identity.application.port.out.TransactionRunner;
+import com.weav.identity.application.notification.IdentitySecurityNotificationRecorder;
 import com.weav.identity.application.security.CurrentIdentityGuard;
 import com.weav.identity.application.usecase.ListOAuthAccountsUseCase;
 import com.weav.identity.application.usecase.OAuthFlowCoordinator;
@@ -110,7 +111,8 @@ class OAuthAccountControllerTest {
                         return work.get();
                     }
                 },
-                new AuthInputPolicy());
+                new AuthInputPolicy(),
+                mock(IdentitySecurityNotificationRecorder.class));
         AuthRateLimiter rateLimiter = new AuthRateLimiter(clock);
         OAuthCsrfTokenService csrfTokenService = new OAuthCsrfTokenService(
                 enabledConfiguration(),

@@ -96,7 +96,7 @@ async function installAuthFixture(page: Page, token = 'token-a') {
     await fulfillJson(route, []);
   });
 
-  await page.route('**/api/notifications**', async (route) => {
+  await page.route('**/api/v2/notifications**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     if (pathname.endsWith('/unread-count')) {
       await fulfillJson(route, { count: 0 });

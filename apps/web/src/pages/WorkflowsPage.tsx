@@ -27,6 +27,9 @@ import { WorkflowGlyph } from '../components/workflows/WorkflowGlyph';
 import { ConfirmModal } from '../components/common/ConfirmModal';
 import { MOTION_DURATION, MOTION_EASE, REDUCED_MOTION_TRANSITION } from '../lib/motion';
 import { useI18nStore } from '../store/useI18nStore';
+import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
+import { showSuccessToast } from '../lib/feedback/toast';
+import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 
 interface WorkflowItem {
   id: string;
@@ -42,6 +45,7 @@ interface WorkflowItem {
 }
 
 export function WorkflowsPage() {
+  const refreshNotifications = useNotificationMilestoneRefresh();
   const { language, t } = useI18nStore();
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
@@ -106,34 +110,51 @@ export function WorkflowsPage() {
 
   const handleCreate = async () => {
     setApiError(null);
+    const mutationSession = captureNotificationSession();
     try {
       const newWf = await workflowApi.createWorkflow({ name: 'New AI Workflow' });
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast('toast.workflow.created', mutationSession);
+      refreshNotifications(mutationSession);
       navigate(`/workflows/${newWf.id}/builder`);
     } catch (error) {
-      setApiError(error instanceof Error ? error.message : 'Workflow could not be created.');
+      if (isCurrentNotificationSession(mutationSession)) {
+        setApiError(error instanceof Error ? error.message : 'Workflow could not be created.');
+      }
     }
   };
 
   const handleRun = async (id: string) => {
     setApiError(null);
+    const mutationSession = captureNotificationSession();
     try {
       const accepted = await workflowApi.runWorkflow(id);
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast('toast.workflow.run_accepted', mutationSession);
       navigate(`/executions?workflowId=${encodeURIComponent(id)}&executionId=${encodeURIComponent(accepted.executionId)}`);
     } catch (error) {
-      setApiError(error instanceof Error ? error.message : 'Workflow could not be started.');
+      if (isCurrentNotificationSession(mutationSession)) {
+        setApiError(error instanceof Error ? error.message : 'Workflow could not be started.');
+      }
     }
   };
 
   const handleTogglePause = async (workflow: WorkflowItem) => {
     setApiError(null);
+    const mutationSession = captureNotificationSession();
     try {
       if (workflow.status === 'PAUSED') await workflowApi.resumeWorkflow(workflow.id);
       else if (workflow.status === 'PUBLISHED') await workflowApi.pauseWorkflow(workflow.id);
       else throw new Error('Only published workflows can be paused.');
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast(workflow.status === 'PAUSED' ? 'toast.workflow.resumed' : 'toast.workflow.paused', mutationSession);
+      refreshNotifications(mutationSession);
       await loadWorkflows();
       setActiveMenuId(null);
     } catch (error) {
-      setApiError(error instanceof Error ? error.message : 'Workflow status could not be changed.');
+      if (isCurrentNotificationSession(mutationSession)) {
+        setApiError(error instanceof Error ? error.message : 'Workflow status could not be changed.');
+      }
     }
   };
 

@@ -1,6 +1,8 @@
 package com.weav.identity.application.usecase;
 
 import com.weav.identity.application.dto.ResetPasswordCommand;
+import com.weav.identity.application.notification.IdentitySecurityEventType;
+import com.weav.identity.application.notification.IdentitySecurityNotificationRecorder;
 import com.weav.identity.application.port.out.KeyedFingerprint;
 import com.weav.identity.application.port.out.OtpChallengeStore;
 import com.weav.identity.application.port.out.PasswordHasher;
@@ -47,6 +49,8 @@ class ResetPasswordUseCaseTest {
     private final OtpChallengeStore challengeStore = mock(OtpChallengeStore.class);
     private final KeyedFingerprint fingerprint = mock(KeyedFingerprint.class);
     private final PasswordHasher passwordHasher = mock(PasswordHasher.class);
+    private final IdentitySecurityNotificationRecorder notificationRecorder =
+            mock(IdentitySecurityNotificationRecorder.class);
     private final TransactionRunner transactionRunner = new ImmediateTransactionRunner();
     private ResetPasswordUseCase useCase;
 
@@ -69,7 +73,8 @@ class ResetPasswordUseCaseTest {
                 transactionRunner,
                 new AuthInputPolicy(),
                 new OtpInputPolicy(),
-                CLOCK
+                CLOCK,
+                notificationRecorder
         );
     }
 
@@ -87,6 +92,7 @@ class ResetPasswordUseCaseTest {
         order.verify(passwordHasher).hash("new-password");
         order.verify(userRepository).findByIdForUpdate(USER_ID);
         order.verify(sessionRepository).revokeAllForUser(USER_ID, NOW);
+        verify(notificationRecorder).record(IdentitySecurityEventType.PASSWORD_RESET, USER_ID);
         assertEquals("new-password-hash", user.getPasswordHash());
         assertEquals(NOW, user.getEmailVerifiedAt());
     }
@@ -124,7 +130,8 @@ class ResetPasswordUseCaseTest {
                 failingTransaction,
                 new AuthInputPolicy(),
                 new OtpInputPolicy(),
-                CLOCK
+                CLOCK,
+                notificationRecorder
         );
         when(passwordHasher.hash("new-password")).thenReturn("new-password-hash");
         when(challengeStore.consumeGrant(RESET_TOKEN)).thenReturn(grant());
