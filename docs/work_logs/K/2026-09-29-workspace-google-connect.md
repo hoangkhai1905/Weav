@@ -25,7 +25,7 @@ empty (identity login uses the separate `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET
 - Note: `email.send` stays "Unavailable" by design — `UnavailableNodeExecutor` in workflow-service and the FE readiness message block publish; Gmail send is not implemented yet (and workspace Gmail scope is `gmail.metadata`, which cannot send).
 
 ## Feature: Gmail `email.send` node (branch `feature/gmail-send-node`)
-Status: implemented and tested; real send pending user reconnect + click-through.
+Status: complete. User confirmed a real end-to-end run (reconnect with `gmail.send` → builder → publish → run → email delivered).
 
 Decisions
 - Workspace GMAIL required scopes are now `openid, email, gmail.metadata, gmail.send`. GitNexus impact on `GoogleOAuthScopePolicy.requiredScopes`: CRITICAL (resolve, refresh, callback, test, authorizationUrl flows) — intended: existing Gmail connections fail resolve/test (422) until reconnected once.
