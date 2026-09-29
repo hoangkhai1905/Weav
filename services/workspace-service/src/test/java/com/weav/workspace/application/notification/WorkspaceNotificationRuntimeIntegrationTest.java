@@ -117,6 +117,7 @@ import static org.mockito.Mockito.when;
 class WorkspaceNotificationRuntimeIntegrationTest {
     private static final String EXCHANGE = "weav.events";
     private static final String GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.metadata";
+    private static final String GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 
     @Container
     private static final RabbitMQContainer rabbit = new RabbitMQContainer(
@@ -930,7 +931,7 @@ class WorkspaceNotificationRuntimeIntegrationTest {
                             "synthetic-access-token",
                             "synthetic-refresh-token",
                             "Bearer",
-                            List.of("openid", "email", GMAIL_SCOPE),
+                            List.of("openid", "email", GMAIL_SCOPE, GMAIL_SEND_SCOPE),
                             3600);
                 }
 

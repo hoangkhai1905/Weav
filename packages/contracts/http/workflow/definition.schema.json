@@ -205,6 +205,9 @@
               "config": {
                 "type": "object",
                 "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
                   "to": {
                     "oneOf": [
                       {

@@ -31,7 +31,7 @@ Older project material contains stale or unrelated examples. The checked-in sour
 - Google Docs (`google.docs`), although it currently appears in the Web UI catalog.
 - Direct Telegram webhook handling by Workflow Service.
 - Inventing AI Service or Bot Service routes, payloads, credentials, or authentication contracts.
-- Gmail send permission changes, workflow-execution cancellation/resume APIs, human approval nodes, loops, arbitrary code execution, or a distributed node-level queue.
+- Workflow-execution cancellation/resume APIs, human approval nodes, loops, arbitrary code execution, or a distributed node-level queue.
 
 ## 3. Architecture baseline and required structure
 
@@ -110,7 +110,7 @@ The V1 server catalog is:
 | `trigger.webhook` | Service-generated endpoint key and secret verifier; the accepted JSON request body becomes `trigger.input`. Do not accept a caller-chosen public path as the endpoint identity. |
 | `trigger.telegram` | Persist and validate its node/trigger identity. Event normalization is owned by Bot Service. Its normalized payload schema is not defined until the Bot contract is approved. |
 | `http.request` | Method, URL, optional headers/query/body, and optional Workspace connection reference. Output contains response data and HTTP status. Apply the outbound request controls in section 11. |
-| `email.send` | Typed recipient, subject, and body configuration; output is message identifier/status only when a real sender is available. Execution is blocked by the missing Gmail send capability described in section 10. |
+| `email.send` | Literal Gmail `connectionId` plus recipient (1-10), subject, and plain-text body; sends via Gmail `messages.send` and outputs `messageId`, `threadId`, `status`. See section 10. |
 | `google.sheets` | Workspace connection reference, operation, spreadsheet ID, and range/data configuration. V1 operations are read, append, and update. Output is a JSON result. Dynamic values use the mapping syntax in section 6. |
 | `telegram.send_message` | Config has `chatId` and `text`; output is a sent message ID only after a real send. The actual sender boundary is pending Bot/provider contract; do not return a fake success. |
 | `logic.condition` | A declarative predicate with `left`, `operator`, and `right`; outgoing edge ports are `true` and `false`. No code strings. |
@@ -234,7 +234,7 @@ Use `connectionId` and Workspace credential resolution. Workspace already allows
 
 ### Email
 
-The current Workspace Gmail OAuth policy grants `gmail.metadata`, not Gmail send. The `email.send` node stays in the catalog with typed configuration, but it must not claim successful delivery or silently request broader OAuth scopes. A real executor requires an approved send-capable connection/provider contract. Until then, execution returns `DEPENDENCY_NOT_CONFIGURED` with `retryable=false`.
+Update 2026-09-29: the Workspace Gmail OAuth policy requires `gmail.metadata` and `gmail.send` (existing Gmail connections must reconnect once). `email.send` resolves the Workspace connection per attempt, requires provider `GMAIL`/`OAUTH2`, and posts an RFC 2822 message to the fixed `gmail.googleapis.com/gmail/v1/users/me/messages/send` endpoint through the pinned transport. Sending is not idempotent: only credential-resolution failures and Gmail 429 are retryable; timeouts, 5xx, and ambiguous responses fail with `retryable=false` so a retry can never send a duplicate email.
 
 ### Telegram action and AI nodes
 
@@ -296,7 +296,7 @@ Within one worker, independent `READY` nodes may run concurrently. The engine de
 9. Schedule uses six-field cron plus explicit timezone. Webhook key/secret checks happen before durable enqueue, and accepted requests return `202` only after persistence/outbox commit.
 10. Workspace calls use `X-Internal-Service-Key`, enforce returned capabilities, and never expose/store resolved secrets. The required connection-usage response is `{ "inUse": boolean }` and counts draft/version references.
 11. OCR uses the documented Workflow Service JWT claims and request shape; deployment is blocked until OCR validates those claims. Artifact source remains blocked until its resolution contract is agreed.
-12. AI, Bot/Telegram, and Gmail send integrations fail clearly when unconfigured; none returns a fake success or uses an invented service contract.
+12. AI and Bot/Telegram integrations fail clearly when unconfigured, and Gmail send fails clearly without an authorized Gmail connection; none returns a fake success or uses an invented service contract.
 
 ## 14. Repository references
 

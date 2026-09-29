@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class UnavailableNodeExecutorTest {
 
     @ParameterizedTest
-    @ValueSource(strings = {"email.send", "telegram.send_message", "ai.extract", "ai.classify", "ai.summarize"})
+    @ValueSource(strings = {"telegram.send_message", "ai.extract", "ai.classify", "ai.summarize"})
     void registryProvidesAnExplicitNonRetryableFailureForUnavailableIntegrations(String type) {
         NodeExecutor executor = new NodeExecutorRegistry().executors().get(type);
 
@@ -32,7 +32,7 @@ class UnavailableNodeExecutorTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"email.send", "telegram.send_message", "ai.extract", "ai.classify",
+    @ValueSource(strings = {"telegram.send_message", "ai.extract", "ai.classify",
             "ai.summarize", "trigger.telegram"})
     void readinessDoesNotLetNodeConfigurationEnableUnavailableIntegrations(String type) {
         IntegrationReadiness.Readiness readiness = IntegrationReadiness.forType(type);

@@ -47,6 +47,7 @@ import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
 import { useWorkspaceContext } from '../hooks/useWorkspace';
+import { useConnections } from '../hooks/useConnections';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG } from '../lib/constants/nodeCatalog';
@@ -138,7 +139,15 @@ const getNodeReadinessMessage = (type: string, config: Record<string, unknown>):
   }
   if (type === 'trigger.telegram') return 'Unavailable: the Bot Service trigger contract has not been approved.';
   if (type === 'telegram.send_message') return 'Unavailable: the Telegram sender contract is not implemented.';
-  if (type === 'email.send') return 'Unavailable: Gmail send capability is not configured.';
+  if (type === 'email.send') {
+    if (!String(config.connectionId ?? '').trim()) {
+      return 'Not configured: select an authorized Gmail connection before publication.';
+    }
+    if (!String(config.to ?? '').trim() || !String(config.subject ?? '').trim()) {
+      return 'Not configured: enter a recipient and subject.';
+    }
+    return undefined;
+  }
   if (type.startsWith('ai.')) return 'Unavailable: the AI provider contract is not implemented.';
   if (type === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
     return 'Not configured: set both condition values before publication.';
@@ -180,7 +189,11 @@ const getPublishBlockers = (nodes: Node[]): string[] => {
     if (type === 'google.sheets' && !String(config.connectionId ?? '').trim()) {
       blockers.add('Google Sheets requires an authorized Workspace connection');
     }
-    if (type === 'trigger.telegram' || type === 'telegram.send_message' || type === 'email.send' || type.startsWith('ai.') || type === 'ocr.extract') {
+    if (type === 'email.send') {
+      const message = getNodeReadinessMessage(type, config);
+      if (message) blockers.add(message);
+    }
+    if (type === 'trigger.telegram' || type === 'telegram.send_message' || type.startsWith('ai.') || type === 'ocr.extract') {
       blockers.add(getNodeReadinessMessage(type, config) ?? `${type} is not configured`);
     }
     if (type === 'ocr.extract') {
@@ -216,6 +229,13 @@ export const WorkflowBuilderPage: React.FC = () => {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const selectedNodeType = String(selectedNode?.data?.nodeType ?? '');
   const selectedNodeConfig = (selectedNode?.data?.config ?? {}) as Record<string, unknown>;
+  const { data: workspaceConnections, isLoading: isLoadingConnections } = useConnections();
+  const gmailConnections = useMemo(
+    () => (workspaceConnections ?? []).filter(
+      (connection) => connection.provider === 'GMAIL' && connection.status === 'ACTIVE' && connection.canAttach,
+    ),
+    [workspaceConnections],
+  );
   const unsupportedNodeTypes = useMemo(
     () => [...new Set(nodes.map((node) => String(node.data?.nodeType ?? '')).filter((type) => !SUPPORTED_NODE_TYPES.has(type)))],
     [nodes]
@@ -1263,6 +1283,32 @@ export const WorkflowBuilderPage: React.FC = () => {
                 </div>
               ) : selectedNodeType === 'email.send' ? (
                 <div data-testid="email-config" className="space-y-3">
+                  <div>
+                    <label htmlFor="email-connection" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Gmail connection</label>
+                    <select
+                      id="email-connection"
+                      data-testid="email-connection"
+                      value={String(selectedNodeConfig.connectionId ?? '')}
+                      // Omit the key when cleared: the Workflow Service rejects an empty connectionId even in drafts.
+                      onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value || undefined })}
+                      disabled={isLoadingConnections}
+                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 disabled:opacity-60 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                    >
+                      <option value="">{isLoadingConnections ? 'Loading connections…' : 'Select a Gmail connection'}</option>
+                      {gmailConnections.map((connection) => (
+                        <option key={connection.id} value={connection.id}>{connection.name}</option>
+                      ))}
+                      {String(selectedNodeConfig.connectionId ?? '').trim()
+                        && !gmailConnections.some((connection) => connection.id === selectedNodeConfig.connectionId) && (
+                        <option value={String(selectedNodeConfig.connectionId)}>Unavailable connection (reconnect or pick another)</option>
+                      )}
+                    </select>
+                    {!isLoadingConnections && gmailConnections.length === 0 && (
+                      <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                        No active Gmail connection. <Link to="/connections" className="text-blue-600 underline dark:text-blue-400">Connect Gmail</Link> first.
+                      </p>
+                    )}
+                  </div>
                   <div>
                     <label htmlFor="email-to" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Recipient</label>
                     <input id="email-to" value={String(selectedNodeConfig.to ?? '')} onChange={(event) => updateSelectedNodeConfig({ to: event.target.value })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />

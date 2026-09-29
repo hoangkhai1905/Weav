@@ -75,6 +75,7 @@ class GoogleOAuthUseCasesTest {
     private static final String ACCESS_TOKEN = "synthetic-access-token";
     private static final String REFRESH_TOKEN = "synthetic-refresh-token";
     private static final String GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.metadata";
+    private static final String GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
     private static final String SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 
     @Container
@@ -187,7 +188,7 @@ class GoogleOAuthUseCasesTest {
         assertThat(firstPayload).containsEntry("accessToken", ACCESS_TOKEN)
                 .containsEntry("refreshToken", REFRESH_TOKEN)
                 .containsEntry("tokenType", "Bearer")
-                .containsEntry("grantedScopes", List.of("openid", "email", GMAIL_SCOPE));
+                .containsEntry("grantedScopes", List.of("openid", "email", GMAIL_SCOPE, GMAIL_SEND_SCOPE));
         assertThat(firstCredential.getExpiresAt()).isBetween(
                 before.plusSeconds(3600), after.plusSeconds(3600));
         assertThat(firstCredential.getExpiresAt()).isBetween(
@@ -684,7 +685,7 @@ class GoogleOAuthUseCasesTest {
     }
 
     private static List<String> gmailScopes() {
-        return List.of("openid", "email", GMAIL_SCOPE);
+        return List.of("openid", "email", GMAIL_SCOPE, GMAIL_SEND_SCOPE);
     }
 
     private static List<String> sheetsScopes() {

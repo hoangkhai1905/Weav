@@ -1047,3 +1047,79 @@ test.describe("workspace connection API adapter", () => {
     ).toHaveCount(0);
   });
 });
+
+test.describe("workflow builder Gmail connection picker", () => {
+  const WORKFLOW_ID = "30000000-0000-4000-8000-000000000001";
+  const INVALID_GMAIL_ID = "20000000-0000-4000-8000-000000000009";
+
+  const workflowDetail = (emailConfig: Record<string, unknown>) => ({
+    workflowId: WORKFLOW_ID,
+    name: "Mail report",
+    status: "DRAFT",
+    schemaVersion: "1.0",
+    currentVersionId: null,
+    createdAt: "2026-08-01T00:00:00Z",
+    updatedAt: "2026-08-01T00:00:00Z",
+    definition: {
+      schemaVersion: "1.0",
+      nodes: [
+        { id: "manual", type: "trigger.manual", config: {} },
+        { id: "email", type: "email.send", config: emailConfig },
+      ],
+      edges: [{ id: "manual-email", source: "manual", target: "email" }],
+      variables: {},
+    },
+    editorState: {
+      nodes: {
+        manual: { name: "Start", position: { x: 0, y: 0 } },
+        email: { name: "Send report", position: { x: 320, y: 0 } },
+      },
+    },
+  });
+
+  test("lists only active attachable Gmail connections and saves the selected connectionId", async ({ page }) => {
+    await installAuthFixture(page);
+    const savedDrafts: Array<Record<string, unknown>> = [];
+    let emailConfig: Record<string, unknown> = { to: "team@example.test", subject: "Weekly", body: "Hi" };
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, [
+        connection(CONNECTION_GMAIL_ID, "GMAIL", WORKSPACE_ID, "ACTIVE"),
+        connection(INVALID_GMAIL_ID, "GMAIL", WORKSPACE_ID, "INVALID"),
+        connection(CONNECTION_SHEETS_ID, "GOOGLE_SHEETS", WORKSPACE_ID, "ACTIVE"),
+      ]),
+    );
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/draft") && route.request().method() === "PUT") {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        savedDrafts.push(body);
+        const nodes = (body.definition as { nodes: Array<{ id: string; config: Record<string, unknown> }> }).nodes;
+        emailConfig = nodes.find((node) => node.id === "email")?.config ?? {};
+        return fulfillJson(route, workflowDetail(emailConfig));
+      }
+      if (url.pathname.endsWith(`/workflows/${WORKFLOW_ID}`)) {
+        return fulfillJson(route, workflowDetail(emailConfig));
+      }
+      return fulfillJson(route, pageResult([]));
+    });
+
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+    await page.locator('[data-testid="workflow-node"][data-node-type="email.send"]').click();
+
+    const picker = page.getByTestId("email-connection");
+    await expect(picker.locator("option")).toHaveText(["Select a Gmail connection", "Work Gmail"]);
+    await expect(page.getByTestId("integration-readiness")).toContainText("select an authorized Gmail connection");
+    await expect(page.getByTestId("workflow-publish")).toBeDisabled();
+
+    await picker.selectOption(CONNECTION_GMAIL_ID);
+    await expect(page.getByTestId("integration-readiness")).toHaveCount(0);
+    await page.getByTestId("workflow-save-inspector").click();
+    await expect.poll(() => savedDrafts.length).toBe(1);
+    expect(emailConfig).toMatchObject({ connectionId: CONNECTION_GMAIL_ID, to: "team@example.test" });
+
+    await picker.selectOption("");
+    await page.getByTestId("workflow-save-inspector").click();
+    await expect.poll(() => savedDrafts.length).toBe(2);
+    expect(emailConfig).not.toHaveProperty("connectionId");
+  });
+});

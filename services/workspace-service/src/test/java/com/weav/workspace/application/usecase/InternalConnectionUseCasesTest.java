@@ -64,6 +64,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class InternalConnectionUseCasesTest {
 
     private static final String GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.metadata";
+    private static final String GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
     private static final String SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
     private static final String EMAIL_ALIAS = "https://www.googleapis.com/auth/userinfo.email";
     private static final String OLD_ACCESS_TOKEN = "synthetic-old-access-token";
@@ -684,7 +685,7 @@ class InternalConnectionUseCasesTest {
     }
 
     private List<String> gmailScopes() {
-        return List.of("openid", "email", GMAIL_SCOPE);
+        return List.of("openid", "email", GMAIL_SCOPE, GMAIL_SEND_SCOPE);
     }
 
     private List<String> sheetsScopes() {
@@ -710,7 +711,7 @@ class InternalConnectionUseCasesTest {
         private final AtomicInteger refreshCalls = new AtomicInteger();
         private final AtomicReference<GoogleOAuthRefreshResponse> response = new AtomicReference<>(
                 new GoogleOAuthRefreshResponse("synthetic-refreshed-access", null, "Bearer",
-                        List.of("openid", "email", GMAIL_SCOPE), 3600));
+                        List.of("openid", "email", GMAIL_SCOPE, GMAIL_SEND_SCOPE), 3600));
         private final AtomicReference<RuntimeException> failure = new AtomicReference<>();
         private final AtomicReference<Runnable> beforeRefresh = new AtomicReference<>(() -> { });
         private final AtomicReference<String> lastRefreshToken = new AtomicReference<>();
@@ -750,7 +751,7 @@ class InternalConnectionUseCasesTest {
         void reset() {
             refreshCalls.set(0);
             response.set(new GoogleOAuthRefreshResponse(
-                    "synthetic-refreshed-access", null, "Bearer", List.of("openid", "email", GMAIL_SCOPE), 3600));
+                    "synthetic-refreshed-access", null, "Bearer", List.of("openid", "email", GMAIL_SCOPE, GMAIL_SEND_SCOPE), 3600));
             failure.set(null);
             beforeRefresh.set(() -> { });
             lastRefreshToken.set(null);

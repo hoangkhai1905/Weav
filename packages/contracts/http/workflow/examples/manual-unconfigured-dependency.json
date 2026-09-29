@@ -7,17 +7,16 @@
       "config": {}
     },
     {
-      "id": "email",
-      "type": "email.send",
+      "id": "dependency",
+      "type": "telegram.send_message",
       "config": {
-        "to": "workflow-v1-dependency-test@example.test",
-        "subject": "Workflow V1 dependency test",
-        "body": "The unsupported email adapter must fail closed without sending."
+        "chatId": "workflow-v1-dependency-test",
+        "text": "The unsupported Telegram adapter must fail closed without sending."
       }
     }
   ],
   "edges": [
-    { "id": "manual-email", "source": "manual-root", "target": "email" }
+    { "id": "manual-dependency", "source": "manual-root", "target": "dependency" }
   ],
   "variables": {}
 }

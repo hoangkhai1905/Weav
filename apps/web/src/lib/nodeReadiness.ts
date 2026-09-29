@@ -21,7 +21,6 @@ export const getNodeReadinessBadge = (nodeType: string, config: Record<string, u
   if (
     nodeType === 'trigger.telegram' ||
     nodeType === 'telegram.send_message' ||
-    nodeType === 'email.send' ||
     nodeType.startsWith('ai.') ||
     nodeType === 'ocr.extract'
   ) {
@@ -31,6 +30,12 @@ export const getNodeReadinessBadge = (nodeType: string, config: Record<string, u
     return String(config.connectionId ?? '').trim()
       ? { state: 'authorization-required', label: 'Authorization required' }
       : { state: 'not-configured', label: 'Not configured' };
+  }
+  if (
+    nodeType === 'email.send' &&
+    (!String(config.connectionId ?? '').trim() || !String(config.to ?? '').trim() || !String(config.subject ?? '').trim())
+  ) {
+    return { state: 'not-configured', label: 'Not configured' };
   }
   if (nodeType === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
     return { state: 'not-configured', label: 'Not configured' };

@@ -17,7 +17,8 @@ public final class GoogleOAuthScopePolicy {
     private static final List<String> GMAIL_SCOPES = List.of(
             "openid",
             EMAIL_SCOPE,
-            "https://www.googleapis.com/auth/gmail.metadata");
+            "https://www.googleapis.com/auth/gmail.metadata",
+            "https://www.googleapis.com/auth/gmail.send");
     private static final List<String> SHEETS_SCOPES = List.of(
             "openid",
             EMAIL_SCOPE,
