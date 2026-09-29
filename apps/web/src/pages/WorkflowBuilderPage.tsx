@@ -1721,7 +1721,13 @@ export const WorkflowBuilderPage: React.FC = () => {
             >
               Preview flow
             </button>
-            <button className="rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
+            <button
+              data-testid="workflow-save-inspector"
+              onClick={handleSaveDraft}
+              disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
+              aria-busy={isSavingWorkflow}
+              className="rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-50"
+            >
               {t('builder.save_changes')}
             </button>
           </div>
