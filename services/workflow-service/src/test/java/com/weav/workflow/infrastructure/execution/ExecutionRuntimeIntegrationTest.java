@@ -123,7 +123,7 @@ class ExecutionRuntimeIntegrationTest {
     @Autowired
     private DeterministicNodeExecutor fakeExecutor;
     @Autowired
-    private ExtractCapturingNodeExecutor extractExecutor;
+    private RuntimeAiClient aiClient;
     @Autowired
     private NodeExecutorRegistry registry;
     @Autowired
@@ -144,7 +144,7 @@ class ExecutionRuntimeIntegrationTest {
     void setUp() {
         workspaceAccess.setCapabilities(RUN_CAPABILITIES);
         fakeExecutor.reset();
-        extractExecutor.reset();
+        aiClient.reset();
         rabbitAdmin.purgeQueue(RabbitExecutionConfiguration.EXECUTION_QUEUE, false);
         rabbitAdmin.purgeQueue(RabbitExecutionConfiguration.DEAD_LETTER_QUEUE, false);
         rabbitAdmin.purgeQueue(ExecutionWorkerRabbitConfiguration.RETRY_QUEUE, false);
@@ -183,9 +183,9 @@ class ExecutionRuntimeIntegrationTest {
         awaitTerminal(fixture.executionId());
 
         assertEquals(ExecutionStatus.SUCCESS.name(), status(fixture.executionId()));
-        assertEquals("hello", extractExecutor.capturedConfig.get().get("text"));
+        assertEquals("hello", aiClient.capturedConfig.get().get("text"));
         @SuppressWarnings("unchecked")
-        Map<String, Object> capturedSchema = (Map<String, Object>) extractExecutor.capturedConfig.get().get("outputSchema");
+        Map<String, Object> capturedSchema = (Map<String, Object>) aiClient.capturedConfig.get().get("outputSchema");
         @SuppressWarnings("unchecked")
         Map<String, Object> capturedDescription = (Map<String, Object>) ((Map<String, Object>) capturedSchema.get("properties"))
                 .get("description");
@@ -278,8 +278,32 @@ class ExecutionRuntimeIntegrationTest {
                 + "where id = ?", fixture.executionId()));
     }
 
+    @Test
+    void aiBusyRetriesTwiceThenSucceeds() throws Exception {
+        aiClient.failuresBeforeSuccess(2, "AI_BUSY", true);
+        Fixture fixture = admit("ai-retry-success", aiActionDefinition(), Map.of());
+
+        assertTrue(publisher.publishPending() >= 1);
+        awaitTerminal(fixture.executionId());
+
+        assertEquals(ExecutionStatus.SUCCESS.name(), status(fixture.executionId()));
+        assertEquals(3, aiClient.calls());
+    }
+
+    @Test
+    void aiOutputInvalidDoesNotRetry() throws Exception {
+        aiClient.failuresBeforeSuccess(1, "AI_OUTPUT_INVALID", false);
+        Fixture fixture = admit("ai-no-retry", aiActionDefinition(), Map.of());
+
+        assertTrue(publisher.publishPending() >= 1);
+        awaitTerminal(fixture.executionId());
+
+        assertEquals(ExecutionStatus.FAILED.name(), status(fixture.executionId()));
+        assertEquals(1, aiClient.calls());
+    }
+
     @ParameterizedTest
-    @ValueSource(strings = {"telegram.send_message", "ai.extract", "ai.classify", "ai.summarize"})
+    @ValueSource(strings = {"telegram.send_message"})
     void unavailableIntegrationFailsOnceInRealDatabaseWithoutPersistingOutput(String type) throws Exception {
         NodeExecutor registered = registry.executors().get(type);
         assertNotNull(registered, "unavailable integration should have an explicit executor");
@@ -509,6 +533,13 @@ class ExecutionRuntimeIntegrationTest {
                 List.of(edge("root-unavailable", "root", "unavailable", null)), Map.of());
     }
 
+    private WorkflowDefinition aiActionDefinition() {
+        return new WorkflowDefinition("1.0", List.of(
+                node("root", "trigger.manual", Map.of()),
+                node("ai", "ai.summarize", Map.of("inputText", "Summarize this", "maxLength", 200))),
+                List.of(edge("root-ai", "root", "ai", null)), Map.of());
+    }
+
     private static WorkflowDefinition.Node httpNode(String id, String url) {
         return node(id, "http.request", Map.of("method", "GET", "url", url));
     }
@@ -573,30 +604,43 @@ class ExecutionRuntimeIntegrationTest {
         }
 
         @Bean
-        ExtractCapturingNodeExecutor extractCapturingNodeExecutor() {
-            return new ExtractCapturingNodeExecutor();
+        @org.springframework.context.annotation.Primary
+        RuntimeAiClient runtimeAiClient() {
+            return new RuntimeAiClient();
         }
     }
 
-    static final class ExtractCapturingNodeExecutor implements NodeExecutor {
+    static final class RuntimeAiClient extends com.weav.workflow.infrastructure.ai.AiClient {
         private final AtomicReference<Map<String, Object>> capturedConfig = new AtomicReference<>();
+        private final AtomicInteger calls = new AtomicInteger();
+        private final AtomicInteger failures = new AtomicInteger();
+        private volatile String failureCode;
+        private volatile boolean retryable;
 
         @Override
-        public String type() {
-            return "ai.extract";
+        public Map<String, Object> execute(NodeExecutor.Context context, String operation, Map<String, Object> payload) {
+            capturedConfig.set(payload);
+            calls.incrementAndGet();
+            if (failures.getAndDecrement() > 0) {
+                throw new NodeExecutor.Failure(failureCode, "stub", retryable);
+            }
+            return Map.of("summary", "ok", "truncated", false);
         }
 
-        @Override
-        public Result execute(Context context, Map<String, Object> resolvedConfig) {
-            if (!resolvedConfig.containsKey("outputSchema")) {
-                throw new Failure("DEPENDENCY_NOT_CONFIGURED", "deterministic extract stub", false);
-            }
-            capturedConfig.set(resolvedConfig);
-            return new Result(Map.of("ok", true), null);
+        void failuresBeforeSuccess(int count, String code, boolean canRetry) {
+            failures.set(count);
+            failureCode = code;
+            retryable = canRetry;
+        }
+
+        int calls() {
+            return calls.get();
         }
 
         void reset() {
             capturedConfig.set(null);
+            calls.set(0);
+            failures.set(0);
         }
     }
 

@@ -17,6 +17,9 @@ class RetryPolicyTest {
         assertTrue(policy.retryable("NETWORK_ERROR", null));
         assertTrue(policy.retryable("TIMEOUT", null));
         assertTrue(policy.retryable("WORKER_INTERRUPTED", null));
+        assertTrue(policy.retryable("AI_BUSY", null));
+        assertTrue(policy.retryable("AI_PROVIDER_UNAVAILABLE", null));
+        assertTrue(policy.retryable("AI_TIMEOUT", null));
         assertTrue(policy.retryable("HTTP_ERROR", 429));
         assertTrue(policy.retryable(null, 500));
         assertTrue(policy.retryable("HTTP_ERROR", 599));
@@ -24,6 +27,7 @@ class RetryPolicyTest {
         assertFalse(policy.retryable("HTTP_ERROR", 400));
         assertFalse(policy.retryable("HTTP_ERROR", 401));
         assertFalse(policy.retryable("UNKNOWN_ERROR", null));
+        assertFalse(policy.retryable("AI_OUTPUT_INVALID", null));
     }
 
     @Test
