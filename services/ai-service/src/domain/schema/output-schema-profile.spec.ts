@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { AiError } from '../errors';
 import { checkOutputSchema, matchesOutputSchema } from './output-schema-profile';
 
 const fixture = JSON.parse(readFileSync(
@@ -36,5 +37,14 @@ describe('matchesOutputSchema', () => {
   it('rejects a missing required field and a wrong type', () => {
     expect(matchesOutputSchema(schema, { tags: [] })).toBe(false);
     expect(matchesOutputSchema(schema, { name: 3 })).toBe(false);
+  });
+  it('maps an Ajv compile error to AI_SCHEMA_INVALID', () => {
+    try {
+      matchesOutputSchema({ type: 'string', items: { type: 'string' } }, 'x');
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(AiError);
+      expect((e as AiError).code).toBe('AI_SCHEMA_INVALID');
+    }
   });
 });
