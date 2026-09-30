@@ -348,7 +348,7 @@ services:
       AI_SERVICE_JWKS_FILE: /run/weav-keys/workflow-service.jwks.json
       AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-60000}
     volumes:
-      - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}:/run/weav-keys:ro
+      - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/workflow-service.jwks.json:/run/weav-keys/workflow-service.jwks.json:ro
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/live').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 10s

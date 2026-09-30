@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { addNode, loginAndOpenBuilder } from './support/builder.js';
 
 type WorkflowFixture = {
   id: string;
@@ -49,7 +50,7 @@ test.afterEach(async ({ page }) => {
 });
 
 test('catalog matches exactly the Workflow V1 node set and contract defaults', async ({ page }) => {
-  await page.goto('/workflows/wf-001/builder');
+  await loginAndOpenBuilder(page);
   const catalog = await page.evaluate(async () => {
     const dynamicImport = new Function('modulePath', 'return import(modulePath)') as (
       modulePath: string,
@@ -79,7 +80,7 @@ test('catalog matches exactly the Workflow V1 node set and contract defaults', a
 });
 
 test('builder palette derives from the catalog and offers exactly the V1 node set', async ({ page }) => {
-  await page.goto('/workflows/wf-001/builder');
+  await loginAndOpenBuilder(page);
 
   const paletteItems = page.getByTestId('workflow-palette-item');
   await expect(paletteItems).toHaveCount(13);
@@ -98,7 +99,7 @@ test('builder palette derives from the catalog and offers exactly the V1 node se
 
 test('shows unavailable draft badges and keeps preview separate from a V1 run', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.goto('/workflows/wf-001/builder');
+  await loginAndOpenBuilder(page);
 
   const webhook = page.locator('[data-node-type="trigger.webhook"][data-testid="workflow-node"]');
   await expect(webhook).toHaveAttribute('data-readiness', 'draft');
@@ -106,9 +107,9 @@ test('shows unavailable draft badges and keeps preview separate from a V1 run', 
   await expect(webhook.getByTestId('workflow-node-readiness')).toHaveText('Not published');
 
   const ai = page.locator('[data-node-type="ai.extract"][data-testid="workflow-node"]');
-  await expect(ai).toHaveAttribute('data-readiness', 'unavailable');
+  await expect(ai).toHaveAttribute('data-readiness', 'not-configured');
   await expect(ai).toHaveAttribute('data-status', 'idle');
-  await expect(ai.getByTestId('workflow-node-readiness')).toHaveText('Unavailable');
+  await expect(ai.getByTestId('workflow-node-readiness')).toHaveText('Not configured');
 
   const condition = page.locator('[data-node-type="logic.condition"][data-testid="workflow-node"]');
   await expect(condition).toHaveAttribute('data-readiness', 'not-configured');
@@ -129,9 +130,9 @@ test('shows unavailable draft badges and keeps preview separate from a V1 run', 
 });
 
 test('schedule and webhook inspectors use system-managed V1 inputs', async ({ page }) => {
-  await page.goto('/workflows/wf-001/builder');
+  await loginAndOpenBuilder(page);
 
-  await page.locator('[data-testid="workflow-palette-item"][data-node-type="trigger.schedule"]').click();
+  await addNode(page, 'trigger.schedule');
   const schedule = page.getByTestId('workflow-inspector');
   await expect(schedule.getByTestId('schedule-cron')).toHaveValue('0 0 9 * * *');
   await expect(schedule.getByTestId('schedule-timezone')).toHaveValue('Asia/Ho_Chi_Minh');
@@ -147,7 +148,7 @@ test('schedule and webhook inspectors use system-managed V1 inputs', async ({ pa
 });
 
 test('condition editor is declarative and both branch ports survive editor reload mapping', async ({ page }, testInfo) => {
-  await page.goto('/workflows/wf-001/builder');
+  await loginAndOpenBuilder(page);
   await page.getByTestId('rf__node-node-condition').getByTestId('workflow-node').click();
 
   const inspector = page.getByTestId('workflow-inspector');
@@ -209,8 +210,8 @@ test('condition editor is declarative and both branch ports survive editor reloa
 });
 
 test('unconfigured integrations remain visible and cannot be published as ready', async ({ page }) => {
-  await page.goto('/workflows/wf-001/builder');
-  await page.locator('[data-node-type="google.sheets"]').click();
+  await loginAndOpenBuilder(page);
+  await addNode(page, 'google.sheets');
 
   const inspector = page.getByTestId('workflow-inspector');
   await expect(inspector.getByTestId('google-connection')).toHaveValue('');
@@ -224,8 +225,8 @@ test('unconfigured integrations remain visible and cannot be published as ready'
 });
 
 test('OCR draft source allows one source at a time and exposes the closed production gate', async ({ page }) => {
-  await page.goto('/workflows/wf-001/builder');
-  await page.locator('[data-node-type="ocr.extract"]').click();
+  await loginAndOpenBuilder(page);
+  await addNode(page, 'ocr.extract');
 
   const inspector = page.getByTestId('workflow-inspector');
   await expect(inspector.getByTestId('ocr-artifact-id')).toHaveValue('');
@@ -238,7 +239,7 @@ test('OCR draft source allows one source at a time and exposes the closed produc
 });
 
 test('legacy unsupported node data survives the editor mapper unchanged', async ({ page }) => {
-  await page.goto('/workflows/wf-001/builder');
+  await loginAndOpenBuilder(page);
   const legacy: WorkflowFixture = {
     id: 'workflow-legacy-draft',
     name: 'Legacy draft',

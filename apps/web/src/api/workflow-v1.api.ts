@@ -214,6 +214,57 @@ function safeStatus(value: unknown): WorkflowStatus {
   throw new WorkflowApiError(502, 'Workflow service returned an unknown workflow status.');
 }
 
+export type GenerationResponse =
+  | { status: 'ready'; name: string; definition: unknown; layout: Record<string, { x: number; y: number }> }
+  | { status: 'needs_input'; questions: Array<{ code: string; field: string }> }
+  | { status: 'unsupported'; reasons: Array<{ code: string }> };
+
+function layoutPosition(entry: unknown): { x: number; y: number } | undefined {
+  if (!isRecord(entry)) return undefined;
+  if (typeof entry.x === 'number' && typeof entry.y === 'number') {
+    return { x: entry.x, y: entry.y };
+  }
+  const position = isRecord(entry.position) ? entry.position : undefined;
+  if (position && typeof position.x === 'number' && typeof position.y === 'number') {
+    return { x: position.x, y: position.y };
+  }
+  return undefined;
+}
+
+function layoutName(entry: unknown, fallback: string): string {
+  return isRecord(entry) && typeof entry.name === 'string' ? entry.name : fallback;
+}
+
+export function definitionToCanvas(
+  definition: unknown,
+  layout: Record<string, unknown>,
+): { nodes: WorkflowNode[]; edges: WorkflowEdge[] } {
+  const source = isRecord(definition) ? definition : {};
+  const rawNodes = Array.isArray(source.nodes) ? source.nodes : [];
+  const nodes: WorkflowNode[] = rawNodes.flatMap((rawNode): WorkflowNode[] => {
+    if (!isRecord(rawNode) || typeof rawNode.id !== 'string' || typeof rawNode.type !== 'string') return [];
+    const position = layoutPosition(layout[rawNode.id]);
+    return [{
+      id: rawNode.id,
+      type: rawNode.type,
+      name: layoutName(layout[rawNode.id], rawNode.id),
+      config: isRecord(rawNode.config) ? rawNode.config : {},
+      ...(position ? { position } : {}),
+    }];
+  });
+  const rawEdges = Array.isArray(source.edges) ? source.edges : [];
+  const edges: WorkflowEdge[] = rawEdges.flatMap((rawEdge): WorkflowEdge[] => {
+    if (!isRecord(rawEdge) || typeof rawEdge.id !== 'string' || typeof rawEdge.source !== 'string' || typeof rawEdge.target !== 'string') return [];
+    return [{
+      id: rawEdge.id,
+      source: rawEdge.source,
+      target: rawEdge.target,
+      ...(typeof rawEdge.sourcePort === 'string' ? { sourcePort: rawEdge.sourcePort } : {}),
+    }];
+  });
+  return { nodes, edges };
+}
+
 function mapSummary(summary: WorkflowSummaryV1, workspaceId: string): WorkflowDefinition {
   if (!summary || typeof summary.workflowId !== 'string' || typeof summary.name !== 'string') {
     throw new WorkflowApiError(502, 'Workflow service returned an invalid workflow.');
@@ -236,36 +287,9 @@ function mapSummary(summary: WorkflowSummaryV1, workspaceId: string): WorkflowDe
 
 function mapDetail(detail: WorkflowDetailV1, workspaceId: string): WorkflowDefinition {
   const workflow = mapSummary(detail, workspaceId);
-  const definition = isRecord(detail.definition) ? detail.definition : {};
   const editorState = isRecord(detail.editorState) ? detail.editorState : {};
   const editorNodes = isRecord(editorState.nodes) ? editorState.nodes : {};
-  const rawNodes = Array.isArray(definition.nodes) ? definition.nodes : [];
-  const nodes: WorkflowNode[] = rawNodes.flatMap((rawNode): WorkflowNode[] => {
-    if (!isRecord(rawNode) || typeof rawNode.id !== 'string' || typeof rawNode.type !== 'string') return [];
-    const rawLayout = editorNodes[rawNode.id];
-    const layout: Record<string, unknown> = isRecord(rawLayout) ? rawLayout : {};
-    const rawPosition = isRecord(layout.position) ? layout.position : undefined;
-    const position = rawPosition && typeof rawPosition.x === 'number' && typeof rawPosition.y === 'number'
-      ? { x: rawPosition.x, y: rawPosition.y }
-      : undefined;
-    return [{
-      id: rawNode.id,
-      type: rawNode.type,
-      name: safeString(layout.name, rawNode.id),
-      config: isRecord(rawNode.config) ? rawNode.config : {},
-      ...(position ? { position } : {}),
-    }];
-  });
-  const rawEdges = Array.isArray(definition.edges) ? definition.edges : [];
-  const edges: WorkflowEdge[] = rawEdges.flatMap((rawEdge): WorkflowEdge[] => {
-    if (!isRecord(rawEdge) || typeof rawEdge.id !== 'string' || typeof rawEdge.source !== 'string' || typeof rawEdge.target !== 'string') return [];
-    return [{
-      id: rawEdge.id,
-      source: rawEdge.source,
-      target: rawEdge.target,
-      ...(typeof rawEdge.sourcePort === 'string' ? { sourcePort: rawEdge.sourcePort } : {}),
-    }];
-  });
+  const { nodes, edges } = definitionToCanvas(detail.definition, editorNodes);
   const trigger = nodes.find((node) => node.type.startsWith('trigger.'));
   return {
     ...workflow,
@@ -402,6 +426,14 @@ export const workflowV1Api = {
       `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}/executions`,
       { method: 'POST', body: JSON.stringify({ input }) },
     );
+  },
+
+  async generateWorkflow(input: { prompt: string; timezone?: string; connections?: Record<string, string> }): Promise<GenerationResponse> {
+    const workspaceId = await getActiveWorkflowWorkspaceId();
+    return request<GenerationResponse>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/workflows/generate`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
   },
 
   async duplicateWorkflow(id: string, workspaceId?: string): Promise<WorkflowDefinition> {
