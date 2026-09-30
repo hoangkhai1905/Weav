@@ -1,6 +1,7 @@
 package com.weav.workspace.infrastructure.cache;
 
 import com.weav.workspace.application.dto.OAuthPendingState;
+import com.weav.workspace.application.port.out.OAuthStateStore;
 import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.domain.valueobject.ConnectionProvider;
 import org.junit.jupiter.api.AfterAll;
@@ -101,6 +102,84 @@ class RedisOAuthStateStoreTest {
     }
 
     @Test
+    void startMetadataRoundTripsWithoutChangingTheFourFieldStatePayload() {
+        OAuthPendingState pending = pendingState();
+        String state = randomState();
+        RedisOAuthStateStore store = new RedisOAuthStateStore(redis, objectMapper, Duration.ofMinutes(10));
+
+        store.saveForStart(state, pending, true);
+
+        String storedState = redis.opsForValue().get(key(state));
+        assertThat(objectMapper.readTree(storedState).size()).isEqualTo(4);
+        String metadata = redis.opsForValue().get(metadataKey(state));
+        assertThat(metadata).matches("v1;ACTIVE;[0-9a-f-]{36};[0-9a-f-]{36};[0-9a-f-]{36}");
+        assertThat(metadata).doesNotContain(state, "authorizationCode", "accessToken", "refreshToken");
+        assertThat(redis.getExpire(metadataKey(state), TimeUnit.SECONDS)).isBetween(590L, 600L);
+        assertThat(redis.getExpire(activeOriginKey(pending), TimeUnit.SECONDS)).isBetween(590L, 600L);
+
+        OAuthStateStore.ConsumedState consumed = store.consumeForCallback(state).orElseThrow();
+        assertThat(consumed.pendingState()).isEqualTo(pending);
+        assertThat(consumed.notificationOrigin()).isEqualTo(OAuthStateStore.NotificationOrigin.ACTIVE);
+        assertThat(redis.opsForValue().get(key(state))).isNull();
+        assertThat(redis.opsForValue().get(metadataKey(state))).isNull();
+        assertThat(redis.opsForZSet().zCard(activeOriginKey(pending))).isEqualTo(1L);
+        store.releaseOrigin(consumed);
+        assertThat(redis.opsForZSet().zCard(activeOriginKey(pending))).isEqualTo(0L);
+    }
+
+    @Test
+    void overlappingStartsInheritActiveOriginUntilEveryPendingCallbackIsConsumed() {
+        OAuthPendingState pending = pendingState();
+        RedisOAuthStateStore store = new RedisOAuthStateStore(redis, objectMapper, Duration.ofMinutes(1));
+        String firstState = randomState();
+        String secondState = randomState();
+        String thirdState = randomState();
+        String laterReconnectState = randomState();
+
+        store.saveForStart(firstState, pending, true);
+        store.saveForStart(secondState, pending, false);
+        store.saveForStart(thirdState, pending, false);
+        OAuthStateStore.ConsumedState first = store.consumeForCallback(firstState).orElseThrow();
+        OAuthStateStore.ConsumedState second = store.consumeForCallback(secondState).orElseThrow();
+        OAuthStateStore.ConsumedState third = store.consumeForCallback(thirdState).orElseThrow();
+        assertThat(List.of(first, second, third))
+                .allSatisfy(consumed -> assertThat(consumed.notificationOrigin())
+                        .isEqualTo(OAuthStateStore.NotificationOrigin.ACTIVE));
+        assertThat(redis.opsForZSet().zCard(activeOriginKey(pending))).isEqualTo(3L);
+
+        store.releaseOrigin(first);
+        assertThat(redis.opsForZSet().zCard(activeOriginKey(pending))).isEqualTo(2L);
+        store.releaseOrigin(second);
+        assertThat(redis.opsForZSet().zCard(activeOriginKey(pending))).isEqualTo(1L);
+        store.releaseOrigin(third);
+        assertThat(redis.opsForZSet().zCard(activeOriginKey(pending))).isEqualTo(0L);
+
+        store.saveForStart(laterReconnectState, pending, false);
+        assertThat(store.consumeForCallback(laterReconnectState).orElseThrow().notificationOrigin())
+                .isEqualTo(OAuthStateStore.NotificationOrigin.NON_ACTIVE);
+    }
+
+    @Test
+    void legacyOrMalformedOriginMetadataRemainsConsumableButSuppressesConnected() {
+        OAuthPendingState pending = pendingState();
+        RedisOAuthStateStore store = new RedisOAuthStateStore(redis, objectMapper, Duration.ofMinutes(1));
+        String legacyState = randomState();
+        store.save(legacyState, pending);
+
+        assertThat(store.consumeForCallback(legacyState).orElseThrow())
+                .satisfies(consumed -> {
+                    assertThat(consumed.pendingState()).isEqualTo(pending);
+                    assertThat(consumed.notificationOrigin()).isEqualTo(OAuthStateStore.NotificationOrigin.UNKNOWN);
+                });
+
+        String malformedState = randomState();
+        store.save(malformedState, pending);
+        redis.opsForValue().set(metadataKey(malformedState), "v9;unknown", Duration.ofMinutes(1));
+        assertThat(store.consumeForCallback(malformedState).orElseThrow().notificationOrigin())
+                .isEqualTo(OAuthStateStore.NotificationOrigin.UNKNOWN);
+    }
+
+    @Test
     void expiredStateCannotBeConsumed() throws Exception {
         String state = randomState();
         RedisOAuthStateStore store = new RedisOAuthStateStore(redis, objectMapper, Duration.ofSeconds(1));
@@ -112,6 +191,22 @@ class RedisOAuthStateStoreTest {
 
         assertThat(store.consume(state)).isEmpty();
         assertThat(redis.getExpire(key(state))).isLessThanOrEqualTo(0);
+    }
+
+    @Test
+    void activeOriginOrphanExpiresWithItsUnconsumedState() throws Exception {
+        OAuthPendingState pending = pendingState();
+        String state = randomState();
+        RedisOAuthStateStore store = new RedisOAuthStateStore(redis, objectMapper, Duration.ofSeconds(1));
+        store.saveForStart(state, pending, true);
+        long expiryDeadline = System.nanoTime() + Duration.ofSeconds(4).toNanos();
+        while (System.nanoTime() < expiryDeadline && redis.getExpire(key(state), TimeUnit.MILLISECONDS) > 0) {
+            Thread.sleep(40);
+        }
+
+        assertThat(store.consumeForCallback(state)).isEmpty();
+        assertThat(redis.opsForValue().get(metadataKey(state))).isNull();
+        assertThat(redis.opsForZSet().zCard(activeOriginKey(pending))).isEqualTo(0L);
     }
 
     @Test
@@ -151,6 +246,47 @@ class RedisOAuthStateStoreTest {
     }
 
     @Test
+    void concurrentCallbackConsumersReceiveAndReleaseOnlyOneActiveOriginLease() throws Exception {
+        OAuthPendingState pending = pendingState();
+        String state = randomState();
+        RedisOAuthStateStore store = new RedisOAuthStateStore(redis, objectMapper, Duration.ofMinutes(1));
+        store.saveForStart(state, pending, true);
+        int consumers = 24;
+        ExecutorService executor = Executors.newFixedThreadPool(consumers);
+        CountDownLatch ready = new CountDownLatch(consumers);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<Boolean>> results = new ArrayList<>();
+            for (int index = 0; index < consumers; index++) {
+                results.add(executor.submit(() -> {
+                    ready.countDown();
+                    if (!start.await(5, TimeUnit.SECONDS)) {
+                        return false;
+                    }
+                    var consumed = store.consumeForCallback(state);
+                    consumed.ifPresent(store::releaseOrigin);
+                    return consumed.isPresent();
+                }));
+            }
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            long winners = 0;
+            for (Future<Boolean> result : results) {
+                if (result.get(5, TimeUnit.SECONDS)) {
+                    winners++;
+                }
+            }
+            assertThat(winners).isEqualTo(1);
+            assertThat(redis.opsForValue().get(key(state))).isNull();
+            assertThat(redis.opsForValue().get(metadataKey(state))).isNull();
+            assertThat(redis.opsForZSet().zCard(activeOriginKey(pending))).isEqualTo(0L);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void malformedOrUnknownStatePayloadIsConsumedAndRejected() {
         String state = randomState();
         redis.opsForValue().set(key(state),
@@ -175,11 +311,16 @@ class RedisOAuthStateStoreTest {
                 .when(failingValues).set(anyString(), anyString(), any(Duration.class));
         doThrow(new RedisConnectionFailureException("synthetic unavailable"))
                 .when(failingRedis).execute(any(RedisScript.class), anyList());
+        doThrow(new RedisConnectionFailureException("synthetic unavailable"))
+                .when(failingRedis).execute(any(RedisScript.class), anyList(), any(Object[].class));
         RedisOAuthStateStore store = new RedisOAuthStateStore(
                 failingRedis, objectMapper, Duration.ofMinutes(1));
         String state = randomState();
 
         assertThatThrownBy(() -> store.save(state, pendingState()))
+                .isInstanceOf(DependencyUnavailableException.class)
+                .hasMessage("A required dependency is temporarily unavailable");
+        assertThatThrownBy(() -> store.saveForStart(state, pendingState(), true))
                 .isInstanceOf(DependencyUnavailableException.class)
                 .hasMessage("A required dependency is temporarily unavailable");
         assertThatThrownBy(() -> store.consume(state))
@@ -200,5 +341,13 @@ class RedisOAuthStateStoreTest {
 
     private static String key(String state) {
         return "workspace:oauth-state:" + state;
+    }
+
+    private static String metadataKey(String state) {
+        return "workspace:oauth-notification-origin:" + state;
+    }
+
+    private static String activeOriginKey(OAuthPendingState pending) {
+        return "workspace:oauth-active-origin:" + pending.workspaceId() + ":" + pending.connectionId();
     }
 }

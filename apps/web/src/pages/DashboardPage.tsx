@@ -2,20 +2,261 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Plus, Play, RotateCw, Sparkles, X, Check, ArrowRight, Activity, ShoppingCart, ArrowLeftRight, Headphones, Cloud } from 'lucide-react';
-import type { WorkflowDefinition, ExecutionDetail } from '../types/workflow.types';
-import { workflowApi } from '../api/workflow.api';
-import { executionApi } from '../api/execution.api';
+import type { WorkflowDefinition } from '../types/workflow.types';
+import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
 import { WorkflowActivityChart } from '../components/dashboard/WorkflowActivityChart';
 import { LiveExecutionPanel } from '../components/dashboard/LiveExecutionPanel';
 import { useI18nStore } from '../store/useI18nStore';
+
+interface HttpDashboardContentProps {
+  workflows: WorkflowDefinition[];
+  isLoading: boolean;
+  error: string | null;
+  actionError: string | null;
+  onRetry: () => void;
+  onRunWorkflow: (id: string) => void;
+}
+
+interface DashboardQuickActionsProps {
+  prefersReducedMotion: boolean | null;
+  onOpenAi: () => void;
+}
+
+function DashboardQuickActions({ prefersReducedMotion, onOpenAi }: DashboardQuickActionsProps) {
+  const { t } = useI18nStore();
+
+  return (
+    <motion.section
+      data-testid="dashboard-quick-actions"
+      aria-labelledby="dashboard-quick-actions-title"
+      initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: prefersReducedMotion ? 0 : 0.3, ease: [0.16, 1, 0.3, 1] }}
+      className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xs dark:border-slate-800 dark:bg-slate-900"
+    >
+      <div className="flex flex-col gap-1 border-b border-slate-200 px-4 py-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 id="dashboard-quick-actions-title" className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            {t('dashboard.quick_actions')}
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {t('dashboard.quick_actions_hint')}
+          </p>
+        </div>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400">{t('dashboard.workflow_operations')}</span>
+      </div>
+
+      <div className="grid grid-cols-1 divide-y divide-slate-200 dark:divide-slate-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+        <Link
+          to="/workflows/new"
+          className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-blue-950/25"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm transition-transform duration-200 group-hover:-translate-y-0.5">
+            <Plus size={17} />
+          </span>
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
+              {t('dashboard.new_workflow')}
+              <ArrowRight size={12} className="text-blue-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-blue-400" />
+            </span>
+            <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">{t('dashboard.create_blank_desc')}</span>
+          </span>
+        </Link>
+
+        {isWorkflowMockMode ? (
+          <button
+            type="button"
+            onClick={onOpenAi}
+            className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-blue-950/25"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 transition-transform duration-200 group-hover:-translate-y-0.5 dark:bg-blue-950/70 dark:text-blue-300">
+              <Sparkles size={17} />
+            </span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                {t('dashboard.generate_ai')}
+                <ArrowRight size={12} className="text-blue-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-blue-400" />
+              </span>
+              <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">{t('dashboard.create_ai_desc')}</span>
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled
+            aria-disabled="true"
+            title={t('dashboard.ai_unavailable')}
+            className="group flex cursor-not-allowed items-start gap-3 p-4 text-left opacity-60"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              <Sparkles size={17} />
+            </span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
+                {t('dashboard.generate_ai')}
+              </span>
+              <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">{t('dashboard.ai_unavailable')}</span>
+            </span>
+          </button>
+        )}
+
+        <Link
+          to={isWorkflowMockMode ? '/workflows/wf-prod-8492/builder' : '/workflows'}
+          className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-slate-800/50"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 transition-transform duration-200 group-hover:-translate-y-0.5 dark:bg-slate-800 dark:text-slate-200">
+            <Play size={17} />
+          </span>
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
+              {t('dashboard.run_test')}
+              <ArrowRight size={12} className="text-slate-400 transition-transform duration-200 group-hover:translate-x-0.5" />
+            </span>
+            <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">{t('dashboard.run_test_desc')}</span>
+          </span>
+        </Link>
+
+        <Link
+          to="/executions"
+          className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-emerald-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-emerald-950/20"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 transition-transform duration-200 group-hover:-translate-y-0.5 dark:bg-emerald-950/60 dark:text-emerald-300">
+            <Activity size={17} />
+          </span>
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
+              {t('dashboard.view_executions')}
+              <ArrowRight size={12} className="text-emerald-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-emerald-400" />
+            </span>
+            <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">{t('dashboard.view_executions_desc')}</span>
+          </span>
+        </Link>
+      </div>
+    </motion.section>
+  );
+}
+
+function HttpDashboardContent({ workflows, isLoading, error, actionError, onRetry, onRunWorkflow }: HttpDashboardContentProps) {
+  const { t } = useI18nStore();
+  const publishedCount = workflows.filter((workflow) => workflow.status === 'PUBLISHED').length;
+
+  if (isLoading) {
+    return (
+      <section data-testid="dashboard-real-data" className="space-y-6">
+        <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400" data-testid="dashboard-workflows-loading">
+          {t('dashboard.real_data_loading')}
+        </div>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section data-testid="dashboard-real-data" className="space-y-6">
+        <div role="alert" data-testid="dashboard-workflows-error" className="rounded-lg border border-rose-200 bg-rose-50 p-6 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
+          <p>{t('dashboard.real_data_error')}</p>
+          <button type="button" onClick={onRetry} className="mt-3 rounded-md border border-rose-300 px-3 py-1.5 text-xs font-semibold dark:border-rose-800">
+            {t('dashboard.real_data_retry')}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section data-testid="dashboard-real-data" className="space-y-6">
+      {actionError && (
+        <div role="alert" data-testid="dashboard-workflow-action-error" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          {t('dashboard.run_error')}
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{t('dashboard.total_workflows')}</span>
+          <strong data-testid="dashboard-total-workflows" className="mt-2 block font-mono text-2xl text-slate-900 dark:text-slate-100">{workflows.length}</strong>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{t('dashboard.published_workflows')}</span>
+          <strong data-testid="dashboard-published-workflows" className="mt-2 block font-mono text-2xl text-slate-900 dark:text-slate-100">{publishedCount}</strong>
+        </div>
+        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400">
+          {t('dashboard.execution_data_unavailable')}
+        </div>
+        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400">
+          {t('dashboard.activity_data_unavailable')}
+        </div>
+      </div>
+
+      {workflows.length === 0 ? (
+        <div data-testid="dashboard-workflows-empty" className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+          {t('dashboard.real_data_empty')}
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xs dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t('dashboard.recent_workflows')}</h2>
+            <Link to="/workflows" className="text-xs font-semibold text-blue-600 dark:text-blue-400">{t('dashboard.view_all_workflows')}</Link>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-400 dark:border-slate-800">
+                <tr>
+                  <th className="px-4 py-2.5">{t('dashboard.table_name')}</th>
+                  <th className="px-3 py-2.5">{t('dashboard.table_status')}</th>
+                  <th className="px-4 py-2.5 text-right">{t('dashboard.table_actions')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                {workflows.map((workflow) => {
+                  const statusKey = workflow.status === 'PUBLISHED'
+                    ? 'workflows.status_published'
+                    : workflow.status === 'PAUSED'
+                      ? 'workflows.status_paused'
+                      : 'workflows.status_draft';
+                  return (
+                    <tr key={workflow.id} data-testid="dashboard-workflow-row">
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-slate-900 dark:text-slate-100">{workflow.name}</div>
+                        <div className="font-mono text-[11px] text-slate-400">{workflow.id}</div>
+                      </td>
+                      <td className="px-3 py-3 text-slate-600 dark:text-slate-300">{t(statusKey)}</td>
+                      <td className="px-4 py-3 text-right">
+                        {workflow.status === 'PUBLISHED' && (
+                          <button type="button" onClick={() => onRunWorkflow(workflow.id)} title={t('dashboard.trigger_manual')} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={t('dashboard.trigger_manual')}>
+                            <Play size={15} />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div data-testid="dashboard-activity-unavailable" className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400">
+          {t('dashboard.activity_data_unavailable')}
+        </div>
+        <div data-testid="dashboard-live-unavailable" className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400">
+          {t('dashboard.execution_data_unavailable')}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export function DashboardPage() {
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const { t } = useI18nStore();
 
-  const [, setWorkflows] = useState<WorkflowDefinition[]>([]);
-  const [, setExecutions] = useState<ExecutionDetail[]>([]);
+  const [workflows, setWorkflows] = useState<WorkflowDefinition[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
@@ -23,15 +264,16 @@ export function DashboardPage() {
   const [generatedNodes, setGeneratedNodes] = useState<string[]>([]);
 
   const loadData = useCallback(async () => {
+    setIsLoading(true);
+    setApiError(null);
     try {
-      const [wfList, execList] = await Promise.all([
-        workflowApi.getWorkflows(),
-        executionApi.getExecutions(),
-      ]);
+      const wfList = await workflowApi.getWorkflows();
       setWorkflows(wfList);
-      setExecutions(execList);
     } catch (e) {
-      console.error(e);
+      setWorkflows([]);
+      setApiError(e instanceof Error ? e.message : 'Workflow data could not be loaded.');
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
@@ -42,8 +284,13 @@ export function DashboardPage() {
   }, [loadData]);
 
   const handleRunWorkflow = async (id: string) => {
-    await workflowApi.runWorkflow(id);
-    await loadData();
+    setActionError(null);
+    try {
+      await workflowApi.runWorkflow(id);
+      await loadData();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Workflow could not be started.');
+    }
   };
 
   const handleAiGenerateSubmit = (e: React.FormEvent) => {
@@ -83,10 +330,12 @@ export function DashboardPage() {
 
         {/* Top-Right Controls */}
         <div className="flex items-center gap-3 shrink-0">
-          <div className="flex items-center gap-2 px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono text-[11px] font-medium border border-slate-200/60 dark:border-slate-700/60">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>{t('dashboard.status_online')}</span>
-          </div>
+          {isWorkflowMockMode && (
+            <div className="flex items-center gap-2 px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono text-[11px] font-medium border border-slate-200/60 dark:border-slate-700/60">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>{t('dashboard.status_online')}</span>
+            </div>
+          )}
 
           <button
             onClick={() => navigate('/workflows/new')}
@@ -98,7 +347,15 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* 2. UNIFIED METRICS BAND */}
+      {/* 2. QUICK ACTIONS */}
+      <DashboardQuickActions
+        prefersReducedMotion={prefersReducedMotion}
+        onOpenAi={() => setAiModalOpen(true)}
+      />
+
+      {/* 3. UNIFIED METRICS BAND */}
+      {isWorkflowMockMode ? (
+        <>
       <div className="grid grid-cols-2 lg:grid-cols-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg divide-y lg:divide-y-0 lg:divide-x divide-slate-200 dark:divide-slate-800 shadow-2xs overflow-hidden">
         {/* Metric 1 */}
         <div className="p-4 flex flex-col justify-between">
@@ -164,95 +421,6 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
-
-      {/* 3. QUICK ACTIONS */}
-      <motion.section
-        data-testid="dashboard-quick-actions"
-        aria-labelledby="dashboard-quick-actions-title"
-        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: prefersReducedMotion ? 0 : 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xs dark:border-slate-800 dark:bg-slate-900"
-      >
-        <div className="flex flex-col gap-1 border-b border-slate-200 px-4 py-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 id="dashboard-quick-actions-title" className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100">
-              {t('dashboard.quick_actions')}
-            </h2>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              {t('dashboard.quick_actions_hint')}
-            </p>
-          </div>
-          <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400">{t('dashboard.workflow_operations')}</span>
-        </div>
-
-        <div className="grid grid-cols-1 divide-y divide-slate-200 dark:divide-slate-800 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
-          <Link
-            to="/workflows/new"
-            className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-blue-950/25"
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm transition-transform duration-200 group-hover:-translate-y-0.5">
-              <Plus size={17} />
-            </span>
-            <span className="min-w-0">
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
-                {t('dashboard.new_workflow')}
-                <ArrowRight size={12} className="text-blue-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-blue-400" />
-              </span>
-              <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">{t('dashboard.create_blank_desc')}</span>
-            </span>
-          </Link>
-
-          <button
-            type="button"
-            onClick={() => setAiModalOpen(true)}
-            className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-blue-950/25"
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-700 transition-transform duration-200 group-hover:-translate-y-0.5 dark:bg-blue-950/70 dark:text-blue-300">
-              <Sparkles size={17} />
-            </span>
-            <span className="min-w-0">
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
-                {t('dashboard.generate_ai')}
-                <ArrowRight size={12} className="text-blue-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-blue-400" />
-              </span>
-              <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">{t('dashboard.create_ai_desc')}</span>
-            </span>
-          </button>
-
-          <Link
-            to="/workflows/wf-prod-8492/builder"
-            className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-slate-800/50"
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-700 transition-transform duration-200 group-hover:-translate-y-0.5 dark:bg-slate-800 dark:text-slate-200">
-              <Play size={17} />
-            </span>
-            <span className="min-w-0">
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
-                {t('dashboard.run_test')}
-                <ArrowRight size={12} className="text-slate-400 transition-transform duration-200 group-hover:translate-x-0.5" />
-              </span>
-              <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">{t('dashboard.run_test_desc')}</span>
-            </span>
-          </Link>
-
-          <Link
-            to="/executions"
-            className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-emerald-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 dark:hover:bg-emerald-950/20"
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 transition-transform duration-200 group-hover:-translate-y-0.5 dark:bg-emerald-950/60 dark:text-emerald-300">
-              <Activity size={17} />
-            </span>
-            <span className="min-w-0">
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100">
-                {t('dashboard.view_executions')}
-                <ArrowRight size={12} className="text-emerald-600 transition-transform duration-200 group-hover:translate-x-0.5 dark:text-emerald-400" />
-              </span>
-              <span className="mt-1 block text-[11px] leading-4 text-slate-500 dark:text-slate-400">{t('dashboard.view_executions_desc')}</span>
-            </span>
-          </Link>
-        </div>
-      </motion.section>
 
       {/* 4. WORKFLOW ACTIVITY CHART & LIVE EXECUTION PANEL */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
@@ -331,12 +499,12 @@ export function DashboardPage() {
                     <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300">98.4%</span>
                   </div>
                 </td>
-                <td className="py-3 px-3 text-slate-500 text-[11px]">2 min ago</td>
+                <td className="py-3 px-3 text-slate-500 text-[11px]">{t('relative.min_2')}</td>
                 <td className="py-3 px-4 text-right">
                   <button
                     onClick={() => handleRunWorkflow('wf-prod-8492')}
                     className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Trigger manual run"
+                    title={t('dashboard.trigger_manual')}
                   >
                     <Play size={15} />
                   </button>
@@ -375,12 +543,12 @@ export function DashboardPage() {
                     <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300">100%</span>
                   </div>
                 </td>
-                <td className="py-3 px-3 text-slate-500 text-[11px]">18 min ago</td>
+                <td className="py-3 px-3 text-slate-500 text-[11px]">{t('relative.min_18')}</td>
                 <td className="py-3 px-4 text-right">
                   <button
                     onClick={() => handleRunWorkflow('wf-prod-3310')}
                     className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Trigger manual run"
+                    title={t('dashboard.trigger_manual')}
                   >
                     <Play size={15} />
                   </button>
@@ -419,12 +587,12 @@ export function DashboardPage() {
                     <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300">97.2%</span>
                   </div>
                 </td>
-                <td className="py-3 px-3 text-slate-500 text-[11px]">1 hour ago</td>
+                <td className="py-3 px-3 text-slate-500 text-[11px]">{t('relative.hour_1')}</td>
                 <td className="py-3 px-4 text-right">
                   <button
                     onClick={() => handleRunWorkflow('wf-prod-6211')}
                     className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Trigger manual run"
+                    title={t('dashboard.trigger_manual')}
                   >
                     <Play size={15} />
                   </button>
@@ -463,12 +631,12 @@ export function DashboardPage() {
                     <span className="font-mono text-[11px] text-slate-700 dark:text-slate-300">89.1%</span>
                   </div>
                 </td>
-                <td className="py-3 px-3 text-slate-500 text-[11px]">2 hours ago</td>
+                <td className="py-3 px-3 text-slate-500 text-[11px]">{t('relative.hour_2')}</td>
                 <td className="py-3 px-4 text-right">
                   <button
                     onClick={() => handleRunWorkflow('wf-prod-1094')}
                     className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Re-run failed workflow"
+                    title={t('dashboard.rerun_failed')}
                   >
                     <RotateCw size={15} />
                   </button>
@@ -478,6 +646,17 @@ export function DashboardPage() {
           </table>
         </div>
       </div>
+        </>
+      ) : (
+        <HttpDashboardContent
+          workflows={workflows}
+          isLoading={isLoading}
+          error={apiError}
+          actionError={actionError}
+          onRetry={() => void loadData()}
+          onRunWorkflow={(id) => void handleRunWorkflow(id)}
+        />
+      )}
 
       {/* 6. CREATE WITH AI MODAL */}
       <AnimatePresence>

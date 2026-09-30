@@ -85,16 +85,22 @@ and unsupported methods are not forwarded.
 | `/api/v1/notifications/**`, `/api/notifications/**`                              | Registered notification methods | Required bearer                                                        | Notification                        |
 | `/api/v1/workspaces`                                                             | `POST`, `GET`                   | Required bearer                                                        | `/workspaces`                       |
 | `/api/v1/workspaces/{workspaceId}`                                               | `GET`, `PATCH`                  | Required bearer                                                        | `/workspaces/{workspaceId}`         |
+| `/api/v1/workspaces/{workspaceId}/connections`                                  | `POST`, `GET`                   | Required bearer                                                        | `/workspaces/{workspaceId}/connections` |
+| `/api/v1/workspaces/{workspaceId}/connections/{connectionId}`                   | `GET`, `PATCH`, `DELETE`        | Required bearer                                                        | Matching Workspace suffix           |
+| `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/test`              | `POST`                          | Required bearer                                                        | Matching Workspace suffix           |
+| `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/disable`           | `POST`                          | Required bearer                                                        | Matching Workspace suffix           |
+| `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/authorize`   | `POST`                          | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/members`                                       | `GET`, `POST`                   | Required bearer                                                        | `/workspaces/{workspaceId}/members` |
 | `/api/v1/workspaces/{workspaceId}/members/{userId}/permissions`                  | `PATCH`                         | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/members/{userId}`                              | `DELETE`                        | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/members/me`                                    | `DELETE`                        | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/ocr/extractions`                               | `POST`                          | Required bearer, or the existing development-only missing-token bypass | OCR `/v1/extractions`               |
 
-The Workspace rows are exactly the nine public operations in the Workspace
-OpenAPI contract. The internal Workspace access operation is deliberately not a
-Gateway route. The literal `members/me` route is registered separately from the
-generic `{userId}` route so route precedence cannot widen the API.
+The Workspace rows are exactly the seventeen public operations in the Gateway
+OpenAPI contract. Connection routes are explicitly allow-listed; internal
+Workspace operations, manual credential routes, and the Google OAuth callback
+are not Gateway routes. The literal `members/me` route is registered separately
+from the generic `{userId}` route so route precedence cannot widen the API.
 
 ## Transport and response behavior
 

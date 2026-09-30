@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
+  envDir: process.env.WEAV_E2E_ENV_DIR || undefined,
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

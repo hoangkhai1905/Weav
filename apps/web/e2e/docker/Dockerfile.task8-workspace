@@ -1,0 +1,12 @@
+FROM eclipse-temurin:25-jdk
+
+WORKDIR /app
+
+COPY services/workspace-service/.mvn/ .mvn/
+COPY services/workspace-service/mvnw services/workspace-service/pom.xml ./
+RUN chmod +x mvnw
+
+COPY services/workspace-service/src/ src/
+RUN ./mvnw -q -DskipTests package
+
+CMD ["java", "-jar", "target/workspace-service-0.0.1-SNAPSHOT.jar"]

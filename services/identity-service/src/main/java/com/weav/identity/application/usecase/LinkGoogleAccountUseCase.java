@@ -2,6 +2,8 @@ package com.weav.identity.application.usecase;
 
 import com.weav.identity.application.dto.OAuthAccountMetadata;
 import com.weav.identity.application.dto.OAuthSecret;
+import com.weav.identity.application.notification.IdentitySecurityEventType;
+import com.weav.identity.application.notification.IdentitySecurityNotificationRecorder;
 import com.weav.identity.application.port.out.KeyedFingerprint;
 import com.weav.identity.application.port.out.OAuthProviderClient;
 import com.weav.identity.application.port.out.OAuthTransactionStore;
@@ -45,6 +47,7 @@ public final class LinkGoogleAccountUseCase {
     private final TransactionRunner transactionRunner;
     private final AuthInputPolicy inputPolicy;
     private final Clock clock;
+    private final IdentitySecurityNotificationRecorder notificationRecorder;
 
     public LinkGoogleAccountUseCase(
             CurrentIdentityGuard identityGuard,
@@ -54,7 +57,8 @@ public final class LinkGoogleAccountUseCase {
             KeyedFingerprint fingerprint,
             TransactionRunner transactionRunner,
             AuthInputPolicy inputPolicy,
-            Clock clock
+            Clock clock,
+            IdentitySecurityNotificationRecorder notificationRecorder
     ) {
         this.identityGuard = Objects.requireNonNull(identityGuard, "identityGuard must not be null");
         this.userRepository = Objects.requireNonNull(userRepository, "userRepository must not be null");
@@ -65,6 +69,8 @@ public final class LinkGoogleAccountUseCase {
         this.transactionRunner = Objects.requireNonNull(transactionRunner, "transactionRunner must not be null");
         this.inputPolicy = Objects.requireNonNull(inputPolicy, "inputPolicy must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.notificationRecorder = Objects.requireNonNull(
+                notificationRecorder, "notificationRecorder must not be null");
     }
 
     /**
@@ -172,7 +178,9 @@ public final class LinkGoogleAccountUseCase {
                     providerEmail,
                     now,
                     now);
-            return OAuthAccountMetadata.from(oauthAccountRepository.save(account));
+            OAuthAccountMetadata saved = OAuthAccountMetadata.from(oauthAccountRepository.save(account));
+            notificationRecorder.record(IdentitySecurityEventType.GOOGLE_LINKED, authenticatedUserId);
+            return saved;
         });
     }
 

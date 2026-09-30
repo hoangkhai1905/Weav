@@ -56,7 +56,7 @@ class WorkspaceUseCasesTest {
         RecordingTransactionRunner transactions = new RecordingTransactionRunner();
 
         WorkspaceResponse response = new CreateWorkspaceUseCase(
-                workspaceRepository, membershipRepository, transactions)
+                workspaceRepository, membershipRepository, transactions, WorkspaceNotificationTestFixtures.recorder())
                 .execute(new CreateWorkspaceCommand(ACTOR, "  Acme  "));
 
         ArgumentCaptor<Workspace> workspaceCaptor = ArgumentCaptor.forClass(Workspace.class);
@@ -85,7 +85,8 @@ class WorkspaceUseCasesTest {
         when(membershipRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         WorkspaceResponse response = new CreateWorkspaceUseCase(
-                workspaceRepository, membershipRepository, new RecordingTransactionRunner())
+                workspaceRepository, membershipRepository, new RecordingTransactionRunner(),
+                WorkspaceNotificationTestFixtures.recorder())
                 .execute(new CreateWorkspaceCommand(ACTOR, null));
 
         assertEquals("My workspace 8", response.name());
@@ -101,7 +102,8 @@ class WorkspaceUseCasesTest {
         when(membershipRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         WorkspaceResponse response = new CreateWorkspaceUseCase(
-                workspaceRepository, membershipRepository, new RecordingTransactionRunner())
+                workspaceRepository, membershipRepository, new RecordingTransactionRunner(),
+                WorkspaceNotificationTestFixtures.recorder())
                 .execute(new CreateWorkspaceCommand(OTHER_ACTOR, "Shared"));
 
         assertEquals("Shared", response.name());
@@ -115,7 +117,7 @@ class WorkspaceUseCasesTest {
         RecordingTransactionRunner transactions = new RecordingTransactionRunner();
 
         assertThrows(BadRequestException.class, () -> new CreateWorkspaceUseCase(
-                workspaceRepository, membershipRepository, transactions)
+                workspaceRepository, membershipRepository, transactions, WorkspaceNotificationTestFixtures.recorder())
                 .execute(new CreateWorkspaceCommand(ACTOR, "   ")));
 
         assertEquals(0, transactions.invocations);
@@ -129,7 +131,8 @@ class WorkspaceUseCasesTest {
         when(workspaceRepository.existsOwnedNameNormalized(ACTOR, "acme", null)).thenReturn(true);
 
         ConflictException exception = assertThrows(ConflictException.class, () -> new CreateWorkspaceUseCase(
-                workspaceRepository, membershipRepository, new RecordingTransactionRunner())
+                workspaceRepository, membershipRepository, new RecordingTransactionRunner(),
+                WorkspaceNotificationTestFixtures.recorder())
                 .execute(new CreateWorkspaceCommand(ACTOR, "Acme")));
 
         assertEquals("WORKSPACE_NAME_ALREADY_EXISTS", exception.getCode());
@@ -149,7 +152,7 @@ class WorkspaceUseCasesTest {
         RecordingTransactionRunner transactions = new RecordingTransactionRunner();
 
         WorkspaceResponse response = new CreateWorkspaceUseCase(
-                workspaceRepository, membershipRepository, transactions)
+                workspaceRepository, membershipRepository, transactions, WorkspaceNotificationTestFixtures.recorder())
                 .execute(new CreateWorkspaceCommand(ACTOR, null));
 
         assertEquals("My workspace 5", response.name());
@@ -168,7 +171,7 @@ class WorkspaceUseCasesTest {
         RecordingTransactionRunner transactions = new RecordingTransactionRunner();
 
         assertThrows(DataIntegrityViolationException.class, () -> new CreateWorkspaceUseCase(
-                workspaceRepository, membershipRepository, transactions)
+                workspaceRepository, membershipRepository, transactions, WorkspaceNotificationTestFixtures.recorder())
                 .execute(new CreateWorkspaceCommand(ACTOR, null)));
 
         assertEquals(1, transactions.requiresNewInvocations);
@@ -181,7 +184,8 @@ class WorkspaceUseCasesTest {
         when(workspaceRepository.findMaxDefaultWorkspaceNumberByOwner(ACTOR)).thenReturn(Integer.MAX_VALUE);
 
         InvalidStateException exception = assertThrows(InvalidStateException.class, () -> new CreateWorkspaceUseCase(
-                workspaceRepository, membershipRepository, new RecordingTransactionRunner())
+                workspaceRepository, membershipRepository, new RecordingTransactionRunner(),
+                WorkspaceNotificationTestFixtures.recorder())
                 .execute(new CreateWorkspaceCommand(ACTOR, null)));
 
         assertTrue(exception.getMessage().contains("exhausted"));
@@ -244,7 +248,8 @@ class WorkspaceUseCasesTest {
         when(workspaceRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         WorkspaceResponse response = new RenameWorkspaceUseCase(
-                workspaceRepository, membershipRepository, new RecordingTransactionRunner())
+                workspaceRepository, membershipRepository, new RecordingTransactionRunner(),
+                WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
                 .execute(ACTOR, WORKSPACE_ID, "  ACME  ");
 
         assertEquals("ACME", response.name());
@@ -259,7 +264,8 @@ class WorkspaceUseCasesTest {
                 .thenReturn(Optional.of(Membership.member(WORKSPACE_ID, ACTOR)));
 
         assertThrows(ForbiddenException.class, () -> new RenameWorkspaceUseCase(
-                workspaceRepository, membershipRepository, new RecordingTransactionRunner())
+                workspaceRepository, membershipRepository, new RecordingTransactionRunner(),
+                WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
                 .execute(ACTOR, WORKSPACE_ID, "New name"));
 
         when(membershipRepository.findByWorkspaceIdAndUserId(WORKSPACE_ID, ACTOR))
@@ -268,7 +274,8 @@ class WorkspaceUseCasesTest {
         when(workspaceRepository.existsOwnedNameNormalized(ACTOR, "new", WORKSPACE_ID)).thenReturn(true);
 
         ConflictException exception = assertThrows(ConflictException.class, () -> new RenameWorkspaceUseCase(
-                workspaceRepository, membershipRepository, new RecordingTransactionRunner())
+                workspaceRepository, membershipRepository, new RecordingTransactionRunner(),
+                WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
                 .execute(ACTOR, WORKSPACE_ID, "New"));
         assertEquals("WORKSPACE_NAME_ALREADY_EXISTS", exception.getCode());
     }

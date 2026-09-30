@@ -1,10 +1,12 @@
 package com.weav.workspace.application.usecase;
 
 import com.weav.workspace.application.dto.ConnectionTestResult;
+import com.weav.workspace.application.notification.ConnectionNotificationRecorder;
 import com.weav.workspace.application.port.out.ConnectionProviderPort;
 import com.weav.workspace.application.port.out.CredentialCryptoPort;
 import com.weav.workspace.application.port.out.TransactionRunner;
 import com.weav.workspace.application.port.out.WorkflowConnectionUsagePort;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.service.ConnectionAuthorizationPolicy;
 import com.weav.workspace.application.service.ConnectionProviderRegistry;
 import com.weav.workspace.application.service.ConnectionUsageProtection;
@@ -44,6 +46,7 @@ public final class TestConnectionUseCase {
     private final CredentialPayloadCodec payloadCodec;
     private final CredentialCryptoPort crypto;
     private final ConnectionUsageProtection usageProtection;
+    private final ConnectionNotificationRecorder notificationRecorder;
 
     @Autowired
     public TestConnectionUseCase(
@@ -55,7 +58,9 @@ public final class TestConnectionUseCase {
             CredentialPayloadCodec payloadCodec,
             CredentialCryptoPort crypto,
             WorkflowConnectionUsagePort workflowConnectionUsagePort,
-            TransactionRunner transactionRunner) {
+            TransactionRunner transactionRunner,
+            WorkspaceMutationLock workspaceMutationLock,
+            ConnectionNotificationRecorder notificationRecorder) {
         this(
                 connectionRepository,
                 membershipRepository,
@@ -69,7 +74,9 @@ public final class TestConnectionUseCase {
                         membershipRepository,
                         authorizationPolicy,
                         workflowConnectionUsagePort,
-                        transactionRunner));
+                        transactionRunner,
+                        workspaceMutationLock),
+                notificationRecorder);
     }
 
     private TestConnectionUseCase(
@@ -80,7 +87,8 @@ public final class TestConnectionUseCase {
             ConnectionProviderRegistry providerRegistry,
             CredentialPayloadCodec payloadCodec,
             CredentialCryptoPort crypto,
-            ConnectionUsageProtection usageProtection) {
+            ConnectionUsageProtection usageProtection,
+            ConnectionNotificationRecorder notificationRecorder) {
         this.connectionRepository = Objects.requireNonNull(
                 connectionRepository, "connectionRepository must not be null");
         this.membershipRepository = Objects.requireNonNull(
@@ -95,6 +103,7 @@ public final class TestConnectionUseCase {
         this.crypto = Objects.requireNonNull(crypto, "crypto must not be null");
         this.usageProtection = Objects.requireNonNull(
                 usageProtection, "usageProtection must not be null");
+        this.notificationRecorder = Objects.requireNonNull(notificationRecorder, "notificationRecorder must not be null");
     }
 
     public ConnectionTestResult execute(
@@ -113,12 +122,10 @@ public final class TestConnectionUseCase {
                 connectionId,
                 authorization,
                 ConnectionUsageProtection.UsageScope.MEMBER_ONLY,
-                (membership, connection) -> testInTransaction(membership, connection));
+                (membership, connection) -> testInTransaction(actorUserId, connection));
     }
 
-    private ConnectionTestResult testInTransaction(
-            Membership membership,
-            Connection connection) {
+    private ConnectionTestResult testInTransaction(UUID actorUserId, Connection connection) {
 
         ConnectionProviderPort provider = providerRegistry.resolve(connection.getProvider());
         provider.validateConfig(connection.getAuthType(), connection.getConfig());
@@ -126,7 +133,7 @@ public final class TestConnectionUseCase {
         try {
             credential = decryptCredential(connection);
         } catch (InvalidStoredCredentialException exception) {
-            markInvalid(connection);
+            markInvalid(connection, actorUserId);
             return ConnectionTestResult.authInvalid();
         }
         ConnectionTestResult result = provider.test(connection, credential);
@@ -136,13 +143,17 @@ public final class TestConnectionUseCase {
 
         return switch (result.outcome()) {
             case VERIFIED -> {
+                boolean newlyConnected = connection.getStatus()
+                        != com.weav.workspace.domain.valueobject.ConnectionStatus.ACTIVE;
                 connection.markVerified(Instant.now());
                 connectionRepository.save(connection);
+                if (newlyConnected) {
+                    notificationRecorder.recordConnected(connection, actorUserId);
+                }
                 yield result;
             }
             case AUTH_INVALID -> {
-                connection.markInvalid();
-                connectionRepository.save(connection);
+                markInvalid(connection, actorUserId);
                 yield result;
             }
             case DEPENDENCY_FAILURE -> throw new DependencyUnavailableException();
@@ -169,9 +180,12 @@ public final class TestConnectionUseCase {
         }
     }
 
-    private void markInvalid(Connection connection) {
-        connection.markInvalid();
-        connectionRepository.save(connection);
+    private void markInvalid(Connection connection, UUID actorUserId) {
+        if (connection.getStatus() != com.weav.workspace.domain.valueobject.ConnectionStatus.INVALID) {
+            connection.markInvalid();
+            connectionRepository.save(connection);
+            notificationRecorder.recordInvalid(connection, actorUserId);
+        }
     }
 
     private static final class InvalidStoredCredentialException extends RuntimeException {

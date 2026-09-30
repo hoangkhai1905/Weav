@@ -13,6 +13,8 @@ servers:
 tags:
   - name: Workspaces
   - name: Members
+  - name: Connections
+  - name: OAuth
 security:
   - bearerAuth: []
 paths:
@@ -113,6 +115,216 @@ paths:
         "500": { $ref: "#/components/responses/GatewayInternalError" }
         "502": { $ref: "#/components/responses/GatewayBadGateway" }
         "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /api/v1/workspaces/{workspaceId}/connections:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+    post:
+      tags: [Connections]
+      operationId: gatewayCreateWorkspaceConnection
+      summary: Create a workspace connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../workspace/openapi.yaml#/components/schemas/CreateConnectionRequest"
+      responses:
+        "201":
+          description: Connection created by the Workspace service.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/ConnectionResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+    get:
+      tags: [Connections]
+      operationId: gatewayListWorkspaceConnections
+      summary: List connections visible in a workspace
+      responses:
+        "200":
+          description: Secret-safe connection metadata from the Workspace service.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "../workspace/openapi.yaml#/components/schemas/ConnectionResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /api/v1/workspaces/{workspaceId}/connections/{connectionId}:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+      - $ref: "../workspace/openapi.yaml#/components/parameters/ConnectionId"
+    get:
+      tags: [Connections]
+      operationId: gatewayGetWorkspaceConnection
+      summary: Get secret-safe workspace connection metadata
+      responses:
+        "200":
+          description: Secret-safe connection metadata from the Workspace service.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/ConnectionResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+    patch:
+      tags: [Connections]
+      operationId: gatewayUpdateWorkspaceConnection
+      summary: Update connection name or configuration metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../workspace/openapi.yaml#/components/schemas/UpdateConnectionRequest"
+      responses:
+        "200":
+          description: Updated connection metadata from the Workspace service.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/ConnectionResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+    delete:
+      tags: [Connections]
+      operationId: gatewayDeleteWorkspaceConnection
+      summary: Delete a workspace connection after downstream usage checks
+      responses:
+        "204":
+          description: Connection deleted; no response body.
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+
+  /api/v1/workspaces/{workspaceId}/connections/{connectionId}/test:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+      - $ref: "../workspace/openapi.yaml#/components/parameters/ConnectionId"
+    post:
+      tags: [Connections]
+      operationId: gatewayTestWorkspaceConnection
+      summary: Test a workspace connection with its provider
+      responses:
+        "200":
+          description: Provider test outcome from the Workspace service.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/ConnectionTestResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "422":
+          { $ref: "../workspace/openapi.yaml#/components/responses/InvalidState" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+
+  /api/v1/workspaces/{workspaceId}/connections/{connectionId}/disable:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+      - $ref: "../workspace/openapi.yaml#/components/parameters/ConnectionId"
+    post:
+      tags: [Connections]
+      operationId: gatewayDisableWorkspaceConnection
+      summary: Disable a workspace connection
+      responses:
+        "200":
+          description: Disabled connection metadata from the Workspace service.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/ConnectionResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+
+  /api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/authorize:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+      - $ref: "../workspace/openapi.yaml#/components/parameters/ConnectionId"
+    post:
+      tags: [OAuth]
+      operationId: gatewayStartWorkspaceConnectionOAuth
+      summary: Start server-built Google authorization for a connection
+      responses:
+        "200":
+          description: One-time authorization URL from Workspace; the URL must not be logged.
+          headers:
+            Cache-Control:
+              description: Gateway forces no-store for Workspace responses.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/OAuthAuthorizationHttpResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
 
   /api/v1/workspaces/{workspaceId}/members:
     parameters:

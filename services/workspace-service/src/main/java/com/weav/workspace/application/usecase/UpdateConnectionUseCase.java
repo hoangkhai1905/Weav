@@ -4,6 +4,7 @@ import com.weav.workspace.application.dto.ConnectionResponse;
 import com.weav.workspace.application.dto.UpdateConnectionCommand;
 import com.weav.workspace.application.port.out.WorkflowConnectionUsagePort;
 import com.weav.workspace.application.port.out.TransactionRunner;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.service.ConnectionAuthorizationPolicy;
 import com.weav.workspace.application.service.ConnectionConfigPolicy;
 import com.weav.workspace.application.service.ConnectionUsageProtection;
@@ -43,7 +44,8 @@ public final class UpdateConnectionUseCase {
             ConnectionConfigPolicy configPolicy,
             ConnectionViewAssembler viewAssembler,
             WorkflowConnectionUsagePort workflowConnectionUsagePort,
-            TransactionRunner transactionRunner) {
+            TransactionRunner transactionRunner,
+            WorkspaceMutationLock workspaceMutationLock) {
         this(
                 connectionRepository,
                 membershipRepository,
@@ -56,7 +58,8 @@ public final class UpdateConnectionUseCase {
                         membershipRepository,
                         authorizationPolicy,
                         workflowConnectionUsagePort,
-                        transactionRunner));
+                        transactionRunner,
+                        workspaceMutationLock));
     }
 
     private UpdateConnectionUseCase(

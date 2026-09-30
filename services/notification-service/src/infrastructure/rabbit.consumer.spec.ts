@@ -1,11 +1,25 @@
 import type { ConfirmChannel, ConsumeMessage } from 'amqplib';
 import { RabbitConsumer } from './rabbit.consumer';
 import { Notifications } from '../application/notifications';
+import { InboxRepository } from '../domain/inbox';
 import { mockRepository, testEvent, testSettings } from '../testing/fixtures';
+import { InboxPersistenceConflictError } from './inbox.persistence';
 
 describe('RabbitMQ acknowledgment contract', () => {
   const repo = mockRepository();
-  const service = new Notifications(repo);
+  const inboxRepository = {
+    ingest: jest.fn().mockResolvedValue(undefined),
+    list: jest.fn(),
+    unreadCount: jest.fn(),
+    markRead: jest.fn(),
+    markAllRead: jest.fn(),
+    ready: jest.fn(),
+    reconcileLegacy: jest.fn(),
+  } as unknown as InboxRepository;
+  const service = Reflect.construct(Notifications, [
+    repo,
+    inboxRepository,
+  ]) as Notifications;
   const consumer = new RabbitConsumer(service, testSettings());
   const ack = jest.fn();
   const sendToQueue = jest.fn<
@@ -62,5 +76,45 @@ describe('RabbitMQ acknowledgment contract', () => {
       'broker',
     );
     expect(ack).not.toHaveBeenCalled();
+  });
+  it('quarantines an unknown schema version and confirms its DLQ record before ack', async () => {
+    let confirm!: (err: Error | null) => void;
+    sendToQueue.mockImplementation((_q, _body, _options, callback) => {
+      confirm = callback;
+    });
+    const msg = message({ ...testEvent(), schemaVersion: 3 });
+
+    const pending = consumer.handle(msg, channel);
+    await Promise.resolve();
+
+    expect(repo.ingest).not.toHaveBeenCalled();
+    expect(ack).not.toHaveBeenCalled();
+    const dlqBody = sendToQueue.mock.calls[0][1].toString();
+    expect(dlqBody).not.toContain('eventId');
+    expect(dlqBody).not.toContain('payload');
+    confirm(null);
+    await pending;
+    expect(ack).toHaveBeenCalledWith(msg);
+  });
+  it('DLQs persisted identity conflicts as terminal and confirms before ack', async () => {
+    let confirm!: (err: Error | null) => void;
+    sendToQueue.mockImplementation((_q, _body, _options, callback) => {
+      confirm = callback;
+    });
+    repo.ingest.mockRejectedValue(new InboxPersistenceConflictError());
+    const msg = message(testEvent());
+
+    const pending = consumer.handle(msg, channel);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(ack).not.toHaveBeenCalled();
+    const dlq = JSON.parse(sendToQueue.mock.calls[0][1].toString());
+    expect(dlq).toEqual({
+      code: 'PERSISTED_EVENT_CONFLICT',
+      occurredAt: expect.any(String),
+    });
+    confirm(null);
+    await pending;
+    expect(ack).toHaveBeenCalledWith(msg);
   });
 });

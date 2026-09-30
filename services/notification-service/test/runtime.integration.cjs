@@ -7,32 +7,43 @@ const { FastifyAdapter } = require('@nestjs/platform-fastify');
 const { sign } = require('jsonwebtoken');
 const { connect } = require('amqplib');
 const { Pool } = require('pg');
-const { readFileSync } = require('node:fs');
+const { mkdtempSync, readFileSync, readdirSync, rmSync } = require('node:fs');
+const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const {
   PrismaDeliveryRepository,
 } = require('../dist/infrastructure/prisma.repository');
 const { loadSettings, SETTINGS } = require('../dist/config/settings');
 const { Notifications } = require('../dist/application/notifications');
+const {
+  InboxNotifications,
+} = require('../dist/application/inbox-notifications');
 const { DeliveryWorker } = require('../dist/application/delivery.worker');
 const { RabbitConsumer } = require('../dist/infrastructure/rabbit.consumer');
+const {
+  PrismaInboxRepository,
+} = require('../dist/infrastructure/prisma.inbox.repository');
 const {
   DeliveryRepository,
   publicPayload,
   DeliveryError,
 } = require('../dist/domain/notification');
+const { InboxRepository } = require('../dist/domain/inbox');
 const {
   NotificationsController,
+  InboxNotificationsController,
   HealthController,
   AccessGuard,
   ApiErrorFilter,
 } = require('../dist/presentation/http');
 const { Module } = require('@nestjs/common');
 
+const databaseName = `notification_runtime_${randomUUID().replaceAll('-', '')}`;
+assert.match(databaseName, /^notification_runtime_[a-f0-9]{32}$/);
 const settings = loadSettings({
   DB_HOST: '127.0.0.1',
   DB_PORT: '15439',
-  DB_NAME: 'notification_test',
+  DB_NAME: databaseName,
   DB_USERNAME: 'notification_test',
   DB_PASSWORD: 'unused-local-trust',
   DB_SSL_MODE: 'disable',
@@ -69,6 +80,84 @@ function event() {
     },
   };
 }
+const v2EventTypes = [
+  'workflow.created',
+  'workflow.published',
+  'workflow.paused',
+  'workflow.resumed',
+  'workflow.completed',
+  'workflow.failed',
+  'workspace.created',
+  'workspace.renamed',
+  'workspace.member_added',
+  'workspace.member_removed',
+  'workspace.member_permissions_updated',
+  'workspace.member_left',
+  'connection.connected',
+  'connection.disabled',
+  'connection.invalid',
+  'identity.password_changed',
+  'identity.password_reset',
+  'identity.google_linked',
+  'identity.google_unlinked',
+];
+function v2EventFor(eventType, recipientUserId = randomUUID()) {
+  const workspaceId = randomUUID();
+  const workflowId = randomUUID();
+  const actorUserId = randomUUID();
+  let producer;
+  let entity;
+  let data;
+  let normalizedWorkspaceId = workspaceId;
+  let recipients = [recipientUserId];
+  if (eventType.startsWith('identity.')) {
+    producer = 'identity-service';
+    entity = { kind: 'USER', id: recipientUserId };
+    data = {};
+    normalizedWorkspaceId = null;
+  } else if (eventType.startsWith('workflow.')) {
+    producer = 'workflow-service';
+    if (eventType === 'workflow.completed' || eventType === 'workflow.failed') {
+      entity = { kind: 'EXECUTION', id: randomUUID() };
+      data = { workflowName: 'Broker integration', workflowId };
+    } else {
+      entity = { kind: 'WORKFLOW', id: workflowId };
+      data = { workflowName: 'Broker integration' };
+    }
+  } else if (eventType.startsWith('workspace.')) {
+    producer = 'workspace-service';
+    entity = { kind: 'WORKSPACE', id: workspaceId };
+    if (eventType.startsWith('workspace.member_')) {
+      const subjectUserId =
+        eventType === 'workspace.member_left' ? randomUUID() : recipientUserId;
+      data = { workspaceName: 'Broker workspace', subjectUserId };
+    } else {
+      data = { workspaceName: 'Broker workspace' };
+    }
+  } else {
+    producer = 'workspace-service';
+    entity = { kind: 'CONNECTION', id: randomUUID() };
+    data = { connectionName: 'Broker connection' };
+  }
+  if (eventType === 'workspace.member_left') recipients = [recipientUserId];
+  const finalActor = eventType.startsWith('identity.')
+    ? recipientUserId
+    : eventType === 'workspace.member_left'
+      ? data.subjectUserId
+      : actorUserId;
+  return {
+    schemaVersion: 2,
+    eventId: randomUUID(),
+    eventType,
+    occurredAt: new Date().toISOString(),
+    producer,
+    actorUserId: finalActor,
+    recipientUserIds: recipients,
+    workspaceId: normalizedWorkspaceId,
+    entity,
+    data,
+  };
+}
 async function until(predicate) {
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
@@ -79,30 +168,43 @@ async function until(predicate) {
 }
 test(
   'real notification persistence, concurrency, broker and HTTP',
-  { timeout: 60000 },
+  { timeout: 180000 },
   async (t) => {
-    const pool = new Pool({
+    const admin = new Pool({
       host: '127.0.0.1',
       port: 15439,
       database: 'notification_test',
       user: 'notification_test',
     });
+    const pool = new Pool({
+      host: '127.0.0.1',
+      port: 15439,
+      database: databaseName,
+      user: 'notification_test',
+    });
     const repo = new PrismaDeliveryRepository(settings);
+    const inboxRepo = new PrismaInboxRepository(settings);
     let connection, channel, app;
-    const service = new Notifications(repo);
+    const service = new Notifications(repo, inboxRepo);
+    const inboxService = new InboxNotifications(inboxRepo);
     const consumer = new RabbitConsumer(service, settings);
     const events = [];
+    const v2Events = [];
+    let createdDatabase = false;
     try {
-      const exists = await pool.query(
-        "SELECT to_regclass('notification.notification_deliveries') AS name",
-      );
-      if (!exists.rows[0].name)
+      await admin.query(`CREATE DATABASE "${databaseName}"`);
+      createdDatabase = true;
+      const migrationsRoot = join(__dirname, '../prisma/migrations');
+      const migrationDirectories = readdirSync(migrationsRoot, {
+        withFileTypes: true,
+      })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+      for (const migrationDirectory of migrationDirectories)
         await pool.query(
           readFileSync(
-            join(
-              __dirname,
-              '../prisma/migrations/202609090001_notification_deliveries/migration.sql',
-            ),
+            join(migrationsRoot, migrationDirectory, 'migration.sql'),
             'utf8',
           ),
         );
@@ -233,7 +335,7 @@ test(
         },
       );
       await t.test(
-        'RabbitMQ events reach the inbox and malformed messages reach sanitized DLQ',
+        'RabbitMQ v2 catalog, legacy compatibility, JWT inbox HTTP and Gateway proxy',
         async () => {
           consumer.onModuleInit();
           await until(() => consumer.isReady);
@@ -251,29 +353,102 @@ test(
           await until(
             async () => (await repo.unreadCount(e.payload.userId)) === 2,
           );
-          channel.publish(
-            settings.NOTIFICATION_EXCHANGE,
-            e.eventType,
-            Buffer.from('{"secret":"must-not-copy"}'),
-            { persistent: true },
-          );
-          await channel.waitForConfirms();
-          let rejected;
-          await until(async () => {
-            rejected = await channel.get(settings.NOTIFICATION_DLQ, {
-              noAck: true,
+          assert.equal(v2EventTypes.length, 19);
+          for (const eventType of v2EventTypes) {
+            const v2 = v2EventFor(eventType);
+            v2Events.push(v2);
+            channel.publish(
+              settings.NOTIFICATION_EXCHANGE,
+              eventType,
+              Buffer.from(JSON.stringify(v2)),
+              { persistent: true },
+            );
+            await channel.waitForConfirms();
+            await until(
+              async () =>
+                (await inboxRepo.client.notificationInbox.count({
+                  where: { sourceEventId: v2.eventId },
+                })) === 1,
+            );
+            assert.equal(
+              await repo.client.notificationDelivery.count({
+                where: { sourceEventId: v2.eventId },
+              }),
+              0,
+            );
+          }
+
+          const rejectedEvents = [
+            {
+              event: {
+                ...v2EventFor('workspace.created'),
+                schemaVersion: 7,
+                privateField: 'do-not-copy-version',
+              },
+              routingKey: 'workspace.created',
+            },
+            {
+              event: {
+                ...v2EventFor('workspace.created'),
+                producer: 'identity-service',
+                privateField: 'do-not-copy-family',
+              },
+              routingKey: 'workspace.created',
+            },
+            {
+              event: {
+                ...v2EventFor('workspace.created'),
+                unknownField: 'do-not-copy-unknown',
+              },
+              routingKey: 'workspace.created',
+            },
+            {
+              event: v2EventFor('workflow.completed'),
+              routingKey: 'workflow.failed',
+            },
+            {
+              event: { secret: 'must-not-copy' },
+              routingKey: 'workflow.completed',
+            },
+          ];
+          for (const rejectedEvent of rejectedEvents) {
+            channel.publish(
+              settings.NOTIFICATION_EXCHANGE,
+              rejectedEvent.routingKey,
+              Buffer.from(JSON.stringify(rejectedEvent.event)),
+              { persistent: true },
+            );
+            await channel.waitForConfirms();
+          }
+          for (const _ of rejectedEvents) {
+            let rejected;
+            await until(async () => {
+              rejected = await channel.get(settings.NOTIFICATION_DLQ, {
+                noAck: true,
+              });
+              return Boolean(rejected);
             });
-            return Boolean(rejected);
-          });
-          assert(!rejected.content.toString().includes('must-not-copy'));
+            const safeRecord = JSON.parse(rejected.content.toString());
+            assert.deepEqual(Object.keys(safeRecord).sort(), [
+              'code',
+              'occurredAt',
+            ]);
+          }
+
           class RuntimeModule {}
           Module({
-            controllers: [NotificationsController, HealthController],
+            controllers: [
+              NotificationsController,
+              InboxNotificationsController,
+              HealthController,
+            ],
             providers: [
               AccessGuard,
               { provide: SETTINGS, useValue: settings },
               { provide: DeliveryRepository, useValue: repo },
+              { provide: InboxRepository, useValue: inboxRepo },
               { provide: Notifications, useValue: service },
+              { provide: InboxNotifications, useValue: inboxService },
               {
                 provide: RabbitConsumer,
                 useValue: {
@@ -290,27 +465,31 @@ test(
           app.useGlobalFilters(new ApiErrorFilter());
           await app.listen(0, '127.0.0.1');
           const url = await app.getUrl();
-          const now = Math.floor(Date.now() / 1000);
-          const token = sign(
-            {
-              sub: e.payload.userId,
-              sid: randomUUID(),
-              jti: randomUUID(),
-              token_use: 'access',
-              user_status: 'ACTIVE',
-              system_role: 'USER',
-              iat: now,
-              nbf: now,
-              exp: now + 60,
-            },
-            settings.JWT_ACCESS_SECRET,
-            {
-              algorithm: 'HS256',
-              issuer: settings.JWT_ISSUER,
-              audience: settings.JWT_AUDIENCE,
-            },
-          );
-          const headers = { authorization: `Bearer ${token}` };
+          const tokenFor = (subject) => {
+            const now = Math.floor(Date.now() / 1000);
+            return sign(
+              {
+                sub: subject,
+                sid: randomUUID(),
+                jti: randomUUID(),
+                token_use: 'access',
+                user_status: 'ACTIVE',
+                system_role: 'USER',
+                iat: now,
+                nbf: now,
+                exp: now + 60,
+              },
+              settings.JWT_ACCESS_SECRET,
+              {
+                algorithm: 'HS256',
+                issuer: settings.JWT_ISSUER,
+                audience: settings.JWT_AUDIENCE,
+              },
+            );
+          };
+          const headers = {
+            authorization: `Bearer ${tokenFor(e.payload.userId)}`,
+          };
           const response = await fetch(`${url}/api/notifications?limit=1`, {
             headers,
           });
@@ -332,29 +511,234 @@ test(
             headers,
           });
           assert.equal((await marked.json()).updatedCount, 2);
+
+          const inboxUser = randomUUID();
+          const inboxEvents = [
+            v2EventFor('workspace.renamed', inboxUser),
+            v2EventFor('identity.google_linked', inboxUser),
+            v2EventFor('workspace.member_removed', inboxUser),
+          ];
+          for (const inboxEvent of inboxEvents) {
+            v2Events.push(inboxEvent);
+            channel.publish(
+              settings.NOTIFICATION_EXCHANGE,
+              inboxEvent.eventType,
+              Buffer.from(JSON.stringify(inboxEvent)),
+              { persistent: true },
+            );
+            await channel.waitForConfirms();
+          }
+          const inboxEventIds = inboxEvents.map((item) => item.eventId);
+          await until(
+            async () =>
+              (await inboxRepo.client.notificationInbox.count({
+                where: {
+                  sourceEventId: { in: inboxEventIds },
+                  userId: inboxUser,
+                },
+              })) === 3,
+          );
+          const tiedCreatedAt = new Date('2026-08-01T12:13:14.015Z');
+          await inboxRepo.client.notificationInbox.updateMany({
+            where: { sourceEventId: { in: inboxEventIds }, userId: inboxUser },
+            data: { createdAt: tiedCreatedAt },
+          });
+          const inboxHeaders = {
+            authorization: `Bearer ${tokenFor(inboxUser)}`,
+          };
+          const firstPageResponse = await fetch(
+            `${url}/api/v2/notifications?limit=2&unreadOnly=true&locale=en`,
+            { headers: inboxHeaders },
+          );
+          assert.equal(firstPageResponse.status, 200);
+          const firstPage = await firstPageResponse.json();
+          assert.equal(firstPage.items.length, 2);
+          assert(firstPage.nextCursor);
+          assert.equal(
+            firstPage.items[0].createdAt,
+            tiedCreatedAt.toISOString(),
+          );
+          assert.equal('userId' in firstPage.items[0], false);
+          assert.equal('sourceEventId' in firstPage.items[0], false);
+          assert.equal('provider' in firstPage.items[0], false);
+          const secondPageResponse = await fetch(
+            `${url}/api/v2/notifications?limit=2&unreadOnly=true&locale=en&cursor=${encodeURIComponent(firstPage.nextCursor)}`,
+            { headers: inboxHeaders },
+          );
+          assert.equal(secondPageResponse.status, 200);
+          const secondPage = await secondPageResponse.json();
+          const pageIds = [
+            ...firstPage.items.map((item) => item.id),
+            ...secondPage.items.map((item) => item.id),
+          ];
+          assert.equal(secondPage.items.length, 1);
+          assert.equal(new Set(pageIds).size, 3);
+          const expectedIds = await inboxRepo.client.notificationInbox.findMany(
+            {
+              where: {
+                sourceEventId: { in: inboxEventIds },
+                userId: inboxUser,
+              },
+              select: { id: true },
+            },
+          );
+          assert.deepEqual(
+            pageIds.slice().sort(),
+            expectedIds.map((item) => item.id).sort(),
+          );
+          const workspacePage = await (
+            await fetch(
+              `${url}/api/v2/notifications?category=WORKSPACE&locale=en`,
+              { headers: inboxHeaders },
+            )
+          ).json();
+          assert.equal(workspacePage.items.length, 2);
+          assert.equal(
+            workspacePage.items.find(
+              (item) => item.eventType === 'workspace.member_removed',
+            ).target.kind,
+            'NONE',
+          );
+          assert.equal(
+            (
+              await (
+                await fetch(`${url}/api/v2/notifications/unread-count`, {
+                  headers: inboxHeaders,
+                })
+              ).json()
+            ).count,
+            3,
+          );
+          const readId = firstPage.items[0].id;
+          const readUrl = `${url}/api/v2/notifications/${readId}/read?locale=en`;
+          const readResponse = await fetch(readUrl, {
+            method: 'PATCH',
+            headers: inboxHeaders,
+          });
+          assert.equal(readResponse.status, 200);
+          const readBody = await readResponse.json();
+          assert.equal(readBody.item.readAt !== null, true);
+          const readAgain = await (
+            await fetch(readUrl, { method: 'PATCH', headers: inboxHeaders })
+          ).json();
+          assert.equal(readAgain.item.readAt, readBody.item.readAt);
+          assert.equal(
+            (
+              await fetch(`${url}/api/v2/notifications/${readId}/read`, {
+                method: 'PATCH',
+                headers: { authorization: `Bearer ${tokenFor(randomUUID())}` },
+              })
+            ).status,
+            404,
+          );
+          const readAllResponse = await fetch(
+            `${url}/api/v2/notifications/read-all`,
+            { method: 'POST', headers: inboxHeaders },
+          );
+          assert.equal((await readAllResponse.json()).updatedCount, 2);
+          assert.equal(
+            (
+              await (
+                await fetch(`${url}/api/v2/notifications/unread-count`, {
+                  headers: inboxHeaders,
+                })
+              ).json()
+            ).count,
+            0,
+          );
+
+          const { Test } = require('@nestjs/testing');
+          const { ConfigService } = require('@nestjs/config');
+          const {
+            NotificationsModule,
+          } = require('../../api-gateway/dist/notifications/notifications.module');
+          const gatewayModule = await Test.createTestingModule({
+            imports: [NotificationsModule],
+          })
+            .useMocker((dependency) =>
+              dependency === ConfigService
+                ? {
+                    get: (key) =>
+                      key === 'gateway'
+                        ? { upstreams: { notification: url } }
+                        : key === 'NOTIFICATION_SERVICE_URL'
+                          ? url
+                          : undefined,
+                  }
+                : undefined,
+            )
+            .compile();
+          const gateway = gatewayModule.createNestApplication(
+            new FastifyAdapter(),
+          );
+          await gateway.init();
+          await gateway.getHttpAdapter().getInstance().ready();
+          try {
+            await gateway.listen(0, '127.0.0.1');
+            const gatewayUrl = await gateway.getUrl();
+            const proxied = await fetch(
+              `${gatewayUrl}/api/v2/notifications?locale=en&limit=2`,
+              { headers: inboxHeaders },
+            );
+            assert.equal(proxied.status, 200);
+            const proxiedBody = await proxied.json();
+            assert.equal(proxiedBody.items.length, 2);
+            assert.equal(proxied.headers.get('x-request-id') !== null, true);
+          } finally {
+            await gateway.close();
+          }
         },
       );
-      await t.test('production AppModule boots with the generated Prisma client and real broker', async () => {
-        const env = Object.fromEntries(Object.entries(settings).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]));
-        const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
-        Object.assign(process.env, env);
-        let production;
-        try {
-          const { AppModule } = require('../dist/app.module');
-          production = await NestFactory.create(AppModule, new FastifyAdapter(), { logger: false });
-          await production.listen(0, '127.0.0.1');
-          await until(() => production.get(RabbitConsumer).isReady);
-          const url = await production.getUrl();
-          assert.equal((await fetch(`${url}/health`)).status, 200);
-          assert.equal((await fetch(`${url}/ready`)).status, 200);
-          assert.equal((await fetch(`${url}/api/v1/notifications`)).status, 401);
-        } finally {
-          if (production) await production.close();
-          for (const [key, value] of Object.entries(previous)) {
-            if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      await t.test(
+        'production AppModule boots with the generated Prisma client and real broker',
+        async () => {
+          const env = Object.fromEntries(
+            Object.entries(settings)
+              .filter(([, value]) => value !== undefined)
+              .map(([key, value]) => [key, String(value)]),
+          );
+          const previous = Object.fromEntries(
+            Object.keys(env).map((key) => [key, process.env[key]]),
+          );
+          const previousCwd = process.cwd();
+          const isolatedConfigDirectory = mkdtempSync(
+            join(tmpdir(), 'weav-notification-no-env-'),
+          );
+          let production;
+          try {
+            process.chdir(isolatedConfigDirectory);
+            Object.assign(process.env, env);
+            const { AppModule } = require('../dist/app.module');
+            production = await NestFactory.create(
+              AppModule,
+              new FastifyAdapter(),
+              { logger: false, abortOnError: false },
+            );
+            await production.listen(0, '127.0.0.1');
+            await until(() => production.get(RabbitConsumer).isReady);
+            const url = await production.getUrl();
+            assert.equal((await fetch(`${url}/health`)).status, 200);
+            assert.equal((await fetch(`${url}/ready`)).status, 200);
+            assert.equal(
+              (await fetch(`${url}/api/v1/notifications`)).status,
+              401,
+            );
+          } catch (error) {
+            process.stderr.write(
+              `runtime integration production boot failed: ${error instanceof Error ? error.message : 'unknown error'}\n`,
+            );
+            throw error;
+          } finally {
+            if (production) await production.close();
+            process.chdir(previousCwd);
+            rmSync(isolatedConfigDirectory, { recursive: true, force: true });
+            for (const [key, value] of Object.entries(previous)) {
+              if (value === undefined) delete process.env[key];
+              else process.env[key] = value;
+            }
           }
-        }
-      });
+        },
+      );
     } finally {
       if (app) await app.close();
       await consumer.onModuleDestroy();
@@ -363,8 +747,25 @@ test(
       await repo.client.notificationDelivery.deleteMany({
         where: { sourceEventId: { in: events.map((e) => e.eventId) } },
       });
+      await inboxRepo.client.notificationDelivery.deleteMany({
+        where: {
+          sourceEventId: {
+            in: [...events, ...v2Events].map((item) => item.eventId),
+          },
+        },
+      });
+      await inboxRepo.client.notificationInbox.deleteMany({
+        where: {
+          sourceEventId: {
+            in: [...events, ...v2Events].map((item) => item.eventId),
+          },
+        },
+      });
       await repo.onModuleDestroy();
+      await inboxRepo.onModuleDestroy();
       await pool.end();
+      if (createdDatabase) await admin.query(`DROP DATABASE "${databaseName}"`);
+      await admin.end();
     }
   },
 );

@@ -4,6 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useNotificationUnreadCount } from '../../hooks/useNotifications';
+import { useAuthStore } from '../../store/useAuthStore';
+import { useWorkspaceListContext } from '../../hooks/useWorkspace';
+import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
 const getTopbarPageKey = (pathname: string) => {
   if (pathname.startsWith('/workflows')) return 'nav.workflows';
@@ -21,9 +24,20 @@ const getTopbarPageKey = (pathname: string) => {
 export function Topbar() {
   const { searchQuery, setSearchQuery, theme, toggleTheme, toggleMobileSidebar } = useUIStore();
   const { language, toggleLanguage, t } = useI18nStore();
+  const user = useAuthStore((state) => state.user);
+  const { workspaces, workspacesQuery } = useWorkspaceListContext();
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const selectWorkspace = useWorkspaceStore((state) => state.selectWorkspace);
   const location = useLocation();
   const { data: unreadCount = 0, isError: unreadError } = useNotificationUnreadCount();
   const currentPageKey = getTopbarPageKey(location.pathname);
+  const profileName = user?.displayName?.trim() || user?.name?.trim() || user?.email || 'Account';
+  const profileInitials = profileName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
 
   return (
     <header className="z-20 flex h-14 shrink-0 select-none items-center justify-between border-b border-border bg-card px-4 text-foreground transition-colors duration-200">
@@ -60,11 +74,57 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-2.5">
-        <div className="hidden cursor-pointer items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted lg:flex">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-          <span className="text-xs font-semibold">WEAV Workspace · Prod</span>
-          <span className="font-mono text-[11px] text-muted-foreground">↕</span>
-        </div>
+        {workspacesQuery.isPending && workspaces.length === 0 ? (
+          <span data-testid="topbar-workspace-loading" role="status" className="max-w-28 truncate text-xs text-muted-foreground sm:max-w-40">
+            {t('topbar.workspace_loading')}
+          </span>
+        ) : workspaces.length > 0 ? (
+          <div className="flex min-w-0 flex-col items-start">
+            <label className="sr-only" htmlFor="topbar-workspace-selector">
+              {t('topbar.select_workspace')}
+            </label>
+            <select
+              id="topbar-workspace-selector"
+              data-testid="topbar-workspace-selector"
+              aria-label={t('topbar.select_workspace')}
+              aria-busy={workspacesQuery.isFetching}
+              value={activeWorkspaceId ?? ''}
+              onChange={(event) => selectWorkspace(event.target.value || null)}
+              className="max-w-28 rounded-lg border border-border bg-background px-2 py-1 text-xs font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring sm:max-w-40 lg:max-w-56"
+            >
+              {workspaces.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
+              ))}
+            </select>
+            {workspacesQuery.isError && (
+              <span data-testid="topbar-workspace-error" role="alert" className="max-w-32 truncate text-[10px] text-destructive" title={t('topbar.workspace_load_error')}>
+                {t('topbar.workspace_load_error')}
+              </span>
+            )}
+          </div>
+        ) : workspacesQuery.isError ? (
+          <div className="flex items-center gap-1">
+            <span data-testid="topbar-workspace-error" role="alert" className="max-w-24 truncate text-xs text-destructive sm:max-w-36">
+              {t('topbar.workspace_load_error')}
+            </span>
+            <button
+              type="button"
+              aria-label={t('topbar.retry_workspace_load')}
+              onClick={() => void workspacesQuery.refetch()}
+              className="rounded-md px-1.5 py-1 text-xs text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {t('topbar.retry')}
+            </button>
+          </div>
+        ) : (
+          <Link
+            data-testid="topbar-no-workspace"
+            to="/workspace"
+            className="max-w-28 truncate rounded-lg border border-border bg-background px-2 py-1 text-xs font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:max-w-40"
+          >
+            {t('topbar.no_workspace')}
+          </Link>
+        )}
 
         <button
           onClick={toggleLanguage}
@@ -108,8 +168,8 @@ export function Topbar() {
           )}
         </Link>
 
-        <div className="ml-1 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground shadow-sm">
-          NT
+        <div data-testid="topbar-user-avatar" title={profileName} className="ml-1 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground shadow-sm">
+          {profileInitials || 'A'}
         </div>
       </div>
     </header>

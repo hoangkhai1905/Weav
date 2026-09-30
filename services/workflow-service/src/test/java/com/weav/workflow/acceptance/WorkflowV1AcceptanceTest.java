@@ -374,11 +374,11 @@ class WorkflowV1AcceptanceTest {
         UUID executionId = UUID.fromString(read(admitted).path("executionId").stringValue());
         assertTrue(outboxPublisher.publishPending() >= 1);
         JsonNode detail = awaitExecution(workflow, token, executionId, "FAILED");
-        assertNode(detail, "email", "FAILED", 1);
+        assertNode(detail, "dependency", "FAILED", 1);
         assertEquals("DEPENDENCY_NOT_CONFIGURED", jdbc.queryForObject(
                 "select a.error ->> 'code' from workflow.node_execution_attempts a "
                         + "join workflow.node_executions n on n.id = a.node_execution_id "
-                        + "where n.execution_id = ? and n.node_id = 'email'",
+                        + "where n.execution_id = ? and n.node_id = 'dependency'",
                 String.class, executionId));
     }
 

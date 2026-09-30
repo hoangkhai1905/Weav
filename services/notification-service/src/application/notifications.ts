@@ -6,11 +6,25 @@ import {
   publicPayload,
 } from '../domain/notification';
 import type { ListQuery } from '../domain/notification';
+import { InboxRepository } from '../domain/inbox';
+import { notificationEventV2Schema } from '../domain/notification-event';
 
 @Injectable()
 export class Notifications {
-  constructor(private readonly repository: DeliveryRepository) {}
+  constructor(
+    private readonly repository: DeliveryRepository,
+    private readonly inboxRepository: InboxRepository,
+  ) {}
   async consume(value: unknown) {
+    if (
+      value !== null &&
+      typeof value === 'object' &&
+      'schemaVersion' in value
+    ) {
+      const event = notificationEventV2Schema.parse(value);
+      await this.inboxRepository.ingest(event);
+      return;
+    }
     const event = executionEventSchema.parse(value);
     await this.repository.ingest(event, publicPayload(event));
   }

@@ -1,5 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { connectionRepository } from '../../../infrastructure/repository-factory';
+import { captureAuthSessionScope, isAuthSessionScopeCurrent } from '../../auth/auth-session.scope';
+import { showMilestoneToastForSession } from '../../feedback/milestone-toast';
+import { notificationQueryKey } from '../../notifications/notification.query';
 
 export function useConnections() {
   return useQuery({
@@ -12,8 +15,15 @@ export function useTestConnection() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => connectionRepository.testConnection(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['connections'] });
+    onMutate: () => captureAuthSessionScope(),
+    onSuccess: (result, _id, scope) => {
+      if (!scope || !isAuthSessionScopeCurrent(scope)) return;
+      if (result.success) {
+        showMilestoneToastForSession(scope, 'connection.verified', () => {
+          void queryClient.invalidateQueries({ queryKey: notificationQueryKey(scope.userId, scope.generation) });
+        });
+      }
+      void queryClient.invalidateQueries({ queryKey: ['connections'] });
     },
   });
 }

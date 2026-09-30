@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useI18nStore } from '../../store/useI18nStore';
 
 interface LogoProps {
   collapsed?: boolean;
@@ -7,6 +8,7 @@ interface LogoProps {
 }
 
 export function Logo({ collapsed = false, size = 'md', showSubtitle = true }: LogoProps) {
+  const { t } = useI18nStore();
   let imgSize = 'w-9 h-9';
   let titleSize = 'text-base';
 
@@ -23,7 +25,7 @@ export function Logo({ collapsed = false, size = 'md', showSubtitle = true }: Lo
       <div className="relative shrink-0">
         <img
           src="/weav-logo-v2.png"
-          alt="WEAV Logo"
+          alt={t('common.logo_alt')}
           className={`${imgSize} rounded-xl object-cover border border-blue-500/30 shadow-md shadow-blue-600/20 group-hover:scale-105 transition-transform duration-300`}
         />
         <div className="absolute inset-0 rounded-xl ring-1 ring-white/20 pointer-events-none" />
@@ -36,7 +38,7 @@ export function Logo({ collapsed = false, size = 'md', showSubtitle = true }: Lo
           </span>
           {showSubtitle && (
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold tracking-tight mt-0.5">
-              AI Workflow Studio
+              {t('common.product_subtitle')}
             </span>
           )}
         </div>

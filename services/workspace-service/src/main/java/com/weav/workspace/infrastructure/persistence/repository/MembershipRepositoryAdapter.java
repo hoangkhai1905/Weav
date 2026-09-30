@@ -74,6 +74,13 @@ public class MembershipRepositoryAdapter implements MembershipRepository {
     }
 
     @Override
+    public List<UUID> findUserIdsByWorkspaceId(UUID workspaceId) {
+        return repository.findByWorkspaceIdOrderByUserIdAsc(workspaceId).stream()
+                .map(MembershipJpaEntity::getUserId)
+                .toList();
+    }
+
+    @Override
     public boolean existsByWorkspaceIdAndUserId(UUID workspaceId, UUID userId) {
         return repository.existsByWorkspaceIdAndUserId(workspaceId, userId);
     }

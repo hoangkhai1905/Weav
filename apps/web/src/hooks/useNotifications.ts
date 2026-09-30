@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import {
   useInfiniteQuery,
   useMutation,
@@ -9,53 +10,96 @@ import {
   notificationApi,
   isNotificationMockMode,
   NotificationApiError,
-  type NotificationPage,
 } from '../api/notification.api';
 import { getStoredAuthToken } from '../api/ocr.api';
 import { useAuthStore } from '../store/useAuthStore';
-import type { NotificationItem } from '../types/workflow.types';
+import { useI18nStore } from '../store/useI18nStore';
+import {
+  notificationSessionKey,
+} from '../lib/notifications/session';
+import type {
+  NotificationCategory,
+  NotificationInboxItem,
+  NotificationLocale,
+  NotificationPage,
+} from '../types/notification.types';
+
+export const notificationKeys = {
+  session: (sessionId: string) => ['notifications', sessionId] as const,
+};
 
 function useNotificationSession() {
-  const userId = useAuthStore((state) => state.user?.id);
+  const userId = useAuthStore((state) => state.user?.id ?? null);
   const authenticated = useAuthStore((state) => state.isAuthenticated);
+  const token = getStoredAuthToken();
+  const snapshot = { userId, token, authenticated };
+  const sessionId = notificationSessionKey(snapshot);
   return {
-    queryKey: ['notifications', userId ?? 'anonymous'],
-    enabled:
-      authenticated && (isNotificationMockMode || !!getStoredAuthToken()),
+    userId,
+    queryKey: notificationKeys.session(sessionId),
+    enabled: Boolean(authenticated && userId && (isNotificationMockMode || token)),
   };
+}
+
+export function useNotificationSessionCleanup() {
+  const session = useNotificationSession();
+  const queryClient = useQueryClient();
+  const previousSessionId = useRef<string | null>(null);
+  const currentSessionId = session.enabled
+    ? session.queryKey[1] as string
+    : null;
+
+  useEffect(() => {
+    const previous = previousSessionId.current;
+    if (previous !== currentSessionId && previous) {
+      const queryKey = notificationKeys.session(previous);
+      void queryClient.cancelQueries({ queryKey });
+      void queryClient.removeQueries({ queryKey });
+    }
+    if (!currentSessionId) {
+      void queryClient.cancelQueries({ queryKey: ['notifications'] });
+      void queryClient.removeQueries({ queryKey: ['notifications'] });
+    }
+    previousSessionId.current = currentSessionId;
+  }, [currentSessionId, queryClient]);
 }
 
 const retryNotification = (count: number, error: Error) =>
   count < 1 &&
-  !(
-    error instanceof NotificationApiError &&
-    error.status >= 400 &&
-    error.status < 500
-  );
+  !(error instanceof NotificationApiError && error.status >= 400 && error.status < 500);
 
-function flattenPages(
-  data: InfiniteData<NotificationPage>,
-): NotificationItem[] {
-  const unique = new Map<string, NotificationItem>();
+function flattenPages(data: InfiniteData<NotificationPage>): NotificationInboxItem[] {
+  const unique = new Map<string, NotificationInboxItem>();
   for (const page of data.pages) {
-    for (const item of page.items)
+    for (const item of page.items) {
       if (!unique.has(item.id)) unique.set(item.id, item);
+    }
   }
   return [...unique.values()];
 }
 
-export function useNotifications() {
+export function useNotifications(filters: {
+  category?: Exclude<NotificationCategory, 'UNKNOWN'>;
+  unreadOnly?: boolean;
+  locale?: NotificationLocale;
+} = {}) {
   const session = useNotificationSession();
+  const locale = filters.locale ?? (useI18nStore.getState().language === 'VI' ? 'vi' : 'en');
+  const category = filters.category;
+  const unreadOnly = filters.unreadOnly;
   const query = useInfiniteQuery({
-    queryKey: [...session.queryKey, 'list'],
+    queryKey: [...session.queryKey, 'list', locale, category ?? 'all', unreadOnly ?? false],
     enabled: session.enabled,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
-      notificationApi.getNotificationPage({ cursor: pageParam }, signal),
+      notificationApi.getNotificationPage({
+        ...(pageParam ? { cursor: pageParam } : {}),
+        ...(category ? { category } : {}),
+        ...(unreadOnly ? { unreadOnly: true } : {}),
+        locale,
+      }, signal),
     getNextPageParam: (page, _pages, cursor) =>
-      page.nextCursor && page.nextCursor !== cursor
-        ? page.nextCursor
-        : undefined,
+      page.nextCursor && page.nextCursor !== cursor ? page.nextCursor : undefined,
     select: flattenPages,
     retry: retryNotification,
     gcTime: 0,
@@ -78,24 +122,28 @@ export function useNotificationUnreadCount() {
   });
 }
 
-export function useMarkNotificationRead() {
+export function useMarkNotificationRead(locale: NotificationLocale = 'vi') {
   const queryClient = useQueryClient();
   const { queryKey } = useNotificationSession();
+  const invalidate = () => queryClient.invalidateQueries({ queryKey });
   return useMutation({
-    mutationFn: (id: string) => notificationApi.markAsRead(id),
+    mutationFn: (id: string) => notificationApi.markAsRead(id, locale),
     retry: false,
     onMutate: () => queryClient.cancelQueries({ queryKey }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: invalidate,
+    onError: invalidate,
   });
 }
 
 export function useMarkAllNotificationsRead() {
   const queryClient = useQueryClient();
   const { queryKey } = useNotificationSession();
+  const invalidate = () => queryClient.invalidateQueries({ queryKey });
   return useMutation({
     mutationFn: () => notificationApi.markAllAsRead(),
     retry: false,
     onMutate: () => queryClient.cancelQueries({ queryKey }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
+    onSuccess: invalidate,
+    onError: invalidate,
   });
 }

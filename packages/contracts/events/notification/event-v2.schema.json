@@ -1,0 +1,458 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Weav notification event v2",
+  "description": "Allowlisted internal notification events. Cross-field identity and workspace equality rules are additionally enforced by the Notification service.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "eventType",
+    "occurredAt",
+    "producer",
+    "actorUserId",
+    "recipientUserIds",
+    "workspaceId",
+    "entity",
+    "data"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "eventId": { "type": "string", "format": "uuid" },
+    "eventType": {
+      "enum": [
+        "workflow.created",
+        "workflow.published",
+        "workflow.paused",
+        "workflow.resumed",
+        "workflow.completed",
+        "workflow.failed",
+        "workspace.created",
+        "workspace.renamed",
+        "workspace.member_added",
+        "workspace.member_removed",
+        "workspace.member_permissions_updated",
+        "workspace.member_left",
+        "connection.connected",
+        "connection.disabled",
+        "connection.invalid",
+        "identity.password_changed",
+        "identity.password_reset",
+        "identity.google_linked",
+        "identity.google_unlinked"
+      ]
+    },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "producer": {
+      "enum": ["workflow-service", "workspace-service", "identity-service"]
+    },
+    "actorUserId": {
+      "oneOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }]
+    },
+    "recipientUserIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "type": "string", "format": "uuid" }
+    },
+    "workspaceId": {
+      "oneOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }]
+    },
+    "entity": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "enum": ["WORKFLOW", "EXECUTION", "WORKSPACE", "CONNECTION", "USER"]
+        },
+        "id": { "type": "string", "format": "uuid" }
+      },
+      "additionalProperties": false
+    },
+    "data": { "type": "object" }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "eventType": { "const": "workflow.created" },
+            "producer": { "const": "workflow-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "WORKFLOW" } } },
+            "data": {
+              "type": "object",
+              "required": ["workflowName"],
+              "properties": {
+                "workflowName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workflow.published" },
+            "producer": { "const": "workflow-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "WORKFLOW" } } },
+            "data": {
+              "type": "object",
+              "required": ["workflowName"],
+              "properties": {
+                "workflowName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workflow.paused" },
+            "producer": { "const": "workflow-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "WORKFLOW" } } },
+            "data": {
+              "type": "object",
+              "required": ["workflowName"],
+              "properties": {
+                "workflowName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workflow.resumed" },
+            "producer": { "const": "workflow-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "WORKFLOW" } } },
+            "data": {
+              "type": "object",
+              "required": ["workflowName"],
+              "properties": {
+                "workflowName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workflow.completed" },
+            "producer": { "const": "workflow-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "EXECUTION" } } },
+            "data": {
+              "type": "object",
+              "required": ["workflowName", "workflowId"],
+              "properties": {
+                "workflowName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                },
+                "workflowId": { "type": "string", "format": "uuid" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workflow.failed" },
+            "producer": { "const": "workflow-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "EXECUTION" } } },
+            "data": {
+              "type": "object",
+              "required": ["workflowName", "workflowId"],
+              "properties": {
+                "workflowName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                },
+                "workflowId": { "type": "string", "format": "uuid" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workspace.created" },
+            "producer": { "const": "workspace-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "WORKSPACE" } } },
+            "data": {
+              "type": "object",
+              "required": ["workspaceName"],
+              "properties": {
+                "workspaceName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workspace.renamed" },
+            "producer": { "const": "workspace-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "WORKSPACE" } } },
+            "data": {
+              "type": "object",
+              "required": ["workspaceName"],
+              "properties": {
+                "workspaceName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\\\S"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workspace.member_added" },
+            "producer": { "const": "workspace-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "WORKSPACE" } } },
+            "data": {
+              "type": "object",
+              "required": ["workspaceName", "subjectUserId"],
+              "properties": {
+                "workspaceName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                },
+                "subjectUserId": { "type": "string", "format": "uuid" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workspace.member_removed" },
+            "producer": { "const": "workspace-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "WORKSPACE" } } },
+            "data": {
+              "type": "object",
+              "required": ["workspaceName", "subjectUserId"],
+              "properties": {
+                "workspaceName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                },
+                "subjectUserId": { "type": "string", "format": "uuid" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workspace.member_permissions_updated" },
+            "producer": { "const": "workspace-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "WORKSPACE" } } },
+            "data": {
+              "type": "object",
+              "required": ["workspaceName", "subjectUserId"],
+              "properties": {
+                "workspaceName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                },
+                "subjectUserId": { "type": "string", "format": "uuid" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workspace.member_left" },
+            "producer": { "const": "workspace-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "WORKSPACE" } } },
+            "data": {
+              "type": "object",
+              "required": ["workspaceName", "subjectUserId"],
+              "properties": {
+                "workspaceName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                },
+                "subjectUserId": { "type": "string", "format": "uuid" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "connection.connected" },
+            "producer": { "const": "workspace-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "CONNECTION" } } },
+            "data": {
+              "type": "object",
+              "required": ["connectionName"],
+              "properties": {
+                "connectionName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "connection.disabled" },
+            "producer": { "const": "workspace-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "CONNECTION" } } },
+            "data": {
+              "type": "object",
+              "required": ["connectionName"],
+              "properties": {
+                "connectionName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "connection.invalid" },
+            "producer": { "const": "workspace-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "CONNECTION" } } },
+            "data": {
+              "type": "object",
+              "required": ["connectionName"],
+              "properties": {
+                "connectionName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "identity.password_changed" },
+            "producer": { "const": "identity-service" },
+            "workspaceId": { "type": "null" },
+            "entity": { "properties": { "kind": { "const": "USER" } } },
+            "data": {
+              "type": "object",
+              "required": [],
+              "properties": {},
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "identity.password_reset" },
+            "producer": { "const": "identity-service" },
+            "workspaceId": { "type": "null" },
+            "entity": { "properties": { "kind": { "const": "USER" } } },
+            "data": {
+              "type": "object",
+              "required": [],
+              "properties": {},
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "identity.google_linked" },
+            "producer": { "const": "identity-service" },
+            "workspaceId": { "type": "null" },
+            "entity": { "properties": { "kind": { "const": "USER" } } },
+            "data": {
+              "type": "object",
+              "required": [],
+              "properties": {},
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "identity.google_unlinked" },
+            "producer": { "const": "identity-service" },
+            "workspaceId": { "type": "null" },
+            "entity": { "properties": { "kind": { "const": "USER" } } },
+            "data": {
+              "type": "object",
+              "required": [],
+              "properties": {},
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

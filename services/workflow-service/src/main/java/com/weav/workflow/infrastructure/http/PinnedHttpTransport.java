@@ -55,6 +55,8 @@ public class PinnedHttpTransport {
             "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
     private static final Pattern HEADER_NAME = Pattern.compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$");
     private static final String GOOGLE_SHEETS_HOST = "sheets.googleapis.com";
+    private static final String GMAIL_HOST = "gmail.googleapis.com";
+    private static final String GMAIL_SEND_PATH = "/gmail/v1/users/me/messages/send";
     private static final Set<String> FORBIDDEN_HEADERS = Set.of(
             "host", "content-length", "transfer-encoding", "connection", "proxy-connection",
             "keep-alive", "te", "trailer", "upgrade", "authorization", "proxy-authorization",
@@ -160,6 +162,22 @@ public class PinnedHttpTransport {
         OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
         return executeWithAuthentication(target, method, Map.of(),
                 Map.of("Authorization", "Bearer " + accessToken), query, body);
+    }
+
+    /**
+     * Sends one Gmail message with Workspace-owned OAuth credentials. The
+     * endpoint is fixed to the Gmail send URL; DNS is approved and pinned here.
+     */
+    public HttpResponse executeGmailSendWithBearerToken(URI uri, Object body, String accessToken) {
+        validateGmailSendUri(uri);
+        if (accessToken == null || accessToken.isBlank() || accessToken.length() > 16 * 1024
+                || accessToken.codePoints().anyMatch(Character::isISOControl)) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Gmail authentication configuration is invalid.", false);
+        }
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "POST", Map.of(),
+                Map.of("Authorization", "Bearer " + accessToken), null, body);
     }
 
     /**
@@ -464,6 +482,23 @@ public class PinnedHttpTransport {
                 || !uri.getRawPath().startsWith("/v4/spreadsheets/")) {
             throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
                     "The Sheets destination is invalid.", false);
+        }
+    }
+
+    private void validateGmailSendUri(URI uri) {
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(GMAIL_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || !GMAIL_SEND_PATH.equals(uri.getRawPath())) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Gmail destination is invalid.", false);
         }
     }
 

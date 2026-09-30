@@ -1,0 +1,9 @@
+FROM eclipse-temurin:25-jdk
+
+WORKDIR /app
+COPY .mvn/ .mvn/
+COPY mvnw pom.xml ./
+COPY src/ src/
+RUN chmod +x mvnw && ./mvnw -q -DskipTests package
+
+ENTRYPOINT ["java", "-jar", "target/workspace-service-0.0.1-SNAPSHOT.jar"]

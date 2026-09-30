@@ -2,6 +2,8 @@ package com.weav.workflow.infrastructure.persistence.repository;
 
 import com.weav.workflow.application.port.out.ExecutionRecoveryPort;
 import com.weav.workflow.application.port.out.ExecutionStatePort;
+import com.weav.workflow.application.notification.WorkflowNotificationEvent;
+import com.weav.workflow.application.port.out.WorkflowNotificationOutboxPort;
 import com.weav.workflow.domain.definition.JsonValues;
 import com.weav.workflow.domain.definition.WorkflowDefinition;
 import com.weav.workflow.domain.execution.GraphState;
@@ -16,6 +18,7 @@ import com.weav.workflow.domain.valueobject.LogLevel;
 import com.weav.workflow.domain.valueobject.NodeExecutionStatus;
 import com.weav.workflow.infrastructure.definition.DefinitionJsonCodec;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -64,11 +67,20 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     private final String attemptTable;
     private final String logTable;
     private final String outboxTable;
+    private final WorkflowNotificationOutboxPort notificationOutbox;
 
     public ExecutionStateAdapter(JdbcTemplate jdbc, ObjectMapper objectMapper,
                                  @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema) {
+        this(jdbc, objectMapper, schema, event -> { });
+    }
+
+    @Autowired
+    public ExecutionStateAdapter(JdbcTemplate jdbc, ObjectMapper objectMapper,
+                                 @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema,
+                                 WorkflowNotificationOutboxPort notificationOutbox) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
+        this.notificationOutbox = Objects.requireNonNull(notificationOutbox, "notificationOutbox must not be null");
         if (schema == null || !SQL_IDENTIFIER.matcher(schema).matches()) {
             throw new IllegalArgumentException("The configured workflow schema name is invalid");
         }
@@ -279,6 +291,25 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
         }
         for (ExecutionLog log : transition.logs()) {
             persistLog(lease.executionId(), log);
+        }
+        if (transition.status() == ExecutionStatus.SUCCESS || transition.status() == ExecutionStatus.FAILED) {
+            TerminalRecipient recipient = jdbc.queryForObject("""
+                    SELECT e.workflow_id, w.workspace_id, w.name, w.created_by, e.trigger_type, e.triggered_by
+                    FROM %s e JOIN %s w ON w.id = e.workflow_id
+                    WHERE e.id = ?
+                    """.formatted(executionTable, workflowTable), (rs, rowNum) -> new TerminalRecipient(
+                    rs.getObject("workflow_id", UUID.class), rs.getObject("workspace_id", UUID.class),
+                    rs.getString("name"),
+                    rs.getObject("created_by", UUID.class), rs.getString("trigger_type"),
+                    rs.getObject("triggered_by", UUID.class)), lease.executionId());
+            boolean manual = "MANUAL".equals(recipient.triggerType());
+            UUID actor = manual ? recipient.triggeredBy() : null;
+            UUID candidate = manual ? recipient.triggeredBy() : recipient.createdBy();
+            String eventType = transition.status() == ExecutionStatus.SUCCESS
+                    ? "workflow.completed" : "workflow.failed";
+            notificationOutbox.record(WorkflowNotificationEvent.terminal(eventType, recipient.workspaceId(),
+                    actor, candidate, lease.executionId(), recipient.workflowId(),
+                    recipient.workflowName(), transition.finishedAt()));
         }
         return true;
     }
@@ -794,5 +825,9 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     }
 
     private record StoredNode(UUID id, String nodeId) {
+    }
+
+    private record TerminalRecipient(UUID workflowId, UUID workspaceId, String workflowName, UUID createdBy,
+                                     String triggerType, UUID triggeredBy) {
     }
 }

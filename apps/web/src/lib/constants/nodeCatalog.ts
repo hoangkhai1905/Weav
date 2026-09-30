@@ -54,7 +54,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'email.send',
     title: 'Send Email (Gmail)',
-    description: 'Email sending is unavailable until an approved send-capable connection exists.',
+    description: 'Send a plain-text email from an authorized Gmail connection.',
     category: 'action',
     iconName: 'Mail',
     defaultConfig: { to: '', subject: '', body: '' },

@@ -355,7 +355,7 @@ public final class DefinitionValidator {
             case "ai.classify.categories" -> isStringList(value);
             case "ai.summarize.maxLength" -> isPositiveInteger(value);
             case "ocr.extract.detectTables" -> value instanceof Boolean;
-            case "http.request.connectionId", "google.sheets.connectionId" -> value instanceof String;
+            case "http.request.connectionId", "google.sheets.connectionId", "email.send.connectionId" -> value instanceof String;
             default -> false;
         };
     }
@@ -368,7 +368,7 @@ public final class DefinitionValidator {
             return false;
         }
         return switch (type + "." + field) {
-            case "http.request.method", "http.request.url", "email.send.to", "email.send.subject",
+            case "http.request.method", "http.request.url", "email.send.connectionId", "email.send.to", "email.send.subject",
                     "google.sheets.connectionId", "google.sheets.operation", "google.sheets.spreadsheetId",
                     "google.sheets.range", "telegram.send_message.chatId", "telegram.send_message.text",
                     "trigger.schedule.cron", "trigger.schedule.timezone", "ai.extract.text",
@@ -381,7 +381,7 @@ public final class DefinitionValidator {
         return switch (type) {
             case "trigger.schedule" -> Set.of("cron", "timezone");
             case "http.request" -> Set.of("method", "url");
-            case "email.send" -> Set.of("to", "subject", "body");
+            case "email.send" -> Set.of("connectionId", "to", "subject", "body");
             case "google.sheets" -> Set.of("connectionId", "operation", "spreadsheetId", "range");
             case "telegram.send_message" -> Set.of("chatId", "text");
             case "logic.condition" -> Set.of("left", "operator", "right");

@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Info, X, RefreshCw } from 'lucide-react';
+import { useI18nStore } from '../../store/useI18nStore';
 
 export interface ConfirmModalProps {
   isOpen: boolean;
@@ -25,6 +26,7 @@ export function ConfirmModal({
   variant = 'danger',
   loading = false,
 }: ConfirmModalProps) {
+  const { t } = useI18nStore();
   const getVariantStyles = () => {
     switch (variant) {
       case 'danger':
@@ -125,7 +127,7 @@ export function ConfirmModal({
                 {loading ? (
                   <>
                     <RefreshCw size={14} className="animate-spin" />
-                    <span>Đang xử lý...</span>
+                    <span>{t('common.processing')}</span>
                   </>
                 ) : (
                   <span>{confirmText}</span>

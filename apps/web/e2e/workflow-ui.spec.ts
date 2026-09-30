@@ -43,20 +43,22 @@ async function clickEmptyWorkflowCanvas(page: Page) {
 
 test.describe('industrial workflow shell', () => {
   test('uses the refreshed WEAV mark in the shell and auth brand', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.goto('/dashboard');
     await expect(page.locator('img[alt="WEAV app logo"]')).toHaveAttribute('src', '/weav-logo-v2.png');
 
     await page.goto('/login');
-    await expect(page.locator('img[alt="WEAV Logo"]')).toHaveAttribute('src', '/weav-logo-v2.png');
+    await expect(page.getByRole('img', { name: 'WEAV logo', exact: true })).toHaveAttribute('src', '/weav-logo-v2.png');
     await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/weav-logo-v2.png');
   });
 
   test('shows readable navigation and moves the active indicator to Workflows', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.emulateMedia({ colorScheme: 'light' });
     await page.goto('/workflows');
 
     const sidebar = page.getByTestId('app-sidebar');
-    const workflowsLink = sidebar.getByRole('link', { name: 'Workflows' });
+    const workflowsLink = sidebar.getByRole('link', { name: 'Workflows', exact: true });
 
     await expect(sidebar).toBeVisible();
     await expect(workflowsLink).toHaveAttribute('aria-current', 'page');
@@ -132,15 +134,15 @@ test.describe('dashboard quick actions', () => {
 
 test.describe('language switching', () => {
   test('translates the dashboard shell and quick actions between Vietnamese and English', async ({ page }) => {
-    await page.addInitScript({ content: "window.localStorage.removeItem('weav_lang_v1')" });
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'VI')" });
     await page.goto('/dashboard');
 
     await expect(page.getByRole('heading', { name: 'Tổng quan không gian làm việc', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: /Đổi sang English|Switch to English/ }).click();
+    await page.getByRole('button', { name: 'Chuyển sang tiếng Anh', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Workspace overview', exact: true })).toBeVisible();
     await expect(page.getByTestId('dashboard-quick-actions').getByRole('button', { name: 'Create with AI' })).toBeVisible();
 
-    await page.getByRole('button', { name: /Đổi sang Tiếng Việt|Switch to Vietnamese/ }).click();
+    await page.getByRole('button', { name: 'Switch to Vietnamese', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Tổng quan không gian làm việc', exact: true })).toBeVisible();
     await expect(page.getByTestId('dashboard-quick-actions').getByRole('button', { name: 'Tạo bằng AI' })).toBeVisible();
   });
@@ -218,8 +220,8 @@ test.describe('workflow responsive layout', () => {
 
     const rows = page.getByTestId('workflow-row');
     await expect(rows).toHaveCount(3);
-    await rows.nth(0).getByRole('checkbox', { name: /Select / }).check();
-    await rows.nth(1).getByRole('checkbox', { name: /Select / }).check();
+    await rows.nth(0).getByRole('checkbox', { name: /^Chọn / }).check();
+    await rows.nth(1).getByRole('checkbox', { name: /^Chọn / }).check();
 
     const dimensions = await page.evaluate(() => {
       const globalObj = globalThis as unknown as {
@@ -238,6 +240,10 @@ test.describe('workflow responsive layout', () => {
 });
 
 test.describe('workflow builder execution motion', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
+  });
+
   test('keeps the minimap contained and the selected workflow visible', async ({ page }) => {
     await page.goto('/workflows/wf-001/builder');
 
@@ -272,7 +278,9 @@ test.describe('workflow builder execution motion', () => {
   });
 
   test('shows an active connection while previewing an edge', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.goto('/workflows/wf-001/builder');
+    await expect(page.getByTestId('execution-edge-flow')).toHaveCount(4);
     await page.getByRole('button', { name: 'Preview workflow (visual only)' }).first().click();
 
     const activeEdge = page.getByTestId('execution-edge-active');
@@ -359,6 +367,22 @@ test.describe('workflow builder execution motion', () => {
 
 test.describe('OCR workflow node', () => {
   test('adds OCR to the canvas and previews extracted document text', async ({ page }) => {
+    await page.addInitScript({
+      content: `(() => {
+        const nativeSetTimeout = window.setTimeout.bind(window);
+        const pendingMockDelays = [];
+        window.addEventListener('weav:release-mock-delays', () => {
+          pendingMockDelays.splice(0).forEach((release) => release());
+        });
+        window.setTimeout = (handler, timeout, ...args) => {
+          if (timeout === 150) {
+            pendingMockDelays.push(() => nativeSetTimeout(handler, 0, ...args));
+            return nativeSetTimeout(() => {}, 0);
+          }
+          return nativeSetTimeout(handler, timeout, ...args);
+        };
+      })();`,
+    });
     await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.route('**/api/v1/workspaces/*/ocr/extractions', async (route) => {
       await route.fulfill({
@@ -390,8 +414,14 @@ test.describe('OCR workflow node', () => {
       });
     });
     await page.goto('/workflows/wf-001/builder');
+    await expect(page.getByText('Loading workflow…', { exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'OCR Text Extract' }).click();
+    const ocrPaletteItem = page.getByRole('button', { name: 'OCR Text Extract' });
+    await expect(ocrPaletteItem).toBeDisabled();
+    await page.evaluate("window.dispatchEvent(new Event('weav:release-mock-delays'))");
+    await expect(page.getByText('Loading workflow…', { exact: true })).toBeHidden();
+    await expect(ocrPaletteItem).toBeEnabled();
+    await ocrPaletteItem.click();
 
     const inspector = page.getByTestId('workflow-inspector');
     await expect(inspector).toContainText('OCR Text Extract');
@@ -402,7 +432,6 @@ test.describe('OCR workflow node', () => {
       mimeType: 'image/png',
       buffer: Buffer.from('mock invoice image'),
     });
-
     await expect(inspector.getByText('invoice.png', { exact: true })).toBeVisible();
     await inspector.getByRole('button', { name: 'Extract text' }).click();
 
@@ -415,10 +444,11 @@ test.describe('OCR workflow node', () => {
 
 test.describe('workspace account surfaces', () => {
   test('keeps workspace, profile settings, and help surfaces discoverable', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'VI')" });
     await page.goto('/workspace');
     await expect(page.getByTestId('workspace-page')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'WEAV Production Workspace', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: /mời|invite/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Thêm thành viên', exact: true })).toBeVisible();
 
     await page.goto('/settings/profile');
     await expect(page.getByTestId('settings-profile-page')).toBeVisible();
@@ -428,7 +458,7 @@ test.describe('workspace account surfaces', () => {
     await page.goto('/help');
     await expect(page.getByTestId('help-page')).toBeVisible();
     await expect(page.getByRole('heading', { name: /^(Trợ giúp & Tài liệu|Help & Docs)$/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /open guide/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Mở hướng dẫn', exact: true })).toBeVisible();
   });
 });
 

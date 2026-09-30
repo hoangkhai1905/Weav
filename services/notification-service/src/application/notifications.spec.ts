@@ -1,9 +1,21 @@
 import { Notifications } from './notifications';
+import { randomUUID } from 'node:crypto';
+import { executionEventSchema } from '../domain/notification';
+import { InboxRepository } from '../domain/inbox';
 import { mockRepository, testDelivery, testEvent } from '../testing/fixtures';
 
 describe('notification use cases', () => {
   const repo = mockRepository();
-  const service = new Notifications(repo);
+  const inboxRepository = {
+    ingest: jest.fn().mockResolvedValue(undefined),
+    list: jest.fn(),
+    unreadCount: jest.fn(),
+    markRead: jest.fn(),
+    markAllRead: jest.fn(),
+    ready: jest.fn(),
+    reconcileLegacy: jest.fn(),
+  } as unknown as InboxRepository;
+  const service = Reflect.construct(Notifications, [repo, inboxRepository]) as Notifications;
   beforeEach(() => jest.resetAllMocks());
   it('awaits durable ingestion and propagates failures to the consumer', async () => {
     repo.ingest.mockRejectedValue(new Error('offline'));
@@ -13,6 +25,47 @@ describe('notification use cases', () => {
   it('rejects malformed messages before touching persistence', async () => {
     await expect(service.consume({})).rejects.toThrow();
     expect(repo.ingest).not.toHaveBeenCalled();
+  });
+  it('routes schemaVersion 2 events to inbox persistence without legacy deliveries', async () => {
+    const workspaceId = randomUUID();
+    const event = {
+      schemaVersion: 2,
+      eventId: randomUUID(),
+      eventType: 'workspace.created',
+      occurredAt: '2026-09-27T04:00:00Z',
+      producer: 'workspace-service',
+      actorUserId: randomUUID(),
+      recipientUserIds: [randomUUID()],
+      workspaceId,
+      entity: { kind: 'WORKSPACE', id: workspaceId },
+      data: { workspaceName: 'Operations' },
+    };
+
+    await service.consume(event);
+
+    expect(inboxRepository.ingest).toHaveBeenCalledWith(event);
+    expect(repo.ingest).not.toHaveBeenCalled();
+  });
+  it('rejects a present unsupported schemaVersion instead of falling back to legacy', async () => {
+    await expect(
+      service.consume({ ...testEvent(), schemaVersion: 3 }),
+    ).rejects.toThrow();
+
+    expect(repo.ingest).not.toHaveBeenCalled();
+    expect(inboxRepository.ingest).not.toHaveBeenCalled();
+  });
+  it('treats UUID casing variants as the same legacy execution identity', () => {
+    const event = testEvent();
+    expect(
+      executionEventSchema.safeParse({
+        ...event,
+        aggregateId: event.aggregateId.toUpperCase(),
+        payload: {
+          ...event.payload,
+          executionId: event.payload.executionId.toLowerCase(),
+        },
+      }).success,
+    ).toBe(true);
   });
   it('uses current user and stable paginated cursor', async () => {
     const first = testDelivery(),

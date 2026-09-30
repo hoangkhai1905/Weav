@@ -170,6 +170,74 @@ cannot complete, an already-cached authorization value can remain usable until
 the configured TTL expires, so V1 does not claim instant revocation during an
 invalidation outage. Workspace has no profile cache.
 
+## Workspace notifications and outbox
+
+Successful workspace creation, display-name changes, member add/remove,
+effective permission changes, member leave, and qualifying Connection status
+transitions append the approved Notification v2 envelope to Workspace's
+`notification_outbox` in the same PostgreSQL transaction as the mutation. The
+outbox stores the immutable payload as JSONB; it has no membership foreign key
+and no automatic retention/deletion job. Notification remains the sole owner
+of inbox rows and consumer queues.
+
+Connection events are `connection.connected` for a real non-ACTIVE to ACTIVE
+transition after provider verification, `connection.disabled` for a real
+non-DISABLED to DISABLED manual disable, and `connection.invalid` only for a
+confirmed non-INVALID to INVALID transition (provider authentication rejection,
+missing/corrupt stored credentials, the typed internal authentication-rejected
+report, or a current/fenced Google refresh rejection or required-scope loss).
+Already-target-state operations and transient provider/transport failures do
+not emit an event. Credential/configuration resets are not manual disable
+notifications. OAuth and refresh provider calls and remote Workflow usage
+checks remain outside the final mutation transaction.
+
+OAuth start still persists `DISABLED` before redirect. Under the final
+Workspace mutation lock, it records whether the freshly reloaded connection
+was `ACTIVE` in a separate Redis companion value; the existing four-field
+callback-state JSON remains unchanged. That metadata and the one-time state are
+written atomically with the configured state TTL. Active-origin references are
+kept until callback processing finishes so overlapping starts inherit the
+original status, then released best-effort and otherwise expire by TTL.
+Reauthorizing an already `ACTIVE` connection therefore restores it without a
+new `connection.connected` event. Legacy states without companion metadata
+remain valid for callback authentication but have unknown origin and suppress
+`connection.connected`; malformed metadata is handled the same way.
+
+`connection.connected` goes only to the authenticated actor. A disable event
+goes to the current authorized Workspace owner and current authorized
+connection creator, deduplicated with the acting user removed; an empty
+recipient set is suppressed. An invalid event goes to those current authorized
+recipients without removing an interactive actor. Confirmed internal and
+refresh invalidations use an explicit null system actor. Recipient resolution
+occurs under the same Workspace mutation lock/transaction as the state change;
+that lock is acquired before reloading membership or Connection state. The
+allowlisted payload includes only the surrogate-safe summarized Connection
+name (at most 200 UTF-16 code units), never provider responses or credential
+material.
+
+The scheduled publisher claims one due row at a time with
+`FOR UPDATE SKIP LOCKED`, sends persistent JSON to the durable topic exchange
+(`NOTIFICATION_EXCHANGE`, default `weav.events`), uses `eventType` as the
+routing key and `eventId` as the RabbitMQ message ID, then marks the row only
+after a positive publisher confirm and no mandatory return. Failures retry with
+exponential backoff capped at 60 seconds and are not dropped after an attempt
+limit. RabbitMQ availability does not gate Workspace writes. Disabling the
+publisher only pauses draining; Workspace continues recording events, so the
+outbox can grow until publishing is restored.
+
+Delivery is at-least-once: a process/database failure after RabbitMQ confirms
+but before `published_at` commits can publish the same event again. Consumers
+must deduplicate by `eventId`; exactly-once delivery is not claimed. Workspace
+events do not create Telegram, Expo, or other provider deliveries. A workspace
+name longer than 200 UTF-16 code units is summarized only in the notification
+as a surrogate-safe prefix of at most 199 units plus `…`; the stored/API name
+and the 255-unit Workspace limit are unchanged.
+
+For rollout, apply the additive Workspace Flyway migration before enabling the
+producer, and ensure the Notification consumer has declared/bound its exchange
+and queue before expecting rows to drain. Rolling back the Workspace app does
+not delete queued rows; there is intentionally no destructive down migration.
+
 ## Configuration
 
 The service reads the following names. Values belong in a local secret manager
@@ -191,6 +259,14 @@ variables.
 | `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_CLOCK_SKEW` | JWT verification metadata; defaults are `weav-identity`, `weav-api`, and `30s` |
 | `REDIS_URL` | Redis/Valkey URI; direct-run default is `redis://localhost:6379` |
 | `WORKSPACE_AUTHORIZATION_CACHE_TTL` | Authorization snapshot TTL; defaults to `PT5M` |
+| `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `RABBITMQ_VHOST`, `RABBITMQ_TLS_ENABLED` | RabbitMQ connection settings; development defaults are `rabbitmq`, `5672`, `guest`, `/`, and TLS off; keep credentials in the deployment secret store |
+| `WORKSPACE_RABBITMQ_CONNECTION_TIMEOUT` | Finite RabbitMQ connection deadline; defaults to `3s` |
+| `NOTIFICATION_EXCHANGE` | Notification-owned durable topic exchange; defaults to `weav.events` |
+| `WORKSPACE_NOTIFICATION_PUBLISHER_ENABLED` | Enables scheduled outbox draining only; defaults to `true`, while recording remains enabled |
+| `WORKSPACE_NOTIFICATION_OUTBOX_BATCH_SIZE` | Maximum rows drained per scheduler tick; defaults to `25`, valid range `1`–`250` |
+| `WORKSPACE_NOTIFICATION_OUTBOX_POLL_INTERVAL`, `WORKSPACE_NOTIFICATION_OUTBOX_INITIAL_DELAY` | Scheduled drain interval and initial delay in milliseconds; both default to `1000` |
+| `WORKSPACE_NOTIFICATION_OUTBOX_CONFIRM_TIMEOUT` | Publisher-confirm deadline; defaults to `PT5S`, must be positive and no more than `PT30S` |
+| `WORKSPACE_NOTIFICATION_OUTBOX_MAX_RETRY_DELAY` | Exponential retry cap; defaults to `PT60S`, must be positive and no more than `PT60S` |
 | `CREDENTIAL_ENCRYPTION_KEY` | Required Base64 encoding of exactly 32 random bytes for AES-256-GCM; keep in a secret manager |
 | `CREDENTIAL_ENCRYPTION_KEY_VERSION` | Identifier stored with encrypted credentials; defaults to `v1` |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Google OAuth web client credentials; configure only in a local secret manager or deployment secret store |
@@ -201,11 +277,19 @@ variables.
 | `WORKFLOW_INTERNAL_SERVICE_KEY` | Key Workspace sends to Workflow's internal usage endpoint; keep it in a secret manager and configure the matching Workflow-side key |
 | `WORKFLOW_CONNECT_TIMEOUT`, `WORKFLOW_READ_TIMEOUT` | Finite Workflow HTTP deadlines; defaults are `3s` and `5s` |
 
+The local Compose development example points `GOOGLE_OAUTH_FRONTEND_RETURN_URL`
+to the Vite web app at `http://localhost:5173/connections`. Set this URL to the
+deployed web app's Connections page in each deployed environment. Register the
+configured `GOOGLE_OAUTH_REDIRECT_URI` (the Workspace callback endpoint) with
+the Google OAuth client; it is separate from the frontend return URL.
+
 The OAuth redirect URI comes from service configuration, never from an API
 client. Redis/Valkey is required to store and consume OAuth state; the OAuth
 flow fails closed during a Redis outage. OAuth state contains only workspace,
-connection, user, and provider identifiers. Google access and refresh tokens
-are stored only in the encrypted PostgreSQL credential payload. Gmail requests
+connection, user, and provider identifiers; notification-origin metadata is a
+separate Redis companion and does not change the four-field state payload.
+Google access and refresh tokens are stored only in the encrypted PostgreSQL
+credential payload. Gmail requests
 `openid`, `email`, and `gmail.metadata`; Sheets requests `openid`, `email`, and
 `spreadsheets`. The current scopes do not grant Gmail send or broad Drive access.
 

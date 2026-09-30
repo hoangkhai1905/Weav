@@ -1,0 +1,286 @@
+services:
+  identity-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: task10_identity
+      POSTGRES_USER: task10_runtime
+      POSTGRES_PASSWORD: ${TASK10_IDENTITY_DB_PASSWORD:?Task10 runner must set a disposable password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U task10_runtime -d task10_identity"]
+      interval: 2s
+      timeout: 2s
+      retries: 45
+    restart: "no"
+
+  workspace-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: task10_workspace
+      POSTGRES_USER: task10_runtime
+      POSTGRES_PASSWORD: ${TASK10_WORKSPACE_DB_PASSWORD:?Task10 runner must set a disposable password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U task10_runtime -d task10_workspace"]
+      interval: 2s
+      timeout: 2s
+      retries: 45
+    restart: "no"
+
+  workflow-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: task10_workflow
+      POSTGRES_USER: task10_runtime
+      POSTGRES_PASSWORD: ${TASK10_WORKFLOW_DB_PASSWORD:?Task10 runner must set a disposable password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U task10_runtime -d task10_workflow"]
+      interval: 2s
+      timeout: 2s
+      retries: 45
+    restart: "no"
+
+  notification-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: task10_notification
+      POSTGRES_USER: task10_runtime
+      POSTGRES_PASSWORD: ${TASK10_NOTIFICATION_DB_PASSWORD:?Task10 runner must set a disposable password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U task10_runtime -d task10_notification"]
+      interval: 2s
+      timeout: 2s
+      retries: 45
+    restart: "no"
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    user: "999:999"
+    environment:
+      RABBITMQ_DEFAULT_USER: task10_runtime
+      RABBITMQ_DEFAULT_PASS: ${TASK10_RABBITMQ_PASSWORD:?Task10 runner must set a disposable password}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 45
+    volumes:
+      - task10-rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - "127.0.0.1:${TASK10_RABBITMQ_MANAGEMENT_HOST_PORT:?Task10 runner must set a loopback port}:15672"
+    networks:
+      - default
+      - task10-host-edge
+    restart: "no"
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 45
+    restart: "no"
+
+  identity-service:
+    build:
+      context: ../../../../services/identity-service
+      dockerfile: ../../apps/web/e2e/docker/Dockerfile.task10-identity
+    environment:
+      APP_ENV: test
+      DB_HOST: identity-db
+      DB_PORT: "5432"
+      DB_NAME: task10_identity
+      DB_USERNAME: task10_runtime
+      DB_PASSWORD: ${TASK10_IDENTITY_DB_PASSWORD:?Task10 runner must set a disposable password}
+      DB_SCHEMA: identity
+      DB_SSL_MODE: disable
+      JWT_ACCESS_SECRET: ${TASK10_JWT_ACCESS_SECRET:?Task10 runner must set a disposable signing key}
+      JWT_REFRESH_SECRET: ${TASK10_JWT_REFRESH_SECRET:?Task10 runner must set a disposable signing key}
+      JWT_ISSUER: weav-identity
+      JWT_AUDIENCE: weav-api
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: task10_runtime
+      RABBITMQ_PASSWORD: ${TASK10_RABBITMQ_PASSWORD:?Task10 runner must set a disposable password}
+      IDENTITY_NOTIFICATION_OUTBOX_PUBLISHER_ENABLED: "true"
+      IDENTITY_INTERNAL_SERVICE_KEY: ${TASK10_IDENTITY_INTERNAL_SERVICE_KEY:?Task10 runner must set a disposable service key}
+      SMTP_AUTH_ENABLED: "false"
+      SMTP_STARTTLS_ENABLED: "false"
+      SMTP_SSL_ENABLED: "false"
+      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx512m -XX:MaxMetaspaceSize=192m"
+    depends_on:
+      identity-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    restart: "no"
+
+  workspace-service:
+    build:
+      context: ../../../../services/workspace-service
+      dockerfile: ../../apps/web/e2e/docker/Dockerfile.task10-workspace
+    environment:
+      APP_ENV: test
+      DB_HOST: workspace-db
+      DB_PORT: "5432"
+      DB_NAME: task10_workspace
+      DB_USERNAME: task10_runtime
+      DB_PASSWORD: ${TASK10_WORKSPACE_DB_PASSWORD:?Task10 runner must set a disposable password}
+      DB_SCHEMA: workspace
+      DB_SSL_MODE: disable
+      JWT_ACCESS_SECRET: ${TASK10_JWT_ACCESS_SECRET:?Task10 runner must set a disposable signing key}
+      JWT_REFRESH_SECRET: ${TASK10_JWT_REFRESH_SECRET:?Task10 runner must set a disposable signing key}
+      JWT_ISSUER: weav-identity
+      JWT_AUDIENCE: weav-api
+      CREDENTIAL_ENCRYPTION_KEY: ${TASK10_CREDENTIAL_ENCRYPTION_KEY:?Task10 runner must set a disposable key}
+      IDENTITY_SERVICE_URL: http://identity-service:8080
+      IDENTITY_INTERNAL_SERVICE_KEY: ${TASK10_IDENTITY_INTERNAL_SERVICE_KEY:?Task10 runner must set a disposable service key}
+      WEAV_INTERNAL_SERVICE_KEY: ${TASK10_WEAV_INTERNAL_SERVICE_KEY:?Task10 runner must set a disposable service key}
+      WORKFLOW_SERVICE_URL: http://workflow-service:8080
+      WORKFLOW_INTERNAL_SERVICE_KEY: ${TASK10_WORKFLOW_INTERNAL_SERVICE_KEY:?Task10 runner must set a disposable service key}
+      REDIS_URL: redis://valkey:6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: task10_runtime
+      RABBITMQ_PASSWORD: ${TASK10_RABBITMQ_PASSWORD:?Task10 runner must set a disposable password}
+      RABBITMQ_VHOST: /
+      RABBITMQ_TLS_ENABLED: "false"
+      WORKSPACE_NOTIFICATION_PUBLISHER_ENABLED: "true"
+      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx512m -XX:MaxMetaspaceSize=192m"
+    depends_on:
+      workspace-db:
+        condition: service_healthy
+      identity-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    restart: "no"
+
+  workflow-service:
+    build:
+      context: ../../../../services/workflow-service
+      dockerfile: ../../apps/web/e2e/docker/Dockerfile.task10-workflow
+      additional_contexts:
+        contracts: ../../../../packages/contracts
+    environment:
+      APP_ENV: test
+      DB_HOST: workflow-db
+      DB_PORT: "5432"
+      DB_NAME: task10_workflow
+      DB_USERNAME: task10_runtime
+      DB_PASSWORD: ${TASK10_WORKFLOW_DB_PASSWORD:?Task10 runner must set a disposable password}
+      DB_SCHEMA: workflow
+      DB_SSL_MODE: disable
+      JWT_ACCESS_SECRET: ${TASK10_JWT_ACCESS_SECRET:?Task10 runner must set a disposable signing key}
+      JWT_ISSUER: weav-identity
+      JWT_AUDIENCE: weav-api
+      WORKSPACE_SERVICE_URL: http://workspace-service:8080
+      WEAV_INTERNAL_SERVICE_KEY: ${TASK10_WEAV_INTERNAL_SERVICE_KEY:?Task10 runner must set a disposable service key}
+      WORKFLOW_INTERNAL_SERVICE_KEY: ${TASK10_WORKFLOW_INTERNAL_SERVICE_KEY:?Task10 runner must set a disposable service key}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: task10_runtime
+      RABBITMQ_PASSWORD: ${TASK10_RABBITMQ_PASSWORD:?Task10 runner must set a disposable password}
+      RABBITMQ_VHOST: /
+      WORKFLOW_NOTIFICATION_OUTBOX_PUBLISHER_ENABLED: "true"
+      WORKFLOW_EXECUTION_WORKER_ENABLED: "true"
+      WORKFLOW_EXECUTION_RECOVERY_INITIAL_DELAY: "3600000"
+      WORKFLOW_EXECUTION_RECOVERY_POLL_INTERVAL: "3600000"
+      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx512m -XX:MaxMetaspaceSize=192m"
+    depends_on:
+      workflow-db:
+        condition: service_healthy
+      workspace-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    restart: "no"
+
+  notification-service:
+    build:
+      context: ../../../../
+      dockerfile: services/notification-service/Dockerfile.dev
+    command: ["sh", "-lc", "pnpm db:migrate && pnpm build && pnpm start:prod"]
+    environment:
+      PORT: "3000"
+      APP_ENV: test
+      NODE_ENV: production
+      DB_HOST: notification-db
+      DB_PORT: "5432"
+      DB_NAME: task10_notification
+      DB_USERNAME: task10_runtime
+      DB_PASSWORD: ${TASK10_NOTIFICATION_DB_PASSWORD:?Task10 runner must set a disposable password}
+      DB_SCHEMA: notification
+      DB_SSL_MODE: disable
+      NOTIFICATION_MIGRATION_URL: postgresql://task10_runtime:${TASK10_NOTIFICATION_DB_PASSWORD:?Task10 runner must set a disposable password}@notification-db:5432/task10_notification?schema=notification
+      JWT_ACCESS_SECRET: ${TASK10_JWT_ACCESS_SECRET:?Task10 runner must set a disposable signing key}
+      JWT_ISSUER: weav-identity
+      JWT_AUDIENCE: weav-api
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: task10_runtime
+      RABBITMQ_PASSWORD: ${TASK10_RABBITMQ_PASSWORD:?Task10 runner must set a disposable password}
+      RABBITMQ_VHOST: /
+      RABBITMQ_TLS: "false"
+      NOTIFICATION_EXCHANGE: weav.events
+      NOTIFICATION_QUEUE: task10.notification.v2
+      NOTIFICATION_DLQ: task10.notification.v2.dlq
+      NOTIFICATION_TELEGRAM_ENABLED: "false"
+      NOTIFICATION_EXPO_ENABLED: "false"
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: "no"
+
+  api-gateway:
+    build:
+      context: ../../../../
+      dockerfile: services/api-gateway/Dockerfile.dev
+    command: ["sh", "-lc", "pnpm build && pnpm start:prod"]
+    environment:
+      PORT: "3000"
+      APP_ENV: test
+      NODE_ENV: production
+      JWT_ACCESS_SECRET: ${TASK10_JWT_ACCESS_SECRET:?Task10 runner must set a disposable signing key}
+      JWT_ISSUER: weav-identity
+      JWT_AUDIENCE: weav-api
+      IDENTITY_SERVICE_URL: http://identity-service:8080
+      WORKSPACE_SERVICE_URL: http://workspace-service:8080
+      WORKFLOW_SERVICE_URL: http://workflow-service:8080
+      NOTIFICATION_SERVICE_URL: http://notification-service:3000
+      CORS_ALLOWED_ORIGINS: ${TASK10_CORS_ALLOWED_ORIGINS:?Task10 runner must set disposable loopback origins}
+      GATEWAY_AUTH_RATE_LIMIT: "100"
+    depends_on:
+      identity-service:
+        condition: service_started
+      workspace-service:
+        condition: service_started
+      workflow-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${TASK10_API_GATEWAY_HOST_PORT:?Task10 runner must set a loopback port}:3000"
+    networks:
+      - default
+      - task10-host-edge
+    restart: "no"
+
+networks:
+  default:
+    internal: true
+  task10-host-edge:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"
+
+volumes:
+  task10-rabbitmq-data:

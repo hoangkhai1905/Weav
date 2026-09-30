@@ -1,6 +1,8 @@
 package com.weav.identity.application.usecase;
 
 import com.weav.identity.application.dto.ChangePasswordCommand;
+import com.weav.identity.application.notification.IdentitySecurityEventType;
+import com.weav.identity.application.notification.IdentitySecurityNotificationRecorder;
 import com.weav.identity.application.port.out.PasswordHasher;
 import com.weav.identity.application.port.out.TransactionRunner;
 import com.weav.identity.application.security.CurrentIdentityGuard;
@@ -28,6 +30,7 @@ public final class ChangePasswordUseCase {
     private final TransactionRunner transactionRunner;
     private final AuthInputPolicy inputPolicy;
     private final Clock clock;
+    private final IdentitySecurityNotificationRecorder notificationRecorder;
 
     public ChangePasswordUseCase(
             CurrentIdentityGuard identityGuard,
@@ -36,7 +39,8 @@ public final class ChangePasswordUseCase {
             PasswordHasher passwordHasher,
             TransactionRunner transactionRunner,
             AuthInputPolicy inputPolicy,
-            Clock clock
+            Clock clock,
+            IdentitySecurityNotificationRecorder notificationRecorder
     ) {
         this.identityGuard = Objects.requireNonNull(identityGuard);
         this.userRepository = Objects.requireNonNull(userRepository);
@@ -45,6 +49,7 @@ public final class ChangePasswordUseCase {
         this.transactionRunner = Objects.requireNonNull(transactionRunner);
         this.inputPolicy = Objects.requireNonNull(inputPolicy);
         this.clock = Objects.requireNonNull(clock);
+        this.notificationRecorder = Objects.requireNonNull(notificationRecorder);
     }
 
     public void execute(UUID userId, UUID sessionId, ChangePasswordCommand command) {
@@ -76,6 +81,7 @@ public final class ChangePasswordUseCase {
             lockedUser.changePassword(replacementHash, now);
             userRepository.save(lockedUser);
             sessionRepository.revokeAllForUser(userId, now);
+            notificationRecorder.record(IdentitySecurityEventType.PASSWORD_CHANGED, userId);
             return null;
         });
     }

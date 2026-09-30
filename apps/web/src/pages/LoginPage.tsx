@@ -13,7 +13,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const { loginMock, setUser } = useAuthStore();
   const { theme, toggleTheme } = useUIStore();
-  const { language, toggleLanguage } = useI18nStore();
+  const { language, toggleLanguage, t } = useI18nStore();
 
   const [email, setEmail] = useState(
     isAuthMockMode ? 'truong@example.com' : '',
@@ -31,12 +31,8 @@ export function LoginPage() {
       const session = await authApi.login(email, password);
       setUser(session.user);
       navigate('/dashboard');
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : 'Unable to sign in. Please try again.',
-      );
+    } catch {
+      setError(t('auth.login_failed'));
     } finally {
       setLoading(false);
     }
@@ -47,13 +43,9 @@ export function LoginPage() {
     setError('');
     try {
       await authApi.startGoogleLogin();
-    } catch (error) {
+    } catch {
       setGoogleLoading(false);
-      setError(
-        error instanceof Error
-          ? error.message
-          : 'Unable to start Google sign-in. Please try again.',
-      );
+      setError(t('auth.google_start_failed'));
     }
   };
 
@@ -75,6 +67,7 @@ export function LoginPage() {
         <div className="flex items-center gap-2.5">
           <button
             onClick={toggleLanguage}
+            aria-label={language === 'VI' ? t('topbar.switch_to_english') : t('topbar.switch_to_vietnamese')}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700/60 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 transition-all cursor-pointer shadow-sm"
           >
             <Globe size={14} className="text-blue-500" />
@@ -83,17 +76,18 @@ export function LoginPage() {
 
           <button
             onClick={toggleTheme}
+            aria-label={theme === 'light' ? t('common.light_theme') : t('common.dark_theme')}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700/60 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 transition-all cursor-pointer shadow-sm"
           >
             {theme === 'light' ? (
               <>
                 <Sun size={15} className="text-amber-500" />
-                <span>Light</span>
+                <span>{t('common.light_theme')}</span>
               </>
             ) : (
               <>
                 <Moon size={15} className="text-blue-400" />
-                <span>Dark</span>
+                <span>{t('common.dark_theme')}</span>
               </>
             )}
           </button>
@@ -113,10 +107,10 @@ export function LoginPage() {
             <div>
               <div className="space-y-1.5 mb-6">
                 <h1 className="text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
-                  Welcome back
+                  {t('auth.welcome_back')}
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Sign in to manage workflows, monitor executions & AI nodes.
+                  {t('auth.login_intro')}
                 </p>
               </div>
 
@@ -131,10 +125,11 @@ export function LoginPage() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Email Address
+                    {t('auth.email')}
                   </label>
                   <input
                     type="email"
+                    aria-label={t('auth.email')}
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -144,10 +139,11 @@ export function LoginPage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Password
+                    {t('auth.password')}
                   </label>
                   <input
                     type="password"
+                    aria-label={t('auth.password')}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -162,13 +158,13 @@ export function LoginPage() {
                       defaultChecked
                       className="rounded border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-blue-600"
                     />
-                    <span>Remember me</span>
+                    <span>{t('auth.remember_me')}</span>
                   </label>
                   <Link
                     to="/forgot-password"
                     className="text-blue-600 dark:text-blue-400 font-semibold hover:underline"
                   >
-                    Forgot password?
+                    {t('auth.forgot_password')}
                   </Link>
                 </div>
 
@@ -177,7 +173,7 @@ export function LoginPage() {
                   disabled={loading || googleLoading}
                   className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer border border-blue-400/30"
                 >
-                  <span>{loading ? 'Logging in...' : 'Sign In'}</span>
+                  <span>{loading ? t('auth.logging_in') : t('auth.sign_in')}</span>
                   <ArrowRight size={16} />
                 </button>
               </form>
@@ -189,7 +185,7 @@ export function LoginPage() {
                       <div className="w-full border-t border-slate-200 dark:border-slate-800" />
                     </div>
                     <span className="relative bg-white px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:bg-slate-900 dark:text-slate-500">
-                      Or continue with
+                      {t('auth.or_continue')}
                     </span>
                   </div>
 
@@ -200,11 +196,11 @@ export function LoginPage() {
                     className="w-full py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait disabled:opacity-60"
                   >
                     {googleLoading ? (
-                      <span>Connecting to Google…</span>
+                      <span>{t('auth.connecting_google')}</span>
                     ) : (
                       <>
                         <Globe size={16} className="text-blue-500" />
-                        <span>Continue with Google</span>
+                        <span>{t('auth.continue_google')}</span>
                       </>
                     )}
                   </button>
@@ -218,7 +214,7 @@ export function LoginPage() {
                       <div className="w-full border-t border-slate-200 dark:border-slate-800" />
                     </div>
                     <span className="relative bg-white dark:bg-slate-900 px-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                      Quick Access
+                      {t('auth.quick_access')}
                     </span>
                   </div>
 
@@ -228,19 +224,19 @@ export function LoginPage() {
                     className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Sparkles size={16} className="text-blue-500" />
-                    <span>Quick Demo Login (Nguyễn Anh Xuân Trường)</span>
+                    <span>{t('auth.quick_demo')}</span>
                   </button>
                 </>
               )}
             </div>
 
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80 text-center text-xs text-slate-500 dark:text-slate-400">
-              Don't have an account?{' '}
+              {t('auth.no_account')}{' '}
               <Link
                 to="/register"
                 className="text-blue-600 dark:text-blue-400 font-bold hover:underline"
               >
-                Register here
+                {t('auth.register_now')}
               </Link>
             </div>
           </motion.div>
@@ -259,7 +255,7 @@ export function LoginPage() {
 
       {/* Footer copyright */}
       <footer className="w-full text-center text-[11px] text-slate-400 dark:text-slate-500 z-20 shrink-0 pt-2">
-        WEAV Automation V1.0 • Built for Modern AI Engineering
+        {t('auth.footer')}
       </footer>
     </div>
   );

@@ -208,7 +208,8 @@ class CredentialUseCasesTest {
                 authorizationPolicy,
                 viewAssembler,
                 (workspaceId, connectionId) -> false,
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                workspaceId -> { });
 
         assertThat(useCase.execute(CREATOR_ID, WORKSPACE_ID, CONNECTION_ID).status())
                 .isEqualTo(ConnectionStatus.DISABLED);
@@ -266,7 +267,8 @@ class CredentialUseCasesTest {
                 crypto,
                 viewAssembler,
                 (workspaceId, connectionId) -> false,
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                workspaceId -> { });
     }
 
     private static Connection connection(

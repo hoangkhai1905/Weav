@@ -1,8 +1,10 @@
 package com.weav.workflow.application.service;
 
 import com.weav.workflow.application.dto.CreateWorkflowCommand;
+import com.weav.workflow.application.notification.WorkflowNotificationEvent;
 import com.weav.workflow.application.port.out.ConnectionReferenceUnavailableException;
 import com.weav.workflow.application.port.out.ConnectionReferencePort;
+import com.weav.workflow.application.port.out.WorkflowNotificationOutboxPort;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
 import com.weav.workflow.application.usecase.CreateWorkflowUseCase;
 import com.weav.workflow.domain.definition.DefinitionValidator;
@@ -14,6 +16,7 @@ import com.weav.workflow.domain.exception.ResourceNotFoundException;
 import com.weav.workflow.domain.model.aggregate.workflow.Workflow;
 import com.weav.workflow.domain.port.out.WorkflowRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayDeque;
@@ -37,6 +40,7 @@ public class WorkflowDraftService {
     private final WorkspaceAuthorization workspaceAuthorization;
     private final WorkspaceConnectionPort workspaceConnections;
     private final Optional<ConnectionReferencePort> connectionReferences;
+    private final WorkflowNotificationOutboxPort notificationOutbox;
     private final DefinitionValidator definitionValidator = new DefinitionValidator();
 
     public WorkflowDraftService(
@@ -45,11 +49,24 @@ public class WorkflowDraftService {
             WorkspaceAuthorization workspaceAuthorization,
             WorkspaceConnectionPort workspaceConnections,
             Optional<ConnectionReferencePort> connectionReferences) {
+        this(createWorkflow, workflowRepository, workspaceAuthorization, workspaceConnections,
+                connectionReferences, event -> { });
+    }
+
+    @Autowired
+    public WorkflowDraftService(
+            CreateWorkflowUseCase createWorkflow,
+            WorkflowRepository workflowRepository,
+            WorkspaceAuthorization workspaceAuthorization,
+            WorkspaceConnectionPort workspaceConnections,
+            Optional<ConnectionReferencePort> connectionReferences,
+            WorkflowNotificationOutboxPort notificationOutbox) {
         this.createWorkflow = Objects.requireNonNull(createWorkflow, "createWorkflow must not be null");
         this.workflowRepository = Objects.requireNonNull(workflowRepository, "workflowRepository must not be null");
         this.workspaceAuthorization = Objects.requireNonNull(workspaceAuthorization, "workspaceAuthorization must not be null");
         this.workspaceConnections = Objects.requireNonNull(workspaceConnections, "workspaceConnections must not be null");
         this.connectionReferences = Objects.requireNonNull(connectionReferences, "connectionReferences must not be null");
+        this.notificationOutbox = Objects.requireNonNull(notificationOutbox, "notificationOutbox must not be null");
     }
 
     @Transactional
@@ -57,7 +74,10 @@ public class WorkflowDraftService {
         Objects.requireNonNull(command, "command must not be null");
         workspaceAuthorization.require(command.workspaceId(), command.actorId(), "WORKFLOW_CREATE");
         validateName(command.name());
-        return createWorkflow.execute(command);
+        Workflow created = createWorkflow.execute(command);
+        notificationOutbox.record(WorkflowNotificationEvent.lifecycle("workflow.created", created.getWorkspaceId(),
+                command.actorId(), created.getId(), created.getName(), created.getCreatedAt()));
+        return created;
     }
 
     @Transactional

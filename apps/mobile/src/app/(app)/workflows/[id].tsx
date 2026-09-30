@@ -6,6 +6,7 @@ import { ArrowLeft, Play, Pause, Layers, X } from 'lucide-react-native';
 import { useWorkflowDetail } from '../../../features/workflows/hooks/useWorkflowDetail';
 import { usePauseWorkflow, useResumeWorkflow } from '../../../features/workflows/hooks/useWorkflows';
 import { useRunWorkflow } from '../../../features/workflows/hooks/useRunWorkflow';
+import { completeWorkflowRunInCurrentSession } from '../../../features/workflows/run-workflow.session';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 
@@ -41,7 +42,11 @@ export default function WorkflowDetailScreen() {
         input = { rawPayload: payloadInput };
       }
     }
-    const res = await runMutation.mutateAsync({ id: workflow.id, input });
+    const completion = await completeWorkflowRunInCurrentSession(
+      () => runMutation.mutateAsync({ id: workflow.id, input }),
+    );
+    if (completion.status !== 'success') return;
+    const res = completion.result;
     setShowRunModal(false);
     setPayloadInput('');
     if (res?.executionId) {

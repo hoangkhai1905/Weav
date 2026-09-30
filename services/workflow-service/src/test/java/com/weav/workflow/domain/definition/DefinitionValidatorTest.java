@@ -24,6 +24,26 @@ class DefinitionValidatorTest {
     private final DefinitionValidator validator = new DefinitionValidator();
 
     @Test
+    void emailDraftMaySkipConnectionButPublishRequiresALiteralGmailConnection() {
+        Map<String, Object> message = Map.of("to", "person@example.test", "subject", "Ready", "body", "Done");
+        WorkflowDefinition withoutConnection = definition(
+                List.of(manual("manual"), node("email", "email.send", message)),
+                List.of(edge("e1", "manual", "email")));
+        java.util.Map<String, Object> mappedConnection = new java.util.HashMap<>(message);
+        mappedConnection.put("connectionId", "{{ trigger.input.connectionId }}");
+        WorkflowDefinition withMappedConnection = definition(
+                List.of(manual("manual"), node("email", "email.send", mappedConnection)),
+                List.of(edge("e1", "manual", "email")));
+
+        assertTrue(validator.validateDraft(withoutConnection).isEmpty());
+        assertTrue(validator.validatePublish(withoutConnection).stream()
+                .anyMatch(issue -> issue.field().equals("config.connectionId")
+                        && issue.code().equals("REQUIRED_FIELD_MISSING")));
+        assertTrue(validator.validateDraft(withMappedConnection).stream()
+                .anyMatch(issue -> issue.field().equals("config.connectionId")));
+    }
+
+    @Test
     void draftAllowsIncompleteConfigurationAndDefersPublishGraphSemantics() {
         WorkflowDefinition draft = definition(
                 List.of(manual("manual"), node("request", "http.request", Map.of())),
@@ -141,7 +161,8 @@ class DefinitionValidatorTest {
                 node("webhook", "trigger.webhook", Map.of()),
                 node("telegram-trigger", "trigger.telegram", Map.of()),
                 node("request", "http.request", httpConfig()),
-                node("email", "email.send", Map.of("to", "person@example.test", "subject", "Ready", "body", "Done")),
+                node("email", "email.send", Map.of("connectionId", connectionId.toString(), "to", "person@example.test",
+                        "subject", "Ready", "body", "Done")),
                 node("sheets", "google.sheets", Map.of("connectionId", connectionId.toString(), "operation", "read",
                         "spreadsheetId", "sheet-id", "range", "Sheet1!A1")),
                 node("telegram-send", "telegram.send_message", Map.of("chatId", "123", "text", "Done")),

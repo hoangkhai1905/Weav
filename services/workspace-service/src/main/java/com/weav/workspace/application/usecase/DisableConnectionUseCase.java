@@ -1,8 +1,10 @@
 package com.weav.workspace.application.usecase;
 
 import com.weav.workspace.application.dto.ConnectionResponse;
+import com.weav.workspace.application.notification.ConnectionNotificationRecorder;
 import com.weav.workspace.application.port.out.WorkflowConnectionUsagePort;
 import com.weav.workspace.application.port.out.TransactionRunner;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.service.ConnectionAuthorizationPolicy;
 import com.weav.workspace.application.service.ConnectionUsageProtection;
 import com.weav.workspace.application.service.ConnectionViewAssembler;
@@ -30,6 +32,7 @@ public final class DisableConnectionUseCase {
     private final ConnectionAuthorizationPolicy authorizationPolicy;
     private final ConnectionViewAssembler viewAssembler;
     private final ConnectionUsageProtection usageProtection;
+    private final ConnectionNotificationRecorder notificationRecorder;
 
     @Autowired
     public DisableConnectionUseCase(
@@ -39,7 +42,9 @@ public final class DisableConnectionUseCase {
             ConnectionAuthorizationPolicy authorizationPolicy,
             ConnectionViewAssembler viewAssembler,
             WorkflowConnectionUsagePort workflowConnectionUsagePort,
-            TransactionRunner transactionRunner) {
+            TransactionRunner transactionRunner,
+            WorkspaceMutationLock workspaceMutationLock,
+            ConnectionNotificationRecorder notificationRecorder) {
         this(
                 connectionRepository,
                 membershipRepository,
@@ -51,7 +56,9 @@ public final class DisableConnectionUseCase {
                         membershipRepository,
                         authorizationPolicy,
                         workflowConnectionUsagePort,
-                        transactionRunner));
+                        transactionRunner,
+                        workspaceMutationLock),
+                notificationRecorder);
     }
 
     private DisableConnectionUseCase(
@@ -60,13 +67,15 @@ public final class DisableConnectionUseCase {
             CredentialRepository credentialRepository,
             ConnectionAuthorizationPolicy authorizationPolicy,
             ConnectionViewAssembler viewAssembler,
-            ConnectionUsageProtection usageProtection) {
+            ConnectionUsageProtection usageProtection,
+            ConnectionNotificationRecorder notificationRecorder) {
         this.connectionRepository = Objects.requireNonNull(connectionRepository);
         this.membershipRepository = Objects.requireNonNull(membershipRepository);
         this.credentialRepository = Objects.requireNonNull(credentialRepository);
         this.authorizationPolicy = Objects.requireNonNull(authorizationPolicy);
         this.viewAssembler = Objects.requireNonNull(viewAssembler);
         this.usageProtection = Objects.requireNonNull(usageProtection);
+        this.notificationRecorder = Objects.requireNonNull(notificationRecorder);
     }
 
     public ConnectionResponse execute(UUID actorUserId, UUID workspaceId, UUID connectionId) {
@@ -86,6 +95,7 @@ public final class DisableConnectionUseCase {
             if (connection.getStatus() != ConnectionStatus.DISABLED) {
                 connection.markDisabled();
                 connectionRepository.save(connection);
+                notificationRecorder.recordDisabled(connection, actorUserId);
             }
             Credential credential = credentialRepository.findByConnectionId(connection.getId()).orElse(null);
             return viewAssembler.assemble(connection, membership, credential);

@@ -1,7 +1,9 @@
 import { motion } from 'framer-motion';
 import { Play, Webhook, Mail, Sparkles, Send, CheckCircle2, Zap, Layers } from 'lucide-react';
+import { useI18nStore } from '../../store/useI18nStore';
 
 export function AnimatedWorkflowShowcase() {
+  const { t } = useI18nStore();
   return (
     <div className="w-full h-full flex flex-col justify-between p-6 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-sky-500/10 dark:from-blue-950/40 dark:via-slate-900 dark:to-indigo-950/40 rounded-3xl border border-slate-200/80 dark:border-slate-800 relative overflow-hidden select-none">
       {/* Ambient background particles */}
@@ -12,10 +14,10 @@ export function AnimatedWorkflowShowcase() {
       <div className="relative z-10 space-y-2">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 border border-blue-500/20 text-xs font-bold shadow-sm">
           <Sparkles size={14} className="text-blue-500 animate-spin" />
-          <span>Real-Time AI Node Graph</span>
+          <span>{t('auth.showcase.title')}</span>
         </div>
         <h2 className="text-xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
-          Automate complex workflows visually.
+          {t('auth.showcase.subtitle')}
         </h2>
       </div>
 
@@ -75,7 +77,7 @@ export function AnimatedWorkflowShowcase() {
                 <Play size={14} />
               </div>
               <div className="truncate">
-                <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">Manual Run</div>
+                <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">{t('auth.showcase.manual_run')}</div>
                 <div className="text-[9px] text-slate-400 font-mono">trigger.manual</div>
               </div>
             </motion.div>
@@ -90,7 +92,7 @@ export function AnimatedWorkflowShowcase() {
                 <Webhook size={14} />
               </div>
               <div className="truncate">
-                <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">Webhook In</div>
+                <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">{t('auth.showcase.webhook_in')}</div>
                 <div className="text-[9px] text-slate-400 font-mono">trigger.webhook</div>
               </div>
             </motion.div>
@@ -103,12 +105,12 @@ export function AnimatedWorkflowShowcase() {
             className="p-3 bg-white dark:bg-slate-900 border-l-4 border-l-blue-500 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl flex flex-col items-center gap-1.5 w-40 text-center relative"
           >
             <span className="absolute -top-2.5 px-2 py-0.5 rounded-full bg-blue-500 text-white text-[9px] font-bold shadow">
-              AI Compiler
+              {t('auth.showcase.ai_compiler')}
             </span>
             <div className="p-2 rounded-xl bg-blue-500/10 text-blue-500 mt-1">
               <Sparkles size={20} className="animate-spin" />
             </div>
-            <div className="text-xs font-bold text-slate-900 dark:text-slate-100">AI Invoice Extract</div>
+            <div className="text-xs font-bold text-slate-900 dark:text-slate-100">{t('auth.showcase.invoice_node')}</div>
             <div className="text-[9px] text-slate-400 font-mono">ai.extract</div>
           </motion.div>
 
@@ -124,7 +126,7 @@ export function AnimatedWorkflowShowcase() {
                 <Send size={14} />
               </div>
               <div className="truncate">
-                <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">Telegram Alert</div>
+                <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">{t('auth.showcase.telegram_alert')}</div>
                 <div className="text-[9px] text-slate-400 font-mono">telegram.send</div>
               </div>
             </motion.div>
@@ -139,7 +141,7 @@ export function AnimatedWorkflowShowcase() {
                 <Mail size={14} />
               </div>
               <div className="truncate">
-                <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">Send Email</div>
+                <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100 truncate">{t('auth.showcase.send_email')}</div>
                 <div className="text-[9px] text-slate-400 font-mono">email.send</div>
               </div>
             </motion.div>
@@ -152,19 +154,19 @@ export function AnimatedWorkflowShowcase() {
         <div className="p-2.5 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl text-center shadow-sm">
           <Layers size={16} className="mx-auto mb-1 text-blue-500" />
           <span className="block text-[11px] font-bold text-slate-900 dark:text-slate-100">React Flow 12</span>
-          <span className="text-[9px] text-slate-500 dark:text-slate-400">Drag & Drop Canvas</span>
+          <span className="text-[9px] text-slate-500 dark:text-slate-400">{t('auth.showcase.drag_canvas')}</span>
         </div>
 
         <div className="p-2.5 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl text-center shadow-sm">
           <CheckCircle2 size={16} className="mx-auto mb-1 text-emerald-500" />
-          <span className="block text-[11px] font-bold text-slate-900 dark:text-slate-100">99.9% Uptime</span>
-          <span className="text-[9px] text-slate-500 dark:text-slate-400">Reliable Execution</span>
+          <span className="block text-[11px] font-bold text-slate-900 dark:text-slate-100">{t('auth.showcase.uptime')}</span>
+          <span className="text-[9px] text-slate-500 dark:text-slate-400">{t('auth.showcase.reliable_execution')}</span>
         </div>
 
         <div className="p-2.5 bg-white/70 dark:bg-slate-900/70 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-xl text-center shadow-sm">
           <Zap size={16} className="mx-auto mb-1 text-amber-500" />
-          <span className="block text-[11px] font-bold text-slate-900 dark:text-slate-100">10x Speed</span>
-          <span className="text-[9px] text-slate-500 dark:text-slate-400">AI Automation</span>
+          <span className="block text-[11px] font-bold text-slate-900 dark:text-slate-100">{t('auth.showcase.speed')}</span>
+          <span className="text-[9px] text-slate-500 dark:text-slate-400">{t('auth.showcase.ai_automation')}</span>
         </div>
       </div>
     </div>

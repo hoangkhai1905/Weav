@@ -1,6 +1,6 @@
 # WEAV Notification Service
 
-NestJS 11 + Fastify, Prisma 7/PostgreSQL, RabbitMQ, Telegram and Expo Push. Node 24 and the root-declared pnpm version are required. Owns only `notification.notification_deliveries`; no cross-service foreign keys or database reads.
+NestJS 11 + Fastify, Prisma 7/PostgreSQL, RabbitMQ, Telegram and Expo Push. Node 24 and the root-declared pnpm version are required. Owns notification delivery and inbox records in its database; no cross-service foreign keys or database reads.
 
 ## API
 
@@ -12,10 +12,16 @@ All inbox routes require an Identity HS256 access JWT (issuer/audience, expiry, 
 | GET | /api/v1/notifications/unread-count | `{count}` |
 | PATCH | /api/v1/notifications/:id/read | `{item}` |
 | POST | /api/v1/notifications/read-all | `{updatedCount}` |
+| GET | /api/v2/notifications | `{items, nextCursor}` (inbox view) |
+| GET | /api/v2/notifications/unread-count | `{count}` (inbox unread count) |
+| PATCH | /api/v2/notifications/:id/read | `{item}` (inbox view) |
+| POST | /api/v2/notifications/read-all | `{updatedCount}` (inbox read state) |
 | GET | /health | Liveness |
-| GET | /ready | Database table + broker readiness; 503 when unavailable |
+| GET | /ready | Delivery table + inbox table + broker readiness; 503 when unavailable |
 
 The four inbox routes also accept `/api/notifications`. Gateway proxies both prefixes to the same handlers. Notification has no public container port and no send/test-dispatch HTTP endpoint.
+
+The v2 HTTP contract, exact `InboxView` shape, locale/query rules, cursor behavior, errors and read-state compatibility are documented in [`packages/contracts/http/notifications-v2.md`](../../packages/contracts/http/notifications-v2.md). V2 list query values are strict (`limit=1..100`, optional `unreadOnly=true|false`, category `WORKFLOW|WORKSPACE|CONNECTION|SECURITY`, locale `vi|en`, and an opaque cursor); unknown or repeated values are rejected. The verified JWT subject is the only recipient scope.
 
 List query: `limit` defaults to 20 (1–100), opaque `cursor`, `unreadOnly=true|false`, exact `eventType=workflow.completed|workflow.failed`, `status=PENDING|SENDING|SENT|FAILED`. Order is newest `createdAt,id` first. Other query parameters are rejected. A page is per recipient/delivery, not one item per execution. Read operations are idempotent; missing and foreign-user IDs both return 404. Errors follow `{error:{code,message,details:[]},status,timestamp,path}`.
 
@@ -89,6 +95,26 @@ pnpm --dir services/notification-service db:migrate
 pnpm --dir services/notification-service build
 pnpm --dir services/notification-service start:prod
 ```
+
+## Inbox persistence and backfill rollout (Task 2)
+
+Back up and inspect the target database before rollout. Apply the additive inbox migration before deploying a client generated from the updated Prisma schema. The integration worker applies migrations only to disposable local test databases; it never targets a production database.
+
+Production cutover and legacy reconciliation are later operator actions. Quiesce the legacy consumer and legacy mark-read writes before seeding the inbox, and keep them quiesced until a final reconciliation is complete and Task 3 compatible ingestion/API is ready. This task does not synchronize read changes online; a legacy read after an item is seeded can otherwise leave the inbox read state stale.
+
+Task 3 ingestion atomically stores the legacy delivery rows, one inbox item per recipient, and the delivery links in the same transaction. A shared canonical event lock enforces first-persisted-event-wins across legacy and v2 envelopes. Replays cannot add recipients/destinations; v2 events without legacy delivery intent remain inbox-only. These guarantees complement rather than replace the explicit bounded backfill and final reconciliation checks.
+
+Apply the migration before deploying the generated client, then run one explicitly requested bounded reconciliation batch:
+
+```powershell
+pnpm --dir services/notification-service db:migrate
+pnpm --dir services/notification-service build
+pnpm --dir services/notification-service db:reconcile-inbox -- --apply --batch-size 100
+```
+
+Repeat the command while `linkedDeliveries` is greater than zero. Investigate every nonzero `skippedGroups`; do not report the backfill complete while any group remains skipped. Keep the legacy consumer and mark-read writes quiesced through the final pass and verification, then resume ingestion on the Task 3-compatible service. Late deliveries can be linked idempotently to their existing event/user item, but reconciliation does not synchronize read state after that item has been seeded. Legacy delivery reads and v2 inbox reads remain independent; v2 reads do not update worker delivery rows. Enable v2 clients only after the final cutover checks and coordinated client migration.
+
+Application rollback retains the additive inbox table, delivery links, and all original legacy records. There is no automatic destructive down migration. Before another cutover after rollback, reassess legacy reads and reconcile them under quiescence.
 
 ## Verification
 

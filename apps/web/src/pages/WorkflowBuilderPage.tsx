@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ReactFlow,
@@ -39,15 +39,26 @@ import {
   Scan,
   Upload,
   X,
+  Copy,
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
 import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
+import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
+import { useWorkspaceContext } from '../hooks/useWorkspace';
+import { useConnections } from '../hooks/useConnections';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG } from '../lib/constants/nodeCatalog';
 import { getNodeReadinessBadge } from '../lib/nodeReadiness';
+import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
+import type { WebhookProvisioning } from '../api/workflow-v1.api';
+import { workflowToReactFlow, reactFlowToWorkflow } from '../lib/mappers/workflowMapper';
+import type { WorkflowDefinition } from '../types/workflow.types';
+import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
+import { showSuccessToast } from '../lib/feedback/toast';
+import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 
 const SUPPORTED_NODE_TYPES = new Set(NODE_CATALOG.map((item) => item.type));
 
@@ -92,113 +103,21 @@ const catalogDefaultConfig = (type: string): Record<string, unknown> => ({
   ...(NODE_CATALOG.find((item) => item.type === type)?.defaultConfig ?? {}),
 });
 
-// Preset Nodes for Initial Canvas State
+// Keep the former starter canvas only for explicit mock/demo mode. Live workflows
+// always use the nodes returned by Workflow Service.
 const INITIAL_NODES: Node[] = [
-  {
-    id: 'node-manual',
-    type: 'customNode',
-    position: { x: 80, y: 80 },
-    data: {
-      id: 'manual_trigger_v1',
-      nameKey: 'builder.node.manual',
-      nodeType: 'trigger.manual',
-      status: 'idle',
-      executionTime: '',
-      config: catalogDefaultConfig('trigger.manual'),
-    },
-  },
-  {
-    id: 'node-webhook',
-    type: 'customNode',
-    position: { x: 80, y: 300 },
-    data: {
-      id: 'webhook_inbound_v1',
-      name: 'Webhook Trigger',
-      nameKey: 'builder.node.webhook',
-      nodeType: 'trigger.webhook',
-      status: 'idle',
-      executionTime: '',
-      config: catalogDefaultConfig('trigger.webhook'),
-    },
-  },
-  {
-    id: 'node-extract',
-    type: 'customNode',
-    position: { x: 420, y: 180 },
-    data: {
-      id: 'extract_order_v1',
-      name: 'AI Extract Core',
-      nameKey: 'builder.node.ai_extract',
-      nodeType: 'ai.extract',
-      status: 'idle',
-      executionTime: '',
-      config: catalogDefaultConfig('ai.extract'),
-    },
-  },
-  {
-    id: 'node-condition',
-    type: 'customNode',
-    position: { x: 760, y: 180 },
-    data: {
-      id: 'condition_check_v1',
-      name: 'High Value Check',
-      nameKey: 'builder.node.condition',
-      nodeType: 'logic.condition',
-      status: 'idle',
-      executionTime: '',
-      config: catalogDefaultConfig('logic.condition'),
-    },
-  },
-  {
-    id: 'node-notify',
-    type: 'customNode',
-    position: { x: 1100, y: 180 },
-    data: {
-      id: 'notify_slack_v1',
-      name: 'Notify Priority Queue',
-      nameKey: 'builder.node.email',
-      nodeType: 'email.send',
-      status: 'idle',
-      executionTime: '',
-      config: catalogDefaultConfig('email.send'),
-    },
-  },
+  { id: 'node-manual', type: 'customNode', position: { x: 80, y: 80 }, data: { id: 'manual_trigger_v1', nameKey: 'builder.node.manual', nodeType: 'trigger.manual', status: 'idle', executionTime: '', config: catalogDefaultConfig('trigger.manual') } },
+  { id: 'node-webhook', type: 'customNode', position: { x: 80, y: 300 }, data: { id: 'webhook_inbound_v1', name: 'Webhook Trigger', nameKey: 'builder.node.webhook', nodeType: 'trigger.webhook', status: 'idle', executionTime: '', config: catalogDefaultConfig('trigger.webhook') } },
+  { id: 'node-extract', type: 'customNode', position: { x: 420, y: 180 }, data: { id: 'extract_order_v1', name: 'AI Extract Core', nameKey: 'builder.node.ai_extract', nodeType: 'ai.extract', status: 'idle', executionTime: '', config: catalogDefaultConfig('ai.extract') } },
+  { id: 'node-condition', type: 'customNode', position: { x: 760, y: 180 }, data: { id: 'condition_check_v1', name: 'High Value Check', nameKey: 'builder.node.condition', nodeType: 'logic.condition', status: 'idle', executionTime: '', config: catalogDefaultConfig('logic.condition') } },
+  { id: 'node-notify', type: 'customNode', position: { x: 1100, y: 180 }, data: { id: 'notify_slack_v1', name: 'Notify Priority Queue', nameKey: 'builder.node.email', nodeType: 'email.send', status: 'idle', executionTime: '', config: catalogDefaultConfig('email.send') } },
 ];
 
 const INITIAL_EDGES: Edge[] = [
-  {
-    id: 'edge-manual-extract',
-    source: 'node-manual',
-    target: 'node-extract',
-    type: 'execution',
-    animated: false,
-    style: { stroke: '#94a3b8', strokeWidth: 1.75 },
-  },
-  {
-    id: 'edge-1-2',
-    source: 'node-webhook',
-    target: 'node-extract',
-    type: 'execution',
-    animated: false,
-    style: { stroke: '#94a3b8', strokeWidth: 1.75 },
-  },
-  {
-    id: 'edge-2-3',
-    source: 'node-extract',
-    target: 'node-condition',
-    type: 'execution',
-    animated: false,
-    style: { stroke: '#94a3b8', strokeWidth: 1.75 },
-  },
-  {
-    id: 'edge-3-4',
-    source: 'node-condition',
-    sourceHandle: 'true',
-    target: 'node-notify',
-    type: 'execution',
-    animated: false,
-    style: { stroke: '#94a3b8', strokeWidth: 1.75 },
-  },
+  { id: 'edge-manual-extract', source: 'node-manual', target: 'node-extract', type: 'execution', animated: false, style: { stroke: '#94a3b8', strokeWidth: 1.75 } },
+  { id: 'edge-1-2', source: 'node-webhook', target: 'node-extract', type: 'execution', animated: false, style: { stroke: '#94a3b8', strokeWidth: 1.75 } },
+  { id: 'edge-2-3', source: 'node-extract', target: 'node-condition', type: 'execution', animated: false, style: { stroke: '#94a3b8', strokeWidth: 1.75 } },
+  { id: 'edge-3-4', source: 'node-condition', sourceHandle: 'true', target: 'node-notify', type: 'execution', animated: false, style: { stroke: '#94a3b8', strokeWidth: 1.75 } },
 ];
 
 const CONDITION_OPERATORS = [
@@ -220,7 +139,15 @@ const getNodeReadinessMessage = (type: string, config: Record<string, unknown>):
   }
   if (type === 'trigger.telegram') return 'Unavailable: the Bot Service trigger contract has not been approved.';
   if (type === 'telegram.send_message') return 'Unavailable: the Telegram sender contract is not implemented.';
-  if (type === 'email.send') return 'Unavailable: Gmail send capability is not configured.';
+  if (type === 'email.send') {
+    if (!String(config.connectionId ?? '').trim()) {
+      return 'Not configured: select an authorized Gmail connection before publication.';
+    }
+    if (!String(config.to ?? '').trim() || !String(config.subject ?? '').trim()) {
+      return 'Not configured: enter a recipient and subject.';
+    }
+    return undefined;
+  }
   if (type.startsWith('ai.')) return 'Unavailable: the AI provider contract is not implemented.';
   if (type === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
     return 'Not configured: set both condition values before publication.';
@@ -262,7 +189,11 @@ const getPublishBlockers = (nodes: Node[]): string[] => {
     if (type === 'google.sheets' && !String(config.connectionId ?? '').trim()) {
       blockers.add('Google Sheets requires an authorized Workspace connection');
     }
-    if (type === 'trigger.telegram' || type === 'telegram.send_message' || type === 'email.send' || type.startsWith('ai.') || type === 'ocr.extract') {
+    if (type === 'email.send') {
+      const message = getNodeReadinessMessage(type, config);
+      if (message) blockers.add(message);
+    }
+    if (type === 'trigger.telegram' || type === 'telegram.send_message' || type.startsWith('ai.') || type === 'ocr.extract') {
       blockers.add(getNodeReadinessMessage(type, config) ?? `${type} is not configured`);
     }
     if (type === 'ocr.extract') {
@@ -274,23 +205,37 @@ const getPublishBlockers = (nodes: Node[]): string[] => {
   return [...blockers];
 };
 
+type OcrErrorState = { code: string; message: string; retryable?: boolean };
+type OcrScope = { userId: string | null; workspaceId: string | null };
+
 export const WorkflowBuilderPage: React.FC = () => {
+  const refreshNotifications = useNotificationMilestoneRefresh();
+  const { workflowId } = useParams<{ workflowId: string }>();
+  const navigate = useNavigate();
   const { theme } = useUIStore();
-  const { t } = useI18nStore();
-  const { activeWorkspace } = useAuthStore();
+  const { language, t } = useI18nStore();
+  const ariaLabelConfig = useMemo(() => createReactFlowAriaLabelConfig(t, language), [language, t]);
+  const { activeWorkspaceId, userId } = useWorkspaceContext();
   const prefersReducedMotion = useReducedMotion();
   const nodeSequenceRef = useRef(INITIAL_NODES.length);
   const logSequenceRef = useRef(0);
   const executionTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const inspectorRef = useRef<HTMLElement | null>(null);
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(INITIAL_NODES);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(INITIAL_EDGES);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const selectedNodeType = String(selectedNode?.data?.nodeType ?? '');
   const selectedNodeConfig = (selectedNode?.data?.config ?? {}) as Record<string, unknown>;
+  const { data: workspaceConnections, isLoading: isLoadingConnections } = useConnections();
+  const gmailConnections = useMemo(
+    () => (workspaceConnections ?? []).filter(
+      (connection) => connection.provider === 'GMAIL' && connection.status === 'ACTIVE' && connection.canAttach,
+    ),
+    [workspaceConnections],
+  );
   const unsupportedNodeTypes = useMemo(
     () => [...new Set(nodes.map((node) => String(node.data?.nodeType ?? '')).filter((type) => !SUPPORTED_NODE_TYPES.has(type)))],
     [nodes]
@@ -315,8 +260,13 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [inspectorTab, setInspectorTab] = useState<'config' | 'input' | 'output' | 'logs'>('config');
 
   // Workflow Metadata & Status
-  const [workflowTitle, setWorkflowTitle] = useState('Order processing & notification');
+  const [workflow, setWorkflow] = useState<WorkflowDefinition | null>(null);
+  const [workflowTitle, setWorkflowTitle] = useState('');
   const [isSaved, setIsSaved] = useState(true);
+  const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(true);
+  const [isSavingWorkflow, setIsSavingWorkflow] = useState(false);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
+  const [publishedWebhooks, setPublishedWebhooks] = useState<WebhookProvisioning[]>([]);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null);
 
@@ -324,9 +274,74 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [ocrLanguage, setOcrLanguage] = useState('vi+en');
   const [ocrDetectTables, setOcrDetectTables] = useState(true);
   const [ocrFile, setOcrFile] = useState<File | null>(null);
+  const [ocrFileUserId, setOcrFileUserId] = useState<string | null>(null);
   const [ocrResult, setOcrResult] = useState<OcrExtractionResult | null>(null);
-  const [ocrError, setOcrError] = useState<{ code: string; message: string; retryable?: boolean } | null>(null);
+  const [ocrResultScope, setOcrResultScope] = useState<OcrScope | null>(null);
+  const [ocrError, setOcrError] = useState<OcrErrorState | null>(null);
+  const [ocrErrorScope, setOcrErrorScope] = useState<OcrScope | null>(null);
   const [isOcrRunning, setIsOcrRunning] = useState(false);
+  const ocrRequestSequenceRef = useRef(0);
+  const ocrRequestRef = useRef<{
+    requestId: number;
+    userId: string | null;
+    workspaceId: string;
+    controller: AbortController;
+  } | null>(null);
+  const ocrScopeRef = useRef<{ userId: string | null; workspaceId: string | null }>({
+    userId,
+    workspaceId: activeWorkspaceId,
+  });
+  const currentOcrScope: OcrScope = { userId, workspaceId: activeWorkspaceId };
+  const currentUserOcrFile = ocrFileUserId === userId ? ocrFile : null;
+  const visibleOcrResult =
+    ocrResultScope?.userId === userId && ocrResultScope.workspaceId === activeWorkspaceId
+      ? ocrResult
+      : null;
+  const visibleOcrError =
+    ocrErrorScope?.userId === userId && ocrErrorScope.workspaceId === activeWorkspaceId
+      ? ocrError
+      : null;
+
+  const clearOcrResult = () => {
+    setOcrResult(null);
+    setOcrResultScope(null);
+  };
+
+  const setScopedOcrError = (error: OcrErrorState | null, scope = currentOcrScope) => {
+    setOcrError(error);
+    setOcrErrorScope(error ? scope : null);
+  };
+
+  const isCurrentOcrRequest = useCallback(
+    (requestId: number, requestUserId: string | null, requestWorkspaceId: string) => {
+      const request = ocrRequestRef.current;
+      return Boolean(
+        request &&
+          request.requestId === requestId &&
+          ocrScopeRef.current.userId === requestUserId &&
+          ocrScopeRef.current.workspaceId === requestWorkspaceId,
+      );
+    },
+    [],
+  );
+
+  useEffect(() => {
+    ocrScopeRef.current = { userId, workspaceId: activeWorkspaceId };
+    const request = ocrRequestRef.current;
+    if (
+      request &&
+      (request.userId !== userId || request.workspaceId !== activeWorkspaceId)
+    ) {
+      request.controller.abort();
+      ocrRequestRef.current = null;
+      setIsOcrRunning(false);
+    }
+  }, [activeWorkspaceId, userId]);
+
+  useEffect(() => () => {
+    ocrRequestRef.current?.controller.abort();
+    ocrRequestRef.current = null;
+  }, []);
 
   const clearExecutionTimers = useCallback(() => {
     executionTimeoutsRef.current.forEach((timeoutId) => clearTimeout(timeoutId));
@@ -342,6 +357,116 @@ export const WorkflowBuilderPage: React.FC = () => {
   }, []);
 
   useEffect(() => clearExecutionTimers, [clearExecutionTimers]);
+
+  useEffect(() => {
+    let disposed = false;
+    setIsLoadingWorkflow(true);
+    setWorkflowError(null);
+    if (!workflowId) {
+      setWorkflowError('Workflow ID is missing.');
+      setIsLoadingWorkflow(false);
+      return;
+    }
+
+    void workflowApi.getWorkflow(workflowId)
+      .then((loaded) => {
+        if (disposed) return;
+        if (!loaded) {
+          setWorkflow(null);
+          setWorkflowError('Workflow not found in the active workspace.');
+          return;
+        }
+        const flow = isWorkflowMockMode
+          ? {
+              nodes: INITIAL_NODES.map((node) => ({ ...node, position: { ...node.position }, data: { ...node.data, config: { ...(node.data.config as Record<string, unknown>) } } })),
+              edges: INITIAL_EDGES.map((edge) => ({ ...edge, style: edge.style ? { ...edge.style } : undefined })),
+            }
+          : workflowToReactFlow(loaded);
+        setWorkflow(loaded);
+        setWorkflowTitle(loaded.name);
+        setNodes(flow.nodes);
+        setEdges(flow.edges);
+        setIsSaved(true);
+      })
+      .catch((error: unknown) => {
+        if (disposed) return;
+        setWorkflow(null);
+        setWorkflowError(error instanceof Error ? error.message : 'Workflow could not be loaded.');
+      })
+      .finally(() => {
+        if (!disposed) setIsLoadingWorkflow(false);
+      });
+
+    return () => { disposed = true; };
+  }, [workflowId, setNodes, setEdges]);
+
+  const saveDraft = useCallback(async () => {
+    if (!workflow) throw new Error('Workflow is not loaded.');
+    const draft = reactFlowToWorkflow(nodes, edges, { ...workflow, name: workflowTitle });
+    const saved = await workflowApi.updateWorkflow(workflow.id, draft);
+    setWorkflow(saved);
+    setWorkflowTitle(saved.name);
+    setIsSaved(true);
+    return saved;
+  }, [edges, nodes, setWorkflow, setWorkflowTitle, setIsSaved, workflow, workflowTitle]);
+
+  const handleSaveDraft = async () => {
+    setWorkflowError(null);
+    const mutationSession = captureNotificationSession();
+    setIsSavingWorkflow(true);
+    try {
+      await saveDraft();
+      if (isCurrentNotificationSession(mutationSession)) {
+        showSuccessToast('toast.workflow.draft_saved', mutationSession);
+      }
+    } catch (error) {
+      if (isCurrentNotificationSession(mutationSession)) {
+        setWorkflowError(error instanceof Error ? error.message : 'Draft could not be saved.');
+      }
+    } finally {
+      setIsSavingWorkflow(false);
+    }
+  };
+
+  const handlePublishWorkflow = async () => {
+    setWorkflowError(null);
+    const mutationSession = captureNotificationSession();
+    setPublishedWebhooks([]);
+    setIsSavingWorkflow(true);
+    try {
+      const saved = isSaved ? workflow : await saveDraft();
+      if (!saved) throw new Error('Workflow is not loaded.');
+      const publication = await workflowApi.publishWorkflow(saved.id);
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      setWorkflow(publication.workflow);
+      setIsSaved(true);
+      setPublishedWebhooks(publication.webhooks);
+      showSuccessToast('toast.workflow.published', mutationSession);
+      refreshNotifications(mutationSession);
+    } catch (error) {
+      if (isCurrentNotificationSession(mutationSession)) {
+        setWorkflowError(error instanceof Error ? error.message : 'Workflow could not be published.');
+      }
+    } finally {
+      setIsSavingWorkflow(false);
+    }
+  };
+
+  const handleRunWorkflow = async () => {
+    if (!workflow) return;
+    setWorkflowError(null);
+    const mutationSession = captureNotificationSession();
+    try {
+      const accepted = await workflowApi.runWorkflow(workflow.id, {});
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast('toast.workflow.run_accepted', mutationSession);
+      navigate(`/executions?workflowId=${encodeURIComponent(workflow.id)}&executionId=${encodeURIComponent(accepted.executionId)}`);
+    } catch (error) {
+      if (isCurrentNotificationSession(mutationSession)) {
+        setWorkflowError(error instanceof Error ? error.message : 'Workflow execution could not be queued.');
+      }
+    }
+  };
 
   // Telemetry Console State
   const [telemetryOpen, setTelemetryOpen] = useState(true);
@@ -364,7 +489,8 @@ export const WorkflowBuilderPage: React.FC = () => {
   );
 
   const onConnect = useCallback(
-    (params: Connection) =>
+    (params: Connection) => {
+      setIsSaved(false);
       setEdges((eds) =>
         addEdge({
           ...params,
@@ -372,8 +498,17 @@ export const WorkflowBuilderPage: React.FC = () => {
           animated: false,
           style: { stroke: '#94a3b8', strokeWidth: 1.75 },
         }, eds)
-      ),
-    [setEdges]
+      );
+    },
+    [setEdges, setIsSaved]
+  );
+
+  const handleEdgesChange = useCallback(
+    (changes: Parameters<typeof onEdgesChange>[0]) => {
+      onEdgesChange(changes);
+      if (changes.some((change) => change.type !== 'select')) setIsSaved(false);
+    },
+    [onEdgesChange, setIsSaved]
   );
 
   const closeInspector = useCallback(() => {
@@ -385,12 +520,13 @@ export const WorkflowBuilderPage: React.FC = () => {
   const handleNodesChange = useCallback(
     (changes: Parameters<typeof onNodesChange>[0]) => {
       onNodesChange(changes);
+      if (changes.some((change) => change.type !== 'select')) setIsSaved(false);
       if (selectedNodeId && changes.some((change) => change.type === 'remove' && change.id === selectedNodeId)) {
         setSelectedNodeId(null);
         setInspectorOpen(false);
       }
     },
-    [onNodesChange, selectedNodeId]
+    [onNodesChange, selectedNodeId, setIsSaved]
   );
 
   const handleWorkspacePointerDown = useCallback(
@@ -411,8 +547,9 @@ export const WorkflowBuilderPage: React.FC = () => {
       setOcrLanguage(String(config.language ?? 'vi+en'));
       setOcrDetectTables(Boolean(config.detectTables ?? true));
       setOcrFile(null);
-      setOcrResult(null);
-      setOcrError(null);
+      setOcrFileUserId(null);
+      clearOcrResult();
+      setScopedOcrError(null);
     }
     setNodes((nds) =>
       nds.map((n) => ({
@@ -442,14 +579,37 @@ export const WorkflowBuilderPage: React.FC = () => {
 
   const handleOcrFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
+    if (file && !activeWorkspaceId) {
+      event.target.value = '';
+      setOcrFile(null);
+      setOcrFileUserId(null);
+      clearOcrResult();
+      setScopedOcrError({
+        code: 'WORKSPACE_REQUIRED',
+        message: t('ocr.workspace_required'),
+        retryable: false,
+      });
+      return;
+    }
     setOcrFile(file);
-    setOcrResult(null);
-    setOcrError(null);
+    setOcrFileUserId(file ? userId : null);
+    clearOcrResult();
+    setScopedOcrError(null);
+    if (file) updateSelectedNodeConfig({ fileName: file.name });
   };
 
   const handleRunOcr = async () => {
-    if (!ocrFile) {
-      setOcrError({
+    if (ocrRequestRef.current || isOcrRunning) return;
+    if (!activeWorkspaceId) {
+      setScopedOcrError({
+        code: 'WORKSPACE_REQUIRED',
+        message: t('ocr.workspace_required'),
+        retryable: false,
+      });
+      return;
+    }
+    if (!currentUserOcrFile) {
+      setScopedOcrError({
         code: 'INVALID_REQUEST',
         message: t('ocr.file_required'),
         retryable: false,
@@ -457,15 +617,27 @@ export const WorkflowBuilderPage: React.FC = () => {
       return;
     }
 
+    const requestId = ++ocrRequestSequenceRef.current;
+    const requestUserId = userId;
+    const requestWorkspaceId = activeWorkspaceId;
+    const controller = new AbortController();
+    ocrRequestRef.current = {
+      requestId,
+      userId: requestUserId,
+      workspaceId: requestWorkspaceId,
+      controller,
+    };
     setIsOcrRunning(true);
-    setOcrError(null);
+    setScopedOcrError(null);
     try {
       const result = await ocrApi.extractText(
-        ocrFile,
+        currentUserOcrFile,
         { language: ocrLanguage, detectTables: ocrDetectTables },
-        { workspaceId: activeWorkspace?.id || 'ws-main' }
+        { workspaceId: requestWorkspaceId, signal: controller.signal }
       );
+      if (!isCurrentOcrRequest(requestId, requestUserId, requestWorkspaceId)) return;
       setOcrResult(result);
+      setOcrResultScope({ userId: requestUserId, workspaceId: requestWorkspaceId });
       updateSelectedNodeConfig({
         language: ocrLanguage,
         detectTables: ocrDetectTables,
@@ -496,33 +668,52 @@ export const WorkflowBuilderPage: React.FC = () => {
         },
       ]);
     } catch (error) {
+      if (!isCurrentOcrRequest(requestId, requestUserId, requestWorkspaceId)) return;
+      if (controller.signal.aborted) return;
+      if (error instanceof OcrApiError && error.statusCode === 401) {
+        useAuthStore.getState().logout();
+        return;
+      }
       if (error instanceof OcrApiError) {
-        setOcrError({
+        setScopedOcrError({
           code: error.code,
           message: error.message,
           retryable: error.retryable,
         });
       } else if (error instanceof Error) {
-        setOcrError({
+        setScopedOcrError({
           code: 'OCR_ERROR',
           message: error.message,
           retryable: false,
         });
       } else {
-        setOcrError({
+        setScopedOcrError({
           code: 'OCR_FAILED',
           message: t('ocr.failed'),
           retryable: false,
         });
       }
     } finally {
-      setIsOcrRunning(false);
+      if (isCurrentOcrRequest(requestId, requestUserId, requestWorkspaceId)) {
+        ocrRequestRef.current = null;
+        setIsOcrRunning(false);
+      }
     }
   };
 
+  const handleRetryOcr = () => {
+    void handleRunOcr();
+  };
+
   const handleAddCatalogItem = (type: string, name: string, nameKey: string) => {
-    const sequence = ++nodeSequenceRef.current;
-    const newNodeId = `node-${sequence}`;
+    const usedIds = new Set(nodes.map((node) => node.id));
+    let sequence = nodeSequenceRef.current;
+    let newNodeId = '';
+    do {
+      sequence += 1;
+      newNodeId = `node-${sequence}`;
+    } while (usedIds.has(newNodeId));
+    nodeSequenceRef.current = sequence;
     const catalogItem = NODE_CATALOG.find((item) => item.type === type);
     const newNode: Node = {
       id: newNodeId,
@@ -550,8 +741,9 @@ export const WorkflowBuilderPage: React.FC = () => {
       setOcrLanguage('vi+en');
       setOcrDetectTables(true);
       setOcrFile(null);
-      setOcrResult(null);
-      setOcrError(null);
+      setOcrFileUserId(null);
+      clearOcrResult();
+      setScopedOcrError(null);
     }
     setIsSaved(false);
   };
@@ -604,8 +796,11 @@ export const WorkflowBuilderPage: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <input
+              data-testid="workflow-title"
+              aria-label="Workflow name"
               type="text"
               value={workflowTitle}
+              disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
               onChange={(e) => {
                 setWorkflowTitle(e.target.value);
                 setIsSaved(false);
@@ -637,22 +832,38 @@ export const WorkflowBuilderPage: React.FC = () => {
         {/* Top Header Action Buttons */}
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setIsSaved(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md transition-colors"
+            data-testid="workflow-save"
+            onClick={handleSaveDraft}
+            disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
+            aria-busy={isSavingWorkflow}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md transition-colors disabled:cursor-wait disabled:opacity-50"
           >
-            <Save size={13} />
-            <span>{t('builder.save')}</span>
+            {isSavingWorkflow ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+            <span>{isSavingWorkflow ? 'Saving…' : t('builder.save')}</span>
           </button>
 
           <button
             data-testid="workflow-publish"
+            onClick={handlePublishWorkflow}
             aria-describedby={publishBlockers.length > 0 ? 'publish-blocker-summary' : undefined}
             title={publishBlockers.length > 0 ? publishBlockers.join('; ') : undefined}
-            disabled={publishBlockers.length > 0}
+            disabled={publishBlockers.length > 0 || isLoadingWorkflow || isSavingWorkflow || !workflow}
+            aria-busy={isSavingWorkflow}
             className="hidden sm:flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-800 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           >
             <span>{t('builder.publish')}</span>
           </button>
+
+          {workflow?.status === 'PUBLISHED' && (
+            <button
+              data-testid="workflow-run"
+              onClick={handleRunWorkflow}
+              className="hidden sm:flex items-center gap-1.5 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
+            >
+              <Play size={13} />
+              <span>Run</span>
+            </button>
+          )}
 
           <motion.button
             data-testid="workflow-preview"
@@ -679,6 +890,26 @@ export const WorkflowBuilderPage: React.FC = () => {
           </motion.button>
         </div>
       </header>
+
+      {isLoadingWorkflow && <div role="status" className="border-b border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">Loading workflow…</div>}
+      {workflowError && <div role="alert" data-testid="workflow-builder-error" className="border-b border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">{workflowError}</div>}
+      {publishedWebhooks.length > 0 && (
+        <section aria-label="One-time webhook credentials" className="space-y-2 border-b border-amber-300 bg-amber-50 px-3 py-3 text-xs text-amber-950">
+          <div className="flex items-center justify-between gap-3">
+            <p className="font-semibold">Copy these webhook credentials now. The secret will not be returned again.</p>
+            <button type="button" onClick={() => setPublishedWebhooks([])} className="rounded px-2 py-1 hover:bg-amber-100">Dismiss</button>
+          </div>
+          {publishedWebhooks.map((webhook) => (
+            <div key={webhook.triggerId} className="flex flex-wrap items-center gap-2 font-mono">
+              <span>Endpoint key: {webhook.endpointKey}</span>
+              <span>Secret: {webhook.secret}</span>
+              <button type="button" onClick={() => void navigator.clipboard.writeText(webhook.secret)} className="inline-flex items-center gap-1 rounded border border-amber-400 px-2 py-1 hover:bg-amber-100">
+                <Copy size={12} /> Copy secret
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
 
       {publishBlockers.length > 0 && (
         <div
@@ -707,11 +938,17 @@ export const WorkflowBuilderPage: React.FC = () => {
         <div className="flex items-center gap-3 font-mono text-[11px] text-slate-600 dark:text-slate-400">
           <span className="flex items-center gap-1 text-slate-700 dark:text-slate-300 font-medium">
             <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-            Draft
+            {workflow?.status ?? 'Draft'}
           </span>
           <span className="text-slate-400 dark:text-slate-600">|</span>
           <span data-testid="workflow-preview-notice" className="text-slate-500 dark:text-slate-400">
             Visual preview only · no workflow or provider calls
+          </span>
+          <span data-testid="builder-workspace-context" className="text-slate-500 dark:text-slate-400">
+            {t('builder.workspace_context').replace(
+              '{workspace}',
+              activeWorkspaceId ?? t('builder.workspace_not_selected'),
+            )}
           </span>
         </div>
 
@@ -785,9 +1022,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                           key={item.type}
                           data-testid="workflow-palette-item"
                           data-node-type={item.type}
+                          disabled={isLoadingWorkflow || !workflow}
                           onClick={() => handleAddCatalogItem(item.type, item.nameKey ? t(item.nameKey) : item.title, item.nameKey ?? '')}
                           aria-label={item.nameKey ? t(item.nameKey) : item.title}
-                          className="group flex w-full cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-left transition-[background-color,border-color,transform] hover:-translate-y-px hover:border-blue-400/60 hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:border-slate-700/50 dark:bg-slate-800/40 dark:hover:bg-blue-950/25 motion-reduce:hover:translate-y-0"
+                          className="group flex w-full cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-left transition-[background-color,border-color,transform] hover:-translate-y-px hover:border-blue-400/60 hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700/50 dark:bg-slate-800/40 dark:hover:bg-blue-950/25 motion-reduce:hover:translate-y-0"
                         >
                           <ItemIcon size={14} className="mt-0.5 shrink-0 text-slate-500 transition-colors group-hover:text-blue-600 dark:group-hover:text-blue-400" />
                           <div className="flex flex-col min-w-0 flex-1">
@@ -808,10 +1046,11 @@ export const WorkflowBuilderPage: React.FC = () => {
         {/* WORKFLOW CANVAS (CENTER) */}
         <main data-testid="workflow-canvas" className="flex-1 h-full bg-slate-100 dark:bg-slate-950 relative overflow-hidden">
           <ReactFlow
+            ariaLabelConfig={ariaLabelConfig}
             nodes={nodes}
             edges={renderedEdges}
             onNodesChange={handleNodesChange}
-            onEdgesChange={onEdgesChange}
+            onEdgesChange={handleEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
             onPaneClick={closeInspector}
@@ -832,7 +1071,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             {showMinimap && (
               <MiniMap
                 data-testid="workflow-minimap"
-                aria-label="Workflow minimap"
+                aria-label={t('builder.workflow_minimap')}
                 className="workflow-minimap hidden sm:block !bottom-3 !right-3 !m-0 !h-28 !w-44 !rounded-md !border-slate-300 !bg-slate-200/90 !shadow-lg dark:!border-slate-700 dark:!bg-slate-950/90"
                 style={{ width: 176, height: 112, borderRadius: 6 }}
                 nodeColor={(node) => {
@@ -1045,6 +1284,32 @@ export const WorkflowBuilderPage: React.FC = () => {
               ) : selectedNodeType === 'email.send' ? (
                 <div data-testid="email-config" className="space-y-3">
                   <div>
+                    <label htmlFor="email-connection" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Gmail connection</label>
+                    <select
+                      id="email-connection"
+                      data-testid="email-connection"
+                      value={String(selectedNodeConfig.connectionId ?? '')}
+                      // Omit the key when cleared: the Workflow Service rejects an empty connectionId even in drafts.
+                      onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value || undefined })}
+                      disabled={isLoadingConnections}
+                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 disabled:opacity-60 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                    >
+                      <option value="">{isLoadingConnections ? 'Loading connections…' : 'Select a Gmail connection'}</option>
+                      {gmailConnections.map((connection) => (
+                        <option key={connection.id} value={connection.id}>{connection.name}</option>
+                      ))}
+                      {String(selectedNodeConfig.connectionId ?? '').trim()
+                        && !gmailConnections.some((connection) => connection.id === selectedNodeConfig.connectionId) && (
+                        <option value={String(selectedNodeConfig.connectionId)}>Unavailable connection (reconnect or pick another)</option>
+                      )}
+                    </select>
+                    {!isLoadingConnections && gmailConnections.length === 0 && (
+                      <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                        No active Gmail connection. <Link to="/connections" className="text-blue-600 underline dark:text-blue-400">Connect Gmail</Link> first.
+                      </p>
+                    )}
+                  </div>
+                  <div>
                     <label htmlFor="email-to" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Recipient</label>
                     <input id="email-to" value={String(selectedNodeConfig.to ?? '')} onChange={(event) => updateSelectedNodeConfig({ to: event.target.value })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
                   </div>
@@ -1122,13 +1387,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                     </label>
                     <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed border-slate-300 bg-slate-50 px-2.5 py-2 text-xs text-slate-600 transition-colors hover:border-blue-400 hover:bg-blue-50/60 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:border-blue-500/60 dark:hover:bg-blue-950/25">
                       <Upload size={14} className="shrink-0 text-blue-600 dark:text-blue-400" />
-                      <span className="min-w-0 flex-1 truncate">{ocrFile?.name ?? t('ocr.choose_file')}</span>
+                      <span className="min-w-0 flex-1 truncate">{currentUserOcrFile?.name ?? t('ocr.choose_file')}</span>
                       <input
                         id="ocr-file-input"
                         data-testid="ocr-file-input"
                         type="file"
                         accept=".pdf,.png,.jpg,.jpeg,.webp,image/*,application/pdf"
                         onChange={handleOcrFileChange}
+                        disabled={isOcrRunning}
                         className="sr-only"
                       />
                     </label>
@@ -1149,9 +1415,9 @@ export const WorkflowBuilderPage: React.FC = () => {
                         }}
                         className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
                       >
-                        <option value="vi+en">Tiếng Việt + English</option>
-                        <option value="vi">Tiếng Việt</option>
-                        <option value="en">English</option>
+                        <option value="vi+en">{t('builder.language.vi_en')}</option>
+                        <option value="vi">{t('settings.vietnamese')}</option>
+                        <option value="en">{t('settings.english')}</option>
                       </select>
                     </div>
                     <label className="mt-5 flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
@@ -1168,7 +1434,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     </label>
                   </div>
 
-                  {ocrError && (
+                  {visibleOcrError && (
                     <div
                       role="alert"
                       data-testid="ocr-error"
@@ -1176,20 +1442,32 @@ export const WorkflowBuilderPage: React.FC = () => {
                     >
                       <div className="flex items-center justify-between gap-1.5">
                         <span className="font-mono text-[10px] font-semibold uppercase bg-rose-200/70 dark:bg-rose-900/60 px-1 py-0.5 rounded">
-                          {ocrError.code}
+                          {visibleOcrError.code}
                         </span>
-                        {ocrError.retryable && (
+                        {visibleOcrError.retryable && (
                           <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
                             Retryable
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 leading-relaxed">{ocrError.message}</p>
+                      <p className="mt-1 leading-relaxed">{visibleOcrError.message}</p>
+                      {visibleOcrError.retryable && currentUserOcrFile && activeWorkspaceId && (
+                        <button
+                          type="button"
+                          data-testid="ocr-retry"
+                          onClick={handleRetryOcr}
+                          disabled={isOcrRunning}
+                          className="mt-2 rounded border border-rose-300 px-2 py-1 text-[10px] font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-wait disabled:opacity-70 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                        >
+                          Retry OCR
+                        </button>
+                      )}
                     </div>
                   )}
 
                   <button
                     type="button"
+                    data-testid="ocr-submit"
                     onClick={handleRunOcr}
                     disabled={isOcrRunning}
                     className="flex w-full items-center justify-center gap-1.5 rounded bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-70"
@@ -1198,22 +1476,22 @@ export const WorkflowBuilderPage: React.FC = () => {
                     {isOcrRunning ? t('ocr.processing') : t('ocr.extract_text')}
                   </button>
 
-                  {ocrResult && (
+                  {visibleOcrResult && (
                     <div data-testid="ocr-result" className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-900/40">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{t('ocr.result')}</span>
-                          {ocrResult.metadata.quality === 'OK' && (
+                          {visibleOcrResult.metadata.quality === 'OK' && (
                             <span data-testid="ocr-quality-badge" className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
                               ● OK
                             </span>
                           )}
-                          {ocrResult.metadata.quality === 'LOW_CONFIDENCE' && (
+                          {visibleOcrResult.metadata.quality === 'LOW_CONFIDENCE' && (
                             <span data-testid="ocr-quality-badge" className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-amber-600 dark:text-amber-400">
                               ▲ Low Confidence
                             </span>
                           )}
-                          {ocrResult.metadata.quality === 'EMPTY' && (
+                          {visibleOcrResult.metadata.quality === 'EMPTY' && (
                             <span data-testid="ocr-quality-badge" className="rounded border border-slate-400/20 bg-slate-400/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-500 dark:text-slate-400">
                               ○ Empty
                             </span>
@@ -1221,7 +1499,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         </div>
                         <button
                           type="button"
-                          onClick={() => setOcrResult(null)}
+                          onClick={clearOcrResult}
                           className="rounded p-0.5 text-slate-500 transition-colors hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800"
                           aria-label={t('ocr.dismiss_result')}
                         >
@@ -1229,31 +1507,31 @@ export const WorkflowBuilderPage: React.FC = () => {
                         </button>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-[10px]">
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">{t('ocr.pages')}: <strong>{ocrResult.document.pages}</strong></span>
+                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">{t('ocr.pages')}: <strong>{visibleOcrResult.document.pages}</strong></span>
                         <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-                          {t('ocr.confidence')}: <strong>{ocrResult.confidence !== null ? `${(ocrResult.confidence * 100).toFixed(1)}%` : '—'}</strong>
+                          {t('ocr.confidence')}: <strong>{visibleOcrResult.confidence !== null ? `${(visibleOcrResult.confidence * 100).toFixed(1)}%` : '—'}</strong>
                         </span>
                         <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-                          {t('ocr.mime_type')}: <strong>{ocrResult.document.mimeType}</strong>
+                          {t('ocr.mime_type')}: <strong>{visibleOcrResult.document.mimeType}</strong>
                         </span>
                         <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
-                          {t('ocr.tables')}: <strong>{ocrResult.tables?.length ?? 0}</strong>
+                          {t('ocr.tables')}: <strong>{visibleOcrResult.tables?.length ?? 0}</strong>
                         </span>
                       </div>
 
-                      {ocrResult.metadata.quality === 'EMPTY' && (
+                      {visibleOcrResult.metadata.quality === 'EMPTY' && (
                         <div data-testid="ocr-empty-note" className="rounded border border-amber-200/60 bg-amber-50/50 p-2 text-[11px] text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
                           {t('ocr.empty_text')}
                         </div>
                       )}
 
-                      {ocrResult.metadata.warnings && ocrResult.metadata.warnings.length > 0 && (
+                      {visibleOcrResult.metadata.warnings && visibleOcrResult.metadata.warnings.length > 0 && (
                         <div data-testid="ocr-warnings" className="space-y-1">
                           <span className="block text-[10px] font-medium text-amber-700 dark:text-amber-400">
-                            {t('ocr.warnings')} ({ocrResult.metadata.warnings.length})
+                            {t('ocr.warnings')} ({visibleOcrResult.metadata.warnings.length})
                           </span>
                           <div className="space-y-1">
-                            {ocrResult.metadata.warnings.map((w, idx) => (
+                            {visibleOcrResult.metadata.warnings.map((w, idx) => (
                               <div key={idx} className="rounded border border-amber-200/80 bg-amber-50/70 px-2 py-1 text-[10px] text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
                                 <span className="font-mono font-semibold">[{w.code}]</span>{' '}
                                 {w.page ? `(p.${w.page}) ` : ''}
@@ -1266,7 +1544,7 @@ export const WorkflowBuilderPage: React.FC = () => {
 
                       <div>
                         <span className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-400">{t('ocr.raw_text')}</span>
-                        <pre data-testid="ocr-raw-text" className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-slate-200 bg-white/70 p-2 font-mono text-[10px] leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">{ocrResult.text.rawText || '(No text detected)'}</pre>
+                        <pre data-testid="ocr-raw-text" className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-slate-200 bg-white/70 p-2 font-mono text-[10px] leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">{visibleOcrResult.text.rawText || '(No text detected)'}</pre>
                       </div>
                     </div>
                   )}
@@ -1489,7 +1767,13 @@ export const WorkflowBuilderPage: React.FC = () => {
             >
               Preview flow
             </button>
-            <button className="rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
+            <button
+              data-testid="workflow-save-inspector"
+              onClick={handleSaveDraft}
+              disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
+              aria-busy={isSavingWorkflow}
+              className="rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-50"
+            >
               {t('builder.save_changes')}
             </button>
           </div>

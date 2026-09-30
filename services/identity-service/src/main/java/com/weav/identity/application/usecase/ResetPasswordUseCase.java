@@ -1,6 +1,8 @@
 package com.weav.identity.application.usecase;
 
 import com.weav.identity.application.dto.ResetPasswordCommand;
+import com.weav.identity.application.notification.IdentitySecurityEventType;
+import com.weav.identity.application.notification.IdentitySecurityNotificationRecorder;
 import com.weav.identity.application.port.out.KeyedFingerprint;
 import com.weav.identity.application.port.out.OtpChallengeStore;
 import com.weav.identity.application.port.out.PasswordHasher;
@@ -33,6 +35,7 @@ public final class ResetPasswordUseCase {
     private final AuthInputPolicy authInputPolicy;
     private final OtpInputPolicy otpInputPolicy;
     private final Clock clock;
+    private final IdentitySecurityNotificationRecorder notificationRecorder;
 
     public ResetPasswordUseCase(
             UserRepository userRepository,
@@ -43,7 +46,8 @@ public final class ResetPasswordUseCase {
             TransactionRunner transactionRunner,
             AuthInputPolicy authInputPolicy,
             OtpInputPolicy otpInputPolicy,
-            Clock clock
+            Clock clock,
+            IdentitySecurityNotificationRecorder notificationRecorder
     ) {
         this.userRepository = Objects.requireNonNull(userRepository, "userRepository must not be null");
         this.sessionRepository = Objects.requireNonNull(sessionRepository, "sessionRepository must not be null");
@@ -54,6 +58,8 @@ public final class ResetPasswordUseCase {
         this.authInputPolicy = Objects.requireNonNull(authInputPolicy, "authInputPolicy must not be null");
         this.otpInputPolicy = Objects.requireNonNull(otpInputPolicy, "otpInputPolicy must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.notificationRecorder = Objects.requireNonNull(
+                notificationRecorder, "notificationRecorder must not be null");
     }
 
     public void execute(ResetPasswordCommand command) {
@@ -86,6 +92,7 @@ public final class ResetPasswordUseCase {
             lockedUser.markEmailVerified(now);
             userRepository.save(lockedUser);
             sessionRepository.revokeAllForUser(userId, now);
+            notificationRecorder.record(IdentitySecurityEventType.PASSWORD_RESET, userId);
             return null;
         });
     }

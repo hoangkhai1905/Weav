@@ -11,6 +11,8 @@ import { ZodError } from 'zod';
 import { Notifications } from '../application/notifications';
 import { SETTINGS } from '../config/settings';
 import type { Settings } from '../config/settings';
+import { notificationEventTypes } from '../domain/notification-event';
+import { InboxPersistenceConflictError } from './inbox.persistence';
 
 @Injectable()
 export class RabbitConsumer implements OnModuleInit, OnModuleDestroy {
@@ -86,7 +88,7 @@ export class RabbitConsumer implements OnModuleInit, OnModuleDestroy {
           'x-dead-letter-routing-key': s.NOTIFICATION_DLQ,
         },
       });
-      for (const key of ['workflow.completed', 'workflow.failed'])
+      for (const key of notificationEventTypes)
         await channel.bindQueue(
           s.NOTIFICATION_QUEUE,
           s.NOTIFICATION_EXCHANGE,
@@ -126,14 +128,21 @@ export class RabbitConsumer implements OnModuleInit, OnModuleDestroy {
       channel.ack(message);
       this.retry = 0;
     } catch (error) {
-      if (error instanceof SyntaxError || error instanceof ZodError) {
+      if (
+        error instanceof SyntaxError ||
+        error instanceof ZodError ||
+        error instanceof InboxPersistenceConflictError
+      ) {
         // Publish a sanitized durable DLQ record with confirms before acknowledging the original.
         await new Promise<void>((resolve, reject) => {
           channel.sendToQueue(
             this.settings.NOTIFICATION_DLQ,
             Buffer.from(
               JSON.stringify({
-                code: 'INVALID_EXECUTION_EVENT',
+                code:
+                  error instanceof InboxPersistenceConflictError
+                    ? 'PERSISTED_EVENT_CONFLICT'
+                    : 'INVALID_EXECUTION_EVENT',
                 occurredAt: new Date().toISOString(),
               }),
             ),

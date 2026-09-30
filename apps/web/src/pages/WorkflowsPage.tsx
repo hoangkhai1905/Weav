@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
@@ -7,7 +7,6 @@ import {
   Search,
   ChevronDown,
   Play,
-  RotateCw,
   Edit3,
   MoreHorizontal,
   LayoutList,
@@ -23,167 +22,38 @@ import {
   X,
 } from 'lucide-react';
 import type { WorkflowDefinition } from '../types/workflow.types';
-import { workflowApi } from '../api/workflow.api';
+import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import { WorkflowGlyph } from '../components/workflows/WorkflowGlyph';
 import { ConfirmModal } from '../components/common/ConfirmModal';
 import { MOTION_DURATION, MOTION_EASE, REDUCED_MOTION_TRANSITION } from '../lib/motion';
 import { useI18nStore } from '../store/useI18nStore';
+import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
+import { showSuccessToast } from '../lib/feedback/toast';
+import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 
 interface WorkflowItem {
   id: string;
   code: string;
   name: string;
   description?: string;
-  status: 'RUNNING' | 'SUCCESS' | 'FAILED' | 'PAUSED' | 'DRAFT';
-  executions: number;
+  status: 'PUBLISHED' | 'PAUSED' | 'DRAFT';
+  executions: number | null;
   successRate: string;
   lastRun: string;
   updated: string;
   triggerType: string;
 }
 
-const MOCK_WORKFLOWS: WorkflowItem[] = [
-  {
-    id: 'wf-prod-8492',
-    code: 'wf-prod-8492',
-    name: 'Order processing & notification',
-    status: 'RUNNING',
-    executions: 48,
-    successRate: '98.4%',
-    lastRun: '2 min ago',
-    updated: 'Today, 10:40 AM',
-    triggerType: 'trigger.webhook',
-  },
-  {
-    id: 'wf-prod-3310',
-    code: 'wf-prod-3310',
-    name: 'PostgreSQL to BigQuery ETL Sync',
-    status: 'SUCCESS',
-    executions: 32,
-    successRate: '100%',
-    lastRun: '18 min ago',
-    updated: 'Today, 10:24 AM',
-    triggerType: 'trigger.schedule',
-  },
-  {
-    id: 'wf-prod-6211',
-    code: 'wf-prod-6211',
-    name: 'Zendesk Priority Triage & Vectorization',
-    status: 'SUCCESS',
-    executions: 24,
-    successRate: '97.2%',
-    lastRun: '1 hour ago',
-    updated: 'Today, 09:30 AM',
-    triggerType: 'trigger.telegram',
-  },
-  {
-    id: 'wf-prod-1094',
-    code: 'wf-prod-1094',
-    name: 'Daily S3 Backup & Checksum Audit',
-    status: 'FAILED',
-    executions: 11,
-    successRate: '89.1%',
-    lastRun: '2 hours ago',
-    updated: 'Yesterday, 11:15 PM',
-    triggerType: 'trigger.schedule',
-  },
-  {
-    id: 'wf-prod-7742',
-    code: 'wf-prod-7742',
-    name: 'Lead Scoring & CRM Enrichment',
-    status: 'PAUSED',
-    executions: 18,
-    successRate: '95.2%',
-    lastRun: 'Yesterday',
-    updated: 'Yesterday, 04:20 PM',
-    triggerType: 'trigger.webhook',
-  },
-  {
-    id: 'wf-prod-5521',
-    code: 'wf-prod-5521',
-    name: 'Invoice PDF OCR & Slack Dispatcher',
-    status: 'DRAFT',
-    executions: 0,
-    successRate: '—',
-    lastRun: 'Never',
-    updated: '3 days ago',
-    triggerType: 'trigger.webhook',
-  },
-  {
-    id: 'wf-prod-9920',
-    code: 'wf-prod-9920',
-    name: 'GitHub PR Automated Code Review',
-    status: 'SUCCESS',
-    executions: 54,
-    successRate: '99.1%',
-    lastRun: '5 min ago',
-    updated: 'Today, 10:42 AM',
-    triggerType: 'trigger.webhook',
-  },
-  {
-    id: 'wf-prod-4412',
-    code: 'wf-prod-4412',
-    name: 'Stripe Payment Webhook & Receipt Mailer',
-    status: 'RUNNING',
-    executions: 120,
-    successRate: '99.8%',
-    lastRun: '1 min ago',
-    updated: 'Today, 10:45 AM',
-    triggerType: 'trigger.webhook',
-  },
-  {
-    id: 'wf-prod-3311',
-    code: 'wf-prod-3311',
-    name: 'Slack Incident Alert Escalation Bot',
-    status: 'PAUSED',
-    executions: 15,
-    successRate: '94.0%',
-    lastRun: '3 days ago',
-    updated: '4 days ago',
-    triggerType: 'trigger.telegram',
-  },
-  {
-    id: 'wf-prod-8812',
-    code: 'wf-prod-8812',
-    name: 'ChromaDB Vector Store Re-indexing',
-    status: 'PAUSED',
-    executions: 8,
-    successRate: '92.5%',
-    lastRun: '5 days ago',
-    updated: '5 days ago',
-    triggerType: 'trigger.schedule',
-  },
-  {
-    id: 'wf-prod-1102',
-    code: 'wf-prod-1102',
-    name: 'Shopify Inventory Low-Stock Alert',
-    status: 'DRAFT',
-    executions: 0,
-    successRate: '—',
-    lastRun: 'Never',
-    updated: '1 week ago',
-    triggerType: 'trigger.schedule',
-  },
-  {
-    id: 'wf-prod-7711',
-    code: 'wf-prod-7711',
-    name: 'Customer Offboarding & Data Cleanup',
-    status: 'SUCCESS',
-    executions: 40,
-    successRate: '98.0%',
-    lastRun: 'Yesterday',
-    updated: 'Yesterday',
-    triggerType: 'trigger.manual',
-  },
-];
-
 export function WorkflowsPage() {
-  const { t } = useI18nStore();
+  const refreshNotifications = useNotificationMilestoneRefresh();
+  const { language, t } = useI18nStore();
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const menuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-  const [workflowsList, setWorkflowsList] = useState<WorkflowItem[]>(MOCK_WORKFLOWS);
+  const [workflowsList, setWorkflowsList] = useState<WorkflowItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [apiError, setApiError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'ALL' | 'ACTIVE' | 'PAUSED' | 'DRAFT' | 'EMPTY'>('ALL');
 
@@ -206,47 +76,110 @@ export function WorkflowsPage() {
     requestAnimationFrame(() => menuButtonRefs.current[id]?.focus());
   };
 
-  // Load API workflows if available
-  useEffect(() => {
-    async function loadApiWorkflows() {
-      try {
-        const data = await workflowApi.getWorkflows();
-        if (data && data.length > 0) {
-          const mapped: WorkflowItem[] = data.map((wf: WorkflowDefinition, idx: number) => ({
-            id: wf.id,
-            code: `wf-prod-${1000 + idx}`,
-            name: wf.name,
-            description: wf.description,
-            status: wf.status === 'DRAFT' ? 'DRAFT' : 'SUCCESS',
-            executions: 20 + idx * 5,
-            successRate: '98.5%',
-            lastRun: '5 min ago',
-            updated: new Date(wf.updatedAt).toLocaleDateString(),
-            triggerType: wf.triggerType,
-          }));
-          setWorkflowsList(mapped);
-        }
-      } catch (e) {
-        console.error(e);
-      }
+  const loadWorkflows = useCallback(async () => {
+    setIsLoading(true);
+    setApiError(null);
+    try {
+      const data = await workflowApi.getWorkflows();
+      const mapped: WorkflowItem[] = data.map((wf: WorkflowDefinition) => ({
+        id: wf.id,
+        code: wf.id.slice(0, 8),
+        name: wf.name,
+        description: wf.description,
+        status: wf.status,
+        executions: null,
+        successRate: '—',
+        lastRun: '—',
+        updated: wf.updatedAt
+          ? new Date(wf.updatedAt).toLocaleString(language === 'VI' ? 'vi-VN' : 'en-US')
+          : '—',
+        triggerType: wf.triggerType,
+      }));
+      setWorkflowsList(mapped);
+    } catch (error) {
+      setWorkflowsList([]);
+      setApiError(error instanceof Error ? error.message : 'Workflows could not be loaded.');
+    } finally {
+      setIsLoading(false);
     }
-    loadApiWorkflows();
-  }, []);
+  }, [language]);
+
+  useEffect(() => {
+    void loadWorkflows();
+  }, [loadWorkflows]);
 
   const handleCreate = async () => {
+    setApiError(null);
+    const mutationSession = captureNotificationSession();
     try {
       const newWf = await workflowApi.createWorkflow({ name: 'New AI Workflow' });
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast('toast.workflow.created', mutationSession);
+      refreshNotifications(mutationSession);
       navigate(`/workflows/${newWf.id}/builder`);
-    } catch {
-      navigate('/workflows/new/builder');
+    } catch (error) {
+      if (isCurrentNotificationSession(mutationSession)) {
+        setApiError(error instanceof Error ? error.message : 'Workflow could not be created.');
+      }
     }
   };
 
   const handleRun = async (id: string) => {
+    setApiError(null);
+    const mutationSession = captureNotificationSession();
     try {
-      await workflowApi.runWorkflow(id);
-    } catch (e) {
-      console.error(e);
+      const accepted = await workflowApi.runWorkflow(id);
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast('toast.workflow.run_accepted', mutationSession);
+      navigate(`/executions?workflowId=${encodeURIComponent(id)}&executionId=${encodeURIComponent(accepted.executionId)}`);
+    } catch (error) {
+      if (isCurrentNotificationSession(mutationSession)) {
+        setApiError(error instanceof Error ? error.message : 'Workflow could not be started.');
+      }
+    }
+  };
+
+  const handleTogglePause = async (workflow: WorkflowItem) => {
+    setApiError(null);
+    const mutationSession = captureNotificationSession();
+    try {
+      if (workflow.status === 'PAUSED') await workflowApi.resumeWorkflow(workflow.id);
+      else if (workflow.status === 'PUBLISHED') await workflowApi.pauseWorkflow(workflow.id);
+      else throw new Error('Only published workflows can be paused.');
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast(workflow.status === 'PAUSED' ? 'toast.workflow.resumed' : 'toast.workflow.paused', mutationSession);
+      refreshNotifications(mutationSession);
+      await loadWorkflows();
+      setActiveMenuId(null);
+    } catch (error) {
+      if (isCurrentNotificationSession(mutationSession)) {
+        setApiError(error instanceof Error ? error.message : 'Workflow status could not be changed.');
+      }
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!isWorkflowMockMode) return;
+    try {
+      await workflowApi.deleteWorkflow(id);
+      setWorkflowsList((current) => current.filter((workflow) => workflow.id !== id));
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : 'Workflow could not be deleted.');
+    }
+  };
+
+  const handleDuplicate = async (id: string) => {
+    setApiError(null);
+    try {
+      const duplicate = await workflowApi.duplicateWorkflow(id);
+      navigate(`/workflows/${duplicate.id}/builder`);
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : 'Workflow could not be duplicated.');
     }
   };
 
@@ -273,6 +206,7 @@ export function WorkflowsPage() {
   };
 
   const handleBulkDelete = async () => {
+    if (!isWorkflowMockMode) return;
     const idsToDelete = Array.from(selectedIds);
     setBulkDeleteLoading(true);
 
@@ -292,7 +226,7 @@ export function WorkflowsPage() {
 
   // Filter calculations
   const totalCount = workflowsList.length;
-  const activeCount = workflowsList.filter((w) => w.status === 'RUNNING' || w.status === 'SUCCESS').length;
+  const activeCount = workflowsList.filter((w) => w.status === 'PUBLISHED').length;
   const pausedCount = workflowsList.filter((w) => w.status === 'PAUSED').length;
   const draftCount = workflowsList.filter((w) => w.status === 'DRAFT').length;
 
@@ -304,7 +238,7 @@ export function WorkflowsPage() {
       wf.code.toLowerCase().includes(search.toLowerCase());
 
     let matchesTab = true;
-    if (activeTab === 'ACTIVE') matchesTab = wf.status === 'RUNNING' || wf.status === 'SUCCESS';
+    if (activeTab === 'ACTIVE') matchesTab = wf.status === 'PUBLISHED';
     if (activeTab === 'PAUSED') matchesTab = wf.status === 'PAUSED';
     if (activeTab === 'DRAFT') matchesTab = wf.status === 'DRAFT';
 
@@ -316,29 +250,49 @@ export function WorkflowsPage() {
 
   const pageSize = 6;
   const paginatedWorkflows = filteredWorkflows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const localizedRelativeTime = (value: string) => {
+    const keys: Record<string, string> = {
+      '1 min ago': 'relative.min_1',
+      '2 min ago': 'relative.min_2',
+      '3 min ago': 'relative.min_3',
+      '5 min ago': 'relative.min_5',
+      '18 min ago': 'relative.min_18',
+      '1 hour ago': 'relative.hour_1',
+      '2 hours ago': 'relative.hour_2',
+      Yesterday: 'relative.yesterday',
+      '3 days ago': 'relative.days_3',
+      '5 days ago': 'relative.days_5',
+      Never: 'relative.never',
+    };
+    return keys[value] ? t(keys[value]) : value;
+  };
+
+  const localizedUpdatedTime = (value: string) => {
+    if (language === 'EN') return value;
+
+    const dateTime = value.match(/^(Today|Yesterday), (\d{1,2}):(\d{2}) (AM|PM)$/);
+    if (dateTime) {
+      const dayKey = dateTime[1] === 'Today' ? 'relative.today' : 'relative.yesterday';
+      const hour24 = (Number(dateTime[2]) % 12) + (dateTime[4] === 'PM' ? 12 : 0);
+      return `${t(dayKey)}, ${String(hour24).padStart(2, '0')}:${dateTime[3]}`;
+    }
+
+    if (value === 'Today') return t('relative.today');
+    if (value === 'Yesterday') return t('relative.yesterday');
+    if (value === 'Never') return t('relative.never');
+
+    const daysAgo = value.match(/^(\d+) days ago$/);
+    if (daysAgo) return t('relative.days_count').replace('{count}', daysAgo[1]);
+    if (value === '1 week ago') return t('relative.week_1');
+    return value;
+  };
 
   const renderStatusBadge = (status: WorkflowItem['status']) => {
-    if (status === 'RUNNING') {
-      return (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-300">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 motion-safe:animate-pulse" />
-          Running
-        </span>
-      );
-    }
-    if (status === 'SUCCESS') {
+    if (status === 'PUBLISHED') {
       return (
         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-semibold text-[11px]">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-          Success
-        </span>
-      );
-    }
-    if (status === 'FAILED') {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-semibold text-[11px]">
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-          Failed
+          {t('workflows.tab_active')}
         </span>
       );
     }
@@ -346,14 +300,14 @@ export function WorkflowsPage() {
       return (
         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-semibold text-[11px]">
           <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-          Paused
+          {t('workflows.tab_paused')}
         </span>
       );
     }
     return (
       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-semibold text-[11px]">
         <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-        Draft
+        {t('workflows.tab_draft')}
       </span>
     );
   };
@@ -406,6 +360,12 @@ export function WorkflowsPage() {
           </div>
         </div>
       </div>
+
+      {apiError && (
+        <div role="alert" data-testid="workflow-api-error" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-300">
+          {apiError}
+        </div>
+      )}
 
       {/* 2. FILTER & TOOLBAR AREA */}
       <div className="flex flex-col items-stretch justify-between gap-2 rounded-xl border border-border bg-card p-2 shadow-sm lg:flex-row lg:items-center">
@@ -482,7 +442,7 @@ export function WorkflowsPage() {
                   ? 'bg-card text-primary font-semibold shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
-              title="Preview empty view state"
+              title={t('workflows.preview_empty')}
             >
               <FilterX size={13} />
               <span>{t('workflows.empty_view')}</span>
@@ -498,9 +458,7 @@ export function WorkflowsPage() {
             className="h-8 px-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
           >
             <option value="ALL">{t('workflows.status_prefix')} {t('workflows.all')}</option>
-            <option value="RUNNING">{t('workflows.status_prefix')} {t('status.running')}</option>
-            <option value="SUCCESS">{t('workflows.status_prefix')} {t('status.success')}</option>
-            <option value="FAILED">{t('workflows.status_prefix')} {t('status.failed')}</option>
+            <option value="PUBLISHED">{t('workflows.status_prefix')} Published</option>
             <option value="PAUSED">{t('workflows.status_prefix')} {t('workflows.tab_paused')}</option>
             <option value="DRAFT">{t('workflows.status_prefix')} {t('workflows.tab_draft')}</option>
           </select>
@@ -519,7 +477,7 @@ export function WorkflowsPage() {
             className="h-8 px-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-300 hidden md:flex items-center gap-1 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
           >
             <span className="text-slate-400 font-normal">{t('workflows.owner')}</span>
-            <span className="font-semibold">{ownerFilter}</span>
+            <span className="font-semibold">{ownerFilter === 'ALL' ? t('workflows.all') : ownerFilter}</span>
             <ChevronDown size={14} className="text-slate-400" />
           </button>
 
@@ -535,7 +493,7 @@ export function WorkflowsPage() {
                   ? 'bg-card text-primary shadow-sm'
                   : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
-              title="Dense Table View"
+              title={t('workflows.table_view')}
             >
               <LayoutList size={15} />
             </button>
@@ -547,7 +505,7 @@ export function WorkflowsPage() {
                   ? 'bg-card text-primary shadow-sm'
                   : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
               }`}
-              title="Grid View"
+              title={t('workflows.grid_view')}
             >
               <LayoutGrid size={15} />
             </button>
@@ -585,7 +543,9 @@ export function WorkflowsPage() {
                 type="button"
                 aria-label={t('workflows.bulk_delete')}
                 onClick={() => setBulkDeleteOpen(true)}
-                className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2.5 py-1.5 font-semibold text-white shadow-sm transition-colors hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50"
+                disabled={!isWorkflowMockMode}
+                title={isWorkflowMockMode ? undefined : 'Workflow Service V1 does not provide a delete endpoint'}
+                className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2.5 py-1.5 font-semibold text-white shadow-sm transition-colors hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Trash2 size={13} />
                 {t('workflows.bulk_delete')}
@@ -596,24 +556,28 @@ export function WorkflowsPage() {
       </AnimatePresence>
 
       {/* 3. MAIN WORKFLOWS CONTENT (TABLE / GRID / EMPTY STATE) */}
-      {filteredWorkflows.length === 0 ? (
+      {isLoading ? (
+        <div role="status" className="rounded-xl border border-border bg-card p-10 text-center text-sm text-muted-foreground">
+          Loading workflows…
+        </div>
+      ) : filteredWorkflows.length === 0 ? (
         /* Empty State Layout */
         <div className="flex flex-col items-center justify-center space-y-3 rounded-xl border border-border bg-card p-12 text-center shadow-sm">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <Inbox size={24} />
           </div>
           <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-            No workflows found
+            {t('workflows.no_results')}
           </h3>
           <p className="text-xs text-slate-500 max-w-sm">
-            No workflows matched your search filters or selected tab. Try adjusting your query or create a new workflow.
+            {t('workflows.no_results_description')}
           </p>
           <button
             onClick={handleCreate}
             className="mt-2 flex cursor-pointer items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Plus size={15} />
-            <span>Create workflow</span>
+            <span>{t('dashboard.new_workflow')}</span>
           </button>
         </div>
       ) : viewMode === 'grid' ? (
@@ -633,7 +597,7 @@ export function WorkflowsPage() {
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2.5">
-                  <WorkflowGlyph triggerType={wf.triggerType} status={wf.status} />
+                  <WorkflowGlyph triggerType={wf.triggerType} status={wf.status === 'PUBLISHED' ? 'SUCCESS' : wf.status} />
                   <div>
                     <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
                       {wf.name}
@@ -645,27 +609,28 @@ export function WorkflowsPage() {
               </div>
 
               <div className="flex items-center justify-between text-xs text-slate-500 font-mono border-t border-b border-slate-100 dark:border-slate-800/80 py-2">
-                <span>{wf.executions} runs</span>
+                <span>{wf.executions === null ? '—' : `${wf.executions} ${t('workflows.runs')}`}</span>
                 <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
                   {wf.successRate}
                 </span>
-                <span>{wf.lastRun}</span>
+                <span>{localizedRelativeTime(wf.lastRun)}</span>
               </div>
 
               <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-slate-400">{wf.updated}</span>
+                <span className="text-[11px] text-slate-400">{localizedUpdatedTime(wf.updated)}</span>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => handleRun(wf.id)}
-                    className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-primary"
-                    title="Run"
+                    disabled={wf.status !== 'PUBLISHED'}
+                    className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                    title={wf.status === 'PUBLISHED' ? t('workflows.trigger_execution') : t('workflows.btn_publish')}
                   >
                     <Play size={14} />
                   </button>
                   <Link
                     to={`/workflows/${wf.id}/builder`}
                     className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-primary"
-                    title="Edit"
+                    title={t('workflows.edit_studio')}
                   >
                     <Edit3 size={14} />
                   </Link>
@@ -687,7 +652,7 @@ export function WorkflowsPage() {
                       checked={selectedIds.size === filteredWorkflows.length && filteredWorkflows.length > 0}
                       onChange={handleToggleSelectAll}
                       className="h-3.5 w-3.5 cursor-pointer rounded accent-blue-600"
-                      aria-label="Select all workflows"
+                      aria-label={t('workflows.select_all')}
                     />
                   </th>
                 <th className="px-3 py-2.5 min-w-[260px]">{t('workflows.col_name')}</th>
@@ -726,14 +691,14 @@ export function WorkflowsPage() {
                             checked={isSelected}
                             onChange={() => handleToggleSelectRow(wf.id)}
                             className="h-3.5 w-3.5 cursor-pointer rounded accent-blue-600"
-                            aria-label={`Select ${wf.name}`}
+                            aria-label={`${t('workflows.select')} ${wf.name}`}
                           />
                         </td>
 
                         {/* Name & ID */}
                         <td className="px-3 py-3 align-middle">
                           <div className="flex items-center gap-3">
-                            <WorkflowGlyph triggerType={wf.triggerType} status={wf.status} />
+                            <WorkflowGlyph triggerType={wf.triggerType} status={wf.status === 'PUBLISHED' ? 'SUCCESS' : wf.status} />
                             <div className="flex flex-col min-w-0">
                               <Link
                                 to={`/workflows/${wf.id}/builder`}
@@ -753,7 +718,7 @@ export function WorkflowsPage() {
 
                         {/* Executions */}
                         <td className="px-3 py-3 align-middle font-mono text-xs text-slate-700 dark:text-slate-300">
-                          {wf.executions} runs
+                          {wf.executions === null ? '—' : `${wf.executions} ${t('workflows.runs')}`}
                         </td>
 
                         {/* Success Rate */}
@@ -764,9 +729,7 @@ export function WorkflowsPage() {
                             <div className="flex items-center gap-2">
                               <div className="w-16 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                                 <div
-                                  className={`h-full rounded-full ${
-                                    wf.status === 'FAILED' ? 'bg-rose-500' : 'bg-emerald-500'
-                                  }`}
+                                  className="h-full rounded-full bg-emerald-500"
                                   style={{
                                     width: wf.successRate,
                                   }}
@@ -781,39 +744,30 @@ export function WorkflowsPage() {
 
                         {/* Last Run */}
                         <td className="px-3 py-3 align-middle text-slate-500 text-[11px]">
-                          {wf.lastRun}
+                          {localizedRelativeTime(wf.lastRun)}
                         </td>
 
                         {/* Updated */}
                         <td className="px-3 py-3 align-middle text-slate-500 text-[11px]">
-                          {wf.updated}
+                          {localizedUpdatedTime(wf.updated)}
                         </td>
 
                         {/* Actions */}
                         <td className="px-3 py-3 align-middle text-right relative">
                           <div className="inline-flex items-center gap-1 justify-end">
-                            {wf.status === 'FAILED' ? (
-                              <button
-                                onClick={() => handleRun(wf.id)}
-                                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                title="Re-run failed workflow"
-                              >
-                                <RotateCw size={14} />
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleRun(wf.id)}
-                                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                title="Trigger Execution"
-                              >
-                                <Play size={14} />
-                              </button>
-                            )}
+                            <button
+                              onClick={() => handleRun(wf.id)}
+                              disabled={wf.status !== 'PUBLISHED'}
+                              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+                              title={wf.status === 'PUBLISHED' ? t('workflows.trigger_execution') : t('workflows.btn_publish')}
+                            >
+                              <Play size={14} />
+                            </button>
 
                             <Link
                               to={`/workflows/${wf.id}/builder`}
                               className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                              title="Edit Workflow Studio"
+                              title={t('workflows.edit_studio')}
                             >
                               <Edit3 size={14} />
                             </Link>
@@ -824,8 +778,8 @@ export function WorkflowsPage() {
                               }}
                               onClick={() => setActiveMenuId(activeMenuId === wf.id ? null : wf.id)}
                               className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                              title="More workflow actions"
-                              aria-label="More workflow actions"
+                              title={t('workflows.more_actions')}
+                              aria-label={t('workflows.more_actions')}
                               aria-haspopup="menu"
                               aria-expanded={activeMenuId === wf.id}
                             >
@@ -849,28 +803,30 @@ export function WorkflowsPage() {
                                 className="px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
                               >
                                 <History size={14} className="text-slate-400" />
-                                <span>Executions</span>
+                                <span>{t('nav.executions')}</span>
                               </Link>
                               <button
-                                onClick={() => closeMenu(wf.id)}
+                                onClick={() => void handleDuplicate(wf.id)}
                                 className="px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 text-left"
                               >
                                 <Copy size={14} className="text-slate-400" />
-                                <span>Duplicate</span>
+                                <span>{t('workflows.btn_duplicate')}</span>
                               </button>
                               <button
-                                onClick={() => closeMenu(wf.id)}
+                                onClick={() => void handleTogglePause(wf)}
+                                disabled={wf.status === 'DRAFT'}
+                                title={wf.status === 'DRAFT' ? 'Publish this workflow before pausing it' : undefined}
                                 className="px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 text-left"
                               >
                                 {wf.status === 'PAUSED' ? (
                                   <>
                                     <PlayCircle size={14} className="text-emerald-500" />
-                                    <span>Resume</span>
+                                    <span>{t('workflows.btn_resume')}</span>
                                   </>
                                 ) : (
                                   <>
                                     <PauseCircle size={14} className="text-amber-500" />
-                                    <span>Pause</span>
+                                    <span>{t('workflows.btn_pause')}</span>
                                   </>
                                 )}
                               </button>
@@ -878,12 +834,14 @@ export function WorkflowsPage() {
                               <button
                                 onClick={() => {
                                   closeMenu(wf.id);
-                                  setWorkflowsList(workflowsList.filter((w) => w.id !== wf.id));
+                                  void handleDelete(wf.id);
                                 }}
-                                className="px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center gap-2 text-left font-medium"
+                                disabled={!isWorkflowMockMode}
+                                title={isWorkflowMockMode ? 'Delete workflow' : 'Workflow Service V1 does not provide a delete endpoint'}
+                                className="px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center gap-2 text-left font-medium disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 <Trash2 size={14} />
-                                <span>Delete</span>
+                                <span>{t('workflows.btn_delete')}</span>
                               </button>
                             </motion.div>
                             )}
@@ -901,14 +859,14 @@ export function WorkflowsPage() {
           <div className="px-4 py-2.5 bg-slate-50/60 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
             <div className="flex items-center gap-3">
               <span>
-                Showing <strong className="text-slate-900 dark:text-slate-100 font-semibold">{paginatedWorkflows.length}</strong> of{' '}
-                <strong className="text-slate-900 dark:text-slate-100 font-semibold">{filteredWorkflows.length}</strong> workflows
+                {t('workflows.showing')} <strong className="text-slate-900 dark:text-slate-100 font-semibold">{paginatedWorkflows.length}</strong> {t('workflows.of')}{' '}
+                <strong className="text-slate-900 dark:text-slate-100 font-semibold">{filteredWorkflows.length}</strong> {t('workflows.workflow_count')}
               </span>
               <div className="flex items-center gap-1 text-[11px]">
-                <span>Rows:</span>
+                <span>{t('workflows.rows')}</span>
                 <select className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded px-1.5 py-0.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none">
-                  <option value="25">25 per page</option>
-                  <option value="50">50 per page</option>
+                  <option value="25">25 {t('connections.page_size')}</option>
+                  <option value="50">50 {t('connections.page_size')}</option>
                 </select>
               </div>
             </div>
@@ -919,7 +877,7 @@ export function WorkflowsPage() {
                 onClick={() => setCurrentPage(1)}
                 className="px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
               >
-                Previous
+                {t('workflows.previous')}
               </button>
               <button
                 onClick={() => setCurrentPage(1)}
@@ -946,7 +904,7 @@ export function WorkflowsPage() {
                 onClick={() => setCurrentPage(2)}
                 className="px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
               >
-                Next
+                {t('workflows.next')}
               </button>
             </div>
           </div>

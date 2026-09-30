@@ -3,6 +3,8 @@ package com.weav.identity.infrastructure.persistence;
 import com.weav.identity.TestcontainersConfiguration;
 import com.weav.identity.application.dto.OAuthAccountMetadata;
 import com.weav.identity.application.dto.OAuthSecret;
+import com.weav.identity.application.notification.IdentityNotificationEvent;
+import com.weav.identity.application.notification.IdentitySecurityNotificationRecorder;
 import com.weav.identity.application.port.out.KeyedFingerprint;
 import com.weav.identity.application.port.out.OAuthProviderClient;
 import com.weav.identity.application.port.out.OAuthTransactionStore;
@@ -53,6 +55,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -80,6 +83,7 @@ class OAuthLinkPersistenceIntegrationTest {
     private static final Instant NOW = Instant.parse("2026-09-09T10:15:30Z");
     private static final Instant CREATED_AT = Instant.parse("2026-09-09T09:15:30Z");
     private static final String PASSWORD = "correct-horse-battery-staple";
+    private static final List<IdentityNotificationEvent> RECORDED_EVENTS = new CopyOnWriteArrayList<>();
 
     @Autowired
     private LinkGoogleAccountUseCase linkUseCase;
@@ -112,12 +116,16 @@ class OAuthLinkPersistenceIntegrationTest {
     private TransactionRunner transactionRunner;
 
     @Autowired
+    private IdentitySecurityNotificationRecorder notificationRecorder;
+
+    @Autowired
     private PlatformTransactionManager transactionManager;
 
     private ExecutorService executor;
 
     @BeforeEach
     void cleanDatabase() {
+        RECORDED_EVENTS.clear();
         springDataUserSessionRepository.deleteAll();
         springDataOAuthAccountRepository.deleteAll();
         springDataUserRepository.deleteAll();
@@ -148,6 +156,9 @@ class OAuthLinkPersistenceIntegrationTest {
         assertEquals("person@gmail.com", persisted.getEmail());
         assertEquals(NOW, persisted.getEmailVerifiedAt());
         assertEquals("person@gmail.com", result.providerEmail());
+        assertEquals(1, RECORDED_EVENTS.size());
+        assertEquals("identity.google_linked", RECORDED_EVENTS.getFirst().eventType());
+        assertEquals(user.getId(), RECORDED_EVENTS.getFirst().actorUserId());
         assertEquals(user.getId(), oauthAccountRepository
                 .findByProviderAndProviderUserId(OAuthProvider.GOOGLE, "google-subject")
                 .orElseThrow().getUserId());
@@ -223,7 +234,8 @@ class OAuthLinkPersistenceIntegrationTest {
                 new HmacKeyedFingerprint("01234567890123456789012345678901"),
                 transactionRunner,
                 new AuthInputPolicy(),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                notificationRecorder);
 
         assertThrows(IllegalStateException.class, () -> failingUseCase.complete(
                 user.getId(), session.getId(),
@@ -232,6 +244,7 @@ class OAuthLinkPersistenceIntegrationTest {
         assertEquals(0, springDataOAuthAccountRepository.count());
         assertNull(userRepository.findById(user.getId()).orElseThrow().getEmailVerifiedAt());
         assertEquals(1, springDataUserSessionRepository.count());
+        assertTrue(RECORDED_EVENTS.isEmpty());
     }
 
     @Test
@@ -253,7 +266,8 @@ class OAuthLinkPersistenceIntegrationTest {
                 new HmacKeyedFingerprint("01234567890123456789012345678901"),
                 transactionRunner,
                 new AuthInputPolicy(),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                notificationRecorder);
 
         executor = Executors.newFixedThreadPool(2);
         Future<LinkOutcome> firstResult = executor.submit(() -> complete(
@@ -284,6 +298,7 @@ class OAuthLinkPersistenceIntegrationTest {
         assertEquals(1, springDataOAuthAccountRepository.count());
         assertEquals(2, springDataUserRepository.count());
         assertEquals(2, springDataUserSessionRepository.count());
+        assertEquals(1, RECORDED_EVENTS.size());
     }
 
     @Test
@@ -306,6 +321,8 @@ class OAuthLinkPersistenceIntegrationTest {
                 .allMatch(failure -> failure instanceof ConflictException));
         assertEquals(1, springDataOAuthAccountRepository.count());
         assertEquals(1, springDataUserSessionRepository.count());
+        assertEquals(1, RECORDED_EVENTS.size());
+        assertEquals("identity.google_linked", RECORDED_EVENTS.getFirst().eventType());
     }
 
     @Test
@@ -324,6 +341,7 @@ class OAuthLinkPersistenceIntegrationTest {
 
         unlinkUseCase.execute(user.getId(), session.getId(), target.getId(), PASSWORD);
         assertEquals(0, springDataOAuthAccountRepository.count());
+        assertEquals("identity.google_unlinked", RECORDED_EVENTS.getLast().eventType());
         assertTrue(sessionRepository.findById(session.getId()).orElseThrow().isActive(NOW));
     }
 
@@ -348,6 +366,7 @@ class OAuthLinkPersistenceIntegrationTest {
                         oauthOnly.getId(), oauthOnlySession.getId(), oauthOnlyAccount.getId(), null));
         assertEquals("OAUTH_LAST_LOGIN_METHOD", failure.getCode());
         assertTrue(oauthAccountRepository.findById(oauthOnlyAccount.getId()).isPresent());
+        assertTrue(RECORDED_EVENTS.isEmpty());
     }
 
     private LinkOutcome complete(
@@ -630,7 +649,8 @@ class OAuthLinkPersistenceIntegrationTest {
                 PasswordHasher passwordHasher,
                 KeyedFingerprint fingerprint,
                 TransactionRunner transactionRunner,
-                Clock clock) {
+                Clock clock,
+                IdentitySecurityNotificationRecorder notificationRecorder) {
             return new LinkGoogleAccountUseCase(
                     identityGuard,
                     userRepository,
@@ -639,7 +659,8 @@ class OAuthLinkPersistenceIntegrationTest {
                     fingerprint,
                     transactionRunner,
                     new AuthInputPolicy(),
-                    clock);
+                    clock,
+                    notificationRecorder);
         }
 
         @Bean
@@ -655,14 +676,21 @@ class OAuthLinkPersistenceIntegrationTest {
                 UserRepository userRepository,
                 OAuthAccountRepository oauthAccountRepository,
                 PasswordHasher passwordHasher,
-                TransactionRunner transactionRunner) {
+                TransactionRunner transactionRunner,
+                IdentitySecurityNotificationRecorder notificationRecorder) {
             return new UnlinkOAuthAccountUseCase(
                     identityGuard,
                     userRepository,
                     oauthAccountRepository,
                     passwordHasher,
                     transactionRunner,
-                    new AuthInputPolicy());
+                    new AuthInputPolicy(),
+                    notificationRecorder);
+        }
+
+        @Bean
+        IdentitySecurityNotificationRecorder notificationRecorder(Clock clock) {
+            return new IdentitySecurityNotificationRecorder(RECORDED_EVENTS::add, clock);
         }
     }
 }

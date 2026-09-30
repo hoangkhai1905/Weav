@@ -16,15 +16,22 @@ class GoogleOAuthScopePolicyTest {
     private final GoogleOAuthScopePolicy policy = new GoogleOAuthScopePolicy();
 
     @Test
-    void gmailRequestsOnlyIdentityAndMetadataScopes() {
+    void gmailRequestsIdentityMetadataAndSendScopes() {
         List<String> scopes = policy.requiredScopes(ConnectionProvider.GMAIL);
 
         assertEquals(List.of(
                 "openid",
                 "email",
-                "https://www.googleapis.com/auth/gmail.metadata"), scopes);
-        assertFalse(scopes.contains("https://www.googleapis.com/auth/gmail.send"));
+                "https://www.googleapis.com/auth/gmail.metadata",
+                "https://www.googleapis.com/auth/gmail.send"), scopes);
+        assertFalse(scopes.stream().anyMatch(scope -> scope.contains("gmail.readonly") || scope.contains("mail.google.com")));
         assertTrue(policy.containsRequiredScopes(ConnectionProvider.GMAIL, scopes));
+    }
+
+    @Test
+    void gmailGrantWithoutSendScopeIsRejectedSoOldConnectionsMustReconnect() {
+        assertFalse(policy.containsRequiredScopes(ConnectionProvider.GMAIL, List.of(
+                "openid", "email", "https://www.googleapis.com/auth/gmail.metadata")));
     }
 
     @Test
@@ -45,6 +52,7 @@ class GoogleOAuthScopePolicyTest {
                 "openid",
                 "email",
                 "https://www.googleapis.com/auth/gmail.metadata",
+                "https://www.googleapis.com/auth/gmail.send",
                 "https://www.googleapis.com/auth/drive.file");
 
         assertTrue(policy.containsRequiredScopes(ConnectionProvider.GMAIL, granted));
@@ -57,7 +65,8 @@ class GoogleOAuthScopePolicyTest {
         String userinfoEmail = "https://www.googleapis.com/auth/userinfo.email";
 
         assertTrue(policy.containsRequiredScopes(ConnectionProvider.GMAIL, List.of(
-                "openid", userinfoEmail, "https://www.googleapis.com/auth/gmail.metadata")));
+                "openid", userinfoEmail, "https://www.googleapis.com/auth/gmail.metadata",
+                "https://www.googleapis.com/auth/gmail.send")));
         assertTrue(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_SHEETS, List.of(
                 "openid", userinfoEmail, "https://www.googleapis.com/auth/spreadsheets")));
     }

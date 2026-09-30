@@ -1,5 +1,7 @@
 package com.weav.workspace.application.usecase;
 
+import com.weav.workspace.application.notification.ConnectionNotificationRecorder;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.dto.ConnectionAuthFailureCode;
 import com.weav.workspace.application.port.out.TransactionRunner;
 import com.weav.workspace.domain.exception.BadRequestException;
@@ -18,12 +20,18 @@ public final class ReportConnectionAuthFailureUseCase {
 
     private final ConnectionRepository connectionRepository;
     private final TransactionRunner transactionRunner;
+    private final WorkspaceMutationLock workspaceMutationLock;
+    private final ConnectionNotificationRecorder notificationRecorder;
 
     public ReportConnectionAuthFailureUseCase(
             ConnectionRepository connectionRepository,
-            TransactionRunner transactionRunner) {
+            TransactionRunner transactionRunner,
+            WorkspaceMutationLock workspaceMutationLock,
+            ConnectionNotificationRecorder notificationRecorder) {
         this.connectionRepository = Objects.requireNonNull(connectionRepository);
         this.transactionRunner = Objects.requireNonNull(transactionRunner);
+        this.workspaceMutationLock = Objects.requireNonNull(workspaceMutationLock);
+        this.notificationRecorder = Objects.requireNonNull(notificationRecorder);
     }
 
     public void execute(
@@ -36,11 +44,13 @@ public final class ReportConnectionAuthFailureUseCase {
             throw new BadRequestException("Connection auth failure code is invalid");
         }
         transactionRunner.required(() -> {
+            workspaceMutationLock.lock(workspaceId);
             Connection connection = connectionRepository.findByWorkspaceIdAndId(workspaceId, connectionId)
                     .orElseThrow(() -> new ResourceNotFoundException("Connection not found"));
             if (connection.getStatus() == ConnectionStatus.ACTIVE) {
                 connection.markInvalid();
                 connectionRepository.save(connection);
+                notificationRecorder.recordInvalid(connection, null);
             }
             return Boolean.TRUE;
         });

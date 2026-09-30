@@ -26,7 +26,7 @@ public final class NodeCatalog {
             Map.entry("trigger.webhook", Set.of()),
             Map.entry("trigger.telegram", Set.of()),
             Map.entry("http.request", Set.of("method", "url", "headers", "query", "body", "connectionId")),
-            Map.entry("email.send", Set.of("to", "subject", "body")),
+            Map.entry("email.send", Set.of("connectionId", "to", "subject", "body")),
             Map.entry("google.sheets", Set.of(
                     "connectionId", "operation", "spreadsheetId", "range", "values")),
             Map.entry("telegram.send_message", Set.of("chatId", "text")),

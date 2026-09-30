@@ -3,10 +3,12 @@ package com.weav.workspace.application.usecase;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import com.weav.workspace.application.dto.SaveCredentialCommand;
+import com.weav.workspace.application.notification.ConnectionNotificationRecorder;
 import com.weav.workspace.application.port.out.ConnectionProviderPort;
 import com.weav.workspace.application.port.out.CredentialCryptoPort;
 import com.weav.workspace.application.port.out.TransactionRunner;
 import com.weav.workspace.application.port.out.WorkflowConnectionUsagePort;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.service.ConnectionAuthorizationPolicy;
 import com.weav.workspace.application.service.ConnectionConfigPolicy;
 import com.weav.workspace.application.service.ConnectionProviderPolicy;
@@ -22,6 +24,7 @@ import com.weav.workspace.domain.model.Membership;
 import com.weav.workspace.domain.port.out.ConnectionRepository;
 import com.weav.workspace.domain.port.out.CredentialRepository;
 import com.weav.workspace.domain.port.out.MembershipRepository;
+import com.weav.workspace.domain.port.out.WorkspaceRepository;
 import com.weav.workspace.domain.valueobject.ConnectionAuthType;
 import com.weav.workspace.domain.valueobject.ConnectionProvider;
 import com.weav.workspace.domain.valueobject.ConnectionStatus;
@@ -38,6 +41,7 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -54,6 +58,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 
 class ConnectionUsageProtectionTest {
 
@@ -63,6 +68,7 @@ class ConnectionUsageProtectionTest {
     private static final UUID CONNECTION_ID = UUID.fromString("30000000-0000-0000-0000-000000000001");
     private static final String SERVICE_KEY = "synthetic-workflow-key";
     private static final String KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
+    private static final WorkspaceMutationLock NO_OP_WORKSPACE_LOCK = workspaceId -> { };
 
     private final ConnectionAuthorizationPolicy authorizationPolicy = new ConnectionAuthorizationPolicy();
     private final ConnectionProviderPolicy providerPolicy = new ConnectionProviderPolicy();
@@ -71,6 +77,38 @@ class ConnectionUsageProtectionTest {
     private final CredentialCryptoPort crypto = new com.weav.workspace.infrastructure.credential.AesGcmCredentialCrypto(
             new com.weav.workspace.infrastructure.config.CredentialEncryptionProperties(KEY, "v1"));
     private HttpServer server;
+
+    @Test
+    void mutationLocksWorkspaceBeforeReloadingMembershipAndConnection() {
+        ConnectionRepository connections = mock(ConnectionRepository.class);
+        MembershipRepository memberships = mock(MembershipRepository.class);
+        WorkspaceMutationLock workspaceLock = mock(WorkspaceMutationLock.class);
+        Membership owner = Membership.owner(WORKSPACE, OWNER);
+        Connection connection = connection(ConnectionStatus.ACTIVE, OWNER);
+        when(memberships.findByWorkspaceIdAndUserId(WORKSPACE, OWNER)).thenReturn(Optional.of(owner));
+        when(connections.findByWorkspaceIdAndId(WORKSPACE, CONNECTION_ID)).thenReturn(Optional.of(connection));
+        ConnectionUsageProtection protection = new ConnectionUsageProtection(
+                connections,
+                memberships,
+                authorizationPolicy,
+                (workspaceId, connectionId) -> false,
+                new DirectTransactionRunner(),
+                workspaceLock);
+
+        protection.reauthorizeAndMutate(
+                OWNER,
+                WORKSPACE,
+                CONNECTION_ID,
+                new ConnectionUsageProtection.Authorization(
+                        WORKSPACE, CONNECTION_ID, com.weav.workspace.domain.valueobject.MembershipRole.OWNER),
+                ConnectionUsageProtection.UsageScope.ALL_ROLES,
+                (currentMembership, currentConnection) -> Boolean.TRUE);
+
+        var order = inOrder(workspaceLock, memberships, connections);
+        order.verify(workspaceLock).lock(WORKSPACE);
+        order.verify(memberships).findByWorkspaceIdAndUserId(WORKSPACE, OWNER);
+        order.verify(connections).findByWorkspaceIdAndId(WORKSPACE, CONNECTION_ID);
+    }
 
     @AfterEach
     void stopServer() {
@@ -103,7 +141,8 @@ class ConnectionUsageProtectionTest {
                 new ConnectionConfigPolicy(),
                 new com.weav.workspace.application.service.ConnectionViewAssembler(authorizationPolicy),
                 (workspaceId, connectionId) -> false,
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK);
 
         assertThat(useCase.execute(new com.weav.workspace.application.dto.UpdateConnectionCommand(
                 WORKSPACE, MEMBER, CONNECTION_ID, "Renamed", null)).name()).isEqualTo("Renamed");
@@ -129,7 +168,8 @@ class ConnectionUsageProtectionTest {
                 new ConnectionConfigPolicy(),
                 new com.weav.workspace.application.service.ConnectionViewAssembler(authorizationPolicy),
                 (workspaceId, connectionId) -> true,
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK);
 
         assertThatThrownBy(() -> useCase.execute(new com.weav.workspace.application.dto.UpdateConnectionCommand(
                 WORKSPACE, MEMBER, CONNECTION_ID, "Rejected", null)))
@@ -162,7 +202,8 @@ class ConnectionUsageProtectionTest {
                     usageCalls.incrementAndGet();
                     return true;
                 },
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK);
 
         useCase.execute(new com.weav.workspace.application.dto.UpdateConnectionCommand(
                 WORKSPACE, OWNER, CONNECTION_ID, "Owner update", null));
@@ -191,7 +232,8 @@ class ConnectionUsageProtectionTest {
                 crypto,
                 new com.weav.workspace.application.service.ConnectionViewAssembler(authorizationPolicy),
                 (workspaceId, connectionId) -> true,
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK);
         assertThatThrownBy(() -> save.execute(new SaveCredentialCommand(
                 WORKSPACE, MEMBER, CONNECTION_ID, Map.of("apiKey", "synthetic"), null)))
                 .isInstanceOf(ConflictException.class);
@@ -203,7 +245,8 @@ class ConnectionUsageProtectionTest {
                 authorizationPolicy,
                 new com.weav.workspace.application.service.ConnectionViewAssembler(authorizationPolicy),
                 (workspaceId, connectionId) -> true,
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK);
         assertThatThrownBy(() -> delete.execute(MEMBER, WORKSPACE, CONNECTION_ID))
                 .isInstanceOf(ConflictException.class);
         verify(credentials, never()).save(any());
@@ -233,7 +276,8 @@ class ConnectionUsageProtectionTest {
                 crypto,
                 new com.weav.workspace.application.service.ConnectionViewAssembler(authorizationPolicy),
                 (workspaceId, connectionId) -> true,
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK);
         save.execute(new SaveCredentialCommand(
                 WORKSPACE, OWNER, CONNECTION_ID, Map.of("apiKey", "synthetic"), null));
         verify(credentials).save(any());
@@ -249,7 +293,8 @@ class ConnectionUsageProtectionTest {
                     usageCalls.incrementAndGet();
                     throw new DependencyUnavailableException();
                 },
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK);
         delete.execute(OWNER, WORKSPACE, CONNECTION_ID);
         assertThat(usageCalls).hasValue(0);
         verify(credentials).deleteByConnectionId(CONNECTION_ID);
@@ -275,7 +320,8 @@ class ConnectionUsageProtectionTest {
                             memberships,
                             authorizationPolicy,
                             (workspaceId, connectionId) -> true,
-                            new DirectTransactionRunner()));
+                            new DirectTransactionRunner(),
+                            NO_OP_WORKSPACE_LOCK));
 
             assertThatThrownBy(() -> delete.execute(
                     membership.getUserId(), WORKSPACE, CONNECTION_ID))
@@ -306,7 +352,8 @@ class ConnectionUsageProtectionTest {
                 (workspaceId, connectionId) -> {
                     throw new DependencyUnavailableException();
                 },
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK);
 
         assertThatThrownBy(() -> useCase.execute(new com.weav.workspace.application.dto.UpdateConnectionCommand(
                 WORKSPACE, MEMBER, CONNECTION_ID, "Unavailable", null)))
@@ -352,7 +399,9 @@ class ConnectionUsageProtectionTest {
                 authorizationPolicy,
                 new com.weav.workspace.application.service.ConnectionViewAssembler(authorizationPolicy),
                 (workspaceId, connectionId) -> true,
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK,
+                emptyNotificationRecorder(memberships));
         assertThatThrownBy(() -> disable.execute(MEMBER, WORKSPACE, CONNECTION_ID))
                 .isInstanceOf(ConflictException.class);
 
@@ -365,7 +414,9 @@ class ConnectionUsageProtectionTest {
                 payloadCodec,
                 crypto,
                 (workspaceId, connectionId) -> true,
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK,
+                emptyNotificationRecorder(memberships));
         assertThatThrownBy(() -> test.execute(MEMBER, WORKSPACE, CONNECTION_ID))
                 .isInstanceOf(ConflictException.class);
         assertThat(providerCalls).hasValue(0);
@@ -413,7 +464,9 @@ class ConnectionUsageProtectionTest {
                 authorizationPolicy,
                 new com.weav.workspace.application.service.ConnectionViewAssembler(authorizationPolicy),
                 usage,
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK,
+                emptyNotificationRecorder(memberships));
         assertThat(disable.execute(OWNER, WORKSPACE, CONNECTION_ID).status())
                 .isEqualTo(ConnectionStatus.DISABLED);
 
@@ -426,7 +479,9 @@ class ConnectionUsageProtectionTest {
                 payloadCodec,
                 crypto,
                 usage,
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK,
+                emptyNotificationRecorder(memberships));
         assertThat(test.execute(OWNER, WORKSPACE, CONNECTION_ID).outcome())
                 .isEqualTo(com.weav.workspace.application.dto.ConnectionTestResult.ConnectionTestOutcome.VERIFIED);
         assertThat(usageCalls).hasValue(0);
@@ -457,7 +512,8 @@ class ConnectionUsageProtectionTest {
                     transactionAtRemote.set(runner.active());
                     return false;
                 },
-                runner);
+                runner,
+                NO_OP_WORKSPACE_LOCK);
 
         assertThatThrownBy(() -> useCase.execute(new com.weav.workspace.application.dto.UpdateConnectionCommand(
                 WORKSPACE, MEMBER, CONNECTION_ID, "Fresh auth", null)))
@@ -489,7 +545,8 @@ class ConnectionUsageProtectionTest {
                 new ConnectionConfigPolicy(),
                 new com.weav.workspace.application.service.ConnectionViewAssembler(authorizationPolicy),
                 (workspaceId, connectionId) -> true,
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK);
 
         assertThatThrownBy(() -> useCase.execute(new com.weav.workspace.application.dto.UpdateConnectionCommand(
                 WORKSPACE, OWNER, CONNECTION_ID, "Downgraded", null)))
@@ -544,7 +601,8 @@ class ConnectionUsageProtectionTest {
                         memberships,
                         authorizationPolicy,
                         client(Duration.ofSeconds(1), Duration.ofSeconds(1), SERVICE_KEY),
-                        new DirectTransactionRunner()));
+                        new DirectTransactionRunner(),
+                        NO_OP_WORKSPACE_LOCK));
 
         delete.execute(OWNER, WORKSPACE, CONNECTION_ID);
 
@@ -577,7 +635,8 @@ class ConnectionUsageProtectionTest {
                         memberships,
                         authorizationPolicy,
                         client(Duration.ofSeconds(1), Duration.ofSeconds(1), SERVICE_KEY),
-                        new DirectTransactionRunner()));
+                        new DirectTransactionRunner(),
+                        NO_OP_WORKSPACE_LOCK));
 
         assertThatThrownBy(() -> delete.execute(OWNER, WORKSPACE, CONNECTION_ID))
                 .isInstanceOf(DependencyUnavailableException.class);
@@ -686,7 +745,8 @@ class ConnectionUsageProtectionTest {
                 new ConnectionConfigPolicy(),
                 new com.weav.workspace.application.service.ConnectionViewAssembler(authorizationPolicy),
                 client(Duration.ofSeconds(1), Duration.ofMillis(120), SERVICE_KEY),
-                new DirectTransactionRunner());
+                new DirectTransactionRunner(),
+                NO_OP_WORKSPACE_LOCK);
 
         long started = System.nanoTime();
         try {
@@ -738,6 +798,15 @@ class ConnectionUsageProtectionTest {
 
     private String baseUrl() {
         return "http://127.0.0.1:" + server.getAddress().getPort();
+    }
+
+    private ConnectionNotificationRecorder emptyNotificationRecorder(MembershipRepository memberships) {
+        return new ConnectionNotificationRecorder(
+                event -> { },
+                mock(WorkspaceRepository.class),
+                memberships,
+                authorizationPolicy,
+                Clock.systemUTC());
     }
 
     private static Connection connection(ConnectionStatus status, UUID createdBy) {

@@ -10,6 +10,8 @@ import com.weav.workspace.domain.exception.BadRequestException;
 import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.domain.valueobject.ConnectionProvider;
 import com.weav.workspace.infrastructure.config.GoogleOAuthProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -34,6 +36,7 @@ import java.util.Set;
 /** Fixed-endpoint Google OAuth adapter with bounded bodies and redirects disabled by its client. */
 public final class GoogleOAuthProvider implements GoogleOAuthPort {
 
+    private static final Logger log = LoggerFactory.getLogger(GoogleOAuthProvider.class);
     private static final URI AUTHORIZATION_ENDPOINT = URI.create("https://accounts.google.com/o/oauth2/v2/auth");
     private static final URI TOKEN_ENDPOINT = URI.create("https://oauth2.googleapis.com/token");
     private static final URI GMAIL_PROFILE_ENDPOINT = URI.create(
@@ -467,6 +470,7 @@ public final class GoogleOAuthProvider implements GoogleOAuthPort {
 
     private void requireConfiguredClient() {
         if (!properties.isConfigured()) {
+            log.warn("Google OAuth client is not configured; set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET");
             throw new DependencyUnavailableException();
         }
     }

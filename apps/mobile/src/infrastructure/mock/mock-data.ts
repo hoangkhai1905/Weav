@@ -3,7 +3,6 @@ import type { Workflow } from '../../domain/workflow/workflow.types';
 import type { Execution } from '../../domain/execution/execution.types';
 import type { ConnectionItem } from '../../domain/connection/connection.types';
 import type { Workspace, WorkspaceMember } from '../../domain/workspace/workspace.types';
-import type { NotificationItem } from '../../domain/notification/notification.types';
 import type { TelegramStatus } from '../../domain/telegram/telegram.types';
 
 export const MOCK_USER: UserProfile = {
@@ -16,6 +15,8 @@ export const MOCK_USER: UserProfile = {
 export const MOCK_WORKSPACE: Workspace = {
   id: 'ws-main',
   name: 'WEAV Production Workspace',
+  createdBy: 'user-001',
+  updatedAt: '2026-08-01T00:00:00Z',
   description: 'Primary AI Workflow Automation Hub',
   ownerName: 'Nguyễn Anh Xuân Trường',
   createdAt: '2026-08-01T00:00:00Z',
@@ -23,9 +24,9 @@ export const MOCK_WORKSPACE: Workspace = {
 };
 
 export const MOCK_MEMBERS: WorkspaceMember[] = [
-  { id: 'user-001', name: 'Nguyễn Anh Xuân Trường', email: 'truong@example.com', role: 'OWNER', canPublishWorkflow: true, joinedAt: '2026-08-01T00:00:00Z' },
-  { id: 'user-002', name: 'Lê Văn Nam', email: 'nam.le@example.com', role: 'MEMBER', canPublishWorkflow: true, joinedAt: '2026-08-10T00:00:00Z' },
-  { id: 'user-003', name: 'Trần Thị Bích', email: 'bich.tran@example.com', role: 'MEMBER', canPublishWorkflow: false, joinedAt: '2026-08-14T00:00:00Z' },
+  { id: 'user-001', name: 'Nguyễn Anh Xuân Trường', displayName: 'Nguyễn Anh Xuân Trường', email: 'truong@example.com', role: 'OWNER', canPublishWorkflow: true, canManageWorkflowState: true, active: true, joinedAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z' },
+  { id: 'user-002', name: 'Lê Văn Nam', displayName: 'Lê Văn Nam', email: 'nam.le@example.com', role: 'MEMBER', canPublishWorkflow: true, canManageWorkflowState: false, active: true, joinedAt: '2026-08-10T00:00:00Z', updatedAt: '2026-08-10T00:00:00Z' },
+  { id: 'user-003', name: 'Trần Thị Bích', displayName: 'Trần Thị Bích', email: 'bich.tran@example.com', role: 'MEMBER', canPublishWorkflow: false, canManageWorkflowState: false, active: true, joinedAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-14T00:00:00Z' },
 ];
 
 export const MOCK_WORKFLOWS: Workflow[] = [
@@ -248,7 +249,17 @@ export const MOCK_CONNECTIONS: ConnectionItem[] = [
   { id: 'conn-5', provider: 'gmail', name: 'Support Mailbox Backup', status: 'EXPIRED', createdBy: 'Trần Thị Bích', createdAt: '2026-08-01T00:00:00Z' },
 ];
 
-export const MOCK_NOTIFICATIONS: NotificationItem[] = [
+interface LegacyMockNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+  link?: string;
+}
+
+export const MOCK_NOTIFICATIONS: LegacyMockNotification[] = [
   { id: 'notif-1', type: 'WORKFLOW_COMPLETED', title: 'Execution Succeeded ⚡', message: 'Workflow "Invoice OCR → AI Extract → Google Sheets" completed in 4.2s.', timestamp: '10 phút trước', read: false, link: '/(app)/executions/exec-101' },
   { id: 'notif-2', type: 'WORKFLOW_FAILED', title: 'Execution Failed ⚠️', message: 'Workflow "Invoice OCR → AI Extract → Google Sheets" failed at OCR step.', timestamp: '1 giờ trước', read: false, link: '/(app)/executions/exec-103' },
   { id: 'notif-3', type: 'TELEGRAM_LINKED', title: 'Telegram Linked 🤖', message: 'Telegram Bot @weav_automation_bot linked to workspace.', timestamp: 'Hôm qua', read: true, link: '/(app)/telegram' },

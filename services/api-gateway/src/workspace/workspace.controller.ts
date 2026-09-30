@@ -80,6 +80,27 @@ const updatePermissionsBodySchema = z
   })
   .strict();
 
+const connectionConfigSchema = z.record(z.string(), z.unknown());
+const createConnectionBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    provider: z.enum(['TELEGRAM', 'HTTP', 'GMAIL', 'GOOGLE_SHEETS']),
+    authType: z.enum(['NONE', 'TOKEN', 'API_KEY', 'BASIC', 'OAUTH2']),
+    config: connectionConfigSchema.optional(),
+  })
+  .strict();
+const updateConnectionBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    config: z.union([connectionConfigSchema, z.null()]).optional(),
+  })
+  .strict()
+  .refine(
+    (body) =>
+      body.name !== undefined ||
+      (body.config !== undefined && body.config !== null),
+  );
+
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
   if (!result.success) {
@@ -211,6 +232,133 @@ export class WorkspaceController {
       request,
       reply,
       `/${workspace}/members/${user}`,
+    );
+  }
+
+  @Post(':workspaceId/connections')
+  createConnection(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const id = workspaceId(rawWorkspaceId);
+    return this.proxy.forward('POST', request, reply, `/${id}/connections`, {
+      body: parse(createConnectionBodySchema, body),
+    });
+  }
+
+  @Get(':workspaceId/connections')
+  listConnections(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const id = workspaceId(rawWorkspaceId);
+    return this.proxy.forward('GET', request, reply, `/${id}/connections`);
+  }
+
+  @Get(':workspaceId/connections/:connectionId')
+  getConnection(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('connectionId') rawConnectionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const connection = workspaceId(rawConnectionId);
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      `/${workspace}/connections/${connection}`,
+    );
+  }
+
+  @Patch(':workspaceId/connections/:connectionId')
+  updateConnection(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('connectionId') rawConnectionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const connection = workspaceId(rawConnectionId);
+    return this.proxy.forward(
+      'PATCH',
+      request,
+      reply,
+      `/${workspace}/connections/${connection}`,
+      { body: parse(updateConnectionBodySchema, body) },
+    );
+  }
+
+  @Delete(':workspaceId/connections/:connectionId')
+  deleteConnection(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('connectionId') rawConnectionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const connection = workspaceId(rawConnectionId);
+    return this.proxy.forward(
+      'DELETE',
+      request,
+      reply,
+      `/${workspace}/connections/${connection}`,
+    );
+  }
+
+  @Post(':workspaceId/connections/:connectionId/test')
+  testConnection(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('connectionId') rawConnectionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const connection = workspaceId(rawConnectionId);
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/${workspace}/connections/${connection}/test`,
+    );
+  }
+
+  @Post(':workspaceId/connections/:connectionId/disable')
+  disableConnection(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('connectionId') rawConnectionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const connection = workspaceId(rawConnectionId);
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/${workspace}/connections/${connection}/disable`,
+    );
+  }
+
+  @Post(':workspaceId/connections/:connectionId/oauth/authorize')
+  startConnectionOAuth(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('connectionId') rawConnectionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const connection = workspaceId(rawConnectionId);
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/${workspace}/connections/${connection}/oauth/authorize`,
     );
   }
 }

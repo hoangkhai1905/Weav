@@ -9,12 +9,15 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 public interface SpringDataMembershipRepository
         extends JpaRepository<MembershipJpaEntity, UUID>, JpaSpecificationExecutor<MembershipJpaEntity> {
 
     Optional<MembershipJpaEntity> findByWorkspaceIdAndUserId(UUID workspaceId, UUID userId);
+
+    List<MembershipJpaEntity> findByWorkspaceIdOrderByUserIdAsc(UUID workspaceId);
 
     boolean existsByWorkspaceIdAndUserId(UUID workspaceId, UUID userId);
 

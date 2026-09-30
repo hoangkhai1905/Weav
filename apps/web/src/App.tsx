@@ -17,10 +17,13 @@ import { NotificationsPage } from './pages/NotificationsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { Toaster } from 'sonner';
 
 export function App() {
   return (
-    <Routes>
+    <>
+      <Toaster position="top-right" richColors closeButton />
+      <Routes>
       {/* Auth Routes */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
@@ -67,7 +70,8 @@ export function App() {
 
       {/* Catch-all Fallback */}
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+      </Routes>
+    </>
   );
 }
 

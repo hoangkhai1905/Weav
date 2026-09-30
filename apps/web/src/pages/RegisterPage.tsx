@@ -13,7 +13,7 @@ export function RegisterPage() {
   const navigate = useNavigate();
   const { setUser } = useAuthStore();
   const { theme, toggleTheme } = useUIStore();
-  const { language, toggleLanguage } = useI18nStore();
+  const { language, toggleLanguage, t } = useI18nStore();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -29,12 +29,8 @@ export function RegisterPage() {
       const session = await authApi.register(email, name, password);
       setUser(session.user);
       navigate('/dashboard');
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : 'Unable to register. Please try again.',
-      );
+    } catch {
+      setError(t('auth.registration_failed'));
     } finally {
       setLoading(false);
     }
@@ -53,6 +49,7 @@ export function RegisterPage() {
         <div className="flex items-center gap-2.5">
           <button
             onClick={toggleLanguage}
+            aria-label={language === 'VI' ? t('topbar.switch_to_english') : t('topbar.switch_to_vietnamese')}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700/60 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 transition-all cursor-pointer shadow-sm"
           >
             <Globe size={14} className="text-blue-500" />
@@ -61,17 +58,18 @@ export function RegisterPage() {
 
           <button
             onClick={toggleTheme}
+            aria-label={theme === 'light' ? t('common.light_theme') : t('common.dark_theme')}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700/60 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 transition-all cursor-pointer shadow-sm"
           >
             {theme === 'light' ? (
               <>
                 <Sun size={15} className="text-amber-500" />
-                <span>Light</span>
+                <span>{t('common.light_theme')}</span>
               </>
             ) : (
               <>
                 <Moon size={15} className="text-blue-400" />
-                <span>Dark</span>
+                <span>{t('common.dark_theme')}</span>
               </>
             )}
           </button>
@@ -101,11 +99,10 @@ export function RegisterPage() {
             <div>
               <div className="space-y-1.5 mb-6">
                 <h1 className="text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
-                  Create your Account
+                  {t('auth.create_account')}
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Join WEAV and start building automated AI workflows in
-                  minutes.
+                  {t('auth.register_intro')}
                 </p>
               </div>
 
@@ -120,38 +117,41 @@ export function RegisterPage() {
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Full Name
+                    {t('auth.full_name')}
                   </label>
                   <input
                     type="text"
+                    aria-label={t('auth.full_name')}
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Nguyễn Văn A"
+                    placeholder={t('auth.name_placeholder')}
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/70 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Email Address
+                    {t('auth.email')}
                   </label>
                   <input
                     type="email"
+                    aria-label={t('auth.email')}
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@company.com"
+                    placeholder={t('auth.email_placeholder')}
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/70 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Password
+                    {t('auth.password')}
                   </label>
                   <input
                     type="password"
+                    aria-label={t('auth.password')}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -165,19 +165,19 @@ export function RegisterPage() {
                   disabled={loading}
                   className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/25 transition-all flex items-center justify-center gap-2 cursor-pointer border border-blue-400/30 mt-2"
                 >
-                  <span>Create Account</span>
+                  <span>{loading ? t('auth.creating_account') : t('auth.create_account_submit')}</span>
                   <ArrowRight size={16} />
                 </button>
               </form>
             </div>
 
             <div className="pt-4 border-t border-slate-100 dark:border-slate-800/80 text-center text-xs text-slate-500 dark:text-slate-400">
-              Already have an account?{' '}
+              {t('auth.already_account')}{' '}
               <Link
                 to="/login"
                 className="text-blue-600 dark:text-blue-400 font-bold hover:underline"
               >
-                Sign In
+                {t('auth.sign_in')}
               </Link>
             </div>
           </motion.div>
@@ -186,7 +186,7 @@ export function RegisterPage() {
 
       {/* Footer copyright */}
       <footer className="w-full text-center text-[11px] text-slate-400 dark:text-slate-500 z-20 shrink-0 pt-2">
-        WEAV Automation V1.0 • Built for Modern AI Engineering
+        {t('auth.footer')}
       </footer>
     </div>
   );

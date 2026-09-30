@@ -1,0 +1,157 @@
+services:
+  workspace-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: task8_workspace
+      POSTGRES_USER: task8_runtime
+      POSTGRES_PASSWORD: ${TASK8_WORKSPACE_DB_PASSWORD:?test runner must set an ephemeral password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U task8_runtime -d task8_workspace"]
+      interval: 2s
+      timeout: 2s
+      retries: 45
+    restart: "no"
+    volumes:
+      - workspace-db-data:/var/lib/postgresql/data
+
+  notification-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: task8_notification
+      POSTGRES_USER: task8_runtime
+      POSTGRES_PASSWORD: ${TASK8_NOTIFICATION_DB_PASSWORD:?test runner must set an ephemeral password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U task8_runtime -d task8_notification"]
+      interval: 2s
+      timeout: 2s
+      retries: 45
+    restart: "no"
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: task8_runtime
+      RABBITMQ_DEFAULT_PASS: ${TASK8_RABBITMQ_PASSWORD:?test runner must set an ephemeral password}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 45
+    restart: "no"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    restart: "no"
+
+  workspace-service:
+    build:
+      context: ../../../../
+      dockerfile: apps/web/e2e/docker/Dockerfile.task8-workspace
+    entrypoint: ["java"]
+    command: ["-jar", "target/workspace-service-0.0.1-SNAPSHOT.jar"]
+    environment:
+      DB_HOST: workspace-db
+      DB_PORT: "5432"
+      DB_NAME: task8_workspace
+      DB_USERNAME: task8_runtime
+      DB_PASSWORD: ${TASK8_WORKSPACE_DB_PASSWORD:?test runner must set an ephemeral password}
+      DB_SCHEMA: workspace
+      DB_SSL_MODE: disable
+      CREDENTIAL_ENCRYPTION_KEY: ${TASK8_CREDENTIAL_ENCRYPTION_KEY:?test runner must set an ephemeral key}
+      JWT_ACCESS_SECRET: ${TASK8_JWT_SECRET:?test runner must set an ephemeral signing key}
+      JWT_ISSUER: weav-identity
+      JWT_AUDIENCE: weav-api
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: task8_runtime
+      RABBITMQ_PASSWORD: ${TASK8_RABBITMQ_PASSWORD:?test runner must set an ephemeral password}
+      RABBITMQ_VHOST: /
+      RABBITMQ_TLS_ENABLED: "false"
+      REDIS_URL: redis://valkey:6379
+      WORKSPACE_NOTIFICATION_PUBLISHER_ENABLED: "true"
+    depends_on:
+      workspace-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      valkey:
+        condition: service_started
+    ports:
+      - "127.0.0.1::8080"
+    restart: "no"
+
+  notification-service:
+    build:
+      context: ../../../../
+      dockerfile: services/notification-service/Dockerfile.dev
+    command: ["sh", "-lc", "pnpm db:migrate && pnpm build && pnpm start:prod"]
+    environment:
+      PORT: "3000"
+      DB_HOST: notification-db
+      DB_PORT: "5432"
+      DB_NAME: task8_notification
+      DB_USERNAME: task8_runtime
+      DB_PASSWORD: ${TASK8_NOTIFICATION_DB_PASSWORD:?test runner must set an ephemeral password}
+      DB_SCHEMA: notification
+      DB_SSL_MODE: disable
+      NOTIFICATION_MIGRATION_URL: postgresql://task8_runtime:${TASK8_NOTIFICATION_DB_PASSWORD:?test runner must set an ephemeral password}@notification-db:5432/task8_notification?schema=notification
+      JWT_ACCESS_SECRET: ${TASK8_JWT_SECRET:?test runner must set an ephemeral signing key}
+      JWT_ISSUER: weav-identity
+      JWT_AUDIENCE: weav-api
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: task8_runtime
+      RABBITMQ_PASSWORD: ${TASK8_RABBITMQ_PASSWORD:?test runner must set an ephemeral password}
+      RABBITMQ_VHOST: /
+      RABBITMQ_TLS: "false"
+      NOTIFICATION_EXCHANGE: weav.events
+      NOTIFICATION_TELEGRAM_ENABLED: "false"
+      NOTIFICATION_EXPO_ENABLED: "false"
+      APP_ENV: test
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1::3000"
+    restart: "no"
+
+  api-gateway:
+    build:
+      context: ../../../../
+      dockerfile: services/api-gateway/Dockerfile.dev
+    command: ["sh", "-lc", "pnpm build && pnpm start:prod"]
+    environment:
+      PORT: "3000"
+      JWT_ACCESS_SECRET: ${TASK8_JWT_SECRET:?test runner must set an ephemeral signing key}
+      JWT_ISSUER: weav-identity
+      JWT_AUDIENCE: weav-api
+      IDENTITY_SERVICE_URL: http://identity-not-running:8081
+      WORKSPACE_SERVICE_URL: http://workspace-service:8080
+      WORKFLOW_SERVICE_URL: http://workflow-not-running:8083
+      AI_SERVICE_URL: http://ai-not-running:3002
+      BOT_SERVICE_URL: http://bot-not-running:3003
+      NOTIFICATION_SERVICE_URL: http://notification-service:3000
+      OCR_SERVICE_URL: http://ocr-not-running:8000
+      CORS_ALLOWED_ORIGINS: ${TASK8_CORS_ALLOWED_ORIGIN:?test runner must set an ephemeral web origin}
+      APP_ENV: test
+      NODE_ENV: production
+    depends_on:
+      workspace-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    ports:
+      - "127.0.0.1::3000"
+    restart: "no"
+
+volumes:
+  workspace-db-data:
+  notification-db-data:
+  rabbitmq-data:

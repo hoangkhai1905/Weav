@@ -41,7 +41,7 @@ export function Sidebar() {
   const { t } = useI18nStore();
   const prefersReducedMotion = useReducedMotion();
   const activeTransition = prefersReducedMotion ? REDUCED_MOTION_TRANSITION : MOTION_TRANSITION;
-  const profileName = user?.displayName?.trim() || user?.name?.trim() || user?.email || 'Account';
+  const profileName = user?.displayName?.trim() || user?.name?.trim() || user?.email || t('nav.account');
   const profileInitials = profileName
     .split(/\s+/)
     .filter(Boolean)
@@ -107,7 +107,7 @@ export function Sidebar() {
           <div className="flex flex-col">
             <span className="text-sm font-bold leading-none tracking-tight text-sidebar-foreground">WEAV</span>
             <span className="mt-1 text-[11px] font-medium leading-tight text-sidebar-muted">
-              Workflow Operations
+              {t('nav.brand_subtitle')}
             </span>
           </div>
         </div>
@@ -116,22 +116,22 @@ export function Sidebar() {
           <button
             onClick={() => setMobileSidebarOpen(false)}
             className="rounded-md p-1.5 text-sidebar-muted transition-colors hover:bg-blue-100 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            aria-label="Close navigation"
+            aria-label={t('nav.close_navigation')}
           >
             <X size={18} />
           </button>
         )}
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5" aria-label="Primary navigation">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5" aria-label={t('nav.primary')}>
         <div className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-muted">
-          Platform
+          {t('nav.platform')}
         </div>
         {renderNavItems(MAIN_NAV_ITEMS, isMobile)}
       </nav>
 
       <div data-testid="sidebar-footer" className="shrink-0 space-y-1 border-t border-slate-200/80 bg-slate-100/70 p-3 dark:border-slate-800 dark:bg-slate-900/45">
-        <nav aria-label="Support navigation">{renderNavItems(BOTTOM_NAV_ITEMS, isMobile)}</nav>
+        <nav aria-label={t('nav.support')}>{renderNavItems(BOTTOM_NAV_ITEMS, isMobile)}</nav>
 
         <div className="mt-3 flex items-center justify-between border-t border-slate-200 px-2 pt-3 pb-1">
           <div className="flex min-w-0 items-center gap-2.5">
@@ -139,11 +139,11 @@ export function Sidebar() {
               {profileInitials || 'A'}
             </div>
             <div className="flex min-w-0 flex-col">
-              <span className="truncate text-xs font-semibold leading-tight text-sidebar-foreground">
+              <span data-testid="sidebar-profile-name" className="truncate text-xs font-semibold leading-tight text-sidebar-foreground">
                 {profileName}
               </span>
               <div className="mt-1 flex items-center gap-1.5">
-                <span className="truncate text-[11px] leading-none text-sidebar-muted">Workspace</span>
+                <span className="truncate text-[11px] leading-none text-sidebar-muted">{t('nav.workspace')}</span>
                 <span className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-blue-700">
                   Pro
                 </span>

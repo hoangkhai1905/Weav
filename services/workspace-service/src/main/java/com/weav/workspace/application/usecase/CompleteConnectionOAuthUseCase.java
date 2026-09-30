@@ -4,6 +4,8 @@ import com.weav.workspace.application.dto.ConnectionTestResult;
 import com.weav.workspace.application.dto.GoogleOAuthCallbackResult;
 import com.weav.workspace.application.dto.GoogleOAuthTokenResponse;
 import com.weav.workspace.application.dto.OAuthPendingState;
+import com.weav.workspace.application.notification.ConnectionNotificationRecorder;
+import com.weav.workspace.application.notification.NotificationOutboxWriteException;
 import com.weav.workspace.application.port.out.ConnectionProviderPort;
 import com.weav.workspace.application.port.out.CredentialCryptoPort;
 import com.weav.workspace.application.port.out.GoogleOAuthPort;
@@ -22,6 +24,7 @@ import com.weav.workspace.domain.port.out.ConnectionRepository;
 import com.weav.workspace.domain.port.out.CredentialRepository;
 import com.weav.workspace.domain.valueobject.ConnectionAuthType;
 import com.weav.workspace.domain.valueobject.ConnectionProvider;
+import com.weav.workspace.domain.valueobject.ConnectionStatus;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionException;
@@ -50,6 +53,7 @@ public final class CompleteConnectionOAuthUseCase {
     private final CredentialPayloadCodec payloadCodec;
     private final CredentialCryptoPort crypto;
     private final Clock clock;
+    private final ConnectionNotificationRecorder notificationRecorder;
 
     public CompleteConnectionOAuthUseCase(
             ConnectionRepository connectionRepository,
@@ -61,7 +65,8 @@ public final class CompleteConnectionOAuthUseCase {
             ConnectionProviderRegistry providerRegistry,
             CredentialPayloadCodec payloadCodec,
             CredentialCryptoPort crypto,
-            Clock clock) {
+            Clock clock,
+            ConnectionNotificationRecorder notificationRecorder) {
         this.connectionRepository = Objects.requireNonNull(
                 connectionRepository, "connectionRepository must not be null");
         this.credentialRepository = Objects.requireNonNull(
@@ -74,6 +79,7 @@ public final class CompleteConnectionOAuthUseCase {
         this.payloadCodec = Objects.requireNonNull(payloadCodec, "payloadCodec must not be null");
         this.crypto = Objects.requireNonNull(crypto, "crypto must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.notificationRecorder = Objects.requireNonNull(notificationRecorder, "notificationRecorder must not be null");
     }
 
     public ConnectionTestResult execute(String state, String authorizationCode) {
@@ -82,9 +88,18 @@ public final class CompleteConnectionOAuthUseCase {
 
     /** The callback error is handled only after state consumption and is never reflected to the client. */
     public ConnectionTestResult execute(String state, String authorizationCode, String callbackError) {
-        OAuthPendingState pendingState = stateStore.consume(state)
+        OAuthStateStore.ConsumedState consumedState = stateStore.consumeForCallback(state)
                 .orElseThrow(() -> new BadRequestException("Google authorization state is invalid or expired"));
-        return executePending(pendingState, authorizationCode, callbackError, null);
+        try {
+            return executePending(
+                    consumedState.pendingState(),
+                    consumedState.notificationOrigin(),
+                    authorizationCode,
+                    callbackError,
+                    null);
+        } finally {
+            stateStore.releaseOrigin(consumedState);
+        }
     }
 
     /**
@@ -95,54 +110,67 @@ public final class CompleteConnectionOAuthUseCase {
             String state,
             String authorizationCode,
             String callbackError) {
-        final OAuthPendingState pendingState;
+        final OAuthStateStore.ConsumedState consumedState;
         try {
-            pendingState = stateStore.consume(state).orElse(null);
+            consumedState = stateStore.consumeForCallback(state).orElse(null);
         } catch (DependencyUnavailableException exception) {
             // Redis is the only state authority. Without it there is no trusted
             // connection id and the callback must fail closed.
             return GoogleOAuthCallbackResult.failure(
                     null, GoogleOAuthCallbackResult.FailureReason.STATE_INVALID);
         }
-        if (pendingState == null) {
+        if (consumedState == null) {
             return GoogleOAuthCallbackResult.failure(
                     null, GoogleOAuthCallbackResult.FailureReason.STATE_INVALID);
         }
 
+        OAuthPendingState pendingState = consumedState.pendingState();
         UUID connectionId = pendingState.connectionId();
-        if (callbackError != null && !callbackError.isBlank()) {
-            return GoogleOAuthCallbackResult.failure(
-                    connectionId, GoogleOAuthCallbackResult.FailureReason.AUTHORIZATION_DENIED);
-        }
-        if (!isValidAuthorizationCode(authorizationCode)) {
-            return GoogleOAuthCallbackResult.failure(
-                    connectionId, GoogleOAuthCallbackResult.FailureReason.TOKEN_EXCHANGE_FAILED);
-        }
-
-        CallbackStageTracker stage = new CallbackStageTracker();
         try {
-            ConnectionTestResult verification = executePending(
-                    pendingState, authorizationCode, null, stage);
-            if (verification == null || verification.outcome() == null
-                    || verification.outcome() != ConnectionTestResult.ConnectionTestOutcome.VERIFIED) {
+            if (callbackError != null && !callbackError.isBlank()) {
+                return GoogleOAuthCallbackResult.failure(
+                        connectionId, GoogleOAuthCallbackResult.FailureReason.AUTHORIZATION_DENIED);
+            }
+            if (!isValidAuthorizationCode(authorizationCode)) {
+                return GoogleOAuthCallbackResult.failure(
+                        connectionId, GoogleOAuthCallbackResult.FailureReason.TOKEN_EXCHANGE_FAILED);
+            }
+
+            CallbackStageTracker stage = new CallbackStageTracker();
+            try {
+                ConnectionTestResult verification = executePending(
+                        pendingState,
+                        consumedState.notificationOrigin(),
+                        authorizationCode,
+                        null,
+                        stage);
+                if (verification == null || verification.outcome() == null
+                        || verification.outcome() != ConnectionTestResult.ConnectionTestOutcome.VERIFIED) {
+                    return GoogleOAuthCallbackResult.failure(
+                            connectionId, GoogleOAuthCallbackResult.FailureReason.VERIFICATION_FAILED);
+                }
+                return GoogleOAuthCallbackResult.success(connectionId);
+            } catch (DomainException exception) {
+                // Application failures are reduced to an allow-listed reason; provider,
+                // database, and callback details never reach the redirect.
+                return GoogleOAuthCallbackResult.failure(connectionId, stage.failureReason());
+            } catch (NotificationOutboxWriteException exception) {
                 return GoogleOAuthCallbackResult.failure(
                         connectionId, GoogleOAuthCallbackResult.FailureReason.VERIFICATION_FAILED);
+            } catch (DataAccessException | TransactionException exception) {
+                // Repository and transaction failures can happen after state is consumed,
+                // including at transaction commit. Keep callback behavior safe without
+                // reporting success or exposing infrastructure diagnostics.
+                return GoogleOAuthCallbackResult.failure(connectionId, stage.failureReason());
             }
-            return GoogleOAuthCallbackResult.success(connectionId);
-        } catch (DomainException exception) {
-            // Application failures are reduced to an allow-listed reason; provider,
-            // database, and callback details never reach the redirect.
-            return GoogleOAuthCallbackResult.failure(connectionId, stage.failureReason());
-        } catch (DataAccessException | TransactionException exception) {
-            // Repository and transaction failures can happen after state is consumed,
-            // including at transaction commit. Keep callback behavior safe without
-            // reporting success or exposing infrastructure diagnostics.
-            return GoogleOAuthCallbackResult.failure(connectionId, stage.failureReason());
+        } finally {
+            stateStore.releaseOrigin(consumedState);
         }
     }
 
     private ConnectionTestResult executePending(
             OAuthPendingState pendingState,
+            OAuthStateStore.NotificationOrigin notificationOrigin,
             String authorizationCode,
             String callbackError,
             CallbackStageTracker callbackStage) {
@@ -216,8 +244,12 @@ public final class CompleteConnectionOAuthUseCase {
                 (membership, currentConnection) -> {
                     validatePendingConnection(pendingState, currentConnection);
                     if (verification.outcome() == ConnectionTestResult.ConnectionTestOutcome.AUTH_INVALID) {
-                        currentConnection.markInvalid();
-                        connectionRepository.save(currentConnection);
+                        if (currentConnection.getStatus()
+                                != com.weav.workspace.domain.valueobject.ConnectionStatus.INVALID) {
+                            currentConnection.markInvalid();
+                            connectionRepository.save(currentConnection);
+                            notificationRecorder.recordInvalid(currentConnection, pendingState.userId());
+                        }
                         return verification;
                     }
 
@@ -227,6 +259,8 @@ public final class CompleteConnectionOAuthUseCase {
                     if (!accessTokenExpiresAt.isAfter(now)) {
                         throw new DependencyUnavailableException();
                     }
+                    boolean newlyConnected = currentConnection.getStatus()
+                            != ConnectionStatus.ACTIVE;
                     Credential replacement = currentCredential == null
                             ? new Credential(
                                     UUID.randomUUID(),
@@ -247,6 +281,10 @@ public final class CompleteConnectionOAuthUseCase {
                     credentialRepository.save(replacement);
                     currentConnection.markVerified(now);
                     connectionRepository.save(currentConnection);
+                    if (newlyConnected
+                            && notificationOrigin == OAuthStateStore.NotificationOrigin.NON_ACTIVE) {
+                        notificationRecorder.recordConnected(currentConnection, pendingState.userId());
+                    }
                     return verification;
                 });
     }

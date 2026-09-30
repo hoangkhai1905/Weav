@@ -67,7 +67,9 @@ class MembershipUseCasesTest {
         when(memberships.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         MemberView result = new AddMemberUseCase(
-                memberships, identity, new RecordingTransactionRunner(), afterCommit, cache)
+                memberships, identity, new RecordingTransactionRunner(), afterCommit, cache,
+                WorkspaceNotificationTestFixtures.workspaceRepository(WORKSPACE, OWNER),
+                WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
                 .execute(new AddMemberCommand(WORKSPACE, OWNER, "  person@example.com  "));
 
         assertEquals(OTHER, result.userId());
@@ -86,7 +88,9 @@ class MembershipUseCasesTest {
 
         assertThrows(ForbiddenException.class, () -> new AddMemberUseCase(
                 memberships, identity, new RecordingTransactionRunner(),
-                new ImmediateAfterCommitExecutor(), mock(WorkspaceAuthorizationCache.class))
+                new ImmediateAfterCommitExecutor(), mock(WorkspaceAuthorizationCache.class),
+                WorkspaceNotificationTestFixtures.workspaceRepository(WORKSPACE, OWNER),
+                WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
                 .execute(new AddMemberCommand(WORKSPACE, MEMBER, "person@example.com")));
         verify(identity, never()).findByEmail(any());
 
@@ -96,7 +100,9 @@ class MembershipUseCasesTest {
         when(identity.findByEmail("missing@example.com")).thenReturn(Optional.empty());
         DomainException missing = assertThrows(DomainException.class, () -> new AddMemberUseCase(
                 memberships, identity, new RecordingTransactionRunner(),
-                new ImmediateAfterCommitExecutor(), mock(WorkspaceAuthorizationCache.class))
+                new ImmediateAfterCommitExecutor(), mock(WorkspaceAuthorizationCache.class),
+                WorkspaceNotificationTestFixtures.workspaceRepository(WORKSPACE, OWNER),
+                WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
                 .execute(new AddMemberCommand(WORKSPACE, OWNER, "missing@example.com")));
         assertEquals("USER_NOT_FOUND", missing.getCode());
 
@@ -104,7 +110,9 @@ class MembershipUseCasesTest {
                 summary(OTHER, "inactive@example.com", null, false)));
         DomainException inactive = assertThrows(DomainException.class, () -> new AddMemberUseCase(
                 memberships, identity, new RecordingTransactionRunner(),
-                new ImmediateAfterCommitExecutor(), mock(WorkspaceAuthorizationCache.class))
+                new ImmediateAfterCommitExecutor(), mock(WorkspaceAuthorizationCache.class),
+                WorkspaceNotificationTestFixtures.workspaceRepository(WORKSPACE, OWNER),
+                WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
                 .execute(new AddMemberCommand(WORKSPACE, OWNER, "inactive@example.com")));
         assertEquals("USER_INACTIVE", inactive.getCode());
     }
@@ -121,7 +129,9 @@ class MembershipUseCasesTest {
 
         ConflictException duplicate = assertThrows(ConflictException.class, () -> new AddMemberUseCase(
                 memberships, identity, new RecordingTransactionRunner(),
-                new ImmediateAfterCommitExecutor(), mock(WorkspaceAuthorizationCache.class))
+                new ImmediateAfterCommitExecutor(), mock(WorkspaceAuthorizationCache.class),
+                WorkspaceNotificationTestFixtures.workspaceRepository(WORKSPACE, OWNER),
+                WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
                 .execute(new AddMemberCommand(WORKSPACE, OWNER, "person@example.com")));
         assertEquals("USER_ALREADY_MEMBER", duplicate.getCode());
 
@@ -130,7 +140,9 @@ class MembershipUseCasesTest {
                 .thenThrow(new DependencyUnavailableException());
         assertThrows(DependencyUnavailableException.class, () -> new AddMemberUseCase(
                 memberships, identity, new RecordingTransactionRunner(),
-                new ImmediateAfterCommitExecutor(), mock(WorkspaceAuthorizationCache.class))
+                new ImmediateAfterCommitExecutor(), mock(WorkspaceAuthorizationCache.class),
+                WorkspaceNotificationTestFixtures.workspaceRepository(WORKSPACE, OWNER),
+                WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
                 .execute(new AddMemberCommand(WORKSPACE, OWNER, "person@example.com")));
     }
 
@@ -206,7 +218,9 @@ class MembershipUseCasesTest {
 
         Membership result = new UpdateMemberPermissionsUseCase(
                 memberships, new RecordingTransactionRunner(),
-                new ImmediateAfterCommitExecutor(), cache)
+                new ImmediateAfterCommitExecutor(), cache,
+                WorkspaceNotificationTestFixtures.workspaceRepository(WORKSPACE, OWNER),
+                WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
                 .execute(new UpdateMemberPermissionsCommand(WORKSPACE, OWNER, MEMBER, true, true));
 
         assertTrue(result.isCanPublishWorkflow());
@@ -224,16 +238,25 @@ class MembershipUseCasesTest {
         when(memberships.findByWorkspaceIdAndUserId(WORKSPACE, MEMBER)).thenReturn(Optional.of(member));
 
         new RemoveMemberUseCase(memberships, new RecordingTransactionRunner(),
-                new ImmediateAfterCommitExecutor(), cache).execute(WORKSPACE, OWNER, MEMBER);
+                new ImmediateAfterCommitExecutor(), cache,
+                WorkspaceNotificationTestFixtures.workspaceRepository(WORKSPACE, OWNER),
+                WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
+                .execute(WORKSPACE, OWNER, MEMBER);
         verify(memberships).delete(member);
         verify(cache).evict(WORKSPACE, MEMBER);
 
         assertEquals("OWNER_CANNOT_LEAVE", assertThrows(ConflictException.class, () ->
                 new LeaveWorkspaceUseCase(memberships, new RecordingTransactionRunner(),
-                        new ImmediateAfterCommitExecutor(), cache).execute(WORKSPACE, OWNER)).getCode());
+                        new ImmediateAfterCommitExecutor(), cache,
+                        WorkspaceNotificationTestFixtures.workspaceRepository(WORKSPACE, OWNER),
+                        WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
+                        .execute(WORKSPACE, OWNER)).getCode());
         assertEquals("OWNER_CANNOT_REMOVE", assertThrows(ConflictException.class, () ->
                 new RemoveMemberUseCase(memberships, new RecordingTransactionRunner(),
-                        new ImmediateAfterCommitExecutor(), cache).execute(WORKSPACE, OWNER, OWNER)).getCode());
+                        new ImmediateAfterCommitExecutor(), cache,
+                        WorkspaceNotificationTestFixtures.workspaceRepository(WORKSPACE, OWNER),
+                        WorkspaceNotificationTestFixtures.unlocked(), WorkspaceNotificationTestFixtures.recorder())
+                        .execute(WORKSPACE, OWNER, OWNER)).getCode());
     }
 
     @Test

@@ -13,4 +13,6 @@ export interface ApiError {
   code: ApiErrorCode | string;
   message: string;
   details?: unknown;
+  status?: number;
+  requestId?: string;
 }

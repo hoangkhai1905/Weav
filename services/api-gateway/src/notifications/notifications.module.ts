@@ -1,8 +1,11 @@
 import {
   BadRequestException,
   Controller,
+  forwardRef,
   Get,
   HttpException,
+  Inject,
+  Injectable,
   Logger,
   Module,
   Param,
@@ -26,24 +29,29 @@ import {
   type RequestContextCarrier,
 } from '../common/request-context';
 
+interface NotificationProxyTransportApi {
+  forward(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    version: 'v1' | 'v2',
+    path: string,
+    query?: string,
+  ): Promise<unknown> | unknown;
+}
+
 @Controller(['api/v1/notifications', 'api/notifications'])
 @AuthPolicy('required')
 export class NotificationProxyController {
-  private readonly logger = new Logger(NotificationProxyController.name);
-
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    @Inject(forwardRef(() => NotificationProxyTransport))
+    private readonly transport: NotificationProxyTransportApi,
+  ) {}
   @Get() list(
     @Req() request: FastifyRequest,
     @Res() reply: FastifyReply,
     @Query() query: Record<string, string>,
   ) {
-    const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(query)) {
-      if (typeof value !== 'string' || value.length > 512)
-        throw new BadRequestException();
-      params.set(key, value);
-    }
-    return this.forward(request, reply, '', params.toString());
+    return this.forward(request, reply, '', serializeQuery(query));
   }
   @Get('unread-count') count(
     @Req() req: FastifyRequest,
@@ -68,6 +76,104 @@ export class NotificationProxyController {
   async forward(
     req: FastifyRequest,
     reply: FastifyReply,
+    path: string,
+    query = '',
+  ) {
+    return this.transport.forward(req, reply, 'v1', path, query);
+  }
+}
+
+@Controller('api/v2/notifications')
+@AuthPolicy('required')
+export class NotificationV2ProxyController {
+  constructor(
+    @Inject(forwardRef(() => NotificationProxyTransport))
+    private readonly transport: NotificationProxyTransportApi,
+  ) {}
+
+  @Get()
+  list(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Query() query: Record<string, string>,
+  ) {
+    return this.transport.forward(
+      request,
+      reply,
+      'v2',
+      '',
+      serializeQuery(query),
+    );
+  }
+
+  @Get('unread-count')
+  unreadCount(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Query() query: Record<string, string>,
+  ) {
+    return this.transport.forward(
+      request,
+      reply,
+      'v2',
+      '/unread-count',
+      serializeQuery(query),
+    );
+  }
+
+  @Patch(':id/read')
+  markRead(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Param('id') id: string,
+    @Query() query: Record<string, string>,
+  ) {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new BadRequestException();
+    return this.transport.forward(
+      request,
+      reply,
+      'v2',
+      `/${id}/read`,
+      serializeQuery(query),
+    );
+  }
+
+  @Post('read-all')
+  readAll(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Query() query: Record<string, string>,
+  ) {
+    return this.transport.forward(
+      request,
+      reply,
+      'v2',
+      '/read-all',
+      serializeQuery(query),
+    );
+  }
+}
+
+function serializeQuery(query: Record<string, string>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (typeof value !== 'string' || value.length > 512)
+      throw new BadRequestException();
+    params.set(key, value);
+  }
+  return params.toString();
+}
+
+@Injectable()
+export class NotificationProxyTransport {
+  private readonly logger = new Logger(NotificationProxyTransport.name);
+
+  constructor(private readonly config: ConfigService) {}
+
+  async forward(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    version: 'v1' | 'v2',
     path: string,
     query = '',
   ) {
@@ -109,7 +215,7 @@ export class NotificationProxyController {
     const abortHandle = createUpstreamAbortHandle(request, reply, 10_000);
     try {
       const response = await fetch(
-        `${base.replace(/\/$/, '')}/api/v1/notifications${path}${query ? `?${query}` : ''}`,
+        `${base.replace(/\/$/, '')}/api/${version}/notifications${path}${query ? `?${query}` : ''}`,
         {
           method: req.method,
           redirect: 'error',
@@ -157,5 +263,8 @@ export class NotificationProxyController {
     }
   }
 }
-@Module({ controllers: [NotificationProxyController] })
+@Module({
+  controllers: [NotificationProxyController, NotificationV2ProxyController],
+  providers: [NotificationProxyTransport],
+})
 export class NotificationsModule {}

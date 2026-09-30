@@ -3,6 +3,7 @@ package com.weav.workspace.application.usecase;
 import com.weav.workspace.application.dto.ConnectionResponse;
 import com.weav.workspace.application.port.out.WorkflowConnectionUsagePort;
 import com.weav.workspace.application.port.out.TransactionRunner;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.service.ConnectionAuthorizationPolicy;
 import com.weav.workspace.application.service.ConnectionUsageProtection;
 import com.weav.workspace.application.service.ConnectionViewAssembler;
@@ -40,7 +41,8 @@ public final class DeleteCredentialUseCase {
             ConnectionAuthorizationPolicy authorizationPolicy,
             ConnectionViewAssembler viewAssembler,
             WorkflowConnectionUsagePort workflowConnectionUsagePort,
-            TransactionRunner transactionRunner) {
+            TransactionRunner transactionRunner,
+            WorkspaceMutationLock workspaceMutationLock) {
         this(
                 connectionRepository,
                 membershipRepository,
@@ -52,7 +54,8 @@ public final class DeleteCredentialUseCase {
                         membershipRepository,
                         authorizationPolicy,
                         workflowConnectionUsagePort,
-                        transactionRunner));
+                        transactionRunner,
+                        workspaceMutationLock));
     }
 
     private DeleteCredentialUseCase(

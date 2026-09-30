@@ -3,7 +3,10 @@ package com.weav.workspace.application.usecase;
 import com.weav.workspace.application.dto.ConnectionResponse;
 import com.weav.workspace.application.dto.CreateConnectionCommand;
 import com.weav.workspace.application.dto.UpdateConnectionCommand;
+import com.weav.workspace.application.notification.ConnectionNotificationRecorder;
+import com.weav.workspace.application.notification.WorkspaceNotificationEvent;
 import com.weav.workspace.application.port.out.TransactionRunner;
+import com.weav.workspace.application.port.out.NotificationOutboxPort;
 import com.weav.workspace.application.service.ConnectionAuthorizationPolicy;
 import com.weav.workspace.application.service.ConnectionConfigPolicy;
 import com.weav.workspace.application.service.ConnectionProviderPolicy;
@@ -15,9 +18,11 @@ import com.weav.workspace.domain.exception.ResourceNotFoundException;
 import com.weav.workspace.domain.model.Connection;
 import com.weav.workspace.domain.model.Credential;
 import com.weav.workspace.domain.model.Membership;
+import com.weav.workspace.domain.model.Workspace;
 import com.weav.workspace.domain.port.out.ConnectionRepository;
 import com.weav.workspace.domain.port.out.CredentialRepository;
 import com.weav.workspace.domain.port.out.MembershipRepository;
+import com.weav.workspace.domain.port.out.WorkspaceRepository;
 import com.weav.workspace.domain.valueobject.ConnectionAuthType;
 import com.weav.workspace.domain.valueobject.ConnectionProvider;
 import com.weav.workspace.domain.valueobject.ConnectionStatus;
@@ -26,6 +31,9 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.RecordComponent;
 import java.time.Instant;
+import java.time.Clock;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -213,7 +221,8 @@ class ConnectionUseCasesTest {
         ConnectionResponse response = new UpdateConnectionUseCase(
                 connections, memberships, credentials, authorizationPolicy, configPolicy, assembler,
                 (workspaceId, connectionId) -> false,
-                new RecordingTransactionRunner()).execute(new UpdateConnectionCommand(
+                new RecordingTransactionRunner(),
+                workspaceId -> { }).execute(new UpdateConnectionCommand(
                 WORKSPACE, OWNER, CONNECTION_ID, null, Map.of("baseUrl", "https://new.test")));
 
         assertEquals(ConnectionStatus.DISABLED, response.status());
@@ -239,7 +248,8 @@ class ConnectionUseCasesTest {
         ConnectionResponse response = new UpdateConnectionUseCase(
                 connections, memberships, credentials, authorizationPolicy, configPolicy, assembler,
                 (workspaceId, connectionId) -> false,
-                new RecordingTransactionRunner()).execute(new UpdateConnectionCommand(
+                new RecordingTransactionRunner(),
+                workspaceId -> { }).execute(new UpdateConnectionCommand(
                 WORKSPACE, MEMBER, CONNECTION_ID, "Renamed", null));
 
         assertEquals(ConnectionStatus.ACTIVE, response.status());
@@ -262,7 +272,8 @@ class ConnectionUseCasesTest {
         UpdateConnectionUseCase useCase = new UpdateConnectionUseCase(
                 connections, memberships, credentials, authorizationPolicy, configPolicy, assembler,
                 (workspaceId, connectionId) -> false,
-                new RecordingTransactionRunner());
+                new RecordingTransactionRunner(),
+                workspaceId -> { });
         assertThrows(ForbiddenException.class, () -> useCase.execute(new UpdateConnectionCommand(
                 WORKSPACE, MEMBER, CONNECTION_ID, "Nope", null)));
         verify(connections, never()).save(any());
@@ -292,7 +303,8 @@ class ConnectionUseCasesTest {
         UpdateConnectionUseCase useCase = new UpdateConnectionUseCase(
                 connections, memberships, credentials, authorizationPolicy, configPolicy, assembler,
                 (workspaceId, connectionId) -> false,
-                new RecordingTransactionRunner());
+                new RecordingTransactionRunner(),
+                workspaceId -> { });
         List<Map<String, Object>> invalidConfigs = List.of(
                 Map.of("headers", Map.of("Authorization", "Bearer fixture-update-value")),
                 Map.of("nested", Map.of("headers", List.of(
@@ -317,24 +329,49 @@ class ConnectionUseCasesTest {
         ConnectionRepository connections = mock(ConnectionRepository.class);
         MembershipRepository memberships = mock(MembershipRepository.class);
         CredentialRepository credentials = mock(CredentialRepository.class);
+        WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
         Membership owner = Membership.owner(WORKSPACE, OWNER);
+        Membership creator = Membership.member(WORKSPACE, MEMBER);
         Connection active = connection(ConnectionStatus.ACTIVE, MEMBER, Map.of());
         when(memberships.findByWorkspaceIdAndUserId(WORKSPACE, OWNER)).thenReturn(Optional.of(owner));
+        when(memberships.findByWorkspaceIdAndUserId(WORKSPACE, MEMBER)).thenReturn(Optional.of(creator));
+        when(workspaces.findById(WORKSPACE)).thenReturn(Optional.of(new Workspace(
+                WORKSPACE, "Workspace", OWNER, Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-01-01T00:00:00Z"))));
         when(connections.findByWorkspaceIdAndId(WORKSPACE, CONNECTION_ID)).thenReturn(Optional.of(active));
         when(connections.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(credentials.findByConnectionId(CONNECTION_ID)).thenReturn(Optional.empty());
 
+        RecordingOutbox outbox = new RecordingOutbox();
+        ConnectionNotificationRecorder notificationRecorder = new ConnectionNotificationRecorder(
+                outbox, workspaces, memberships, authorizationPolicy,
+                Clock.fixed(Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC));
         DisableConnectionUseCase useCase = new DisableConnectionUseCase(
                 connections, memberships, credentials, authorizationPolicy, assembler,
                 (workspaceId, connectionId) -> false,
-                new RecordingTransactionRunner());
+                new RecordingTransactionRunner(),
+                workspaceId -> { },
+                notificationRecorder);
         assertEquals(ConnectionStatus.DISABLED, useCase.execute(OWNER, WORKSPACE, CONNECTION_ID).status());
         verify(connections).save(active);
+        assertEquals(List.of(MEMBER), outbox.events.getFirst().recipientUserIds());
+        assertEquals(OWNER, outbox.events.getFirst().actorUserId());
+        assertEquals("connection.disabled", outbox.events.getFirst().eventType());
 
         Connection disabled = connection(ConnectionStatus.DISABLED, MEMBER, Map.of());
         when(connections.findByWorkspaceIdAndId(WORKSPACE, CONNECTION_ID)).thenReturn(Optional.of(disabled));
         assertEquals(ConnectionStatus.DISABLED, useCase.execute(OWNER, WORKSPACE, CONNECTION_ID).status());
         verify(connections, org.mockito.Mockito.times(1)).save(active);
+        assertEquals(1, outbox.events.size());
+    }
+
+    private static final class RecordingOutbox implements NotificationOutboxPort {
+        private final List<WorkspaceNotificationEvent> events = new ArrayList<>();
+
+        @Override
+        public void append(WorkspaceNotificationEvent event) {
+            events.add(event);
+        }
     }
 
     private static Connection connection(
