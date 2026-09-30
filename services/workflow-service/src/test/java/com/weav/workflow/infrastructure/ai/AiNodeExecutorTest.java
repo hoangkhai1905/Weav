@@ -40,6 +40,15 @@ class AiNodeExecutorTest {
         new AiNodeExecutor("ai.summarize", client).execute(CONTEXT, Map.of("inputText", "s"));
         assertEquals("summarize", client.operation);
         assertEquals(Map.of("text", "s", "maxLength", 200), client.payload);
+
+        NodeExecutor.Failure oversized = assertThrows(NodeExecutor.Failure.class,
+                () -> new AiNodeExecutor("ai.summarize", client)
+                        .execute(CONTEXT, Map.of("inputText", "s", "maxLength", 6000)));
+        assertEquals("CONFIGURATION_ERROR", oversized.code());
+        NodeExecutor.Failure tooFewCategories = assertThrows(NodeExecutor.Failure.class,
+                () -> new AiNodeExecutor("ai.classify", client)
+                        .execute(CONTEXT, Map.of("content", "c", "categories", java.util.List.of("a"))));
+        assertEquals("CONFIGURATION_ERROR", tooFewCategories.code());
     }
 
     @Test

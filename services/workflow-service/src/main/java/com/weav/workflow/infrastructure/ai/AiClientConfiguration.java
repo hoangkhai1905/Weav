@@ -6,7 +6,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
@@ -33,19 +32,16 @@ public class AiClientConfiguration {
     }
 
     @Bean
-    @ConditionalOnProperty(name = "weav.workflow.ai.enabled", havingValue = "true")
     NodeExecutor aiExtractExecutor(AiClient client) {
         return new AiNodeExecutor("ai.extract", client);
     }
 
     @Bean
-    @ConditionalOnProperty(name = "weav.workflow.ai.enabled", havingValue = "true")
     NodeExecutor aiClassifyExecutor(AiClient client) {
         return new AiNodeExecutor("ai.classify", client);
     }
 
     @Bean
-    @ConditionalOnProperty(name = "weav.workflow.ai.enabled", havingValue = "true")
     NodeExecutor aiSummarizeExecutor(AiClient client) {
         return new AiNodeExecutor("ai.summarize", client);
     }
