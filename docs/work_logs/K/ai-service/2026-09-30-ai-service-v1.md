@@ -1,6 +1,19 @@
-# Nhật ký ngày `2026-09-30` — AI Service V1 implementation (Tasks 1–11 Part A)
+# Nhật ký AI Service V1 — spec, plan và implementation (`2026-09-25` → `2026-09-30`)
 
-> File này tổng hợp toàn bộ quá trình implement AI Service V1 (spec §10 ra quyết định) từ Task 1 tới Task 11 Part A. Chi tiết từng task nằm trong các report `task-N-report.md` tại SDD workspace; progress ledger: `.superpowers/sdd/2026-09-25-ai-service-v1/progress.md` (không commit).
+> File duy nhất cho AI Service V1. Gộp từ ba log cũ (`2026-09-25-ai-service-spec-and-plan.md`, `2026-09-30-ai-spec-plan-review.md`, `2026-09-30-ai-service-v1-implementation.md`) và từ các report/review của từng task trong SDD workspace (đã xóa sau khi gộp). Mọi quyết định, finding và mục deferred cần giữ lại đều nằm ở đây.
+
+## 0. Lịch sử spec và plan
+
+- **2026-09-25 — Spec + plan (chỉ tài liệu).** Hướng V1 đã duyệt: AI Service NestJS stateless, adapter DeepSeek thay thế được, xác thực Service JWT, JSON chặt có giới hạn, bốn operation: generate, `ai.extract`, `ai.classify`, `ai.summarize`. Workflow sở hữu authorization, compile `WorkflowIntent` tất định, definition chuẩn, persistence, execution và retry policy. Definition extract cũ vẫn đọc/sửa/publish được nhưng cần `outputSchema` để chạy. Thiếu dữ kiện khi generate thì hỏi lại, không đoán. Deadline AI 60 s; Workflow gọi AI 65 s; generate 75 s. Gateway (route, contract, config, CI, test public edge) thuộc partner; plan gồm 11 task chỉ cho AI Service và Workflow.
+- **2026-09-30 — Review spec/plan so với code (chỉ tài liệu, nhánh `feature/ai-service`).** Spec được sửa (§10 ghi quyết định) và plan viết lại thành 11 task test-first theo file. Các khoảng trống tìm thấy và quyết định:
+  - Workspace không có endpoint liệt kê metadata connection → người dùng chọn connection ID trong builder, Workflow kiểm từng cái bằng `authorizeAttachment`, AI không bao giờ thấy connection.
+  - Web chưa có wiring AI thật (`ai.api.ts` là mock thừa; builder ghi `schemaDescription`) → web builder vào scope, mobile giữ mock.
+  - Đã có mẫu OCR (`OcrClient`, `WorkflowServiceJwtIssuer`) → tách `ServiceJwtSigner` dùng chung.
+  - Retry theo HTTP status không an toàn → Workflow retry theo mã lỗi AI, không theo status.
+  - Keyword schema có thể mang secret → `outputSchema` là static field, profile không có `default`/`const`/`examples`/`$ref`; độ sâu schema 16 → 8.
+  - Lease heartbeat 15 s độc lập nên call AI 65 s an toàn.
+  - Hoãn: CI, duplicate-key trên AI ingress, `$ref`.
+  - Implementation chạy trên nhánh mới `feature/ai-service-impl` (cắt từ `fix/workspace-connection`, merge docs vào: `76cc791`).
 
 ## 1. Metadata
 
@@ -9,11 +22,11 @@
 | Ngày làm việc                | `2026-09-30`                                                         |
 | Múi giờ ghi log              | `Asia/Saigon`                                                        |
 | Dự án / repository           | `Weav`                                                               |
-| Nhánh / commit đầu ngày      | `feature/ai-service-impl` / `09a2331` (lane-C merge)                 |
-| Người thực hiện              | `Orca lane workers (A/B/C/D) + coordinator`                          |
-| Người review / nhận bàn giao | `coordinator + antigravity/copilot reviewers`                        |
-| Trạng thái cuối ngày         | `Part B xong` (5 PASS + 1 PARTIAL + 1 FAIL tại Workflow hop; F1 đã fix, F2 là lỗi text brief; F3 là V1 known limitation, F4 deferred; Gateway route vẫn absent) |
-| Phạm vi session              | `AI Service V1: implement Tasks 1–10, Task 11 Part A (fixture stack)` |
+| Nhánh / commit               | `feature/ai-service-impl`: `76cc791` (base) → `95a7d76` (merge lane D) |
+| Người thực hiện              | Coordinator (Claude, Orca run `run_8981cdd5d65a`) + worker: opencode (lane A, D), GitHub Copilot (lane B, C); review: antigravity, Copilot (Task 1 re-review) |
+| Người review / nhận bàn giao | Coordinator tự review toàn nhánh (không review riêng với `main` vì `main` tụt xa) |
+| Trạng thái cuối ngày         | `Hoàn thành` — 11/11 task review sạch và đã merge; live acceptance 5 PASS + 1 PARTIAL + 1 FAIL tại Workflow hop (F3 là V1 known limitation); Gateway route vẫn absent |
+| Phạm vi session              | `AI Service V1: Tasks 1–11 (implement, review, merge, live acceptance)` |
 | Liên kết liên quan           | `docs/superpowers/specs/2026-09-25-ai-service-v1-design.md`           |
 
 ## 2. Tóm tắt điều hành
@@ -69,7 +82,7 @@
 - **Bối cảnh hệ thống:** Weav đa service; AI Service mới (NestJS) cung cấp extract/classify/summarize/generate cho Workflow Service qua Service JWT; web builder consume qua Gateway route (spec §9).
 - **Giả định đã dùng:** Gateway route chưa tồn tại trên mọi branch (đã xác nhận bằng search, không đoán).
 - **Ràng buộc:** Không đọc/ghi DB chéo service; additive migrations/endpoints; không commit secret, `.env`, build output; `pnpm lint` của ai-service là `eslint --fix` nên chỉ chạy read-only.
-- **Nguồn sự thật:** `docs/superpowers/specs/2026-09-25-ai-service-v1-design.md` (binding), briefs Task 1–11, `progress.md` ledger.
+- **Nguồn sự thật:** `docs/superpowers/specs/2026-09-25-ai-service-v1-design.md` (binding) và plan `docs/superpowers/plans/2026-09-25-ai-service-v1.md` (brief từng task và ledger đã được gộp vào file này).
 
 ## 5. Nhật ký theo session / thời gian
 
@@ -82,11 +95,22 @@
 | 14:05     | T11-A Step 2: fake-deepseek + smoke 8 case | Mọi scenario đúng contract (trừ slow, bỏ qua 70s wait)      | `Xong`     |
 | 14:08     | T11-A Step 3: compose overlay + config     | `config --quiet` exit 0, 0 warning (có `.env` đã ignore)    | `Xong`     |
 | 14:10     | T11-A Step 5: static checks                | unit 66/66, e2e 18/18, builds + tsc pass, diff-check clean  | `Xong`     |
-| 14:15     | T11-A Step 6: work log + report + commit   | File này + task-11-report.md                                | `Xong`     |
+| 14:15     | T11-A Step 6: work log + report + commit   | File log này                                                | `Xong`     |
+| 14:30     | T11-A fix round 1                          | fake-deepseek bind `0.0.0.0`; ai-service chỉ mount JWKS (không còn thấy private key) | `Xong` |
+| 14:35–15:00 | T11 Part B: live acceptance (stack rút gọn) | 5 PASS, 1 PARTIAL, 1 FAIL tại Workflow hop (§11)          | `Xong`     |
+| 15:05     | F1 fix + work log Part B (`da5a62b`, `f052d46`, `9e2a3c7`) | e2e 21/21                                  | `Xong`     |
+| 15:10     | Merge lane D (`95a7d76`) + final verification | Xem §9 "Final verification"                             | `Xong`     |
+| 15:20     | Self-review toàn nhánh, gộp work log, dọn worktree | Không có Critical/Important mới (§6 "Self-review")   | `Xong`     |
+
+### Điều phối (Orca)
+
+- Lanes song song, mỗi lane một worktree/nhánh riêng, merge `--no-ff` vào `feature/ai-service-impl` sau khi review sạch: A (Tasks 2–4, opencode) `b31c1e9`; B (Tasks 5, 6, 8, Copilot) `cf76153`; C (Tasks 7, 9, Copilot) `09a2331`; D (Tasks 10, 11, opencode) `95a7d76`. Reviewer: antigravity (khác agent với implementer).
+- Fix rounds: Task 7 ×1 (thiếu test contract/retry, `@ConditionalOnProperty` làm AI node mất executor khi disabled), Task 9 ×3 (thiếu `WorkflowGenerationHttpTest`, thiếu 11/12 test service, một assertion rỗng), Task 10 ×1 (R7, report thiếu), Task 11-A ×1. Các task còn lại sạch ngay lần review đầu.
+- Sự cố điều phối đáng nhớ: prompt Copilot bị mất khi TUI chưa sẵn sàng (cách tin cậy: mở terminal agent trước rồi bind dispatch); Orca tự update giữa chừng (run vẫn nguyên vẹn); watcher nền bị dừng do thiếu RAM; reviewer Task 4 chạy `pnpm lint` (là `eslint --fix`) để lại thay đổi format — coordinator xác nhận đúng là output của `--fix` rồi bỏ.
 
 ## 6. Quyết định kỹ thuật
 
-Spec §10 là nguồn quyết định cho kiến trúc (layering, closed errors, fail-closed khi AI disabled). Các rulings từ `progress.md`:
+Spec §10 là nguồn quyết định cho kiến trúc (layering, closed errors, fail-closed khi AI disabled). Các ruling của coordinator trong quá trình implement:
 
 | Quyết định | Lý do / bằng chứng | Phương án đã cân nhắc | Hệ quả và việc theo dõi |
 | ---------- | ------------------ | --------------------- | ----------------------- |
@@ -97,6 +121,12 @@ Spec §10 là nguồn quyết định cho kiến trúc (layering, closed errors,
 | R5: profile không bao giờ nhận schema mà Ajv strict reject | Mismatch profile/Ajv gây raw Error → 500 runtime | Nới lỏng profile | Schema nghiêm hơn một chút; Task 1 + Java twin Task 5 |
 | R6: thêm `AI_BUSY`, `AI_PROVIDER_UNAVAILABLE`, `AI_TIMEOUT` vào `RetryPolicy.TRANSIENT_CODES` | Spec §5 + acceptance #8 yêu cầu retry 3 mã này; plan bỏ sót | Chỉ dựa vào `failure.retryable()` | Additive; Task 7 áp dụng |
 | R7: xóa `ai.*` khỏi unavailable/publish-blocker ở web builder | Task 7 đã xóa ai.* khỏi server unavailable set; acceptance #7/#8 yêu cầu AI publish + run được | Giữ nguyên text cũ | Server validation vẫn gate publish; Task 10 fix round 1 |
+| Least privilege: ai-service chỉ mount `workflow-service.jwks.json` | Mount cả thư mục làm lộ `workflow-service.pem` trong container AI | Giữ mount thư mục theo plan | File JWKS phải tồn tại trước `up` (chạy `node scripts/ai-dev-keys.mjs`) |
+| F3 là V1 known limitation (user quyết định 2026-09-30) | AI release admission đúng khi client của nó ngắt; Workflow không huỷ call AI khi client của Workflow ngắt | Sửa ngay trong Workflow (async + phát hiện disconnect) | Theo dõi ở §10 |
+
+### Self-review toàn nhánh (coordinator, `76cc791..95a7d76`, 116 files)
+
+Không review riêng với `main` (theo user: `main` tụt xa nhánh này). Đọc lại các vùng rủi ro nhất: `ServiceJwtVerifier` (RS256 cố định, `kid` → JWKS local, verify chữ ký trước khi tin claim, kiểm iss/aud/exp/iat/skew/lifetime/scope/workspace/request/mode), `DeepSeekProvider` (`redirect: 'error'`, body giới hạn, `finish_reason === 'stop'`, JSON chặt, không log key), `AiClient` (request ID mới mỗi call gắn vào cả token và body, đọc giới hạn byte, JSON chặt có phát hiện key trùng, `requestId` phải khớp, chỉ map mã lỗi đã biết còn lại fail-closed, lọc token khỏi output), `WorkflowGenerationService` (flag → rate limit → `WORKFLOW_CREATE` → `authorizeAttachment` từng connection → mới gọi AI; kết quả AI lọc theo allow-list, lạ thì `INVALID_INTENT`). Kết quả: không có Critical/Important mới. Quan sát Minor: rate limiter chạy trước authorization (khóa theo actor nên vô hại, nhưng non-member vẫn làm map limiter lớn lên — cùng rủi ro "coarse eviction" ở §10).
 
 ## 7. Thay đổi đã thực hiện
 
@@ -138,7 +168,7 @@ Spec §10 là nguồn quyết định cho kiến trúc (layering, closed errors,
 | `Thêm`  | `scripts/ai-dev-keys.mjs`                                                    | Sinh RSA + JWKS dev                         | Chạy 1 lần; không commit output        |
 | `Thêm`  | `services/ai-service/test/fixtures/fake-deepseek.mjs`                        | Fake provider 18080                         | Part B đã dùng qua compose overlay     |
 | `Thêm`  | `compose.ai-local.yml`                                                       | Overlay 3 services                          | `config` + `up` Part B đã chạy (stack rút gọn) |
-| `Thêm`  | `docs/work_logs/K/ai-service/2026-09-30-ai-service-v1-implementation.md`     | File này                                    | Đã cập nhật Part B (§11)               |
+| `Thêm`  | `docs/work_logs/K/ai-service/2026-09-30-ai-service-v1.md`                    | File này (gộp 3 log cũ)                     | Log duy nhất của AI Service V1         |
 | `Sửa`   | `services/ai-service/src/**` (Tasks 1–4)                                     | Domain/adapter/use-cases/routes             | Lint drift pre-existing, đừng `--fix`  |
 | `Sửa`   | `services/workflow-service/**/ai/**`, executors, generation (Tasks 5–9)      | Policy/signer/executor/compiler/endpoint    | Verify tại 09a2331: 439 pass           |
 | `Sửa/Xóa`| `apps/web/src/**`, `apps/web/e2e/**` (Task 10)                              | Builder AI + e2e (R7)                       | 5 lint errors pre-existing             |
@@ -163,6 +193,18 @@ Không liệt kê `.env`, `tmp/service-keys/*` (ignored, không review).
 | graph changes     | `node /t/Weav/.gitnexus/run.cjs detect-changes --scope all --repo /t/Weav`              | "No changes detected" (advisory)             | Phản ánh main checkout, không phải worktree |
 | workflow verify   | Coordinator chạy tại 09a2331                                                            | 439 tests, 0 failures, 3 lỗi môi trường cũ   | T11-A không chạy lại Maven           |
 
+### Final verification (nhánh tích hợp `95a7d76`, cả 4 lane đã merge)
+
+| Hạng mục | Kết quả |
+| -------- | ------- |
+| ai-service unit / e2e / build | 66/66 · 21/21 · exit 0 |
+| web `tsc --noEmit` / build | exit 0 / exit 0 |
+| Playwright chromium (`VITE_API_MODE=mock`) `ai-builder` + `workflow-catalog-v1` | 10 passed, 1 skipped (generate: thiếu Gateway route) |
+| workflow `mvnw verify` | 439 tests, 0 failures, 3 lỗi môi trường đã biết (chạy tại `09a2331`; lane D không đổi Java) |
+| `git diff --check 76cc791..HEAD` | clean |
+
+Lưu ý: chạy Playwright không có `VITE_API_MODE=mock` sẽ fail 8 test (web gọi API thật, không có backend) — là lỗi thiết lập lệnh, không phải regression.
+
 ### Fake-deepseek smoke (T11-A, 8/9 markers; `scenario:slow` bỏ qua wait 70s)
 
 - `needs-input` → 200, content `needs_input` + question `URL`/`ping.config.url`.
@@ -184,10 +226,17 @@ Không liệt kê `.env`, `tmp/service-keys/*` (ignored, không review).
 | ------------- | ------ | ---------------------- | ------------------- | --------------------------- |
 | `Trung bình` | F3: Workflow không cancel AI call khi client disconnect (V1 known limitation) | Gen `4a16ad8c` chạy tới `AI_TIMEOUT` 59 997 ms sau abort 2 s; generation đồng thời cùng workspace trong ~60 s có thể 503 `AI_UNAVAILABLE` | AI-side release đã verify trực tiếp (2 020 ms); cần Workflow-side change hoặc quyết định spec | Workflow lane / backlog |
 | `Trung bình` | Gateway generate route absent mọi branch (2026-09-30) | Search `workflow.module.ts` không có route | Generate e2e skip; ghi handoff | Partner team; re-check khi route có |
-| `Thấp` | Local-only rate và admission limits | Theo brief §6/Step 6 | Ghi nhận (Part B không phát hiện thêm) | AI lane |
-| `Thấp` | Model self-reported confidence | Theo brief §6/Step 6 | Ghi nhận | AI lane |
-| `Thấp` | Coarse `GenerationRateLimiter` eviction | Theo brief §6/Step 6 | Ghi nhận | AI lane |
+| `Thấp` | Local-only rate và admission limits | Theo plan (Task 11 Step 6) | Ghi nhận (Part B không phát hiện thêm) | AI lane |
+| `Thấp` | Model self-reported confidence | Theo plan (Task 11 Step 6) | Ghi nhận | AI lane |
+| `Thấp` | Coarse `GenerationRateLimiter` eviction | Theo plan (Task 11 Step 6) | Ghi nhận | AI lane |
 | `Thấp` | Lint đỏ pre-existing (web 5, ai-service 148) | Blame-chứng minh trước 09a2331 | Không sửa trong scope này | Backlog |
+
+### Minor đã hoãn (từ review từng task, chưa sửa)
+
+- AI Service: độ dài description/tên property đếm theo UTF-16 (khớp `String.length()` phía Java); fixture chưa có case `required` trùng hoặc `enum` rỗng/quá lớn; `deepseek-provider.ts:47` bọc `Buffer.from` thừa; `generation-result.ts:18` không đối chiếu `from`/`to` của edge với `intent.nodes` (theo plan, Workflow kiểm topology); F4: client disconnect được log là `AI_TIMEOUT` (nên có `CLIENT_CLOSED`).
+- Workflow: dòng trống thừa `DefinitionValidator.java:611`; field `properties` không dùng ở `WorkflowServiceJwtIssuer.java:21`; `IntentCompilerTest` thiếu case layout nhánh (y-offset), sort/dedup nhiều loại connection, map/invalid edge port; `IntentCompiler.java:65` và `WorkflowGenerationService.java:52` không null-guard `connections` (an toàn vì controller đổi null thành `Map.of()`); commit `a536d27` có chuỗi `\n\n` literal trước trailer.
+- Web: `getPublishBlockers` (`WorkflowBuilderPage.tsx:170-208`) không chặn AI node chưa cấu hình ở client (server `validatePublish` vẫn từ chối); `GenerateWorkflowPanel.tsx:94-113` thiếu focus trap/autoFocus; `OutputSchemaEditor.tsx:16-27` xóa trắng textarea báo "JSON không hợp lệ" thay vì cho reset.
+- Lint: `pnpm --dir services/ai-service lint` là `eslint --fix` và format lại file của Tasks 1–3 (prettier drift); cần một commit format riêng hoặc bỏ `--fix`.
 
 ### Lỗi có thể tái lập
 
@@ -209,7 +258,7 @@ Không liệt kê `.env`, `tmp/service-keys/*` (ignored, không review).
 
 ### Hướng dẫn cho AI agent tiếp theo
 
-- Đọc file log này, brief Task 11, `git status` trước khi sửa.
+- Đọc file log này, spec, plan (Task 11) và `git status` trước khi sửa.
 - Giữ nguyên các quyết định §6; không chạy `pnpm --dir services/ai-service lint` (nó `--fix` và rewrite file).
 - Không `up`/`build` container khi chưa duyệt; không commit `.env`/`tmp/`.
 - Không hiển thị secret hoặc đưa giá trị `.env` vào chat, log, commit hay fixture.
@@ -243,18 +292,19 @@ Tear down Part B: `docker compose -f compose.yml -f compose.dev.yml -f compose.a
 ## 12. Tham chiếu
 
 - `docs/superpowers/specs/2026-09-25-ai-service-v1-design.md` (binding; §10 decisions, §7.9 acceptance, §9 Gateway handoff)
-- SDD workspace (không commit): task briefs/reports `task-1..11`, `progress.md`, `common-context.md`
-- Commits: `2ebbe56` (T1) `d5e17ca` (T2) `c3c2e85` (T3) `87acc5a` (T4) `a536d27` (T5) `3075c7c` (T6) `1827fa8` (T7) `fc27d44` (T8) `50e193a` (T9) `3baddc1`+`63bea41` (T10)
+- `docs/superpowers/plans/2026-09-25-ai-service-v1.md` (11 task, test-first)
+- Commits: `97eeec8`+`2ebbe56` (T1) `d5e17ca` (T2) `c3c2e85` (T3) `87acc5a` (T4) `a536d27` (T5) `3075c7c` (T6) `9651d5d`+`1827fa8` (T7) `fc27d44` (T8) `67f429b`..`50e193a` (T9) `3baddc1`+`63bea41` (T10) `691e83e`..`9e2a3c7` (T11)
+- Merges: `b31c1e9` (lane A) `cf76153` (lane B) `09a2331` (lane C) `95a7d76` (lane D)
 
 ## 13. Kết thúc session
 
 | Trường                     | Giá trị                                        |
 | -------------------------- | ---------------------------------------------- |
-| Thời điểm dừng             | `2026-09-30 14:20 Asia/Saigon (Part A); fix round 1 sau đó; Part B + F1 follow-up sau đó` |
-| Trạng thái worktree        | `Part B done (coordinator live run) + F1 follow-up committed, xem §11` |
-| Commit/PR đã tạo           | `691e83e (Part A) + 2d35876 (fix round 1) + 81360eb (fix-round-1 hash) + da5a62b (F1 fix) + f052d46 (work-log Part B); PR chưa tạo` |
-| Người cập nhật log         | `Orca lane-D worker (Task 11 Part A)`          |
-| Cần đọc trước khi tiếp tục | `§11 Part B + task-11-brief.md Step 4`         |
+| Thời điểm dừng             | `2026-09-30 ~15:30 Asia/Saigon`                |
+| Trạng thái worktree        | Lane worktrees và nhánh `feature/ai-impl-lane-*` đã xóa (đã merge hết); SDD workspace đã xóa sau khi gộp vào file này |
+| Commit/PR đã tạo           | Toàn bộ trên `feature/ai-service-impl` (xem §12); chưa push, chưa tạo PR |
+| Người cập nhật log         | `Coordinator (gộp 3 log + report task)`        |
+| Cần đọc trước khi tiếp tục | §10 (rủi ro, Minor đã hoãn), §11 (Gateway handoff, F3) |
 
 ---
 
