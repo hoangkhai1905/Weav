@@ -30,11 +30,11 @@
 | Hạng mục                | Trạng thái    | Ghi chú ngắn                                              |
 | ----------------------- | ------------- | --------------------------------------------------------- |
 | Build / compile         | `PASS`        | `ai-service build`, `web build`, `tsc --noEmit` exit 0    |
-| Unit / integration test | `PASS`        | ai-service 66/66 unit + 18/18 e2e; workflow 439, 0 fail*  |
+| Unit / integration test | `PASS`        | ai-service 66/66 unit + 21/21 e2e; workflow 439, 0 fail*  |
 | Migration / database    | `Chưa áp dụng`| Không có migration trong scope                            |
-| Health check            | `Chưa kiểm tra`| Live stack là Part B, chưa `up`                           |
+| Health check            | `Đã kiểm tra` | Stack rút gọn đã `up`; ai `/health/ready` = ready; gateway/workflow/identity/workspace 200 |
 | Review thay đổi         | `Đã kiểm tra` | Tasks 1–10 review clean; T11 Part A self-review           |
-| Commit / PR             | `Đã tạo`      | Xem §7; Part B sẽ commit riêng                            |
+| Commit / PR             | `Đã tạo`      | Xem §7; Part B + F1 follow-up đã commit (`da5a62b`, `f052d46`) |
 
 \* Workflow verify tại 09a2331 do coordinator chạy: 439 tests, 0 failures, 3 lỗi môi trường đã biết (TLS cert ×2, notification dist ×1). Task 11 Part A không chạy lại Maven theo chỉ đạo.
 
@@ -55,14 +55,14 @@
 ### Ngoài phạm vi / chủ động chưa làm
 
 - Gateway generate route (spec §9): của partner team, chỉ ghi trạng thái.
-- Task 11 Part B (live `up` + 7 acceptance scenarios): session sau.
+- Task 11 Part B (live `up` + 7 acceptance scenarios): xong 2026-09-30 (stack rút gọn, coordinator-driven; xem §11).
 - Fix 5 lint errors pre-existing của web và 148 eslint errors pre-existing của ai-service (prettier drift + verbatim test code).
 
 ### Tiêu chí hoàn thành
 
 - [x] Tasks 1–10 implemented, reviewed clean, committed.
 - [x] Task 11 Part A files tạo đúng brief, static checks pass.
-- [ ] Part B: live stack + 7 acceptance scenarios (PENDING).
+- [x] Part B: live stack + 7 acceptance scenarios (5 PASS + 1 PARTIAL + 1 FAIL tại Workflow hop; xem §11).
 
 ## 4. Bối cảnh và giả định
 
@@ -128,7 +128,7 @@ Spec §10 là nguồn quyết định cho kiến trúc (layering, closed errors,
 ### 7.4. API, bảo mật và quan sát hệ thống
 
 - Route: `POST /v1/:operation` (AI Service, Service JWT), `POST .../workflows/generate` (Workflow, đã auth) — Gateway route (spec §9) **absent**.
-- Security: key dev chỉ dùng local (`tmp/`, mode 0600, gitignored); scratch-key test (scenario 6) dành cho Part B.
+- Security: key dev chỉ dùng local (`tmp/`, mode 0600, gitignored); scratch-key test (scenario 6) đã chạy trong Part B (401 cả 4 case).
 - Validation/error: closed error codes (`AI_OUTPUT_INVALID`, `AI_PROVIDER_UNAVAILABLE`, `AI_TIMEOUT`, `AI_BUSY`, `UNAUTHENTICATED`…).
 
 ## 8. Danh sách file ảnh hưởng
@@ -136,9 +136,9 @@ Spec §10 là nguồn quyết định cho kiến trúc (layering, closed errors,
 | Loại    | Đường dẫn                                                                    | Thay đổi chính                              | Lưu ý cho người tiếp nhận              |
 | ------- | ---------------------------------------------------------------------------- | ------------------------------------------- | -------------------------------------- |
 | `Thêm`  | `scripts/ai-dev-keys.mjs`                                                    | Sinh RSA + JWKS dev                         | Chạy 1 lần; không commit output        |
-| `Thêm`  | `services/ai-service/test/fixtures/fake-deepseek.mjs`                        | Fake provider 18080                         | Part B dùng qua compose overlay        |
-| `Thêm`  | `compose.ai-local.yml`                                                       | Overlay 3 services                          | Chỉ `config` đã chạy; `up` là Part B   |
-| `Thêm`  | `docs/work_logs/K/ai-service/2026-09-30-ai-service-v1-implementation.md`     | File này                                    | Cập nhật khi Part B xong               |
+| `Thêm`  | `services/ai-service/test/fixtures/fake-deepseek.mjs`                        | Fake provider 18080                         | Part B đã dùng qua compose overlay     |
+| `Thêm`  | `compose.ai-local.yml`                                                       | Overlay 3 services                          | `config` + `up` Part B đã chạy (stack rút gọn) |
+| `Thêm`  | `docs/work_logs/K/ai-service/2026-09-30-ai-service-v1-implementation.md`     | File này                                    | Đã cập nhật Part B (§11)               |
 | `Sửa`   | `services/ai-service/src/**` (Tasks 1–4)                                     | Domain/adapter/use-cases/routes             | Lint drift pre-existing, đừng `--fix`  |
 | `Sửa`   | `services/workflow-service/**/ai/**`, executors, generation (Tasks 5–9)      | Policy/signer/executor/compiler/endpoint    | Verify tại 09a2331: 439 pass           |
 | `Sửa/Xóa`| `apps/web/src/**`, `apps/web/e2e/**` (Task 10)                              | Builder AI + e2e (R7)                       | 5 lint errors pre-existing             |
@@ -158,7 +158,7 @@ Không liệt kê `.env`, `tmp/service-keys/*` (ignored, không review).
 | web build         | `pnpm --dir apps/web build`                                                             | `PASS` (chỉ chunk-size warning cũ)           | T11-A re-run                         |
 | web e2e (T10)     | `VITE_API_MODE=mock playwright test e2e/ai-builder.spec.ts e2e/workflow-catalog-v1.spec.ts --project=chromium` | 10 passed, 1 skipped (`AI_E2E` gate) | Chromium only                        |
 | fixture smoke     | `node fake-deepseek.mjs` + curl từng scenario (trừ slow)                                | 200 + đúng body ×7, 401 ×1                   | §9 chi tiết dưới                     |
-| compose config    | `docker compose -f compose.yml -f compose.dev.yml -f compose.ai-local.yml --profile app config --quiet` | exit 0, 0 warning | Không `up`/`build` (Part B) |
+| compose config    | `docker compose -f compose.yml -f compose.dev.yml -f compose.ai-local.yml --profile app config --quiet` | exit 0, 0 warning | Part A chỉ `config`; `up` đã chạy ở Part B |
 | diff check        | `git diff --check`                                                                      | clean                                        |                                      |
 | graph changes     | `node /t/Weav/.gitnexus/run.cjs detect-changes --scope all --repo /t/Weav`              | "No changes detected" (advisory)             | Phản ánh main checkout, không phải worktree |
 | workflow verify   | Coordinator chạy tại 09a2331                                                            | 439 tests, 0 failures, 3 lỗi môi trường cũ   | T11-A không chạy lại Maven           |
@@ -176,7 +176,6 @@ Không liệt kê `.env`, `tmp/service-keys/*` (ignored, không review).
 
 ### Điều chưa được kiểm tra
 
-- Live stack + 7 acceptance scenarios (Part B).
 - Playwright firefox/webkit; `AI_E2E=1` generate case (chờ Gateway route).
 
 ## 10. Sự cố, rủi ro và blocker
@@ -184,8 +183,8 @@ Không liệt kê `.env`, `tmp/service-keys/*` (ignored, không review).
 | Mức độ        | Vấn đề | Nguyên nhân / dấu hiệu | Cách xử lý hiện tại | Chủ sở hữu / bước tiếp theo |
 | ------------- | ------ | ---------------------- | ------------------- | --------------------------- |
 | `Trung bình` | F3: Workflow không cancel AI call khi client disconnect (V1 known limitation) | Gen `4a16ad8c` chạy tới `AI_TIMEOUT` 59 997 ms sau abort 2 s; generation đồng thời cùng workspace trong ~60 s có thể 503 `AI_UNAVAILABLE` | AI-side release đã verify trực tiếp (2 020 ms); cần Workflow-side change hoặc quyết định spec | Workflow lane / backlog |
-| `Trung bình` | Gateway generate route absent mọi branch (2026-09-30) | Search `workflow.module.ts` không có route | Generate e2e skip; ghi handoff | Partner team; Part B re-check |
-| `Thấp` | Local-only rate và admission limits | Theo brief §6/Step 6 | Ghi nhận; Part B quan sát | AI lane |
+| `Trung bình` | Gateway generate route absent mọi branch (2026-09-30) | Search `workflow.module.ts` không có route | Generate e2e skip; ghi handoff | Partner team; re-check khi route có |
+| `Thấp` | Local-only rate và admission limits | Theo brief §6/Step 6 | Ghi nhận (Part B không phát hiện thêm) | AI lane |
 | `Thấp` | Model self-reported confidence | Theo brief §6/Step 6 | Ghi nhận | AI lane |
 | `Thấp` | Coarse `GenerationRateLimiter` eviction | Theo brief §6/Step 6 | Ghi nhận | AI lane |
 | `Thấp` | Lint đỏ pre-existing (web 5, ai-service 148) | Blame-chứng minh trước 09a2331 | Không sửa trong scope này | Backlog |
@@ -201,7 +200,7 @@ Không liệt kê `.env`, `tmp/service-keys/*` (ignored, không review).
 
 ### Có thể tiếp tục ngay
 
-1. Part B: `docker compose -f compose.yml -f compose.dev.yml -f compose.ai-local.yml --profile app up -d --build`, rồi chạy 7 scenarios §"Live acceptance (Part B)" dưới đây.
+1. Part B đã chạy xong (§11 "Live acceptance"); nếu chạy lại: `docker compose -f compose.yml -f compose.dev.yml -f compose.ai-local.yml --profile app up -d --build`, rồi chạy 7 scenarios.
 2. Re-check Gateway route rồi chạy `AI_E2E=1 pnpm --dir apps/web exec playwright test e2e/ai-builder.spec.ts`.
 
 ### Cần quyết định / quyền truy cập từ người khác
@@ -212,9 +211,9 @@ Không liệt kê `.env`, `tmp/service-keys/*` (ignored, không review).
 
 - Đọc file log này, brief Task 11, `git status` trước khi sửa.
 - Giữ nguyên các quyết định §6; không chạy `pnpm --dir services/ai-service lint` (nó `--fix` và rewrite file).
-- Không `up`/`build` container ngoài Part B đã duyệt; không commit `.env`/`tmp/`.
+- Không `up`/`build` container khi chưa duyệt; không commit `.env`/`tmp/`.
 - Không hiển thị secret hoặc đưa giá trị `.env` vào chat, log, commit hay fixture.
-- Cập nhật log này khi Part B xong (đổi 7 PENDING thành kết quả quan sát).
+- Log này đã cập nhật Part B ở §11 (kết quả quan sát thay 7 PENDING).
 
 ### Live acceptance (Part B) — DONE 2026-09-30 (coordinator live run, stack rút gọn, base `81360eb`)
 
@@ -253,7 +252,7 @@ Tear down Part B: `docker compose -f compose.yml -f compose.dev.yml -f compose.a
 | -------------------------- | ---------------------------------------------- |
 | Thời điểm dừng             | `2026-09-30 14:20 Asia/Saigon (Part A); fix round 1 sau đó; Part B + F1 follow-up sau đó` |
 | Trạng thái worktree        | `Part B done (coordinator live run) + F1 follow-up committed, xem §11` |
-| Commit/PR đã tạo           | `691e83e (Part A) + 2d35876 (fix round 1) + 81360eb (fix-round-1 hash) + 2 follow-up commits (F1 code, work-log Part B); PR chưa tạo` |
+| Commit/PR đã tạo           | `691e83e (Part A) + 2d35876 (fix round 1) + 81360eb (fix-round-1 hash) + da5a62b (F1 fix) + f052d46 (work-log Part B); PR chưa tạo` |
 | Người cập nhật log         | `Orca lane-D worker (Task 11 Part A)`          |
 | Cần đọc trước khi tiếp tục | `§11 Part B + task-11-brief.md Step 4`         |
 
