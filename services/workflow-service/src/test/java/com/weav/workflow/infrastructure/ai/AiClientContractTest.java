@@ -39,6 +39,23 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class AiClientContractTest {
+    @Test
+    void disabledFailsClosedWithoutCallingAi() {
+        AiClientProperties properties = new AiClientProperties(false, false, java.net.URI.create("http://ai.internal"),
+                "", "", java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(1),
+                java.time.Duration.ofSeconds(1), 1024);
+        AiClient client = new AiClient(properties,
+                new ServiceJwtSigner(new org.springframework.core.io.DefaultResourceLoader(), "", "",
+                        java.time.Duration.ofSeconds(1)),
+                RestClient.builder().build(), new ObjectMapper(), Clock.systemUTC());
+
+        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                () -> client.execute(new NodeExecutor.Context(UUID.randomUUID(), UUID.randomUUID(),
+                        UUID.randomUUID(), "node", 1, null, null), "summarize", Map.of("text", "t")));
+        assertEquals("DEPENDENCY_NOT_CONFIGURED", failure.code());
+        assertFalse(failure.retryable());
+    }
+
     private static final String TRACEPARENT =
             "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 
