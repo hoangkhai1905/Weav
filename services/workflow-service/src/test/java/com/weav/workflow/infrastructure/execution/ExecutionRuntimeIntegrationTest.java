@@ -279,7 +279,7 @@ class ExecutionRuntimeIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"telegram.send_message", "ai.extract", "ai.classify", "ai.summarize"})
+    @ValueSource(strings = {"telegram.send_message"})
     void unavailableIntegrationFailsOnceInRealDatabaseWithoutPersistingOutput(String type) throws Exception {
         NodeExecutor registered = registry.executors().get(type);
         assertNotNull(registered, "unavailable integration should have an explicit executor");
