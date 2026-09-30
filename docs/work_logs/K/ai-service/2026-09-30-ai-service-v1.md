@@ -319,6 +319,19 @@ Tear down Part B: `docker compose -f compose.yml -f compose.dev.yml -f compose.a
 - Commits: `97eeec8`+`2ebbe56` (T1) `d5e17ca` (T2) `c3c2e85` (T3) `87acc5a` (T4) `a536d27` (T5) `3075c7c` (T6) `9651d5d`+`1827fa8` (T7) `fc27d44` (T8) `67f429b`..`50e193a` (T9) `3baddc1`+`63bea41` (T10) `691e83e`..`9e2a3c7` (T11)
 - Merges: `b31c1e9` (lane A) `cf76153` (lane B) `09a2331` (lane C) `95a7d76` (lane D)
 
+### Merge vào `dev` (2026-09-30 ~16:05)
+
+Nhóm merge thẳng vào `dev` (không dùng PR), nên làm theo: `fix/workspace-connection` → `dev` (`fc8ac27`), rồi `feature/ai-service-impl` → `dev` (`80271bf`), đều `--no-ff`. `origin/dev` chưa có commit mới nên không có conflict; cây code của `dev` giống hệt nhánh đã test. GitNexus `detect-changes` so với `origin/dev` báo risk `critical` (180 process, 497 file, index cũ) nên đã chạy thêm test cho các service chưa kiểm trong session:
+
+| Service | Kết quả |
+| ------- | ------- |
+| api-gateway | unit 91/91, e2e 67/67, build OK |
+| notification-service | unit 93/93, e2e 14/14, build OK |
+| apps/mobile | `tsc --noEmit` OK |
+| workspace-service | `mvnw verify` OK |
+| identity-service | 324 test, 0 failure, 3 error: 3 test Avatar dùng image `minio/minio:RELEASE.2024-06-04T19-20-08Z`, Docker Hub trả "repository does not exist" khi pull. Lỗi có sẵn trên `dev` (test và tag không đổi), không do merge. Cần đổi sang image MinIO khác hoặc registry có sẵn |
+| workflow / ai-service / web | như §9 "Final verification" |
+
 ## 13. Kết thúc session
 
 | Trường                     | Giá trị                                        |
