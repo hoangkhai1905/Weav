@@ -151,7 +151,6 @@ const getNodeReadinessMessage = (type: string, config: Record<string, unknown>):
     }
     return undefined;
   }
-  if (type.startsWith('ai.')) return 'Unavailable: the AI provider contract is not implemented.';
   if (type === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
     return 'Not configured: set both condition values before publication.';
   }
@@ -196,7 +195,7 @@ const getPublishBlockers = (nodes: Node[]): string[] => {
       const message = getNodeReadinessMessage(type, config);
       if (message) blockers.add(message);
     }
-    if (type === 'trigger.telegram' || type === 'telegram.send_message' || type.startsWith('ai.') || type === 'ocr.extract') {
+    if (type === 'trigger.telegram' || type === 'telegram.send_message' || type === 'ocr.extract') {
       blockers.add(getNodeReadinessMessage(type, config) ?? `${type} is not configured`);
     }
     if (type === 'ocr.extract') {
