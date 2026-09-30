@@ -1,0 +1,10 @@
+{
+  "requestId": "00000000-0000-4000-8000-000000000001",
+  "workspaceId": "00000000-0000-4000-8000-000000000002",
+  "operation": "generate",
+  "prompt": "ping example.com",
+  "capabilities": [
+    { "type": "trigger.manual", "configFields": ["buttonLabel"] },
+    { "type": "http.request", "configFields": ["method", "url", "headers", "query", "body"] }
+  ]
+}

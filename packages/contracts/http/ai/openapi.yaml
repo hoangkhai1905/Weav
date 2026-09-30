@@ -1,0 +1,270 @@
+openapi: 3.1.0
+info:
+  title: Weav AI Service HTTP API
+  version: 1.0.0
+  description: >-
+    AI-backed operations for Workflow Service: extract, classify, summarize,
+    and workflow generation. Every route takes a strict envelope
+    (mirroring `services/ai-service/src/presentation/http/envelopes.ts`;
+    unknown fields are rejected) and returns a `{requestId, result}` wrapper
+    on success or a `{error: {code, message, requestId}}` object on failure.
+    The caller is Workflow Service authenticating with a Service JWT.
+servers:
+  - url: http://ai-service:3000
+security:
+  - ServiceJwt: []
+paths:
+  /v1/extract:
+    post:
+      operationId: extract
+      summary: Extract facts into a caller-supplied JSON schema
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtractEnvelope'
+      responses:
+        '200':
+          description: Validated extraction result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessWrapper'
+  /v1/classify:
+    post:
+      operationId: classify
+      summary: Classify text into one of the supplied categories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassifyEnvelope'
+      responses:
+        '200':
+          description: Chosen category with confidence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessWrapper'
+  /v1/summarize:
+    post:
+      operationId: summarize
+      summary: Summarize text within a code-point limit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SummarizeEnvelope'
+      responses:
+        '200':
+          description: Summary with truncation flag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessWrapper'
+  /v1/generate:
+    post:
+      operationId: generate
+      summary: Design an automation workflow from a prompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateEnvelope'
+      responses:
+        '200':
+          description: Ready intent, needs_input questions, or unsupported reasons
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessWrapper'
+  /health/live:
+    get:
+      operationId: live
+      summary: Liveness probe, always 200 when the process runs
+      security: []
+      responses:
+        '200':
+          description: Alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+  /health/ready:
+    get:
+      operationId: ready
+      summary: Readiness probe, 200 only when provider and JWKS are configured
+      security: []
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+        '503':
+          description: Not configured (missing API key, model, or JWKS)
+          content:
+            application/json:
+              schema:
+                type: object
+components:
+  securitySchemes:
+    ServiceJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        RS256 Service JWT issued by weav-workflow for audience weav-ai.
+        Required claims: iss=weav-workflow, aud=weav-ai, scope=ai:<operation>,
+        workspace_id (must equal the envelope workspaceId), request_id (must
+        equal the x-request-id header and the envelope requestId),
+        mode=execution (processing routes) or mode=generation (generate route
+        only), iat/exp within a 120 s lifetime. Execution mode additionally
+        requires execution_id and node_execution_id.
+  schemas:
+    BaseEnvelope:
+      type: object
+      required: [requestId, workspaceId, operation]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Must equal the x-request-id header.
+        workspaceId:
+          type: string
+          format: uuid
+          description: Must equal the workspace_id claim.
+    ExtractEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/BaseEnvelope'
+        - type: object
+          required: [operation, text, outputSchema]
+          properties:
+            operation:
+              const: extract
+            text:
+              type: string
+              minLength: 1
+              maxLength: 50000
+            outputSchema:
+              type: object
+              description: Output-schema-profile object the result must match.
+            instructions:
+              type: string
+              minLength: 1
+              maxLength: 2000
+    ClassifyEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/BaseEnvelope'
+        - type: object
+          required: [operation, text, categories]
+          properties:
+            operation:
+              const: classify
+            text:
+              type: string
+              minLength: 1
+              maxLength: 50000
+            categories:
+              type: array
+              minItems: 2
+              maxItems: 50
+              items:
+                type: string
+                minLength: 1
+                maxLength: 100
+    SummarizeEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/BaseEnvelope'
+        - type: object
+          required: [operation, text, maxLength]
+          properties:
+            operation:
+              const: summarize
+            text:
+              type: string
+              minLength: 1
+              maxLength: 50000
+            maxLength:
+              type: integer
+              minimum: 1
+              maximum: 5000
+    GenerateEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/BaseEnvelope'
+        - type: object
+          required: [operation, prompt, capabilities]
+          properties:
+            operation:
+              const: generate
+            prompt:
+              type: string
+              minLength: 1
+              maxLength: 4000
+            timezone:
+              type: string
+              minLength: 1
+              maxLength: 64
+            capabilities:
+              type: array
+              minItems: 1
+              maxItems: 40
+              items:
+                type: object
+                required: [type, configFields]
+                properties:
+                  type:
+                    type: string
+                    pattern: '^[a-z]+(\.[a-z_]+)+$'
+                  configFields:
+                    type: array
+                    maxItems: 32
+                    items:
+                      type: string
+                      minLength: 1
+                      maxLength: 64
+    SuccessWrapper:
+      type: object
+      required: [requestId, result]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        result:
+          type: object
+          description: Operation result (extracted object, category, summary, or generation result).
+    ErrorBody:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+              enum: [INVALID_REQUEST, UNAUTHENTICATED, FORBIDDEN, PAYLOAD_TOO_LARGE,
+                AI_SCHEMA_INVALID, AI_BUSY, AI_NOT_CONFIGURED, AI_PROVIDER_UNAVAILABLE,
+                AI_PROVIDER_AUTH, AI_OUTPUT_INVALID, AI_TIMEOUT, INTERNAL_ERROR]
+              description: >-
+                Error table (spec §4): 400 INVALID_REQUEST, 401 UNAUTHENTICATED,
+                403 FORBIDDEN, 413 PAYLOAD_TOO_LARGE, 422 AI_SCHEMA_INVALID,
+                429 AI_BUSY, 503 AI_NOT_CONFIGURED, 503 AI_PROVIDER_UNAVAILABLE,
+                502 AI_PROVIDER_AUTH, 502 AI_OUTPUT_INVALID, 504 AI_TIMEOUT,
+                500 INTERNAL_ERROR. Provider and model detail is never echoed.
+            message:
+              type: string
+            requestId:
+              type: string
+              nullable: true
