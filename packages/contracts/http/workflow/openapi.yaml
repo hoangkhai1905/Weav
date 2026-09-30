@@ -429,6 +429,9 @@ components:
       type: object
       additionalProperties: false
       required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: string, maxLength: 2000 }
 
     GenerateWorkflowRequest:
       type: object
@@ -462,9 +465,6 @@ components:
           properties:
             status: { const: unsupported }
             reasons: { type: array, items: { type: object } }
-      properties:
-        name: { type: string, minLength: 1, maxLength: 255 }
-        description: { type: string, maxLength: 2000 }
     SaveWorkflowDraftRequest:
       type: object
       additionalProperties: false
