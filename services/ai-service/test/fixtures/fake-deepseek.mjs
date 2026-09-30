@@ -129,6 +129,6 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`fake-deepseek listening on 127.0.0.1:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`fake-deepseek listening on 0.0.0.0:${PORT}`);
 });
