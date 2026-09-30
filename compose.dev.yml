@@ -299,6 +299,13 @@ services:
       WORKFLOW_OCR_TOKEN_LIFETIME: ${WORKFLOW_OCR_TOKEN_LIFETIME:-60s}
       WORKFLOW_OCR_MAX_RESPONSE_BYTES: ${WORKFLOW_OCR_MAX_RESPONSE_BYTES:-1048576}
 
+      # AI nodes and generation stay off until a provider key is set and these flags are turned on.
+      WORKFLOW_AI_ENABLED: ${WORKFLOW_AI_ENABLED:-false}
+      WORKFLOW_AI_GENERATION_ENABLED: ${WORKFLOW_AI_GENERATION_ENABLED:-false}
+      AI_SERVICE_PRIVATE_URL: ${AI_SERVICE_PRIVATE_URL:-http://ai-service:3000}
+      WORKFLOW_AI_SIGNING_KEY_ID: ${WORKFLOW_AI_SIGNING_KEY_ID:-workflow-dev-1}
+      WORKFLOW_AI_SIGNING_KEY_LOCATION: file:/run/weav-keys/workflow-service.pem
+
       # Valkey
       VALKEY_URL: ${VALKEY_URL}
 
@@ -308,6 +315,10 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+
+    # Only the private half of the dev key pair (node scripts/ai-dev-keys.mjs).
+    volumes:
+      - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/private:/run/weav-keys:ro
 
     depends_on:
       rabbitmq:
@@ -348,7 +359,8 @@ services:
       AI_SERVICE_JWKS_FILE: /run/weav-keys/workflow-service.jwks.json
       AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-60000}
     volumes:
-      - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/workflow-service.jwks.json:/run/weav-keys/workflow-service.jwks.json:ro
+      # Only the public JWKS; a missing folder just leaves AI not-ready.
+      - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/public:/run/weav-keys:ro
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/live').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 10s

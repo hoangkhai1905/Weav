@@ -252,6 +252,15 @@ Lưu ý: chạy Playwright không có `VITE_API_MODE=mock` sẽ fail 8 test (web
 1. Part B đã chạy xong (§11 "Live acceptance"); nếu chạy lại: `docker compose -f compose.yml -f compose.dev.yml -f compose.ai-local.yml --profile app up -d --build`, rồi chạy 7 scenarios.
 2. Re-check Gateway route rồi chạy `AI_E2E=1 pnpm --dir apps/web exec playwright test e2e/ai-builder.spec.ts`.
 
+### Bật DeepSeek thật (sau khi gộp log, 2026-09-30)
+
+Trước đó, cấu hình AI của Workflow (bật cờ, URL, key ký) chỉ có trong overlay fixture `compose.ai-local.yml`, nên chỉ điền `DEEPSEEK_API_KEY` vào `.env` là không đủ. Đã chuyển vào `compose.dev.yml` (mặc định tắt) và tách key dev thành `tmp/service-keys/public/` (JWKS, chỉ mount vào ai-service) và `tmp/service-keys/private/` (private key, chỉ mount vào workflow-service). Mount theo thư mục nên thiếu key chỉ làm AI not-ready, Docker không tạo nhầm thư mục thay cho file như với mount từng file.
+
+1. `node scripts/ai-dev-keys.mjs` (một lần; ghi đè cặp key dev).
+2. Trong `.env` (không commit): `DEEPSEEK_API_KEY=<key từ DeepSeek console>`, `DEEPSEEK_MODEL=<model id, ví dụ deepseek-chat>`, `WORKFLOW_AI_ENABLED=true`, `WORKFLOW_AI_GENERATION_ENABLED=true`.
+3. `docker compose -f compose.yml -f compose.dev.yml --profile app up -d --build` (không kèm `compose.ai-local.yml`, overlay đó thay provider bằng fixture).
+4. Kiểm `curl http://localhost:3001/health/ready` → `{"status":"ready"}`.
+
 ### Cần quyết định / quyền truy cập từ người khác
 
 - Partner team: Gateway generate route (spec §9) có chưa? Nếu có, scenario 5 mới chạy được.
