@@ -123,6 +123,8 @@ class ExecutionRuntimeIntegrationTest {
     @Autowired
     private DeterministicNodeExecutor fakeExecutor;
     @Autowired
+    private ExtractCapturingNodeExecutor extractExecutor;
+    @Autowired
     private NodeExecutorRegistry registry;
     @Autowired
     private RetryWaitPort retryWait;
@@ -142,6 +144,7 @@ class ExecutionRuntimeIntegrationTest {
     void setUp() {
         workspaceAccess.setCapabilities(RUN_CAPABILITIES);
         fakeExecutor.reset();
+        extractExecutor.reset();
         rabbitAdmin.purgeQueue(RabbitExecutionConfiguration.EXECUTION_QUEUE, false);
         rabbitAdmin.purgeQueue(RabbitExecutionConfiguration.DEAD_LETTER_QUEUE, false);
         rabbitAdmin.purgeQueue(ExecutionWorkerRabbitConfiguration.RETRY_QUEUE, false);
@@ -164,6 +167,29 @@ class ExecutionRuntimeIntegrationTest {
                 com.weav.workflow.application.port.in.ExecutionRunner.class));
         assertEquals(1, applicationContext.getBeansOfType(ExecutionJobListener.class).size());
         assertSame(fakeExecutor, registry.executors().get("http.request"));
+    }
+
+    @Test
+    void staticOutputSchemaIsPreservedWhileTextMappingsResolve() throws Exception {
+        Map<String, Object> schema = Map.of("type", "object", "properties",
+                Map.of("description", Map.of("type", "string", "description", "{{trigger.input.body}}")));
+        WorkflowDefinition definition = new WorkflowDefinition("1.0", List.of(
+                node("root", "trigger.manual", Map.of()),
+                node("extract", "ai.extract", Map.of("text", "{{trigger.input.body}}", "outputSchema", schema))),
+                List.of(edge("root-extract", "root", "extract", null)), Map.of());
+        Fixture fixture = admit("static-schema", definition, Map.of("body", "hello"));
+
+        assertTrue(publisher.publishPending() >= 1);
+        awaitTerminal(fixture.executionId());
+
+        assertEquals(ExecutionStatus.SUCCESS.name(), status(fixture.executionId()));
+        assertEquals("hello", extractExecutor.capturedConfig.get().get("text"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> capturedSchema = (Map<String, Object>) extractExecutor.capturedConfig.get().get("outputSchema");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> capturedDescription = (Map<String, Object>) ((Map<String, Object>) capturedSchema.get("properties"))
+                .get("description");
+        assertEquals("{{trigger.input.body}}", capturedDescription.get("description"));
     }
 
     @Test
@@ -544,6 +570,33 @@ class ExecutionRuntimeIntegrationTest {
         @Bean
         DeterministicNodeExecutor deterministicNodeExecutor() {
             return new DeterministicNodeExecutor();
+        }
+
+        @Bean
+        ExtractCapturingNodeExecutor extractCapturingNodeExecutor() {
+            return new ExtractCapturingNodeExecutor();
+        }
+    }
+
+    static final class ExtractCapturingNodeExecutor implements NodeExecutor {
+        private final AtomicReference<Map<String, Object>> capturedConfig = new AtomicReference<>();
+
+        @Override
+        public String type() {
+            return "ai.extract";
+        }
+
+        @Override
+        public Result execute(Context context, Map<String, Object> resolvedConfig) {
+            if (!resolvedConfig.containsKey("outputSchema")) {
+                throw new Failure("DEPENDENCY_NOT_CONFIGURED", "deterministic extract stub", false);
+            }
+            capturedConfig.set(resolvedConfig);
+            return new Result(Map.of("ok", true), null);
+        }
+
+        void reset() {
+            capturedConfig.set(null);
         }
     }
 

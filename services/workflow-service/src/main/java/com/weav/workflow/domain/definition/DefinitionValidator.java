@@ -111,7 +111,7 @@ public final class DefinitionValidator {
                     manualTriggers++;
                 }
             }
-            validateCredentialKeys(node.id(), "config", node.config(), issues);
+            validateCredentialKeys(node.id(), "config", withoutStaticFields(node), issues);
         }
         validateCredentialKeys(null, "variables", definition.variables(), issues);
 
@@ -331,6 +331,9 @@ public final class DefinitionValidator {
     }
 
     private static boolean hasValidFieldShape(String type, String field, Object value) {
+        if (NodeCatalog.staticFields(type).contains(field)) {
+            return OutputSchemaPolicy.isValid(value);
+        }
         if (value instanceof String text && containsMappingDelimiter(text)
                 && !"connectionId".equals(field)) {
             // Mapping grammar and resolved types are checked at publish/runtime respectively.
@@ -343,7 +346,7 @@ public final class DefinitionValidator {
                     "telegram.send_message.chatId", "telegram.send_message.text",
                     "trigger.schedule.cron", "trigger.schedule.timezone",
                     "trigger.manual.buttonLabel",
-                    "ai.extract.text", "ai.extract.schemaDescription",
+                    "ai.extract.text", "ai.extract.instructions", "ai.extract.schemaDescription",
                     "ai.classify.content",
                     "ai.summarize.inputText",
                     "ocr.extract.artifactId", "ocr.extract.fileUrl", "ocr.extract.language" -> value instanceof String;
@@ -503,6 +506,9 @@ public final class DefinitionValidator {
                 if (!NodeCatalog.configFields(node.type()).contains(field.getKey())) {
                     continue;
                 }
+                if (NodeCatalog.staticFields(node.type()).contains(field.getKey())) {
+                    continue;
+                }
                 String fieldPath = "config." + field.getKey();
                 Set<String> referencedNodes;
                 try {
@@ -602,11 +608,22 @@ public final class DefinitionValidator {
                     add(issues, nodeId, baseField, "CREDENTIAL_FIELD_NOT_ALLOWED",
                             "Credentials must be referenced through a Workspace connection.");
                 }
+
                 validateCredentialKeys(nodeId, baseField, entry.getValue(), issues);
             }
         } else if (value instanceof List<?> list) {
             list.forEach(item -> validateCredentialKeys(nodeId, baseField, item, issues));
         }
+    }
+
+    private static Map<String, Object> withoutStaticFields(WorkflowDefinition.Node node) {
+        Set<String> staticFields = NodeCatalog.staticFields(node.type());
+        if (staticFields.isEmpty() || node.config() == null) {
+            return node.config();
+        }
+        Map<String, Object> copy = new LinkedHashMap<>(node.config());
+        staticFields.forEach(copy::remove);
+        return copy;
     }
 
     private static boolean isCredentialField(String fieldName) {
@@ -666,7 +683,7 @@ public final class DefinitionValidator {
         return jsonSize(root);
     }
 
-    private static long jsonSize(Object value) {
+    static long jsonSize(Object value) {
         if (value == null) {
             return 4;
         }

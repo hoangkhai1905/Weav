@@ -355,6 +355,12 @@
                   "text": {
                     "type": "string"
                   },
+                  "outputSchema": {
+                    "type": "object"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  },
                   "schemaDescription": {
                     "type": "string"
                   }
