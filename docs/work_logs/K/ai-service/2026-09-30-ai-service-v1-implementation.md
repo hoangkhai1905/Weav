@@ -238,7 +238,7 @@ Tear down Part B: `docker compose -f compose.yml -f compose.dev.yml -f compose.a
 | -------------------------- | ---------------------------------------------- |
 | Thời điểm dừng             | `2026-09-30 14:20 Asia/Saigon (Part A); fix round 1 sau đó` |
 | Trạng thái worktree        | `Part A committed (691e83e); fix round 1 đã commit, Part B pending` |
-| Commit/PR đã tạo           | `691e83e (Part A) + f473b26 (fix round 1); PR chưa tạo` |
+| Commit/PR đã tạo           | `691e83e (Part A) + 2d35876 (fix round 1); PR chưa tạo` |
 | Người cập nhật log         | `Orca lane-D worker (Task 11 Part A)`          |
 | Cần đọc trước khi tiếp tục | `§11 Part B + task-11-brief.md Step 4`         |
 
