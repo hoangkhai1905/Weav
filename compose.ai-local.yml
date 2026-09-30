@@ -1,0 +1,25 @@
+services:
+  fake-deepseek:
+    image: node:24-bookworm
+    profiles: ["app"]
+    working_dir: /fixture
+    volumes:
+      - ./services/ai-service/test/fixtures:/fixture:ro
+    command: ["node", "fake-deepseek.mjs"]
+  ai-service:
+    environment:
+      DEEPSEEK_API_KEY: fixture-key
+      DEEPSEEK_MODEL: fixture-model
+      DEEPSEEK_BASE_URL: http://fake-deepseek:18080
+    depends_on:
+      fake-deepseek:
+        condition: service_started
+  workflow-service:
+    environment:
+      WORKFLOW_AI_ENABLED: "true"
+      WORKFLOW_AI_GENERATION_ENABLED: "true"
+      AI_SERVICE_PRIVATE_URL: http://ai-service:3000
+      WORKFLOW_AI_SIGNING_KEY_ID: workflow-dev-1
+      WORKFLOW_AI_SIGNING_KEY_LOCATION: file:/run/weav-keys/workflow-service.pem
+    volumes:
+      - ./tmp/service-keys:/run/weav-keys:ro
