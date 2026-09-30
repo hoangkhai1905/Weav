@@ -76,12 +76,14 @@ class WorkflowGenerationServiceTest {
 
     @Test void capabilitiesExcludeUnavailableTypesConnectionIdAndLegacySchemaDescription() {
         FakeAi ai = new FakeAi(Map.of("status", "unsupported", "reasons", List.of(Map.of("code", "OUT_OF_SCOPE"))));
-        service(ai, new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null, Map.of());
+        UUID connectionId = UUID.randomUUID();
+        service(ai, new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null,
+                Map.of("google.sheets", connectionId));
         String payload = String.valueOf(ai.payload);
         assertFalse(payload.contains("telegram.send_message"));
         assertFalse(payload.contains("connectionId"));
         assertFalse(payload.contains("schemaDescription"));
-        assertFalse(payload.contains(UUID.randomUUID().toString()));
+        assertFalse(payload.contains(connectionId.toString()));
         List<?> capabilities = (List<?>) ai.payload.get("capabilities");
         List<String> types = capabilities.stream().map(v -> (String) ((Map<?, ?>) v).get("type")).toList();
         List<String> sorted = new ArrayList<>(types);
