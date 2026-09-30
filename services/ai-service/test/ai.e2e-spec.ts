@@ -113,6 +113,55 @@ describe('AI HTTP', () => {
     }
   });
 
+  it('returns 401 UNAUTHENTICATED when Authorization and X-Request-ID are both missing', async () => {
+    const res = await raw('{}', { 'content-type': 'application/json' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['malformed', 'not-a-uuid'],
+  ])(
+    'returns 400 INVALID_REQUEST for a %s X-Request-ID with a valid token',
+    async (_n, headerValue) => {
+      const bodyRequestId = randomUUID();
+      const workspaceId = randomUUID();
+      const token = signJwt(keys.privateKey, {
+        iss: 'weav-workflow',
+        aud: 'weav-ai',
+        scope: 'ai:summarize',
+        workspace_id: workspaceId,
+        request_id: bodyRequestId,
+        mode: 'execution',
+        execution_id: randomUUID(),
+        node_execution_id: randomUUID(),
+        iat: now(),
+        exp: now() + 60,
+        jti: randomUUID(),
+      });
+      const headers: Record<string, string> = {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      };
+      if (headerValue !== undefined) headers['x-request-id'] = headerValue;
+      const res = await app.inject({
+        method: 'POST',
+        url: '/v1/summarize',
+        headers,
+        payload: JSON.stringify({
+          requestId: bodyRequestId,
+          workspaceId,
+          operation: 'summarize',
+          ...summarizeBody,
+        }),
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe('INVALID_REQUEST');
+      expect(provider.calls).toHaveLength(0);
+    },
+  );
+
   it.each([
     ['unknown envelope field', { ...summarizeBody, extra: 1 }],
     [

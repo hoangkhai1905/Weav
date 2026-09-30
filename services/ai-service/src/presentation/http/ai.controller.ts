@@ -41,11 +41,11 @@ export class AiController {
     const { provider, verifier } = this.deps;
     if (!provider || !verifier) throw new AiError('AI_NOT_CONFIGURED');
     if (!isOperation(operation)) throw new AiError('INVALID_REQUEST');
+    const claims = verifier.verify(request.headers.authorization);
     const requestId = request.headers['x-request-id'];
     if (typeof requestId !== 'string' || !UUID.test(requestId))
       throw new AiError('INVALID_REQUEST');
 
-    const claims = verifier.verify(request.headers.authorization);
     const parsed = ENVELOPES[operation].safeParse(request.body);
     if (!parsed.success) throw new AiError('INVALID_REQUEST');
     const body = parsed.data;
