@@ -17,6 +17,8 @@ import com.weav.workflow.infrastructure.web.ApiErrorResponse;
 import com.weav.workflow.infrastructure.web.CorrelationIdFilter;
 import com.weav.workflow.presentation.http.request.CreateWorkflowRequest;
 import com.weav.workflow.presentation.http.request.SaveWorkflowDraftRequest;
+import com.weav.workflow.presentation.http.request.GenerateWorkflowRequest;
+import com.weav.workflow.application.service.WorkflowGenerationService;
 import com.weav.workflow.presentation.http.response.WorkflowResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -48,15 +50,40 @@ public class WorkflowController {
     private final WorkflowPublicationService workflowPublicationService;
     private final DefinitionJsonCodec definitionCodec;
     private final ObjectMapper objectMapper;
+    private final WorkflowGenerationService workflowGenerationService;
 
     public WorkflowController(
             WorkflowDraftService workflowDraftService,
             WorkflowPublicationService workflowPublicationService,
+            WorkflowGenerationService workflowGenerationService,
             ObjectMapper objectMapper) {
         this.workflowDraftService = workflowDraftService;
         this.workflowPublicationService = workflowPublicationService;
+        this.workflowGenerationService = workflowGenerationService;
         this.objectMapper = objectMapper;
         this.definitionCodec = new DefinitionJsonCodec(objectMapper);
+    }
+
+    @PostMapping("/generate")
+    public java.util.Map<String,Object> generate(@PathVariable UUID workspaceId,
+            @AuthenticationPrincipal Jwt jwt, @RequestBody String body) {
+        GenerateWorkflowRequest request;
+        try {
+            request = objectMapper.readerFor(GenerateWorkflowRequest.class)
+                    .with(tools.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                    .with(tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES).readValue(body);
+        } catch (RuntimeException exception) {
+            throw new BadRequestException("The generation request is invalid");
+        }
+        if (request == null) throw new BadRequestException("The generation request is invalid");
+        request.validate();
+        java.util.Map<String,Object> response = new java.util.LinkedHashMap<>(workflowGenerationService.generate(
+                workspaceId, actorId(jwt), request.prompt(), request.timezone(),
+                request.connections() == null ? java.util.Map.of() : request.connections()));
+        if (response.get("definition") instanceof WorkflowDefinition definition) {
+            response.put("definition", definitionCodec.encode(definition));
+        }
+        return response;
     }
 
     @PostMapping

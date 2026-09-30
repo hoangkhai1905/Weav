@@ -23,6 +23,7 @@ import java.util.Objects;
 public final class WorkflowRequestBodyLimitFilter extends OncePerRequestFilter {
 
     public static final int MAX_REQUEST_BYTES = 1_048_576;
+    public static final int MAX_GENERATE_REQUEST_BYTES = 32 * 1024;
 
     private final ObjectMapper objectMapper;
 
@@ -35,12 +36,13 @@ public final class WorkflowRequestBodyLimitFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         boolean create = "POST".equalsIgnoreCase(request.getMethod())
                 && path.matches(".*/workspaces/[^/]+/workflows/?");
+        boolean generate = isGenerate(request);
         boolean save = "PUT".equalsIgnoreCase(request.getMethod())
                 && path.matches(".*/workspaces/[^/]+/workflows/[^/]+/draft/?");
         boolean execution = "POST".equalsIgnoreCase(request.getMethod())
                 && path.matches(".*/workspaces/[^/]+/workflows/[^/]+/executions/?");
         boolean webhook = WebhookRequestPath.isWebhookIngress(request);
-        return !create && !save && !execution && !webhook;
+        return !create && !save && !execution && !webhook && !generate;
     }
 
     @Override
@@ -48,12 +50,13 @@ public final class WorkflowRequestBodyLimitFilter extends OncePerRequestFilter {
             HttpServletRequest request,
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
-        if (request.getContentLengthLong() > MAX_REQUEST_BYTES) {
+        int limit = isGenerate(request) ? MAX_GENERATE_REQUEST_BYTES : MAX_REQUEST_BYTES;
+        if (request.getContentLengthLong() > limit) {
             writeTooLarge(request, response);
             return;
         }
 
-        LimitedRequest wrappedRequest = new LimitedRequest(request, MAX_REQUEST_BYTES);
+        LimitedRequest wrappedRequest = new LimitedRequest(request, limit);
         ContentCachingResponseWrapper wrappedResponse = new ContentCachingResponseWrapper(response);
         try {
             filterChain.doFilter(wrappedRequest, wrappedResponse);
@@ -61,12 +64,18 @@ public final class WorkflowRequestBodyLimitFilter extends OncePerRequestFilter {
             if (!wrappedRequest.exceeded()) {
                 throw exception;
             }
+
         }
         if (wrappedRequest.exceeded()) {
             wrappedResponse.resetBuffer();
             writeTooLarge(request, wrappedResponse);
         }
         wrappedResponse.copyBodyToResponse();
+    }
+
+    private static boolean isGenerate(HttpServletRequest request) {
+        return "POST".equalsIgnoreCase(request.getMethod())
+                && request.getRequestURI().matches(".*/workspaces/[^/]+/workflows/generate/?");
     }
 
     private void writeTooLarge(HttpServletRequest request, HttpServletResponse response) throws IOException {
