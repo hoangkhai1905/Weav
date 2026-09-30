@@ -45,102 +45,106 @@ This project is indexed by GitNexus as **Weav** (12254 symbols, 29228 relationsh
 
 # Weav Project Guidance
 
-## Project mission and verified stack
+> Keep this section identical in `CLAUDE.md` and `AGENTS.md`. The GitNexus block above is generated; do not edit it by hand.
 
-Weav is a graduation-thesis project for automating and monitoring work processes, with a user experience comparable to Zapier or n8n. The primary users are working professionals. The product must support both web and mobile clients.
+## What Weav is
 
-- `apps/web`: React + Vite.
-- `apps/mobile`: React + Expo.
-- Spring Boot services: Identity, Workflow, and Workspace.
-- NestJS services: API Gateway, AI, Bot, and Notification.
-- `services/ocr`: FastAPI.
-- Database: PostgreSQL hosted on Neon.
-- Development orchestration: Docker Compose and Docker Compose Watch (`develop.watch`) where configured.
-- Package manager: pnpm; use the repository's declared package-manager version.
+Weav is a graduation-thesis platform for automating and monitoring work processes, with a Zapier/n8n-style experience for working professionals, on web and mobile. If this file and the code disagree, the code, package manifests, and compose files win; fix this file.
 
-Verify the current repository configuration before relying on this summary. If the code and this file disagree, the code, package manifests, compose files, and current documentation are the source of truth.
+## Repository map
 
-## Repository boundaries
+| Path | Stack | Verify with |
+| --- | --- | --- |
+| `apps/web` | React + Vite | `pnpm --dir apps/web exec tsc --noEmit`, `pnpm --dir apps/web build`, `VITE_API_MODE=mock pnpm --dir apps/web exec playwright test --project=chromium` |
+| `apps/mobile` | React Native + Expo | `npx tsc --noEmit -p .` (from `apps/mobile`); no unit test script |
+| `services/identity-service`, `workspace-service`, `workflow-service` | Spring Boot | `JAVA_TOOL_OPTIONS=-Duser.timezone=UTC ./mvnw verify` (from the service folder) |
+| `services/api-gateway`, `ai-service`, `bot-service`, `notification-service` | NestJS | `pnpm --dir <path> test`, `test:e2e`, `build` |
+| `services/ocr-service` | FastAPI (uv) | `uv run pytest` (from the service folder) |
+| `packages/contracts`, `shared`, `workflow-schema` | Shared contracts and generic utilities only | consumers' tests |
 
-- Each service owns its domain model, persistence schema, migrations, and business rules.
-- A service must not read or write another service's database tables directly.
-- Cross-service communication goes through a documented API or message broker contract.
-- Shared packages are for contracts, schemas, clients, and genuinely generic utilities. Do not move service-specific business logic into shared packages.
-- Keep public API and database changes backward-compatible by default. Prefer additive migrations and additive fields/endpoints.
-- Do not rename or drop persisted data, break an API contract, or remove compatibility behavior without a migration/rollback plan and explicit user confirmation.
-## Required workflow
+- Package manager: `pnpm@11.22.0` (from `package.json`). In a fresh checkout or worktree, run `pnpm install --frozen-lockfile` first.
+- Dev stack: `docker compose -f compose.yml -f compose.dev.yml --profile app up -d --build [services]`. Overlays: `compose.ai-local.yml` (fake AI provider), `compose.workflow-smoke.yml`, `compose.*ocr*.dev.yml`.
+- Database: Neon PostgreSQL, project `Weav`, branch `production`. One database per service (`identity-db`, `workspace_db`, `workflow_db`, `notification_db`); each service uses the schema named by its `DB_SCHEMA`.
+- Docs: specs and plans in `docs/superpowers/`, architecture/API/decisions under `docs/`, work logs under `docs/work_logs/`.
 
-1. Read this file, relevant service/app documentation, the applicable work log, and `git status` before changing anything.
-2. Diagnose the concrete error or requirement first. For non-trivial work, state scope, acceptance criteria, risks, and verification before editing.
-3. Before editing an existing code symbol, run GitNexus upstream impact analysis. Use MCP `impact` when available; otherwise use the CLI in the GitNexus section above. Report callers, processes, and risk.
-4. Treat `risk: UNKNOWN` as unresolved. Confirm it with targeted search and manual inspection; an empty caller set is not proof a symbol is unused. Warn the user before HIGH or CRITICAL risk changes.
-5. For a feature, multi-step change, or design with meaningful alternatives, use brainstorming and writing-plans before implementation.
-6. Implement the smallest safe change that meets the requirement. Preserve working behavior and avoid unrelated cleanup.
-7. Run affected tests and builds. If an inter-service contract changes, add or update an integration test.
-8. For user-facing web behavior, verify the real running application with Playwright. Use Playwright for Expo Web where applicable; native mobile uses unit/integration tests unless a native E2E harness is explicitly introduced.
-9. Review the diff, run `git diff --check`, update `docs/work_logs/YYYY-MM-DD.md` (or a focused same-day file), and state any blocker.
-10. Before committing, run GitNexus `detect_changes`. Commit only a complete, tested logical milestone.
+## Boundaries
 
-## Refactoring policy
+- Each service owns its domain model, schema, migrations, and business rules. Never read or write another service's tables.
+- Cross-service calls go through a documented HTTP contract (`packages/contracts`) or a message-broker event.
+- Shared packages hold contracts, schemas, clients, and generic utilities, never service business logic.
+- Changes to public APIs and persisted data are additive by default. Do not rename or drop data, break a contract, or remove compatibility behavior without a migration/rollback plan and the user's explicit confirmation.
+- The API Gateway is owned by the user's partner; request Gateway changes as a documented handoff instead of implementing them.
 
-Refactoring is allowed when it materially improves architecture, maintainability, correctness, or performance, but it must remain bounded and behavior-preserving unless a behavior change is explicitly requested.
+## How to work
 
-- Define the refactor boundary before editing.
-- Do not combine broad cleanup with an unrelated feature or fix.
-- Preserve API/data compatibility, validation, authorization, accessibility, error handling, and observability.
-- Add or update tests for affected behavior.
-- Prefer incremental changes that can be reviewed and reverted independently.
+1. Read this file, the relevant service docs, the feature's work log, and `git status` before changing anything.
+2. Diagnose the concrete error or requirement first. For non-trivial work, state scope, acceptance criteria, risks, and how you will verify, and use brainstorming/writing-plans when there are real design alternatives or several steps.
+3. Run GitNexus upstream impact before editing an existing symbol (see the block above). Warn the user on HIGH/CRITICAL risk. Treat `UNKNOWN` or "not found" as unresolved: confirm callers with a text search and say so. The index can be stale on new branches.
+4. Make the smallest safe change that meets the requirement. Reuse existing code, prefer the standard library, keep diffs minimal, and leave one runnable check for non-trivial logic. Never trade away validation, security, accessibility, logging, error handling, or tests for brevity.
+5. Test the affected packages (see the repository map), then build. If a contract, event, schema, auth rule, or response shape changes, add or update an integration or contract test.
+6. Verify user-facing web behavior in the real running app with Playwright, including console and network errors. A mock, build, or snapshot alone does not prove a UI flow works.
+7. Review the diff, run `git diff --check`, update the work log, and run GitNexus `detect_changes` before committing.
 
-## Skill routing
+Refactoring is allowed when it clearly improves correctness, maintainability, or performance, but keep it bounded, behavior-preserving, tested, and separate from unrelated fixes. For performance work, measure a baseline and the bottleneck first; never claim a speedup from intuition or a build alone.
 
-Use only skills relevant to the current task. If a skill is unavailable or not callable, say so and use the closest documented fallback rather than pretending it ran.
+## Environment facts that save time
 
-- Apply Ponytail principles by default to coding tasks: YAGNI, reuse existing code, prefer standard-library/native solutions, keep diffs minimal, and leave a runnable check for non-trivial logic. Ponytail never authorizes removing validation, security, accessibility, logging, error handling, or tests for simplicity.
-- Use brainstorming before meaningful implementation alternatives and writing-plans for multi-step work.
-- Use GitNexus exploration, impact analysis, debugging, refactoring, and CLI guidance for architecture questions, symbol changes, bugs, refactors, and index operations.
-- Use parallel-execution-optimizer and dispatching-parallel-agents whenever independent investigation, implementation, or verification lanes exist. Assign ownership before parallel writes; never let agents edit the same file concurrently. Use isolated branches/worktrees for large, multi-service, or multi-agent work and merge only after review and verification.
-- For larger service work, use available subagent-driven-development or equivalent team orchestration with explicit merge gates.
-- Route stack-specific work to applicable skills: `react-patterns`, `react-performance`, `react-testing` for web; `react-native-patterns` for Expo/mobile; `springboot-patterns` for Spring Boot; `nestjs-patterns` for NestJS; `fastapi-patterns` for OCR; `docker-patterns` for containers/Compose; and `postgres-patterns` plus `database-migrations` for PostgreSQL/schema work.
-- For performance work, establish a baseline, measure the bottleneck, preserve correctness, and use a bounded optimization loop. Do not claim an optimization from intuition or a build-only result.
-- For completion, use verification-before-completion and browser-QA guidance when available. A passing mock, static check, or build does not prove a real user flow works.
-- Use context-budget/strategic-compact only when context pressure makes it useful.
-## Testing and verification
+- **Lint scripts that rewrite files.** The NestJS services' `lint` scripts run `eslint --fix` and reformat code. To check lint without changing files, run `pnpm --dir <service> exec eslint "{src,test}/**/*.ts"`. `apps/web` `lint` is plain `eslint .`.
+- **Maven time zone.** On Windows, forked JVMs inherit `Asia/Saigon`, which Postgres Testcontainers reject; always set `JAVA_TOOL_OPTIONS=-Duser.timezone=UTC`. A shell `TZ=UTC` does not reach the JVM.
+- **Known environment-only test errors** (anything else is a regression):
+  - workflow-service `HttpTransportIntegrationTest` x2: TLS test certificate missing.
+  - workflow-service `WorkflowNotificationLifecyclePersistenceIntegrationTest.compiledNotificationConsumerPersistsAllSixV2EventsInJwtScopedInbox`: needs a built `services/notification-service/dist`.
+  - identity-service Avatar integration tests x3: the `minio/minio:RELEASE.2024-06-04T19-20-08Z` image can no longer be pulled from Docker Hub.
+- **Playwright.** The web e2e specs use mocked APIs and need `VITE_API_MODE=mock`; without it they call a backend that is not running. The live AI generation case also needs `AI_E2E=1` and the Gateway generate route.
+- **Local web against the real stack.** Run Vite on `localhost:5173`; the Gateway's CORS allow-list does not include other ports.
+- **AI Service.** Off by default. To enable: `node scripts/ai-dev-keys.mjs` (writes `tmp/service-keys/public/` and `private/`), set `DEEPSEEK_API_KEY` and `DEEPSEEK_MODEL` in `.env`, set `WORKFLOW_AI_ENABLED=true` and `WORKFLOW_AI_GENERATION_ENABLED=true`, then start the stack without `compose.ai-local.yml`. Check `curl http://localhost:3001/health/ready`.
+- **Windows long paths.** Deleting a folder that contains `node_modules` can fail with "Filename too long"; remove it with `cmd /c rd /s /q \\?\<absolute path>`.
 
-- Discover the exact command from the affected package's `package.json`, Maven/Gradle wrapper, or Python configuration instead of guessing.
-- Run focused tests first, then the relevant package build/typecheck/lint when practical.
-- Test service boundaries with integration or contract tests when requests, events, schemas, authentication, or response shapes change.
-- Test the real authenticated UI path for user-visible behavior. Capture the actual browser/runtime result and console/network failure when something still does not work.
-- Do not use generated snapshots, mocked renderers, or build success as the only evidence for a runtime UI claim.
+## Database safety (Neon)
+
+- Never change another service's schema, and never run destructive SQL without the user's confirmation.
+- Before destructive SQL: list what exists, check dependencies (foreign keys, views, `pg_depend`), confirm the service configs do not use the target, create a Neon backup branch, then act on exact names, never patterns.
+- Tests and smoke scripts that create throwaway schemas or accounts (for example `scripts/start-workflow-v1-live-smoke.ps1` creates `weav_workflow_smoke_*` schemas) must clean up after themselves, or record what they left behind in the work log.
 
 ## Logging, secrets, and security
 
-- Use the existing framework logger and include request/correlation context where supported.
-- Never log or paste passwords, tokens, JWT secrets, API keys, cookies, raw connection strings, `.env` contents, or unnecessary personal data.
-- Keep production `console.log` usage out of new code; use structured application logging.
-- Validate input at service boundaries, preserve authorization checks, and apply rate/size limits to expensive work such as OCR or workflow execution.
-- Never commit `.env` files, credentials, generated build output, temporary files, or user data.
+- Use each framework's logger with request/correlation context. No `console.log` in production code.
+- Never log, paste, or commit passwords, tokens, JWTs, API keys, cookies, private keys, connection strings, `.env` contents, or unnecessary personal data. When you must check a secret, check only that it is set, not its value.
+- Never commit `.env`, `tmp/`, keys, build output, or test artifacts. If you add a variable to `.env`, add it with a placeholder to `.env.example`.
+- Validate input at service boundaries, keep authorization checks, and apply rate and size limits to expensive work such as AI, OCR, and workflow execution.
 
 ## Work logs
 
-After every meaningful task or before handoff, update the work log using `docs/work_logs/log_template.md`. Keep work logs under the matching member folder in `docs/work_logs/K/` or `docs/work_logs/T/`; keep `log_template.md` at the `docs/work_logs/` root.
+- One log per feature or area, updated in place: `docs/work_logs/<member>/<area>/<feature>.md` (member folders `K/` and `T/`), using `docs/work_logs/log_template.md`. Do not create a new file for every session; extend the feature's existing log.
+- Record decisions, changed files, commands with one-line results, runtime/browser evidence, risks, blockers, and next steps. Keep it short and reproducible, mark what is done, in progress, or blocked, and redact all secrets.
 
-Record decisions, changed files, commands and results, runtime/browser evidence, risks, blockers, and next steps. Keep raw output short and reproducible. Clearly distinguish complete/tested, in progress, and blocked work. Redact all secrets, tokens, connection strings, cookies, and sensitive personal data.
+## Git and collaboration
 
-## Git and workspace policy
+- Branch from `dev` for features and fixes. `dev` is the integration branch; `main` lags behind it.
+- The team merges into `dev` directly with `git merge --no-ff` (merge commit named "Merge branch '<branch>' into dev"); there are no pull requests. Merge only reviewed, tested work.
+- Commit in small logical batches or at tested milestones, with a summary and a description (`git commit -m "summary" -m "description"`). Report each commit briefly so the user can push. Never include unrelated user changes.
+- Large, multi-service, or multi-agent work uses separate branches/worktrees with disjoint file ownership; no two agents edit the same file at once. The implementer and the reviewer are different agents, and a coordinator merges lanes only after review and verification. Remove merged worktrees and branches afterwards.
+- Never use bare `git stash`/`git stash pop` (the stash is shared across worktrees); prefer a temporary WIP commit.
 
-- Small tasks stay on the current branch.
-- Large, multi-service, or multi-agent tasks use a separate branch/worktree with clear file ownership.
-- Auto-commit is allowed only after a complete, tested logical milestone, with a clear message. Never include secrets, `.env`, build output, or unrelated user changes.
-- If the managed runner reports `helper_unknown_error`, distinguish environment/setup failure from source failure. Verify the resolved workspace path and use a working junction/worktree only when it resolves to this repository; do not "fix" source code based only on runner setup errors.
+## Communication
 
-## Completion checklist
+- If a worker or managed runner reports `helper_unknown_error: setup refresh had errors`, stop and wait for the user. It is an environment problem, not a source bug; do not retry or work around it.
+- Keep progress updates short. If something is unclear or unverified, ask; never present an assumption as a fact.
 
-Before reporting completion:
+## External agent CLI bridge
 
-- The requested behavior or documentation is present.
-- Existing behavior and service boundaries are preserved.
-- Relevant tests/builds and, for UI work, real Playwright/runtime verification are recorded.
-- `git diff --check` is clean.
-- Work log is updated without sensitive data.
-- GitNexus change detection has been run before any commit.
+- For OpenCode or Antigravity calls from this repository, use `powershell.exe -NoProfile -File .\scripts\agent-cli.ps1` from `T:\Weav` only (not `T:\Weav_Alias` or `E:\WeavSub`).
+- Run `-Action Check -Tool Auto` before a task and `-Action Run` with an explicit timeout. `-Tool Auto` selects a tool only before the child starts and never duplicates a started request.
+- Add `-AllowRepoContext` when the external CLI may read or change this private repository. Keep `Plan` as the default and use `AcceptEdits` only when explicitly asked.
+- Never add `--dangerously-skip-permissions` or OpenCode `--auto`. Treat provider, account, policy, and concurrency failures as infrastructure signals, not evidence about the source.
+
+## Skills
+
+Use only skills relevant to the task; if one is unavailable, say so and use the closest fallback. Route stack work to `react-patterns`/`react-testing`/`react-performance` (web), `react-native-patterns` (mobile), `springboot-patterns`, `nestjs-patterns`, `fastapi-patterns`, `docker-patterns`, and `postgres-patterns` with `database-migrations`. Use the GitNexus skills for exploration, impact, debugging, and refactoring; `parallel-execution-optimizer`/`dispatching-parallel-agents` for independent lanes; and `verification-before-completion` before claiming done.
+
+## Before reporting completion
+
+- The requested behavior or document exists, and existing behavior and service boundaries are preserved.
+- Relevant tests and builds pass (known environment-only errors named), and user-facing web changes were checked in the running app.
+- `git diff --check` is clean, GitNexus `detect_changes` ran before any commit, and the work log is updated without secrets.
 - Remaining risks, skipped checks, and next steps are stated plainly.
