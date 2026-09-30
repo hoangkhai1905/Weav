@@ -100,8 +100,10 @@ Refactoring is allowed when it clearly improves correctness, maintainability, or
 - **AI Service.** Off by default. To enable: `node scripts/ai-dev-keys.mjs` (writes `tmp/service-keys/public/` and `private/`), set `DEEPSEEK_API_KEY` and `DEEPSEEK_MODEL` in `.env`, set `WORKFLOW_AI_ENABLED=true` and `WORKFLOW_AI_GENERATION_ENABLED=true`, then start the stack without `compose.ai-local.yml`. Check `curl http://localhost:3001/health/ready`.
 - **Windows long paths.** Deleting a folder that contains `node_modules` can fail with "Filename too long"; remove it with `cmd /c rd /s /q \\?\<absolute path>`.
 
-## Database safety (Neon)
+## Infrastructure and data (Neon, Cloudflare R2)
 
+- Our laptops have limited resources. Do not create local databases, object storage, or other infrastructure: use Neon for PostgreSQL and Cloudflare R2 for object storage (S3-compatible; see the `AVATAR_S3_*` settings in `.env.example`).
+- Start containers only when a task needs them (the Compose dev stack, Testcontainers in tests). When done, stop or remove the containers you started and delete any images and volumes you built or created for a one-off check. Leave the user's other containers alone.
 - Never change another service's schema, and never run destructive SQL without the user's confirmation.
 - Before destructive SQL: list what exists, check dependencies (foreign keys, views, `pg_depend`), confirm the service configs do not use the target, create a Neon backup branch, then act on exact names, never patterns.
 - Tests and smoke scripts that create throwaway schemas or accounts (for example `scripts/start-workflow-v1-live-smoke.ps1` creates `weav_workflow_smoke_*` schemas) must clean up after themselves, or record what they left behind in the work log.
@@ -123,20 +125,13 @@ Refactoring is allowed when it clearly improves correctness, maintainability, or
 - Branch from `dev` for features and fixes. `dev` is the integration branch; `main` lags behind it.
 - The team merges into `dev` directly with `git merge --no-ff` (merge commit named "Merge branch '<branch>' into dev"); there are no pull requests. Merge only reviewed, tested work.
 - Commit in small logical batches or at tested milestones, with a summary and a description (`git commit -m "summary" -m "description"`). Report each commit briefly so the user can push. Never include unrelated user changes.
-- Large, multi-service, or multi-agent work uses separate branches/worktrees with disjoint file ownership; no two agents edit the same file at once. The implementer and the reviewer are different agents, and a coordinator merges lanes only after review and verification. Remove merged worktrees and branches afterwards.
+- This is a two-person project: a branch per feature is enough. Do not create worktrees unless the user asks for parallel agent work. When they do, give each lane its own branch and worktree with disjoint file ownership (no two agents edit the same file at once), coordinate the agents through Orca, have a different agent review each lane, merge only after review and verification, and remove the worktrees and merged branches afterwards.
 - Never use bare `git stash`/`git stash pop` (the stash is shared across worktrees); prefer a temporary WIP commit.
 
 ## Communication
 
 - If a worker or managed runner reports `helper_unknown_error: setup refresh had errors`, stop and wait for the user. It is an environment problem, not a source bug; do not retry or work around it.
 - Keep progress updates short. If something is unclear or unverified, ask; never present an assumption as a fact.
-
-## External agent CLI bridge
-
-- For OpenCode or Antigravity calls from this repository, use `powershell.exe -NoProfile -File .\scripts\agent-cli.ps1` from `T:\Weav` only (not `T:\Weav_Alias` or `E:\WeavSub`).
-- Run `-Action Check -Tool Auto` before a task and `-Action Run` with an explicit timeout. `-Tool Auto` selects a tool only before the child starts and never duplicates a started request.
-- Add `-AllowRepoContext` when the external CLI may read or change this private repository. Keep `Plan` as the default and use `AcceptEdits` only when explicitly asked.
-- Never add `--dangerously-skip-permissions` or OpenCode `--auto`. Treat provider, account, policy, and concurrency failures as infrastructure signals, not evidence about the source.
 
 ## Skills
 
