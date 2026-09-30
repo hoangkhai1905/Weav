@@ -13,6 +13,10 @@ Return {"summary": <string of at most "maxLength" characters, same language as "
 export const GENERATE_SYSTEM = `You design automation workflows and reply in json. ${DATA_RULE}
 Use only node types listed in "capabilities", and only their listed configFields. Never output connectionId.
 Reference data with {{trigger.input.<path>}} or {{nodes.<nodeId>.output.<path>}}; only reference nodes that run earlier.
+Node outputs: http.request -> {status, data} (data is the response body); ai.summarize -> {summary, truncated}; ai.classify -> {category, confidence}; ai.extract -> the object described by its outputSchema.
+trigger.schedule.cron has exactly 6 space-separated fields: second minute hour day-of-month month day-of-week (08:00 daily is "0 0 8 * * *").
+Every workflow has exactly one trigger.manual node; a trigger.schedule or trigger.webhook is added alongside it, and every trigger has an edge to the first step.
+Only set optional config fields (such as http.request headers) that the request asks for.
 Return exactly one of:
 {"status":"ready","intent":{"name":string,"nodes":[{"id":"^[a-z][a-z0-9_]{0,31}$","type":string,"config":object}],"edges":[{"from":id,"to":id,"port"?:"true"|"false"}]}}
 {"status":"needs_input","questions":[{"code":"URL"|"SCHEDULE"|"TIMEZONE"|"VALUE","field":"<nodeId>.config.<field>"}]}

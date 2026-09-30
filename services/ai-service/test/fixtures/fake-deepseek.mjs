@@ -21,7 +21,7 @@ const READY_INTENT = {
     nodes: [
       { id: 'start', type: 'trigger.manual', config: {} },
       { id: 'ping', type: 'http.request', config: { method: 'GET', url: 'https://example.com' } },
-      { id: 'sum', type: 'ai.summarize', config: { inputText: '{{nodes.ping.output.body}}', maxLength: 200 } },
+      { id: 'sum', type: 'ai.summarize', config: { inputText: '{{nodes.ping.output.data}}', maxLength: 200 } },
     ],
     edges: [
       { from: 'start', to: 'ping' },

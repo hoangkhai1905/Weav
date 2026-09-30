@@ -261,6 +261,20 @@ Trước đó, cấu hình AI của Workflow (bật cờ, URL, key ký) chỉ c�
 3. `docker compose -f compose.yml -f compose.dev.yml --profile app up -d --build` (không kèm `compose.ai-local.yml`, overlay đó thay provider bằng fixture).
 4. Kiểm `curl http://localhost:3001/health/ready` → `{"status":"ready"}`.
 
+### Kiểm thử với DeepSeek thật (2026-09-30, model `deepseek-flash`)
+
+Stack rút gọn không có overlay fixture; cờ AI bật bằng biến môi trường shell khi chạy lệnh (`.env` vẫn để `false`). Key hợp lệ (`GET /models` → 200; key có `deepseek-flash`, `deepseek-v4-pro`).
+
+- **Node AI:** một workflow chạy song song summarize + classify + extract trên email đặt hàng tiếng Việt → SUCCESS trong 11 s. Summary đúng; classify `order` 0.98; extract đủ trường, `deliveryDate` chuẩn hóa `2026-10-05`. Extract lần 1 bị `AI_BUSY` (giới hạn 2 call/workspace, 3 node chạy cùng lúc), Workflow retry lần 2 thành công (R6). Mỗi call DeepSeek 0,8–1,1 s.
+- **Generate — lỗi tìm thấy và đã sửa trong prompt `GENERATE_SYSTEM`:**
+  1. Model trả cron 5 trường (`0 8 * * *`), Workflow chỉ nhận 6 trường (`SpringScheduleValidation`) → `INVALID_INTENT`.
+  2. Model tham chiếu `output.body`; output thật của `http.request` là `{status, data}` (lỗi giống F2) → sẽ `MAPPING_ERROR` lúc chạy.
+  3. Workflow V1 bắt buộc có một `trigger.manual` khi publish (`MANUAL_TRIGGER_REQUIRED`); prompt không nói → workflow chỉ có schedule bị từ chối.
+  4. Model tự thêm header `Accept: text/plain`; GitHub trả 415 → `HTTP_BUSINESS_REJECTED`.
+  Đã thêm vào prompt: output của từng loại node, định dạng cron 6 trường, luật một manual trigger (schedule/webhook đi kèm), và chỉ đặt field tùy chọn khi người dùng yêu cầu. Fixture `fake-deepseek` cũng sửa `output.body` → `output.data`.
+- **Sau khi sửa:** "Mỗi sáng 8 giờ, gọi https://api.github.com/zen rồi tóm tắt" → `ready` (manual + schedule `0 0 8 * * *`, GET không header, summarize `output.data`) → publish 200 → chạy SUCCESS. "Every weekday at 17:30 … classify as advice or joke" → cron `0 30 17 * * 1-5`, chạy SUCCESS (`advice` 0.95). Prompt mơ hồ "Gửi email nhắc họp mỗi thứ hai" → `needs_input` hỏi SCHEDULE + người nhận. Generate mất 2–3 s.
+- Unit 66/66, e2e 21/21 sau mỗi lần sửa prompt. Tài khoản thử `ai-v1-deepseek-*@example.test` và `ai-v1-keylayout-*@example.test` còn trong DB dev.
+
 ### Cần quyết định / quyền truy cập từ người khác
 
 - Partner team: Gateway generate route (spec §9) có chưa? Nếu có, scenario 5 mới chạy được.
