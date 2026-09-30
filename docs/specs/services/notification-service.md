@@ -1,6 +1,6 @@
 # Notification Service
 
-> Status: Implemented for V1 inbox (v2 events) and legacy Telegram/Expo delivery; producer-side gaps and client rollout remain (see Status and known gaps). Owner: TBD. Last verified: 2026-09-30 against `dev`.
+> Status: Implemented for V1 inbox (v2 events) and legacy Telegram/Expo delivery; producer-side gaps and client rollout remain (see Status and known gaps). Owner: T (partner). Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 

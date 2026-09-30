@@ -1,6 +1,6 @@
 # API Gateway
 
-> Status: Partial. Identity, Workspace, Notification, OCR and Workflow (draft/publish/run/monitor) routes are proxied at the edge; the AI generate route, webhook public ingress, Bot routes and distributed rate limiting are not in code. Owner: user's partner (Gateway is partner-owned; this spec documents it as-is). Last verified: 2026-09-30 against `dev`.
+> Status: Partial. Identity, Workspace, Notification, OCR and Workflow (draft/publish/run/monitor) routes are proxied at the edge; the AI generate route, webhook public ingress, Bot routes and distributed rate limiting are not in code. Owner: T (partner). Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 

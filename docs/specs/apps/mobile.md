@@ -1,12 +1,13 @@
 # Mobile App (`apps/mobile`)
 
-> Status: Partial. Auth, profile, sessions, workspace/members and notifications use the real Gateway contracts; workflows, executions, connections, Telegram and AI generate call legacy `/api/...` paths that the Gateway does not expose, so they only work in mock mode today. Owner: TBD. Last verified: 2026-09-30 against `dev`.
+> Status: Partial. Auth, profile, sessions, workspace/members and notifications use the real Gateway contracts; workflows, executions, connections, Telegram and AI generate call legacy `/api/...` paths that the Gateway does not expose, so they only work in mock mode today. Owner: T (partner) for now; shared later. Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 
 React Native 0.86 + Expo 57 (expo-router, typed routes, React Compiler) companion client for monitoring and light operation of workflows on the go. Also runs on Expo Web (react-native-web) for smoke tests.
 
 - Responsible for: sign-in and recovery, profile/session management, workspace and member management, workflow list/detail with run/pause/resume, execution monitoring, notification inbox, Telegram link screen, AI generate screen, VI/EN copy.
+- V1 scope (decided 2026-09-30): everything web does except designing workflows; monitoring is the priority.
 - NOT responsible for: the visual workflow Builder (web only), publishing, connection creation/OAuth, any business rule or persistence, admin functions.
 - Talks to the API Gateway only (`EXPO_PUBLIC_API_BASE_URL`).
 
@@ -143,11 +144,11 @@ None. Polling only: notification unread count every 10 s and list every 30 s (pe
 ## Open questions
 
 1. Mobile HTTP repositories for workflows/executions/connections/Telegram/AI use `/api/...` paths absent from the Gateway. Suggested: migrate to workspace-scoped V1 routes (web adapters as reference) and mark those UCs Implemented afterwards; the Gateway already serves workflows, but Telegram and AI routes need a partner handoff.
-2. Mobile scope for V1: monitor/run only, or also connections and generation? Suggested: monitor, run, pause/resume and notifications; leave Builder and connection setup to web.
+2. **Decided (2026-09-30):** mobile does everything web does except design workflows (no Builder), with monitoring as its focus: executions, run/pause/resume, notifications.
 3. Push notifications: `expo-notifications` is installed but unused. Suggested: state in-app polling only for V1, or add a Notification-service push channel to the plan.
 4. Google sign-in is absent on mobile. Suggested: password-only for V1.
 5. Hard-coded English strings versus the VI/EN store. Suggested: fix before demo, or document English-only screens.
-6. Owner is unknown (no docs name a mobile owner). Suggested: assign in the rulebook.
+6. **Decided (2026-09-30):** owner is T (partner) for now; K and T share it later.
 
 ## References
 

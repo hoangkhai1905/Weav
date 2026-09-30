@@ -1,6 +1,6 @@
 # OCR Service
 
-> Status: Partial. Text and table extraction pipeline and HTTP ingress are Implemented and smoke-tested; Service JWT verification, URL allowlist wiring, artifact resolution, health endpoints, and production quality/load gates are Planned. Owner: TBD. Last verified: 2026-09-30 against `dev`.
+> Status: Partial. Text and table extraction pipeline and HTTP ingress are Implemented and smoke-tested; Service JWT verification, URL allowlist wiring, artifact resolution, health endpoints, and production quality/load gates are Planned. Owner: T (partner). Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 
@@ -143,12 +143,12 @@ Overlays: [compose.ocr-models.dev.yml](../../../compose.ocr-models.dev.yml) (loc
 
 ## Open questions
 
-1. Contract says Service JWT must be verified; code checks presence only. Suggested: treat as a blocker for enabling any `WORKFLOW_OCR_*` flag, implement JWKS verification mirroring AI Service.
+1. **Deferred (2026-09-30):** OCR is still being tested on Google Colab; revisit before enabling any `WORKFLOW_OCR_*` flag. Contract says Service JWT must be verified; code checks presence only. Suggested: treat as a blocker for enabling any `WORKFLOW_OCR_*` flag, implement JWKS verification mirroring AI Service.
 2. Contract requires rejecting a missing `X-Request-ID`; code generates one when absent (invalid values are rejected). Suggested: change code to match the contract.
 3. Contract makes `X-Workspace-ID` non-authoritative; code uses it. Suggested: derive from the verified JWT.
 4. Notion's diagram routes Gateway directly to OCR; the contract also has a public Gateway route plus a private route, which matches code. Suggested: keep both, document Gateway as ingress only.
 5. Vietnamese design doc vs English contract: which is authoritative for limits? Suggested: code values above, since they match the contract README.
-6. Owner is unknown (brief says TBD if not in docs). Suggested: K, as OCR benchmark and plans are Workflow-adjacent, but confirm.
+6. **Decided (2026-09-30):** owner is T (partner).
 7. Should OCR get an emitting concurrency limiter before enabling workflow OCR? Suggested: yes, one in-flight worker per replica with `OCR_BUSY` overflow.
 
 ## References

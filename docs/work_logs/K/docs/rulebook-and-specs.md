@@ -21,6 +21,18 @@
 | English, with thesis IDs kept | The user chose this |
 | `email.send` marked Implemented, not Partial | `GmailNodeExecutor` and `GmailClient` are unconditional `@Component`s with a unit test; the workflow README gaps row is stale. Not yet run against real Gmail. |
 
+### Follow-up decisions (same day)
+
+| Decision | Recorded in |
+| --- | --- |
+| Owners: Workflow, Identity, AI, Workspace = K; Notification, OCR, Gateway = T; web, mobile and web admin = T for now, shared later; Bot = TBD | spec headers, rulebook §4 |
+| UC017, UC027, UC028 stay Planned; implement later | specs (already Planned) |
+| Bot = Telegram as a workflow channel: chat linking (users and workspace groups), Telegram trigger, group notifications via `telegram.send_message`; no list/run/pause from chat | `docs/specs/services/bot-service.md`, rulebook §3–4 |
+| Mobile = everything web does except designing workflows, focused on monitoring | `docs/specs/apps/mobile.md` |
+| OCR Service JWT verification deferred while T tests OCR on Colab | `docs/specs/services/ocr-service.md` |
+| Web direct Identity call for Google OAuth acknowledged, fix pending | `docs/specs/apps/web.md` |
+| Gateway handoffs passed to T | `docs/specs/services/api-gateway.md` |
+
 ## Changed files
 
 | Type | Path |

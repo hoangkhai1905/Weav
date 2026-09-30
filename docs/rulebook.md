@@ -54,22 +54,26 @@ The thesis says 32 use cases but lists 28; the 28 listed are authoritative. Stat
 | UC027 | List all workspaces | Workspace | [workspace-service](specs/services/workspace-service.md) |
 | UC028 | Monitor all executions | Workflow | [workflow-service](specs/services/workflow-service.md) |
 
-Web and mobile implement the client side; see [web](specs/apps/web.md) and [mobile](specs/apps/mobile.md).
+Web and mobile implement the client side; see [web](specs/apps/web.md) and [mobile](specs/apps/mobile.md). Mobile covers everything web does except designing workflows, with monitoring as its focus. Web and mobile (including web admin) are owned by T for now and shared later.
+
+One capability is outside the thesis table: **group notifications**, where a workspace links a Telegram group and workflows post to it (Bot, extends UC020).
 
 ## 4. Architecture rules
 
 ### Components
 
-| Component | Stack | Role |
-| --- | --- | --- |
-| API Gateway | NestJS | Public ingress only: routing, edge auth, rate limiting, CORS, error normalization. Owns no business data and makes no business-authorization decisions. Owned by the partner. |
-| Identity | Spring Boot | Accounts, sign-in, tokens, password recovery, admin account actions |
-| Workspace | Spring Boot | Workspaces, members, permissions, connections and credentials, authorization checks for other services |
-| Workflow | Spring Boot | Core domain: definitions, versions, validation, triggers, executions. The Background Worker and the (deferred) Agent Runtime live inside it, not as separate services. |
-| AI | NestJS | Reasoning only: workflow generation and `ai.extract` / `ai.classify` / `ai.summarize`. Private, never on the public edge. |
-| OCR | FastAPI | Document text and table extraction |
-| Bot | NestJS | Telegram linking, bot commands, Telegram triggers |
-| Notification | NestJS | Consumes workflow events, stores the inbox, delivers notifications |
+Owners: K = Nguyễn Hoàng Khải, T = partner (same letters as the `docs/work_logs/` folders).
+
+| Component | Stack | Owner | Role |
+| --- | --- | --- | --- |
+| API Gateway | NestJS | T | Public ingress only: routing, edge auth, rate limiting, CORS, error normalization. Owns no business data and makes no business-authorization decisions. |
+| Identity | Spring Boot | K | Accounts, sign-in, tokens, password recovery, admin account actions |
+| Workspace | Spring Boot | K | Workspaces, members, permissions, connections and credentials, authorization checks for other services |
+| Workflow | Spring Boot | K | Core domain: definitions, versions, validation, triggers, executions. The Background Worker and the (deferred) Agent Runtime live inside it, not as separate services. |
+| AI | NestJS | K | Reasoning only: workflow generation and `ai.extract` / `ai.classify` / `ai.summarize`. Private, never on the public edge. |
+| OCR | FastAPI | T | Document text and table extraction |
+| Bot | NestJS | TBD | Telegram as a workflow channel: chat linking (users and workspace groups), Telegram triggers, sending to linked groups. Not a second client; mobile covers monitoring and control. |
+| Notification | NestJS | T | Consumes workflow events, stores the inbox, delivers notifications |
 
 ### Communication
 
@@ -78,7 +82,7 @@ Web and mobile implement the client side; see [web](specs/apps/web.md) and [mobi
 - R-A3. Asynchronous messages go through RabbitMQ with JSON payloads. Valkey is never used as a queue.
 - R-A4. Every cross-service call has a documented contract in [packages/contracts](../packages/contracts): OpenAPI under `http/<service>/`, event schemas under `events/<domain>/`. Change the contract and its consumers' tests together.
 - R-A5. Contract and persisted-data changes are additive by default. Renaming or dropping fields, routes, events, or columns needs a migration or rollback plan and the user's explicit confirmation.
-- R-A6. Gateway changes are requested from the partner as a documented handoff, not implemented by us.
+- R-A6. Gateway changes are requested from its owner (T) as a documented handoff, not implemented by others.
 
 ### Data ownership
 

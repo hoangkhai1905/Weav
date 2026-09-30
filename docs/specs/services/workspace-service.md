@@ -1,6 +1,6 @@
 # Workspace Service
 
-> Status: V1 core (workspaces, membership, authorization snapshot, connections/credentials, Google OAuth, notification outbox) is implemented; System Admin listing (UC027) is not. Owner: TBD (work logs under `docs/work_logs/K/` suggest K). Last verified: 2026-09-30 against `dev`.
+> Status: V1 core (workspaces, membership, authorization snapshot, connections/credentials, Google OAuth, notification outbox) is implemented; System Admin listing (UC027) is not. Owner: K. Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 
@@ -188,7 +188,7 @@ Suites include domain tests, architecture tests (ArchUnit clean-architecture rul
 4. Gateway credential routes: `PUT/DELETE .../credential` are absent in the Gateway contract. Suggested: request a documented Gateway handoff, or decide web uses Google OAuth only in V1 (matches the 2026-09-24 web design, which offers Google providers only).
 5. Notion says Redis and one physical DB with `*_schema`; code uses Valkey (Redis client, `spring.data.redis`) and Neon `workspace_db` with schema `workspace`. Suggested: follow code.
 6. Provider set (`GMAIL`, `GOOGLE_SHEETS`, `TELEGRAM`, `HTTP`) is broader than the web design's Google-only creation UI. Suggested: confirm the V1 provider list for Builder.
-7. Owner of this component is not recorded in docs. Suggested: set to K if confirmed.
+7. **Decided (2026-09-30):** owner is K.
 
 ## References
 

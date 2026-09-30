@@ -1,6 +1,6 @@
 # Web App (`apps/web`)
 
-> Status: Partial. Auth, workspaces, members, connections, workflow Builder, executions, OCR node, notifications and AI generate UI run against the Gateway; Telegram screen is mock-only, workflow delete and admin screens do not exist. Owner: TBD. Last verified: 2026-09-30 against `dev`.
+> Status: Partial. Auth, workspaces, members, connections, workflow Builder, executions, OCR node, notifications and AI generate UI run against the Gateway; Telegram screen is mock-only, workflow delete and admin screens do not exist. Owner: T (partner) for now; shared later (includes web admin). Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 
@@ -154,7 +154,7 @@ Mock mode in detail: `isAuthMockMode`, `isWorkflowMockMode`, `isWorkspaceMockMod
 
 ## Open questions
 
-1. Web calls Identity directly (`:8081`) for Google OAuth, while the architecture says clients use the Gateway only. Suggested: confirm whether the Gateway will proxy `/auth/oauth/*`; until then document as an exception.
+1. **Acknowledged (2026-09-30), fix pending.** Web calls Identity directly (`:8081`) for Google OAuth, while the architecture says clients use the Gateway only. Suggested: confirm whether the Gateway will proxy `/auth/oauth/*`; until then document as an exception.
 2. Access token in `localStorage` vs the refresh token kept memory-only (reload forces sign-in for password sessions). Suggested: accept for V1 and note; or move to cookie-based session later.
 3. Telegram page is mock-only while the Bot service has link endpoints. Suggested: mark UC023 Planned and wire it after the Gateway exposes Bot routes.
 4. Delete workflow UI exists but the backend has no endpoint. Suggested: hide the action in live mode or add the endpoint (needs decision on soft delete).

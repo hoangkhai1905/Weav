@@ -1,6 +1,6 @@
 # Identity Service
 
-> Status: V1 core implemented (auth, sessions, OTP recovery, Google OAuth web transport, admin user control, avatar, internal directory, security-notification outbox); Gateway/client integration and durable rate limiting are Partial. Owner: TBD (T's work logs cover Identity; the API Gateway is owned by the partner). Last verified: 2026-09-30 against `dev`.
+> Status: V1 core implemented (auth, sessions, OTP recovery, Google OAuth web transport, admin user control, avatar, internal directory, security-notification outbox); Gateway/client integration and durable rate limiting are Partial. Owner: K. Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 
@@ -181,7 +181,7 @@ From `services/identity-service`:
 5. **Env var naming drift.** `.env.example` also lists `GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI/FRONTEND_RETURN_URL/STATE_TTL` and `REDIS_URL`, while Identity reads `GOOGLE_CLIENT_ID/SECRET`, `GOOGLE_REDIRECT_URI`, `OAUTH_WEB_RETURN_TARGET_URI`, `VALKEY_URL`, and the OAuth TTLs are not env-mapped. Suggested: reconcile `.env.example` with `application.properties` (the Gateway may use the `GOOGLE_OAUTH_*` names).
 6. **Email verification enforcement.** Login is allowed before verification; does any V1 feature (for example workspace invitations) require a verified email? Suggested: no for V1.
 7. **`/internal/directory/**` exposure.** The Gateway must not route it; confirm the Gateway allow-list excludes it. Suggested: add a Gateway test (handoff to partner).
-8. **Owner.** Identity owner is not stated in the docs. Suggested: T (work logs under `docs/work_logs/T/`).
+8. **Decided (2026-09-30):** owner is K.
 
 ## References
 

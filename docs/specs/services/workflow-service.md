@@ -1,6 +1,6 @@
 # Workflow Service
 
-> Status: V1 core (drafts, publish, versions, manual/webhook/schedule runs, monitoring, notification events, AI generation endpoint) Implemented; Telegram trigger, Telegram send node, workflow delete, and Agent Runtime Planned or fail-closed. Owner: TBD (T/K split not stated in docs). Last verified: 2026-09-30 against `dev`.
+> Status: V1 core (drafts, publish, versions, manual/webhook/schedule runs, monitoring, notification events, AI generation endpoint) Implemented; Telegram trigger, Telegram send node, workflow delete, and Agent Runtime Planned or fail-closed. Owner: K. Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 

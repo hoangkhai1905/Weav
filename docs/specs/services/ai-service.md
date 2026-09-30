@@ -1,6 +1,6 @@
 # AI Service
 
-> Status: V1 target Implemented for the four stateless operations (extract, classify, summarize, generate); `agent.task`/Agent Runtime and the public generate route are Planned/pending. Owner: TBD (Workflow-side integration by K/T; Gateway handoff to the partner). Last verified: 2026-09-30 against `dev`.
+> Status: V1 target Implemented for the four stateless operations (extract, classify, summarize, generate); `agent.task`/Agent Runtime and the public generate route are Planned/pending. Owner: K. Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 
@@ -139,7 +139,7 @@ Fake provider overlay: [compose.ai-local.yml](../../../compose.ai-local.yml) add
 
 ## Open questions
 
-1. Owner: the brief says TBD; docs do not name an AI Service owner. Suggested: K (author of the AI V1 work log) or record explicitly.
+1. **Decided (2026-09-30):** owner is K.
 2. Notion routes Gateway directly to AI; the V1 design keeps AI private and routes generation through Workflow. Suggested: follow the design (code has no public AI route).
 3. Gateway has an `AI_SERVICE_URL` upstream in [compose.dev.yml](../../../compose.dev.yml) while the design says it must not route public traffic to AI. Suggested: confirm in the partner handoff that the Gateway only uses it for health, not public proxying.
 4. UC014 is Partial only because of the Gateway route; confirm whether Workflow's generate controller is complete (not verified in this spec, Workflow spec owns it).
