@@ -21,7 +21,6 @@ export const getNodeReadinessBadge = (nodeType: string, config: Record<string, u
   if (
     nodeType === 'trigger.telegram' ||
     nodeType === 'telegram.send_message' ||
-    nodeType.startsWith('ai.') ||
     nodeType === 'ocr.extract'
   ) {
     return { state: 'unavailable', label: 'Unavailable' };
@@ -47,6 +46,17 @@ export const getNodeReadinessBadge = (nodeType: string, config: Record<string, u
     }
   }
   if (nodeType === 'http.request' && !String(config.url ?? '').trim()) {
+    return { state: 'not-configured', label: 'Not configured' };
+  }
+  if (nodeType === 'ai.extract') {
+    const schema = config.outputSchema as { type?: unknown; properties?: Record<string, unknown> } | undefined;
+    const hasFields = schema?.type === 'object' && Object.keys(schema.properties ?? {}).length > 0;
+    if (!hasFields || !String(config.text ?? '').trim()) return { state: 'not-configured', label: 'Not configured' };
+  }
+  if (nodeType === 'ai.classify' && (!Array.isArray(config.categories) || config.categories.length < 2 || !String(config.content ?? '').trim())) {
+    return { state: 'not-configured', label: 'Not configured' };
+  }
+  if (nodeType === 'ai.summarize' && !String(config.inputText ?? '').trim()) {
     return { state: 'not-configured', label: 'Not configured' };
   }
   return { state: 'ready', label: 'Ready' };

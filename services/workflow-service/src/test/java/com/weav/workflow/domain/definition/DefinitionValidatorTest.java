@@ -24,6 +24,39 @@ class DefinitionValidatorTest {
     private final DefinitionValidator validator = new DefinitionValidator();
 
     @Test
+    void extractSchemaWithCredentialLikePropertyNamesPublishes() {
+        Map<String, Object> schema = Map.of("type", "object", "properties",
+                Map.of("token", Map.of("type", "string"), "apiKey", Map.of("type", "string"),
+                        "note", Map.of("type", "string", "description", "literal {{not.a.mapping}}")));
+        WorkflowDefinition definition = manualThen("extract", "ai.extract",
+                Map.of("text", "{{trigger.input.body}}", "outputSchema", schema));
+        assertEquals(List.of(), new DefinitionValidator().validatePublish(definition));
+    }
+
+    @Test
+    void ordinaryCredentialKeysAreStillRejected() {
+        WorkflowDefinition definition = manualThen("call", "http.request",
+                Map.of("method", "GET", "url", "https://example.com", "headers", Map.of("X-Api-Token", "secret")));
+        assertTrue(new DefinitionValidator().validatePublish(definition).stream()
+                .anyMatch(issue -> issue.code().equals("CREDENTIAL_FIELD_NOT_ALLOWED")));
+    }
+
+    @Test
+    void extractSchemaOutsideTheProfileIsRejected() {
+        WorkflowDefinition definition = manualThen("extract", "ai.extract", Map.of("text", "t",
+                "outputSchema", Map.of("type", "object", "properties", Map.of("a", Map.of("type", "string", "default", "sk-live")))));
+        assertTrue(new DefinitionValidator().validatePublish(definition).stream()
+                .anyMatch(issue -> issue.field().equals("config.outputSchema") && issue.code().equals("INVALID_FIELD_TYPE")));
+    }
+
+    @Test
+    void legacyExtractWithOnlySchemaDescriptionStillPublishes() {
+        WorkflowDefinition definition = manualThen("extract", "ai.extract",
+                Map.of("text", "t", "schemaDescription", "Invoice number and total"));
+        assertEquals(List.of(), new DefinitionValidator().validatePublish(definition));
+    }
+
+    @Test
     void emailDraftMaySkipConnectionButPublishRequiresALiteralGmailConnection() {
         Map<String, Object> message = Map.of("to", "person@example.test", "subject", "Ready", "body", "Done");
         WorkflowDefinition withoutConnection = definition(
@@ -454,6 +487,10 @@ class DefinitionValidatorTest {
     private static WorkflowDefinition definition(List<WorkflowDefinition.Node> nodes,
             List<WorkflowDefinition.Edge> edges) {
         return new WorkflowDefinition("1.0", nodes, edges, Map.of());
+    }
+
+    private static WorkflowDefinition manualThen(String id, String type, Map<String, Object> config) {
+        return definition(List.of(manual("manual"), node(id, type, config)), List.of(edge("e1", "manual", id)));
     }
 
     private static WorkflowDefinition.Node manual(String id) {

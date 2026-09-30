@@ -6,6 +6,7 @@ import com.weav.workflow.application.port.out.ExecutionStatePort;
 import com.weav.workflow.application.port.out.RetryWaitPort;
 import com.weav.workflow.domain.definition.DefinitionValidator;
 import com.weav.workflow.domain.definition.JsonValues;
+import com.weav.workflow.domain.definition.NodeCatalog;
 import com.weav.workflow.domain.definition.ValidationIssue;
 import com.weav.workflow.domain.definition.WorkflowDefinition;
 import com.weav.workflow.domain.execution.GraphState;
@@ -326,7 +327,10 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
 
     private Map<String, Object> resolveConfig(RuntimeState runtime, WorkflowDefinition.Node definitionNode,
                                               Map<String, Object> outputs) {
-        Object resolved = mappingResolver.resolve(definitionNode.config(),
+        Set<String> staticFields = NodeCatalog.staticFields(definitionNode.type());
+        Map<String, Object> mapped = new LinkedHashMap<>(definitionNode.config());
+        staticFields.forEach(mapped::remove);
+        Object resolved = mappingResolver.resolve(mapped,
                 new MappingContext(runtime.snapshot.input(), outputs, runtime.snapshot.definition().variables()),
                 definitionNode.id(), "config");
         if (!(resolved instanceof Map<?, ?> map)) {
@@ -338,6 +342,11 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
                 throw new ConfigurationFailure();
             }
             config.put(key, entry.getValue());
+        }
+        for (String field : staticFields) {
+            if (definitionNode.config().containsKey(field)) {
+                config.put(field, definitionNode.config().get(field));
+            }
         }
         WorkflowDefinition single = new WorkflowDefinition("1.0",
                 List.of(new WorkflowDefinition.Node(definitionNode.id(), definitionNode.type(), config)),

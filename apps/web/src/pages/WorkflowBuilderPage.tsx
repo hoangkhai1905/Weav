@@ -43,6 +43,8 @@ import {
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
+import { OutputSchemaEditor } from '../components/builder/OutputSchemaEditor';
+import { GenerateWorkflowPanel } from '../components/builder/GenerateWorkflowPanel';
 import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
@@ -54,6 +56,7 @@ import { NODE_CATALOG } from '../lib/constants/nodeCatalog';
 import { getNodeReadinessBadge } from '../lib/nodeReadiness';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
+import { definitionToCanvas, type GenerationResponse } from '../api/workflow-v1.api';
 import { workflowToReactFlow, reactFlowToWorkflow } from '../lib/mappers/workflowMapper';
 import type { WorkflowDefinition } from '../types/workflow.types';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
@@ -148,7 +151,6 @@ const getNodeReadinessMessage = (type: string, config: Record<string, unknown>):
     }
     return undefined;
   }
-  if (type.startsWith('ai.')) return 'Unavailable: the AI provider contract is not implemented.';
   if (type === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
     return 'Not configured: set both condition values before publication.';
   }
@@ -193,7 +195,7 @@ const getPublishBlockers = (nodes: Node[]): string[] => {
       const message = getNodeReadinessMessage(type, config);
       if (message) blockers.add(message);
     }
-    if (type === 'trigger.telegram' || type === 'telegram.send_message' || type.startsWith('ai.') || type === 'ocr.extract') {
+    if (type === 'trigger.telegram' || type === 'telegram.send_message' || type === 'ocr.extract') {
       blockers.add(getNodeReadinessMessage(type, config) ?? `${type} is not configured`);
     }
     if (type === 'ocr.extract') {
@@ -269,6 +271,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [publishedWebhooks, setPublishedWebhooks] = useState<WebhookProvisioning[]>([]);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null);
+  const [isGeneratePanelOpen, setIsGeneratePanelOpen] = useState(false);
 
   // Inspector Form State (for selected node)
   const [ocrLanguage, setOcrLanguage] = useState('vi+en');
@@ -748,6 +751,30 @@ export const WorkflowBuilderPage: React.FC = () => {
     setIsSaved(false);
   };
 
+  const handleGenerateReady = (result: Extract<GenerationResponse, { status: 'ready' }>) => {
+    const hasBeyondTrigger = nodes.length > 1
+      || (nodes.length === 1 && String(nodes[0].data?.nodeType ?? '') !== 'trigger.manual');
+    if (hasBeyondTrigger && !window.confirm('Replace the current canvas?')) return;
+    const canvas = definitionToCanvas(result.definition, result.layout);
+    const flow = workflowToReactFlow({
+      id: workflow?.id ?? 'generated',
+      workspaceId: workflow?.workspaceId ?? activeWorkspaceId ?? '',
+      name: result.name,
+      status: 'DRAFT',
+      version: 1,
+      triggerType: 'trigger.manual',
+      nodes: canvas.nodes,
+      edges: canvas.edges,
+      createdAt: workflow?.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ownerName: workflow?.ownerName ?? '',
+    });
+    setNodes(flow.nodes);
+    setEdges(flow.edges);
+    setWorkflowTitle(result.name);
+    setIsSaved(false);
+    setIsGeneratePanelOpen(false);
+  };
 
   // This previews the graph connections only; it does not execute workflow nodes.
   const handlePreviewFlow = () => {
@@ -831,6 +858,15 @@ export const WorkflowBuilderPage: React.FC = () => {
 
         {/* Top Header Action Buttons */}
         <div className="flex items-center gap-2">
+          <button
+            data-testid="workflow-generate-ai"
+            onClick={() => setIsGeneratePanelOpen(true)}
+            disabled={isLoadingWorkflow || !workflow}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Sparkles size={13} />
+            <span>{t('ai.generate_with_ai')}</span>
+          </button>
           <button
             data-testid="workflow-save"
             onClick={handleSaveDraft}
@@ -1325,9 +1361,16 @@ export const WorkflowBuilderPage: React.FC = () => {
               ) : selectedNodeType.startsWith('ai.') ? (
                 <div data-testid="ai-config" className="space-y-3">
                   {selectedNodeType === 'ai.extract' && (
-                    <div>
-                      <label htmlFor="ai-schema-description" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Schema description</label>
-                      <textarea id="ai-schema-description" rows={4} value={String(selectedNodeConfig.schemaDescription ?? '')} onChange={(event) => updateSelectedNodeConfig({ schemaDescription: event.target.value })} className="w-full resize-y rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                    <div className="space-y-3">
+                      <OutputSchemaEditor
+                        value={selectedNodeConfig.outputSchema}
+                        legacyDescription={typeof selectedNodeConfig.schemaDescription === 'string' ? selectedNodeConfig.schemaDescription : undefined}
+                        onChange={(outputSchema) => updateSelectedNodeConfig({ outputSchema })}
+                      />
+                      <div>
+                        <label htmlFor="ai-input-text" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Input text</label>
+                        <input id="ai-input-text" value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                      </div>
                     </div>
                   )}
                   {selectedNodeType === 'ai.classify' && (
@@ -1844,6 +1887,11 @@ export const WorkflowBuilderPage: React.FC = () => {
           </div>
         )}
       </div>
+      <GenerateWorkflowPanel
+        open={isGeneratePanelOpen}
+        onClose={() => setIsGeneratePanelOpen(false)}
+        onReady={handleGenerateReady}
+      />
     </div>
   );
 };

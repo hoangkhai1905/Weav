@@ -1,0 +1,11 @@
+{
+  "requestId": "00000000-0000-4000-8000-000000000001",
+  "workspaceId": "00000000-0000-4000-8000-000000000002",
+  "operation": "extract",
+  "text": "Tên: Lan",
+  "outputSchema": {
+    "type": "object",
+    "properties": { "name": { "type": "string" } },
+    "required": ["name"]
+  }
+}

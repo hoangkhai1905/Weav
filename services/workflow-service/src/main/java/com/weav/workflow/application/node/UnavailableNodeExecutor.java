@@ -6,10 +6,7 @@ import java.util.Set;
 /** Explicit fail-closed adapters for integrations without an approved runtime contract. */
 public final class UnavailableNodeExecutor implements NodeExecutor {
     public static final Set<String> UNAVAILABLE_NODE_TYPES = Set.of(
-            "telegram.send_message",
-            "ai.extract",
-            "ai.classify",
-            "ai.summarize");
+            "telegram.send_message");
 
     private final String type;
 

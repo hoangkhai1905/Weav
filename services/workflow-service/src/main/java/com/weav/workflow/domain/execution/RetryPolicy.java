@@ -10,7 +10,10 @@ public final class RetryPolicy {
     private static final Set<String> TRANSIENT_CODES = Set.of(
             "NETWORK_ERROR",
             "TIMEOUT",
-            "WORKER_INTERRUPTED");
+            "WORKER_INTERRUPTED",
+            "AI_BUSY",
+            "AI_PROVIDER_UNAVAILABLE",
+            "AI_TIMEOUT");
     private static final Set<String> PERMANENT_CODES = Set.of(
             "MAPPING_ERROR",
             "CONFIGURATION_ERROR",

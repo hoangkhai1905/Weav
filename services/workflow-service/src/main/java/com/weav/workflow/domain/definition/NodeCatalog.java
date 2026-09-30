@@ -31,10 +31,11 @@ public final class NodeCatalog {
                     "connectionId", "operation", "spreadsheetId", "range", "values")),
             Map.entry("telegram.send_message", Set.of("chatId", "text")),
             Map.entry("logic.condition", Set.of("left", "operator", "right")),
-            Map.entry("ai.extract", Set.of("text", "schemaDescription")),
+            Map.entry("ai.extract", Set.of("text", "outputSchema", "instructions", "schemaDescription")),
             Map.entry("ai.classify", Set.of("content", "categories")),
             Map.entry("ai.summarize", Set.of("inputText", "maxLength")),
             Map.entry("ocr.extract", Set.of("artifactId", "fileUrl", "language", "detectTables")));
+    private static final Map<String, Set<String>> STATIC_FIELDS = Map.of("ai.extract", Set.of("outputSchema"));
 
     private NodeCatalog() {
     }
@@ -49,5 +50,10 @@ public final class NodeCatalog {
 
     public static Set<String> configFields(String type) {
         return type == null ? Set.of() : CONFIG_FIELDS.getOrDefault(type, Set.of());
+    }
+
+    /** Config fields that are literal metadata: never mapping-resolved and never credential-key scanned. */
+    public static Set<String> staticFields(String type) {
+        return type == null ? Set.of() : STATIC_FIELDS.getOrDefault(type, Set.of());
     }
 }
