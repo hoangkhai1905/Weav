@@ -12,7 +12,7 @@
 | Nhánh / commit đầu ngày      | `feature/ai-service-impl` / `09a2331` (lane-C merge)                 |
 | Người thực hiện              | `Orca lane workers (A/B/C/D) + coordinator`                          |
 | Người review / nhận bàn giao | `coordinator + antigravity/copilot reviewers`                        |
-| Trạng thái cuối ngày         | `Đang tiếp tục` (Part B live acceptance chưa chạy)                   |
+| Trạng thái cuối ngày         | `Part B xong` (5 PASS + 1 PARTIAL + 1 FAIL tại Workflow hop; F1 đã fix, F2 là lỗi text brief; F3 là V1 known limitation, F4 deferred; Gateway route vẫn absent) |
 | Phạm vi session              | `AI Service V1: implement Tasks 1–10, Task 11 Part A (fixture stack)` |
 | Liên kết liên quan           | `docs/superpowers/specs/2026-09-25-ai-service-v1-design.md`           |
 
@@ -150,6 +150,7 @@ Không liệt kê `.env`, `tmp/service-keys/*` (ignored, không review).
 | Hạng mục          | Lệnh / thao tác tái lập                                                                 | Kết quả thực tế                              | Phạm vi và giới hạn                  |
 | ----------------- | --------------------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------ |
 | ai-service unit   | `pnpm --dir services/ai-service test`                                                   | `PASS` 66/66 (4 suites)                      | T11-A re-run                         |
+| ai-service e2e (F1 follow-up) | `pnpm --dir services/ai-service test:e2e`                                         | `PASS` 21/21 (18 cũ + 401 cả-thiếu-header RED→GREEN + 2 case 400 với token hợp lệ) | Verify JWT trước X-Request-ID |
 | ai-service e2e    | `pnpm --dir services/ai-service test:e2e`                                               | `PASS` 18/18                                 | T11-A re-run                         |
 | ai-service build  | `pnpm --dir services/ai-service build`                                                  | `PASS` exit 0                                | `nest build`                         |
 | ai-service eslint | `exec eslint "{src,test}/**/*.ts"` (read-only, không `--fix`)                           | 148 errors / 16 files, pre-existing          | Prettier drift + verbatim test code  |
@@ -182,6 +183,7 @@ Không liệt kê `.env`, `tmp/service-keys/*` (ignored, không review).
 
 | Mức độ        | Vấn đề | Nguyên nhân / dấu hiệu | Cách xử lý hiện tại | Chủ sở hữu / bước tiếp theo |
 | ------------- | ------ | ---------------------- | ------------------- | --------------------------- |
+| `Trung bình` | F3: Workflow không cancel AI call khi client disconnect (V1 known limitation) | Gen `4a16ad8c` chạy tới `AI_TIMEOUT` 59 997 ms sau abort 2 s; generation đồng thời cùng workspace trong ~60 s có thể 503 `AI_UNAVAILABLE` | AI-side release đã verify trực tiếp (2 020 ms); cần Workflow-side change hoặc quyết định spec | Workflow lane / backlog |
 | `Trung bình` | Gateway generate route absent mọi branch (2026-09-30) | Search `workflow.module.ts` không có route | Generate e2e skip; ghi handoff | Partner team; Part B re-check |
 | `Thấp` | Local-only rate và admission limits | Theo brief §6/Step 6 | Ghi nhận; Part B quan sát | AI lane |
 | `Thấp` | Model self-reported confidence | Theo brief §6/Step 6 | Ghi nhận | AI lane |
@@ -214,15 +216,28 @@ Không liệt kê `.env`, `tmp/service-keys/*` (ignored, không review).
 - Không hiển thị secret hoặc đưa giá trị `.env` vào chat, log, commit hay fixture.
 - Cập nhật log này khi Part B xong (đổi 7 PENDING thành kết quả quan sát).
 
-### Live acceptance (Part B) — PENDING: not yet run
+### Live acceptance (Part B) — DONE 2026-09-30 (coordinator live run, stack rút gọn, base `81360eb`)
 
-1. PENDING: Execution success (browser): manual → `http.request` GET → `ai.summarize` (`inputText: {{nodes.<http>.output.body}}`) → `http.request` POST summary tới sink; execution detail `ai.summarize` SUCCESS + sink nhận được.
-2. PENDING: Retry/non-retry: `scenario:invalid` → 1 attempt `AI_OUTPUT_INVALID`; stop fake-deepseek → 3 attempts `AI_PROVIDER_UNAVAILABLE` rồi FAILED; restart fixture.
-3. PENDING: Timeout/lease: `scenario:slow` → 3 attempts `AI_TIMEOUT` (~60s mỗi attempt); log không có recovery-fenced/duplicate attempt.
-4. PENDING: Legacy extract: draft `ai.extract` chỉ có `schemaDescription` save + publish được; run fail với "Add an output schema to this extract node.".
-5. PENDING: Generation (cần Gateway route): `AI_E2E=1` playwright + xác nhận tay `scenario:unsupported` và CONNECTION question khi thiếu connection.
-6. PENDING: Unauthorized: `POST /v1/summarize` `{}` → 401 `UNAUTHENTICATED`; token ký từ scratch-key cũng 401.
-7. PENDING: Cancellation: start `scenario:slow` generation, đóng tab sau 2s; 2 generations cùng workspace ngay sau đó không trả `AI_BUSY`.
+Stack rút gọn: rabbitmq (container đổi tên `weav-rabbitmq-laned` qua `tmp/compose.laned-name.yml` gitignored để tránh clash với container stopped của main project), fake-deepseek, identity, workspace, workflow, ai, api-gateway. Health: ai `/health/ready` = ready; gateway/workflow/identity/workspace 200. Account throwaway `ai-v1-acceptance-1790753999612@example.test` (đăng ký qua UI thật), workspace "AI V1 Acceptance" `3d875fcd-3ee0-4a09-8fff-63e0494fa811`. Web: lane-D Vite dev `localhost:5173` (Gateway CORS cho phép; `127.0.0.1:5174` bị chặn như expected). Notification 503 ở dashboard là expected (notification-service ngoài stack).
+
+1. Execution success — `PASS` (sau khi sửa mapping của brief, F2): workflow `88a0f79c-b9b2-44c1-bc64-beb2a1fd77da`; run `11d4060b` FAILED tại ai.summarize (`MAPPING_ERROR`, 1 attempt, non-retryable) do brief dùng `{{nodes.<http>.output.body}}`; run `a25f19f9` với `{{ nodes.fetch.output.data }}` SUCCESS (ai.summarize attempt 1, 2.6 s).
+2. Retry/non-retry — `PASS`: workflow `948d51a7`; `scenario:invalid` run `813f12c7` FAILED 1 attempt `AI_OUTPUT_INVALID`; stop fake-deepseek run `23c66761` FAILED 3 attempts `AI_PROVIDER_UNAVAILABLE` (07:45:06/12/19); restart fixture, ai `/health/ready` lại ready.
+3. Timeout/lease — `PASS`: `scenario:slow` run `8b54d885` FAILED 3 attempts `AI_TIMEOUT` (~60 s mỗi attempt, 07:45:47–07:48:53); log `NODE_RETRY_SCHEDULED` ×2 + `NODE_FAILED` ×1, không fence/recover/duplicate/lease, 0 exception; run thứ hai QUEUED chờ (single worker, expected).
+4. Legacy extract — `PASS`: workflow `ac359584` (chỉ `schemaDescription`) draft save + publish 200; run `36de6237` FAILED 1 attempt `CONFIGURATION_ERROR` đúng message.
+5. Generation — `PARTIAL` (Gateway route absent; Workflow↔AI verify trực tiếp): `AI_E2E=1` browser spec NOT run (skipped). Gọi trực tiếp workflow `:8083` với user JWT: `needs-input` 200 (307 ms), `unsupported` 200 (231 ms), prompt ping→summarize 200 ready (246 ms), Sheets prompt → ready default (CONNECTION question không verify được với fixture; đã cover bởi `WorkflowGenerationServiceTest`); call thứ 6 trong phút → 429 `GENERATION_RATE_LIMITED`. Hygiene: log ai-service chỉ có `{requestId, operation, workspaceId, outcome, durationMs}`, 0 dòng prompt/Bearer/JWT; fake-deepseek không log body.
+6. Unauthorized — `PASS` + finding F1: no token + no X-Request-ID → 400 `INVALID_REQUEST` (brief expect 401); no token + valid X-Request-ID → 401; garbage token → 401; scratch-key đúng claims → 401. F1 đã fix ở commit follow-up Part 1 (verify JWT trước, e2e 18→21).
+7. Cancellation — `FAIL` ở Workflow hop / `PASS` ở AI hop (F3): abort generation `scenario:slow` qua Workflow sau 2 s, AI vẫn chạy tới `AI_TIMEOUT` 59 997 ms (gen `4a16ad8c`); 2 generations kế → một 503 `AI_UNAVAILABLE`, một 200. Gọi trực tiếp ai-service `:3001` abort sau 2 s → release admission sau 2 020 ms; 2 calls kế đều 200 (đúng spec §5 / acceptance #5).
+
+#### Findings F1–F4 và disposition
+
+- F1 (auth order): `ai.controller.ts` check X-Request-ID trước `verifier.verify()` → unauthenticated thiếu header nhận 400 thay vì 401. **Fixed** ở commit follow-up Part 1 (verify JWT ngay sau `AI_NOT_CONFIGURED` + operation checks; e2e RED→GREEN, 21/21).
+- F2 (brief mapping): scenario brief dùng `output.body`, nhưng `http.request` output là `{data, status}` → dùng `output.data`. Lỗi text brief, product fail-closed đúng. Không đổi code.
+- F3 (design, Workflow): Workflow không propagate client disconnect tới AI call (generate path và có thể node-execution path). V1 known limitation đã document; AI-side release đã verify trực tiếp. Impact: generation đồng thời thứ hai cùng workspace trong ~60 s có thể nhận 503 `AI_UNAVAILABLE`. Cần Workflow-side change hoặc quyết định spec — xem rủi ro §10.
+- F4 (observability minor): ai-service log client disconnect là `AI_TIMEOUT`; phân biệt `CLIENT_CLOSED` cho log chính xác — **deferred** (backlog).
+
+#### Gateway handoff
+
+- Route `POST /api/v1/workspaces/:id/workflows/generate` absent trên mọi branch (2026-09-30) → `AI_E2E=1` browser spec NOT run; Workflow↔AI đã verify trực tiếp bằng user JWT. Partner team own route (spec §9).
 
 Tear down Part B: `docker compose -f compose.yml -f compose.dev.yml -f compose.ai-local.yml --profile app down`.
 
@@ -236,9 +251,9 @@ Tear down Part B: `docker compose -f compose.yml -f compose.dev.yml -f compose.a
 
 | Trường                     | Giá trị                                        |
 | -------------------------- | ---------------------------------------------- |
-| Thời điểm dừng             | `2026-09-30 14:20 Asia/Saigon (Part A); fix round 1 sau đó` |
-| Trạng thái worktree        | `Part A committed (691e83e); fix round 1 đã commit, Part B pending` |
-| Commit/PR đã tạo           | `691e83e (Part A) + 2d35876 (fix round 1); PR chưa tạo` |
+| Thời điểm dừng             | `2026-09-30 14:20 Asia/Saigon (Part A); fix round 1 sau đó; Part B + F1 follow-up sau đó` |
+| Trạng thái worktree        | `Part B done (coordinator live run) + F1 follow-up committed, xem §11` |
+| Commit/PR đã tạo           | `691e83e (Part A) + 2d35876 (fix round 1) + 81360eb (fix-round-1 hash) + 2 follow-up commits (F1 code, work-log Part B); PR chưa tạo` |
 | Người cập nhật log         | `Orca lane-D worker (Task 11 Part A)`          |
 | Cần đọc trước khi tiếp tục | `§11 Part B + task-11-brief.md Step 4`         |
 
