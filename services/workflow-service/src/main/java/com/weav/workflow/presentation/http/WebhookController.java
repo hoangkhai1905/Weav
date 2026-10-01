@@ -29,9 +29,10 @@ public final class WebhookController {
             @RequestHeader(value = "X-Webhook-Secret", required = false) String secret,
             @RequestBody(required = false) Object input,
             HttpServletRequest request,
-            @RequestHeader(value = "traceparent", required = false) String traceparent) {
+            @RequestHeader(value = "traceparent", required = false) String traceparent,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         var admission = webhooks.accept(endpointKey, secret, input,
-                CorrelationIdFilter.requestId(request), traceparent);
+                CorrelationIdFilter.requestId(request), traceparent, idempotencyKey);
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(new ExecutionResponse.Accepted(admission.executionId(), admission.workflowId(),
                         admission.workflowVersionId(), admission.status()));

@@ -25,24 +25,29 @@ public class WebhookTriggerService {
     private final WebhookSecretPort secrets;
     private final ExecutionAdmissionService admissions;
     private final WebhookIngressRateLimiter rateLimiter;
+    private final WebhookEndpointRateLimiter endpointLimiter;
 
     public WebhookTriggerService(WorkflowRepository workflows, WorkflowTriggerPort triggers,
                                  WebhookSecretPort secrets, ExecutionAdmissionService admissions,
-                                 WebhookIngressRateLimiter rateLimiter) {
+                                 WebhookIngressRateLimiter rateLimiter,
+                                 WebhookEndpointRateLimiter endpointLimiter) {
         this.workflows = Objects.requireNonNull(workflows, "workflows must not be null");
         this.triggers = Objects.requireNonNull(triggers, "triggers must not be null");
         this.secrets = Objects.requireNonNull(secrets, "secrets must not be null");
         this.admissions = Objects.requireNonNull(admissions, "admissions must not be null");
         this.rateLimiter = Objects.requireNonNull(rateLimiter, "rateLimiter must not be null");
+        this.endpointLimiter = Objects.requireNonNull(endpointLimiter, "endpointLimiter must not be null");
+    }
+
+    public ExecutionAdmissionPort.Admission accept(String endpointKey, String suppliedSecret, Object input,
+                                                    String correlationId, String traceparent) {
+        return accept(endpointKey, suppliedSecret, input, correlationId, traceparent, null);
     }
 
     @Transactional
     public ExecutionAdmissionPort.Admission accept(String endpointKey, String suppliedSecret, Object input,
-                                                    String correlationId, String traceparent) {
-        if (!rateLimiter.tryAcquire()) {
-            throw new com.weav.workflow.domain.exception.WebhookRateLimitExceededException();
-        }
-
+                                                    String correlationId, String traceparent,
+                                                    String idempotencyKey) {
         Optional<WorkflowTrigger> candidate = endpointKey == null
                 ? Optional.empty()
                 : triggers.findWebhookByEndpoint(endpointKey);
@@ -54,6 +59,10 @@ public class WebhookTriggerService {
         }
 
         WorkflowTrigger identity = candidate.get();
+        // Budgets are spent only by authenticated callers: unknown keys and bad secrets cannot starve tenants.
+        if (!endpointLimiter.tryAcquire(identity.getId()) || !rateLimiter.tryAcquire()) {
+            throw new com.weav.workflow.domain.exception.WebhookRateLimitExceededException();
+        }
         Workflow workflow = workflows.lockById(identity.getWorkflowId())
                 .orElseThrow(WebhookNotFoundException::new);
         WorkflowTrigger registration = triggers.lockCurrent(identity.getWorkflowId(), identity.getId())
@@ -70,6 +79,7 @@ public class WebhookTriggerService {
 
         // The admission adapter repeats the published/active/version checks under these same locks,
         // then commits execution rows and outbox intent before this transaction can return.
-        return admissions.automatic(registration.getId(), input, null, correlationId, traceparent);
+        return admissions.automatic(registration.getId(), input, null, correlationId, traceparent,
+                idempotencyKey);
     }
 }

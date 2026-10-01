@@ -50,6 +50,13 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void mapsReusedIdempotencyKeyToUnprocessableEntityWithStableCode() throws Exception {
+        mockMvc.perform(get("/test/idempotency-reused"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.error.code").value("IDEMPOTENCY_KEY_REUSED"));
+    }
+
+    @Test
     void mapsDomainNotFoundToErrorResponse() throws Exception {
         mockMvc.perform(get("/test/not-found").header(CorrelationIdFilter.HEADER_NAME, "handler-42"))
                 .andExpect(status().isNotFound())
@@ -89,6 +96,11 @@ class GlobalExceptionHandlerTest {
 
         @PostMapping("/test/validation")
         void validation(@Valid @RequestBody TestRequest request) {
+        }
+
+        @GetMapping("/test/idempotency-reused")
+        void idempotencyReused() {
+            throw new com.weav.workflow.domain.exception.IdempotencyKeyReusedException();
         }
 
         @GetMapping("/test/not-found")

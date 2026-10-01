@@ -45,11 +45,12 @@ public final class WorkflowExecutionController {
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody ManualExecutionRequest request,
             HttpServletRequest servletRequest,
-            @RequestHeader(value = "traceparent", required = false) String traceparent) {
+            @RequestHeader(value = "traceparent", required = false) String traceparent,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         UUID actorId = actorId(jwt);
         var result = triggerExecutionUseCase.manual(
                 workspaceId, workflowId, actorId, request.input(),
-                CorrelationIdFilter.requestId(servletRequest), traceparent);
+                CorrelationIdFilter.requestId(servletRequest), traceparent, idempotencyKey);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(ExecutionResponse.Accepted.from(result));
     }
 

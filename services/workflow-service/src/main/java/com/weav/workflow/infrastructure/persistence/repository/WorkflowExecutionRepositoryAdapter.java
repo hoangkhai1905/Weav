@@ -3,6 +3,7 @@ package com.weav.workflow.infrastructure.persistence.repository;
 import com.weav.workflow.application.port.out.ExecutionAdmissionPort;
 import com.weav.workflow.domain.definition.WorkflowDefinition;
 import com.weav.workflow.domain.exception.BadRequestException;
+import com.weav.workflow.domain.exception.IdempotencyKeyReusedException;
 import com.weav.workflow.domain.exception.InvalidStateException;
 import com.weav.workflow.domain.exception.ResourceNotFoundException;
 import com.weav.workflow.domain.model.aggregate.execution.WorkflowExecution;
@@ -94,6 +95,10 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
             throw new BadRequestException("Manual execution context is invalid");
         }
         WorkflowJpaEntity workflow = lockWorkflow(command.workspaceId(), command.workflowId());
+        Optional<Admission> replay = idempotentReplay(workflow.getId(), command);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
         requirePublished(workflow);
         WorkflowVersionJpaEntity version = currentVersion(workflow);
         WorkflowDefinition definition = definition(version);
@@ -117,6 +122,10 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
         // All admission paths acquire the workflow row before the trigger registration row.
         WorkflowJpaEntity workflow = lockWorkflow(hint.getWorkflowId());
         WorkflowTriggerJpaEntity registration = lockTrigger(command.triggerId(), workflow.getId());
+        Optional<Admission> replay = idempotentReplay(workflow.getId(), command);
+        if (replay.isPresent()) {
+            return replay.get();
+        }
         requirePublished(workflow);
         if (registration.getStatus() != TriggerStatus.ACTIVE) {
             throw new InvalidStateException("The workflow trigger is not active");
@@ -173,7 +182,11 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
         OutboxEvent outbox = OutboxEvent.pending(EXECUTION_AGGREGATE, execution.getId(),
                 EXECUTION_REQUESTED, payload);
 
-        entityManager.persist(mapper.toEntity(execution));
+        WorkflowExecutionJpaEntity executionEntity = mapper.toEntity(execution);
+        if (command.idempotencyKey() != null) {
+            executionEntity.assignIdempotency(command.idempotencyKey(), command.requestHash());
+        }
+        entityManager.persist(executionEntity);
         for (WorkflowDefinition.Node node : definition.nodes()) {
             if (node == null || node.id() == null || node.type() == null) {
                 throw new InvalidStateException("The published workflow contains an invalid execution node");
@@ -186,6 +199,34 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
         entityManager.flush();
         return new Admission(execution.getId(), execution.getWorkflowId(), execution.getWorkflowVersionId(),
                 ExecutionStatus.QUEUED);
+    }
+
+    /**
+     * Replays the original admission for a repeated Idempotency-Key. The caller already holds the workflow row
+     * lock, which serialises same-key requests, so the unique index is only a backstop.
+     */
+    private Optional<Admission> idempotentReplay(UUID workflowId, Command command) {
+        if (command.idempotencyKey() == null) {
+            return Optional.empty();
+        }
+        List<WorkflowExecutionJpaEntity> existing = entityManager.createQuery(
+                        "select execution from WorkflowExecutionJpaEntity execution "
+                                + "where execution.workflowId = :workflowId and execution.idempotencyKey = :key",
+                        WorkflowExecutionJpaEntity.class)
+                .setParameter("workflowId", workflowId)
+                .setParameter("key", command.idempotencyKey())
+                .setMaxResults(1)
+                .getResultList();
+        if (existing.isEmpty()) {
+            return Optional.empty();
+        }
+        WorkflowExecutionJpaEntity original = existing.getFirst();
+        if (!Objects.equals(original.getRequestHash(), command.requestHash())) {
+            throw new IdempotencyKeyReusedException();
+        }
+        // The first response was always 202 QUEUED; replay it verbatim whatever the run has become since.
+        return Optional.of(new Admission(original.getId(), workflowId, original.getWorkflowVersionId(),
+                ExecutionStatus.QUEUED));
     }
 
     private Map<String, String> unknownEdges(WorkflowDefinition definition) {

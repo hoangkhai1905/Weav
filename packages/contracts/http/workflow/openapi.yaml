@@ -147,7 +147,11 @@ paths:
         - { $ref: '#/components/parameters/WorkflowId' }
       responses:
         '200':
-          description: Published version. Each webhook registration is provisioned with a new endpoint key and secret; plaintext secrets are returned once and are write-only thereafter.
+          description: >-
+            Published version. Each webhook registration of a newly created version is provisioned with a new
+            endpoint key and secret; plaintext secrets are returned once and are write-only thereafter.
+            Republishing a draft identical to the active published version is a no-op: it returns the existing
+            version with an empty webhooks list and creates no version, secret, or event.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/WorkflowPublication' }
@@ -221,11 +225,15 @@ paths:
       description: >-
         Requires WORKFLOW_RUN. The workflow must be PUBLISHED. The execution,
         initial node rows, and durable outbox intent are committed before 202
-        is returned. The request input must be a JSON object.
+        is returned. The request input must be a JSON object. An optional
+        Idempotency-Key makes retries safe: the same key with the same input
+        returns the original 202 body without a second execution; the same
+        key with a different input returns 422 IDEMPOTENCY_KEY_REUSED.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/WorkspaceId' }
         - { $ref: '#/components/parameters/WorkflowId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
       requestBody:
         required: true
         content:
@@ -307,9 +315,14 @@ paths:
         Unknown, missing, wrong, inactive, paused, or superseded registrations
         all return the same generic 404. The endpoint identifier and secret
         must be redacted from logs, metrics, and traces. Request bodies are
-        limited to 1 MiB and ingress requests are rate limited.
+        limited to 1 MiB. Rate limits (429) are spent only by authenticated
+        requests: per endpoint, plus a shared process-wide ceiling. An optional
+        Idempotency-Key makes provider redeliveries safe: the same key with the
+        same body returns the original 202 body without a second execution;
+        the same key with a different body returns 422 IDEMPOTENCY_KEY_REUSED.
       security: []
       parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
         - name: endpointKey
           in: path
           required: true
@@ -343,6 +356,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/WebhookNotFound' }
         '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '422': { $ref: '#/components/responses/IdempotencyKeyReused' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '500': { $ref: '#/components/responses/InternalError' }
 
@@ -378,6 +392,12 @@ components:
       in: header
       name: X-Internal-Service-Key
   parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Optional client-generated key (reuse it on retry). Scoped to the workflow.
+      schema: { type: string, minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9._:-]{8,128}$' }
     WorkspaceId:
       name: workspaceId
       in: path
@@ -699,6 +719,11 @@ components:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
     StateConflict:
       description: The requested lifecycle or execution operation is invalid for the current state.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    IdempotencyKeyReused:
+      description: The Idempotency-Key was already used with a different request body (code IDEMPOTENCY_KEY_REUSED).
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }

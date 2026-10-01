@@ -23,7 +23,7 @@ import com.weav.workflow.domain.valueobject.TriggerType;
 import com.weav.workflow.domain.valueobject.WorkflowStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -54,6 +54,7 @@ public class WorkflowPublicationService {
     private final WebhookSecretPort webhookSecrets;
     private final DefinitionValidator definitionValidator;
     private final WorkflowNotificationOutboxPort notificationOutbox;
+    private final TransactionOperations transactions;
 
     public WorkflowPublicationService(
             WorkflowRepository workflowRepository,
@@ -68,7 +69,6 @@ public class WorkflowPublicationService {
                 connectionReferences, schedules, webhookSecrets, event -> { });
     }
 
-    @Autowired
     public WorkflowPublicationService(
             WorkflowRepository workflowRepository,
             WorkflowVersionPort versions,
@@ -79,6 +79,24 @@ public class WorkflowPublicationService {
             ScheduleValidationPort schedules,
             WebhookSecretPort webhookSecrets,
             WorkflowNotificationOutboxPort notificationOutbox) {
+        this(workflowRepository, versions, triggers, workspaceAuthorization, workspaceConnections,
+                connectionReferences, schedules, webhookSecrets, notificationOutbox,
+                TransactionOperations.withoutTransaction());
+    }
+
+    @Autowired
+    public WorkflowPublicationService(
+            WorkflowRepository workflowRepository,
+            WorkflowVersionPort versions,
+            WorkflowTriggerPort triggers,
+            WorkspaceAuthorization workspaceAuthorization,
+            WorkspaceConnectionPort workspaceConnections,
+            Optional<ConnectionReferencePort> connectionReferences,
+            ScheduleValidationPort schedules,
+            WebhookSecretPort webhookSecrets,
+            WorkflowNotificationOutboxPort notificationOutbox,
+            TransactionOperations transactions) {
+        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.workflowRepository = Objects.requireNonNull(workflowRepository, "workflowRepository must not be null");
         this.versions = Objects.requireNonNull(versions, "versions must not be null");
         this.triggers = Objects.requireNonNull(triggers, "triggers must not be null");
@@ -95,7 +113,10 @@ public class WorkflowPublicationService {
                 "notificationOutbox must not be null");
     }
 
-    @Transactional
+    /**
+     * Remote Workspace checks run first with no transaction or pooled connection held; only the lock, the
+     * snapshot re-check and the writes share one short transaction.
+     */
     public Publication publish(UUID workspaceId, UUID workflowId, UUID actorId) {
         workspaceAuthorization.require(workspaceId, actorId, PUBLISH_CAPABILITY);
 
@@ -109,10 +130,23 @@ public class WorkflowPublicationService {
         }
         requireReferenceProjection(referencedConnections);
 
+        return transactions.execute(status -> publishLocked(workspaceId, workflowId, actorId,
+                beforeAuthorization, validatedDefinition, referencedConnections));
+    }
+
+    private Publication publishLocked(UUID workspaceId, UUID workflowId, UUID actorId,
+                                      Workflow beforeAuthorization, WorkflowDefinition validatedDefinition,
+                                      Set<UUID> referencedConnections) {
         Workflow locked = workflowRepository.lockByWorkspaceAndId(workspaceId, workflowId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workflow not found"));
         if (!samePublishSnapshot(beforeAuthorization, locked)) {
             throw new DraftChangedException();
+        }
+
+        // Republishing an unchanged draft is a no-op: no version, no new webhook secret, no event.
+        Publication unchanged = unchangedPublication(locked);
+        if (unchanged != null) {
+            return unchanged;
         }
 
         WorkflowStatus previousStatus = locked.getStatus();
@@ -136,12 +170,10 @@ public class WorkflowPublicationService {
         return new Publication(workflowId, version.getId(), versionNumber, locked.getStatus(), webhookProvisionings);
     }
 
-    @Transactional
     public Workflow pause(UUID workspaceId, UUID workflowId, UUID actorId) {
         return changeState(workspaceId, workflowId, actorId, true);
     }
 
-    @Transactional
     public Workflow resume(UUID workspaceId, UUID workflowId, UUID actorId) {
         return changeState(workspaceId, workflowId, actorId, false);
     }
@@ -156,6 +188,10 @@ public class WorkflowPublicationService {
 
     private Workflow changeState(UUID workspaceId, UUID workflowId, UUID actorId, boolean pause) {
         workspaceAuthorization.require(workspaceId, actorId, STATE_CAPABILITY);
+        return transactions.execute(status -> changeStateLocked(workspaceId, workflowId, actorId, pause));
+    }
+
+    private Workflow changeStateLocked(UUID workspaceId, UUID workflowId, UUID actorId, boolean pause) {
         Workflow workflow = workflowRepository.lockByWorkspaceAndId(workspaceId, workflowId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workflow not found"));
         if (workflow.getCurrentVersionId() == null) {
@@ -190,6 +226,20 @@ public class WorkflowPublicationService {
                     actorId, saved.getId(), saved.getName(), Instant.now()));
         }
         return saved;
+    }
+
+    private Publication unchangedPublication(Workflow locked) {
+        if (locked.getStatus() != WorkflowStatus.PUBLISHED || locked.getCurrentVersionId() == null) {
+            return null;
+        }
+        WorkflowVersion current = versions.require(locked.getCurrentVersionId());
+        if (current == null || !current.getSchemaVersion().equals(locked.getSchemaVersion())
+                || !current.getDefinition().equals(locked.getDraftDefinition())) {
+            return null;
+        }
+        // Webhook secrets were shown once at provisioning, so none is returned here.
+        return new Publication(locked.getId(), current.getId(), current.getVersionNumber(),
+                locked.getStatus(), List.of());
     }
 
     private boolean samePublishSnapshot(Workflow first, Workflow current) {

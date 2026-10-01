@@ -19,6 +19,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public final class ExecutionAdmissionService {
     private static final String RUN_CAPABILITY = "WORKFLOW_RUN";
+    private static final Pattern IDEMPOTENCY_KEY = Pattern.compile("[A-Za-z0-9._:-]{8,128}");
     private static final Pattern SAFE_CORRELATION_ID = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
     private static final Pattern TRACEPARENT = Pattern.compile(
             "(?!ff)[0-9a-f]{2}-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}");
@@ -46,6 +47,13 @@ public final class ExecutionAdmissionService {
 
     public ExecutionAdmissionPort.Admission manual(UUID workspaceId, UUID workflowId, UUID actorId, Object input,
                                                    String correlationId, String traceparent) {
+        return manual(workspaceId, workflowId, actorId, input, correlationId, traceparent, null);
+    }
+
+    public ExecutionAdmissionPort.Admission manual(UUID workspaceId, UUID workflowId, UUID actorId, Object input,
+                                                   String correlationId, String traceparent,
+                                                   String idempotencyKey) {
+        String key = idempotencyKey(idempotencyKey);
         workspaceAuthorization.require(workspaceId, actorId, RUN_CAPABILITY);
         if (!(input instanceof Map<?, ?>)) {
             throw new BadRequestException("Manual execution input must be a JSON object");
@@ -53,19 +61,61 @@ public final class ExecutionAdmissionService {
         Object immutableInput = validateAndFreeze(input);
         return admissionPort.create(new ExecutionAdmissionPort.Command(
                 workspaceId, workflowId, actorId, null, ExecutionTriggerType.MANUAL, immutableInput, null,
-                correlationId(correlationId), traceparent(traceparent)));
+                correlationId(correlationId), traceparent(traceparent), key, requestHash(key, immutableInput)));
     }
 
     public ExecutionAdmissionPort.Admission automatic(UUID triggerId, Object input,
                                                        java.time.Instant scheduledAt,
                                                        String correlationId, String traceparent) {
+        return automatic(triggerId, input, scheduledAt, correlationId, traceparent, null);
+    }
+
+    public ExecutionAdmissionPort.Admission automatic(UUID triggerId, Object input,
+                                                       java.time.Instant scheduledAt,
+                                                       String correlationId, String traceparent,
+                                                       String idempotencyKey) {
+        String key = idempotencyKey(idempotencyKey);
         if (triggerId == null) {
             throw new BadRequestException("An automatic trigger registration is required");
         }
         Object immutableInput = validateAndFreeze(input);
         return admissionPort.create(new ExecutionAdmissionPort.Command(
                 null, null, null, triggerId, null, immutableInput, scheduledAt,
-                correlationId(correlationId), traceparent(traceparent)));
+                correlationId(correlationId), traceparent(traceparent), key, requestHash(key, immutableInput)));
+    }
+
+    /** Validates the optional Idempotency-Key header value; blank counts as absent. */
+    public static String idempotencyKey(String value) {
+        if (value == null || value.isBlank()) return null;
+        String normalized = value.trim();
+        if (!IDEMPOTENCY_KEY.matcher(normalized).matches()) {
+            throw new BadRequestException("Idempotency-Key must match [A-Za-z0-9._:-]{8,128}");
+        }
+        return normalized;
+    }
+
+    /** SHA-256 hex of the canonical (key-sorted) JSON input; null when no key was supplied. */
+    private String requestHash(String key, Object input) {
+        if (key == null) return null;
+        try {
+            byte[] json = objectMapper.writeValueAsBytes(canonical(input));
+            return java.util.HexFormat.of().formatHex(
+                    java.security.MessageDigest.getInstance("SHA-256").digest(json));
+        } catch (Exception exception) {
+            throw new BadRequestException("Execution input could not be validated");
+        }
+    }
+
+    private static Object canonical(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> sorted = new java.util.TreeMap<>();
+            map.forEach((k, v) -> sorted.put(String.valueOf(k), canonical(v)));
+            return sorted;
+        }
+        if (value instanceof java.util.List<?> list) {
+            return list.stream().map(ExecutionAdmissionService::canonical).toList();
+        }
+        return value;
     }
 
     private Object validateAndFreeze(Object input) {

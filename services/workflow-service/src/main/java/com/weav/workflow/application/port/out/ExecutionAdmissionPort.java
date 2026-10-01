@@ -11,7 +11,14 @@ public interface ExecutionAdmissionPort {
 
     record Command(UUID workspaceId, UUID workflowId, UUID actorId, UUID triggerId,
                    ExecutionTriggerType triggerType, Object input, Instant scheduledAt,
-                   String correlationId, String traceparent) {
+                   String correlationId, String traceparent, String idempotencyKey, String requestHash) {
+        /** Admission without an idempotency key. */
+        public Command(UUID workspaceId, UUID workflowId, UUID actorId, UUID triggerId,
+                       ExecutionTriggerType triggerType, Object input, Instant scheduledAt,
+                       String correlationId, String traceparent) {
+            this(workspaceId, workflowId, actorId, triggerId, triggerType, input, scheduledAt,
+                    correlationId, traceparent, null, null);
+        }
     }
 
     record Admission(UUID executionId, UUID workflowId, UUID workflowVersionId, ExecutionStatus status) {
