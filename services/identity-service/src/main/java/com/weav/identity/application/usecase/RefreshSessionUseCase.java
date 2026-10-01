@@ -19,9 +19,15 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class RefreshSessionUseCase {
 
+    private static final Logger log = LoggerFactory.getLogger(RefreshSessionUseCase.class);
+    private static final Duration DEFAULT_REUSE_GRACE = Duration.ofSeconds(10);
     private static final String AUTHENTICATION_FAILED = "Authentication failed";
 
     private final UserRepository userRepository;
@@ -30,6 +36,7 @@ public final class RefreshSessionUseCase {
     private final AccessTokenIssuer accessTokenIssuer;
     private final TransactionRunner transactionRunner;
     private final Clock clock;
+    private final Duration reuseGrace;
 
     public RefreshSessionUseCase(
             UserRepository userRepository,
@@ -39,6 +46,20 @@ public final class RefreshSessionUseCase {
             TransactionRunner transactionRunner,
             Clock clock
     ) {
+        this(userRepository, sessionRepository, refreshTokenGenerator, accessTokenIssuer,
+                transactionRunner, clock, DEFAULT_REUSE_GRACE);
+    }
+
+    public RefreshSessionUseCase(
+            UserRepository userRepository,
+            UserSessionRepository sessionRepository,
+            RefreshTokenGenerator refreshTokenGenerator,
+            AccessTokenIssuer accessTokenIssuer,
+            TransactionRunner transactionRunner,
+            Clock clock,
+            Duration reuseGrace
+    ) {
+        this.reuseGrace = Objects.requireNonNull(reuseGrace);
         this.userRepository = Objects.requireNonNull(userRepository);
         this.sessionRepository = Objects.requireNonNull(sessionRepository);
         this.refreshTokenGenerator = Objects.requireNonNull(refreshTokenGenerator);
@@ -51,18 +72,30 @@ public final class RefreshSessionUseCase {
         Objects.requireNonNull(command, "command must not be null");
         String submittedHash = refreshTokenGenerator.hash(command.refreshToken());
         UserSession candidate = sessionRepository.findByRefreshTokenHash(submittedHash)
+                .or(() -> sessionRepository.findByPreviousRefreshTokenHash(submittedHash))
                 .orElseThrow(() -> new UnauthorizedException(AUTHENTICATION_FAILED));
 
-        return transactionRunner.required(() -> {
+        TokenPairResult result = transactionRunner.required(() -> {
             User user = userRepository.findByIdForUpdate(candidate.getUserId())
                     .filter(value -> value.getStatus() == UserStatus.ACTIVE)
                     .orElseThrow(() -> new UnauthorizedException(AUTHENTICATION_FAILED));
-            UserSession session = sessionRepository.findByRefreshTokenHashForUpdate(submittedHash)
+            Optional<UserSession> current = sessionRepository.findByRefreshTokenHashForUpdate(submittedHash);
+            boolean viaPrevious = current.isEmpty();
+            UserSession session = current
+                    .or(() -> sessionRepository.findByPreviousRefreshTokenHashForUpdate(submittedHash))
                     .filter(value -> value.getUserId().equals(user.getId()))
                     .orElseThrow(() -> new UnauthorizedException(AUTHENTICATION_FAILED));
             Instant now = clock.instant();
             if (!session.isActive(now)) {
                 throw new UnauthorizedException(AUTHENTICATION_FAILED);
+            }
+            if (viaPrevious && !withinGrace(session, now)) {
+                // Reuse of an already-rotated token outside the retry window: assume theft and kill the session.
+                // The revoke must commit, so signal failure by returning null and throw after the transaction.
+                session.revoke(now);
+                sessionRepository.save(session);
+                log.warn("Refresh token reuse detected; session {} revoked", session.getId());
+                return null;
             }
 
             GeneratedRefreshToken replacement = refreshTokenGenerator.generate();
@@ -83,5 +116,15 @@ public final class RefreshSessionUseCase {
                     AuthenticatedUserResult.from(user)
             );
         });
+        if (result == null) {
+            throw new UnauthorizedException(AUTHENTICATION_FAILED);
+        }
+        return result;
+    }
+
+    // A retry of the request that already rotated the token (lost response) is accepted for a short window.
+    private boolean withinGrace(UserSession session, Instant now) {
+        Instant rotatedAt = session.getRotatedAt();
+        return rotatedAt != null && rotatedAt.plus(reuseGrace).isAfter(now);
     }
 }

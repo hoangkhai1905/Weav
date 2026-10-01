@@ -23,6 +23,12 @@ public class UserSessionJpaEntity {
     @Column(name = "refresh_token_hash", nullable = false, unique = true, length = 255)
     private String refreshTokenHash;
 
+    @Column(name = "previous_refresh_token_hash", length = 255)
+    private String previousRefreshTokenHash;
+
+    @Column(name = "rotated_at")
+    private Instant rotatedAt;
+
     @Column(name = "user_agent", length = 512)
     private String userAgent;
 
@@ -56,6 +62,23 @@ public class UserSessionJpaEntity {
         this.userAgent = userAgent;
         this.ipAddress = ipAddress;
         this.expiresAt = expiresAt;
+    }
+
+    public UserSessionJpaEntity(
+            UUID id,
+            UUID userId,
+            String refreshTokenHash,
+            String userAgent,
+            String ipAddress,
+            Instant expiresAt,
+            Instant revokedAt,
+            Instant lastUsedAt,
+            Instant createdAt,
+            String previousRefreshTokenHash,
+            Instant rotatedAt) {
+        this(id, userId, refreshTokenHash, userAgent, ipAddress, expiresAt, revokedAt, lastUsedAt, createdAt);
+        this.previousRefreshTokenHash = previousRefreshTokenHash;
+        this.rotatedAt = rotatedAt;
     }
 
     public UserSessionJpaEntity(
@@ -103,6 +126,14 @@ public class UserSessionJpaEntity {
 
     public void setRefreshTokenHash(String refreshTokenHash) {
         this.refreshTokenHash = refreshTokenHash;
+    }
+
+    public String getPreviousRefreshTokenHash() {
+        return previousRefreshTokenHash;
+    }
+
+    public Instant getRotatedAt() {
+        return rotatedAt;
     }
 
     public String getUserAgent() {

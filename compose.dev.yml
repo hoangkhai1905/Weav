@@ -32,6 +32,10 @@ services:
       JWT_CLOCK_SKEW: ${JWT_CLOCK_SKEW:-30s}
       IDENTITY_INTERNAL_SERVICE_KEY: ${IDENTITY_INTERNAL_SERVICE_KEY:-}
 
+      # ID-2: honour X-Forwarded-For only from the gateway's pinned IP on the `edge` network
+      # (regex, keep in sync with the api-gateway ipv4_address below).
+      IDENTITY_TRUSTED_PROXY_PATTERN: 172[.]31[.]250[.]10
+
       # Optional Google OAuth. Compose interpolation forwards root .env values
       # into the container; blank credentials keep the provider disabled.
       GOOGLE_OAUTH_ENABLED: ${GOOGLE_OAUTH_ENABLED:-}
@@ -95,6 +99,13 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+
+    networks:
+      default: {}
+      edge:
+        # Only the gateway reaches identity through this alias, so its source IP is the pinned one.
+        aliases:
+          - identity-edge
 
     develop:
       watch:
@@ -394,7 +405,8 @@ services:
       JWT_CLOCK_SKEW: ${JWT_CLOCK_SKEW:-30s}
 
       # Internal service URLs
-      IDENTITY_SERVICE_URL: ${IDENTITY_SERVICE_URL:-http://identity-service:8080}
+      # Via the `edge` network so identity sees the pinned gateway IP (X-Forwarded-For trust).
+      IDENTITY_SERVICE_URL: ${GATEWAY_IDENTITY_SERVICE_URL:-http://identity-edge:8080}
       WORKSPACE_SERVICE_URL: http://workspace-service:8080
       WORKFLOW_SERVICE_URL: http://workflow-service:8080
       AI_SERVICE_URL: http://ai-service:3000
@@ -405,6 +417,11 @@ services:
       OCR_ALLOW_UNAUTHENTICATED_DEV: ${OCR_ALLOW_UNAUTHENTICATED_DEV:-false}
       GATEWAY_TRUST_PROXY_HOPS: ${GATEWAY_TRUST_PROXY_HOPS:-0}
       GATEWAY_WEBHOOK_RATE_LIMIT: ${GATEWAY_WEBHOOK_RATE_LIMIT:-60}
+
+    networks:
+      default: {}
+      edge:
+        ipv4_address: 172.31.250.10
 
 
   # ==================================================
@@ -515,3 +532,10 @@ services:
         source: ${OCR_MODEL_HOST_PATH:-./.data/ocr-models}
         target: /models
         read_only: true
+
+networks:
+  # Dedicated gateway<->identity network with a fixed subnet so the gateway IP can be pinned.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24

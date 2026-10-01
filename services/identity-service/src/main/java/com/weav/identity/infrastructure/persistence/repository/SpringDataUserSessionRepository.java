@@ -17,6 +17,8 @@ public interface SpringDataUserSessionRepository extends JpaRepository<UserSessi
 
     Optional<UserSessionJpaEntity> findByRefreshTokenHash(String refreshTokenHash);
 
+    Optional<UserSessionJpaEntity> findByPreviousRefreshTokenHash(String previousRefreshTokenHash);
+
     Page<UserSessionJpaEntity> findByUserIdAndRevokedAtIsNullAndExpiresAtAfter(
             UUID userId,
             Instant now,
@@ -31,6 +33,12 @@ public interface SpringDataUserSessionRepository extends JpaRepository<UserSessi
             + "where session.refreshTokenHash = :refreshTokenHash")
     Optional<UserSessionJpaEntity> findByRefreshTokenHashForUpdate(
             @Param("refreshTokenHash") String refreshTokenHash);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select session from UserSessionJpaEntity session "
+            + "where session.previousRefreshTokenHash = :previousRefreshTokenHash")
+    Optional<UserSessionJpaEntity> findByPreviousRefreshTokenHashForUpdate(
+            @Param("previousRefreshTokenHash") String previousRefreshTokenHash);
 
     @Modifying
     @Query("update UserSessionJpaEntity session set session.revokedAt = :revokedAt "

@@ -20,7 +20,7 @@ import java.time.Clock;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Application orchestration for atomic OTP verification and email marking. */
+/** Application orchestration for OTP verification (Valkey verify outside any DB transaction) and email marking. */
 public final class VerifyOtpUseCase {
 
     private static final String VERIFY_IP_SCOPE = "otp:verify:ip";
@@ -74,35 +74,13 @@ public final class VerifyOtpUseCase {
         }
         UUID userId = parseUserId(metadata.userId());
 
-        return transactionRunner.required(() -> verifyLocked(command, challengeId, code, metadata, userId));
-    }
-
-    private OtpVerificationResult verifyLocked(
-            VerifyOtpCommand command,
-            String challengeId,
-            String code,
-            OtpChallengeStore.ChallengeMetadata metadata,
-            UUID userId
-    ) {
-        User lockedUser = userRepository.findByIdForUpdate(userId)
-                .orElseThrow(VerifyOtpUseCase::invalidChallenge);
-        if (lockedUser.getStatus() != UserStatus.ACTIVE) {
-            throw invalidChallenge();
-        }
-
-        String currentEmail = authInputPolicy.canonicalizeEmail(lockedUser.getEmail());
-        String currentAccountFingerprint = OtpFingerprintPolicy.account(fingerprint, currentEmail);
-        String currentCredentialFingerprint = OtpFingerprintPolicy.credential(
-                fingerprint, lockedUser.getPasswordHash());
-        if (!currentAccountFingerprint.equals(metadata.accountFingerprint())
-                || !Objects.equals(currentCredentialFingerprint, metadata.credentialFingerprint())) {
-            throw invalidChallenge();
-        }
-
+        // ID-8: the Valkey verify is a network call, so it runs outside any DB transaction and the
+        // user row lock is only held for the short re-check + write below.
+        String currentCredentialFingerprint = requireMatchingState(
+                userRepository.findById(userId).orElseThrow(VerifyOtpUseCase::invalidChallenge),
+                metadata);
         if (metadata.purpose() == OtpChallengeStore.Purpose.EMAIL_VERIFICATION) {
-            requireAuthenticatedSession(command, userId, lockedUser);
-        } else if (!hasLocalPassword(lockedUser)) {
-            throw invalidChallenge();
+            requireAuthenticatedUser(command, userId);
         }
 
         String codeFingerprint = OtpFingerprintPolicy.code(
@@ -130,19 +108,68 @@ public final class VerifyOtpUseCase {
                 || !Objects.equals(currentCredentialFingerprint, verified.credentialFingerprint())) {
             throw invalidChallenge();
         }
+        if (metadata.purpose() == OtpChallengeStore.Purpose.PASSWORD_RESET
+                && (verified.grantToken() == null || verified.grantToken().isBlank())) {
+            throw invalidChallenge();
+        }
+
+        // Residual risk: the challenge is already consumed here. If the re-check or the commit below fails
+        // (user disabled, credential or session changed, DB error) the caller gets a generic invalid-challenge
+        // error and must request a new OTP; a consumed password-reset grant simply expires unused.
+        return transactionRunner.required(() -> commitVerified(command, metadata, userId, verified));
+    }
+
+    private OtpVerificationResult commitVerified(
+            VerifyOtpCommand command,
+            OtpChallengeStore.ChallengeMetadata metadata,
+            UUID userId,
+            OtpChallengeStore.VerificationResult verified
+    ) {
+        User lockedUser = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(VerifyOtpUseCase::invalidChallenge);
+        String lockedCredentialFingerprint = requireMatchingState(lockedUser, metadata);
+        if (!Objects.equals(lockedCredentialFingerprint, verified.credentialFingerprint())) {
+            throw invalidChallenge();
+        }
 
         if (metadata.purpose() == OtpChallengeStore.Purpose.EMAIL_VERIFICATION) {
+            requireAuthenticatedSession(command, userId, lockedUser);
             if (lockedUser.getEmailVerifiedAt() == null) {
                 lockedUser.markEmailVerified(clock.instant());
                 userRepository.save(lockedUser);
             }
             return OtpVerificationResult.emailVerified();
         }
+        return OtpVerificationResult.passwordReset(verified.grantToken(), policy.grantTtl().toSeconds());
+    }
 
-        if (verified.grantToken() == null || verified.grantToken().isBlank()) {
+    /** Status and fingerprint checks shared by the pre-verify read and the locked re-check. */
+    private String requireMatchingState(User user, OtpChallengeStore.ChallengeMetadata metadata) {
+        if (user.getStatus() != UserStatus.ACTIVE) {
             throw invalidChallenge();
         }
-        return OtpVerificationResult.passwordReset(verified.grantToken(), policy.grantTtl().toSeconds());
+        String currentEmail = authInputPolicy.canonicalizeEmail(user.getEmail());
+        String currentAccountFingerprint = OtpFingerprintPolicy.account(fingerprint, currentEmail);
+        String currentCredentialFingerprint = OtpFingerprintPolicy.credential(
+                fingerprint, user.getPasswordHash());
+        if (!currentAccountFingerprint.equals(metadata.accountFingerprint())
+                || !Objects.equals(currentCredentialFingerprint, metadata.credentialFingerprint())) {
+            throw invalidChallenge();
+        }
+        if (metadata.purpose() != OtpChallengeStore.Purpose.EMAIL_VERIFICATION && !hasLocalPassword(user)) {
+            throw invalidChallenge();
+        }
+        return currentCredentialFingerprint;
+    }
+
+    private void requireAuthenticatedUser(VerifyOtpCommand command, UUID userId) {
+        if (command.authenticatedUserId() == null || command.authenticatedSessionId() == null) {
+            throw new UnauthorizedException("Authentication failed");
+        }
+        identityGuard.requireActiveUser(command.authenticatedUserId(), command.authenticatedSessionId());
+        if (!userId.equals(command.authenticatedUserId())) {
+            throw new UnauthorizedException("Authentication failed");
+        }
     }
 
     private void requireAuthenticatedSession(VerifyOtpCommand command, UUID userId, User lockedUser) {

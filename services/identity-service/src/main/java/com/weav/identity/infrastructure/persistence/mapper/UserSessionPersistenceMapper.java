@@ -15,7 +15,9 @@ public class UserSessionPersistenceMapper {
                 session.getExpiresAt(),
                 session.getRevokedAt(),
                 session.getLastUsedAt(),
-                session.getCreatedAt());
+                session.getCreatedAt(),
+                session.getPreviousRefreshTokenHash(),
+                session.getRotatedAt());
     }
 
     public UserSession toDomain(UserSessionJpaEntity entity) {
@@ -28,6 +30,8 @@ public class UserSessionPersistenceMapper {
                 entity.getExpiresAt(),
                 entity.getRevokedAt(),
                 entity.getLastUsedAt(),
-                entity.getCreatedAt());
+                entity.getCreatedAt(),
+                entity.getPreviousRefreshTokenHash(),
+                entity.getRotatedAt());
     }
 }

@@ -27,7 +27,9 @@ import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -49,7 +51,7 @@ class VerifyOtpUseCaseTest {
     private final CurrentIdentityGuard identityGuard = mock(CurrentIdentityGuard.class);
     private final OtpChallengeStore challengeStore = mock(OtpChallengeStore.class);
     private final KeyedFingerprint fingerprint = mock(KeyedFingerprint.class);
-    private final TransactionRunner transactionRunner = new ImmediateTransactionRunner();
+    private final ImmediateTransactionRunner transactionRunner = new ImmediateTransactionRunner();
     private VerifyOtpUseCase useCase;
 
     @BeforeEach
@@ -82,6 +84,7 @@ class VerifyOtpUseCaseTest {
         User user = user("password-hash", UserStatus.ACTIVE);
         OtpChallengeStore.ChallengeMetadata metadata = metadata(OtpChallengeStore.Purpose.PASSWORD_RESET, "credential-key");
         when(challengeStore.lookup(CHALLENGE_ID)).thenReturn(metadata);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
         when(challengeStore.verify(any())).thenReturn(new OtpChallengeStore.VerificationResult(
                 OtpChallengeStore.Status.VERIFIED,
@@ -106,6 +109,7 @@ class VerifyOtpUseCaseTest {
         User user = user(null, UserStatus.ACTIVE);
         OtpChallengeStore.ChallengeMetadata metadata = metadata(OtpChallengeStore.Purpose.EMAIL_VERIFICATION, "credential-key");
         when(challengeStore.lookup(CHALLENGE_ID)).thenReturn(metadata);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
         when(challengeStore.verify(any())).thenReturn(new OtpChallengeStore.VerificationResult(
                 OtpChallengeStore.Status.VERIFIED,
@@ -115,6 +119,7 @@ class VerifyOtpUseCaseTest {
                 null,
                 0
         ));
+        when(identityGuard.requireActiveUser(USER_ID, SESSION_ID)).thenReturn(user);
         doNothing().when(identityGuard).requireActiveSessionForLockedUser(user, USER_ID, SESSION_ID);
 
         OtpVerificationResult result = useCase.execute(new VerifyOtpCommand(
@@ -128,10 +133,54 @@ class VerifyOtpUseCaseTest {
     }
 
     @Test
+    void valkeyVerifyRunsOutsideTransactionAndUserLockIsTakenOnlyAfterwards() {
+        User user = user("password-hash", UserStatus.ACTIVE);
+        OtpChallengeStore.ChallengeMetadata metadata = metadata(OtpChallengeStore.Purpose.PASSWORD_RESET, "credential-key");
+        when(challengeStore.lookup(CHALLENGE_ID)).thenReturn(metadata);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenAnswer(invocation -> {
+            assertTrue(transactionRunner.inTransaction, "user lock must be taken inside the short transaction");
+            verify(challengeStore).verify(any());
+            return Optional.of(user);
+        });
+        when(challengeStore.verify(any())).thenAnswer(invocation -> {
+            assertFalse(transactionRunner.inTransaction, "Valkey verify must not hold a DB transaction");
+            return new OtpChallengeStore.VerificationResult(
+                    OtpChallengeStore.Status.VERIFIED, OtpChallengeStore.Purpose.PASSWORD_RESET,
+                    USER_ID.toString(), "credential-key", "reset-grant", 0);
+        });
+
+        OtpVerificationResult result = useCase.execute(new VerifyOtpCommand(
+                CHALLENGE_ID, "123456", null, null, "127.0.0.1"));
+
+        assertEquals("reset-grant", result.resetToken());
+    }
+
+    @Test
+    void stateChangedBetweenVerifyAndLockRejectsWithoutWriting() {
+        User before = user("password-hash", UserStatus.ACTIVE);
+        User locked = user("password-hash", UserStatus.DISABLED);
+        OtpChallengeStore.ChallengeMetadata metadata = metadata(OtpChallengeStore.Purpose.EMAIL_VERIFICATION, "credential-key");
+        when(challengeStore.lookup(CHALLENGE_ID)).thenReturn(metadata);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(before));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(locked));
+        when(identityGuard.requireActiveUser(USER_ID, SESSION_ID)).thenReturn(before);
+        when(challengeStore.verify(any())).thenReturn(new OtpChallengeStore.VerificationResult(
+                OtpChallengeStore.Status.VERIFIED, OtpChallengeStore.Purpose.EMAIL_VERIFICATION,
+                USER_ID.toString(), "credential-key", null, 0));
+
+        assertThrows(BadRequestException.class, () -> useCase.execute(new VerifyOtpCommand(
+                CHALLENGE_ID, "123456", USER_ID, SESSION_ID, "127.0.0.1")));
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
     void changedCredentialInvalidatesChallengeBeforeAtomicVerify() {
         User user = user("new-password-hash", UserStatus.ACTIVE);
         OtpChallengeStore.ChallengeMetadata metadata = metadata(OtpChallengeStore.Purpose.PASSWORD_RESET, "old-credential-key");
         when(challengeStore.lookup(CHALLENGE_ID)).thenReturn(metadata);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
 
         assertThrows(BadRequestException.class, () -> useCase.execute(new VerifyOtpCommand(
@@ -145,6 +194,7 @@ class VerifyOtpUseCaseTest {
         User user = user("password-hash", UserStatus.ACTIVE);
         OtpChallengeStore.ChallengeMetadata metadata = metadata(OtpChallengeStore.Purpose.PASSWORD_RESET, "credential-key");
         when(challengeStore.lookup(CHALLENGE_ID)).thenReturn(metadata);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
         when(challengeStore.verify(any())).thenReturn(new OtpChallengeStore.VerificationResult(
                 OtpChallengeStore.Status.WRONG_CODE,
@@ -201,9 +251,16 @@ class VerifyOtpUseCaseTest {
     }
 
     private static final class ImmediateTransactionRunner implements TransactionRunner {
+        private boolean inTransaction;
+
         @Override
         public <T> T required(Supplier<T> work) {
-            return work.get();
+            inTransaction = true;
+            try {
+                return work.get();
+            } finally {
+                inTransaction = false;
+            }
         }
     }
 }

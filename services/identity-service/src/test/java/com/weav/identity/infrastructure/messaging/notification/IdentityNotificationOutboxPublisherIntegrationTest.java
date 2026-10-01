@@ -179,6 +179,26 @@ class IdentityNotificationOutboxPublisherIntegrationTest {
         }
     }
 
+    @Test
+    void publishesAWholeClaimedBatchWithOneClaimAndOneSettleTransaction() {
+        String routingKey = IdentitySecurityEventType.PASSWORD_CHANGED.eventType();
+        String queue = declareQueue(routingKey);
+        for (int i = 0; i < 3; i++) {
+            jdbc.update("insert into identity.notification_outbox (event_id, event_type, payload) "
+                    + "values (?, ?, cast('{}' as jsonb))", UUID.randomUUID(), routingKey);
+        }
+
+        assertThat(publisher.publishPending()).isEqualTo(3);
+
+        assertThat(jdbc.queryForObject(
+                "select count(*) from identity.notification_outbox where published_at is not null",
+                Integer.class)).isEqualTo(3);
+        for (int i = 0; i < 3; i++) {
+            assertThat(rabbitTemplate.receive(queue, 2_000)).isNotNull();
+        }
+        assertThat(publisher.publishPending()).isZero();
+    }
+
     private String declareQueue(String routingKey) {
         rabbitAdmin.declareExchange(new TopicExchange(EXCHANGE, true, false));
         String queue = "identity-outbox-test-" + UUID.randomUUID();

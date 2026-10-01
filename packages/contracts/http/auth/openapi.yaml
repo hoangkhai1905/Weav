@@ -93,8 +93,10 @@ paths:
       operationId: refreshSession
       summary: Rotate a refresh token
       description: >-
-        Atomically replaces a valid single-use opaque refresh token and returns
-        a new token pair. The old token is invalid after a successful commit.
+        Atomically replaces a valid opaque refresh token and returns a new token
+        pair. The replaced token stays acceptable for a short grace window (10 s)
+        so a client that lost the response can retry; presenting it after that
+        window is treated as token reuse, revokes the session and returns 401.
       security: []
       requestBody:
         required: true

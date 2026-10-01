@@ -128,14 +128,15 @@ class CoreAuthHttpIntegrationTest {
         assertNotEquals(firstPair.accessToken(), secondPair.accessToken());
         assertNotEquals(firstStoredHash, storedRefreshHash(registeredUser.id()));
 
-        assertEquals(
-                401,
-                post("/auth/refresh", Map.of("refreshToken", firstPair.refreshToken())).statusCode()
-        );
+        // Retrying the already-rotated token inside the 10 s grace window issues a fresh pair (lost-response retry).
+        HttpResponse<String> retried = post("/auth/refresh", Map.of("refreshToken", firstPair.refreshToken()));
+        assertEquals(200, retried.statusCode());
+        TokenResponse thirdPair = objectMapper.readValue(retried.body(), TokenResponse.class);
+        assertNotEquals(secondPair.refreshToken(), thirdPair.refreshToken());
 
         HttpResponse<String> logout = post(
                 "/auth/logout",
-                Map.of("refreshToken", secondPair.refreshToken())
+                Map.of("refreshToken", thirdPair.refreshToken())
         );
         assertEquals(204, logout.statusCode());
         assertTrue(logout.body().isEmpty());

@@ -237,9 +237,10 @@ class GoogleOAuthHttpIntegrationTest {
                 originalRefresh,
                 completed.csrfCookie(),
                 completed.csrfToken());
-        assertEquals(401, replay.statusCode());
-        assertEquals("UNAUTHORIZED", objectMapper.readTree(replay.body()).get("error").get("code").asText());
-        assertTrue(replay.headers().allValues("Set-Cookie").isEmpty());
+        // Inside the 10 s grace window the previous cookie is a retry: a fresh cookie is issued (ID-1).
+        assertEquals(200, replay.statusCode());
+        replacementRefresh = cookieValue(replay, OAuthWebProtection.REFRESH_COOKIE);
+        assertNotNull(replacementRefresh);
         assertEquals(1, count("identity.user_sessions"));
 
         jdbcTemplate.update("update identity.user_sessions "
@@ -406,7 +407,8 @@ class GoogleOAuthHttpIntegrationTest {
         List<Integer> statuses = List.of(first.join().statusCode(), second.join().statusCode()).stream()
                 .sorted()
                 .toList();
-        assertEquals(List.of(200, 401), statuses);
+        // Same-token double refresh inside the grace window: both are accepted (serialized by the row lock).
+        assertEquals(List.of(200, 200), statuses);
         assertEquals(1, count("identity.user_sessions"));
     }
 

@@ -12,6 +12,8 @@ public interface UserSessionRepository {
     Optional<UserSession> findByIdForUpdate(UUID id);
     Optional<UserSession> findByRefreshTokenHash(String refreshTokenHash);
     Optional<UserSession> findByRefreshTokenHashForUpdate(String refreshTokenHash);
+    Optional<UserSession> findByPreviousRefreshTokenHash(String previousRefreshTokenHash);
+    Optional<UserSession> findByPreviousRefreshTokenHashForUpdate(String previousRefreshTokenHash);
     UserSessionPage findActiveByUserId(UUID userId, Instant now, int page, int size);
     int revokeAllForUser(UUID userId, Instant revokedAt);
 }

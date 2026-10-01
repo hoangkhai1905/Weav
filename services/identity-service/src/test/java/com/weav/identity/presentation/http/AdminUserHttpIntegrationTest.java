@@ -639,6 +639,16 @@ class AdminUserHttpIntegrationTest {
         }
 
         @Override
+        public Optional<UserSession> findByPreviousRefreshTokenHash(String hash) {
+            return delegate.findByPreviousRefreshTokenHash(hash);
+        }
+
+        @Override
+        public Optional<UserSession> findByPreviousRefreshTokenHashForUpdate(String hash) {
+            return delegate.findByPreviousRefreshTokenHashForUpdate(hash);
+        }
+
+        @Override
         public UserSessionPage findActiveByUserId(UUID userId, Instant now, int page, int size) {
             return delegate.findActiveByUserId(userId, now, page, size);
         }
