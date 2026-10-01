@@ -172,3 +172,41 @@ Cập nhật test cũ: fixture của `ExecutionLeaseTest`/`ExecutionRecoveryTest
 | Trạng thái worktree | Có thay đổi chưa commit (thuộc phạm vi workflow-service, contract, spec, log) |
 | Commit/PR đã tạo | Chưa tạo |
 | Người cập nhật log | AI agent |
+
+## 14. Live smoke re-run after high-priority fixes (2026-10-01)
+
+Phạm vi: các commit `2efbd22`, `c231ec4`, `b0fc647`, `642486a`, `de1d7fd`; chạy stack Docker dev (rabbitmq, identity, workspace, workflow, notification, api-gateway) trên Neon `production`, gọi qua gateway `localhost:3000`. Không đổi code, không truy vấn Neon trực tiếp.
+
+| # | Kiểm tra | Kỳ vọng | Thực tế |
+| --- | --- | --- | --- |
+| 1 | `/ready` của gateway | 200 | `PASS` 200 |
+| 2 | Flyway identity V6, workflow V6 | Áp dụng sạch | `PASS` "Successfully applied 1 migration ... now at version v6" (identity: refresh token reuse detection; workflow: execution idempotency) |
+| 3 | Mạng edge (ID-2) | gateway 172.31.250.10 trên `weav_edge` | `PASS` weav_edge: identity 172.31.250.2, gateway 172.31.250.10; `IDENTITY_TRUSTED_PROXY_PATTERN` khớp IP gateway |
+| 4 | IP của session qua `GET /api/auth/sessions` | IP client, không phải 172.31.250.10 | `KHÔNG QUAN SÁT ĐƯỢC` API không trả IP (chỉ id, createdAt, lastUsedAt, expiresAt, current, userAgent); cột `ip_address` chỉ nằm trong DB. Gateway ghi đè `X-Forwarded-For` = `request.ip` và identity chỉ tin proxy 172.31.250.10 theo code; chưa xác nhận giá trị lưu thực tế (cần truy vấn DB hoặc log) |
+| 5 | Register + login | 201 / 200 | `PASS` |
+| 6 | Refresh RT1 | 200 | `PASS` |
+| 7 | Refresh RT1 lần 2 ngay (grace) | 200 | `PASS` 200 (token mới khác token của lần 1) |
+| 8 | Refresh RT1 sau 12 s | 401 | `PASS`; identity log "Refresh token reuse detected; session revoked" |
+| 9 | Refresh bằng token mới nhất sau reuse | 401 | `PASS` |
+| 10 | Login lại (session mới) | 200 | `PASS` |
+| 11 | Tạo workspace | 201 | `PASS` |
+| 12 | Thêm member email không tồn tại | 404 `USER_NOT_FOUND`, không 500 | `PASS` (lần đầu body có field thừa `role` nên 400; body đúng `{email}` cho 404) |
+| 13 | Tạo connection HTTP/API_KEY, PUT credential | 201 / 200 | `PASS` (config cần `apiKeyHeaderName`; thiếu thì `POST /test` trả 400 "HTTP connection configuration is invalid", lỗi input chứ không phải 5xx) |
+| 14 | `POST .../connections/:id/test` | Không 5xx | `PASS` 200 `{"outcome":"VERIFIED"}` |
+| 15 | Create + save draft + publish workflow (manual + webhook trigger) | 200, version 1, 1 webhook kèm secret | `PASS` version 1, 1 webhook |
+| 16 | Publish lại không đổi | Cùng version, `webhooks` rỗng | `PASS` version 1, `webhooks: []` |
+| 17 | Webhook + `Idempotency-Key` x2 cùng body | 202, cùng executionId | `PASS` |
+| 18 | Cùng key, body khác | 422 `IDEMPOTENCY_KEY_REUSED` | `PASS` |
+| 19 | Manual run + `Idempotency-Key` x2 | Cùng executionId | `PASS` 202 / 202, cùng id |
+| 20 | Webhook key lạ (đúng format) | 404, không trừ ngân sách endpoint thật | `PASS` 404 `WEBHOOK_NOT_FOUND`; endpoint thật vẫn 202 sau đó |
+| 21 | Notification NT-1 | Queue quorum `.v2` có consumer; queue cũ drain | `PASS` (qua `rabbitmqctl`): `notification-service.execution-events.v2` quorum, 0 message, 1 consumer; `notification-service.execution-events` classic, 0 message, 1 consumer; `.dlq` 0 message. Log notification-service không có dòng khai báo queue |
+| 22 | Log 5 service | Chỉ có lỗi negative-path mong đợi | `PASS` chỉ có 2 BAD_REQUEST do input smoke (body sai), reuse detection, USER_NOT_FOUND, IdempotencyKeyReused, WebhookNotFound; không có 5xx, không có ERROR bất ngờ |
+| 23 | Dọn dẹp | Chỉ `stop` service đã bật | `PASS` đã stop 6 container; không có container có sẵn từ trước; không `down`, không xóa image/volume |
+
+Dữ liệu test còn lại trên Neon (không xóa; không có secret trong log):
+
+- User: `smoke2-1790844748661@example.test` (id `ef1d9939-5c37-4726-b789-22ebfd7cdb36`); workspace `f5d8ea9e-b17d-4b17-8cce-431703350d2e`; connection `be29fcea-caff-480a-ab34-798ea9b37463`; workflow `fc9ff953-08af-4564-b6e0-0f8ea28dc391` (version 1 PUBLISHED, versionId `b6e80dc4-03d8-4607-abf2-839ba19450a1`, 1 webhook endpoint); executions `2d70dc92-02ce-4069-a9f8-2dc70a192341` (webhook), `ac41f81b-1a8e-47ef-8640-a591641b1ad2` (webhook), `b77e66cd-0782-4754-984f-16cf956058af` (manual).
+- User: `smoke2b-1790844826469@example.test`, workspace `ee6add32-a12f-44c7-9794-857d260fa0bf`, connection `15b11ee1-0066-4b97-8013-98eb016eaee0` (không có credential hợp lệ).
+- User: `smoke2b-1790844832418@example.test`, workspace `63ad67f9-be74-4e73-9649-9cc8a2263092`, connection `323d12a9-7eeb-49f9-8c3d-3e3d6c07188f`.
+- User: `smoke2c-1790844859830@example.test`, workspace `27078c1a-1e2d-46a3-8b92-e4fd2a77f270`, connection `b4de08e4-538a-4630-9448-0ee97b52ee62` (credential giả, test `VERIFIED`).
+- Cần dọn khi có dịp: toàn bộ user/workspace trên đều có đuôi `@example.test` hoặc tên `smoke2*`.
