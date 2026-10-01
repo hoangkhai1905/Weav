@@ -104,3 +104,30 @@
 | Trạng thái worktree | Có thay đổi chưa commit |
 | Commit/PR | Chưa tạo |
 | Người cập nhật log | AI agent |
+
+## 14. Live smoke (Docker)
+
+Ngày: 2026-10-01. Dịch vụ đã chạy: rabbitmq, identity-service, workspace-service, workflow-service, api-gateway (trước đó chưa có container nào chạy; đã `stop` hết sau khi test, không xóa image). Dữ liệu thật trên Neon.
+
+| Route (qua Gateway :3000) | Kỳ vọng | Thực tế |
+| --- | --- | --- |
+| `/ready` | 200 | 200 (sau ~40s khởi động) |
+| `POST /api/auth/register`, `POST /api/auth/login` | 201 / 200 | 201 / 200 |
+| Header bảo mật (`nosniff`, `DENY`, `no-referrer`) | có | có (cả 2xx lẫn 4xx) |
+| `GET /api/users/me/oauth-accounts` | 200 | 200 (`[]`) |
+| `GET /api/admin/users`, `GET /api/admin/users/:id`, `PATCH .../status` (token USER) | 403 | 403 |
+| `GET /api/users/me/avatar` (chưa có) | 404 | 404 |
+| `PUT /api/users/me/avatar` (PNG 1x1, multipart `file`) | 200 | 200 |
+| `GET /api/users/me/avatar` (sau PUT) | 200 | 200 (trả `url` presigned R2) |
+| `DELETE /api/users/me/avatar` | 204 | 204 |
+| `PUT /connections/:cid/credential` (có `Idempotency-Key`) | 200 | 200 (`hasCredential:true`) |
+| `DELETE /connections/:cid/credential` | 200 | 200 (`hasCredential:false`) |
+| `POST /workflows` (có `Idempotency-Key`), `PUT .../draft`, `POST .../publish` | 201 / 200 / 200 | 201 / 200 / 200 (định nghĩa cần cả `trigger.manual`) |
+| `POST /api/v1/webhooks/:key` + secret đúng | 202 | 202 (`executionId`, QUEUED) |
+| Webhook sai secret / thiếu secret | 404 generic | 404 `WEBHOOK_NOT_FOUND` |
+| `POST /workflows/generate` (AI tắt) | lỗi upstream sạch | 503 `AI_UNAVAILABLE` (không phải 502); body rỗng 400; không token 401 |
+| `pause` / `resume` có `Idempotency-Key` | 200 | 200 / 200 |
+
+Dữ liệu test còn lại trên Neon: user `smoke-gw-1790828007@example.test`, workspace `b9595038-a5f3-4b4c-9a51-1f594001126b`, connection `e99d91ba-a84f-4a15-8dc7-d4ef36538487`, workflow `01f6952a-ba3f-407c-90de-8d837d29aee8` (đã publish, 1 execution QUEUED). Không chạy SQL xóa.
+
+Vấn đề: không có 5xx ở Gateway. Gateway log các 4xx kỳ vọng ở mức ERROR (`GatewayExceptionFilter`) gây nhiễu log. Publish response không trả URL webhook của Gateway (đã nằm ở mục 11). Chưa kiểm tra tận nơi việc Workflow nhận `Idempotency-Key` (chỉ xác nhận không gây lỗi).
