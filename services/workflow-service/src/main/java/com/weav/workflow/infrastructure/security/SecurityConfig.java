@@ -206,7 +206,7 @@ public class SecurityConfig {
 
         private static final String ACCESS_TOKEN_USE = "access";
         private static final Set<String> SYSTEM_ROLES = Set.of("USER", "ADMIN");
-        private static final Set<String> USER_STATUSES = Set.of("ACTIVE", "DISABLED");
+        private static final String ACTIVE_USER_STATUS = "ACTIVE";
         private static final OAuth2Error INVALID_TOKEN =
                 new OAuth2Error("invalid_token", "The access token is invalid", null);
 
@@ -243,7 +243,7 @@ public class SecurityConfig {
 
         private boolean hasExpectedAuthorizationClaims(Jwt token) {
             return SYSTEM_ROLES.contains(token.getClaimAsString("system_role"))
-                    && USER_STATUSES.contains(token.getClaimAsString("user_status"));
+                    && ACTIVE_USER_STATUS.equals(token.getClaimAsString("user_status"));
         }
 
         private boolean hasValidTimeClaims(Jwt token) {

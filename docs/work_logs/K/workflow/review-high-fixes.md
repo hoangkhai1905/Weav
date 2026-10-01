@@ -210,3 +210,10 @@ Dữ liệu test còn lại trên Neon (không xóa; không có secret trong log
 - User: `smoke2b-1790844832418@example.test`, workspace `63ad67f9-be74-4e73-9649-9cc8a2263092`, connection `323d12a9-7eeb-49f9-8c3d-3e3d6c07188f`.
 - User: `smoke2c-1790844859830@example.test`, workspace `27078c1a-1e2d-46a3-8b92-e4fd2a77f270`, connection `b4de08e4-538a-4630-9448-0ee97b52ee62` (credential giả, test `VERIFIED`).
 - Cần dọn khi có dịp: toàn bộ user/workspace trên đều có đuôi `@example.test` hoặc tên `smoke2*`.
+
+## Quick wins X-6, X-8, WS-1 (workflow-service và compose)
+
+- X-6: `compose.dev.yml` và `compose.yml` bind mọi cổng publish vào `127.0.0.1` (identity 8081, workspace 8082, workflow 8083, ai 3001, OCR 8000, RabbitMQ 5672 và 15672), trừ `api-gateway` 3000 vì app mobile trên thiết bị thật gọi gateway qua LAN. Overlay smoke đã sẵn loopback; `compose.ai-local.yml` và các overlay OCR không publish cổng.
+- X-8: bỏ `JWT_REFRESH_SECRET` khỏi env của workspace-service và workflow-service (compose dev và smoke); identity giữ nguyên. workflow-service vốn không có property `refresh-secret` nào.
+- WS-1: `SecurityConfig.JwtAccessTokenValidator` của workflow-service chỉ nhận `user_status=ACTIVE` (trước đây nhận cả `DISABLED`); thêm test `rejectsAnAccessJwtForADisabledUser` trong `WorkflowSecurityTest`.
+- Rủi ro: các service ngoài gateway không còn truy cập được từ LAN; client dùng `localhost` có thể resolve `::1` trên một số máy Windows.

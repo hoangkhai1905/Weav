@@ -121,7 +121,7 @@ Delivery: transactional outbox, publisher confirms, at-least-once; Notification 
 
 ## Security
 
-- Public routes: user JWT validated locally (issuer `JWT_ISSUER`, audience `JWT_AUDIENCE`, skew `JWT_CLOCK_SKEW`); authorization via Workspace permissions (`WORKFLOW_CREATE/EDIT/PUBLISH/MANAGE_STATE/RUN/MONITOR`).
+- Public routes: user JWT validated locally (issuer `JWT_ISSUER`, audience `JWT_AUDIENCE`, skew `JWT_CLOCK_SKEW`; `user_status` must be exactly `ACTIVE`, `DISABLED` is rejected). The service does not read `JWT_REFRESH_SECRET` and compose no longer passes it; authorization via Workspace permissions (`WORKFLOW_CREATE/EDIT/PUBLISH/MANAGE_STATE/RUN/MONITOR`).
 - Internal route: `X-Internal-Service-Key` filter ([InternalServiceKeyFilter](../../../services/workflow-service/src/main/java/com/weav/workflow/infrastructure/security/InternalServiceKeyFilter.java)); blank key keeps it closed. `WORKFLOW_INTERNAL_SERVICE_KEY` (inbound) and `WEAV_INTERNAL_SERVICE_KEY` (to Workspace) are separate; no overlapping rotation window.
 - Outbound to AI/OCR: Service JWT signed with a private key file (`*_SIGNING_KEY_LOCATION`, key id); token lifetimes bounded (AI max 120 s).
 - Webhook secret: random, shown once, only SHA-256 verifier stored; generic 404 avoids enumeration.
