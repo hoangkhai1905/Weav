@@ -127,6 +127,31 @@ export function setResponseRequestId(
   reply.header('X-Correlation-ID', requestId);
 }
 
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
+const NON_MUTATING_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * Adds the gateway-derived client IP (Fastify honours GATEWAY_TRUST_PROXY_HOPS)
+ * and, on mutations, a well-formed Idempotency-Key. Client-supplied
+ * X-Forwarded-For is never copied; it is always replaced by the derived IP.
+ */
+export function applyClientForwardingHeaders(
+  request: { headers?: Record<string, unknown>; ip?: unknown },
+  headers: Record<string, string>,
+  method: string,
+): void {
+  if (typeof request.ip === 'string' && request.ip.length > 0) {
+    headers['x-forwarded-for'] = request.ip;
+  }
+  if (NON_MUTATING_METHODS.has(method.toUpperCase())) {
+    return;
+  }
+  const idempotencyKey = readHeaderValue(request.headers, 'idempotency-key');
+  if (idempotencyKey && IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
+    headers['idempotency-key'] = idempotencyKey;
+  }
+}
+
 export function isValidTraceparent(value: unknown): value is string {
   if (typeof value !== 'string') {
     return false;

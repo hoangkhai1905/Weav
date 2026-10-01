@@ -373,7 +373,10 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
     expect(forwarded?.headers['x-internal-service-key']).toBeUndefined();
     expect(forwarded?.headers['x-user-id']).toBeUndefined();
     expect(forwarded?.headers['x-user-role']).toBeUndefined();
-    expect(forwarded?.headers['x-forwarded-for']).toBeUndefined();
+    // The client-supplied value is dropped; the gateway sends the address it
+    // derived itself (no trusted proxy hops are configured here).
+    expect(forwarded?.headers['x-forwarded-for']).not.toContain('198.51.100.1');
+    expect(forwarded?.headers['x-forwarded-for']).toBe('127.0.0.1');
   });
 
   it('preserves upstream 204 responses without forcing JSON parsing', async () => {

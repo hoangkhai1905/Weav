@@ -55,8 +55,13 @@ Rate-limit names:
 GATEWAY_GENERAL_RATE_LIMIT
 GATEWAY_AUTH_RATE_LIMIT
 GATEWAY_OCR_RATE_LIMIT
+GATEWAY_WEBHOOK_RATE_LIMIT
 GATEWAY_RATE_LIMIT_WINDOW_MS
 ```
+
+Proxy trust: `GATEWAY_TRUST_PROXY_HOPS` (0-10, default 0 = `trustProxy` off).
+Set it to the number of trusted proxies in front of the Gateway so rate limits
+and the forwarded `X-Forwarded-For` use the real client IP.
 
 The validated defaults and production-only configuration checks live in
 `src/config/gateway.config.ts`. The local development OCR bypass is permitted
@@ -82,6 +87,10 @@ and unsupported methods are not forwarded.
 | `/api/users/me`                                                                  | `GET`, `PATCH`                  | Required bearer                                                        | Identity                            |
 | `/api/users/me/sessions`                                                         | `GET`, `DELETE`                 | Required bearer                                                        | Identity                            |
 | `/api/users/me/sessions/{sessionId}`                                             | `DELETE`                        | Required bearer                                                        | Identity                            |
+| `/api/users/me/oauth-accounts`                                                   | `GET`                           | Required bearer                                                        | Identity                            |
+| `/api/users/me/avatar`                                                           | `GET`, `PUT`, `DELETE`          | Required bearer (`PUT` streams multipart, 2 MiB + 64 KiB cap)         | Identity                            |
+| `/api/admin/users`, `/api/admin/users/{userId}`                                  | `GET`                           | Required bearer, `system_role=ADMIN` (403 otherwise)                   | Identity `/admin/users`             |
+| `/api/admin/users/{userId}/status`                                               | `PATCH`                         | Required bearer, `system_role=ADMIN`                                   | Identity                            |
 | `/api/v1/notifications/**`, `/api/notifications/**`                              | Registered notification methods | Required bearer                                                        | Notification                        |
 | `/api/v1/workspaces`                                                             | `POST`, `GET`                   | Required bearer                                                        | `/workspaces`                       |
 | `/api/v1/workspaces/{workspaceId}`                                               | `GET`, `PATCH`                  | Required bearer                                                        | `/workspaces/{workspaceId}`         |
@@ -90,16 +99,18 @@ and unsupported methods are not forwarded.
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/test`              | `POST`                          | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/disable`           | `POST`                          | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/authorize`   | `POST`                          | Required bearer                                                        | Matching Workspace suffix           |
+| `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential`        | `PUT`, `DELETE`                 | Required bearer                                                        | Matching Workspace suffix           |
+| `/api/v1/workspaces/{workspaceId}/workflows/generate`                           | `POST`                          | Required bearer (32 KiB body, 80 s deadline)                           | Workflow                            |
+| `/api/v1/webhooks/{endpointKey}`                                                 | `POST`                          | Public (JSON only, per-endpoint `webhook` throttler)                   | Workflow `/webhooks/{endpointKey}`  |
 | `/api/v1/workspaces/{workspaceId}/members`                                       | `GET`, `POST`                   | Required bearer                                                        | `/workspaces/{workspaceId}/members` |
 | `/api/v1/workspaces/{workspaceId}/members/{userId}/permissions`                  | `PATCH`                         | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/members/{userId}`                              | `DELETE`                        | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/members/me`                                    | `DELETE`                        | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/ocr/extractions`                               | `POST`                          | Required bearer, or the existing development-only missing-token bypass | OCR `/v1/extractions`               |
 
-The Workspace rows are exactly the seventeen public operations in the Gateway
+The Workspace rows are exactly the nineteen public operations in the Gateway
 OpenAPI contract. Connection routes are explicitly allow-listed; internal
-Workspace operations, manual credential routes, and the Google OAuth callback
-are not Gateway routes. The literal `members/me` route is registered separately
+Workspace operations and the Google OAuth callback are not Gateway routes. The literal `members/me` route is registered separately
 from the generic `{userId}` route so route precedence cannot widen the API.
 
 ## Transport and response behavior
@@ -174,9 +185,10 @@ real Identity/Workspace deployment or an authenticated browser smoke test.
 
 ## Deferred features
 
-Workflow, AI, and Bot public routes; distributed throttling; OAuth browser
-cookie migration; realtime; client/database changes; admin/avatar expansion;
-and production stream-cap changes are outside this Gateway slice. Real-service
+AI and Bot public routes; distributed throttling; identity browser cookie and
+OAuth flows (`/auth/web/*`, Google OAuth start/exchange/callback, link,
+unlink); realtime; client/database changes; Workflow `DELETE`; and OCR
+stream-cap changes are outside this Gateway slice. Real-service
 login, Workspace mutation/access, and authenticated browser compatibility proof
 remain deployment-gated follow-up checks.
 

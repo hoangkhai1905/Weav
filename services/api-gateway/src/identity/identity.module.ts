@@ -1,7 +1,9 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Injectable,
   Logger,
@@ -9,14 +11,18 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Req,
   Res,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import type { GatewayConfig } from '../config/gateway.config';
 import { AuthPolicy } from '../auth/auth-policy.decorator';
+import type { AccessPrincipal } from '../auth/access-token.service';
 import {
+  applyClientForwardingHeaders,
   collectSafeUpstreamResponseHeaders,
   createUpstreamAbortHandle,
   getRequestHeader,
@@ -27,6 +33,34 @@ import {
 } from '../common/request-context';
 
 type AuthMode = 'none' | 'optional' | 'required';
+
+// Identity accepts 2 MiB avatars; allow multipart framing overhead on top.
+const AVATAR_MAX_REQUEST_BYTES = 2 * 1024 * 1024 + 64 * 1024;
+const uuidSchema = z.string().uuid();
+
+function isAsyncIterable(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Record<symbol, unknown>)[Symbol.asyncIterator] ===
+      'function'
+  );
+}
+
+function uuidParam(value: string): string {
+  if (!uuidSchema.safeParse(value).success) {
+    throw new BadRequestException('Request validation failed');
+  }
+  return value;
+}
+
+// Coarse edge check only; Identity re-verifies the session and ADMIN role.
+function requireAdmin(req: FastifyRequest): void {
+  const principal = (req as { principal?: AccessPrincipal }).principal;
+  if (principal?.system_role !== 'ADMIN') {
+    throw new ForbiddenException('Administrator role required');
+  }
+}
 
 interface ForwardOptions {
   auth?: AuthMode;
@@ -97,60 +131,178 @@ export class IdentityProxyService {
 
     const userAgent = getRequestHeader(req.headers, 'user-agent');
     if (userAgent) headers['user-agent'] = userAgent.slice(0, 512);
+    applyClientForwardingHeaders(req, headers, req.method);
 
     const targetPath = this.withAllowedQuery(req, path, options.queryKeys);
-    const gateway = this.config.get<GatewayConfig>('gateway');
-    const base =
-      gateway?.upstreams?.identity ??
-      this.config.get<string>('IDENTITY_SERVICE_URL') ??
-      'http://identity-service:8080';
-
     const abortHandle = createUpstreamAbortHandle(request, reply, 10_000);
     try {
-      const response = await fetch(`${base.replace(/\/+$/, '')}${targetPath}`, {
+      const response = await fetch(`${this.baseUrl()}${targetPath}`, {
         method: req.method,
         headers,
         body: serializedBody,
         redirect: 'error',
         signal: abortHandle.signal,
       });
-      const responseHeaders = collectSafeUpstreamResponseHeaders(
-        response.headers,
-      );
-      if (response.status === 204) {
-        setResponseRequestId(reply, requestId);
-        reply.header('Cache-Control', 'no-store');
-        return reply.code(204).send();
-      }
-      if (
-        !responseHeaders['content-type']
-          ?.toLowerCase()
-          .includes('application/json')
-      ) {
-        try {
-          await response.body?.cancel();
-        } catch {
-          // The upstream connection is already being discarded.
-        }
-        return fail(502, 'BAD_GATEWAY', 'Invalid Identity response');
-      }
-      for (const [name, value] of Object.entries(responseHeaders)) {
-        if (name !== 'cache-control') {
-          reply.header(name, value);
-        }
-      }
-      setResponseRequestId(reply, requestId);
-      reply.header('Cache-Control', 'no-store');
-      try {
-        return reply.code(response.status).send(await response.json());
-      } catch {
-        return fail(502, 'BAD_GATEWAY', 'Invalid Identity response');
-      }
+      return await this.relay(response, reply, requestId, fail);
     } catch {
       this.logger.error(`Identity upstream failed requestId=${requestId}`);
       return fail(503, 'SERVICE_UNAVAILABLE', 'Identity service unavailable');
     } finally {
       abortHandle.cleanup();
+    }
+  }
+
+  /**
+   * Streams a multipart upload to Identity without buffering it, aborting with
+   * 413 once more than maxBytes have been read. The raw stream comes from the
+   * global multipart/form-data parser registered by OcrModule.
+   */
+  async forwardMultipart(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    path: string,
+    maxBytes: number,
+  ) {
+    const request = req as RequestContextCarrier;
+    const requestId = getRequestId(request);
+    setResponseRequestId(reply, requestId);
+    reply.header('Cache-Control', 'no-store');
+    const fail = (status: number, code: string, message: string) => {
+      reply.header('Content-Type', 'application/json; charset=utf-8');
+      setResponseRequestId(reply, requestId);
+      reply.header('Cache-Control', 'no-store');
+      return reply.code(status).send({
+        error: { code, message, details: [] },
+        status,
+        requestId,
+      });
+    };
+
+    const authorization = getRequestHeader(req.headers, 'authorization');
+    if (
+      !authorization ||
+      authorization.length > 8192 ||
+      !/^Bearer \S+$/i.test(authorization)
+    ) {
+      return fail(401, 'UNAUTHORIZED', 'Bearer token required');
+    }
+    const contentType = getRequestHeader(req.headers, 'content-type');
+    if (
+      !contentType ||
+      contentType.length > 256 ||
+      !/^multipart\/form-data;\s*boundary=\S+/i.test(contentType)
+    ) {
+      return fail(
+        415,
+        'UNSUPPORTED_MEDIA_TYPE',
+        'multipart/form-data required',
+      );
+    }
+    const declaredLength = Number(
+      getRequestHeader(req.headers, 'content-length'),
+    );
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+      return fail(413, 'PAYLOAD_TOO_LARGE', 'Request too large');
+    }
+    const source = (
+      isAsyncIterable(req.body) ? req.body : req.raw
+    ) as AsyncIterable<Uint8Array>;
+
+    const headers: Record<string, string> = {
+      accept: 'application/json',
+      authorization,
+      'content-type': contentType,
+      'x-correlation-id': requestId,
+      'x-request-id': requestId,
+    };
+    const traceparent = getRequestHeader(req.headers, 'traceparent');
+    if (isValidTraceparent(traceparent)) headers.traceparent = traceparent;
+    const userAgent = getRequestHeader(req.headers, 'user-agent');
+    if (userAgent) headers['user-agent'] = userAgent.slice(0, 512);
+    applyClientForwardingHeaders(req, headers, req.method);
+
+    let tooLarge = false;
+    async function* capped(): AsyncGenerator<Uint8Array> {
+      let total = 0;
+      for await (const chunk of source) {
+        total += chunk.byteLength;
+        if (total > maxBytes) {
+          tooLarge = true;
+          throw new Error('upload exceeds gateway limit');
+        }
+        yield chunk;
+      }
+    }
+
+    const abortHandle = createUpstreamAbortHandle(request, reply, 10_000);
+    try {
+      const init: RequestInit & { duplex: 'half' } = {
+        method: req.method,
+        headers,
+        body: capped() as unknown as BodyInit,
+        duplex: 'half',
+        redirect: 'error',
+        signal: abortHandle.signal,
+      };
+      const response = await fetch(`${this.baseUrl()}${path}`, init);
+      return await this.relay(response, reply, requestId, fail);
+    } catch {
+      if (tooLarge) {
+        return fail(413, 'PAYLOAD_TOO_LARGE', 'Request too large');
+      }
+      this.logger.error(`Identity upload failed requestId=${requestId}`);
+      return fail(503, 'SERVICE_UNAVAILABLE', 'Identity service unavailable');
+    } finally {
+      abortHandle.cleanup();
+    }
+  }
+
+  private baseUrl(): string {
+    const gateway = this.config.get<GatewayConfig>('gateway');
+    const base =
+      gateway?.upstreams?.identity ??
+      this.config.get<string>('IDENTITY_SERVICE_URL') ??
+      'http://identity-service:8080';
+    return base.replace(/\/+$/, '');
+  }
+
+  private async relay(
+    response: Response,
+    reply: FastifyReply,
+    requestId: string,
+    fail: (status: number, code: string, message: string) => unknown,
+  ) {
+    const responseHeaders = collectSafeUpstreamResponseHeaders(
+      response.headers,
+    );
+    if (response.status === 204) {
+      setResponseRequestId(reply, requestId);
+      reply.header('Cache-Control', 'no-store');
+      return reply.code(204).send();
+    }
+    if (
+      !responseHeaders['content-type']
+        ?.toLowerCase()
+        .includes('application/json')
+    ) {
+      try {
+        await response.body?.cancel();
+      } catch {
+        // The upstream connection is already being discarded.
+      }
+      return fail(502, 'BAD_GATEWAY', 'Invalid Identity response');
+    }
+    for (const [name, value] of Object.entries(responseHeaders)) {
+      if (name !== 'cache-control') {
+        reply.header(name, value);
+      }
+    }
+    setResponseRequestId(reply, requestId);
+    reply.header('Cache-Control', 'no-store');
+    try {
+      return reply.code(response.status).send(await response.json());
+    } catch {
+      return fail(502, 'BAD_GATEWAY', 'Invalid Identity response');
     }
   }
 
@@ -378,10 +530,100 @@ export class IdentityUsersProxyController {
       { auth: 'required' },
     );
   }
+
+  // Unlink stays direct-to-Identity: it requires the browser CSRF cookie.
+  @Get('me/oauth-accounts')
+  oauthAccounts(@Req() req: FastifyRequest, @Res() reply: FastifyReply) {
+    return this.proxy.forward(
+      req,
+      reply,
+      '/users/me/oauth-accounts',
+      undefined,
+      {
+        auth: 'required',
+      },
+    );
+  }
+
+  @Get('me/avatar')
+  avatar(@Req() req: FastifyRequest, @Res() reply: FastifyReply) {
+    return this.proxy.forward(req, reply, '/users/me/avatar', undefined, {
+      auth: 'required',
+    });
+  }
+
+  @Put('me/avatar')
+  uploadAvatar(@Req() req: FastifyRequest, @Res() reply: FastifyReply) {
+    return this.proxy.forwardMultipart(
+      req,
+      reply,
+      '/users/me/avatar',
+      AVATAR_MAX_REQUEST_BYTES,
+    );
+  }
+
+  @Delete('me/avatar')
+  deleteAvatar(@Req() req: FastifyRequest, @Res() reply: FastifyReply) {
+    return this.proxy.forward(req, reply, '/users/me/avatar', undefined, {
+      auth: 'required',
+    });
+  }
+}
+
+@Controller('api/admin/users')
+@AuthPolicy('required')
+export class IdentityAdminProxyController {
+  constructor(private readonly proxy: IdentityProxyService) {}
+
+  @Get()
+  list(@Req() req: FastifyRequest, @Res() reply: FastifyReply) {
+    requireAdmin(req);
+    return this.proxy.forward(req, reply, '/admin/users', undefined, {
+      auth: 'required',
+      queryKeys: ['page', 'size', 'search', 'status'],
+    });
+  }
+
+  @Get(':userId')
+  get(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Param('userId') userId: string,
+  ) {
+    requireAdmin(req);
+    return this.proxy.forward(
+      req,
+      reply,
+      `/admin/users/${uuidParam(userId)}`,
+      undefined,
+      { auth: 'required' },
+    );
+  }
+
+  @Patch(':userId/status')
+  changeStatus(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Param('userId') userId: string,
+    @Body() body: unknown,
+  ) {
+    requireAdmin(req);
+    return this.proxy.forward(
+      req,
+      reply,
+      `/admin/users/${uuidParam(userId)}/status`,
+      body,
+      { auth: 'required' },
+    );
+  }
 }
 
 @Module({
-  controllers: [IdentityAuthProxyController, IdentityUsersProxyController],
+  controllers: [
+    IdentityAuthProxyController,
+    IdentityUsersProxyController,
+    IdentityAdminProxyController,
+  ],
   providers: [IdentityProxyService],
 })
 export class IdentityModule {}

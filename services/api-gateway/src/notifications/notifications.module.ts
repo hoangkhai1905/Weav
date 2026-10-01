@@ -29,6 +29,9 @@ import {
   type RequestContextCarrier,
 } from '../common/request-context';
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface NotificationProxyTransportApi {
   forward(
     req: FastifyRequest,
@@ -64,7 +67,7 @@ export class NotificationProxyController {
     @Res() res: FastifyReply,
     @Param('id') id: string,
   ) {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new BadRequestException();
+    if (!UUID_PATTERN.test(id)) throw new BadRequestException();
     return this.forward(req, res, `/${id}/read`);
   }
   @Post('read-all') readAll(
@@ -128,7 +131,7 @@ export class NotificationV2ProxyController {
     @Param('id') id: string,
     @Query() query: Record<string, string>,
   ) {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new BadRequestException();
+    if (!UUID_PATTERN.test(id)) throw new BadRequestException();
     return this.transport.forward(
       request,
       reply,

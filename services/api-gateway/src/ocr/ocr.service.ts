@@ -10,6 +10,10 @@ import {
   type RequestContextCarrier,
 } from '../common/request-context';
 
+// Forwarded as the x-workspace-id header, so only canonical UUIDs pass.
+const WORKSPACE_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface ProxyExtractionResult {
   status: number;
   data: unknown;
@@ -117,7 +121,7 @@ export class OcrService {
     if (
       !workspaceId ||
       typeof workspaceId !== 'string' ||
-      workspaceId.trim() === ''
+      !WORKSPACE_ID_PATTERN.test(workspaceId)
     ) {
       return {
         status: 400,

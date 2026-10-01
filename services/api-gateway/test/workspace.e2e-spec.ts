@@ -418,7 +418,7 @@ function extractOperations(document: string): string[] {
       path = pathMatch[1];
       continue;
     }
-    const methodMatch = /^ {4}(get|post|patch|delete):$/.exec(line);
+    const methodMatch = /^ {4}(get|post|put|patch|delete):$/.exec(line);
     if (path && methodMatch) {
       operations.push(`${methodMatch[1].toUpperCase()} ${path}`);
     }
@@ -717,7 +717,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
   it('rejects invalid UUID/query/body inputs before any upstream request', async () => {
     const authorization = signedAuthorization['normal-token'];
     const invalidRequests: Array<{
-      method: 'GET' | 'POST' | 'PATCH';
+      method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
       url: string;
       payload?: Record<string, unknown>;
     }> = [
@@ -824,6 +824,25 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
         url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
         payload: { unexpected: true },
       },
+      {
+        method: 'PUT',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/not-a-uuid/credential`,
+        payload: { payload: { token: 'x' } },
+      },
+      {
+        method: 'PUT',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/credential`,
+        payload: { token: 'missing-payload-wrapper' },
+      },
+      {
+        method: 'PUT',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/credential`,
+        payload: { payload: { token: 'x' }, expiresAt: 'tomorrow' },
+      },
+      {
+        method: 'DELETE',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/not-a-uuid/credential`,
+      },
     ];
 
     for (const invalidRequest of invalidRequests) {
@@ -895,11 +914,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
         url: `/api/v1/workspaces/${WORKSPACE_ID}`,
       },
       {
-        method: 'PUT' as const,
-        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/credential`,
-      },
-      {
-        method: 'DELETE' as const,
+        method: 'POST' as const,
         url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/credential`,
       },
       {
@@ -1163,7 +1178,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     ).toBe(true);
   });
 
-  it('keeps the gateway contract to exactly seventeen Workspace method/path pairs and resolvable refs', () => {
+  it('keeps the gateway contract to exactly nineteen Workspace method/path pairs and resolvable refs', () => {
     const gatewayPath = resolve(
       __dirname,
       '../../../packages/contracts/http/gateway/openapi.yaml',
@@ -1187,6 +1202,8 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       'POST /api/v1/workspaces/{workspaceId}/connections/{connectionId}/test',
       'POST /api/v1/workspaces/{workspaceId}/connections/{connectionId}/disable',
       'POST /api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/authorize',
+      'PUT /api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential',
+      'DELETE /api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential',
     ];
     const actual = extractOperations(gatewayDocument);
 

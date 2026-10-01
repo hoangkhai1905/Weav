@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { GatewayConfig } from '../config/gateway.config';
 import {
+  applyClientForwardingHeaders,
   collectSafeUpstreamResponseHeaders,
   createUpstreamAbortHandle,
   getRequestHeader,
@@ -12,7 +13,7 @@ import {
   type RequestContextCarrier,
 } from '../common/request-context';
 
-type WorkspaceMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+type WorkspaceMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export interface WorkspaceForwardOptions {
   body?: unknown;
@@ -120,6 +121,7 @@ export class WorkspaceProxyService {
     if (userAgent) {
       headers['user-agent'] = userAgent.slice(0, 512);
     }
+    applyClientForwardingHeaders(request, headers, method);
 
     let serializedBody: string | undefined;
     if (options.body !== undefined) {

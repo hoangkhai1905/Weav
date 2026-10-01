@@ -10,6 +10,7 @@ import {
   isOcrRequest,
   isOperationalRequest,
   isPublicAuthMutation,
+  webhookEndpointKey,
   type GatewayRateLimitRequest,
 } from './gateway-throttler.guard';
 
@@ -65,6 +66,18 @@ function requestFromContext(context: {
               ttl: gateway.limits.windowMs,
               blockDuration: gateway.limits.windowMs,
               skipIf: skipOcr,
+            },
+            {
+              // Per endpoint key, on top of the general per-IP bucket, so one
+              // noisy sender cannot exhaust another workflow's webhook budget.
+              name: 'webhook',
+              limit: gateway.limits.webhookPerMinute,
+              ttl: gateway.limits.windowMs,
+              blockDuration: gateway.limits.windowMs,
+              skipIf: (context: ExecutionContext) =>
+                webhookEndpointKey(requestFromContext(context)) === undefined,
+              getTracker: (request: GatewayRateLimitRequest) =>
+                `endpoint:${webhookEndpointKey(request) ?? 'none'}`,
             },
           ],
           errorMessage: 'Rate limit exceeded',

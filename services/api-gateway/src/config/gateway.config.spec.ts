@@ -149,8 +149,27 @@ describe('validateGatewayEnvironment', () => {
       generalPerMinute: 120,
       authPerMinute: 10,
       ocrPerMinute: 10,
+      webhookPerMinute: 60,
       windowMs: 60_000,
     });
+    expect(config.trustProxyHops).toBe(0);
+  });
+
+  it('bounds the trusted proxy hop count', () => {
+    expect(
+      validateGatewayEnvironment({
+        ...developmentEnvironment(),
+        GATEWAY_TRUST_PROXY_HOPS: '1',
+      }).trustProxyHops,
+    ).toBe(1);
+    for (const invalid of ['-1', '11', 'true']) {
+      expect(() =>
+        validateGatewayEnvironment({
+          ...developmentEnvironment(),
+          GATEWAY_TRUST_PROXY_HOPS: invalid,
+        }),
+      ).toThrow('GATEWAY_TRUST_PROXY_HOPS');
+    }
   });
 
   it('validates the bounded rate-limit window and exposes test-sized overrides', () => {

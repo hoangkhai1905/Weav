@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -100,6 +101,14 @@ const updateConnectionBodySchema = z
       body.name !== undefined ||
       (body.config !== undefined && body.config !== null),
   );
+
+// Write-only provider secrets; Workspace validates provider-specific fields.
+const saveCredentialBodySchema = z
+  .object({
+    payload: z.record(z.string(), z.unknown()),
+    expiresAt: z.union([z.iso.datetime({ offset: true }), z.null()]).optional(),
+  })
+  .strict();
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
@@ -342,6 +351,42 @@ export class WorkspaceController {
       request,
       reply,
       `/${workspace}/connections/${connection}/disable`,
+    );
+  }
+
+  @Put(':workspaceId/connections/:connectionId/credential')
+  saveConnectionCredential(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('connectionId') rawConnectionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const connection = workspaceId(rawConnectionId);
+    return this.proxy.forward(
+      'PUT',
+      request,
+      reply,
+      `/${workspace}/connections/${connection}/credential`,
+      { body: parse(saveCredentialBodySchema, body) },
+    );
+  }
+
+  @Delete(':workspaceId/connections/:connectionId/credential')
+  deleteConnectionCredential(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('connectionId') rawConnectionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const connection = workspaceId(rawConnectionId);
+    return this.proxy.forward(
+      'DELETE',
+      request,
+      reply,
+      `/${workspace}/connections/${connection}/credential`,
     );
   }
 

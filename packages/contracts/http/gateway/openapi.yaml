@@ -293,6 +293,65 @@ paths:
         "500": { $ref: "#/components/responses/GatewayInternalError" }
         "502": { $ref: "#/components/responses/GatewayBadGateway" }
 
+  /api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+      - $ref: "../workspace/openapi.yaml#/components/parameters/ConnectionId"
+    put:
+      tags: [Connections]
+      operationId: gatewaySaveWorkspaceConnectionCredential
+      summary: Replace a write-only connection credential
+      description: >-
+        The gateway checks only the envelope shape (payload object, optional
+        RFC 3339 expiresAt or null). Workspace validates provider fields,
+        encrypts the payload and never returns it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../workspace/openapi.yaml#/components/schemas/SaveCredentialRequest"
+      responses:
+        "200":
+          description: Credential replaced; connection metadata only (left DISABLED pending a provider test).
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/ConnectionResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+    delete:
+      tags: [Connections]
+      operationId: gatewayDeleteWorkspaceConnectionCredential
+      summary: Remove a stored connection credential
+      responses:
+        "200":
+          description: Credential removed; connection metadata only.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/ConnectionResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+
   /api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/authorize:
     parameters:
       - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
