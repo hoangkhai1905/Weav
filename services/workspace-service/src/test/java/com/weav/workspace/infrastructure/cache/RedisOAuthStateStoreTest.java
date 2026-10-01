@@ -102,6 +102,22 @@ class RedisOAuthStateStoreTest {
     }
 
     @Test
+    void pkceVerifierRoundTripsThroughServerSideStateAndIsConsumedOnce() {
+        OAuthPendingState pending = new OAuthPendingState(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                ConnectionProvider.GMAIL, "v".repeat(64));
+        String state = randomState();
+        RedisOAuthStateStore store = new RedisOAuthStateStore(redis, objectMapper, Duration.ofMinutes(10));
+
+        store.saveForStart(state, pending, false);
+
+        assertThat(objectMapper.readTree(redis.opsForValue().get(key(state))).get("codeVerifier").asText())
+                .isEqualTo("v".repeat(64));
+        assertThat(store.consumeForCallback(state).orElseThrow().pendingState()).isEqualTo(pending);
+        assertThat(store.consumeForCallback(state)).isEmpty();
+    }
+
+    @Test
     void startMetadataRoundTripsWithoutChangingTheFourFieldStatePayload() {
         OAuthPendingState pending = pendingState();
         String state = randomState();

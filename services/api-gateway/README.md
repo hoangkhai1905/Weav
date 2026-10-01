@@ -99,6 +99,7 @@ and unsupported methods are not forwarded.
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/test`              | `POST`                          | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/disable`           | `POST`                          | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/authorize`   | `POST`                          | Required bearer                                                        | Matching Workspace suffix           |
+| `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/complete`    | `POST`                          | Required bearer (strict `{completion}` body)                           | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential`        | `PUT`, `DELETE`                 | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/workflows/generate`                           | `POST`                          | Required bearer (32 KiB body, 80 s deadline)                           | Workflow                            |
 | `/api/v1/webhooks/{endpointKey}`                                                 | `POST`                          | Public (JSON only, per-endpoint `webhook` throttler)                   | Workflow `/webhooks/{endpointKey}`  |
@@ -108,7 +109,7 @@ and unsupported methods are not forwarded.
 | `/api/v1/workspaces/{workspaceId}/members/me`                                    | `DELETE`                        | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/ocr/extractions`                               | `POST`                          | Required bearer, or the existing development-only missing-token bypass | OCR `/v1/extractions`               |
 
-The Workspace rows are exactly the nineteen public operations in the Gateway
+The Workspace rows are exactly the twenty public operations in the Gateway
 OpenAPI contract. Connection routes are explicitly allow-listed; internal
 Workspace operations and the Google OAuth callback are not Gateway routes. The literal `members/me` route is registered separately
 from the generic `{userId}` route so route precedence cannot widen the API.

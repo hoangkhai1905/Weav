@@ -4,18 +4,19 @@ import com.weav.workspace.application.dto.ConnectionTestResult;
 import com.weav.workspace.application.dto.GoogleOAuthCallbackResult;
 import com.weav.workspace.application.dto.GoogleOAuthTokenResponse;
 import com.weav.workspace.application.dto.OAuthPendingState;
-import com.weav.workspace.application.notification.ConnectionNotificationRecorder;
 import com.weav.workspace.application.notification.NotificationOutboxWriteException;
+import com.weav.workspace.application.notification.ConnectionNotificationRecorder;
 import com.weav.workspace.application.port.out.ConnectionProviderPort;
 import com.weav.workspace.application.port.out.CredentialCryptoPort;
 import com.weav.workspace.application.port.out.GoogleOAuthPort;
+import com.weav.workspace.application.port.out.OAuthCompletionStore;
 import com.weav.workspace.application.port.out.OAuthStateStore;
 import com.weav.workspace.application.service.ConnectionProviderRegistry;
 import com.weav.workspace.application.service.ConnectionUsageProtection;
 import com.weav.workspace.application.service.CredentialPayloadCodec;
 import com.weav.workspace.application.service.GoogleOAuthScopePolicy;
 import com.weav.workspace.domain.exception.BadRequestException;
-import com.weav.workspace.domain.exception.DomainException;
+import com.weav.workspace.domain.exception.ConflictException;
 import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
 import com.weav.workspace.domain.model.Connection;
@@ -29,19 +30,26 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionException;
 
+import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Consumes one OAuth state, verifies Google, then atomically persists the encrypted credential/status. */
+/**
+ * Two-step Google connect: the public callback only parks the code (PKCE-bound); the initiating
+ * user then completes it with a bearer token, and only that step verifies Google and persists the
+ * encrypted credential/status.
+ */
 @Service
 public final class CompleteConnectionOAuthUseCase {
 
     private static final int MAX_AUTHORIZATION_CODE_LENGTH = 8192;
+    private static final SecureRandom COMPLETION_RANDOM = new SecureRandom();
 
     private final ConnectionRepository connectionRepository;
     private final CredentialRepository credentialRepository;
@@ -54,6 +62,7 @@ public final class CompleteConnectionOAuthUseCase {
     private final CredentialCryptoPort crypto;
     private final Clock clock;
     private final ConnectionNotificationRecorder notificationRecorder;
+    private final OAuthCompletionStore completionStore;
 
     public CompleteConnectionOAuthUseCase(
             ConnectionRepository connectionRepository,
@@ -66,7 +75,8 @@ public final class CompleteConnectionOAuthUseCase {
             CredentialPayloadCodec payloadCodec,
             CredentialCryptoPort crypto,
             Clock clock,
-            ConnectionNotificationRecorder notificationRecorder) {
+            ConnectionNotificationRecorder notificationRecorder,
+            OAuthCompletionStore completionStore) {
         this.connectionRepository = Objects.requireNonNull(
                 connectionRepository, "connectionRepository must not be null");
         this.credentialRepository = Objects.requireNonNull(
@@ -80,8 +90,13 @@ public final class CompleteConnectionOAuthUseCase {
         this.crypto = Objects.requireNonNull(crypto, "crypto must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.notificationRecorder = Objects.requireNonNull(notificationRecorder, "notificationRecorder must not be null");
+        this.completionStore = Objects.requireNonNull(completionStore, "completionStore must not be null");
     }
 
+    /**
+     * Single-step completion straight from a consumed state. Not reachable over HTTP; it bypasses the
+     * authenticated binding and exists only for tests of the completion pipeline.
+     */
     public ConnectionTestResult execute(String state, String authorizationCode) {
         return execute(state, authorizationCode, null);
     }
@@ -95,16 +110,17 @@ public final class CompleteConnectionOAuthUseCase {
                     consumedState.pendingState(),
                     consumedState.notificationOrigin(),
                     authorizationCode,
-                    callbackError,
-                    null);
+                    callbackError);
         } finally {
             stateStore.releaseOrigin(consumedState);
         }
     }
 
     /**
-     * Consumes the callback state exactly once and returns only safe redirect data.
-     * The connection id is trusted only after it has been recovered from that state.
+     * Consumes the callback state exactly once and parks the authorization code as a short-lived
+     * pending completion. Nothing is exchanged or persisted here: the public callback cannot prove
+     * which user owns the browser, so {@link #completeAuthenticated} finishes the flow for the
+     * initiating user only. Exchanging at completion also means no Google token ever exists unbound.
      */
     public GoogleOAuthCallbackResult executeForCallback(
             String state,
@@ -124,8 +140,8 @@ public final class CompleteConnectionOAuthUseCase {
                     null, GoogleOAuthCallbackResult.FailureReason.STATE_INVALID);
         }
 
-        OAuthPendingState pendingState = consumedState.pendingState();
-        UUID connectionId = pendingState.connectionId();
+        UUID connectionId = consumedState.pendingState().connectionId();
+        boolean handedOff = false;
         try {
             if (callbackError != null && !callbackError.isBlank()) {
                 return GoogleOAuthCallbackResult.failure(
@@ -135,45 +151,69 @@ public final class CompleteConnectionOAuthUseCase {
                 return GoogleOAuthCallbackResult.failure(
                         connectionId, GoogleOAuthCallbackResult.FailureReason.TOKEN_EXCHANGE_FAILED);
             }
-
-            CallbackStageTracker stage = new CallbackStageTracker();
+            String completionId = randomCompletionId();
             try {
-                ConnectionTestResult verification = executePending(
-                        pendingState,
-                        consumedState.notificationOrigin(),
-                        authorizationCode,
-                        null,
-                        stage);
-                if (verification == null || verification.outcome() == null
-                        || verification.outcome() != ConnectionTestResult.ConnectionTestOutcome.VERIFIED) {
-                    return GoogleOAuthCallbackResult.failure(
-                            connectionId, GoogleOAuthCallbackResult.FailureReason.VERIFICATION_FAILED);
-                }
-                return GoogleOAuthCallbackResult.success(connectionId);
-            } catch (DomainException exception) {
-                // Application failures are reduced to an allow-listed reason; provider,
-                // database, and callback details never reach the redirect.
-                return GoogleOAuthCallbackResult.failure(connectionId, stage.failureReason());
-            } catch (NotificationOutboxWriteException exception) {
+                completionStore.save(
+                        completionId,
+                        new OAuthCompletionStore.PendingCompletion(consumedState, authorizationCode));
+                handedOff = true;
+            } catch (DependencyUnavailableException exception) {
                 return GoogleOAuthCallbackResult.failure(
-                        connectionId, GoogleOAuthCallbackResult.FailureReason.VERIFICATION_FAILED);
-            } catch (DataAccessException | TransactionException exception) {
-                // Repository and transaction failures can happen after state is consumed,
-                // including at transaction commit. Keep callback behavior safe without
-                // reporting success or exposing infrastructure diagnostics.
-                return GoogleOAuthCallbackResult.failure(connectionId, stage.failureReason());
+                        connectionId, GoogleOAuthCallbackResult.FailureReason.TOKEN_EXCHANGE_FAILED);
             }
+            return GoogleOAuthCallbackResult.pending(connectionId, completionId);
+        } finally {
+            if (!handedOff) {
+                stateStore.releaseOrigin(consumedState);
+            }
+        }
+    }
+
+    /**
+     * Finishes a pending Google connection for the user who started it. The record is consumed
+     * before any check, so a mismatched or replayed id can never be retried.
+     */
+    public ConnectionTestResult completeAuthenticated(
+            UUID actorUserId, UUID workspaceId, UUID connectionId, String completionId) {
+        Objects.requireNonNull(actorUserId, "actorUserId must not be null");
+        Objects.requireNonNull(workspaceId, "workspaceId must not be null");
+        Objects.requireNonNull(connectionId, "connectionId must not be null");
+        OAuthCompletionStore.PendingCompletion completion = completionStore.consume(completionId)
+                .orElseThrow(CompleteConnectionOAuthUseCase::completionUnavailable);
+        OAuthStateStore.ConsumedState consumedState = completion.consumedState();
+        OAuthPendingState pendingState = consumedState.pendingState();
+        try {
+            if (!pendingState.userId().equals(actorUserId)
+                    || !pendingState.workspaceId().equals(workspaceId)
+                    || !pendingState.connectionId().equals(connectionId)) {
+                // Same response as unknown/expired/replayed: never reveal that a record exists.
+                throw completionUnavailable();
+            }
+            return executePending(
+                    pendingState, consumedState.notificationOrigin(), completion.authorizationCode(), null);
+        } catch (NotificationOutboxWriteException | DataAccessException | TransactionException exception) {
+            // State is already consumed; report a retryable dependency failure without internals.
+            throw new DependencyUnavailableException();
         } finally {
             stateStore.releaseOrigin(consumedState);
         }
+    }
+
+    private static ConflictException completionUnavailable() {
+        return new ConflictException("OAuth completion is invalid, expired or already used");
+    }
+
+    private static String randomCompletionId() {
+        byte[] bytes = new byte[32];
+        COMPLETION_RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
     private ConnectionTestResult executePending(
             OAuthPendingState pendingState,
             OAuthStateStore.NotificationOrigin notificationOrigin,
             String authorizationCode,
-            String callbackError,
-            CallbackStageTracker callbackStage) {
+            String callbackError) {
         if (callbackError != null && !callbackError.isBlank()) {
             if ("access_denied".equals(callbackError)) {
                 throw new BadRequestException("Google authorization was denied");
@@ -184,7 +224,6 @@ public final class CompleteConnectionOAuthUseCase {
             throw new BadRequestException("Google authorization response is invalid");
         }
 
-        advance(callbackStage, GoogleOAuthCallbackResult.FailureReason.AUTHORIZATION_CHANGED);
         ConnectionProvider provider = pendingState.provider();
         ConnectionUsageProtection.Authorization initialAuthorization = usageProtection.authorize(
                 pendingState.userId(), pendingState.workspaceId(), pendingState.connectionId());
@@ -194,10 +233,9 @@ public final class CompleteConnectionOAuthUseCase {
         usageProtection.requireUnused(
                 initialAuthorization, ConnectionUsageProtection.UsageScope.MEMBER_ONLY);
 
-        advance(callbackStage, GoogleOAuthCallbackResult.FailureReason.TOKEN_EXCHANGE_FAILED);
-        GoogleOAuthTokenResponse tokens = googleOAuthPort.exchangeAuthorizationCode(authorizationCode);
+        GoogleOAuthTokenResponse tokens = googleOAuthPort.exchangeAuthorizationCode(
+                authorizationCode, pendingState.codeVerifier());
         Instant accessTokenExpiresAt = clock.instant().plusSeconds(tokens.expiresInSeconds());
-        advance(callbackStage, GoogleOAuthCallbackResult.FailureReason.VERIFICATION_FAILED);
         scopePolicy.requireRequiredScopes(provider, tokens.grantedScopes());
         Map<String, Object> credentialPayload = credentialPayload(tokens);
         ConnectionTestResult verification = googleProvider.test(connection, credentialPayload);
@@ -212,7 +250,6 @@ public final class CompleteConnectionOAuthUseCase {
 
         // The exchange and Google verification were remote calls. Recheck live membership and
         // usage before entering the short transaction that writes the credential/status.
-        advance(callbackStage, GoogleOAuthCallbackResult.FailureReason.AUTHORIZATION_CHANGED);
         ConnectionUsageProtection.Authorization finalAuthorization = usageProtection.authorize(
                 pendingState.userId(), pendingState.workspaceId(), pendingState.connectionId());
         usageProtection.requireUnused(
@@ -221,7 +258,6 @@ public final class CompleteConnectionOAuthUseCase {
         final byte[] encryptedCredential;
         final String encryptionKeyVersion;
         if (verification.outcome() == ConnectionTestResult.ConnectionTestOutcome.VERIFIED) {
-            advance(callbackStage, GoogleOAuthCallbackResult.FailureReason.VERIFICATION_FAILED);
             try {
                 encryptedCredential = crypto.encrypt(payloadCodec.encodeGoogleOAuth(connection, tokens));
                 encryptionKeyVersion = crypto.currentKeyVersion();
@@ -234,7 +270,6 @@ public final class CompleteConnectionOAuthUseCase {
             encryptionKeyVersion = null;
         }
 
-        advance(callbackStage, GoogleOAuthCallbackResult.FailureReason.AUTHORIZATION_CHANGED);
         return usageProtection.reauthorizeAndMutate(
                 pendingState.userId(),
                 pendingState.workspaceId(),
@@ -289,14 +324,6 @@ public final class CompleteConnectionOAuthUseCase {
                 });
     }
 
-    private void advance(
-            CallbackStageTracker callbackStage,
-            GoogleOAuthCallbackResult.FailureReason failureReason) {
-        if (callbackStage != null) {
-            callbackStage.failureReason = failureReason;
-        }
-    }
-
     private Connection loadAndValidateConnection(OAuthPendingState pendingState) {
         Connection connection = connectionRepository
                 .findByWorkspaceIdAndId(pendingState.workspaceId(), pendingState.connectionId())
@@ -329,15 +356,5 @@ public final class CompleteConnectionOAuthUseCase {
     private boolean isValidAuthorizationCode(String code) {
         return code != null && !code.isBlank() && code.length() <= MAX_AUTHORIZATION_CODE_LENGTH
                 && code.codePoints().noneMatch(Character::isISOControl);
-    }
-
-    private static final class CallbackStageTracker {
-
-        private GoogleOAuthCallbackResult.FailureReason failureReason =
-                GoogleOAuthCallbackResult.FailureReason.AUTHORIZATION_CHANGED;
-
-        private GoogleOAuthCallbackResult.FailureReason failureReason() {
-            return failureReason;
-        }
     }
 }

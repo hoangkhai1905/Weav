@@ -718,12 +718,12 @@ class InternalConnectionUseCasesTest {
         private final AtomicBoolean calledInsideTransaction = new AtomicBoolean();
 
         @Override
-        public String authorizationUrl(ConnectionProvider provider, String state) {
+        public String authorizationUrl(ConnectionProvider provider, String state, String codeChallenge) {
             throw new DependencyUnavailableException();
         }
 
         @Override
-        public GoogleOAuthTokenResponse exchangeAuthorizationCode(String authorizationCode) {
+        public GoogleOAuthTokenResponse exchangeAuthorizationCode(String authorizationCode, String codeVerifier) {
             throw new DependencyUnavailableException();
         }
 

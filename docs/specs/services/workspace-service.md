@@ -78,7 +78,8 @@ Public (user JWT):
 | POST | `.../connections/{connId}/test` | Provider verification | 502/503 on provider failure |
 | POST | `.../connections/{connId}/disable` | Manual disable | 403 |
 | POST | `.../connections/{connId}/oauth/authorize` | Server-built Google authorization URL | 400, 503 (Redis) |
-| GET | `/oauth/google/callback` | Unauthenticated; consumes one-time state, `302` to `GOOGLE_OAUTH_FRONTEND_RETURN_URL` with `oauth=success\|failed` | invalid state omits `connectionId` |
+| POST | `.../connections/{connId}/oauth/complete` | Bearer; body `{completion}`. Atomically consumes the single-use completion id, requires jwt `sub`, workspace and connection to match the user who started the flow, then exchanges the code (PKCE verifier), verifies Google and stores the encrypted credential | 400, 409 (unknown/expired/replayed/mismatched: one uniform response), 403/404 (access lost), 503 |
+| GET | `/oauth/google/callback` | Unauthenticated; consumes one-time state, parks the code under a random 256-bit completion id (`GOOGLE_OAUTH_COMPLETION_TTL`), stores no credential, `302` to `GOOGLE_OAUTH_FRONTEND_RETURN_URL` with `oauth=pending&completion=<id>&connectionId=<id>` or `oauth=failed&reason=` | invalid state omits `connectionId` |
 | GET | `/actuator/health`, `/actuator/health/**` | Unauthenticated health/liveness/readiness | - |
 
 Internal (header `X-Internal-Service-Key`; caller is Workflow):
@@ -90,7 +91,9 @@ Internal (header `X-Internal-Service-Key`; caller is Workflow):
 | POST | `/internal/workspaces/{ws}/connections/{conn}/resolve` | Minimum runtime auth for an ACTIVE connection; `Cache-Control: no-store`; never returns a Google refresh token |
 | POST | `/internal/workspaces/{ws}/connections/{conn}/auth-failure` | `204`; confirmed provider authentication rejection -> `INVALID` |
 
-Gateway exposure: [gateway openapi](../../../packages/contracts/http/gateway/openapi.yaml) lists workspace, member and connection routes (get/patch/delete, test, disable, oauth/authorize) but has no `credential` PUT/DELETE route (0 mentions of "credential"), so the web client cannot yet set manual credentials through the Gateway (Gateway is partner-owned: handoff needed).
+Gateway exposure: [gateway openapi](../../../packages/contracts/http/gateway/openapi.yaml) lists workspace, member and connection routes (get/patch/delete, test, disable, credential PUT/DELETE, oauth/authorize, oauth/complete); 20 operations in total.
+
+Google connect (authenticated completion, WS-6): `authorize` stores the PKCE `code_verifier` only in the Redis pending state (`workspace:oauth-state:*`) and sends the S256 challenge to Google. The public callback never touches the database: it consumes the state and saves `{state, code}` in Redis (`workspace:oauth-completion:*`, GETDEL-equivalent Lua on consume) under a SecureRandom 256-bit base64url id. The web app, signed in, posts the id to `oauth/complete`; the code exchange, Google verification and credential write happen only there, with the provider calls outside the final DB transaction. A browser that follows an attacker's Google URL therefore cannot attach a victim's tokens to the attacker's connection.
 
 ## Events and messaging
 
@@ -133,7 +136,7 @@ Names and defaults only; see the [README table](../../../services/workspace-serv
 | --- | --- | --- |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` | port `5432` | Neon datasource (no default for the rest) |
 | `DB_SSL_MODE`, `DB_SCHEMA` | `require`, `workspace` | SSL mode; service schema |
-| `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | none (required) | Access verification key (>=32 bytes); refresh secret only for config parity |
+| `JWT_ACCESS_SECRET` | none (required) | Access verification key (>=32 bytes). Tokens must carry `user_status=ACTIVE`; DISABLED or missing -> 401. The refresh secret is not used here |
 | `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_CLOCK_SKEW` | `weav-identity`, `weav-api`, `30s` | JWT verification |
 | `WEAV_INTERNAL_SERVICE_KEY` | empty | Key accepted on Workspace internal routes |
 | `IDENTITY_SERVICE_URL`, `IDENTITY_INTERNAL_SERVICE_KEY` | `http://localhost:8081`, empty | Identity directory client |
@@ -149,6 +152,7 @@ Names and defaults only; see the [README table](../../../services/workspace-serv
 | `GOOGLE_OAUTH_REDIRECT_URI` | service `http://localhost:8080/oauth/google/callback`; Compose/.env.example `http://localhost:8082/oauth/google/callback` | Callback registered with Google |
 | `GOOGLE_OAUTH_FRONTEND_RETURN_URL` | service `http://localhost:3000/connections`; Compose/.env.example `http://localhost:5173/connections` | Post-consent redirect |
 | `GOOGLE_OAUTH_STATE_TTL` | `PT10M` | One-time state lifetime |
+| `GOOGLE_OAUTH_COMPLETION_TTL` | `PT5M` (1 s - 10 min) | Lifetime of the parked callback code before authenticated completion |
 
 ## Non-functional requirements
 

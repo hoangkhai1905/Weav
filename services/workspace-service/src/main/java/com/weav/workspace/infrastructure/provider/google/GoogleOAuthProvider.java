@@ -78,11 +78,15 @@ public final class GoogleOAuthProvider implements GoogleOAuthPort {
     }
 
     @Override
-    public String authorizationUrl(ConnectionProvider provider, String state) {
+    public String authorizationUrl(ConnectionProvider provider, String state, String codeChallenge) {
         List<String> scopes = scopePolicy.requiredScopes(provider);
         requireConfiguredClient();
         if (!isSafeState(state)) {
             throw new BadRequestException("Google authorization state is invalid");
+        }
+        if (!isSafeState(codeChallenge)) {
+            // An S256 challenge is base64url(SHA-256) = 43 chars, the same shape as the state.
+            throw new BadRequestException("Google authorization code challenge is invalid");
         }
         StringBuilder url = new StringBuilder(endpoints.authorization().toString()).append('?');
         appendQuery(url, "client_id", properties.clientId());
@@ -90,6 +94,8 @@ public final class GoogleOAuthProvider implements GoogleOAuthPort {
         appendQuery(url, "response_type", "code");
         appendQuery(url, "scope", String.join(" ", scopes));
         appendQuery(url, "state", state);
+        appendQuery(url, "code_challenge", codeChallenge);
+        appendQuery(url, "code_challenge_method", "S256");
         appendQuery(url, "access_type", "offline");
         appendQuery(url, "include_granted_scopes", "true");
         appendQuery(url, "prompt", "consent");
@@ -97,7 +103,7 @@ public final class GoogleOAuthProvider implements GoogleOAuthPort {
     }
 
     @Override
-    public GoogleOAuthTokenResponse exchangeAuthorizationCode(String authorizationCode) {
+    public GoogleOAuthTokenResponse exchangeAuthorizationCode(String authorizationCode, String codeVerifier) {
         requireConfiguredClient();
         if (!isValidAuthorizationCode(authorizationCode)) {
             throw new BadRequestException("Google authorization response is invalid");
@@ -106,6 +112,9 @@ public final class GoogleOAuthProvider implements GoogleOAuthPort {
         form.put("client_id", properties.clientId());
         form.put("client_secret", properties.clientSecret());
         form.put("code", authorizationCode);
+        if (codeVerifier != null) {
+            form.put("code_verifier", codeVerifier);
+        }
         form.put("grant_type", "authorization_code");
         form.put("redirect_uri", properties.redirectUri().toString());
 

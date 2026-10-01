@@ -4,6 +4,7 @@ import com.weav.workspace.application.port.out.TransactionRunner;
 import com.weav.workspace.application.port.out.AfterCommitExecutor;
 import com.weav.workspace.application.port.out.CredentialCryptoPort;
 import com.weav.workspace.application.port.out.GoogleOAuthPort;
+import com.weav.workspace.application.port.out.OAuthCompletionStore;
 import com.weav.workspace.application.port.out.OAuthStateStore;
 import com.weav.workspace.application.port.out.WorkflowConnectionUsagePort;
 import com.weav.workspace.application.notification.WorkspaceNotificationRecorder;
@@ -20,6 +21,7 @@ import com.weav.workspace.application.service.CredentialPayloadCodec;
 import com.weav.workspace.domain.policy.WorkspaceAuthorizationPolicy;
 import com.weav.workspace.domain.port.out.WorkspaceAuthorizationCache;
 import com.weav.workspace.infrastructure.cache.RedisWorkspaceAuthorizationCache;
+import com.weav.workspace.infrastructure.cache.RedisOAuthCompletionStore;
 import com.weav.workspace.infrastructure.cache.RedisOAuthStateStore;
 import com.weav.workspace.infrastructure.cache.WorkspaceAuthorizationCacheProperties;
 import com.weav.workspace.infrastructure.credential.AesGcmCredentialCrypto;
@@ -40,6 +42,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.boot.amqp.autoconfigure.RabbitTemplateCustomizer;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -268,6 +271,18 @@ public class WorkspaceApplicationConfig {
             ObjectMapper objectMapper,
             GoogleOAuthProperties properties) {
         return new RedisOAuthStateStore(redis, objectMapper, properties.stateTtl());
+    }
+
+    @Bean
+    public OAuthCompletionStore oauthCompletionStore(
+            StringRedisTemplate redis,
+            ObjectMapper objectMapper,
+            @Value("${weav.google.oauth.completion-ttl:PT5M}") Duration completionTtl) {
+        // Short on purpose: Google codes expire after ~10 minutes and the browser hop takes seconds.
+        if (completionTtl.compareTo(Duration.ofSeconds(1)) < 0 || completionTtl.compareTo(Duration.ofMinutes(10)) > 0) {
+            throw new IllegalStateException("weav.google.oauth.completion-ttl must be between PT1S and PT10M");
+        }
+        return new RedisOAuthCompletionStore(redis, objectMapper, completionTtl);
     }
 
     @Bean

@@ -58,14 +58,21 @@ subject is the only user identity used by the application.
 | `POST` | `/workspaces/{workspaceId}/connections/{connectionId}/test` | `200` provider verification result |
 | `POST` | `/workspaces/{workspaceId}/connections/{connectionId}/disable` | `200` after manual disable |
 | `POST` | `/workspaces/{workspaceId}/connections/{connectionId}/oauth/authorize` | `200` server-built Google authorization URL |
-| `GET` | `/oauth/google/callback` | `302` to the configured frontend return URL |
+| `POST` | `/workspaces/{workspaceId}/connections/{connectionId}/oauth/complete` | `200` verification result after the initiating user submits the single-use completion id |
+| `GET` | `/oauth/google/callback` | `302` to the configured frontend return URL with `oauth=pending&completion=<id>&connectionId=<id>` |
 | `POST` | `/internal/workspaces/{workspaceId}/connections/{connectionId}/authorize-attachment` | `204` when the member may attach the connection |
 | `POST` | `/internal/workspaces/{workspaceId}/connections/{connectionId}/resolve` | `200` minimum runtime auth for an ACTIVE connection |
 | `POST` | `/internal/workspaces/{workspaceId}/connections/{connectionId}/auth-failure` | `204` after confirmed provider authentication rejection |
 
 The callback is the only unauthenticated application route. It consumes
-server-stored OAuth state once and redirects only to the configured frontend
-URL with an allow-listed result; invalid state omits `connectionId`. All other
+server-stored OAuth state once, stores no credential, and redirects only to the
+configured frontend URL with an allow-listed result; invalid state omits
+`connectionId`. On success it parks the Google code in Redis under a random
+single-use completion id; the signed-in initiating user then posts it to
+`.../oauth/complete`, which atomically consumes it, requires the same user,
+workspace and connection (any mismatch returns the same `409` as an unknown or
+replayed id), and only then exchanges the code (PKCE) and persists the
+encrypted credential. The PKCE verifier lives only in the Redis state. All other
 public routes require a user JWT. The internal Connection routes require
 `X-Internal-Service-Key`; the resolve response contains runtime secrets, is
 marked `Cache-Control: no-store`, and never returns a Google refresh token.
@@ -133,8 +140,8 @@ behind the same authorization boundary.
 ## Authentication, errors, and correlation
 
 Workspace verifies Identity access JWTs locally with the configured HS256 key,
-issuer, audience, access-token use, UUID identity claims, status/role claims,
-and time claims. It verifies access tokens only; Workspace does not implement
+issuer, audience, access-token use, UUID identity claims, role claims, an
+`ACTIVE` user status (DISABLED or missing is a 401), and time claims. It verifies access tokens only; Workspace does not implement
 login, refresh-token issuance, or refresh-token rotation.
 
 Every response carries `X-Correlation-Id`. A bounded incoming value is reused;
@@ -255,7 +262,6 @@ variables.
 | `WEAV_INTERNAL_SERVICE_KEY` | Key accepted by Workspace's Workflow-facing internal endpoint |
 | `IDENTITY_CONNECT_TIMEOUT`, `IDENTITY_READ_TIMEOUT` | Finite Identity HTTP deadlines; defaults are `3s` and `5s` |
 | `JWT_ACCESS_SECRET` | Identity's HS256 access-token verification key; at least 32 UTF-8 bytes |
-| `JWT_REFRESH_SECRET` | Required for shared configuration compatibility; Workspace does not issue refresh tokens |
 | `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_CLOCK_SKEW` | JWT verification metadata; defaults are `weav-identity`, `weav-api`, and `30s` |
 | `REDIS_URL` | Redis/Valkey URI; direct-run default is `redis://localhost:6379` |
 | `WORKSPACE_AUTHORIZATION_CACHE_TTL` | Authorization snapshot TTL; defaults to `PT5M` |
@@ -273,6 +279,7 @@ variables.
 | `GOOGLE_OAUTH_REDIRECT_URI` | Server-owned Google callback URI; defaults to `http://localhost:8080/oauth/google/callback` |
 | `GOOGLE_OAUTH_FRONTEND_RETURN_URL` | Server-configured frontend return URL; defaults to `http://localhost:3000/connections` |
 | `GOOGLE_OAUTH_STATE_TTL` | One-time Redis OAuth state lifetime; defaults to `PT10M` |
+| `GOOGLE_OAUTH_COMPLETION_TTL` | Lifetime of the parked callback code before authenticated completion; defaults to `PT5M`, range `PT1S`–`PT10M` |
 | `WORKFLOW_SERVICE_URL` | Workflow usage API base URL; direct-run default is `http://localhost:8082`, while Compose uses `http://workflow-service:8080` |
 | `WORKFLOW_INTERNAL_SERVICE_KEY` | Key Workspace sends to Workflow's internal usage endpoint; keep it in a secret manager and configure the matching Workflow-side key |
 | `WORKFLOW_CONNECT_TIMEOUT`, `WORKFLOW_READ_TIMEOUT` | Finite Workflow HTTP deadlines; defaults are `3s` and `5s` |

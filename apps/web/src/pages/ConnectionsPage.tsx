@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { LoaderCircle, Plus, RefreshCw, X } from "lucide-react";
 import {
   ConnectionApiError,
+  connectionApi,
   type ConnectionResponse,
   type ConnectionStatus,
   type GoogleProvider,
@@ -28,6 +29,7 @@ import { useNotificationMilestoneRefresh } from "../hooks/useNotificationMilesto
 
 const OAUTH_PENDING_CONTEXT_KEY = "weav.workspaceConnectionOAuth.pending";
 const OAUTH_PENDING_CONTEXT_MAX_AGE_MS = 10 * 60 * 1000;
+const OAUTH_COMPLETION_ID_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
 
 interface OAuthPendingContext {
   userId: string;
@@ -74,6 +76,7 @@ function getOAuthNoticeKey(state: unknown): string | null {
   const key = (state as { oauthNoticeKey?: unknown }).oauthNoticeKey;
   const allowedKeys = new Set([
     "connections.oauth.returned",
+    "connections.oauth.completing",
     "connections.oauth.context_missing",
     "connections.oauth.failed_generic",
     ...Object.values(OAUTH_FAILURE_KEYS),
@@ -364,6 +367,7 @@ export function ConnectionsPage() {
     const reason = params.get("reason") ?? "";
     const callbackAllowsRestore =
       outcome === "success" ||
+      outcome === "pending" ||
       (outcome === "failed" &&
         reason !== "state_invalid" &&
         Object.hasOwn(OAUTH_FAILURE_KEYS, reason));
@@ -394,6 +398,50 @@ export function ConnectionsPage() {
         ),
         exact: true,
       });
+    }
+
+    if (outcome === "pending") {
+      // The URL carries a single-use secret: clear it now and keep it in memory only.
+      const completion = params.get("completion") ?? "";
+      if (!pendingIsValid || !pending || !OAUTH_COMPLETION_ID_PATTERN.test(completion)) {
+        navigate("/connections", {
+          replace: true,
+          state: { oauthNoticeKey: "connections.oauth.context_missing" },
+        });
+        return;
+      }
+      const { workspaceId, connectionId } = pending;
+      navigate("/connections", {
+        replace: true,
+        state: { oauthNoticeKey: "connections.oauth.completing" },
+      });
+      void connectionApi
+        .completeGoogleOAuth(workspaceId, connectionId, completion)
+        .then((result) =>
+          result.outcome === "VERIFIED"
+            ? "connections.oauth.returned"
+            : "connections.oauth.verification_failed",
+        )
+        .catch((error: unknown) =>
+          error instanceof ConnectionApiError && error.status === 409
+            ? "connections.oauth.state_invalid"
+            : "connections.oauth.failed_generic",
+        )
+        .then((finalKey) => {
+          void queryClient.invalidateQueries({
+            queryKey: connectionKeys.list(userId, workspaceId),
+            exact: true,
+          });
+          void queryClient.invalidateQueries({
+            queryKey: connectionKeys.detail(userId, workspaceId, connectionId),
+            exact: true,
+          });
+          navigate("/connections", {
+            replace: true,
+            state: { oauthNoticeKey: finalKey },
+          });
+        });
+      return;
     }
 
     const noticeKey =

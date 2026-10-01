@@ -5,6 +5,7 @@ import com.weav.workspace.application.dto.ConnectionTestResult;
 import com.weav.workspace.application.dto.CreateConnectionCommand;
 import com.weav.workspace.application.dto.SaveCredentialCommand;
 import com.weav.workspace.application.dto.UpdateConnectionCommand;
+import com.weav.workspace.application.usecase.CompleteConnectionOAuthUseCase;
 import com.weav.workspace.application.usecase.CreateConnectionUseCase;
 import com.weav.workspace.application.usecase.DeleteConnectionUseCase;
 import com.weav.workspace.application.usecase.DeleteCredentialUseCase;
@@ -16,6 +17,7 @@ import com.weav.workspace.application.usecase.StartConnectionOAuthUseCase;
 import com.weav.workspace.application.usecase.TestConnectionUseCase;
 import com.weav.workspace.application.usecase.UpdateConnectionUseCase;
 import com.weav.workspace.infrastructure.security.JwtActor;
+import com.weav.workspace.presentation.http.request.CompleteOAuthRequest;
 import com.weav.workspace.presentation.http.request.CreateConnectionRequest;
 import com.weav.workspace.presentation.http.request.SaveCredentialRequest;
 import com.weav.workspace.presentation.http.request.UpdateConnectionRequest;
@@ -54,6 +56,7 @@ public final class ConnectionController {
     private final TestConnectionUseCase testConnection;
     private final DisableConnectionUseCase disableConnection;
     private final StartConnectionOAuthUseCase startOAuth;
+    private final CompleteConnectionOAuthUseCase completeOAuth;
 
     public ConnectionController(
             CreateConnectionUseCase createConnection,
@@ -65,7 +68,8 @@ public final class ConnectionController {
             DeleteCredentialUseCase deleteCredential,
             TestConnectionUseCase testConnection,
             DisableConnectionUseCase disableConnection,
-            StartConnectionOAuthUseCase startOAuth) {
+            StartConnectionOAuthUseCase startOAuth,
+            CompleteConnectionOAuthUseCase completeOAuth) {
         this.createConnection = createConnection;
         this.listConnections = listConnections;
         this.getConnection = getConnection;
@@ -76,6 +80,7 @@ public final class ConnectionController {
         this.testConnection = testConnection;
         this.disableConnection = disableConnection;
         this.startOAuth = startOAuth;
+        this.completeOAuth = completeOAuth;
     }
 
     @PostMapping
@@ -171,5 +176,18 @@ public final class ConnectionController {
                 .cacheControl(CacheControl.noStore())
                 .body(OAuthAuthorizationHttpResponse.from(
                         startOAuth.execute(JwtActor.userId(jwt), workspaceId, connectionId)));
+    }
+
+    /** Binds the browser that returned from Google to the user who started the flow. */
+    @PostMapping("/{connectionId}/oauth/complete")
+    public ResponseEntity<ConnectionTestResult> completeGoogle(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID connectionId,
+            @AuthenticationPrincipal Jwt jwt,
+            @Valid @RequestBody CompleteOAuthRequest request) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(completeOAuth.completeAuthenticated(
+                        JwtActor.userId(jwt), workspaceId, connectionId, request.completion()));
     }
 }

@@ -102,6 +102,11 @@ const updateConnectionBodySchema = z
       (body.config !== undefined && body.config !== null),
   );
 
+// Opaque single-use completion id issued by Workspace's Google callback redirect.
+const completeOAuthBodySchema = z
+  .object({ completion: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/) })
+  .strict();
+
 // Write-only provider secrets; Workspace validates provider-specific fields.
 const saveCredentialBodySchema = z
   .object({
@@ -404,6 +409,25 @@ export class WorkspaceController {
       request,
       reply,
       `/${workspace}/connections/${connection}/oauth/authorize`,
+    );
+  }
+
+  @Post(':workspaceId/connections/:connectionId/oauth/complete')
+  completeConnectionOAuth(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('connectionId') rawConnectionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const connection = workspaceId(rawConnectionId);
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/${workspace}/connections/${connection}/oauth/complete`,
+      { body: parse(completeOAuthBodySchema, body) },
     );
   }
 }

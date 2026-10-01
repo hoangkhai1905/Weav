@@ -76,6 +76,7 @@ Upstream paths drop the `/api` or `/api/v1` prefix except Notification. Auth: Pu
 | POST, GET | `.../{workspaceId}/connections` | Workspace | Required |
 | GET, PATCH, DELETE | `.../connections/{connectionId}` | Workspace | Required |
 | POST | `.../connections/{connectionId}/test`, `/disable`, `/oauth/authorize` | Workspace | Required |
+| POST | `.../connections/{connectionId}/oauth/complete` (strict body `{completion}`, `^[A-Za-z0-9_-]{32,128}$`) | Workspace | Required |
 | PUT, DELETE | `.../connections/{connectionId}/credential` | Workspace | Required |
 | POST, GET | `/api/v1/workspaces/{workspaceId}/workflows` | Workflow `/workspaces/{id}/workflows` | Required |
 | GET | `.../workflows/{workflowId}` | Workflow | Required |
@@ -92,7 +93,7 @@ Not routed (by design or pending): Workspace internal routes, Google OAuth callb
 Common errors: 400 validation, 401 missing/invalid bearer, 413 body too large (Identity 16 KiB, avatar 2 MiB + 64 KiB, Workflow 1 MiB, generate 32 KiB), 429 with `Retry-After`, 502 invalid upstream response, 503 upstream unavailable/timeout (`OCR_BUSY` for OCR). Downstream business errors (401/403/404/409/422) pass through unchanged.
 
 ### Contracts
-- Public Workspace surface: [gateway openapi.yaml](../../../packages/contracts/http/gateway/openapi.yaml) and [README](../../../packages/contracts/http/gateway/README.md) (19 operations only).
+- Public Workspace surface: [gateway openapi.yaml](../../../packages/contracts/http/gateway/openapi.yaml) and [README](../../../packages/contracts/http/gateway/README.md) (20 operations only).
 - Workflow: [workflow openapi.yaml](../../../packages/contracts/http/workflow/openapi.yaml) (upstream contract, includes `generate` and `/webhooks/{endpointKey}`).
 - Notification v2: [notifications-v2.md](../../../packages/contracts/http/notifications-v2.md). Identity: `packages/contracts/http/auth`. OCR: `packages/contracts/http/ocr`.
 - Identity, Notification, Workflow and OCR routes have no Gateway OpenAPI document.

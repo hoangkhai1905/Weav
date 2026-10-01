@@ -22,7 +22,6 @@ class JwtAccessTokenValidatorTest {
 
     private final JwtProperties properties = new JwtProperties(
             "weav-test-access-secret-0123456789abcdef",
-            "weav-test-refresh-secret-0123456789abcdef",
             "weav-identity",
             "weav-api",
             Duration.ofMinutes(15),
@@ -50,6 +49,29 @@ class JwtAccessTokenValidatorTest {
         assertTrue(validator.validate(token(
                 "access", USER_ID.toString(), NOW.minusSeconds(1), NOW.plusSeconds(60), "SUPERUSER", "ACTIVE"))
                 .hasErrors());
+    }
+
+    @Test
+    void rejectsDisabledAndUnknownUserStatus() {
+        for (String status : new String[] {"DISABLED", "SUSPENDED", ""}) {
+            assertTrue(validator.validate(token(
+                    "access", USER_ID.toString(), NOW.minusSeconds(1), NOW.plusSeconds(60), "USER", status))
+                    .hasErrors(), status);
+        }
+    }
+
+    @Test
+    void rejectsMissingUserStatus() {
+        Jwt valid = token("access", USER_ID.toString(), NOW.minusSeconds(1), NOW.plusSeconds(60));
+        Jwt withoutStatus = Jwt.withTokenValue("test-token")
+                .headers(h -> h.putAll(valid.getHeaders()))
+                .claims(c -> {
+                    c.putAll(valid.getClaims());
+                    c.remove(JwtAccessTokenValidator.USER_STATUS_CLAIM);
+                })
+                .build();
+        assertFalse(validator.validate(valid).hasErrors());
+        assertTrue(validator.validate(withoutStatus).hasErrors());
     }
 
     private Jwt token(String tokenUse, String subject, Instant issuedAt, Instant expiresAt) {

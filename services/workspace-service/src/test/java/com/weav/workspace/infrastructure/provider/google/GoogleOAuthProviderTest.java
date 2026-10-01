@@ -38,6 +38,8 @@ class GoogleOAuthProviderTest {
 
     private static final String CLIENT_ID = "synthetic-google-client-id";
     private static final String CLIENT_SECRET = "synthetic-google-client-secret";
+    private static final String CHALLENGE = "C".repeat(43);
+    private static final String VERIFIER = "V".repeat(64);
     private static final String ACCESS_TOKEN = "synthetic-access-token";
     private static final String REFRESH_TOKEN = "synthetic-refresh-token";
     private static final String GMAIL_SCOPES =
@@ -65,7 +67,7 @@ class GoogleOAuthProviderTest {
 
     @Test
     void authorizationUrlUsesConfiguredRedirectAndExactLeastPrivilegeScopes() {
-        String gmailUrl = provider().authorizationUrl(ConnectionProvider.GMAIL, "A".repeat(43));
+        String gmailUrl = provider().authorizationUrl(ConnectionProvider.GMAIL, "A".repeat(43), CHALLENGE);
         Map<String, String> gmail = query(URI.create(gmailUrl).getRawQuery());
 
         assertThat(URI.create(gmailUrl).getRawPath()).isEqualTo("/authorize");
@@ -74,6 +76,8 @@ class GoogleOAuthProviderTest {
                 .containsEntry("response_type", "code")
                 .containsEntry("scope", GMAIL_SCOPES)
                 .containsEntry("state", "A".repeat(43))
+                .containsEntry("code_challenge", CHALLENGE)
+                .containsEntry("code_challenge_method", "S256")
                 .containsEntry("access_type", "offline")
                 .containsEntry("include_granted_scopes", "true")
                 .containsEntry("prompt", "consent");
@@ -81,12 +85,14 @@ class GoogleOAuthProviderTest {
         assertThat(gmail.get("scope")).doesNotContain("gmail.readonly", "mail.google.com", "drive");
 
         Map<String, String> sheets = query(URI.create(provider()
-                .authorizationUrl(ConnectionProvider.GOOGLE_SHEETS, "B".repeat(43))).getRawQuery());
+                .authorizationUrl(ConnectionProvider.GOOGLE_SHEETS, "B".repeat(43), CHALLENGE)).getRawQuery());
         assertThat(sheets.get("scope")).isEqualTo(SHEETS_SCOPES)
                 .doesNotContain("drive");
-        assertThat(provider().authorizationUrl(ConnectionProvider.GMAIL, "A".repeat(43)))
+        assertThat(provider().authorizationUrl(ConnectionProvider.GMAIL, "A".repeat(43), CHALLENGE))
                 .doesNotContain(CLIENT_SECRET);
-        assertThatThrownBy(() -> provider().authorizationUrl(ConnectionProvider.GMAIL, "bad state"))
+        assertThatThrownBy(() -> provider().authorizationUrl(ConnectionProvider.GMAIL, "bad state", CHALLENGE))
+                .isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> provider().authorizationUrl(ConnectionProvider.GMAIL, "A".repeat(43), "short"))
                 .isInstanceOf(BadRequestException.class);
     }
 
@@ -94,7 +100,7 @@ class GoogleOAuthProviderTest {
     void exchangesCodeThroughConfiguredClientAndRejectsMissingRefreshTokenSafely() {
         respond("/token", 200, tokenJson(GMAIL_SCOPES));
 
-        GoogleOAuthTokenResponse tokens = provider().exchangeAuthorizationCode("synthetic-code");
+        GoogleOAuthTokenResponse tokens = provider().exchangeAuthorizationCode("synthetic-code", VERIFIER);
 
         assertThat(tokens.accessToken()).isEqualTo(ACCESS_TOKEN);
         assertThat(tokens.refreshToken()).isEqualTo(REFRESH_TOKEN);
@@ -112,11 +118,12 @@ class GoogleOAuthProviderTest {
                 .containsEntry("client_secret", CLIENT_SECRET)
                 .containsEntry("code", "synthetic-code")
                 .containsEntry("grant_type", "authorization_code")
+                .containsEntry("code_verifier", VERIFIER)
                 .containsEntry("redirect_uri", "http://localhost:8080/oauth/google/callback");
 
         requests.clear();
         respond("/token", 200, "{\"access_token\":\"new-access\",\"token_type\":\"Bearer\",");
-        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("synthetic-code"))
+        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("synthetic-code", VERIFIER))
                 .isInstanceOf(DependencyUnavailableException.class)
                 .hasMessage("A required dependency is temporarily unavailable");
 
@@ -124,7 +131,7 @@ class GoogleOAuthProviderTest {
         respond("/token", 200,
                 "{\"access_token\":\"new-access\",\"token_type\":\"Bearer\","
                         + "\"expires_in\":3600,\"scope\":\"" + GMAIL_SCOPES + "\"}");
-        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("synthetic-code"))
+        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("synthetic-code", VERIFIER))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("Google did not issue an offline refresh token; reconnect and grant access");
         assertThat(requests).hasSize(1);
@@ -135,7 +142,7 @@ class GoogleOAuthProviderTest {
         respond("/token", 400,
                 "{\"error\":\"invalid_grant\",\"error_description\":\"synthetic-code "
                         + CLIENT_SECRET + "\"}");
-        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("synthetic-code"))
+        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("synthetic-code", VERIFIER))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessage("Google authorization response is invalid or expired")
                 .hasMessageNotContaining("synthetic-code")
@@ -144,7 +151,7 @@ class GoogleOAuthProviderTest {
 
         requests.clear();
         respond("/token", 503, "synthetic-code " + CLIENT_SECRET);
-        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("synthetic-code"))
+        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("synthetic-code", VERIFIER))
                 .isInstanceOf(DependencyUnavailableException.class)
                 .hasMessageNotContaining("synthetic-code")
                 .hasMessageNotContaining(CLIENT_SECRET);
@@ -154,7 +161,7 @@ class GoogleOAuthProviderTest {
                 "{\"access_token\":\"a\",\"access_token\":\"b\",\"refresh_token\":\"r\","
                         + "\"token_type\":\"Bearer\",\"expires_in\":3600,\"scope\":\""
                         + GMAIL_SCOPES + "\"}");
-        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("synthetic-code"))
+        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("synthetic-code", VERIFIER))
                 .isInstanceOf(DependencyUnavailableException.class)
                 .hasMessageNotContaining("synthetic-code")
                 .hasMessageNotContaining(CLIENT_SECRET)
@@ -162,7 +169,7 @@ class GoogleOAuthProviderTest {
 
         requests.clear();
         respond("/token", 200, tokenJson(GMAIL_SCOPES) + " {}");
-        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("synthetic-code"))
+        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("synthetic-code", VERIFIER))
                 .isInstanceOf(DependencyUnavailableException.class);
     }
 
@@ -310,7 +317,7 @@ class GoogleOAuthProviderTest {
     @Test
     void rejectsOversizedResponsesAndInvalidAuthorizationInputWithSanitizedFailures() {
         respond("/token", 200, tokenJson(GMAIL_SCOPES));
-        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("bad\ncode"))
+        assertThatThrownBy(() -> provider().exchangeAuthorizationCode("bad\ncode", VERIFIER))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageNotContaining("bad");
         assertThat(requests).isEmpty();

@@ -921,12 +921,12 @@ class WorkspaceNotificationRuntimeIntegrationTest {
         GoogleOAuthPort localGoogleOAuthPort() {
             return new GoogleOAuthPort() {
                 @Override
-                public String authorizationUrl(ConnectionProvider provider, String state) {
+                public String authorizationUrl(ConnectionProvider provider, String state, String codeChallenge) {
                     return "https://oauth-fixture.test/authorize?state=" + state;
                 }
 
                 @Override
-                public GoogleOAuthTokenResponse exchangeAuthorizationCode(String authorizationCode) {
+                public GoogleOAuthTokenResponse exchangeAuthorizationCode(String authorizationCode, String codeVerifier) {
                     return new GoogleOAuthTokenResponse(
                             "synthetic-access-token",
                             "synthetic-refresh-token",
