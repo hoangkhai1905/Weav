@@ -46,7 +46,7 @@ public final class GoogleSheetsNodeExecutor implements NodeExecutor {
         ResolvedConnection connection = resolveConnection(context, request.connectionId());
         if (connection == null) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
-                    "The Google Sheets connection is unavailable.", true);
+                    "The Google Sheets connection is unavailable.", true, true);
         }
 
         try {
@@ -172,10 +172,10 @@ public final class GoogleSheetsNodeExecutor implements NodeExecutor {
                     "The Google Sheets connection is not available to this workspace.", false);
         } catch (WorkspaceDependencyUnavailableException exception) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
-                    "The connection service is unavailable.", true);
+                    "The connection service is unavailable.", true, true);
         } catch (RuntimeException exception) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
-                    "The connection service is unavailable.", true);
+                    "The connection service is unavailable.", true, true);
         }
     }
 

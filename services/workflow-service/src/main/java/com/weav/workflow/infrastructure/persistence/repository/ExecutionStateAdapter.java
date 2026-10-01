@@ -5,6 +5,7 @@ import com.weav.workflow.application.port.out.ExecutionStatePort;
 import com.weav.workflow.application.notification.WorkflowNotificationEvent;
 import com.weav.workflow.application.port.out.WorkflowNotificationOutboxPort;
 import com.weav.workflow.domain.definition.JsonValues;
+import com.weav.workflow.domain.definition.NodeSideEffects;
 import com.weav.workflow.domain.definition.WorkflowDefinition;
 import com.weav.workflow.domain.execution.GraphState;
 import com.weav.workflow.domain.model.aggregate.execution.ExecutionLog;
@@ -51,6 +52,9 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     private static final int MAX_LEASE_MILLIS = 86_400_000;
     private static final String LEGACY_ERROR = "{\"code\":\"LEGACY_STATE_UNRECOVERABLE\","
             + "\"message\":\"Persisted execution state could not be recovered.\"}";
+    private static final String OUTCOME_UNKNOWN_ERROR = "{\"code\":\"OUTCOME_UNKNOWN\","
+            + "\"message\":\"The worker stopped while this step was calling an external service. "
+            + "The call may or may not have happened, so it was not repeated.\"}";
     private static final String INTERRUPTED_ERROR = "{\"code\":\"WORKER_INTERRUPTED\","
             + "\"message\":\"The worker stopped before the node attempt completed.\"}";
 
@@ -527,6 +531,26 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     }
 
     private void recordInterruptedAttempts(UUID executionId) {
+        // Side-effecting nodes (derived from the stored node type and config) must not be re-run blindly:
+        // the external call may already have happened, so they fail with OUTCOME_UNKNOWN instead of retrying.
+        List<UUID> outcomeUnknown = jdbc.query("""
+                SELECT id, node_type, input::text AS input_json FROM %s
+                WHERE execution_id = ? AND status = 'RUNNING'
+                """.formatted(nodeTable), (rs, rowNum) -> NodeSideEffects.isSideEffecting(
+                        rs.getString("node_type"), jsonObject(rs.getString("input_json")))
+                        ? rs.getObject("id", UUID.class) : null, executionId).stream()
+                .filter(Objects::nonNull).toList();
+        for (UUID nodeId : outcomeUnknown) {
+            jdbc.update("""
+                    UPDATE %s SET status = 'FAILED', error = CAST(? AS jsonb), finished_at = CURRENT_TIMESTAMP
+                    WHERE node_execution_id = ? AND status = 'RUNNING'
+                    """.formatted(attemptTable), OUTCOME_UNKNOWN_ERROR, nodeId);
+            jdbc.update("""
+                    UPDATE %s SET status = 'FAILED', error = CAST(? AS jsonb),
+                        next_attempt_at = NULL, finished_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND status = 'RUNNING'
+                    """.formatted(nodeTable), OUTCOME_UNKNOWN_ERROR, nodeId);
+        }
         jdbc.update("""
                 UPDATE %s a SET status = 'FAILED', error = CAST(? AS jsonb), finished_at = CURRENT_TIMESTAMP
                 FROM %s n

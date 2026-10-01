@@ -115,7 +115,55 @@ Test mới: (a) cùng key hai lần = 1 execution, cùng `Admission` (kể cả 
 
 1. Review diff, chạy GitNexus `detect_changes` rồi commit (chưa commit theo yêu cầu).
 2. Gateway: chuyển tiếp header `Idempotency-Key`, cho phép trong CORS (handoff GW-1).
-3. WF-2 (recovery chạy lại node có side effect), ID/WS còn lại thuộc các finding khác.
+3. WF-2/WF-5/WF-6/WF-7: xem mục 12 (lane A2). ID/WS còn lại thuộc các finding khác.
+
+## 12. Lane A2: WF-2 / WF-7 / WF-5 / WF-6 (engine thực thi)
+
+Trạng thái: hoàn thành, chưa commit. Không có migration và không đổi contract (OpenAPI giữ nguyên).
+
+### 12.1. Quyết định
+
+| Vấn đề | Quyết định | Lý do |
+| --- | --- | --- |
+| Lưu cờ side-effect | Suy ra lúc recovery từ `node_type` + `input` (config thô được runner ghi vào `node_executions.input` trước khi gọi provider), qua `NodeSideEffects` | Đơn giản hơn thêm cột `side_effecting` + migration; không có dữ liệu mới cần backfill; một hàm duy nhất cho runner và recovery |
+| Node side-effecting bị gián đoạn | `FAILED` với `OUTCOME_UNKNOWN` (không retry), run fail với đúng lỗi này | Tránh gửi trùng Gmail/HTTP POST |
+| Retry an toàn | Retry khi executor đánh dấu retryable VÀ (node chỉ đọc, hoặc `http.request` có `Idempotency-Key` ổn định, hoặc lỗi chắc chắn xảy ra trước khi request có hiệu lực: `Failure.requestNotSent`) | Gmail/Sheets ghi không có key chỉ retry với lỗi connect/DNS/429 |
+| Lease vs timeout node | Giữ lease 60 s | Heartbeat chạy trên timer thread riêng, không phụ thuộc thời gian node; lease chỉ cần sống qua các lần heartbeat bị lỡ (15 s). Tăng lease chỉ làm chậm recovery khi crash |
+
+### 12.2. Thay đổi
+
+| Loại | File | Nội dung |
+| --- | --- | --- |
+| Thêm | `domain/definition/NodeSideEffects.java` | Phân loại: HTTP method ngoài GET/HEAD/OPTIONS (hoặc method là mapping/thiếu) = side-effecting; `email.send`, `telegram.send_message`, `google.sheets` append/update, type lạ = side-effecting; `google.sheets` read, `logic.condition`, `ai.*`, `ocr.extract`, `trigger.*` = chỉ đọc |
+| Sửa | `ExecutionStateAdapter.recordInterruptedAttempts` | Node RUNNING side-effecting -> node và attempt `FAILED` + `OUTCOME_UNKNOWN`, `next_attempt_at = NULL`; node chỉ đọc giữ hành vi cũ (WAITING, tối đa 3 attempt) |
+| Sửa | `ExecutionRunner` | Node `FAILED` do recovery làm run fail với lỗi của node (không còn "could not make progress"); `shouldRetry` mới theo bảng an toàn; bỏ `httpStatus()` (code chết); mất lease thì `future.cancel(true)` mọi node đang chạy (trong `finally`); `pollCompletion` thức mỗi 1 s để phát hiện mất lease thay vì chặn ở `take()`; constructor mới nhận `RetryPolicy` |
+| Sửa | `RetryPolicy` | Thêm `HTTP_TIMEOUT`, `HTTP_RATE_LIMITED`, `HTTP_DEPENDENCY_UNAVAILABLE`, `CONNECTION_UNAVAILABLE`, `OCR_UNAVAILABLE` vào mã tạm thời; `retryable(String)` (bỏ nhánh status 429/5xx chết); jitter +/-50% qua `DoubleSupplier` được inject; `baseDelayAfter` giữ 1 s/2 s |
+| Sửa | `NodeExecutor.Failure` | Thêm cờ `requestNotSent` (constructor 4 tham số, constructor cũ giữ nguyên) |
+| Sửa | `HttpRequestNodeExecutor` | Method không an toàn gửi `Idempotency-Key: <executionId>:<nodeId>` (ổn định giữa các attempt), giữ nguyên key do người dùng đặt; đánh dấu `requestNotSent` cho `CONNECTION_UNAVAILABLE` và 429 |
+| Sửa | `PinnedHttpTransport` | Từ chối bắt đầu call khi thread đã bị interrupt (`WORKER_INTERRUPTED`, chưa gửi); `requestNotSent` cho lỗi connect/DNS/connect-timeout |
+| Sửa | `GmailNodeExecutor`, `GmailClient`, `GoogleSheetsNodeExecutor`, `GoogleSheetsClient` | `requestNotSent` cho `CONNECTION_UNAVAILABLE` và 429 |
+| Sửa | `docs/specs/services/workflow-service.md` | Ngữ nghĩa at-least-once so với outcome-unknown, phân loại retry, header idempotency, quan hệ lease/timeout |
+
+Phân loại node (side-effecting?): `http.request` GET/HEAD/OPTIONS = không; POST/PUT/PATCH/DELETE hoặc method mapping = có (retry vẫn an toàn nhờ key); `email.send` = có; `telegram.send_message` = có (node chưa có executor); `google.sheets` read = không, append/update = có; `logic.condition`, `ai.extract/classify/summarize`, `ocr.extract`, `trigger.*` = không.
+
+### 12.3. Kiểm tra
+
+| Lệnh | Kết quả |
+| --- | --- |
+| `JAVA_TOOL_OPTIONS=-Duser.timezone=UTC ./mvnw verify` (từ `services/workflow-service`) | BUILD SUCCESS; 458 test, 0 failure, 0 error (không xuất hiện lỗi môi trường đã biết) |
+| `git diff --check` | Sạch (chỉ cảnh báo CRLF có sẵn) |
+
+Test mới: (a) `ExecutionLeaseTest.anInterruptedSideEffectingNodeFailsWithOutcomeUnknown...` (POST bị gián đoạn = FAILED/OUTCOME_UNKNOWN, không có next attempt), test takeover cũ cho node GET vẫn WAITING; `ExecutionRunnerTest.anAlreadyFailedNodeFromRecovery...` (run fail, executor không được gọi); (b) `HttpRequestNodeExecutorTest`: POST/PUT/PATCH/DELETE có key ổn định qua 2 attempt, GET/HEAD/OPTIONS không có, key người dùng được giữ; (c) `ExecutionRunnerTest.retriesTransientFailuresOnlyWhen...`: HTTP_TIMEOUT/RATE_LIMITED/DEPENDENCY_UNAVAILABLE retry với node chỉ đọc và HTTP POST/PUT, không retry với `email.send` và Sheets append, có retry khi `requestNotSent`; `RetryPolicyTest` cập nhật; (d) `ExecutionRunnerTest.leaseLossCancelsInFlightNodeCalls...` (node bị interrupt trong vòng 5 s); (e) `RetryPolicyTest.jitterKeepsDelays...` (biên 0,5x..1,5x, deterministic qua random inject).
+
+Cập nhật test cũ: fixture của `ExecutionLeaseTest`/`ExecutionRecoveryTest` dùng `http.request` GET thay cho type giả `action.telegram`; `ExecutionRuntimeIntegrationTest` nới ngưỡng thời gian retry theo jitter (>= 0,4 s và >= 0,9 s).
+
+### 12.4. Thay đổi người dùng sẽ thấy / rủi ro
+
+- Run có node side-effecting bị gián đoạn nay fail với `OUTCOME_UNKNOWN` thay vì tự chạy lại; người dùng cần kiểm tra bên ngoài rồi chạy lại thủ công.
+- Provider không hỗ trợ `Idempotency-Key` vẫn có thể thực hiện lại POST khi retry sau timeout (header chỉ là hợp đồng với provider); node `http.request` method POST/PUT/PATCH/DELETE hiện được retry tối đa 3 lần cho 429/5xx/timeout.
+- Call socket đang chạy không bị ngắt bởi interrupt (Apache HttpClient blocking IO): kết quả bị bỏ vì commit bị fence, call tự kết thúc theo timeout (HTTP 30 s, AI 65 s); transport chỉ chặn được call mới.
+- Retry vẫn chờ trong listener (`retryWait...join()`, phần còn lại của WF-6: chuyển sang `next_attempt_at` + recovery) chưa làm.
+- GitNexus impact: `RetryPolicy` LOW (4); `HttpRequestNodeExecutor` CRITICAL (464, do đồ thị Spring/registry), `NodeExecutor` CRITICAL (34); thay đổi thuần cộng thêm, constructor cũ giữ nguyên; `ExecutionStateAdapter` UNKNOWN (inject qua `ExecutionStatePort`, đã xác nhận bằng grep).
 
 ## 13. Kết thúc session
 

@@ -244,6 +244,12 @@ public class PinnedHttpTransport {
         }
         AtomicBoolean deadlineExpired = new AtomicBoolean();
 
+        if (Thread.currentThread().isInterrupted()) {
+            // The run lost its lease and the node future was cancelled before anything was sent.
+            throw new NodeExecutor.Failure("WORKER_INTERRUPTED", "The worker stopped before the request was sent.",
+                    true, true);
+        }
+
         try (CloseableHttpClient client = HttpClients.custom()
                 .setConnectionManager(manager)
                 .setDefaultRequestConfig(requestConfig)
@@ -283,10 +289,10 @@ public class PinnedHttpTransport {
             throw timeoutFailure();
         } catch (IOException exception) {
             if (deadlineExpired.get() || isTimeout(exception)) {
-                throw timeoutFailure();
+                throw timeoutFailure(isConnectFailure(exception));
             }
             throw new NodeExecutor.Failure("HTTP_DEPENDENCY_UNAVAILABLE",
-                    "The HTTP provider could not be reached.", true);
+                    "The HTTP provider could not be reached.", true, isConnectFailure(exception));
         } catch (NodeExecutor.Failure failure) {
             throw failure;
         } catch (RuntimeException exception) {
@@ -503,7 +509,23 @@ public class PinnedHttpTransport {
     }
 
     private NodeExecutor.Failure timeoutFailure() {
-        return new NodeExecutor.Failure("HTTP_TIMEOUT", "The HTTP request timed out.", true);
+        return timeoutFailure(false);
+    }
+
+    private NodeExecutor.Failure timeoutFailure(boolean requestNotSent) {
+        return new NodeExecutor.Failure("HTTP_TIMEOUT", "The HTTP request timed out.", true, requestNotSent);
+    }
+
+    /** True when the failure happened while connecting (DNS, TCP, connect timeout), before any request bytes. */
+    private boolean isConnectFailure(IOException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof java.net.ConnectException || cause instanceof java.net.UnknownHostException
+                    || cause instanceof java.net.NoRouteToHostException
+                    || cause.getClass().getSimpleName().equals("ConnectTimeoutException")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isTimeout(IOException exception) {

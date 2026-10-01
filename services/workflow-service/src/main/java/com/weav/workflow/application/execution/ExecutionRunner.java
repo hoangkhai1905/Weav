@@ -7,6 +7,7 @@ import com.weav.workflow.application.port.out.RetryWaitPort;
 import com.weav.workflow.domain.definition.DefinitionValidator;
 import com.weav.workflow.domain.definition.JsonValues;
 import com.weav.workflow.domain.definition.NodeCatalog;
+import com.weav.workflow.domain.definition.NodeSideEffects;
 import com.weav.workflow.domain.definition.ValidationIssue;
 import com.weav.workflow.domain.definition.WorkflowDefinition;
 import com.weav.workflow.domain.execution.GraphState;
@@ -57,6 +58,7 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
     private static final Logger LOGGER = LoggerFactory.getLogger(ExecutionRunner.class);
     private static final Duration DEFAULT_LEASE = Duration.ofSeconds(60);
     private static final Duration DEFAULT_HEARTBEAT = Duration.ofSeconds(15);
+    private static final long LEASE_POLL_MILLIS = 1_000L;
 
     private final ExecutionStatePort state;
     private final NodeAttemptRunner attempts;
@@ -68,7 +70,7 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
     private final Duration leaseDuration;
     private final Duration heartbeatInterval;
     private final ReadinessPlanner planner = new ReadinessPlanner();
-    private final RetryPolicy retryPolicy = new RetryPolicy();
+    private final RetryPolicy retryPolicy;
     private final MappingResolver mappingResolver = new MappingResolver();
     private final AtomicBoolean accepting = new AtomicBoolean(true);
 
@@ -82,6 +84,22 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
             @Value("${weav.workflow.execution.max-concurrent-nodes:4}") int maxConcurrentNodes,
             @Value("${weav.workflow.execution.worker.lease-duration:PT60S}") Duration leaseDuration,
             @Value("${weav.workflow.execution.worker.heartbeat-interval:PT15S}") Duration heartbeatInterval) {
+        this(state, registry, retryWait, executor, timer, clock, maxConcurrentNodes, leaseDuration,
+                heartbeatInterval, new RetryPolicy());
+    }
+
+    public ExecutionRunner(
+            ExecutionStatePort state,
+            NodeExecutorRegistry registry,
+            RetryWaitPort retryWait,
+            ExecutorService executor,
+            ScheduledExecutorService timer,
+            Clock clock,
+            int maxConcurrentNodes,
+            Duration leaseDuration,
+            Duration heartbeatInterval,
+            RetryPolicy retryPolicy) {
+        this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
         this.state = Objects.requireNonNull(state, "state must not be null");
         this.attempts = new NodeAttemptRunner(Objects.requireNonNull(registry, "registry must not be null"));
         this.retryWait = Objects.requireNonNull(retryWait, "retryWait must not be null");
@@ -103,8 +121,9 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
     public ExecutionRunner(ExecutionStatePort state, NodeExecutorRegistry registry, RetryWaitPort retryWait,
                            ExecutorService executor, ScheduledExecutorService timer, Clock clock,
                            int maxConcurrentNodes) {
+        // Jitter is pinned to the midpoint so tests see the nominal 1 s / 2 s delays.
         this(state, registry, retryWait, executor, timer, clock, maxConcurrentNodes,
-                DEFAULT_LEASE, DEFAULT_HEARTBEAT);
+                DEFAULT_LEASE, DEFAULT_HEARTBEAT, new RetryPolicy(() -> 0.5));
     }
 
     @Override
@@ -117,15 +136,19 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
 
         AtomicBoolean leaseLost = new AtomicBoolean(false);
         ScheduledFuture<?> heartbeat = scheduleHeartbeat(lease, leaseLost);
+        Map<Future<NodeCompletion>, String> running = new LinkedHashMap<>();
         try {
-            runClaimed(lease, leaseLost);
+            runClaimed(lease, leaseLost, running);
         } finally {
+            // Another worker may claim the run as soon as the lease is gone; stop our in-flight calls first.
+            running.keySet().forEach(future -> future.cancel(true));
             heartbeat.cancel(false);
             state.release(lease);
         }
     }
 
-    private void runClaimed(ExecutionStatePort.Lease lease, AtomicBoolean leaseLost) {
+    private void runClaimed(ExecutionStatePort.Lease lease, AtomicBoolean leaseLost,
+                            Map<Future<NodeCompletion>, String> running) {
         ExecutionStatePort.Snapshot snapshot = state.load(lease);
         RuntimeState runtime = new RuntimeState(snapshot, lease.executionId());
         if (!initializeIfNeeded(lease, runtime, leaseLost)) {
@@ -133,9 +156,18 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
         }
 
         CompletionService<NodeCompletion> completions = new ExecutorCompletionService<>(executor);
-        Map<Future<NodeCompletion>, String> running = new LinkedHashMap<>();
         boolean failureSeen = false;
         Map<String, Object> failure = null;
+        // A node already FAILED by recovery (OUTCOME_UNKNOWN, exhausted attempts) fails the run with its error.
+        for (NodeExecution recovered : runtime.nodes.values()) {
+            if (recovered.getStatus() == NodeExecutionStatus.FAILED && recovered.getError() != null
+                    && recovered.getError().get("code") instanceof String code) {
+                failureSeen = true;
+                failure = error(code, String.valueOf(recovered.getError().get("message")));
+                runtime.error = failure;
+                break;
+            }
+        }
 
         while (accepting.get() && !leaseLost.get()) {
             promoteDueRetries(runtime, failureSeen);
@@ -171,7 +203,7 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
             }
 
             try {
-                CompletedNode completed = pollCompletion(completions, running, earliestRetry(runtime), runtime);
+                CompletedNode completed = pollCompletion(completions, running, earliestRetry(runtime), runtime, leaseLost);
                 if (completed == null) {
                     continue;
                 }
@@ -182,7 +214,7 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
                 }
                 if (!completion.outcome().succeeded()) {
                     NodeExecutor.Failure nodeFailure = completion.outcome().failure();
-                    if (!shouldRetry(nodeFailure, runtime.nodes.get(completion.nodeId()).getAttemptCount())) {
+                    if (!shouldRetry(runtime, completion.nodeId(), nodeFailure)) {
                         failureSeen = true;
                         failure = error(nodeFailure.code(), nodeFailure.safeMessage());
                         runtime.error = failure;
@@ -386,7 +418,7 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
         NodeExecutor.Failure failure = completion.outcome().failure();
         Map<String, Object> error = error(failure.code(), failure.safeMessage());
         attempt.fail(error, now);
-        boolean retry = shouldRetry(failure, node.getAttemptCount());
+        boolean retry = shouldRetry(runtime, node.getNodeId(), failure);
         NodeExecutionStatus status = retry ? NodeExecutionStatus.WAITING : NodeExecutionStatus.FAILED;
         Instant next = retry ? now.plus(retryPolicy.delayAfter(node.getAttemptCount())) : null;
         NodeExecution failed = copyNode(node, status, node.getInput(), node.getOutput(), error,
@@ -545,22 +577,18 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
         return outputs;
     }
 
-    private boolean shouldRetry(NodeExecutor.Failure failure, int attemptsConsumed) {
-        Integer status = httpStatus(failure.code());
-        return retryPolicy.canRetry(attemptsConsumed, failure.retryable()
-                && retryPolicy.retryable(failure.code(), status));
-    }
-
-    private static Integer httpStatus(String code) {
-        if (code == null) {
-            return null;
-        }
-        String digits = code.startsWith("HTTP_") ? code.substring(5) : "";
-        try {
-            return digits.isEmpty() ? null : Integer.valueOf(digits);
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
+    /**
+     * Retries only when the executor says the failure is transient and a repeat cannot duplicate an external
+     * effect: the node is read-only, it is an HTTP call carrying a stable Idempotency-Key, or the failure
+     * provably happened before the request took effect.
+     */
+    private boolean shouldRetry(RuntimeState runtime, String nodeId, NodeExecutor.Failure failure) {
+        WorkflowDefinition.Node definitionNode = definitionNode(runtime.snapshot.definition(), nodeId);
+        boolean repeatSafe = failure.requestNotSent()
+                || "http.request".equals(definitionNode.type())
+                || !NodeSideEffects.isSideEffecting(definitionNode.type(), definitionNode.config());
+        return repeatSafe && retryPolicy.canRetry(runtime.nodes.get(nodeId).getAttemptCount(),
+                failure.retryable() && retryPolicy.retryable(failure.code()));
     }
 
     private ScheduledFuture<?> scheduleHeartbeat(ExecutionStatePort.Lease lease, AtomicBoolean leaseLost) {
@@ -583,14 +611,24 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
     private CompletedNode pollCompletion(CompletionService<NodeCompletion> completions,
                                          Map<Future<NodeCompletion>, String> running,
                                          Instant retryAt,
-                                         RuntimeState runtime) throws InterruptedException {
-        if (retryAt == null) {
-            Future<NodeCompletion> future = completions.take();
-            return new CompletedNode(future, getCompletion(future, running.get(future), runtime));
+                                         RuntimeState runtime,
+                                         AtomicBoolean leaseLost) throws InterruptedException {
+        long deadline = retryAt == null ? Long.MAX_VALUE : System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(
+                Math.max(1L, Duration.between(clock.instant(), retryAt).toMillis()));
+        // Wake regularly so a lost lease is noticed (and in-flight nodes cancelled) while nodes are still running.
+        while (!leaseLost.get()) {
+            long remaining = deadline == Long.MAX_VALUE ? LEASE_POLL_MILLIS
+                    : TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+            if (remaining <= 0) {
+                return null;
+            }
+            Future<NodeCompletion> future = completions.poll(Math.min(LEASE_POLL_MILLIS, remaining),
+                    TimeUnit.MILLISECONDS);
+            if (future != null) {
+                return new CompletedNode(future, getCompletion(future, running.get(future), runtime));
+            }
         }
-        long timeout = Math.max(1L, Duration.between(clock.instant(), retryAt).toMillis());
-        Future<NodeCompletion> future = completions.poll(timeout, TimeUnit.MILLISECONDS);
-        return future == null ? null : new CompletedNode(future, getCompletion(future, running.get(future), runtime));
+        return null;
     }
 
     private NodeCompletion getCompletion(Future<NodeCompletion> future, String nodeId, RuntimeState runtime)

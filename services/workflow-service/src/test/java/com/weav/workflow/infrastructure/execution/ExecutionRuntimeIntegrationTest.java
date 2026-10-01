@@ -253,9 +253,10 @@ class ExecutionRuntimeIntegrationTest {
                         + "join workflow.node_executions n on n.id = a.node_execution_id "
                         + "where n.execution_id = ? and n.node_id = 'retry' order by a.attempt_number",
                 (rs, row) -> rs.getTimestamp(1).toInstant(), fixture.executionId());
-        assertTrue(Duration.between(starts.get(0), starts.get(1)).toMillis() >= 700,
+        // Delays are 1 s and 2 s with +/-50% jitter, so the lower bounds are 0.5 s and 1 s.
+        assertTrue(Duration.between(starts.get(0), starts.get(1)).toMillis() >= 400,
                 () -> "first retry started too early: " + starts);
-        assertTrue(Duration.between(starts.get(1), starts.get(2)).toMillis() >= 1700,
+        assertTrue(Duration.between(starts.get(1), starts.get(2)).toMillis() >= 900,
                 () -> "second retry started too early: " + starts);
     }
 
@@ -353,7 +354,8 @@ class ExecutionRuntimeIntegrationTest {
                         + "started_at = current_timestamp, finished_at = current_timestamp "
                         + "where execution_id = ? and node_id = 'root'", fixture.executionId());
         jdbc.update("update workflow.node_executions set status = 'RUNNING', attempt_count = 1, "
-                        + "started_at = current_timestamp, finished_at = null where id = ?", actionId);
+                        + "input = cast(? as jsonb), started_at = current_timestamp, finished_at = null where id = ?",
+                "{\"method\":\"GET\",\"url\":\"https://example.test/recovery\"}", actionId);
         jdbc.update("insert into workflow.node_execution_attempts "
                         + "(id, node_execution_id, attempt_number, status, input, started_at, created_at) "
                         + "values (?, ?, 1, 'RUNNING', cast('{}' as jsonb), current_timestamp, current_timestamp)",

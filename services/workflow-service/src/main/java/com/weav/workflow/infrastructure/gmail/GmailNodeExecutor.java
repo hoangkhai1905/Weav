@@ -51,7 +51,7 @@ public final class GmailNodeExecutor implements NodeExecutor {
         ResolvedConnection connection = resolveConnection(context, request.connectionId());
         if (connection == null) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
-                    "The Gmail connection is unavailable.", true);
+                    "The Gmail connection is unavailable.", true, true);
         }
 
         try {
@@ -157,10 +157,10 @@ public final class GmailNodeExecutor implements NodeExecutor {
                     "The Gmail connection is not available to this workspace.", false);
         } catch (WorkspaceDependencyUnavailableException exception) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
-                    "The connection service is unavailable.", true);
+                    "The connection service is unavailable.", true, true);
         } catch (RuntimeException exception) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
-                    "The connection service is unavailable.", true);
+                    "The connection service is unavailable.", true, true);
         }
     }
 

@@ -49,6 +49,41 @@ class HttpRequestNodeExecutorTest {
     }
 
     @Test
+    void nonSafeMethodsCarryAStableIdempotencyKeyAndSafeMethodsDoNot() {
+        String expected = EXECUTION_ID + ":http-node";
+        for (String method : new String[]{"POST", "PUT", "PATCH", "DELETE"}) {
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                RecordingTransport transport = new RecordingTransport(
+                        new PinnedHttpTransport.HttpResponse(200, Map.of("ok", true), Map.of()), null);
+                NodeExecutor.Context attemptContext = new NodeExecutor.Context(WORKSPACE_ID, EXECUTION_ID,
+                        NODE_EXECUTION_ID, "http-node", attempt, "correlation-id", null);
+                executor(transport, new FakeWorkspace(null)).execute(attemptContext, Map.of(
+                        "method", method, "url", "https://api.example.test/resource"));
+                assertEquals(expected, transport.headers.get("Idempotency-Key"), method + " attempt " + attempt);
+            }
+        }
+        for (String method : new String[]{"GET", "HEAD", "OPTIONS"}) {
+            RecordingTransport transport = new RecordingTransport(
+                    new PinnedHttpTransport.HttpResponse(200, Map.of("ok", true), Map.of()), null);
+            executor(transport, new FakeWorkspace(null)).execute(context(), Map.of(
+                    "method", method, "url", "https://api.example.test/resource"));
+            assertFalse(transport.headers.containsKey("Idempotency-Key"), method);
+        }
+    }
+
+    @Test
+    void aUserSuppliedIdempotencyKeyIsPreservedInsteadOfOverridden() {
+        RecordingTransport transport = new RecordingTransport(
+                new PinnedHttpTransport.HttpResponse(200, Map.of("ok", true), Map.of()), null);
+
+        executor(transport, new FakeWorkspace(null)).execute(context(), Map.of(
+                "method", "POST", "url", "https://api.example.test/resource",
+                "headers", Map.of("idempotency-key", "order-42-abc")));
+
+        assertEquals(Map.of("idempotency-key", "order-42-abc"), transport.headers);
+    }
+
+    @Test
     void failsClosedForWorkspaceApiKeyUntilTheResolvedContractProvidesHeaderName() {
         String secret = "api-key-secret-marker";
         RecordingTransport transport = new RecordingTransport(
@@ -212,6 +247,7 @@ class HttpRequestNodeExecutorTest {
         private final HttpResponse response;
         private final RuntimeException failure;
         private Map<String, String> authenticationHeaders = Map.of();
+        private Map<String, String> headers = Map.of();
         private boolean called;
 
         private RecordingTransport(HttpResponse response, RuntimeException failure) {
@@ -229,6 +265,7 @@ class HttpRequestNodeExecutorTest {
                 Object query,
                 Object body) {
             called = true;
+            this.headers = headers;
             this.authenticationHeaders = authenticationHeaders;
             if (failure != null) {
                 throw failure;

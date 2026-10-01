@@ -49,7 +49,7 @@ class ExecutionLeaseTest {
               {"id":"root","type":"trigger.manual","config":{}},
               {"id":"done","type":"action.telegram","config":{}},
               {"id":"skipped","type":"action.telegram","config":{}},
-              {"id":"running","type":"action.telegram","config":{}}],
+              {"id":"running","type":"http.request","config":{}}],
              "edges":[
               {"id":"root-done","source":"root","target":"done"},
               {"id":"root-skipped","source":"root","target":"skipped"},
@@ -190,6 +190,30 @@ class ExecutionLeaseTest {
         assertEquals(NodeExecutionStatus.WAITING, recovered.graph().nodes().get("running"));
         assertEquals(2, recovered.nodes().get("running").getAttemptCount());
         assertNotNull(recovered.nextAttempts().get("running"));
+    }
+
+    @Test
+    void anInterruptedSideEffectingNodeFailsWithOutcomeUnknownInsteadOfBeingRetried() {
+        Fixture fixture = fixture("RUNNING", "root", "{\"source\":\"manual\"}", 4, true);
+        jdbc.update("update workflow.node_executions set input = cast(? as jsonb) where id = ?",
+                "{\"method\":\"POST\",\"url\":\"https://example.test/charge\"}", fixture.runningNodeId());
+
+        ExecutionStatePort.Lease lease = executions.claim(fixture.executionId(), "worker-new", Duration.ofSeconds(30))
+                .orElseThrow();
+
+        assertEquals(1, jdbc.queryForObject(
+                "select count(*) from workflow.node_executions where id = ? and status = 'FAILED' "
+                        + "and attempt_count = 2 and next_attempt_at is null and finished_at is not null "
+                        + "and error ->> 'code' = 'OUTCOME_UNKNOWN'",
+                Integer.class, fixture.runningNodeId()));
+        assertEquals(1, jdbc.queryForObject(
+                "select count(*) from workflow.node_execution_attempts where node_execution_id = ? "
+                        + "and attempt_number = 2 and status = 'FAILED' and finished_at is not null "
+                        + "and error ->> 'code' = 'OUTCOME_UNKNOWN'",
+                Integer.class, fixture.runningNodeId()));
+        ExecutionStatePort.Snapshot recovered = executions.load(lease);
+        assertEquals(NodeExecutionStatus.FAILED, recovered.graph().nodes().get("running"));
+        assertTrue(recovered.nextAttempts().isEmpty());
     }
 
     @Test
@@ -345,8 +369,11 @@ class ExecutionLeaseTest {
         insertNode(executionId, doneNodeId, "done", "action.telegram", takeover ? "SUCCESS" : "PENDING", 1,
                 takeover ? "{\"ok\":true}" : null, null, takeover ? Instant.parse("2026-09-21T00:00:00Z") : null);
         insertNode(executionId, skippedNodeId, "skipped", "action.telegram", takeover ? "SKIPPED" : "PENDING", 0, null, null, null);
-        insertNode(executionId, runningNodeId, "running", "action.telegram", takeover ? "RUNNING" : "PENDING",
+        insertNode(executionId, runningNodeId, "running", "http.request", takeover ? "RUNNING" : "PENDING",
                 takeover ? 2 : 0, null, takeover ? "{\"code\":\"TIMEOUT\"}" : null, null);
+        // The runner persists the raw node config as the node input before it calls the provider.
+        jdbc.update("update workflow.node_executions set input = cast(? as jsonb) where id = ?",
+                "{\"method\":\"GET\",\"url\":\"https://example.test/read\"}", runningNodeId);
         if (takeover) {
             jdbc.update("insert into workflow.node_execution_attempts "
                             + "(id, node_execution_id, attempt_number, status, input, output, started_at, "
