@@ -54,6 +54,49 @@ class MembershipUseCasesTest {
     private static final Instant JOINED = Instant.parse("2026-01-02T03:04:05Z");
 
     @Test
+    void identityLookupRunsBeforeTransactionAndWorkspaceLock() {
+        MembershipRepository memberships = mock(MembershipRepository.class);
+        IdentityDirectoryPort identity = mock(IdentityDirectoryPort.class);
+        int[] depth = {0};
+        boolean[] locked = {false};
+        List<String> seen = new java.util.ArrayList<>();
+        TransactionRunner runner = new TransactionRunner() {
+            @Override
+            public <T> T required(Supplier<T> work) {
+                depth[0]++;
+                try {
+                    return work.get();
+                } finally {
+                    if (--depth[0] == 0) {
+                        locked[0] = false;
+                    }
+                }
+            }
+
+            @Override
+            public <T> T requiresNew(Supplier<T> work) {
+                return required(work);
+            }
+        };
+        when(memberships.findByWorkspaceIdAndUserId(WORKSPACE, OWNER))
+                .thenReturn(Optional.of(Membership.owner(WORKSPACE, OWNER)));
+        when(identity.findByEmail("person@example.com")).thenAnswer(invocation -> {
+            seen.add(depth[0] + "/" + locked[0]);
+            return Optional.of(summary(OTHER, "person@example.com", "Person", true));
+        });
+        when(memberships.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        new AddMemberUseCase(
+                memberships, identity, runner, new ImmediateAfterCommitExecutor(),
+                mock(WorkspaceAuthorizationCache.class),
+                WorkspaceNotificationTestFixtures.workspaceRepository(WORKSPACE, OWNER),
+                workspaceId -> locked[0] = true, WorkspaceNotificationTestFixtures.recorder())
+                .execute(new AddMemberCommand(WORKSPACE, OWNER, "person@example.com"));
+
+        assertEquals(List.of("0/false"), seen);
+    }
+
+    @Test
     void ownerAddsActiveIdentityUserWithBothOptionalPermissionsDisabled() {
         MembershipRepository memberships = mock(MembershipRepository.class);
         IdentityDirectoryPort identity = mock(IdentityDirectoryPort.class);

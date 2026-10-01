@@ -42,10 +42,16 @@ public final class ListMembersUseCase {
         Objects.requireNonNull(actorUserId, "actorUserId must not be null");
         Objects.requireNonNull(workspaceId, "workspaceId must not be null");
         Objects.requireNonNull(query, "query must not be null");
-        return transactionRunner.required(() -> {
+        // Short read transaction for authorization + candidate load; Identity
+        // HTTP calls below run with no transaction / DB connection held.
+        // ponytail: candidates are still loaded unbounded; Identity needs the id
+        // list to filter/sort, so bounding it would change results.
+        List<Membership> candidates = transactionRunner.required(() -> {
             membershipRepository.findByWorkspaceIdAndUserId(workspaceId, actorUserId)
                     .orElseThrow(() -> new ResourceNotFoundException("Workspace not found", workspaceId));
-            List<Membership> candidates = membershipRepository.findCandidates(workspaceId, query);
+            return membershipRepository.findCandidates(workspaceId, query);
+        });
+        {
             List<UUID> candidateIds = candidates.stream().map(Membership::getUserId).toList();
             Map<UUID, Membership> membershipsByUser = byUserId(candidates);
 
@@ -63,8 +69,8 @@ public final class ListMembersUseCase {
             Set<UUID> matchedUserIds = query.hasSearch()
                     ? identityDirectory.matchUserIds(candidateIds, query.search())
                     : Set.copyOf(candidateIds);
-            PageResult<Membership> membershipPage = membershipRepository
-                    .pageCandidatesByWorkspaceOwnedSort(workspaceId, query, matchedUserIds);
+            PageResult<Membership> membershipPage = transactionRunner.required(() -> membershipRepository
+                    .pageCandidatesByWorkspaceOwnedSort(workspaceId, query, matchedUserIds));
             Map<UUID, IdentityUserSummary> summaries = summariesByUserId(
                     identityDirectory.getUsersByIds(membershipPage.items().stream()
                             .map(Membership::getUserId).toList()));
@@ -77,7 +83,7 @@ public final class ListMembersUseCase {
                     .toList();
             return new PageResult<>(items, membershipPage.page(), membershipPage.size(),
                     membershipPage.totalElements(), membershipPage.totalPages());
-        });
+        }
     }
 
     private Map<UUID, Membership> byUserId(List<Membership> memberships) {

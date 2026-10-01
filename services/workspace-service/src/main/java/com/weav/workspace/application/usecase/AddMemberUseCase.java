@@ -57,22 +57,21 @@ public final class AddMemberUseCase {
 
     public MemberView execute(AddMemberCommand command) {
         Objects.requireNonNull(command, "command must not be null");
+        // Short owner pre-check (no lock) so non-owners cannot probe Identity.
+        transactionRunner.required(() -> {
+            requireOwner(command);
+            return Boolean.TRUE;
+        });
+        // Remote Identity lookup runs outside any transaction or workspace lock.
+        String email = IdentityEmailNormalizer.canonicalize(command.email());
+        IdentityUserSummary summary = identityDirectory.findByEmail(email)
+                .orElseThrow(UserNotFoundException::new);
+        if (!summary.active()) {
+            throw new UserInactiveException();
+        }
         return transactionRunner.required(() -> {
             mutationLock.lock(command.workspaceId());
-            Membership actor = membershipRepository.findByWorkspaceIdAndUserId(
-                            command.workspaceId(), command.actorUserId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Workspace not found", command.workspaceId()));
-            if (actor.getRole() != MembershipRole.OWNER) {
-                throw new ForbiddenException();
-            }
-
-            String email = IdentityEmailNormalizer.canonicalize(command.email());
-            IdentityUserSummary summary = identityDirectory.findByEmail(email)
-                    .orElseThrow(UserNotFoundException::new);
-            if (!summary.active()) {
-                throw new UserInactiveException();
-            }
+            requireOwner(command);
             if (membershipRepository.existsByWorkspaceIdAndUserId(
                     command.workspaceId(), summary.userId())) {
                 throw new UserAlreadyMemberException();
@@ -88,5 +87,15 @@ public final class AddMemberUseCase {
                     command.workspaceId(), summary.userId()));
             return MemberView.from(saved, summary);
         });
+    }
+
+    private void requireOwner(AddMemberCommand command) {
+        Membership actor = membershipRepository.findByWorkspaceIdAndUserId(
+                        command.workspaceId(), command.actorUserId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Workspace not found", command.workspaceId()));
+        if (actor.getRole() != MembershipRole.OWNER) {
+            throw new ForbiddenException();
+        }
     }
 }
