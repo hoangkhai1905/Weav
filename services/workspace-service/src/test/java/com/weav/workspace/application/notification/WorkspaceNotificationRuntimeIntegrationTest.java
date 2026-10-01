@@ -24,6 +24,7 @@ import com.weav.workspace.application.usecase.UpdateMemberPermissionsUseCase;
 import com.weav.workspace.application.usecase.TestConnectionUseCase;
 import com.weav.workspace.application.usecase.DisableConnectionUseCase;
 import com.weav.workspace.application.usecase.StartConnectionOAuthUseCase;
+import com.weav.workspace.application.usecase.CompleteConnectionOAuthTestAccess;
 import com.weav.workspace.application.usecase.CompleteConnectionOAuthUseCase;
 import com.weav.workspace.application.usecase.ReportConnectionAuthFailureUseCase;
 import com.weav.workspace.application.port.out.ConnectionProviderPort;
@@ -411,7 +412,8 @@ class WorkspaceNotificationRuntimeIntegrationTest {
 
             String activationState = oauthState(startOAuth.execute(
                     ownerId, workspace.id(), connection.getId()).authorizationUrl());
-            assertThat(completeOAuth.execute(activationState, "synthetic-activation-code").outcome())
+            assertThat(CompleteConnectionOAuthTestAccess.completeDirectly(
+                    completeOAuth, activationState, "synthetic-activation-code").outcome())
                     .isEqualTo(ConnectionTestResult.ConnectionTestOutcome.VERIFIED);
             assertThat(outboxCount(workspace.id(), "connection.connected")).isEqualTo(1);
             assertThat(publisher(EXCHANGE).publishPending()).isGreaterThanOrEqualTo(1);
@@ -421,7 +423,8 @@ class WorkspaceNotificationRuntimeIntegrationTest {
 
             String reauthorizationState = oauthState(startOAuth.execute(
                     ownerId, workspace.id(), connection.getId()).authorizationUrl());
-            assertThat(completeOAuth.execute(reauthorizationState, "synthetic-reauthorization-code").outcome())
+            assertThat(CompleteConnectionOAuthTestAccess.completeDirectly(
+                    completeOAuth, reauthorizationState, "synthetic-reauthorization-code").outcome())
                     .isEqualTo(ConnectionTestResult.ConnectionTestOutcome.VERIFIED);
             assertThat(outboxCount(workspace.id(), "connection.connected")).isEqualTo(1);
             assertThat(publisher(EXCHANGE).publishPending()).isZero();

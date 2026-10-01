@@ -80,7 +80,8 @@
 | Trung bình | Google consent thật chưa được chạy (cần client OAuth thật và tài khoản thử) | Chạy thủ công một lần Gmail và Sheets trước khi merge vào `dev` |
 | Thấp | Authorization code tồn tại tối đa 5 phút trong Redis | Giữ Redis nội bộ; giảm `GOOGLE_OAUTH_COMPLETION_TTL` nếu cần |
 | Thấp | Người dùng chặn chuyển hướng hoặc reload khi `oauth=pending` thì completion bị mất | Bấm Connect Google lại (state mới); web hiển thị hướng dẫn 409 |
-| Thấp | Compose/`.env.example` chưa liệt kê `GOOGLE_OAUTH_COMPLETION_TTL` (compose thuộc lane F) | Thêm khi gộp lane F; có mặc định `PT5M` nên không bắt buộc |
+| Đã xử lý | Compose/`.env.example` chưa liệt kê `GOOGLE_OAUTH_COMPLETION_TTL` | Đã thêm vào `.env.example`, `.env` (không in giá trị) và `compose.dev.yml` (mặc định `PT5M`) |
+| Đã xử lý | `CompleteConnectionOAuthUseCase.execute(state, code)` public, bỏ qua ràng buộc người khởi tạo (chỉ test dùng) | Đã chuyển sang package-private; test khác package dùng `CompleteConnectionOAuthTestAccess` trong `src/test` |
 | Thông tin | CLAUDE.md ghi sai mode Playwright cho spec HTTP | Cập nhật CLAUDE.md và AGENTS.md ở một commit riêng |
 
 Hướng dẫn cho agent tiếp theo: giữ nguyên các quyết định ở mục 2 (đặc biệt phản hồi 409 thống nhất), không đưa thêm logic ghi credential vào callback.
@@ -89,6 +90,6 @@ Hướng dẫn cho agent tiếp theo: giữ nguyên các quyết định ở m�
 
 | Trường | Giá trị |
 | --- | --- |
-| Trạng thái worktree | Có thay đổi chưa commit (lane E và lane F chung worktree; hai lane tách commit) |
-| Commit/PR | Chưa tạo |
+| Trạng thái worktree | Sạch sau commit dọn dẹp Step 1 |
+| Commit/PR | `0f969b4` (lane E), `7524773` (lane F), commit dọn dẹp Step 1 (TTL env, ẩn `execute`); chưa push |
 | Người cập nhật log | AI agent |

@@ -94,15 +94,20 @@ public final class CompleteConnectionOAuthUseCase {
     }
 
     /**
-     * Single-step completion straight from a consumed state. Not reachable over HTTP; it bypasses the
-     * authenticated binding and exists only for tests of the completion pipeline.
+     * Single-step completion straight from a consumed state. Package-private: test seam only, it
+     * bypasses the authenticated initiator binding; production must use {@link #executeForCallback}
+     * + {@link #completeAuthenticated}.
      */
-    public ConnectionTestResult execute(String state, String authorizationCode) {
+    ConnectionTestResult execute(String state, String authorizationCode) {
         return execute(state, authorizationCode, null);
     }
 
-    /** The callback error is handled only after state consumption and is never reflected to the client. */
-    public ConnectionTestResult execute(String state, String authorizationCode, String callbackError) {
+    /**
+     * Package-private: test seam only; production must use {@link #executeForCallback} +
+     * {@link #completeAuthenticated}. The callback error is handled only after state consumption and
+     * is never reflected to the client.
+     */
+    ConnectionTestResult execute(String state, String authorizationCode, String callbackError) {
         OAuthStateStore.ConsumedState consumedState = stateStore.consumeForCallback(state)
                 .orElseThrow(() -> new BadRequestException("Google authorization state is invalid or expired"));
         try {

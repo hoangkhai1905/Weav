@@ -170,6 +170,7 @@ services:
       GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8082/oauth/google/callback}
       GOOGLE_OAUTH_FRONTEND_RETURN_URL: ${GOOGLE_OAUTH_FRONTEND_RETURN_URL:-http://localhost:5173/connections}
       GOOGLE_OAUTH_STATE_TTL: ${GOOGLE_OAUTH_STATE_TTL:-PT10M}
+      GOOGLE_OAUTH_COMPLETION_TTL: ${GOOGLE_OAUTH_COMPLETION_TTL:-PT5M}
 
       # Workspace calls Workflow to confirm whether a Connection is in use.
       WORKFLOW_SERVICE_URL: ${WORKFLOW_SERVICE_URL:-http://workflow-service:8080}
