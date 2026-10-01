@@ -35,6 +35,15 @@ const schema = z
       .string()
       .min(1)
       .default('notification-service.execution-events.dlq'),
+    // Quorum queue that is consumed today; defaults to `<NOTIFICATION_QUEUE>.v2`.
+    NOTIFICATION_QUEUE_V2: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(1).optional(),
+    ),
+    // Broker dead-letters a message after this many failed deliveries.
+    NOTIFICATION_DELIVERY_LIMIT: integer(10, 1, 1000),
+    // Keep draining the old classic NOTIFICATION_QUEUE; set false once an operator deleted it.
+    NOTIFICATION_LEGACY_DRAIN: flag('true'),
     NOTIFICATION_MAX_ATTEMPTS: integer(5, 1, 20),
     NOTIFICATION_RETRY_BASE_MS: integer(1000),
     NOTIFICATION_RETRY_MAX_MS: integer(300000),

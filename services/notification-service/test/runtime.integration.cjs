@@ -428,11 +428,14 @@ test(
               });
               return Boolean(rejected);
             });
-            const safeRecord = JSON.parse(rejected.content.toString());
-            assert.deepEqual(Object.keys(safeRecord).sort(), [
-              'code',
-              'occurredAt',
-            ]);
+            // The broker dead-letters the ORIGINAL message: body kept, x-death present.
+            const original = JSON.parse(rejected.content.toString());
+            assert(
+              rejectedEvents.some(
+                (r) => JSON.stringify(r.event) === JSON.stringify(original),
+              ),
+            );
+            assert(rejected.properties.headers['x-death']);
           }
 
           class RuntimeModule {}

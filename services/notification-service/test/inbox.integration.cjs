@@ -897,7 +897,6 @@ test(
             },
           });
           const ordering = [];
-          let deadLetter;
           const consumer = new RabbitConsumer(
             service,
             testSettings(databaseName),
@@ -908,26 +907,13 @@ test(
               fields: { routingKey: event.eventType },
             },
             {
-              sendToQueue: (_queue, body, _options, confirm) => {
-                deadLetter = body.toString();
-                ordering.push('published');
-                confirm(null);
-                ordering.push('confirmed');
-              },
+              nack: (_message, _all, requeue) =>
+                ordering.push(requeue ? 'requeued' : 'dead-lettered'),
               ack: () => ordering.push('acknowledged'),
             },
           );
-          assert.deepEqual(ordering, [
-            'published',
-            'confirmed',
-            'acknowledged',
-          ]);
-          assert.deepEqual(Object.keys(JSON.parse(deadLetter)).sort(), [
-            'code',
-            'occurredAt',
-          ]);
-          assert.equal(JSON.parse(deadLetter).code, 'PERSISTED_EVENT_CONFLICT');
-          assert.equal(deadLetter.includes(privateDestination), false);
+          // The broker dead-letters the original message (body kept for replay).
+          assert.deepEqual(ordering, ['dead-lettered']);
           assert.deepEqual(
             await repo.client.notificationInbox.findUnique({
               where: { id: existing.id },
@@ -986,9 +972,12 @@ test(
             service,
             testSettings(databaseName),
           );
+          const requeues = [];
           const channel = {
             ack: (incoming) => acknowledgements.push(incoming),
+            reject: (_m, requeue) => requeues.push(requeue),
           };
+          consumer.sleep = () => Promise.resolve();
           await deliveryRepo.client.$executeRawUnsafe(`
             CREATE FUNCTION notification.task3_fix01_fail_inbox_insert() RETURNS trigger
             LANGUAGE plpgsql AS $$ BEGIN
@@ -1001,10 +990,8 @@ test(
             FOR EACH ROW EXECUTE FUNCTION notification.task3_fix01_fail_inbox_insert()
           `);
           try {
-            await assert.rejects(
-              consumer.handle(message, channel),
-              /Event persistence unavailable/,
-            );
+            await consumer.handle(message, channel);
+            assert.deepEqual(requeues, [true]);
             assert.equal(acknowledgements.length, 0);
             assert.deepEqual(
               await repo.client.notificationInbox.findUnique({
@@ -1067,10 +1054,12 @@ test(
             testSettings(databaseName),
           );
           const acknowledgements = [];
+          const requeues = [];
           const channel = {
             ack: (message) => acknowledgements.push(message),
-            sendToQueue: (_queue, _body, _options, confirm) => confirm(null),
+            reject: (_m, requeue) => requeues.push(requeue),
           };
+          consumer.sleep = () => Promise.resolve();
           const message = {
             content: Buffer.from(JSON.stringify(event)),
             fields: { routingKey: event.eventType },
@@ -1087,7 +1076,8 @@ test(
             FOR EACH ROW EXECUTE FUNCTION notification.task3_fail_inbox_insert()
           `);
           try {
-            await assert.rejects(consumer.handle(message, channel));
+            await consumer.handle(message, channel);
+            assert.deepEqual(requeues, [true]);
             assert.equal(acknowledgements.length, 0);
             assert.equal(
               await deliveryRepo.client.notificationDelivery.count({

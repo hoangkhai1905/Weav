@@ -21,7 +21,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "test:integration": "node --test test/migration.integration.cjs test/runtime.integration.cjs",
+    "test:integration": "node --test test/migration.integration.cjs test/runtime.integration.cjs test/poison.integration.cjs",
     "test:inbox-integration": "node --test test/inbox.integration.cjs"
   },
   "dependencies": {
