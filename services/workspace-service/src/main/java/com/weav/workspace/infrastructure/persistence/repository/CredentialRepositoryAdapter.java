@@ -36,6 +36,11 @@ public class CredentialRepositoryAdapter implements CredentialRepository {
     }
 
     @Override
+    public Optional<Credential> findByConnectionIdForUpdate(UUID connectionId) {
+        return repository.findForUpdateByConnectionId(connectionId).map(this::toDomain);
+    }
+
+    @Override
     public void deleteByConnectionId(UUID connectionId) {
         repository.deleteByConnectionId(connectionId);
     }

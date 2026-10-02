@@ -57,7 +57,7 @@ public final class StartConnectionOAuthUseCase {
         validateGoogleConnection(connection);
 
         String state = randomToken(32);
-        // Build before mutating so missing OAuth configuration cannot disable a usable connection.
+        // Build the URL first so missing OAuth configuration fails before any state is stored.
         String codeVerifier = randomToken(48); // 64 base64url chars
         String authorizationUrl = googleOAuthPort.authorizationUrl(
                 connection.getProvider(), state, codeChallenge(codeVerifier));
@@ -75,13 +75,13 @@ public final class StartConnectionOAuthUseCase {
                     validateGoogleConnection(currentConnection);
                     boolean activeAtLockedStart = currentConnection.getStatus()
                             == com.weav.workspace.domain.valueobject.ConnectionStatus.ACTIVE;
-                    currentConnection.markDisabled();
-                    connectionRepository.save(currentConnection);
+                    // Status and credential stay untouched: only the bound completion step swaps
+                    // the credential, so abandoning consent never breaks a live connection.
                     try {
                         stateStore.saveForStart(state, pendingState, activeAtLockedStart);
                     } catch (DependencyUnavailableException exception) {
-                        // Keep the existing fail-closed behavior: commit the disable, but never
-                        // return an authorization URL whose one-time callback state was not saved.
+                        // Fail closed: never return an authorization URL whose one-time
+                        // callback state was not saved.
                         stateWriteFailure.set(exception);
                     }
                     return Boolean.TRUE;

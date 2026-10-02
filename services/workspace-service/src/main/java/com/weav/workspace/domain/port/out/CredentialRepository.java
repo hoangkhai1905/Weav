@@ -9,5 +9,8 @@ public interface CredentialRepository {
 
     Optional<Credential> findByConnectionId(UUID connectionId);
 
+    /** Same read with a row lock held until the surrounding transaction ends. */
+    Optional<Credential> findByConnectionIdForUpdate(UUID connectionId);
+
     void deleteByConnectionId(UUID connectionId);
 }

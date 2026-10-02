@@ -395,7 +395,7 @@ class InternalConnectionUseCasesTest {
     }
 
     @Test
-    void refreshDoesNotOverwriteCredentialReplacedWhileGoogleIsResponding() {
+    void refreshKeepsCredentialReplacedByReconnectWhileGoogleIsResponding() {
         UUID ownerId = UUID.randomUUID();
         Workspace workspace = createWorkspace(ownerId);
         Connection connection = createConnection(
@@ -412,9 +412,10 @@ class InternalConnectionUseCasesTest {
             });
         });
 
-        assertThatThrownBy(() -> resolveConnection.execute(workspace.getId(), connection.getId()))
-                .isInstanceOf(InvalidStateException.class)
-                .hasMessage("Connection credential changed during refresh");
+        ResolvedConnectionCredential resolved = resolveConnection.execute(workspace.getId(), connection.getId());
+
+        // A reconnect swapped the credential meanwhile: its usable token is returned, not overwritten.
+        assertThat(resolved.auth()).containsExactly(Map.entry("accessToken", "synthetic-other-account-access"));
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
                 .isEqualTo(ConnectionStatus.ACTIVE);
         Credential retained = credentialRepository.findByConnectionId(connection.getId()).orElseThrow();
@@ -444,7 +445,7 @@ class InternalConnectionUseCasesTest {
     }
 
     @Test
-    void duplicateConcurrentRefreshRequestsAreAllowedWithoutDistributedLocking() throws Exception {
+    void concurrentResolvesOfAnExpiredCredentialShareOneProviderRefresh() throws Exception {
         UUID ownerId = UUID.randomUUID();
         Workspace workspace = createWorkspace(ownerId);
         Connection connection = createConnection(
@@ -452,32 +453,109 @@ class InternalConnectionUseCasesTest {
                 ConnectionStatus.ACTIVE, Map.of());
         saveGoogleCredential(connection, OLD_ACCESS_TOKEN, OLD_REFRESH_TOKEN, gmailScopes(), clock.instant().minusSeconds(1));
         googleOAuth.response.set(refreshResponse("synthetic-concurrent-access", null, gmailScopes()));
-        CyclicBarrier bothCallsReachedGoogle = new CyclicBarrier(2);
-        googleOAuth.beforeRefresh.set(() -> {
-            try {
-                bothCallsReachedGoogle.await(5, TimeUnit.SECONDS);
-            } catch (Exception exception) {
-                throw new DependencyUnavailableException();
-            }
-        });
-        ExecutorService executor = Executors.newFixedThreadPool(2);
+        int callers = 5;
+        CountDownLatch go = new CountDownLatch(1);
+        // Hold the leader inside Google long enough that the other callers must wait on it.
+        googleOAuth.beforeRefresh.set(() -> pause(500));
+        ExecutorService executor = Executors.newFixedThreadPool(callers);
         try {
-            var first = executor.submit(() -> resolveConnection.execute(workspace.getId(), connection.getId()));
-            var second = executor.submit(() -> resolveConnection.execute(workspace.getId(), connection.getId()));
-            assertThat(first.get(10, TimeUnit.SECONDS).auth())
-                    .containsEntry("accessToken", "synthetic-concurrent-access");
-            assertThat(second.get(10, TimeUnit.SECONDS).auth())
-                    .containsEntry("accessToken", "synthetic-concurrent-access");
+            List<java.util.concurrent.Future<ResolvedConnectionCredential>> results = new ArrayList<>();
+            for (int index = 0; index < callers; index++) {
+                results.add(executor.submit(() -> {
+                    go.await();
+                    return resolveConnection.execute(workspace.getId(), connection.getId());
+                }));
+            }
+            go.countDown();
+            for (var result : results) {
+                assertThat(result.get(15, TimeUnit.SECONDS).auth())
+                        .containsExactly(Map.entry("accessToken", "synthetic-concurrent-access"));
+            }
         } finally {
             executor.shutdownNow();
         }
 
-        assertThat(googleOAuth.refreshCalls.get()).isEqualTo(2);
+        assertThat(googleOAuth.refreshCalls.get()).isEqualTo(1);
         assertThat(googleOAuth.calledInsideTransaction.get()).isFalse();
         Credential stored = credentialRepository.findByConnectionId(connection.getId()).orElseThrow();
         assertThat(stored.getExpiresAt()).isAfter(clock.instant());
         assertThat(decode(connection, stored)).containsEntry("accessToken", "synthetic-concurrent-access")
                 .containsEntry("refreshToken", OLD_REFRESH_TOKEN);
+    }
+
+    @Test
+    void failedSharedRefreshReachesEveryWaiterAndTheNextCallRetries() throws Exception {
+        UUID ownerId = UUID.randomUUID();
+        Workspace workspace = createWorkspace(ownerId);
+        Connection connection = createConnection(
+                workspace, ownerId, ConnectionProvider.GMAIL, ConnectionAuthType.OAUTH2,
+                ConnectionStatus.ACTIVE, Map.of());
+        saveGoogleCredential(connection, OLD_ACCESS_TOKEN, OLD_REFRESH_TOKEN, gmailScopes(), clock.instant().minusSeconds(1));
+        googleOAuth.failure.set(new DependencyUnavailableException());
+        googleOAuth.beforeRefresh.set(() -> pause(300));
+        CountDownLatch go = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(3);
+        try {
+            List<java.util.concurrent.Future<ResolvedConnectionCredential>> results = new ArrayList<>();
+            for (int index = 0; index < 3; index++) {
+                results.add(executor.submit(() -> {
+                    go.await();
+                    return resolveConnection.execute(workspace.getId(), connection.getId());
+                }));
+            }
+            go.countDown();
+            for (var result : results) {
+                assertThatThrownBy(() -> result.get(15, TimeUnit.SECONDS))
+                        .hasCauseInstanceOf(DependencyUnavailableException.class);
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+        assertThat(googleOAuth.refreshCalls.get()).isEqualTo(1);
+
+        googleOAuth.failure.set(null);
+        googleOAuth.beforeRefresh.set(() -> { });
+        googleOAuth.response.set(refreshResponse("synthetic-retry-access", null, gmailScopes()));
+        assertThat(resolveConnection.execute(workspace.getId(), connection.getId()).auth())
+                .containsEntry("accessToken", "synthetic-retry-access");
+        assertThat(googleOAuth.refreshCalls.get()).isEqualTo(2);
+    }
+
+    @Test
+    void staleRefreshDoesNotOverwriteAFresherStoredCredential() {
+        UUID ownerId = UUID.randomUUID();
+        Workspace workspace = createWorkspace(ownerId);
+        Connection connection = createConnection(
+                workspace, ownerId, ConnectionProvider.GMAIL, ConnectionAuthType.OAUTH2,
+                ConnectionStatus.ACTIVE, Map.of());
+        Credential original = saveGoogleCredential(connection, OLD_ACCESS_TOKEN, OLD_REFRESH_TOKEN,
+                gmailScopes(), clock.instant().minusSeconds(1));
+        googleOAuth.response.set(refreshResponse("synthetic-stale-access", null, gmailScopes()));
+        googleOAuth.beforeRefresh.set(() -> {
+            // Another replica refreshed (same credential id, same grant) while Google was responding.
+            GoogleOAuthTokenResponse fresher = new GoogleOAuthTokenResponse(
+                    "synthetic-fresher-access", OLD_REFRESH_TOKEN, "Bearer", gmailScopes(), 7200);
+            credentialRepository.save(new Credential(
+                    original.getId(), connection.getId(),
+                    credentialCrypto.encrypt(payloadCodec.encodeGoogleOAuth(connection, fresher)),
+                    credentialCrypto.currentKeyVersion(), clock.instant().plusSeconds(7200),
+                    original.getCreatedAt(), clock.instant()));
+        });
+
+        ResolvedConnectionCredential resolved = resolveConnection.execute(workspace.getId(), connection.getId());
+
+        assertThat(resolved.auth()).containsExactly(Map.entry("accessToken", "synthetic-fresher-access"));
+        Credential stored = credentialRepository.findByConnectionId(connection.getId()).orElseThrow();
+        assertThat(decode(connection, stored)).containsEntry("accessToken", "synthetic-fresher-access");
+        assertThat(stored.getExpiresAt()).isEqualTo(clock.instant().plusSeconds(7200));
+    }
+
+    private static void pause(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Test
