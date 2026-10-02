@@ -142,7 +142,7 @@ Names and defaults from [application.properties](../../../services/identity-serv
 | `SMTP_QUEUE_CAPACITY`, `SMTP_CORE_POOL_SIZE`, `SMTP_MAX_POOL_SIZE` | 100, 1, 2 | Mail dispatcher bounds. |
 | `AVATAR_S3_ENDPOINT`, `AVATAR_S3_BUCKET`, `AVATAR_S3_ACCESS_KEY_ID`, `AVATAR_S3_SECRET_ACCESS_KEY` | blank | Object storage. |
 | `AVATAR_S3_REGION`, `AVATAR_S3_PATH_STYLE_ACCESS`, `AVATAR_S3_KEY_PREFIX`, `AVATAR_S3_SIGNED_URL_TTL` | `auto`, `true`, `avatars`, `5m` | Storage tuning. |
-| `AVATAR_S3_CLEANUP_QUEUE_CAPACITY`, `AVATAR_S3_CLEANUP_INTERVAL_MS` | 1000, 30000 | Orphan cleanup. |
+| `AVATAR_S3_CLEANUP_INTERVAL_MS` | 30000 | Durable orphan cleanup (`avatar_cleanup` table). |
 | `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `RABBITMQ_VHOST`, `RABBITMQ_SSL_ENABLED`, `RABBITMQ_CONNECTION_TIMEOUT` | localhost, 5672, guest, `/`, false, 3s | Broker. |
 | `NOTIFICATION_EXCHANGE` | `weav.events` | Outbox exchange (documented in notification-outbox.md). |
 | `IDENTITY_NOTIFICATION_OUTBOX_PUBLISHER_ENABLED`, `_BATCH_SIZE`, `_POLL_INTERVAL`, `_INITIAL_DELAY`, `_CONFIRM_TIMEOUT`, `_MAX_RETRY_DELAY` | true, 25, 1000 ms, 1000 ms, PT5S, PT60S | Outbox publisher. |

@@ -16,7 +16,6 @@ public class AvatarStorageProperties {
     private boolean pathStyleAccess = true;
     private String keyPrefix = "avatars";
     private Duration signedUrlTtl = Duration.ofMinutes(5);
-    private int cleanupQueueCapacity = 1000;
 
     public String getEndpoint() { return endpoint; }
     public void setEndpoint(String endpoint) { this.endpoint = endpoint; }
@@ -34,8 +33,6 @@ public class AvatarStorageProperties {
     public void setKeyPrefix(String keyPrefix) { this.keyPrefix = keyPrefix; }
     public Duration getSignedUrlTtl() { return signedUrlTtl; }
     public void setSignedUrlTtl(Duration signedUrlTtl) { this.signedUrlTtl = signedUrlTtl; }
-    public int getCleanupQueueCapacity() { return cleanupQueueCapacity; }
-    public void setCleanupQueueCapacity(int cleanupQueueCapacity) { this.cleanupQueueCapacity = cleanupQueueCapacity; }
 
     public boolean isConfigured() {
         return hasText(endpoint) && hasText(region) && hasText(bucket)
@@ -59,9 +56,6 @@ public class AvatarStorageProperties {
                 || keyPrefix.endsWith("/") || keyPrefix.contains("..")
                 || !keyPrefix.matches("[A-Za-z0-9/_-]{1,80}")) {
             throw new IllegalArgumentException("keyPrefix is invalid");
-        }
-        if (cleanupQueueCapacity < 1 || cleanupQueueCapacity > 100_000) {
-            throw new IllegalArgumentException("cleanupQueueCapacity is invalid");
         }
     }
 
