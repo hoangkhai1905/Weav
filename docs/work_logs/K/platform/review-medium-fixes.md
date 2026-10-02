@@ -130,3 +130,10 @@ Chưa làm (cố ý, không over-engineer): chưa kiểm tra `userId` phía cons
 Xem báo cáo coordinator; gateway unit 93, e2e 82 (thêm 1 test `/ready` còn 200 khi upstream down).
 
 Kiểm tra lại (coordinator, 2026-10-02): workflow 472/472; workspace 393/393; identity 349 test, 3 error (Avatar minio đã biết), 1 skipped; gateway unit 93/93, e2e 82/82, build OK; notification unit 100/100, e2e 14/14, build OK; compose config OK.
+
+## Live smoke sau Step 2/3 (2026-10-02)
+
+- `scripts/start-workflow-v1-live-smoke.ps1 -ValidateOnly`: PASS (không tạo schema/container).
+- `scripts/start-workflow-v1-live-smoke.ps1` (HEAD `1d78856`): PASS. Auth register/verify/login, tạo workspace qua public API; workflow create 201, draft 200, get 200, list 200, publish 200, admission 202, detail 200; execution `SUCCESS`, correlation id được giữ; `outboundHttpCalls=0`.
+- Dọn dẹp: compose project `weav-workflow-smoke-20261002-8504fbd0e6b1` và volume `..._rabbitmq_smoke_data` đã xoá.
+- Schema thử nghiệm còn lại trên Neon (giữ để review, chỉ xoá khi người dùng duyệt): `weav_workflow_smoke_identity_20261002_8504fbd0e6b1`, `weav_workflow_smoke_workspace_20261002_8504fbd0e6b1`, `weav_workflow_smoke_workflow_20261002_8504fbd0e6b1`.
