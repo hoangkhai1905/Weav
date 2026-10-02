@@ -1,11 +1,16 @@
 package com.weav.workflow.infrastructure.workspace;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Ticker;
 import com.weav.workflow.application.port.out.ResolvedConnection;
 import com.weav.workflow.application.port.out.WorkspaceAccessPort;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
 import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableException;
 import com.weav.workflow.domain.exception.ForbiddenException;
 import com.weav.workflow.infrastructure.web.CorrelationIdFilter;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -22,6 +27,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -49,8 +56,49 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
     private final RestClient restClient;
     private final WorkspaceClientProperties properties;
     private final ObjectMapper objectMapper;
+    private final CircuitBreaker circuitBreaker;
+    /** Only access-check answers are cached: Access or DENIED. Never errors, never credentials. */
+    private final Cache<AccessKey, Object> accessCache;
+
+    private static final Object DENIED = new Object();
+    private static final int ACCESS_CACHE_MAX_ENTRIES = 10_000;
+
+    private record AccessKey(UUID workspaceId, UUID userId) {
+    }
 
     public WorkspaceClient(WorkspaceClientProperties properties, ObjectMapper objectMapper) {
+        this(properties, objectMapper,
+                circuitBreaker(20, 50f, 10, Duration.ofSeconds(10), 3), Duration.ofSeconds(30), Ticker.systemTicker());
+    }
+
+    /** Count-based breaker; 4xx never count (see send), only transport errors, timeouts and 5xx do. */
+    public static CircuitBreaker circuitBreaker(
+            int window, float failureRatePercent, int minimumCalls, Duration openFor, int halfOpenPermits) {
+        CircuitBreaker breaker = CircuitBreaker.of("workspace-service", CircuitBreakerConfig.custom()
+                .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
+                .slidingWindowSize(window)
+                .failureRateThreshold(failureRatePercent)
+                .minimumNumberOfCalls(minimumCalls)
+                .waitDurationInOpenState(openFor)
+                .permittedNumberOfCallsInHalfOpenState(halfOpenPermits)
+                .build());
+        breaker.getEventPublisher().onStateTransition(event ->
+                log.warn("event=workspace_circuit_breaker_transition transition={}", event.getStateTransition()));
+        return breaker;
+    }
+
+    public WorkspaceClient(
+            WorkspaceClientProperties properties,
+            ObjectMapper objectMapper,
+            CircuitBreaker circuitBreaker,
+            Duration accessCacheTtl,
+            Ticker ticker) {
+        this.circuitBreaker = Objects.requireNonNull(circuitBreaker, "circuitBreaker must not be null");
+        this.accessCache = Caffeine.newBuilder()
+                .maximumSize(ACCESS_CACHE_MAX_ENTRIES)
+                .expireAfterWrite(accessCacheTtl)
+                .ticker(ticker)
+                .build();
         this.properties = Objects.requireNonNull(properties, "properties must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
 
@@ -67,6 +115,25 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
     public Access getAccess(UUID workspaceId, UUID userId) {
         Objects.requireNonNull(workspaceId, "workspaceId must not be null");
         Objects.requireNonNull(userId, "userId must not be null");
+        AccessKey key = new AccessKey(workspaceId, userId);
+        Object cached = accessCache.getIfPresent(key);
+        if (cached == DENIED) {
+            throw new ForbiddenException();
+        }
+        if (cached instanceof Access access) {
+            return access;
+        }
+        try {
+            Access access = fetchAccess(workspaceId, userId);
+            accessCache.put(key, access);
+            return access;
+        } catch (ForbiddenException denied) {
+            accessCache.put(key, DENIED);
+            throw denied;
+        }
+    }
+
+    private Access fetchAccess(UUID workspaceId, UUID userId) {
         long started = System.nanoTime();
         String path = INTERNAL_PREFIX + workspaceId + "/users/" + userId + "/access";
         ResponseEnvelope response = send("access", HttpMethod.GET, path, null, started);
@@ -190,6 +257,10 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
             long started) {
         String serviceKey = requiredServiceKey();
         URI uri = endpoint(path, operation, started);
+        if (!circuitBreaker.tryAcquirePermission()) {
+            throw new WorkspaceDependencyUnavailableException();
+        }
+        long breakerStarted = System.nanoTime();
         try {
             RestClient.RequestBodySpec request = restClient.method(method)
                     .uri(uri)
@@ -204,12 +275,20 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
             if (body != null) {
                 request.contentType(MediaType.APPLICATION_JSON).body(body);
             }
-            return request.exchange((clientRequest, clientResponse) -> new ResponseEnvelope(
+            ResponseEnvelope envelope = request.exchange((clientRequest, clientResponse) -> new ResponseEnvelope(
                     clientResponse.getStatusCode().value(),
                     clientResponse.getHeaders().getFirst(HttpHeaders.CONTENT_TYPE),
                     clientResponse.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL),
                     readBounded(clientResponse.getBody())));
+            long elapsed = System.nanoTime() - breakerStarted;
+            if (envelope.statusCode() >= 500) {
+                circuitBreaker.onError(elapsed, TimeUnit.NANOSECONDS, new IllegalStateException("5xx"));
+            } else {
+                circuitBreaker.onSuccess(elapsed, TimeUnit.NANOSECONDS);
+            }
+            return envelope;
         } catch (RuntimeException exception) {
+            circuitBreaker.onError(System.nanoTime() - breakerStarted, TimeUnit.NANOSECONDS, exception);
             throw unavailable(operation, started);
         }
     }

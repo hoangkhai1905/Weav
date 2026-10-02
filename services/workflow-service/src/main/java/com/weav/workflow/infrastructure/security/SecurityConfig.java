@@ -138,8 +138,21 @@ public class SecurityConfig {
     }
 
     @Bean
-    public WorkspaceClient workspaceClient(WorkspaceClientProperties properties, ObjectMapper objectMapper) {
-        return new WorkspaceClient(properties, objectMapper);
+    public WorkspaceClient workspaceClient(
+            WorkspaceClientProperties properties,
+            ObjectMapper objectMapper,
+            @Value("${weav.workflow.workspace-client.circuit-breaker.window-size:20}") int window,
+            @Value("${weav.workflow.workspace-client.circuit-breaker.failure-rate-percent:50}") float failureRate,
+            @Value("${weav.workflow.workspace-client.circuit-breaker.minimum-calls:10}") int minimumCalls,
+            @Value("${weav.workflow.workspace-client.circuit-breaker.open-duration:10s}") java.time.Duration openFor,
+            @Value("${weav.workflow.workspace-client.circuit-breaker.half-open-permits:3}") int halfOpenPermits,
+            @Value("${weav.workflow.workspace-client.access-cache-ttl:30s}") java.time.Duration accessCacheTtl) {
+        return new WorkspaceClient(
+                properties,
+                objectMapper,
+                WorkspaceClient.circuitBreaker(window, failureRate, minimumCalls, openFor, halfOpenPermits),
+                accessCacheTtl,
+                com.github.benmanes.caffeine.cache.Ticker.systemTicker());
     }
 
     @Bean

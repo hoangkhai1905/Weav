@@ -142,8 +142,14 @@ public class WorkspaceApplicationConfig {
     public WorkflowConnectionUsagePort workflowConnectionUsagePort(
             @Qualifier("workflowConnectionUsageRestClient") RestClient restClient,
             WorkflowServiceProperties properties,
-            ObjectMapper objectMapper) {
-        return new WorkflowConnectionUsageClient(restClient, properties, objectMapper);
+            ObjectMapper objectMapper,
+            @Value("${weav.workflow.circuit-breaker.window-size:20}") int window,
+            @Value("${weav.workflow.circuit-breaker.failure-rate-percent:50}") float failureRate,
+            @Value("${weav.workflow.circuit-breaker.minimum-calls:10}") int minimumCalls,
+            @Value("${weav.workflow.circuit-breaker.open-duration:10s}") Duration openFor,
+            @Value("${weav.workflow.circuit-breaker.half-open-permits:3}") int halfOpenPermits) {
+        return new WorkflowConnectionUsageClient(restClient, properties, objectMapper,
+                WorkflowConnectionUsageClient.circuitBreaker(window, failureRate, minimumCalls, openFor, halfOpenPermits));
     }
 
     @Bean("googleOAuthRestClient")
