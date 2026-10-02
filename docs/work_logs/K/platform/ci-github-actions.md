@@ -49,6 +49,10 @@ Chưa kiểm: `pnpm install --frozen-lockfile --filter ...` (chỉ kiểm đư�
 - FAIL `java` x3: `./mvnw: Permission denied`, vì `mvnw` được commit với mode `100644`. Sửa: `git update-index --chmod=+x` cho 3 file `mvnw`.
 - FAIL `notification-integration`: `runtime.integration.cjs` require `../../api-gateway/dist/notifications/notifications.module` (local pass vì gateway đã build sẵn). Sửa: job install + build thêm api-gateway, và chạy khi api-gateway đổi.
 
+## CI run 2 (run `37046116069`, commit `9882b7a`): PASS
+
+Tất cả 12 job xanh, tổng ~5 phút. Java: identity 4m18s (357 test, 1 skip), workspace 3m03s (418), workflow 4m45s (483); node mỗi service 35–55 s; notification-integration 1m14s; web 34 s; mobile 27 s. Số test trùng với chạy local.
+
 ## Việc tiếp theo
 
 1. Chủ repo duyệt push → mở PR vào `dev` → đọc lần chạy CI đầu tiên, chỉ sửa cấu hình CI.
