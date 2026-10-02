@@ -96,6 +96,111 @@ describe('generate', () => {
     ['unknown node type', { ...ready, intent: { ...ready.intent, nodes: [ready.intent.nodes[0], { id: 'x', type: 'agent.task', config: {} }] } }],
     ['config field outside the capability', { ...ready, intent: { ...ready.intent, nodes: [ready.intent.nodes[0], { id: 'ping', type: 'http.request', config: { url: 'u', connectionId: 'c' } }] } }],
     ['bad node id', { ...ready, intent: { ...ready.intent, nodes: [ready.intent.nodes[0], { id: 'Ping!', type: 'http.request', config: {} }] } }],
+    [
+      'dangling edge',
+      {
+        ...ready,
+        intent: { ...ready.intent, edges: [{ from: 'start', to: 'ghost' }] },
+      },
+    ],
+    [
+      'cycle',
+      {
+        ...ready,
+        intent: {
+          ...ready.intent,
+          nodes: [
+            ...ready.intent.nodes,
+            { id: 'again', type: 'http.request', config: {} },
+          ],
+          edges: [
+            { from: 'start', to: 'ping' },
+            { from: 'ping', to: 'again' },
+            { from: 'again', to: 'ping' },
+          ],
+        },
+      },
+    ],
+    [
+      'no manual trigger',
+      {
+        ...ready,
+        intent: {
+          ...ready.intent,
+          nodes: [
+            { id: 'a', type: 'http.request', config: {} },
+            ready.intent.nodes[1],
+          ],
+          edges: [{ from: 'a', to: 'ping' }],
+        },
+      },
+    ],
+    [
+      'two manual triggers',
+      {
+        ...ready,
+        intent: {
+          ...ready.intent,
+          nodes: [
+            ...ready.intent.nodes,
+            { id: 'start2', type: 'trigger.manual', config: {} },
+          ],
+          edges: [
+            { from: 'start', to: 'ping' },
+            { from: 'start2', to: 'ping' },
+          ],
+        },
+      },
+    ],
+    [
+      'oversized config',
+      {
+        ...ready,
+        intent: {
+          ...ready.intent,
+          nodes: [
+            ready.intent.nodes[0],
+            {
+              id: 'ping',
+              type: 'http.request',
+              config: { body: 'x'.repeat(17 * 1024) },
+            },
+          ],
+        },
+      },
+    ],
+    ...[
+      'http://localhost/x',
+      'http://127.0.0.1/',
+      'http://10.1.2.3/',
+      'http://172.20.0.1/',
+      'http://192.168.1.1/',
+      'http://169.254.169.254/',
+      'http://[::1]/',
+      'http://db.internal/',
+      'http://printer.local/',
+      'ftp://example.com/f',
+      'http://2130706433/',
+    ].map(
+      (url) =>
+        [
+          `internal url ${url}`,
+          {
+            ...ready,
+            intent: {
+              ...ready.intent,
+              nodes: [
+                ready.intent.nodes[0],
+                {
+                  id: 'ping',
+                  type: 'http.request',
+                  config: { method: 'GET', url },
+                },
+              ],
+            },
+          },
+        ] as const,
+    ),
     ['free-text question code', { status: 'needs_input', questions: [{ code: 'PLEASE_TELL_ME', field: 'x' }] }],
   ])('rejects %s', async (_name, output) => {
     await expect(codeOf(generate(new FakeProvider(output as Record<string, unknown>), { prompt: 'p', capabilities }, signal))).resolves.toBe('AI_OUTPUT_INVALID');

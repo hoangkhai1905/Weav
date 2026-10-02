@@ -124,6 +124,13 @@ class WorkflowGenerationServiceTest {
         }
     }
 
+    @Test void quotaExhaustionBecomesAiQuotaExceeded() {
+        FakeAi ai = new FakeAi(new NodeExecutor.Failure("AI_QUOTA_EXCEEDED", "quota", false));
+        assertThrows(com.weav.workflow.domain.exception.AiQuotaExceededException.class,
+                () -> service(ai, new Connections(), () -> true)
+                        .generate(UUID.randomUUID(), UUID.randomUUID(), "x", null, Map.of()));
+    }
+
     @Test void otherAiFailuresBecomeAiUnavailable() {
         for (String code : List.of("AI_OUTPUT_INVALID", "DEPENDENCY_NOT_CONFIGURED")) {
             FakeAi ai = new FakeAi(new NodeExecutor.Failure(code, "failure", false));

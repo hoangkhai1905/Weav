@@ -26,6 +26,7 @@ public final class RetryPolicy {
             "CONFIGURATION_ERROR",
             "INVALID_CONFIGURATION",
             "DEPENDENCY_NOT_CONFIGURED",
+            "AI_QUOTA_EXCEEDED",
             "AUTHENTICATION_REJECTED");
 
     private final DoubleSupplier random;

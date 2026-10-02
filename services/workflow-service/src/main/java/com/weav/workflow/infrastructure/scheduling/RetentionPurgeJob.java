@@ -35,6 +35,7 @@ public class RetentionPurgeJob {
     private final String agentSteps;
     private final String outbox;
     private final String notificationOutbox;
+    private final String aiUsage;
 
     public RetentionPurgeJob(JdbcTemplate jdbc, PlatformTransactionManager transactionManager,
                              @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema,
@@ -61,6 +62,7 @@ public class RetentionPurgeJob {
         agentSteps = q + "agent_steps";
         outbox = q + "outbox_events";
         notificationOutbox = q + "notification_outbox";
+        aiUsage = q + "ai_usage";
     }
 
     @Scheduled(fixedDelayString = "${weav.workflow.retention.purge-interval:PT1H}",
@@ -83,6 +85,8 @@ public class RetentionPurgeJob {
                     WHERE status = 'PUBLISHED' AND published_at < CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
                     LIMIT ?)
                 """.formatted(notificationOutbox), notificationOutboxDays, BATCH_SIZE));
+        held = held && inBatches("ai_usage", () -> jdbc.update(
+                "DELETE FROM %s WHERE usage_date < (now() AT TIME ZONE 'UTC')::date - 30".formatted(aiUsage)));
         if (held && executionDays > 0) {
             inBatches("workflow_executions", this::purgeExecutionBatch);
         }

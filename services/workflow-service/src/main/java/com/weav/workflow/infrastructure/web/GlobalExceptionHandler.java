@@ -12,6 +12,7 @@ import com.weav.workflow.domain.exception.WebhookNotFoundException;
 import com.weav.workflow.domain.exception.WebhookRateLimitExceededException;
 import com.weav.workflow.domain.exception.GenerationRateLimitedException;
 import com.weav.workflow.domain.exception.AiUnavailableException;
+import com.weav.workflow.domain.exception.AiQuotaExceededException;
 import com.weav.workflow.domain.exception.AiTimeoutException;
 import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -248,6 +249,7 @@ public class GlobalExceptionHandler {
         if (exception instanceof WebhookRateLimitExceededException) {
             return HttpStatus.TOO_MANY_REQUESTS;
         }
+        if (exception instanceof AiQuotaExceededException) return HttpStatus.TOO_MANY_REQUESTS;
         if (exception instanceof GenerationRateLimitedException) return HttpStatus.TOO_MANY_REQUESTS;
         if (exception instanceof AiUnavailableException) return HttpStatus.SERVICE_UNAVAILABLE;
         if (exception instanceof AiTimeoutException) return HttpStatus.GATEWAY_TIMEOUT;

@@ -23,6 +23,7 @@ class RetryPolicyTest {
         assertFalse(policy.retryable("HTTP_BUSINESS_REJECTED"));
         assertFalse(policy.retryable("UNKNOWN_ERROR"));
         assertFalse(policy.retryable("AI_OUTPUT_INVALID"));
+        assertFalse(policy.retryable("AI_QUOTA_EXCEEDED"));
         assertFalse(policy.retryable("OUTCOME_UNKNOWN"));
     }
 

@@ -16,6 +16,7 @@ import { generate } from '../../application/generate';
 import { summarize } from '../../application/summarize';
 import { AiError } from '../../domain/errors';
 import { Admission } from '../../infrastructure/admission';
+import { RequestDedup } from '../../infrastructure/request-dedup';
 import { ENVELOPES, isOperation } from './envelopes';
 import './request-signal';
 
@@ -25,6 +26,11 @@ const MAX_OUTPUT_BYTES = 256 * 1024;
 @Controller('v1')
 export class AiController {
   private readonly logger = new Logger('AiController');
+  // AI-1: a retried/recovered attempt reuses its requestId; see RequestDedup.
+  private readonly dedup = new RequestDedup<{
+    requestId: string;
+    result: unknown;
+  }>();
 
   constructor(
     @Inject(AI_DEPS) private readonly deps: AiDeps,
@@ -59,34 +65,38 @@ export class AiController {
       throw new AiError('FORBIDDEN');
     }
 
-    const release = this.admission.tryAcquire(body.workspaceId);
-    if (!release) throw new AiError('AI_BUSY');
-    let outcome = 'OK';
-    try {
-      const signal = request.aiSignal;
-      const result =
-        body.operation === 'extract'
-          ? await extract(provider, body, signal)
-          : body.operation === 'classify'
-            ? await classify(provider, body, signal)
-            : body.operation === 'summarize'
-              ? await summarize(provider, body, signal)
-              : await generate(provider, body, signal);
-      if (Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_OUTPUT_BYTES)
-        throw new AiError('AI_OUTPUT_INVALID');
-      return { requestId, result };
-    } catch (error) {
-      outcome = error instanceof AiError ? error.code : 'INTERNAL_ERROR';
-      throw error;
-    } finally {
-      release();
-      this.logger.log({
-        requestId,
-        operation,
-        workspaceId: body.workspaceId,
-        outcome,
-        durationMs: Date.now() - startedAt,
-      });
-    }
+    return this.dedup.run(`${body.workspaceId}:${requestId}`, async () => {
+      const release = this.admission.tryAcquire(body.workspaceId);
+      if (!release) throw new AiError('AI_BUSY');
+      let outcome = 'OK';
+      try {
+        const signal = request.aiSignal;
+        const result =
+          body.operation === 'extract'
+            ? await extract(provider, body, signal)
+            : body.operation === 'classify'
+              ? await classify(provider, body, signal)
+              : body.operation === 'summarize'
+                ? await summarize(provider, body, signal)
+                : await generate(provider, body, signal);
+        if (
+          Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_OUTPUT_BYTES
+        )
+          throw new AiError('AI_OUTPUT_INVALID');
+        return { requestId, result };
+      } catch (error) {
+        outcome = error instanceof AiError ? error.code : 'INTERNAL_ERROR';
+        throw error;
+      } finally {
+        release();
+        this.logger.log({
+          requestId,
+          operation,
+          workspaceId: body.workspaceId,
+          outcome,
+          durationMs: Date.now() - startedAt,
+        });
+      }
+    });
   }
 }

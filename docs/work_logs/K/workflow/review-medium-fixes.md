@@ -45,3 +45,16 @@ Nguồn: `docs/reviews/2026-10-01-backend-review.md` (WF-9, WF-12, WF-11, WF-8).
 - Contract: `packages/contracts/http/workflow/openapi.yaml` (`SaveWorkflowDraftRequest.expectedRevision`, `Workflow.revision`).
 - Kiểm tra thread-safety: `ExecutionJobListener` không giữ state theo run (chỉ `AtomicBoolean`), `ExecutionRunner` dùng biến cục bộ cho mỗi run, lease trong `claim` chặn hai worker chạy một execution bất kể owner. Không cần sửa.
 - Handoff cho web: `apps/web` chưa gửi `expectedRevision`. Web nên lưu `revision` nhận được khi tải/lưu bản nháp, gửi lại trong mỗi lần `PUT .../draft`, và xử lý 409 `DRAFT_REVISION_CONFLICT` (tải lại bản nháp hoặc hỏi người dùng ghi đè).
+
+## Bổ sung: AI-1 (requestId ổn định) và AI-2 (hạn mức AI theo workspace)
+
+Người dùng: "8. ok" (AI-1, AI-3) và "We're developing right now, so i think having a quota obstructing us. but when we go production, we need a quota limit." nên hạn mức mặc định TẮT.
+
+- `AiClient`: node AI gửi `requestId = UUID.nameUUIDFromBytes(executionId:nodeId:attempt)` (cùng attempt thì cùng id, attempt khác thì khác id; JWT `request_id` và header `X-Request-ID` dùng cùng giá trị). Sinh workflow (không gắn execution) vẫn dùng UUID ngẫu nhiên. Phía ai-service dedup theo id này (xem log ai-service). Chưa truyền correlation-id (ai-service chưa đọc).
+- `AiQuota` (mới) + migration `V9__ai_usage.sql` (`ai_usage(workspace_id, usage_date, call_count)`, khóa chính hai cột). `weav.workflow.ai.daily-limit-per-workspace` (env `WORKFLOW_AI_DAILY_LIMIT_PER_WORKSPACE`, mặc định 0 = không giới hạn, không chạy câu SQL nào). Khi > 0: một câu `INSERT ... ON CONFLICT DO UPDATE ... WHERE call_count < ? RETURNING`, transaction `REQUIRES_NEW` riêng; không có hàng trả về thì node fail `AI_QUOTA_EXCEEDED` (không retry; thêm vào `PERMANENT_CODES` của `RetryPolicy`), sinh workflow trả 429 `AI_QUOTA_EXCEEDED` (`AiQuotaExceededException`, `GlobalExceptionHandler`). Mỗi lần gọi ai-service (kể cả retry engine) tính một đơn vị; ngày tính theo UTC.
+- `RetentionPurgeJob` xóa thêm `ai_usage` cũ hơn 30 ngày.
+- Env: `.env.example`, `.env`, `compose.dev.yml`, `application.properties`. Khi lên production cần đặt giá trị dương.
+- GitNexus impact: `AiClient`, `WorkflowGenerationService`, `RetentionPurgeJob` đều CRITICAL ở mức class (đã grep: `AiClient` chỉ dùng bởi `AiNodeExecutor`, `AiClientConfiguration`, test; constructor test 5 tham số giữ nguyên; thay đổi chỉ cộng thêm).
+- Test mới: `AiClientContractTest` (requestId ổn định; quota chặn trước khi gọi HTTP), `AiQuotaTest` (tắt thì không ghi dòng nào; giới hạn 2 thì lần 3 fail không retry; purge 30 ngày), `WorkflowGenerationServiceTest` và `WorkflowGenerationHttpTest` (429), `RetryPolicyTest`.
+- Workflow có kiểm tra lại đồ thị sinh ra: `IntentCompiler` dùng `validatePublish` nên đồ thị sinh ra bị kiểm cạnh/chu trình/một manual trigger. Lưu draft thủ công (`validateDraft`) chỉ kiểm id, loại node, trường config, KHÔNG kiểm cạnh trỏ tới node có thật, chu trình, số trigger (để publish kiểm). Chưa sửa trong lane này.
+- `./mvnw verify` (UTC): 472 test, 0 failure, 0 error, 0 skipped (baseline 465 + 7 mới; không gặp lỗi môi trường đã biết). Compose config -q: PASS.

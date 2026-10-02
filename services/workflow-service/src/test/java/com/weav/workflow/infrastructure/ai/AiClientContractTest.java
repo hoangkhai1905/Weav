@@ -89,6 +89,32 @@ class AiClientContractTest {
     }
 
     @Test
+    void requestIdIsStablePerExecutionNodeAttemptAndChangesWithAttempt() {
+        UUID workspace = UUID.randomUUID();
+        UUID execution = UUID.randomUUID();
+        NodeExecutor.Context first = new NodeExecutor.Context(workspace, execution, UUID.randomUUID(), "node", 1, null, null);
+        NodeExecutor.Context recovered = new NodeExecutor.Context(workspace, execution, UUID.randomUUID(), "node", 1, null, null);
+        NodeExecutor.Context retry = new NodeExecutor.Context(workspace, execution, UUID.randomUUID(), "node", 2, null, null);
+        assertEquals(AiClient.requestId(first), AiClient.requestId(recovered));
+        org.junit.jupiter.api.Assertions.assertNotEquals(AiClient.requestId(first), AiClient.requestId(retry));
+    }
+
+    @Test
+    void quotaExhaustionStopsTheCallBeforeAnyRequest() {
+        AiClient limited = new AiClient(new AiClientProperties(true, true, java.net.URI.create("http://ai.internal"),
+                "k", "p", Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofSeconds(1), 1024),
+                new ServiceJwtSigner(new DefaultResourceLoader(), "", "", Duration.ofSeconds(1)),
+                builder.build(), new ObjectMapper(), Clock.systemUTC(), workspaceId -> {
+                    throw new NodeExecutor.Failure(AiQuota.EXCEEDED, "quota", false);
+                });
+        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                () -> limited.execute(context(), "summarize", Map.of("text", "t", "maxLength", 10)));
+        assertEquals("AI_QUOTA_EXCEEDED", failure.code());
+        assertFalse(failure.retryable());
+        server.verify(); // no HTTP expectation was set, none was made
+    }
+
+    @Test
     void sendsBoundServiceJwtAndReturnsResult() throws Exception {
         AtomicReference<String> requestId = new AtomicReference<>();
         AtomicReference<String> token = new AtomicReference<>();
