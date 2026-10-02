@@ -79,6 +79,18 @@ Lưu ý: overlay `compose.workflow-smoke.yml` không mount khóa nên vẫn dùn
 - Chưa kiểm: chạy image production với hạ tầng thật; healthcheck production của Java chưa chạy end-to-end; `mem_limit` dev chưa đo dưới tải; image gateway nặng do `prisma` nằm trong dependencies production của gateway (không thuộc X-16).
 - Kiểm tra: `docker compose -f compose.yml -f compose.dev.yml --profile app config -q` OK, cùng với `compose.workflow-smoke.yml` OK.
 
+## X-14 - metric backlog outbox, độ sâu DLQ, endpoint Prometheus
+
+- 3 service Java thêm `io.micrometer:micrometer-registry-prometheus` (version theo Spring Boot BOM) và mở `management.endpoints.web.exposure.include=health,info,prometheus` (không mở env/beans/configprops/heapdump). `SecurityConfig` của từng service `permitAll` `GET /actuator/prometheus` giống `/actuator/health`. Port Java chỉ bind `127.0.0.1` trong `compose.dev.yml` và api-gateway không có route `/actuator/**` (chỉ gọi `/actuator/health/readiness` của upstream), nên metric không ra ngoài; production cần giữ nguyên điều này (không publish port service, hoặc tách management port).
+- Gauge outbox (`infrastructure/metrics/OutboxMetrics`, mỗi service một bản; query nhẹ chạy lười khi scrape, cache 30 giây, lỗi DB thì giữ giá trị cũ, không ném):
+  - `weav_outbox_pending{outbox}`: dòng chưa publish và chưa FAILED; `weav_outbox_oldest_pending_age_seconds{outbox}`: tuổi dòng pending cũ nhất (0 nếu không có); `weav_outbox_failed{outbox}`: dòng ở trạng thái FAILED.
+  - identity: `notification_outbox` (chỉ pending và tuổi; bảng không có trạng thái FAILED); workspace: `notification_outbox`; workflow: `outbox_events` và `notification_outbox` (pending = PENDING/CLAIMED).
+- Độ sâu queue (workflow, `RabbitQueueMetrics`): `weav_rabbit_queue_messages{queue}` cho `workflow.executions.v1` và `workflow.executions.v1.dlq`, thăm dò mỗi 30 giây trên thread daemon riêng qua `AmqpAdmin.getQueueInfo`; broker down hoặc queue không tồn tại thì NaN, không chặn scrape/khởi động.
+- Hikari: `hikaricp_connections_pending` có sẵn từ registry Prometheus (test xác nhận).
+- Test: `OutboxMetricsIntegrationTest` ở cả 3 service (seed dòng pending/FAILED, refresh, kiểm giá trị gauge và `/actuator/prometheus` có `weav_outbox_pending`, `hikaricp_connections_pending`); `RabbitQueueMetricsTest` (đọc DLQ = 7, broker down -> NaN, không ném). Test dùng `@AutoConfigureMetrics` vì Boot 4 tắt export metric trong `@SpringBootTest`; `src/test/resources/application.properties` của workflow/workspace phải thêm `prometheus` vào exposure (file test che file main).
+- Kết quả `./mvnw verify`: identity 353 test, 3 error (Avatar minio đã biết), 1 skipped; workspace 412/412; workflow 488/488.
+- Chưa làm: alert rule/dashboard Grafana, scrape config Prometheus (chưa có Prometheus trong compose); metric NestJS service.
+
 ## Kiểm tra
 
 Xem báo cáo coordinator; gateway unit 93, e2e 82 (thêm 1 test `/ready` còn 200 khi upstream down).

@@ -60,7 +60,7 @@ public class SecurityConfig {
                                 "/auth/web/csrf"
                         ).permitAll()
                         .requestMatchers("/internal/directory/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/prometheus").permitAll()
                         .anyRequest().authenticated()
                 )
                 .httpBasic(AbstractHttpConfigurer::disable)

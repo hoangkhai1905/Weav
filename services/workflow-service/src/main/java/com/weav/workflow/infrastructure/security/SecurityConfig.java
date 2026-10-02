@@ -65,7 +65,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/prometheus").permitAll()
                         .requestMatchers(HttpMethod.HEAD, INTERNAL_USAGE_PATH).denyAll()
                         .requestMatchers(HttpMethod.GET, INTERNAL_USAGE_PATH).permitAll()
                         .requestMatchers(HttpMethod.POST, WEBHOOK_PATH).permitAll()
