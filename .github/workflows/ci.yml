@@ -144,7 +144,8 @@ jobs:
 
   notification-integration:
     needs: changes
-    if: contains(fromJSON(needs.changes.outputs.node), 'notification-service')
+    # runtime.integration.cjs also loads api-gateway's built notifications module.
+    if: contains(fromJSON(needs.changes.outputs.node), 'notification-service') || contains(fromJSON(needs.changes.outputs.node), 'api-gateway')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Ports and settings mirror services/notification-service/test/compose.yml.
@@ -178,9 +179,10 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - run: pnpm install --frozen-lockfile --filter ./services/notification-service
-      # Integration tests require ../dist.
+      - run: pnpm install --frozen-lockfile --filter ./services/notification-service --filter ./services/api-gateway
+      # Integration tests require ../dist and ../../api-gateway/dist.
       - run: pnpm --dir services/notification-service build
+      - run: pnpm --dir services/api-gateway build
       - run: pnpm --dir services/notification-service test:integration
       - run: pnpm --dir services/notification-service test:inbox-integration
 

@@ -43,6 +43,12 @@
 
 Chưa kiểm: `pnpm install --frozen-lockfile --filter ...` (chỉ kiểm được trên CI), thời gian chạy thực tế trên runner.
 
+## CI run 1 ([PR #2](https://github.com/hoangkhai1905/Weav/pull/2), run `37045712836`)
+
+- PASS: changes, mobile, web, node x4 (`--filter` install chạy được trên runner).
+- FAIL `java` x3: `./mvnw: Permission denied`, vì `mvnw` được commit với mode `100644`. Sửa: `git update-index --chmod=+x` cho 3 file `mvnw`.
+- FAIL `notification-integration`: `runtime.integration.cjs` require `../../api-gateway/dist/notifications/notifications.module` (local pass vì gateway đã build sẵn). Sửa: job install + build thêm api-gateway, và chạy khi api-gateway đổi.
+
 ## Việc tiếp theo
 
 1. Chủ repo duyệt push → mở PR vào `dev` → đọc lần chạy CI đầu tiên, chỉ sửa cấu hình CI.
