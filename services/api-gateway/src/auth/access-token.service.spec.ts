@@ -1,6 +1,15 @@
 import { randomBytes, randomUUID, createHmac } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import {
+  SignJWT,
+  exportJWK,
+  generateKeyPair,
+  type JWK,
+  type CryptoKey,
+} from 'jose';
 import { AccessTokenService } from './access-token.service';
 
 describe('AccessTokenService real signatures', () => {
@@ -135,5 +144,117 @@ describe('AccessTokenService real signatures', () => {
     await expect(
       service.verify(randomBytes(32).toString('base64url')),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
+describe('AccessTokenService RS256 via JWKS', () => {
+  const secret = randomBytes(48).toString('hex');
+  const kid = 'test-key';
+  let server: Server;
+  let jwksUri: string;
+  let privateKey: CryptoKey;
+  let publicJwk: JWK;
+  let service: AccessTokenService;
+  const build = (uri: string) =>
+    new AccessTokenService(
+      new ConfigService({
+        gateway: {
+          jwt: {
+            accessSecret: secret,
+            issuer: 'issuer',
+            audience: 'audience',
+            clockSkewSeconds: 30,
+            jwksUri: uri,
+          },
+        },
+      }),
+    );
+  const claims = (status = 'ACTIVE') => ({
+    sid: randomUUID(),
+    jti: randomUUID(),
+    system_role: 'USER',
+    user_status: status,
+    token_use: 'access',
+  });
+  const sub = randomUUID();
+  const rs256 = (payload: object, header: object = { alg: 'RS256', kid }) =>
+    new SignJWT({ ...payload })
+      .setProtectedHeader(header as { alg: string })
+      .setSubject(sub)
+      .setIssuer('issuer')
+      .setAudience('audience')
+      .setIssuedAt()
+      .setNotBefore('0s')
+      .setExpirationTime('5m')
+      .sign(privateKey);
+
+  beforeAll(async () => {
+    const pair = await generateKeyPair('RS256', { extractable: true });
+    privateKey = pair.privateKey;
+    publicJwk = { ...(await exportJWK(pair.publicKey)), kid, alg: 'RS256' };
+    server = createServer((_req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ keys: [publicJwk] }));
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    jwksUri = `http://127.0.0.1:${(server.address() as AddressInfo).port}/jwks`;
+  });
+  afterAll(() => new Promise((resolve) => server.close(resolve)));
+  beforeEach(() => {
+    service = build(jwksUri);
+  });
+
+  it('accepts RS256 with a known kid and keeps the claim checks', async () => {
+    await expect(service.verify(await rs256(claims()))).resolves.toMatchObject({
+      sub,
+      user_status: 'ACTIVE',
+    });
+    await expect(
+      service.verify(await rs256(claims('DISABLED'))),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+  it('rejects an unknown kid', async () => {
+    await expect(
+      service.verify(await rs256(claims(), { alg: 'RS256', kid: 'other' })),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+  it('rejects HS256 signed with the RSA public key as the HMAC secret', async () => {
+    const forged = await new SignJWT({ ...claims() })
+      .setProtectedHeader({ alg: 'HS256', kid })
+      .setSubject(sub)
+      .setIssuer('issuer')
+      .setAudience('audience')
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(new TextEncoder().encode(JSON.stringify(publicJwk)));
+    await expect(service.verify(forged)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+  it('rejects alg none', async () => {
+    const part = (v: object) =>
+      Buffer.from(JSON.stringify(v)).toString('base64url');
+    const token = `${part({ alg: 'none' })}.${part({ ...claims(), sub, iss: 'issuer', aud: 'audience', exp: Date.now() / 1000 + 60 })}.`;
+    await expect(service.verify(token)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+  it('returns 401 when the JWKS is unreachable and HS256 still works', async () => {
+    const down = build('http://127.0.0.1:1/jwks');
+    await expect(down.verify(await rs256(claims()))).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    const hs = await new SignJWT({ ...claims() })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject(sub)
+      .setIssuer('issuer')
+      .setAudience('audience')
+      .setIssuedAt()
+      .setNotBefore('0s')
+      .setExpirationTime('5m')
+      .sign(new TextEncoder().encode(secret));
+    await expect(down.verify(hs)).resolves.toMatchObject({ sub });
   });
 });

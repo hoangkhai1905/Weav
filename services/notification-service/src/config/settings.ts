@@ -18,6 +18,13 @@ const schema = z
     DB_SCHEMA: z.literal('notification').default('notification'),
     DB_SSL_MODE: z.enum(['require', 'disable']).default('require'),
     JWT_ACCESS_SECRET: z.string().refine((s) => Buffer.byteLength(s) >= 32),
+    // Public keys for RS256 access tokens; fetched lazily so startup never waits on identity.
+    JWT_JWKS_URI: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z
+        .url({ protocol: /^https?$/ })
+        .default('http://identity-service:8080/.well-known/jwks.json'),
+    ),
     JWT_ISSUER: z.string().default('weav-identity'),
     JWT_AUDIENCE: z.string().default('weav-api'),
     RABBITMQ_HOST: z.string().default('localhost'),

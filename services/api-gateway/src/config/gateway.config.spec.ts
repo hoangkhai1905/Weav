@@ -133,6 +133,24 @@ describe('validateGatewayEnvironment', () => {
     ).toThrow('OCR_ALLOW_UNAUTHENTICATED_DEV');
   });
 
+  it('derives the JWKS URI from the identity URL and validates overrides', () => {
+    expect(
+      validateGatewayEnvironment(developmentEnvironment()).jwt.jwksUri,
+    ).toBe('http://identity-service:8080/.well-known/jwks.json');
+    expect(
+      validateGatewayEnvironment({
+        ...developmentEnvironment(),
+        JWT_JWKS_URI: 'https://id.example.test/jwks',
+      }).jwt.jwksUri,
+    ).toBe('https://id.example.test/jwks');
+    expect(() =>
+      validateGatewayEnvironment({
+        ...developmentEnvironment(),
+        JWT_JWKS_URI: 'file:///tmp/jwks',
+      }),
+    ).toThrow('JWT_JWKS_URI');
+  });
+
   it('accepts a valid development environment with safe defaults', () => {
     const config = validateGatewayEnvironment(developmentEnvironment());
 
