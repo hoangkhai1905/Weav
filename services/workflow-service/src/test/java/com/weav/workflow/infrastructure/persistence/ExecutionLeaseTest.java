@@ -217,6 +217,31 @@ class ExecutionLeaseTest {
     }
 
     @Test
+    void aRunThatKeepsBeingReclaimedIsFailedWithRecoveryExhaustedAndNotifiesOnce() {
+        Fixture fixture = fixture("RUNNING", "root", "{}", 2, true);
+        jdbc.update("update workflow.workflow_executions set recovery_count = 4 where id = ?",
+                fixture.executionId());
+
+        ExecutionStatePort.Lease fifth = executions.claim(fixture.executionId(), "worker-a", Duration.ofSeconds(30))
+                .orElseThrow();
+        executions.release(fifth);
+        assertTrue(executions.claim(fixture.executionId(), "worker-b", Duration.ofSeconds(30)).isEmpty());
+
+        assertEquals(1, jdbc.queryForObject(
+                "select count(*) from workflow.workflow_executions where id = ? and status = 'FAILED' "
+                        + "and error ->> 'code' = 'RECOVERY_EXHAUSTED' and lease_until is null "
+                        + "and finished_at is not null and recovery_count = 6",
+                Integer.class, fixture.executionId()));
+        assertEquals(0, jdbc.queryForObject(
+                "select count(*) from workflow.node_executions where execution_id = ? "
+                        + "and status in ('PENDING', 'RUNNING', 'WAITING')", Integer.class, fixture.executionId()));
+        assertEquals(1, jdbc.queryForObject(
+                "select count(*) from workflow.notification_outbox where entity_id = ? "
+                        + "and event_type = 'workflow.failed'", Integer.class, fixture.executionId()));
+        assertTrue(executions.claim(fixture.executionId(), "worker-c", Duration.ofSeconds(30)).isEmpty());
+    }
+
+    @Test
     void anInterruptedThirdAttemptFailsInsteadOfResettingOrSchedulingAnotherAttempt() {
         Fixture fixture = fixture("RUNNING", "root", "{}", 2, true);
         jdbc.update("update workflow.node_executions set attempt_count = 3 where id = ?", fixture.runningNodeId());
