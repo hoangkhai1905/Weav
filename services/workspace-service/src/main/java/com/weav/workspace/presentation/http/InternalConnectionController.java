@@ -60,7 +60,7 @@ public final class InternalConnectionController {
             @PathVariable UUID workspaceId,
             @PathVariable UUID connectionId,
             @Valid @RequestBody ReportConnectionAuthFailureRequest request) {
-        reportAuthFailure.execute(workspaceId, connectionId, request.failureCode());
+        reportAuthFailure.execute(workspaceId, connectionId, request.failureCode(), request.credentialId());
         return ResponseEntity.noContent().build();
     }
 }

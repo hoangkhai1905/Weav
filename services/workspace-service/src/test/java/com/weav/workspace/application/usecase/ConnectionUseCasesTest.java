@@ -172,8 +172,9 @@ class ConnectionUseCasesTest {
         when(memberships.findByWorkspaceIdAndUserId(WORKSPACE, OTHER_MEMBER))
                 .thenReturn(Optional.of(otherMember));
         when(connections.findByWorkspaceIdAndId(WORKSPACE, CONNECTION_ID)).thenReturn(Optional.of(connection));
-        when(connections.findAllByWorkspaceId(WORKSPACE)).thenReturn(List.of(connection));
+        when(connections.findAllByWorkspaceId(WORKSPACE, 200)).thenReturn(List.of(connection));
         when(credentials.findByConnectionId(CONNECTION_ID)).thenReturn(Optional.of(credential));
+        when(credentials.findAllByConnectionIdIn(List.of(CONNECTION_ID))).thenReturn(List.of(credential));
 
         GetConnectionUseCase get = new GetConnectionUseCase(
                 connections, memberships, credentials, assembler, new RecordingTransactionRunner());
@@ -194,6 +195,32 @@ class ConnectionUseCasesTest {
                 .anyMatch(name -> name.equals("credentialId")
                         || name.equals("encryptedPayload")
                         || name.equals("encryptionKeyVersion")));
+    }
+
+    @Test
+    void listLoadsCredentialsWithOneQueryAndCapsTheConnectionList() {
+        ConnectionRepository connections = mock(ConnectionRepository.class);
+        MembershipRepository memberships = mock(MembershipRepository.class);
+        CredentialRepository credentials = mock(CredentialRepository.class);
+        when(memberships.findByWorkspaceIdAndUserId(WORKSPACE, OWNER)).thenReturn(Optional.of(Membership.owner(WORKSPACE, OWNER)));
+        Connection first = connection(ConnectionStatus.ACTIVE, OWNER, Map.of());
+        Instant now = Instant.parse("2026-01-01T00:00:00Z");
+        Connection second = new Connection(UUID.randomUUID(), WORKSPACE, OWNER, "Other", ConnectionProvider.HTTP,
+                ConnectionAuthType.NONE, ConnectionStatus.ACTIVE, Map.of(), now, now, now);
+        when(connections.findAllByWorkspaceId(WORKSPACE, 200)).thenReturn(List.of(first, second));
+        Credential credential = Credential.createNew(first.getId(), new byte[] {1}, "key-v1", null);
+        when(credentials.findAllByConnectionIdIn(List.of(first.getId(), second.getId()))).thenReturn(List.of(credential));
+
+        List<ConnectionResponse> listed = new ListConnectionsUseCase(
+                connections, memberships, credentials, assembler, new RecordingTransactionRunner())
+                .execute(OWNER, WORKSPACE);
+
+        assertEquals(2, listed.size());
+        assertTrue(listed.get(0).hasCredential());
+        assertFalse(listed.get(1).hasCredential());
+        verify(credentials).findAllByConnectionIdIn(any());
+        verify(credentials, never()).findByConnectionId(any());
+        verify(connections).findAllByWorkspaceId(WORKSPACE, 200);
     }
 
     @Test

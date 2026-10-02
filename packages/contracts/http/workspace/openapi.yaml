@@ -23,6 +23,14 @@ paths:
       tags: [Workspaces]
       operationId: createWorkspace
       summary: Create a workspace for the authenticated user
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Optional retry key (8-128 chars of A-Za-z0-9._:-). Same key and body replays the original workspace; same key with a different body returns 422 IDEMPOTENCY_KEY_REUSED. Keys expire after 7 days.
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9._:-]{8,128}$'
       requestBody:
         required: true
         content:
@@ -985,6 +993,10 @@ components:
           type: string
           enum: [AUTHENTICATION_REJECTED]
           description: Only a confirmed authentication rejection may mark an ACTIVE connection INVALID.
+        credentialId:
+          type: string
+          format: uuid
+          description: Optional. When present and not the connection's current credential id, the report is ignored (204) so a stale report cannot invalidate a replaced credential.
     ConnectionResponse:
       type: object
       additionalProperties: false

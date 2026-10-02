@@ -14,6 +14,11 @@ public interface ConnectionRepository {
 
     List<Connection> findAllByWorkspaceId(UUID workspaceId);
 
+    /** At most {@code limit} connections, oldest first. */
+    default List<Connection> findAllByWorkspaceId(UUID workspaceId, int limit) {
+        return findAllByWorkspaceId(workspaceId).stream().limit(limit).toList();
+    }
+
     boolean existsByWorkspaceIdAndNameNormalized(
             UUID workspaceId,
             String normalizedName,

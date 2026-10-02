@@ -1,6 +1,7 @@
 package com.weav.workspace.infrastructure.persistence.repository;
 
 import com.weav.workspace.infrastructure.persistence.entity.ConnectionJpaEntity;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,6 +15,8 @@ public interface SpringDataConnectionRepository extends JpaRepository<Connection
     Optional<ConnectionJpaEntity> findByWorkspaceIdAndId(UUID workspaceId, UUID connectionId);
 
     List<ConnectionJpaEntity> findAllByWorkspaceId(UUID workspaceId);
+
+    List<ConnectionJpaEntity> findByWorkspaceIdOrderByCreatedAtAscIdAsc(UUID workspaceId, Pageable pageable);
 
     @Query("select case when count(connection) > 0 then true else false end "
             + "from ConnectionJpaEntity connection "

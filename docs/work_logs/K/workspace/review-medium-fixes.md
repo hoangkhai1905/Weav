@@ -47,3 +47,21 @@ Nguồn: `docs/reviews/2026-10-01-backend-review.md` (WS-5 trong "Other security
 Xoay key: đặt key cũ + version vào `CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS` (`v1:<base64>`), đặt key mới + version mới (`v2`) vào `CREDENTIAL_ENCRYPTION_KEY(_VERSION)`. Giữ key cũ trong danh sách tới khi mọi credential được ghi lại (refresh/reconnect/update). Chưa có công cụ liệt kê credential còn version cũ.
 
 File: `CredentialCryptoPort`, `AesGcmCredentialCrypto`, `CredentialEncryptionProperties` (thêm `previousKeys`, constructor 2 tham số giữ lại), `CompleteConnectionOAuthUseCase`, `ResolveConnectionUseCase`, `SaveCredentialUseCase`, `TestConnectionUseCase`, `RedisWorkspaceAuthorizationCache`, `application.properties`; `.env.example`, `.env`, `compose.dev.yml` (biến mới). Test: `AesGcmCredentialCryptoTest` (round trip format 2, hoán đổi connection thất bại, legacy giải mã được, xoay key + ghi lại bằng key mới, version lạ fail closed, previous keys sai), `RedisWorkspaceAuthorizationCacheLoggingTest` (retry rồi thành công; thất bại hẳn log ERROR, không ném lỗi), các test cũ cập nhật chữ ký mới.
+
+## Step 3 / Low (WS-8, WS-9, WS-11, WS-13, WS-3)
+
+| Mục | Quyết định | Ghi chú |
+| --- | --- | --- |
+| WS-8 | `POST /workspaces` nhận header tùy chọn `Idempotency-Key` (`[A-Za-z0-9._:-]{8,128}`, sai định dạng: 400). Bảng mới `workspace_idempotency (user_id, idem_key)` (V5), hàng được ghi cùng transaction với workspace. | Cùng key + cùng body: trả lại workspace gốc (201). Khác body: 422 `IDEMPOTENCY_KEY_REUSED`. Race: `INSERT ... ON CONFLICT DO NOTHING`, request thua đọc lại và trả workspace của request thắng. Không có header: hành vi cũ. FK `ON DELETE CASCADE DEFERRABLE` tới `workspaces`. Gateway đã chuyển tiếp `Idempotency-Key`, không sửa gateway. |
+| WS-9 | `ListConnectionsUseCase`: một query `findAllByConnectionIdIn` thay cho N query; danh sách giới hạn 200 connection (cũ nhất trước). | Chưa có tham số phân trang (contract không đổi). Thêm `page/size` tùy chọn khi workspace cần hơn 200 connection. |
+| WS-11 | `POST /internal/.../auth-failure` nhận thêm `credentialId` tùy chọn; nếu có và khác credential hiện tại thì bỏ qua (vẫn 204). | Hạn chế: id credential không đổi khi refresh/ghi đè (chỉ đổi khi xoá rồi tạo lại), và `resolve` chưa trả `credentialId`. Cần follow-up ở workflow (xem báo cáo) và có thể cần trường version (`updatedAt`). |
+| WS-13 | Outbox notification: thêm cột `failed_at` (V6). Sau `weav.workspace.notification-outbox.max-attempts` (mặc định 10) lần lỗi: đặt FAILED, log ERROR một lần, không thử lại, giữ hàng. | Job `WorkspaceRetentionPurgeJob` (mỗi giờ, batch 1000, advisory lock): xoá hàng đã publish quá 14 ngày (`weav.workspace.retention.outbox-days`) và key idempotency quá 7 ngày (`idempotency-days`). Không xoá FAILED. |
+| WS-3 | Bỏ qua. | `findCandidates` chỉ tải thành viên của một workspace (đã bị chặn bởi kích thước workspace) và Identity cần đủ danh sách id để lọc/sắp xếp theo tên; giới hạn sẽ đổi kết quả. Giữ nguyên, comment `ponytail:` trong `ListMembersUseCase` đã nêu lý do. |
+
+Test mới: `WorkspaceUseCasePersistenceIntegrationTest` (replay, khác body 422, 3 thread cùng key ra 1 workspace), `ConnectionUseCasesTest` (1 query credential, cap 200), `InternalConnectionUseCasesTest` (credentialId cũ bị bỏ qua), `WorkspaceNotificationRuntimeIntegrationTest` (FAILED sau 10 lần, purge giữ FAILED và hàng mới). Contract: `packages/contracts/http/workspace/openapi.yaml` thêm header và `credentialId`.
+
+| Lệnh | Kết quả |
+| --- | --- |
+| `JAVA_TOOL_OPTIONS=-Duser.timezone=UTC ./mvnw verify` (workspace-service) | PASS, 409 chạy, 0 failures, 0 errors (baseline 403) |
+
+Rủi ro: thêm phương thức vào `CredentialRepository` (port) và tham số `maxAttempts` vào constructor `NotificationOutboxPublisher`; mọi nơi gọi trong repo đã cập nhật.

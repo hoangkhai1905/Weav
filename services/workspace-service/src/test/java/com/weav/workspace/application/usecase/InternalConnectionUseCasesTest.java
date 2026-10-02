@@ -589,6 +589,33 @@ class InternalConnectionUseCasesTest {
     }
 
     @Test
+    void authFailureForAReplacedCredentialIsIgnoredButCurrentOrAbsentIdInvalidates() {
+        UUID ownerId = UUID.randomUUID();
+        Workspace workspace = createWorkspace(ownerId);
+        Connection stale = createConnection(workspace, ownerId, ConnectionProvider.TELEGRAM,
+                ConnectionAuthType.TOKEN, ConnectionStatus.ACTIVE, Map.of());
+        saveCredential(stale, Map.of("token", "synthetic-token"), null);
+        Connection current = createConnection(workspace, ownerId, ConnectionProvider.TELEGRAM,
+                ConnectionAuthType.TOKEN, ConnectionStatus.ACTIVE, Map.of());
+        Credential currentCredential = saveCredential(current, Map.of("token", "synthetic-token"), null);
+
+        reportAuthFailure.execute(workspace.getId(), stale.getId(),
+                ConnectionAuthFailureCode.AUTHENTICATION_REJECTED, UUID.randomUUID());
+        assertThat(connectionRepository.findById(stale.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.ACTIVE);
+
+        reportAuthFailure.execute(workspace.getId(), current.getId(),
+                ConnectionAuthFailureCode.AUTHENTICATION_REJECTED, currentCredential.getId());
+        assertThat(connectionRepository.findById(current.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.INVALID);
+
+        reportAuthFailure.execute(workspace.getId(), stale.getId(),
+                ConnectionAuthFailureCode.AUTHENTICATION_REJECTED);
+        assertThat(connectionRepository.findById(stale.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.INVALID);
+    }
+
+    @Test
     void onlyTypedAuthenticationRejectionInvalidatesAnActiveConnection() {
         UUID ownerId = UUID.randomUUID();
         Workspace workspace = createWorkspace(ownerId);

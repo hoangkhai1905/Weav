@@ -145,6 +145,7 @@ class WorkspaceNotificationRuntimeIntegrationTest {
     @Autowired private WorkflowConnectionUsagePort workflowConnectionUsagePort;
     @Autowired private DisableConnectionUseCase disableConnection;
     @Autowired private ReportConnectionAuthFailureUseCase reportAuthFailure;
+    @Autowired private com.weav.workspace.infrastructure.scheduling.WorkspaceRetentionPurgeJob retentionPurgeJob;
     @Autowired private WorkspaceRepository workspaceRepository;
     @Autowired private MembershipRepository membershipRepository;
     @Autowired private WorkspaceAuthorizationCache authorizationCache;
@@ -560,6 +561,57 @@ class WorkspaceNotificationRuntimeIntegrationTest {
     }
 
     @Test
+    void outboxEventBecomesFailedAfterMaxAttemptsAndIsNotRetried() {
+        WorkspaceResponse workspace = createWorkspace.execute(
+                new CreateWorkspaceCommand(UUID.randomUUID(), "Poison event"));
+        UUID eventId = latestEvent(workspace.id()).eventId();
+        jdbc.update("update workspace.notification_outbox set published_at = current_timestamp "
+                + "where published_at is null and event_id <> ?", eventId);
+        jdbc.update("update workspace.notification_outbox set attempts = 9 where event_id = ?", eventId);
+        RabbitTemplate nackTemplate = mock(RabbitTemplate.class);
+        doAnswer(invocation -> {
+            CorrelationData correlation = invocation.getArgument(3);
+            correlation.getFuture().complete(new CorrelationData.Confirm(false, "simulated nack"));
+            return null;
+        }).when(nackTemplate).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
+
+        publisher(EXCHANGE, nackTemplate).publishPending();
+        publisher(EXCHANGE, nackTemplate).publishPending();
+
+        assertThat(jdbc.queryForObject("select failed_at is not null and attempts = 10 and published_at is null "
+                + "from workspace.notification_outbox where event_id = ?", Boolean.class, eventId)).isTrue();
+        org.mockito.Mockito.verify(nackTemplate, org.mockito.Mockito.times(1))
+                .send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
+    }
+
+    @Test
+    void retentionPurgeKeepsFailedAndRecentRowsAndDeletesOldPublishedOnes() {
+        UUID oldPublished = insertOutboxRow("published_at = current_timestamp - interval '20 days'");
+        UUID recentPublished = insertOutboxRow("published_at = current_timestamp - interval '1 day'");
+        UUID oldFailed = insertOutboxRow("failed_at = current_timestamp - interval '20 days', "
+                + "created_at = current_timestamp - interval '20 days'");
+
+        retentionPurgeJob.purgeNow();
+
+        assertThat(outboxRowExists(oldPublished)).isFalse();
+        assertThat(outboxRowExists(recentPublished)).isTrue();
+        assertThat(outboxRowExists(oldFailed)).isTrue();
+    }
+
+    private UUID insertOutboxRow(String setClause) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("insert into workspace.notification_outbox (event_id, event_type, payload) "
+                + "values (?, 'workspace.created', '{}'::jsonb)", id);
+        jdbc.update("update workspace.notification_outbox set " + setClause + " where event_id = ?", id);
+        return id;
+    }
+
+    private boolean outboxRowExists(UUID id) {
+        return jdbc.queryForObject("select count(*) from workspace.notification_outbox where event_id = ?",
+                Integer.class, id) == 1;
+    }
+
+    @Test
     void concurrentPublishersClaimOneDueRowOnlyOnce() throws Exception {
         String exchange = "workspace-task4-concurrent-" + UUID.randomUUID().toString().replace("-", "");
         String queueName = exchange + "-queue";
@@ -738,7 +790,7 @@ class WorkspaceNotificationRuntimeIntegrationTest {
     private NotificationOutboxPublisher publisher(
             String exchange, RabbitTemplate template, Duration confirmTimeout) {
         return new NotificationOutboxPublisher(jdbc, template, transactionManager,
-                "workspace", exchange, 250, confirmTimeout, Duration.ofSeconds(60));
+                "workspace", exchange, 250, confirmTimeout, Duration.ofSeconds(60), 10);
     }
 
     private List<OutboxEvent> loadWorkspaceEvents(UUID workspaceId) {

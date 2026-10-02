@@ -66,6 +66,54 @@ class WorkspaceUseCasePersistenceIntegrationTest {
     private WorkspaceNotificationRecorder notificationRecorder;
 
     @Test
+    void idempotencyKeyReplaysSameWorkspaceAndRejectsADifferentBody() {
+        UUID actor = UUID.randomUUID();
+        String key = "key-" + UUID.randomUUID();
+
+        WorkspaceResponse first = createWorkspaceUseCase.execute(new CreateWorkspaceCommand(actor, null, key));
+        WorkspaceResponse replay = createWorkspaceUseCase.execute(new CreateWorkspaceCommand(actor, null, key));
+
+        assertEquals(first.id(), replay.id());
+        assertEquals(1, ownedWorkspaces(actor));
+        assertThrows(com.weav.workspace.domain.exception.IdempotencyKeyReusedException.class,
+                () -> createWorkspaceUseCase.execute(new CreateWorkspaceCommand(actor, "Different", key)));
+        assertEquals(1, ownedWorkspaces(actor));
+        assertThrows(com.weav.workspace.domain.exception.BadRequestException.class,
+                () -> createWorkspaceUseCase.execute(new CreateWorkspaceCommand(actor, null, "short")));
+    }
+
+    @Test
+    void concurrentRequestsWithTheSameIdempotencyKeyCreateOneWorkspace() throws Exception {
+        UUID actor = UUID.randomUUID();
+        String key = "key-" + UUID.randomUUID();
+        int threads = 3;
+        var barrier = new java.util.concurrent.CyclicBarrier(threads);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        try {
+            var futures = new java.util.ArrayList<java.util.concurrent.Future<WorkspaceResponse>>();
+            for (int i = 0; i < threads; i++) {
+                futures.add(pool.submit(() -> {
+                    barrier.await();
+                    return createWorkspaceUseCase.execute(new CreateWorkspaceCommand(actor, null, key));
+                }));
+            }
+            var ids = new java.util.HashSet<UUID>();
+            for (var future : futures) {
+                ids.add(future.get().id());
+            }
+            assertEquals(1, ids.size());
+            assertEquals(1, ownedWorkspaces(actor));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private long ownedWorkspaces(UUID actor) {
+        return springDataWorkspaceRepository.findAll().stream()
+                .filter(workspace -> actor.equals(workspace.getCreatedBy())).count();
+    }
+
+    @Test
     void createCommitsWorkspaceAndExactlyOneOwnerInOnePostgresTransaction() {
         UUID actor = UUID.randomUUID();
 

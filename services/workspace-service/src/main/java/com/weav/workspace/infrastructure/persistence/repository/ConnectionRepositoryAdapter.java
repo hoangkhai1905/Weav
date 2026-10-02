@@ -50,6 +50,14 @@ public class ConnectionRepositoryAdapter implements ConnectionRepository {
     }
 
     @Override
+    public List<Connection> findAllByWorkspaceId(UUID workspaceId, int limit) {
+        return repository.findByWorkspaceIdOrderByCreatedAtAscIdAsc(workspaceId, org.springframework.data.domain.PageRequest.ofSize(limit))
+                .stream()
+                .map(mapper::toDomain)
+                .toList();
+    }
+
+    @Override
     public List<Connection> findAllByWorkspaceId(UUID workspaceId) {
         return repository.findAllByWorkspaceId(workspaceId).stream()
                 .map(mapper::toDomain)
