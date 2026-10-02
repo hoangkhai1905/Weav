@@ -2,18 +2,20 @@ package com.weav.identity.infrastructure.security;
 
 import com.weav.identity.infrastructure.web.ApiErrorResponse;
 import jakarta.servlet.FilterChain;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -21,7 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AuthRateLimitFilterTest {
 
-    private static final Instant NOW = Instant.parse("2026-09-05T10:00:00Z");
+    private static final GenericContainer<?> VALKEY =
+            new GenericContainer<>(DockerImageName.parse("valkey/valkey:8-alpine")).withExposedPorts(6379);
+    private static LettuceConnectionFactory connectionFactory;
+    private static StringRedisTemplate redis;
     private static final String REMOTE_ADDRESS = "198.51.100.10";
 
     private ObjectMapper objectMapper;
@@ -30,8 +35,16 @@ class AuthRateLimitFilterTest {
 
     @BeforeEach
     void setUp() {
+        if (redis == null) {
+            VALKEY.start();
+            connectionFactory = new LettuceConnectionFactory(VALKEY.getHost(), VALKEY.getMappedPort(6379));
+            connectionFactory.afterPropertiesSet();
+            redis = new StringRedisTemplate(connectionFactory);
+            redis.afterPropertiesSet();
+        }
+        redis.getConnectionFactory().getConnection().serverCommands().flushDb();
         objectMapper = JsonMapper.builder().findAndAddModules().build();
-        rateLimiter = new AuthRateLimiter(Clock.fixed(NOW, ZoneOffset.UTC), 100);
+        rateLimiter = new AuthRateLimiter(redis);
         filter = new AuthRateLimitFilter(rateLimiter, objectMapper);
     }
 
@@ -121,7 +134,7 @@ class AuthRateLimitFilterTest {
         );
 
         assertEquals(4, downstreamCalls.get());
-        assertEquals(0, rateLimiter.entryCount());
+        assertEquals(0, redis.keys("identity:ratelimit:*").size());
     }
 
     @Test
@@ -193,5 +206,11 @@ class AuthRateLimitFilterTest {
 
     private static FilterChain countingChain(AtomicInteger downstreamCalls) {
         return (request, response) -> downstreamCalls.incrementAndGet();
+    }
+
+    @AfterAll
+    static void stopValkey() {
+        if (connectionFactory != null) connectionFactory.destroy();
+        VALKEY.stop();
     }
 }

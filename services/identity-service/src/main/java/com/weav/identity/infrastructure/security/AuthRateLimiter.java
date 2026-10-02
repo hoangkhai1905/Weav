@@ -1,81 +1,102 @@
 package com.weav.identity.infrastructure.security;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
-import java.time.Clock;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.HexFormat;
+import java.util.List;
 import java.util.Objects;
 
 @Component
 public final class AuthRateLimiter {
 
-    static final int DEFAULT_MAX_ENTRIES = 10_000;
+    private static final Logger log = LoggerFactory.getLogger(AuthRateLimiter.class);
+    private static final String KEY_PREFIX = "identity:ratelimit:";
 
-    private final Clock clock;
-    private final int maxEntries;
-    private final Map<LimitKey, WindowCounter> counters = new HashMap<>();
+    // Fixed window: first hit sets the TTL; returns {count, remaining ttl in ms}.
+    private static final DefaultRedisScript<List> HIT_SCRIPT = new DefaultRedisScript<>("""
+            local count = redis.call('INCR', KEYS[1])
+            if count == 1 or redis.call('PTTL', KEYS[1]) < 0 then
+              redis.call('PEXPIRE', KEYS[1], ARGV[1])
+            end
+            return {count, redis.call('PTTL', KEYS[1])}
+            """, List.class);
+
+    // Gives back one reserved unit; never creates the key or goes below zero.
+    private static final DefaultRedisScript<Long> REFUND_SCRIPT = new DefaultRedisScript<>("""
+            local count = tonumber(redis.call('GET', KEYS[1]) or '0')
+            if count > 0 then return redis.call('DECR', KEYS[1]) end
+            return 0
+            """, Long.class);
+
+    private final StringRedisTemplate redis;
 
     @Autowired
-    public AuthRateLimiter(Clock clock) {
-        this(clock, DEFAULT_MAX_ENTRIES);
+    public AuthRateLimiter(StringRedisTemplate redis) {
+        this.redis = Objects.requireNonNull(redis);
     }
 
-    AuthRateLimiter(Clock clock, int maxEntries) {
-        this.clock = Objects.requireNonNull(clock);
-        if (maxEntries < 1) {
-            throw new IllegalArgumentException("maxEntries must be positive");
-        }
-        this.maxEntries = maxEntries;
-    }
-
+    /** Counts this attempt and rejects when the scope's limit for the window is exceeded. */
     public void requireAllowed(Scope scope, String key) {
-        Decision decision = attempt(scope, key);
+        throwIfBlocked(attempt(scope, key));
+    }
+
+    /** Gives back a unit reserved by {@link #requireAllowed}, e.g. after a successful login. */
+    public void refund(Scope scope, String key) {
+        try {
+            redis.execute(REFUND_SCRIPT, List.of(redisKey(scope, key)));
+        } catch (RuntimeException exception) {
+            log.warn("Auth rate limiter unavailable for scope {}; refund skipped", scope);
+        }
+    }
+
+    private static void throwIfBlocked(Decision decision) {
         if (!decision.allowed()) {
             throw new AuthRateLimitExceededException(decision.retryAfterSeconds());
         }
     }
 
-    synchronized Decision attempt(Scope scope, String key) {
-        Objects.requireNonNull(scope);
-        String normalizedKey = key == null || key.isBlank() ? "unknown" : key;
-        Instant now = clock.instant();
-        counters.entrySet().removeIf(entry -> !now.isBefore(entry.getValue().expiresAt()));
-
-        LimitKey limitKey = new LimitKey(scope, normalizedKey);
-        WindowCounter current = counters.get(limitKey);
-        if (current == null) {
-            if (counters.size() >= maxEntries) {
-                return Decision.blocked(secondsUntilNextCapacity(now));
-            }
-            counters.put(limitKey, new WindowCounter(1, now.plus(scope.window())));
+    Decision attempt(Scope scope, String key) {
+        List<Long> result;
+        try {
+            result = redis.execute(HIT_SCRIPT, List.of(redisKey(scope, key)), Long.toString(scope.window().toMillis()));
+        } catch (RuntimeException exception) {
+            // ponytail: fail-open trades brute-force protection during a Valkey outage for login
+            // availability; switch to fail-closed if the threat model changes.
+            log.warn("Auth rate limiter unavailable for scope {}; allowing request", scope);
             return Decision.permitted();
         }
-
-        if (current.count() >= scope.limit()) {
-            return Decision.blocked(secondsBetweenCeiling(now, current.expiresAt()));
+        if (result == null || result.size() < 2) {
+            return Decision.permitted();
         }
-        counters.put(limitKey, new WindowCounter(current.count() + 1, current.expiresAt()));
-        return Decision.permitted();
+        return result.get(0) <= scope.limit() ? Decision.permitted() : Decision.blocked(ceilSeconds(result.get(1), scope));
     }
 
-    synchronized int entryCount() {
-        return counters.size();
+    private static String redisKey(Scope scope, String key) {
+        Objects.requireNonNull(scope);
+        return KEY_PREFIX + scope.name() + ":" + sha256Hex(key == null || key.isBlank() ? "unknown" : key);
     }
 
-    private long secondsUntilNextCapacity(Instant now) {
-        return counters.values().stream()
-                .mapToLong(counter -> secondsBetweenCeiling(now, counter.expiresAt()))
-                .min()
-                .orElse(1);
-    }
-
-    private static long secondsBetweenCeiling(Instant start, Instant end) {
-        long millis = Math.max(1, Duration.between(start, end).toMillis());
+    private static long ceilSeconds(long ttlMillis, Scope scope) {
+        long millis = ttlMillis > 0 ? ttlMillis : scope.window().toMillis();
         return Math.max(1, (millis + 999) / 1_000);
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            return HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException(exception);
+        }
     }
 
     public enum Scope {
@@ -120,11 +141,5 @@ public final class AuthRateLimiter {
         static Decision blocked(long retryAfterSeconds) {
             return new Decision(false, Math.max(1, retryAfterSeconds));
         }
-    }
-
-    private record LimitKey(Scope scope, String value) {
-    }
-
-    private record WindowCounter(int count, Instant expiresAt) {
     }
 }

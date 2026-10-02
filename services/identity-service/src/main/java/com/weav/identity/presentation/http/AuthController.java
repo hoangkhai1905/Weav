@@ -1,5 +1,6 @@
 package com.weav.identity.presentation.http;
 
+import com.weav.identity.application.dto.TokenPairResult;
 import com.weav.identity.application.usecase.LoginUseCase;
 import com.weav.identity.application.usecase.LogoutUseCase;
 import com.weav.identity.application.usecase.RefreshSessionUseCase;
@@ -67,17 +68,18 @@ public class AuthController {
             @Valid @RequestBody LoginRequest request,
             HttpServletRequest httpRequest
     ) {
-        rateLimiter.requireAllowed(
-                AuthRateLimiter.Scope.LOGIN_ACCOUNT,
-                inputPolicy.canonicalizeEmail(request.email())
-        );
+        String account = inputPolicy.canonicalizeEmail(request.email());
+        // Reserve a unit atomically (parallel guesses cannot all slip under the limit);
+        // a successful login refunds it, so only failures consume the account budget.
+        rateLimiter.requireAllowed(AuthRateLimiter.Scope.LOGIN_ACCOUNT, account);
         String userAgent = truncate(httpRequest.getHeader("User-Agent"), MAX_USER_AGENT_LENGTH);
         String ipAddress = truncate(httpRequest.getRemoteAddr(), MAX_IP_ADDRESS_LENGTH);
+        // A failed login throws here, so the reserved unit stays spent.
+        TokenPairResult tokens = loginUseCase.execute(mapper.toCommand(request, userAgent, ipAddress));
+        rateLimiter.refund(AuthRateLimiter.Scope.LOGIN_ACCOUNT, account);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
-                .body(mapper.toResponse(
-                        loginUseCase.execute(mapper.toCommand(request, userAgent, ipAddress))
-                ));
+                .body(mapper.toResponse(tokens));
     }
 
     @PostMapping("/refresh")
