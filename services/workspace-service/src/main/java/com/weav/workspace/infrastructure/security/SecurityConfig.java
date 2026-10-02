@@ -1,6 +1,7 @@
 package com.weav.workspace.infrastructure.security;
 
 import com.weav.workspace.infrastructure.web.RequestCorrelationFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -14,6 +15,9 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
@@ -50,7 +54,7 @@ public class SecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(Customizer.withDefaults())
-                        // Internal calls carry RS256 service JWTs that InternalServiceKeyFilter owns, not user HS256 tokens.
+                        // Internal calls carry RS256 service JWTs that InternalServiceKeyFilter owns, not user access tokens.
                         .bearerTokenResolver(request -> InternalServiceKeyFilter.isInternalRequest(request)
                                 ? null : DEFAULT_BEARER.resolve(request))
                         .authenticationEntryPoint(authenticationEntryPoint))
@@ -105,15 +109,22 @@ public class SecurityConfig {
     }
 
     @Bean
-    public JwtDecoder jwtDecoder(JwtProperties properties, Clock jwtClock) {
-        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(
-                        new SecretKeySpec(
-                                properties.accessSecret().getBytes(StandardCharsets.UTF_8),
-                                "HmacSHA256"))
+    public JwtDecoder jwtDecoder(
+            JwtProperties properties,
+            Clock jwtClock,
+            @Value("${weav.jwt.jwks-uri:http://identity-service:8080/.well-known/jwks.json}") String jwksUri) {
+        OAuth2TokenValidator<Jwt> validator = new JwtAccessTokenValidator(properties, jwtClock);
+        NimbusJwtDecoder hs256 = NimbusJwtDecoder.withSecretKey(
+                        new SecretKeySpec(properties.accessSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"))
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
-        decoder.setJwtValidator(new JwtAccessTokenValidator(properties, jwtClock));
-        return decoder;
+        hs256.setJwtValidator(validator);
+        // The JWKS is fetched lazily on the first RS256 token, so the service starts while Identity is down.
+        NimbusJwtDecoder rs256 = NimbusJwtDecoder.withJwkSetUri(jwksUri)
+                .jwsAlgorithm(SignatureAlgorithm.RS256)
+                .build();
+        rs256.setJwtValidator(validator);
+        return new AlgorithmRoutingJwtDecoder(hs256, rs256);
     }
 
     @Bean
