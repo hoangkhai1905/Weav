@@ -71,7 +71,7 @@ public class UserRepositoryAdapter implements UserRepository {
     @Override
     public UserPage findPage(String search, UserStatus status, int page, int size) {
         Page<com.weav.identity.infrastructure.persistence.entity.UserJpaEntity> result = repository.search(
-                search,
+                SpringDataUserRepository.escapeLike(search),
                 status,
                 PageRequest.of(page, size, Sort.by(
                         Sort.Order.desc("createdAt"),

@@ -58,6 +58,24 @@ class DirectoryUserQueryIntegrationTest {
         assertFalse(inactive.active());
     }
 
+    @Test
+    void searchTreatsLikeWildcardsLiterally() {
+        userRepository.save(user(UUID.fromString("00000000-0000-0000-0000-000000000011"), "a_b@example.com", "Plain", UserStatus.ACTIVE));
+        userRepository.save(user(UUID.fromString("00000000-0000-0000-0000-000000000012"), "axb@example.com", "Plain", UserStatus.ACTIVE));
+        userRepository.save(user(UUID.fromString("00000000-0000-0000-0000-000000000013"), "c@example.com", "50% Off!", UserStatus.ACTIVE));
+        userRepository.save(user(UUID.fromString("00000000-0000-0000-0000-000000000014"), "d@example.com", "500 Off", UserStatus.ACTIVE));
+
+        assertEquals(List.of("a_b@example.com"), emails("a_b"));
+        assertEquals(List.of("c@example.com"), emails("50%"));
+        assertEquals(List.of("c@example.com"), emails("off!"));
+        assertEquals(2, emails("PLAIN").size());
+        assertEquals(4, emails("").size());
+    }
+
+    private List<String> emails(String search) {
+        return userRepository.findPage(search, null, 0, 20).items().stream().map(User::getEmail).toList();
+    }
+
     private static User user(UUID id, String email, String displayName, UserStatus status) {
         return new User(id, email, "hash", displayName, null, SystemRole.USER, status, NOW, NOW);
     }

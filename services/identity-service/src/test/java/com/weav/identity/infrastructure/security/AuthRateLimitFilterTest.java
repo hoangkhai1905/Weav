@@ -70,7 +70,7 @@ class AuthRateLimitFilterTest {
 
         assertEquals(429, deniedResponse.getStatus());
         assertEquals(MediaType.APPLICATION_JSON_VALUE, deniedResponse.getContentType());
-        assertEquals("60", deniedResponse.getHeader(HttpHeaders.RETRY_AFTER));
+        assertRetryAfterNear(deniedResponse, 60);
         assertEquals("no-store", deniedResponse.getHeader(HttpHeaders.CACHE_CONTROL));
         assertEquals(5, downstreamCalls.get());
 
@@ -108,17 +108,12 @@ class AuthRateLimitFilterTest {
     }
 
     @Test
-    void passesThroughNonTargetAndLogoutRoutes() throws Exception {
+    void passesThroughNonTargetRoutes() throws Exception {
         AtomicInteger downstreamCalls = new AtomicInteger();
         FilterChain chain = countingChain(downstreamCalls);
 
         filter.doFilter(
                 request("GET", "/auth/register", REMOTE_ADDRESS),
-                new MockHttpServletResponse(),
-                chain
-        );
-        filter.doFilter(
-                request("POST", "/auth/logout", REMOTE_ADDRESS),
                 new MockHttpServletResponse(),
                 chain
         );
@@ -133,7 +128,7 @@ class AuthRateLimitFilterTest {
                 chain
         );
 
-        assertEquals(4, downstreamCalls.get());
+        assertEquals(3, downstreamCalls.get());
         assertEquals(0, redis.keys("identity:ratelimit:*").size());
     }
 
@@ -154,7 +149,7 @@ class AuthRateLimitFilterTest {
         filter.doFilter(request("DELETE", accountPath, REMOTE_ADDRESS), deniedResponse, chain);
 
         assertEquals(429, deniedResponse.getStatus());
-        assertEquals("900", deniedResponse.getHeader(HttpHeaders.RETRY_AFTER));
+        assertRetryAfterNear(deniedResponse, 900);
         assertEquals("no-store", deniedResponse.getHeader(HttpHeaders.CACHE_CONTROL));
         assertEquals("no-referrer", deniedResponse.getHeader("Referrer-Policy"));
         assertEquals(10, downstreamCalls.get());
@@ -177,7 +172,7 @@ class AuthRateLimitFilterTest {
                 refreshDenied,
                 chain);
         assertEquals(429, refreshDenied.getStatus());
-        assertEquals("60", refreshDenied.getHeader(HttpHeaders.RETRY_AFTER));
+        assertRetryAfterNear(refreshDenied, 60);
         assertEquals("no-referrer", refreshDenied.getHeader("Referrer-Policy"));
 
         for (int attempt = 0; attempt < 10; attempt++) {
@@ -192,9 +187,35 @@ class AuthRateLimitFilterTest {
                 logoutDenied,
                 chain);
         assertEquals(429, logoutDenied.getStatus());
-        assertEquals("900", logoutDenied.getHeader(HttpHeaders.RETRY_AFTER));
+        assertRetryAfterNear(logoutDenied, 900);
         assertEquals("no-referrer", logoutDenied.getHeader("Referrer-Policy"));
         assertEquals(40, downstreamCalls.get());
+    }
+
+    @Test
+    void rateLimitsResetPasswordAndLogoutByRemoteAddress() throws Exception {
+        AtomicInteger downstreamCalls = new AtomicInteger();
+        FilterChain chain = countingChain(downstreamCalls);
+
+        assertDeniedAfter("/auth/reset-password", 10, "900", chain);
+        assertDeniedAfter("/auth/logout", 30, "60", chain);
+        assertEquals(40, downstreamCalls.get());
+    }
+
+    private void assertDeniedAfter(String path, int limit, String retryAfter, FilterChain chain) throws Exception {
+        for (int attempt = 0; attempt < limit; attempt++) {
+            filter.doFilter(request("POST", path, REMOTE_ADDRESS), new MockHttpServletResponse(), chain);
+        }
+        MockHttpServletResponse denied = new MockHttpServletResponse();
+        filter.doFilter(request("POST", path, REMOTE_ADDRESS), denied, chain);
+        assertEquals(429, denied.getStatus());
+        assertRetryAfterNear(denied, Long.parseLong(retryAfter));
+    }
+
+    /** Retry-After comes from the remaining Valkey TTL, so a slow run may see a few seconds less. */
+    private static void assertRetryAfterNear(MockHttpServletResponse response, long windowSeconds) {
+        long retry = Long.parseLong(response.getHeader(HttpHeaders.RETRY_AFTER));
+        assertTrue(retry <= windowSeconds && retry >= windowSeconds - 5, "Retry-After was " + retry);
     }
 
     private static MockHttpServletRequest request(String method, String servletPath, String remoteAddress) {

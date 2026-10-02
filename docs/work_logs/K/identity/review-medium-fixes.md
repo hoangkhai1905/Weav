@@ -65,3 +65,12 @@ Kết quả ID-7: `./mvnw verify` 349 test, 0 failure, 3 error (3 Avatar minio �
 | Quyết định | Lý do | Đánh đổi |
 | --- | --- | --- |
 | Giữ `POST /auth/register` trả 409 khi email đã tồn tại (phương án b) | Người dùng chọn (a) chỉ khi mail đã nối cho luồng đăng ký. Hiện mail chỉ dùng cho OTP; đăng ký tạo user `ACTIVE` ngay và trả user, nên đổi sang 202 + email là đổi contract mà web/mobile đang dùng | Kẻ tấn công dò được email đã đăng ký; giảm nhẹ bởi `REGISTER_IP` 5 lần/phút (Valkey, ID-3). Xem lại nếu thêm xác minh email khi đăng ký |
+
+## Step 3 / Low (ID-9, ID-10, ID-11)
+
+- **ID-9**: tìm kiếm user escape `!`, `%`, `_` (`SpringDataUserRepository.escapeLike`, gọi trong `UserRepositoryAdapter.findPage`) và dùng `LIKE ... ESCAPE '!'`; kết quả với input thường không đổi. Migration `V8__user_search_trgm_and_session_retention.sql`: `CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public` + GIN trigram index trên `lower(email)` và `lower(coalesce(display_name,''))`. Lưu ý: cần quyền tạo extension trên Neon (pg_trgm được hỗ trợ).
+- **ID-10**: `SessionRetentionPurgeJob` (hằng giờ, batch 1000, `pg_try_advisory_xact_lock`) xóa `user_sessions` có `COALESCE(revoked_at, expires_at) < now() - N ngày` (`weav.identity.session-retention-days`, mặc định 30); session revoke trong cửa sổ N ngày được giữ nên grace/reuse không bị ảnh hưởng. Cùng migration V8 thêm index một phần `idx_user_sessions_active (user_id, expires_at) WHERE revoked_at IS NULL`.
+- **ID-11**: `AuthRateLimitFilter` giới hạn theo IP `POST /auth/reset-password` (10 / 15 phút) và `POST /auth/logout` (30 / 1 phút), 429 giống các scope khác. Đường dẫn khớp route gateway.
+- Test: `AuthRateLimitFilterTest` (reset/logout 429), `DirectoryUserQueryIntegrationTest.searchTreatsLikeWildcardsLiterally`, `SessionRetentionPurgeJobIntegrationTest`. Kết quả `mvnw verify`: xem báo cáo của coordinator.
+
+Kiểm tra lại (coordinator, 2026-10-02): `./mvnw verify` 352 test, 0 failure, 3 error (3 Avatar minio đã biết), 1 skipped. Đã sửa các assert `Retry-After` cứng (60/900) trong `AuthRateLimitFilterTest` thành khoảng [cửa sổ-5, cửa sổ] vì giá trị lấy từ TTL còn lại trên Valkey (flake 59 vs 60 có từ ID-3).

@@ -103,6 +103,8 @@ public final class AuthRateLimiter {
         REGISTER_IP(5, Duration.ofMinutes(1)),
         LOGIN_IP(20, Duration.ofMinutes(1)),
         REFRESH_IP(30, Duration.ofMinutes(1)),
+        RESET_PASSWORD_IP(10, Duration.ofMinutes(15)),
+        LOGOUT_IP(30, Duration.ofMinutes(1)),
         LOGIN_ACCOUNT(10, Duration.ofMinutes(15)),
         OAUTH_START_IP(10, Duration.ofMinutes(15)),
         OAUTH_CALLBACK_IP(20, Duration.ofMinutes(1)),
