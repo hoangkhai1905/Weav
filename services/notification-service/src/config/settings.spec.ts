@@ -24,6 +24,20 @@ describe('notification configuration validation', () => {
       expect(() => loadSettings(rest)).toThrow(key);
     },
   );
+  it('prefers the NOTIFICATION_RABBITMQ_* broker user and falls back when empty', () => {
+    const own = loadSettings(
+      env({
+        NOTIFICATION_RABBITMQ_USERNAME: 'own-user',
+        NOTIFICATION_RABBITMQ_PASSWORD: 'own-pass',
+      }),
+    );
+    expect([own.RABBITMQ_USERNAME, own.RABBITMQ_PASSWORD]).toEqual([
+      'own-user',
+      'own-pass',
+    ]);
+    const shared = loadSettings(env({ NOTIFICATION_RABBITMQ_USERNAME: '' }));
+    expect(shared.RABBITMQ_USERNAME).toBe(env().RABBITMQ_USERNAME);
+  });
   it.each([
     'https://user:private@example.com',
     'https://example.com?token=private',

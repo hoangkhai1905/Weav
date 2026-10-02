@@ -1,4 +1,4 @@
-# Platform - review-medium-fixes (X-10, X-12, X-13)
+# Platform - review-medium-fixes (X-9, X-10, X-12, X-13)
 
 Nhánh `refactor/optimize-backend`. Nguồn: `docs/reviews/2026-10-01-backend-review.md`.
 
@@ -90,6 +90,40 @@ Lưu ý: overlay `compose.workflow-smoke.yml` không mount khóa nên vẫn dùn
 - Test: `OutboxMetricsIntegrationTest` ở cả 3 service (seed dòng pending/FAILED, refresh, kiểm giá trị gauge và `/actuator/prometheus` có `weav_outbox_pending`, `hikaricp_connections_pending`); `RabbitQueueMetricsTest` (đọc DLQ = 7, broker down -> NaN, không ném). Test dùng `@AutoConfigureMetrics` vì Boot 4 tắt export metric trong `@SpringBootTest`; `src/test/resources/application.properties` của workflow/workspace phải thêm `prometheus` vào exposure (file test che file main).
 - Kết quả `./mvnw verify`: identity 353 test, 3 error (Avatar minio đã biết), 1 skipped; workspace 412/412; workflow 488/488.
 - Chưa làm: alert rule/dashboard Grafana, scrape config Prometheus (chưa có Prometheus trong compose); metric NestJS service.
+
+## X-9 - mỗi service một user RabbitMQ riêng, giới hạn quyền
+
+Mục tiêu: một service bị chiếm không thể publish event của service khác lên `weav.events`. Không đổi mã nghiệp vụ; chỉ đổi cách đọc credential + script cấp quyền.
+
+**Inventory (từ Spring AMQP config và `rabbit.consumer.ts`)**
+
+| Service | Exchange / routing key publish | Queue / exchange khai báo hoặc consume |
+| --- | --- | --- |
+| identity | `weav.events` (topic): `identity.*` (`google_linked`, `google_unlinked`, `password_changed`, `password_reset`) | không khai báo gì; chỉ publish (mandatory + confirm) |
+| workspace | `weav.events`: `workspace.*` (`created`, `renamed`, `member_*`), `connection.*` | không khai báo gì; chỉ publish |
+| workflow | `weav.events`: `workflow.*`; `workflow.executions` (direct, key `execute`/`retry`) | khai báo + consume `workflow.executions`, `.dlx`, `.v1`, `.v1.dlq`, `.v1.retry`; declare `weav.events`; metric đọc độ sâu queue (passive declare) |
+| notification | không publish | khai báo `weav.events`, quorum queue `notification-service.execution-events.v2`, DLQ `...events.dlq` (DLX = default exchange), queue cũ `...events`; bind `identity.* workspace.* workflow.* connection.*` |
+
+**Quyền mỗi user** (vhost `RABBITMQ_VHOST`, mặc định `/`; tag rỗng):
+
+| User | configure | write | read | topic `weav.events` (write / read) |
+| --- | --- | --- | --- | --- |
+| identity | `^$` | `^(weav\.events)$` | `^$` | `^identity\.` / `^$` |
+| workspace | `^$` | `^(weav\.events)$` | `^$` | `^(workspace\|connection)\.` / `^$` |
+| workflow | `^(weav\.events\|workflow\.executions(\..*)?)$` | như configure | `^(workflow\.executions(\..*)?)$` | `^workflow\.` / `^$` |
+| notification | `^(weav\.events\|notification-service\..*)$` | `^(notification-service\..*\|amq\.default)$` | `^(weav\.events\|notification-service\..*)$` | `^$` / `^(identity\|workspace\|workflow\|connection)\.` |
+
+Ghi chú: workflow/notification cần `configure` trên `weav.events` vì chúng `declare` exchange này (khai báo lại exchange đã tồn tại cũng cần configure). Tên queue/exchange trong script là mặc định; nếu đổi `NOTIFICATION_QUEUE*`/`NOTIFICATION_EXCHANGE` thì sửa hằng số ở đầu `scripts/rabbitmq-provision-users.mjs`.
+
+**Biến môi trường mới** (`.env.example`, để trống = dùng user chung): `IDENTITY_`, `WORKSPACE_`, `WORKFLOW_`, `NOTIFICATION_` + `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD`. Spring: `${IDENTITY_RABBITMQ_USERNAME:${RABBITMQ_USERNAME:guest}}`; notification: `settings.ts` lấy biến riêng rồi fallback `RABBITMQ_*` (vẫn bắt buộc có credential). `compose.dev.yml` truyền cả hai (biến riêng mặc định = user chung). Phải đặt CẢ username lẫn password cho một service.
+
+**Script** `node scripts/rabbitmq-provision-users.mjs [--dry-run]`: dùng management API (admin = `RABBITMQ_USERNAME/PASSWORD`, URL = `RABBITMQ_MANAGEMENT_URL` hoặc `http://localhost:${RABBITMQ_MANAGEMENT_PORT:-15672}`), đọc `.env`, không in giá trị bí mật; idempotent (PUT user, permissions, topic-permissions; tạo `weav.events` nếu chưa có); bỏ qua service thiếu username/password; thoát mã khác 0 nếu API lỗi.
+
+**Rollout**: (1) đặt `<SVC>_RABBITMQ_USERNAME/PASSWORD` trong `.env`; (2) chạy script với broker đang chạy; (3) restart service (`docker compose ... up -d`); (4) tùy chọn: sau khi mọi service đã chuyển, đổi/thu hồi user chung (không còn dùng guest). **Rollback**: xóa các biến riêng (để trống) và restart: service quay lại user chung; user riêng có thể để nguyên hoặc `DELETE /api/users/<name>`.
+
+**Bằng chứng** (broker `rabbitmq:4-management` tạm, đã xóa): workflow publish `workflow.completed` OK, publish `identity.password_reset` bị broker đóng channel (ACCESS_REFUSED); identity publish `identity.*` OK, `workflow.failed` bị từ chối; workspace publish `connection.*` OK, `identity.*` bị từ chối; identity tạo queue bị 403 (configure); notification bind key ngoài prefix (`admin.x`) bị 403 (read topic); topology thật của notification (quorum + DLQ qua default exchange) và workflow (exchange/queue/retry/DLX) khai báo được dưới user riêng. Chạy script lần 2 vẫn thành công (idempotent).
+
+Chưa làm (cố ý, không over-engineer): chưa kiểm tra `userId` phía consumer (topic permission của broker đủ cho giai đoạn này; có thể thêm sau để chống service được phép publish nhưng giả userId); chưa đổi user mặc định của container RabbitMQ.
 
 ## Kiểm tra
 

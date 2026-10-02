@@ -94,8 +94,16 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
   // RABBITMQ_TLS_ENABLED is canonical; RABBITMQ_TLS and RABBITMQ_SSL_ENABLED are legacy aliases.
   const tls =
     env.RABBITMQ_TLS_ENABLED ?? env.RABBITMQ_TLS ?? env.RABBITMQ_SSL_ENABLED;
+  // NOTIFICATION_RABBITMQ_* give this service its own broker user; empty falls back to the shared one.
+  const merged: NodeJS.ProcessEnv = {
+    ...env,
+    RABBITMQ_USERNAME:
+      env.NOTIFICATION_RABBITMQ_USERNAME || env.RABBITMQ_USERNAME,
+    RABBITMQ_PASSWORD:
+      env.NOTIFICATION_RABBITMQ_PASSWORD || env.RABBITMQ_PASSWORD,
+  };
   const result = schema.safeParse(
-    tls === undefined ? env : { ...env, RABBITMQ_TLS: tls },
+    tls === undefined ? merged : { ...merged, RABBITMQ_TLS: tls },
   );
   if (!result.success)
     throw new Error(
