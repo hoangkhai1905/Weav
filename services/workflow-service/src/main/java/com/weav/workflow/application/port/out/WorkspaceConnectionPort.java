@@ -10,4 +10,9 @@ public interface WorkspaceConnectionPort {
     ResolvedConnection resolve(UUID workspaceId, UUID connectionId);
 
     void reportAuthenticationRejected(UUID workspaceId, UUID connectionId);
+
+    /** WS-11: echoes the resolved credential's id/version so Workspace ignores a report that went stale. */
+    default void reportAuthenticationRejected(UUID workspaceId, UUID connectionId, ResolvedConnection resolved) {
+        reportAuthenticationRejected(workspaceId, connectionId);
+    }
 }

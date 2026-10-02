@@ -616,6 +616,55 @@ class InternalConnectionUseCasesTest {
     }
 
     @Test
+    void authFailureCarryingAStaleCredentialVersionIsIgnoredAfterARefresh() {
+        UUID ownerId = UUID.randomUUID();
+        Workspace workspace = createWorkspace(ownerId);
+        Connection connection = createConnection(
+                workspace, ownerId, ConnectionProvider.GMAIL, ConnectionAuthType.OAUTH2,
+                ConnectionStatus.ACTIVE, Map.of());
+        Credential original = saveGoogleCredential(connection, OLD_ACCESS_TOKEN, OLD_REFRESH_TOKEN,
+                gmailScopes(), clock.instant().minusSeconds(1));
+        ResolvedConnectionCredential before = new ResolvedConnectionCredential(
+                ConnectionProvider.GMAIL, ConnectionAuthType.OAUTH2, Map.of("accessToken", OLD_ACCESS_TOKEN),
+                original.getId(), original.getUpdatedAt().toEpochMilli());
+        clock.set(clock.instant().plusSeconds(5));
+        googleOAuth.response.set(refreshResponse("synthetic-new-access-token", null, gmailScopes()));
+
+        ResolvedConnectionCredential after = resolveConnection.execute(workspace.getId(), connection.getId());
+
+        assertThat(after.credentialId()).isEqualTo(original.getId());
+        assertThat(after.credentialVersion()).isNotEqualTo(before.credentialVersion());
+        reportAuthFailure.execute(workspace.getId(), connection.getId(),
+                ConnectionAuthFailureCode.AUTHENTICATION_REJECTED,
+                before.credentialId(), before.credentialVersion());
+        assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.ACTIVE);
+
+        reportAuthFailure.execute(workspace.getId(), connection.getId(),
+                ConnectionAuthFailureCode.AUTHENTICATION_REJECTED,
+                after.credentialId(), after.credentialVersion());
+        assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.INVALID);
+    }
+
+    @Test
+    void authFailureWithoutCredentialVersionStillInvalidates() {
+        UUID ownerId = UUID.randomUUID();
+        Workspace workspace = createWorkspace(ownerId);
+        Connection connection = createConnection(workspace, ownerId, ConnectionProvider.TELEGRAM,
+                ConnectionAuthType.TOKEN, ConnectionStatus.ACTIVE, Map.of());
+        Credential credential = saveCredential(connection, Map.of("token", "synthetic-token"), null);
+
+        ResolvedConnectionCredential resolved = resolveConnection.execute(workspace.getId(), connection.getId());
+        assertThat(resolved.credentialVersion()).isEqualTo(credential.getUpdatedAt().toEpochMilli());
+        reportAuthFailure.execute(workspace.getId(), connection.getId(),
+                ConnectionAuthFailureCode.AUTHENTICATION_REJECTED, null, null);
+
+        assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.INVALID);
+    }
+
+    @Test
     void onlyTypedAuthenticationRejectionInvalidatesAnActiveConnection() {
         UUID ownerId = UUID.randomUUID();
         Workspace workspace = createWorkspace(ownerId);

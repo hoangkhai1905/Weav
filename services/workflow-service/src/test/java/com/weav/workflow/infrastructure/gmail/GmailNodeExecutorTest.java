@@ -25,6 +25,8 @@ class GmailNodeExecutorTest {
     private static final UUID WORKSPACE_ID = UUID.fromString("c77f6cef-78ca-4840-910d-ed8ce8c519b2");
     private static final UUID CONNECTION_ID = UUID.fromString("988998bb-f44c-44a6-86c7-1dc568b9623f");
     private static final String ACCESS_TOKEN = "synthetic-gmail-access-token";
+    private static final UUID CREDENTIAL_ID = UUID.fromString("00000000-0000-0000-0000-0000000000c1");
+    private static final Long CREDENTIAL_VERSION = 1_790_000_000_123L;
 
     @Test
     void sendsToTrimmedRecipientsAndRedactsTheTokenFromOutput() {
@@ -103,6 +105,9 @@ class GmailNodeExecutorTest {
 
         assertEquals("AUTHENTICATION_REJECTED", failure.code());
         assertEquals(1, workspace.reportCalls);
+        // WS-11: the report carries the credential id/version of the resolve it used.
+        assertEquals(CREDENTIAL_ID, workspace.reported.credentialId());
+        assertEquals(CREDENTIAL_VERSION, workspace.reported.credentialVersion());
         assertThrows(IllegalStateException.class, workspace.resolved::auth);
     }
 
@@ -200,6 +205,7 @@ class GmailNodeExecutorTest {
 
     private static final class FakeWorkspace implements WorkspaceConnectionPort {
         private ResolvedConnection resolved;
+        private ResolvedConnection reported;
         private boolean forbidden;
         private boolean unavailable;
         private UUID connectionId;
@@ -220,13 +226,20 @@ class GmailNodeExecutorTest {
             if (unavailable) {
                 throw new WorkspaceDependencyUnavailableException();
             }
-            resolved = new ResolvedConnection("GMAIL", "OAUTH2", Map.of("accessToken", ACCESS_TOKEN));
+            resolved = new ResolvedConnection("GMAIL", "OAUTH2", Map.of("accessToken", ACCESS_TOKEN),
+                    CREDENTIAL_ID, CREDENTIAL_VERSION);
             return resolved;
         }
 
         @Override
         public void reportAuthenticationRejected(UUID workspaceId, UUID connectionId) {
             reportCalls++;
+        }
+
+        @Override
+        public void reportAuthenticationRejected(UUID workspaceId, UUID connectionId, ResolvedConnection resolved) {
+            reported = resolved;
+            reportAuthenticationRejected(workspaceId, connectionId);
         }
     }
 }

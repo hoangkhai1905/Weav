@@ -89,7 +89,7 @@ Internal (header `X-Internal-Service-Key`; caller is Workflow):
 | GET | `/internal/workspaces/{ws}/users/{user}/access` | Role + capability snapshot |
 | POST | `/internal/workspaces/{ws}/connections/{conn}/authorize-attachment` | `204` if the member may attach the connection |
 | POST | `/internal/workspaces/{ws}/connections/{conn}/resolve` | Minimum runtime auth for an ACTIVE connection; `Cache-Control: no-store`; never returns a Google refresh token |
-| POST | `/internal/workspaces/{ws}/connections/{conn}/auth-failure` | `204`; confirmed provider authentication rejection -> `INVALID` |
+| POST | `/internal/workspaces/{ws}/connections/{conn}/auth-failure` | `204`; confirmed provider authentication rejection -> `INVALID`; optional `credentialId`/`credentialVersion` (from `resolve`, epoch-millis `updatedAt`) that no longer match the current credential make the report a no-op |
 
 Gateway exposure: [gateway openapi](../../../packages/contracts/http/gateway/openapi.yaml) lists workspace, member and connection routes (get/patch/delete, test, disable, credential PUT/DELETE, oauth/authorize, oauth/complete); 20 operations in total.
 

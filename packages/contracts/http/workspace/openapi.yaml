@@ -997,6 +997,10 @@ components:
           type: string
           format: uuid
           description: Optional. When present and not the connection's current credential id, the report is ignored (204) so a stale report cannot invalidate a replaced credential.
+        credentialVersion:
+          type: integer
+          format: int64
+          description: Optional. The credentialVersion returned by resolve. When present and different from the current credential's version, the credential was refreshed or replaced since it was resolved and the report is ignored (204).
     ConnectionResponse:
       type: object
       additionalProperties: false
@@ -1112,6 +1116,16 @@ components:
           description: >-
             Internal runtime authentication only. Google OAuth returns accessToken; the refresh token is never returned.
             Callers must not log or cache this response.
+        credentialId:
+          type: [string, 'null']
+          format: uuid
+          description: Current credential id; null when authType is NONE.
+        credentialVersion:
+          type: [integer, 'null']
+          format: int64
+          description: >-
+            The credential's updatedAt as epoch milliseconds; changes on every refresh, save and reconnect.
+            Echo it back on auth-failure so a stale report is ignored. Null when authType is NONE.
     CreateWorkspaceRequest:
       type: object
       additionalProperties: false

@@ -96,11 +96,12 @@ public final class HttpRequestNodeExecutor implements NodeExecutor {
 
             PinnedHttpTransport.HttpResponse response = transport.executeWithAuthentication(
                     target, request.method(), request.headers(), authHeaders, request.query(), request.body());
+            ResolvedConnection used = connection;
             if (connection != null) {
                 connection.close();
                 connection = null;
             }
-            return classify(context, request.connectionId(), response, activeSecrets);
+            return classify(context, request.connectionId(), used, response, activeSecrets);
         } finally {
             if (connection != null) {
                 connection.close();
@@ -111,6 +112,7 @@ public final class HttpRequestNodeExecutor implements NodeExecutor {
     private Result classify(
             Context context,
             UUID connectionId,
+            ResolvedConnection used,
             PinnedHttpTransport.HttpResponse response,
             Set<String> activeSecrets) {
         int status = response.status();
@@ -120,7 +122,7 @@ public final class HttpRequestNodeExecutor implements NodeExecutor {
         if (status == 401) {
             if (connectionId != null) {
                 try {
-                    workspaceConnections.reportAuthenticationRejected(context.workspaceId(), connectionId);
+                    workspaceConnections.reportAuthenticationRejected(context.workspaceId(), connectionId, used);
                 } catch (RuntimeException ignored) {
                     // The provider already confirmed the rejection. A failure
                     // to record it must not expose a downstream body or change

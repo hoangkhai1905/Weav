@@ -5,5 +5,5 @@ import jakarta.validation.constraints.NotNull;
 
 import java.util.UUID;
 
-public record ReportConnectionAuthFailureRequest(@NotNull ConnectionAuthFailureCode failureCode, UUID credentialId) {
+public record ReportConnectionAuthFailureRequest(@NotNull ConnectionAuthFailureCode failureCode, UUID credentialId, Long credentialVersion) {
 }

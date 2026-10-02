@@ -72,3 +72,13 @@ Người dùng: "default" (WF-13 FAILED sau N lần; WF-14 khóa nhẹ + lock ti
 
 - Test: `RetentionPurgeJobTest` (+2: notification và execution outbox thành FAILED, không bị claim/purge), `WebhookTriggerServiceRateLimitTest` (+1: lock timeout -> 429), `WorkflowTriggerAdapterClockTest` (mới), `AiClientContractTest` (+1, và kiểm tra header).
 - `./mvnw verify` (UTC): 485 test, 0 failure, 0 error, 0 skipped (baseline 480 + 5 mới).
+
+## WS-11 follow-up (credentialVersion)
+
+| Thay đổi | Ghi chú |
+| --- | --- |
+| `ResolvedConnection` giữ thêm `credentialId`/`credentialVersion` (không phải secret, đọc được sau `close`); `WorkspaceClient.resolve` đọc hai trường tùy chọn (strict: không trường lạ). | Không log. `toString` không đổi. |
+| `WorkspaceConnectionPort.reportAuthenticationRejected(ws, conn, resolved)` (default method, gọi bản 2 tham số); `WorkspaceClient` gửi `credentialId`/`credentialVersion` trong body `auth-failure`. Gmail, Sheets và HTTP executor truyền connection đã resolve. | AI/OCR không dùng connection nên không đổi. |
+
+- Test: `WorkspaceClientTest` (+1: đọc version và gửi lại), `GmailNodeExecutorTest` (report mang đúng id/version của lần resolve).
+- `./mvnw verify` (UTC): 486 test, 0 failure (baseline 485 + 1).

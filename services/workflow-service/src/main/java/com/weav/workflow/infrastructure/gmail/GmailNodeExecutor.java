@@ -61,7 +61,7 @@ public final class GmailNodeExecutor implements NodeExecutor {
                 providerOutput = gmailClient.send(request.recipients(), request.subject(), request.body(), connection);
             } catch (NodeExecutor.Failure failure) {
                 if ("AUTHENTICATION_REJECTED".equals(failure.code())) {
-                    reportAuthenticationRejected(context.workspaceId(), request.connectionId());
+                    reportAuthenticationRejected(context.workspaceId(), request.connectionId(), connection);
                 }
                 throw failure;
             } catch (RuntimeException exception) {
@@ -173,9 +173,9 @@ public final class GmailNodeExecutor implements NodeExecutor {
         }
     }
 
-    private void reportAuthenticationRejected(UUID workspaceId, UUID connectionId) {
+    private void reportAuthenticationRejected(UUID workspaceId, UUID connectionId, ResolvedConnection resolved) {
         try {
-            workspaceConnections.reportAuthenticationRejected(workspaceId, connectionId);
+            workspaceConnections.reportAuthenticationRejected(workspaceId, connectionId, resolved);
         } catch (RuntimeException ignored) {
             // The provider confirmed rejection; keep its safe classification if Workspace is unavailable.
         }

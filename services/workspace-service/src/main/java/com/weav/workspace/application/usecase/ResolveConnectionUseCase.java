@@ -98,7 +98,7 @@ public final class ResolveConnectionUseCase {
                 throw new InvalidStateException("Google access token expiry is missing");
             }
             if (expiresAt.isAfter(clock.instant())) {
-                return googleAccessToken(connection, payload);
+                return googleAccessToken(connection, payload, credential);
             }
             return refreshSingleFlight(connection);
         }
@@ -106,7 +106,7 @@ public final class ResolveConnectionUseCase {
         if (credential.isExpired(clock.instant())) {
             throw new InvalidStateException("Connection credential has expired");
         }
-        return resolvedCredential(connection, payload);
+        return resolvedCredential(connection, payload, credential);
     }
 
     /**
@@ -153,7 +153,7 @@ public final class ResolveConnectionUseCase {
         Map<String, Object> originalPayload = decodeStoredCredential(connection, originalCredential);
         if (originalCredential.getExpiresAt() != null
                 && originalCredential.getExpiresAt().isAfter(clock.instant())) {
-            return googleAccessToken(connection, originalPayload);
+            return googleAccessToken(connection, originalPayload, originalCredential);
         }
 
         String originalRefreshToken = textValue(originalPayload, "refreshToken");
@@ -202,7 +202,7 @@ public final class ResolveConnectionUseCase {
             throw new DependencyUnavailableException();
         }
 
-        return transactionRunner.required(() -> {
+        ResolvedConnectionCredential stored = transactionRunner.required(() -> {
             workspaceMutationLock.lock(connection.getWorkspaceId());
             Connection currentConnection = connectionRepository
                     .findByWorkspaceIdAndId(connection.getWorkspaceId(), connection.getId())
@@ -219,7 +219,7 @@ public final class ResolveConnectionUseCase {
                     && (replaced || originalCredential.getExpiresAt() == null
                     || currentExpiresAt.isAfter(originalCredential.getExpiresAt()))) {
                 // Another refresh or a reconnect already stored a usable token: keep it.
-                return googleAccessToken(currentConnection, currentPayload);
+                return googleAccessToken(currentConnection, currentPayload, currentCredential);
             }
             String currentRefreshToken = textValue(currentPayload, "refreshToken");
             if (replaced
@@ -230,16 +230,24 @@ public final class ResolveConnectionUseCase {
             if (!accessTokenExpiresAt.isAfter(now)) {
                 throw new DependencyUnavailableException();
             }
-            credentialRepository.save(new Credential(
+            // updatedAt is rewritten by the entity on update; the version is re-read after commit.
+            Credential refreshed = new Credential(
                     currentCredential.getId(),
                     currentConnection.getId(),
                     encryptedPayload,
                     keyVersion,
                     accessTokenExpiresAt,
                     currentCredential.getCreatedAt(),
-                    now));
-            return googleAccessToken(currentConnection, Map.of("accessToken", replacementTokens.accessToken()));
+                    now);
+            credentialRepository.save(refreshed);
+            return googleAccessToken(
+                    currentConnection, Map.of("accessToken", replacementTokens.accessToken()), refreshed);
         });
+        // ponytail: a rewrite landing between commit and this read yields the newer version, so a
+        // rejection of the token returned here would be treated as current; negligible window.
+        Credential committed = credentialRepository.findByConnectionId(connection.getId()).orElse(null);
+        return committed == null ? stored : googleAccessToken(
+                connection, Map.of("accessToken", stored.auth().get("accessToken")), committed);
     }
 
     private void markInvalidIfCurrent(
@@ -309,14 +317,18 @@ public final class ResolveConnectionUseCase {
 
     private ResolvedConnectionCredential googleAccessToken(
             Connection connection,
-            Map<String, Object> payload) {
+            Map<String, Object> payload,
+            Credential credential) {
         return new ResolvedConnectionCredential(
                 connection.getProvider(),
                 connection.getAuthType(),
-                Map.of("accessToken", textValue(payload, "accessToken")));
+                Map.of("accessToken", textValue(payload, "accessToken")),
+                credential.getId(),
+                credential.getUpdatedAt().toEpochMilli());
     }
 
-    private ResolvedConnectionCredential resolvedCredential(Connection connection, Map<String, Object> payload) {
+    private ResolvedConnectionCredential resolvedCredential(
+            Connection connection, Map<String, Object> payload, Credential credential) {
         Map<String, String> auth = switch (connection.getAuthType()) {
             case NONE -> Map.of();
             case TOKEN -> Map.of("token", textValue(payload, "token"));
@@ -326,7 +338,9 @@ public final class ResolveConnectionUseCase {
                     "password", textValue(payload, "password"));
             case OAUTH2 -> throw new InvalidStateException("Connection authorization type is invalid");
         };
-        return new ResolvedConnectionCredential(connection.getProvider(), connection.getAuthType(), auth);
+        return new ResolvedConnectionCredential(
+                connection.getProvider(), connection.getAuthType(), auth,
+                credential.getId(), credential.getUpdatedAt().toEpochMilli());
     }
 
     private boolean isGoogleOAuth(Connection connection) {

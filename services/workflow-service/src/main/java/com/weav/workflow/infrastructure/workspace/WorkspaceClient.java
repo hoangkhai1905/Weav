@@ -224,7 +224,9 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
         }
         try {
             JsonNode payload = parseObject(response.body());
-            if (payload.size() != 3) {
+            // Additive WS-11 fields: credentialId/credentialVersion are optional, nothing else is allowed.
+            int expectedSize = 3 + (payload.has("credentialId") ? 1 : 0) + (payload.has("credentialVersion") ? 1 : 0);
+            if (payload.size() != expectedSize) {
                 throw new InvalidWorkspaceResponseException();
             }
             String provider = textField(payload, "provider");
@@ -242,7 +244,18 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
             for (String field : expectedFields) {
                 auth.put(field, textField(authNode, field));
             }
-            return new ResolvedConnection(provider, authType, auth);
+            UUID credentialId = null;
+            Long credentialVersion = null;
+            if (payload.hasNonNull("credentialVersion")) {
+                if (!payload.get("credentialVersion").isIntegralNumber()) {
+                    throw new InvalidWorkspaceResponseException();
+                }
+                credentialVersion = payload.get("credentialVersion").asLong();
+            }
+            if (payload.hasNonNull("credentialId")) {
+                credentialId = UUID.fromString(textField(payload, "credentialId"));
+            }
+            return new ResolvedConnection(provider, authType, auth, credentialId, credentialVersion);
         } catch (RuntimeException exception) {
             throw unavailable("resolve", started);
         }
@@ -250,10 +263,23 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
 
     @Override
     public void reportAuthenticationRejected(UUID workspaceId, UUID connectionId) {
+        reportAuthenticationRejected(workspaceId, connectionId, null);
+    }
+
+    @Override
+    public void reportAuthenticationRejected(UUID workspaceId, UUID connectionId, ResolvedConnection resolved) {
         Objects.requireNonNull(workspaceId, "workspaceId must not be null");
         Objects.requireNonNull(connectionId, "connectionId must not be null");
         long started = System.nanoTime();
-        byte[] body = jsonBody(Map.of("failureCode", "AUTHENTICATION_REJECTED"));
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("failureCode", "AUTHENTICATION_REJECTED");
+        if (resolved != null && resolved.credentialId() != null) {
+            report.put("credentialId", resolved.credentialId().toString());
+        }
+        if (resolved != null && resolved.credentialVersion() != null) {
+            report.put("credentialVersion", resolved.credentialVersion());
+        }
+        byte[] body = jsonBody(report);
         String path = INTERNAL_PREFIX + workspaceId + "/connections/" + connectionId + "/auth-failure";
         ResponseEnvelope response = send("auth-failure", HttpMethod.POST, path, body, started, "connection:report-auth-failure", workspaceId, connectionId);
         if (isDenied(response.statusCode())) {

@@ -39,18 +39,25 @@ public final class ReportConnectionAuthFailureUseCase {
     }
 
     public void execute(UUID workspaceId, UUID connectionId, ConnectionAuthFailureCode failureCode) {
-        execute(workspaceId, connectionId, failureCode, null);
+        execute(workspaceId, connectionId, failureCode, null, null);
+    }
+
+    public void execute(
+            UUID workspaceId, UUID connectionId, ConnectionAuthFailureCode failureCode, UUID credentialId) {
+        execute(workspaceId, connectionId, failureCode, credentialId, null);
     }
 
     /**
-     * WS-11: when {@code credentialId} is given and is no longer the connection's current credential,
-     * the report is about a credential that has since been replaced and is ignored.
+     * WS-11: when {@code credentialId} / {@code credentialVersion} (epoch-millis {@code updatedAt}) are
+     * given and no longer match the current credential, it was replaced or rewritten since Workflow
+     * resolved it, so the report is stale and ignored.
      */
     public void execute(
             UUID workspaceId,
             UUID connectionId,
             ConnectionAuthFailureCode failureCode,
-            UUID credentialId) {
+            UUID credentialId,
+            Long credentialVersion) {
         Objects.requireNonNull(workspaceId, "workspaceId must not be null");
         Objects.requireNonNull(connectionId, "connectionId must not be null");
         if (failureCode != ConnectionAuthFailureCode.AUTHENTICATION_REJECTED) {
@@ -60,9 +67,12 @@ public final class ReportConnectionAuthFailureUseCase {
             workspaceMutationLock.lock(workspaceId);
             Connection connection = connectionRepository.findByWorkspaceIdAndId(workspaceId, connectionId)
                     .orElseThrow(() -> new ResourceNotFoundException("Connection not found"));
-            if (credentialId != null
-                    && !credentialRepository.findByConnectionId(connectionId)
-                    .map(credential -> credential.getId().equals(credentialId)).orElse(false)) {
+            if ((credentialId != null || credentialVersion != null)
+                    && !credentialRepository.findByConnectionIdForUpdate(connectionId)
+                    .map(credential -> (credentialId == null || credential.getId().equals(credentialId))
+                            && (credentialVersion == null
+                            || credential.getUpdatedAt().toEpochMilli() == credentialVersion))
+                    .orElse(false)) {
                 return Boolean.TRUE;
             }
             if (connection.getStatus() == ConnectionStatus.ACTIVE) {

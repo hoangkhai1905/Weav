@@ -6,12 +6,24 @@ import com.weav.workspace.domain.valueobject.ConnectionProvider;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
-/** Minimum internal runtime credential shape; Google refresh tokens are never included. */
+/**
+ * Minimum internal runtime credential shape; Google refresh tokens are never included.
+ * {@code credentialVersion} is the credential's {@code updatedAt} in epoch milliseconds: it changes on
+ * every refresh, save and reconnect (WS-11); both identity fields are null for authType NONE.
+ */
 public record ResolvedConnectionCredential(
         ConnectionProvider provider,
         ConnectionAuthType authType,
-        Map<String, String> auth) {
+        Map<String, String> auth,
+        UUID credentialId,
+        Long credentialVersion) {
+
+    public ResolvedConnectionCredential(
+            ConnectionProvider provider, ConnectionAuthType authType, Map<String, String> auth) {
+        this(provider, authType, auth, null, null);
+    }
 
     public ResolvedConnectionCredential {
         Objects.requireNonNull(provider, "provider must not be null");

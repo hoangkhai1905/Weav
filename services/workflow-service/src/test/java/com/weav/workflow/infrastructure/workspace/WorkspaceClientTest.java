@@ -218,6 +218,26 @@ class WorkspaceClientTest {
     }
 
     @Test
+    void resolveReadsCredentialVersionAndAuthFailureEchoesIt() {
+        UUID credentialId = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+        stubResponse.set(new StubResponse(200,
+                "{\"provider\":\"GOOGLE_SHEETS\",\"authType\":\"OAUTH2\","
+                        + "\"auth\":{\"accessToken\":\"access-token-secret\"},"
+                        + "\"credentialId\":\"" + credentialId + "\",\"credentialVersion\":1790000000123}",
+                true, 0));
+        ResolvedConnection resolved = client.resolve(WORKSPACE_ID, CONNECTION_ID);
+        assertEquals(credentialId, resolved.credentialId());
+        assertEquals(1790000000123L, resolved.credentialVersion());
+        assertFalse(resolved.toString().contains("1790000000123"));
+
+        stubResponse.set(new StubResponse(204, "", false, 0));
+        client.reportAuthenticationRejected(WORKSPACE_ID, CONNECTION_ID, resolved);
+
+        assertEquals("{\"failureCode\":\"AUTHENTICATION_REJECTED\",\"credentialId\":\"" + credentialId
+                + "\",\"credentialVersion\":1790000000123}", lastRequest.get().body());
+    }
+
+    @Test
     void authFailureReportsOnlyTheConfirmedAuthenticationRejection() {
         stubResponse.set(new StubResponse(204, "", false, 0));
 
