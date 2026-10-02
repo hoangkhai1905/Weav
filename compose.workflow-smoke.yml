@@ -118,6 +118,10 @@ services:
       JWT_ISSUER: ${JWT_ISSUER}
       JWT_AUDIENCE: ${JWT_AUDIENCE}
       JWT_CLOCK_SKEW: 30s
+      # ID-6: set WORKFLOW_SMOKE_JWT_ACCESS_ALG=RS256 (after `node scripts/identity-dev-keys.mjs`) to smoke RS256 end to end.
+      JWT_ACCESS_ALG: ${WORKFLOW_SMOKE_JWT_ACCESS_ALG:-HS256}
+      JWT_SIGNING_KEY_LOCATION: /run/identity-keys/identity-access.pem
+      JWT_SIGNING_KEY_ID: identity-smoke-1
       IDENTITY_INTERNAL_SERVICE_KEY: ${IDENTITY_INTERNAL_SERVICE_KEY}
       GOOGLE_OAUTH_ENABLED: "false"
       VALKEY_URL: redis://valkey:6379
@@ -132,6 +136,8 @@ services:
       SMTP_STARTTLS_REQUIRED: "false"
       SMTP_SSL_ENABLED: "false"
       AVATAR_S3_ENDPOINT: ""
+    volumes:
+      - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/identity:/run/identity-keys:ro
     depends_on:
       valkey:
         condition: service_healthy

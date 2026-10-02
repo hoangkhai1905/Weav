@@ -3,9 +3,18 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
-import { sign } from 'jsonwebtoken';
-import { randomUUID } from 'node:crypto';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { createHmac, randomUUID } from 'node:crypto';
+import {
+  SignJWT,
+  exportJWK,
+  generateKeyPair,
+  type CryptoKey,
+  type JWK,
+} from 'jose';
 import { AppModule } from '../src/app.module';
+import { AccessGuard } from '../src/presentation/http';
 import { SETTINGS } from '../src/config/settings';
 import { DeliveryRepository } from '../src/domain/notification';
 import { InboxRepository } from '../src/domain/inbox';
@@ -16,6 +25,17 @@ import {
   testDelivery,
   testSettings,
 } from '../src/testing/fixtures';
+
+function sign(
+  payload: Record<string, unknown>,
+  secret: string,
+  o: { algorithm: string; issuer: string; audience: string },
+) {
+  const part = (v: object) =>
+    Buffer.from(JSON.stringify(v)).toString('base64url');
+  const input = `${part({ alg: o.algorithm, typ: 'JWT' })}.${part({ ...payload, iss: o.issuer, aud: o.audience })}`;
+  return `${input}.${createHmac('sha256', secret).update(input).digest('base64url')}`;
+}
 
 describe('notification HTTP (real Nest + Fastify)', () => {
   let app: NestFastifyApplication;
@@ -363,5 +383,106 @@ describe('notification HTTP (real Nest + Fastify)', () => {
     });
     expect(response.statusCode).toBe(500);
     expect(response.body).not.toContain('private-password');
+  });
+});
+
+describe('AccessGuard RS256 via JWKS', () => {
+  const kid = 'test-key';
+  const settings = testSettings();
+  const sub = randomUUID();
+  let server: Server;
+  let privateKey: CryptoKey;
+  let publicJwk: JWK;
+  let guard: AccessGuard;
+  const claims = (user_status = 'ACTIVE') => ({
+    sid: randomUUID(),
+    jti: randomUUID(),
+    token_use: 'access',
+    system_role: 'USER',
+    user_status,
+  });
+  const rs256 = (payload: object, header: { alg: string; kid?: string }) =>
+    new SignJWT({ ...payload })
+      .setProtectedHeader(header)
+      .setSubject(sub)
+      .setIssuer(settings.JWT_ISSUER)
+      .setAudience(settings.JWT_AUDIENCE)
+      .setIssuedAt()
+      .setNotBefore('0s')
+      .setExpirationTime('5m')
+      .sign(privateKey);
+  const run = (g: AccessGuard, token: string) => {
+    const request = { headers: { authorization: `Bearer ${token}` } } as {
+      headers: { authorization: string };
+      userId?: string;
+    };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as never;
+    return g.canActivate(context).then(() => request.userId);
+  };
+  beforeAll(async () => {
+    const pair = await generateKeyPair('RS256', { extractable: true });
+    privateKey = pair.privateKey;
+    publicJwk = { ...(await exportJWK(pair.publicKey)), kid, alg: 'RS256' };
+    server = createServer((_req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ keys: [publicJwk] }));
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve),
+    );
+    guard = new AccessGuard({
+      ...settings,
+      JWT_JWKS_URI: `http://127.0.0.1:${(server.address() as AddressInfo).port}/jwks`,
+    });
+  });
+  afterAll(() => new Promise((resolve) => server.close(resolve)));
+
+  it('accepts RS256 with a known kid and keeps the claim checks', async () => {
+    await expect(
+      run(guard, await rs256(claims(), { alg: 'RS256', kid })),
+    ).resolves.toBe(sub);
+    await expect(
+      run(guard, await rs256(claims('DISABLED'), { alg: 'RS256', kid })),
+    ).rejects.toMatchObject({ status: 401 });
+  });
+  it('rejects an unknown kid', async () => {
+    await expect(
+      run(guard, await rs256(claims(), { alg: 'RS256', kid: 'other' })),
+    ).rejects.toMatchObject({ status: 401 });
+  });
+  it('rejects HS256 signed with the RSA public key as the HMAC secret', async () => {
+    const forged = sign(
+      {
+        ...claims(),
+        sub,
+        exp: Date.now() / 1000 + 60,
+        iat: (Date.now() / 1000) | 0,
+        nbf: (Date.now() / 1000) | 0,
+      },
+      JSON.stringify(publicJwk),
+      {
+        algorithm: 'HS256',
+        issuer: settings.JWT_ISSUER,
+        audience: settings.JWT_AUDIENCE,
+      },
+    );
+    await expect(run(guard, forged)).rejects.toMatchObject({ status: 401 });
+  });
+  it('rejects alg none', async () => {
+    const part = (v: object) =>
+      Buffer.from(JSON.stringify(v)).toString('base64url');
+    const token = `${part({ alg: 'none' })}.${part({ ...claims(), sub, iss: settings.JWT_ISSUER, aud: settings.JWT_AUDIENCE })}.`;
+    await expect(run(guard, token)).rejects.toMatchObject({ status: 401 });
+  });
+  it('returns 401 when the JWKS is unreachable', async () => {
+    const down = new AccessGuard({
+      ...settings,
+      JWT_JWKS_URI: 'http://127.0.0.1:1/jwks',
+    });
+    await expect(
+      run(down, await rs256(claims(), { alg: 'RS256', kid })),
+    ).rejects.toMatchObject({ status: 401 });
   });
 });

@@ -4,7 +4,12 @@ const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { NestFactory } = require('@nestjs/core');
 const { FastifyAdapter } = require('@nestjs/platform-fastify');
-const { sign } = require('jsonwebtoken');
+const { createHmac } = require('node:crypto');
+const sign = (payload, secret, o) => {
+  const part = (v) => Buffer.from(JSON.stringify(v)).toString('base64url');
+  const input = `${part({ alg: o.algorithm, typ: 'JWT' })}.${part({ ...payload, iss: o.issuer, aud: o.audience })}`;
+  return `${input}.${createHmac('sha256', secret).update(input).digest('base64url')}`;
+};
 const { connect } = require('amqplib');
 const { Pool } = require('pg');
 const { mkdtempSync, readFileSync, readdirSync, rmSync } = require('node:fs');

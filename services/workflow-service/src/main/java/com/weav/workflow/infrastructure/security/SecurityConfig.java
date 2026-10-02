@@ -24,6 +24,7 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -128,13 +129,22 @@ public class SecurityConfig {
     }
 
     @Bean
-    public JwtDecoder jwtDecoder(JwtProperties properties, Clock jwtClock) {
-        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(
+    public JwtDecoder jwtDecoder(
+            JwtProperties properties,
+            Clock jwtClock,
+            @Value("${weav.jwt.jwks-uri:http://identity-service:8080/.well-known/jwks.json}") String jwksUri) {
+        OAuth2TokenValidator<Jwt> validator = new JwtAccessTokenValidator(properties, jwtClock);
+        NimbusJwtDecoder hs256 = NimbusJwtDecoder.withSecretKey(
                         new SecretKeySpec(properties.accessSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"))
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
-        decoder.setJwtValidator(new JwtAccessTokenValidator(properties, jwtClock));
-        return decoder;
+        hs256.setJwtValidator(validator);
+        // The JWKS is fetched lazily on the first RS256 token, so the service starts while Identity is down.
+        NimbusJwtDecoder rs256 = NimbusJwtDecoder.withJwkSetUri(jwksUri)
+                .jwsAlgorithm(SignatureAlgorithm.RS256)
+                .build();
+        rs256.setJwtValidator(validator);
+        return new AlgorithmRoutingJwtDecoder(hs256, rs256);
     }
 
     @Bean

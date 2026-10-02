@@ -37,7 +37,7 @@
     "amqplib": "^2.0.1",
     "expo-server-sdk": "^7.1.0",
     "fastify": "^5.12.3",
-    "jsonwebtoken": "^9.0.3",
+    "jose": "^6.2.9",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
@@ -53,7 +53,6 @@
     "@types/amqplib": "^0.10.8",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
-    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.0.0",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.0.0",
@@ -95,8 +94,8 @@
       ]
     },
     "transformIgnorePatterns": [
-      "node_modules/(?!\\.pnpm|expo-server-sdk/)",
-      "node_modules/\\.pnpm/(?!expo-server-sdk@)"
+      "node_modules/(?!\\.pnpm|expo-server-sdk/|jose/)",
+      "node_modules/\\.pnpm/(?!expo-server-sdk@|jose@)"
     ],
     "collectCoverageFrom": [
       "**/*.(t|j)s"

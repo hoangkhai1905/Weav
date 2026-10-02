@@ -218,6 +218,12 @@ function Assert-ResolvedSmokeConfig([object]$Config) {
             $rabbitVolumes = @($service.volumes)
             if ($rabbitVolumes.Count -ne 1 -or [string]$rabbitVolumes[0].source -ne 'rabbitmq_smoke_data' -or
                 [string]$rabbitVolumes[0].target -ne '/var/lib/rabbitmq') { throw 'compose-config-rabbit-volume' }
+        } elseif ($serviceProperty.Name -eq 'identity-service' -and $null -ne $service.volumes) {
+            # ID-6: identity may mount only its signing key folder, read-only.
+            $identityVolumes = @($service.volumes)
+            if ($identityVolumes.Count -ne 1 -or [string]$identityVolumes[0].type -ne 'bind' -or
+                [string]$identityVolumes[0].target -ne '/run/identity-keys' -or
+                -not $identityVolumes[0].read_only) { throw 'compose-config-resource-isolation' }
         } elseif ($null -ne $service.volumes -and @($service.volumes).Count -gt 0) {
             throw 'compose-config-resource-isolation'
         }

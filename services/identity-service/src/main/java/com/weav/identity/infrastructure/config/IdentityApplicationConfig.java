@@ -51,7 +51,10 @@ import com.weav.identity.infrastructure.storage.UnavailableAvatarStorage;
 import com.weav.identity.infrastructure.security.BcryptPasswordHasher;
 import com.weav.identity.infrastructure.security.JwtAccessTokenIssuer;
 import com.weav.identity.infrastructure.security.JwtAccessTokenValidator;
+import com.weav.identity.infrastructure.security.AlgorithmRoutingJwtDecoder;
 import com.weav.identity.infrastructure.security.JwtProperties;
+import com.weav.identity.infrastructure.security.JwtSigningKeys;
+import com.weav.identity.infrastructure.security.JwtSigningProperties;
 import com.weav.identity.infrastructure.security.SecureRefreshTokenGenerator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -60,6 +63,10 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
+import org.springframework.security.oauth2.jose.jws.JwsAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
@@ -75,7 +82,7 @@ import java.time.Clock;
 
 @Configuration(proxyBeanMethods = false)
 @EnableScheduling
-@EnableConfigurationProperties({MailProperties.class, OtpProperties.class, AvatarStorageProperties.class})
+@EnableConfigurationProperties({JwtSigningProperties.class, MailProperties.class, OtpProperties.class, AvatarStorageProperties.class})
 public class IdentityApplicationConfig {
 
     @Bean
@@ -133,24 +140,36 @@ public class IdentityApplicationConfig {
     }
 
     @Bean
-    public JwtEncoder jwtEncoder(JwtProperties properties) {
+    public JwtSigningKeys jwtSigningKeys(JwtSigningProperties signing) {
+        return JwtSigningKeys.load(signing);
+    }
+
+    @Bean
+    public JwtEncoder jwtEncoder(JwtProperties properties, JwtSigningProperties signing, JwtSigningKeys keys) {
+        if (signing.rs256()) {
+            return new NimbusJwtEncoder(new ImmutableJWKSet<>(new JWKSet(keys.current())));
+        }
         return NimbusJwtEncoder.withSecretKey(accessTokenKey(properties))
                 .algorithm(MacAlgorithm.HS256)
                 .build();
     }
 
     @Bean
-    public JwtDecoder jwtDecoder(JwtProperties properties, Clock clock) {
-        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(accessTokenKey(properties))
+    public JwtDecoder jwtDecoder(JwtProperties properties, JwtSigningKeys keys, Clock clock) {
+        JwtAccessTokenValidator validator = new JwtAccessTokenValidator(properties, clock);
+        NimbusJwtDecoder hs256 = NimbusJwtDecoder.withSecretKey(accessTokenKey(properties))
                 .macAlgorithm(MacAlgorithm.HS256)
                 .build();
-        decoder.setJwtValidator(new JwtAccessTokenValidator(properties, clock));
-        return decoder;
+        hs256.setJwtValidator(validator);
+        return new AlgorithmRoutingJwtDecoder(hs256, keys, validator);
     }
 
     @Bean
-    public AccessTokenIssuer accessTokenIssuer(JwtEncoder jwtEncoder, JwtProperties properties, Clock clock) {
-        return new JwtAccessTokenIssuer(jwtEncoder, properties, clock);
+    public AccessTokenIssuer accessTokenIssuer(
+            JwtEncoder jwtEncoder, JwtProperties properties, JwtSigningProperties signing, Clock clock) {
+        JwsAlgorithm algorithm = signing.rs256() ? SignatureAlgorithm.RS256 : MacAlgorithm.HS256;
+        return new JwtAccessTokenIssuer(jwtEncoder, properties, clock, algorithm,
+                signing.rs256() ? signing.keyId() : null);
     }
 
     @Bean

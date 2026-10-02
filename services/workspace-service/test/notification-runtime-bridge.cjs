@@ -1,7 +1,14 @@
 /* Test-only Nest/Fastify consumer bridge for the Workspace-to-Notification runtime test. */
 const { NestFactory } = require('@nestjs/core');
 const { FastifyAdapter } = require('@nestjs/platform-fastify');
-const { sign } = require('jsonwebtoken');
+const { createHmac } = require('node:crypto');
+
+// Minimal HS256 signer (notification-service no longer ships jsonwebtoken).
+const b64url = (value) => Buffer.from(value).toString('base64url');
+const signHs256 = (claims, secret) => {
+  const unsigned = `${b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))}.${b64url(JSON.stringify(claims))}`;
+  return `${unsigned}.${createHmac('sha256', secret).update(unsigned).digest('base64url')}`;
+};
 const { Pool } = require('pg');
 const { mkdtempSync, readFileSync, readdirSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
@@ -68,7 +75,7 @@ async function main() {
   const settings = require('../../notification-service/dist/config/settings').loadSettings(env);
   const tokenFor = (subject) => {
     const now = Math.floor(Date.now() / 1000);
-    return sign({
+    return signHs256({
       sub: subject,
       sid: require('node:crypto').randomUUID(),
       jti: require('node:crypto').randomUUID(),
@@ -78,11 +85,9 @@ async function main() {
       iat: now,
       nbf: now,
       exp: now + 300,
-    }, settings.JWT_ACCESS_SECRET, {
-      algorithm: 'HS256',
-      issuer: settings.JWT_ISSUER,
-      audience: settings.JWT_AUDIENCE,
-    });
+      iss: settings.JWT_ISSUER,
+      aud: settings.JWT_AUDIENCE,
+    }, settings.JWT_ACCESS_SECRET);
   };
   process.stdout.write(`TASK4_READY:${JSON.stringify({
     url: await app.getUrl(),

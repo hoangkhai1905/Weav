@@ -127,6 +127,10 @@ const environmentSchema = z.object({
   JWT_ISSUER: z.string().trim().min(1).default('weav-identity'),
   JWT_AUDIENCE: z.string().trim().min(1).default('weav-api'),
   JWT_CLOCK_SKEW: clockSkewSchema,
+  // Defaults to <IDENTITY_SERVICE_URL>/.well-known/jwks.json.
+  JWT_JWKS_URI: upstreamUrlSchema
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
   IDENTITY_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.identity),
   WORKSPACE_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.workspace),
   WORKFLOW_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.workflow),
@@ -175,6 +179,7 @@ export interface GatewayConfig {
     issuer: string;
     audience: string;
     clockSkewSeconds: number;
+    jwksUri: string;
   };
   cors: {
     allowedOrigins: string[];
@@ -292,6 +297,9 @@ export function validateGatewayEnvironment(
     issuer: parsed.data.JWT_ISSUER,
     audience: parsed.data.JWT_AUDIENCE,
     clockSkewSeconds: parsed.data.JWT_CLOCK_SKEW,
+    jwksUri:
+      parsed.data.JWT_JWKS_URI ??
+      `${parsed.data.IDENTITY_SERVICE_URL.replace(/\/+$/, '')}/.well-known/jwks.json`,
   } as GatewayConfig['jwt'];
 
   Object.defineProperty(jwt, 'accessSecret', {

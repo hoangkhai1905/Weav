@@ -18,7 +18,12 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { verify } from 'jsonwebtoken';
+import {
+  createRemoteJWKSet,
+  decodeProtectedHeader,
+  jwtVerify,
+  type JWTPayload,
+} from 'jose';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { Notifications } from '../application/notifications';
@@ -49,8 +54,12 @@ const claimsSchema = z.object({
 type Request = FastifyRequest & { userId: string };
 @Injectable()
 export class AccessGuard implements CanActivate {
-  constructor(@Inject(SETTINGS) private readonly settings: Settings) {}
-  canActivate(context: ExecutionContext): boolean {
+  // Created once; jose fetches lazily, so a down identity only fails RS256 tokens.
+  private readonly jwks: ReturnType<typeof createRemoteJWKSet>;
+  constructor(@Inject(SETTINGS) private readonly settings: Settings) {
+    this.jwks = createRemoteJWKSet(new URL(settings.JWT_JWKS_URI));
+  }
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
     try {
       const authorization = request.headers.authorization;
@@ -60,14 +69,28 @@ export class AccessGuard implements CanActivate {
         !/^Bearer \S+$/i.test(authorization)
       )
         throw new Error();
-      const claims = claimsSchema.parse(
-        verify(authorization.slice(7), this.settings.JWT_ACCESS_SECRET, {
-          algorithms: ['HS256'],
-          issuer: this.settings.JWT_ISSUER,
-          audience: this.settings.JWT_AUDIENCE,
-          clockTolerance: 30,
-        }),
-      );
+      const token = authorization.slice(7);
+      const options = {
+        issuer: this.settings.JWT_ISSUER,
+        audience: this.settings.JWT_AUDIENCE,
+        clockTolerance: 30,
+      };
+      // Pick the key by the header alg; each key only ever verifies its own algorithm.
+      const { alg } = decodeProtectedHeader(token);
+      let payload: JWTPayload;
+      if (alg === 'HS256')
+        ({ payload } = await jwtVerify(
+          token,
+          new TextEncoder().encode(this.settings.JWT_ACCESS_SECRET),
+          { ...options, algorithms: ['HS256'] },
+        ));
+      else if (alg === 'RS256')
+        ({ payload } = await jwtVerify(token, this.jwks, {
+          ...options,
+          algorithms: ['RS256'],
+        }));
+      else throw new Error();
+      const claims = claimsSchema.parse(payload);
       if (
         claims.iat > Date.now() / 1000 + 30 ||
         claims.exp <= claims.iat ||
