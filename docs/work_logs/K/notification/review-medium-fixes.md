@@ -48,3 +48,7 @@ Test mới: thiếu credential RabbitMQ (settings.spec), ghi DB lỗi sau khi pr
 
 - Ghi DB lỗi 3 lần liên tiếp sau khi provider nhận vẫn dẫn tới gửi lại sau khi lease hết hạn (at-least-once).
 - Khi triển khai: đảm bảo môi trường notification-service có `RABBITMQ_USERNAME/PASSWORD` (compose đã có).
+
+## Quyết định nhỏ (2026-10-02, người dùng giao coordinator quyết)
+
+- NT-6 giữ chỉ cho v2: replay event v1 không thêm người nhận mới. Lý do: v1 là đường cũ, đẩy tới đích mới khi replay gây bất ngờ; v2 đã xử lý replay đúng.

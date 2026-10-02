@@ -82,3 +82,7 @@ Người dùng: "default" (WF-13 FAILED sau N lần; WF-14 khóa nhẹ + lock ti
 
 - Test: `WorkspaceClientTest` (+1: đọc version và gửi lại), `GmailNodeExecutorTest` (report mang đúng id/version của lần resolve).
 - `./mvnw verify` (UTC): 486 test, 0 failure (baseline 485 + 1).
+
+## Quyết định nhỏ (2026-10-02, người dùng giao coordinator quyết)
+
+- Lưu draft vẫn không kiểm tra cấu trúc graph (edge đích, chu trình, số trigger); chỉ kiểm tra khi publish và ở đường sinh AI. Lý do: draft là bản đang soạn trong editor, chặn graph dở dang khi lưu sẽ phá autosave; không có gì chạy trước publish.
