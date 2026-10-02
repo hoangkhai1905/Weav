@@ -23,6 +23,8 @@ import {
   applyClientForwardingHeaders,
   collectSafeUpstreamResponseHeaders,
   createUpstreamAbortHandle,
+  isWriteTimeout,
+  UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN,
   getRequestHeader,
   getRequestId,
   isValidTraceparent,
@@ -261,6 +263,13 @@ export class WorkflowProxyService {
       reply.header('Cache-Control', 'no-store');
       return reply.code(response.status).send(responseBody);
     } catch {
+      if (isWriteTimeout(abortHandle, method)) {
+        return fail(
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.status,
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.code,
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.message,
+        );
+      }
       this.logger.error(`Workflow upstream failed requestId=${requestId}`);
       return fail(503, 'SERVICE_UNAVAILABLE', 'Workflow service unavailable');
     } finally {

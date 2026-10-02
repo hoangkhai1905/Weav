@@ -22,6 +22,8 @@ import { AuthPolicy } from '../auth/auth-policy.decorator';
 import {
   collectSafeUpstreamResponseHeaders,
   createUpstreamAbortHandle,
+  isWriteTimeout,
+  UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN,
   getRequestHeader,
   getRequestId,
   isValidTraceparent,
@@ -255,6 +257,13 @@ export class NotificationProxyTransport {
         return fail(502, 'BAD_GATEWAY', 'Invalid Notification response');
       }
     } catch {
+      if (isWriteTimeout(abortHandle, req.method)) {
+        return fail(
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.status,
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.code,
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.message,
+        );
+      }
       this.logger.error(`Notification upstream failed requestId=${requestId}`);
       return fail(
         503,

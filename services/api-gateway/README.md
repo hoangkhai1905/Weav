@@ -57,6 +57,7 @@ GATEWAY_AUTH_RATE_LIMIT
 GATEWAY_OCR_RATE_LIMIT
 GATEWAY_WEBHOOK_RATE_LIMIT
 GATEWAY_RATE_LIMIT_WINDOW_MS
+GATEWAY_THROTTLER_REDIS_URL   # optional redis(s):// URL; empty = in-memory
 ```
 
 Proxy trust: `GATEWAY_TRUST_PROXY_HOPS` (0-10, default 0 = `trustProxy` off).
@@ -134,6 +135,11 @@ from the generic `{userId}` route so route precedence cannot widen the API.
 - Redirects are rejected. Upstream connection failures, deadline expiry, or
   client disconnects return the existing sanitized service-unavailable contract;
   mutating requests are not retried. `429` responses include `Retry-After`.
+- A non-GET/HEAD upstream call that exceeds the 10 s deadline returns `504`
+  with code `UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN`: the write may have committed, so
+  clients should retry with the same `Idempotency-Key`. GET timeouts and
+  connection failures keep `503`.
+- Expected client errors (4xx) are logged at WARN; 5xx at ERROR.
 
 ## Health, readiness, and rate limits
 
@@ -149,7 +155,9 @@ included); a down, failed, redirected, or stalled probe yields `503`. Responses
 expose only aggregate `up`/`down` status and the correlation ID. Notification
 and OCR are not probed.
 
-The limiter is intentionally in-memory and single-replica:
+By default the limiter is in-memory and single-replica. Set
+`GATEWAY_THROTTLER_REDIS_URL` to a Valkey URL to share counters across replicas;
+if Valkey errors the gateway fails open (request allowed, WARN logged).
 
 - General traffic uses one socket-IP budget across routes.
 - Public authentication mutations use a separate socket-IP budget.
@@ -158,8 +166,6 @@ The limiter is intentionally in-memory and single-replica:
 - `trustProxy` is false, forwarded headers do not choose a bucket, and health
   plus CORS preflight are exempt.
 
-Distributed rate storage and multi-replica enforcement require a separate
-design and rollout decision.
 
 ## OCR streaming risk
 
@@ -168,10 +174,10 @@ ten-second upstream deadline covering response-body reads, plus disconnect
 cancellation. The established response is sanitized `503 OCR_BUSY` when the
 upstream cannot complete in time.
 
-The existing raw-stream path may bypass the ordinary Fastify parser body-size
-limit. This compatibility risk is intentionally not changed here; a strict
-stream cap needs a separate measurement, client-compatibility review, and
-rollout plan before being enabled.
+Uploads are capped at 10 MiB plus 64 KiB multipart framing (the OCR service
+caps the document at 10 MiB). A larger `Content-Length`, or a chunked stream that
+grows past the cap, returns `413 PAYLOAD_TOO_LARGE` in the OCR error envelope;
+a declared oversize body is rejected before the upstream is called.
 
 ## Verification commands
 

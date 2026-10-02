@@ -6,6 +6,8 @@ import {
   applyClientForwardingHeaders,
   collectSafeUpstreamResponseHeaders,
   createUpstreamAbortHandle,
+  isWriteTimeout,
+  UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN,
   getRequestHeader,
   getRequestId,
   isValidTraceparent,
@@ -220,6 +222,13 @@ export class WorkspaceProxyService {
       reply.header('Cache-Control', 'no-store');
       return reply.code(response.status).send(responseBody);
     } catch (error) {
+      if (isWriteTimeout(abortHandle, method)) {
+        return fail(
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.status,
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.code,
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.message,
+        );
+      }
       if (!abortHandle.signal.aborted) {
         this.logger.error(
           `Workspace upstream failed requestId=${requestId} error=${

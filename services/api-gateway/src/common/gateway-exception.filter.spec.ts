@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException } from '@nestjs/common';
+import { BadRequestException, HttpException, Logger } from '@nestjs/common';
 import type { ArgumentsHost } from '@nestjs/common';
 import {
   attachRequestContext,
@@ -142,5 +142,21 @@ describe('GatewayExceptionFilter', () => {
       requestId: 'req-structured-500',
     });
     expect(JSON.stringify(body)).not.toContain(secret);
+  });
+
+  it('logs expected 4xx at WARN and 5xx at ERROR', () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const { host } = createHost({ headers: {} });
+    const filter = new GatewayExceptionFilter();
+
+    filter.catch(new BadRequestException('bad'), host);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(error).not.toHaveBeenCalled();
+
+    filter.catch(new Error('boom'), host);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    jest.restoreAllMocks();
   });
 });

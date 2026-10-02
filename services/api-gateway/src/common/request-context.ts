@@ -185,7 +185,24 @@ export function collectSafeUpstreamResponseHeaders(
 
 export interface UpstreamAbortHandle {
   signal: AbortSignal;
+  /** True only when the upstream deadline fired (not a client disconnect). */
+  readonly timedOut: boolean;
   cleanup(): void;
+}
+
+export const UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN = {
+  status: 504,
+  code: 'UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN',
+  message:
+    'Upstream timed out; the outcome is unknown. Retry with the same Idempotency-Key.',
+} as const;
+
+/** A write that timed out may have committed, so it gets 504, not 503. */
+export function isWriteTimeout(
+  handle: Pick<UpstreamAbortHandle, 'timedOut'>,
+  method: string,
+): boolean {
+  return handle.timedOut && !NON_MUTATING_METHODS.has(method.toUpperCase());
 }
 
 export function createUpstreamAbortHandle(
@@ -194,7 +211,9 @@ export function createUpstreamAbortHandle(
   timeoutMs: number,
 ): UpstreamAbortHandle {
   const controller = new AbortController();
+  let timedOut = false;
   const timer = setTimeout(() => {
+    timedOut = true;
     controller.abort(new Error('upstream timeout'));
   }, timeoutMs);
   const raw = request?.raw;
@@ -269,6 +288,9 @@ export function createUpstreamAbortHandle(
 
   return {
     signal: controller.signal,
+    get timedOut() {
+      return timedOut;
+    },
     cleanup: () => {
       clearTimeout(timer);
       for (const { target, event, listener } of listeners) {

@@ -143,6 +143,13 @@ const environmentSchema = z.object({
   GATEWAY_OCR_RATE_LIMIT: positiveIntegerEnvironmentSchema(10),
   GATEWAY_WEBHOOK_RATE_LIMIT: positiveIntegerEnvironmentSchema(60),
   GATEWAY_RATE_LIMIT_WINDOW_MS: positiveIntegerEnvironmentSchema(60_000),
+  // Empty keeps the in-memory throttler storage (single replica / tests).
+  GATEWAY_THROTTLER_REDIS_URL: z
+    .string()
+    .trim()
+    .regex(/^rediss?:\/\//)
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
   // Number of trusted reverse-proxy hops in front of the gateway; 0 trusts none.
   GATEWAY_TRUST_PROXY_HOPS: z.preprocess(
     (value) => (value === undefined ? 0 : value),
@@ -179,6 +186,7 @@ export interface GatewayConfig {
     ocrPerMinute: number;
     webhookPerMinute: number;
     windowMs: number;
+    throttlerRedisUrl?: string;
   };
   ocr: {
     allowUnauthenticatedDev: boolean;
@@ -317,6 +325,7 @@ export function validateGatewayEnvironment(
       ocrPerMinute: parsed.data.GATEWAY_OCR_RATE_LIMIT,
       webhookPerMinute: parsed.data.GATEWAY_WEBHOOK_RATE_LIMIT,
       windowMs: parsed.data.GATEWAY_RATE_LIMIT_WINDOW_MS,
+      throttlerRedisUrl: parsed.data.GATEWAY_THROTTLER_REDIS_URL,
     },
     ocr: {
       allowUnauthenticatedDev: parsed.data.OCR_ALLOW_UNAUTHENTICATED_DEV,

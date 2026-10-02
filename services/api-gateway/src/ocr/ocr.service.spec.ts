@@ -132,6 +132,65 @@ describe('OcrService (Proxy Boundary)', () => {
     });
   });
 
+  describe('Upload size cap', () => {
+    const CAP = 10 * 1024 * 1024 + 64 * 1024;
+    const multipart = 'multipart/form-data; boundary=----cap';
+
+    it('rejects a declared length over the cap with 413 and never calls upstream', async () => {
+      const stream = Readable.from([Buffer.from('x')]);
+      const result = await service.proxyExtraction(VALID_WORKSPACE_ID, {
+        headers: {
+          'content-type': multipart,
+          authorization: 'Bearer t',
+          'content-length': String(CAP + 1),
+        },
+        body: stream,
+        raw: stream,
+      });
+      expect(result.status).toBe(413);
+      expect((result.data as any).error.code).toBe('PAYLOAD_TOO_LARGE');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('rejects a chunked stream that grows past the cap with 413', async () => {
+      mockFetch.mockImplementationOnce(async (_url: string, init: any) => {
+        for await (const chunk of init.body) void chunk;
+        return new Response('{}', {
+          headers: { 'content-type': 'application/json' },
+        });
+      });
+      const chunks = [Buffer.alloc(CAP), Buffer.alloc(1)];
+      const stream = Readable.from(chunks);
+      const result = await service.proxyExtraction(VALID_WORKSPACE_ID, {
+        headers: { 'content-type': multipart, authorization: 'Bearer t' },
+        body: stream,
+        raw: stream,
+      });
+      expect(result.status).toBe(413);
+    });
+
+    it('proxies an upload exactly at the cap', async () => {
+      mockFetch.mockImplementationOnce(async (_url: string, init: any) => {
+        for await (const chunk of init.body) void chunk;
+        return new Response('{"ok":true}', {
+          headers: { 'content-type': 'application/json' },
+        });
+      });
+      const stream = Readable.from([Buffer.alloc(CAP)]);
+      const result = await service.proxyExtraction(VALID_WORKSPACE_ID, {
+        headers: {
+          'content-type': multipart,
+          authorization: 'Bearer t',
+          'content-length': String(CAP),
+        },
+        body: stream,
+        raw: stream,
+      });
+      expect(result.status).toBe(200);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('JSON body forwarding', () => {
     it('should forward application/json body and content-type to OCR_SERVICE_URL/v1/extractions', async () => {
       const upstreamResponse = {

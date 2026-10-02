@@ -2,8 +2,10 @@ import { Module, type ExecutionContext } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { AuthModule } from '../auth/auth.module';
 import type { GatewayConfig } from '../config/gateway.config';
+import { FailOpenThrottlerStorage } from './fail-open-throttler-storage';
 import {
   GatewayThrottlerGuard,
   isOcrRateLimitEligible,
@@ -80,6 +82,17 @@ function requestFromContext(context: {
                 `endpoint:${webhookEndpointKey(request) ?? 'none'}`,
             },
           ],
+          // Shared across replicas when configured; otherwise in-memory.
+          ...(gateway.limits.throttlerRedisUrl
+            ? {
+                storage: new FailOpenThrottlerStorage(
+                  new ThrottlerStorageRedisService(
+                    gateway.limits.throttlerRedisUrl,
+                    { commandTimeout: 500, maxRetriesPerRequest: 1 },
+                  ),
+                ),
+              }
+            : {}),
           errorMessage: 'Rate limit exceeded',
           setHeaders: true,
         };

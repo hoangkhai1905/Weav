@@ -25,6 +25,8 @@ import {
   applyClientForwardingHeaders,
   collectSafeUpstreamResponseHeaders,
   createUpstreamAbortHandle,
+  isWriteTimeout,
+  UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN,
   getRequestHeader,
   getRequestId,
   isValidTraceparent,
@@ -145,6 +147,13 @@ export class IdentityProxyService {
       });
       return await this.relay(response, reply, requestId, fail);
     } catch {
+      if (isWriteTimeout(abortHandle, req.method)) {
+        return fail(
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.status,
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.code,
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.message,
+        );
+      }
       this.logger.error(`Identity upstream failed requestId=${requestId}`);
       return fail(503, 'SERVICE_UNAVAILABLE', 'Identity service unavailable');
     } finally {
@@ -249,6 +258,13 @@ export class IdentityProxyService {
     } catch {
       if (tooLarge) {
         return fail(413, 'PAYLOAD_TOO_LARGE', 'Request too large');
+      }
+      if (isWriteTimeout(abortHandle, req.method)) {
+        return fail(
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.status,
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.code,
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.message,
+        );
       }
       this.logger.error(`Identity upload failed requestId=${requestId}`);
       return fail(503, 'SERVICE_UNAVAILABLE', 'Identity service unavailable');
