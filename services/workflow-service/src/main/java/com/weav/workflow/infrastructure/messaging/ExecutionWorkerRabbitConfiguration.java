@@ -44,11 +44,18 @@ public class ExecutionWorkerRabbitConfiguration {
 
     @Bean(name = LISTENER_CONTAINER_FACTORY)
     SimpleRabbitListenerContainerFactory workflowExecutionListenerContainerFactory(
-            ConnectionFactory connectionFactory) {
+            ConnectionFactory connectionFactory,
+            @Value("${weav.workflow.execution.worker.concurrency-min:2}") int concurrencyMin,
+            @Value("${weav.workflow.execution.worker.concurrency-max:4}") int concurrencyMax) {
+        if (concurrencyMin < 1 || concurrencyMax < concurrencyMin || concurrencyMax > 16) {
+            throw new IllegalArgumentException("Worker concurrency must satisfy 1 <= min <= max <= 16");
+        }
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         factory.setAcknowledgeMode(AcknowledgeMode.MANUAL);
         factory.setPrefetchCount(1);
+        factory.setConcurrentConsumers(concurrencyMin);
+        factory.setMaxConcurrentConsumers(concurrencyMax);
         factory.setDefaultRequeueRejected(false);
         return factory;
     }

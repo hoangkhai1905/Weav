@@ -71,6 +71,7 @@ const saveDraftSchema = z
     description: z.string().max(2000).optional(),
     definition: recordSchema,
     editorState: recordSchema.optional(),
+    expectedRevision: z.number().int().min(0).optional(),
   })
   .strict();
 

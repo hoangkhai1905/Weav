@@ -494,6 +494,14 @@ components:
         description: { type: string, maxLength: 2000 }
         definition: { type: object, additionalProperties: true }
         editorState: { type: object, additionalProperties: true }
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            Revision of the draft the client loaded. When present and different from the stored revision the save
+            fails with 409 DRAFT_REVISION_CONFLICT (error.details[0].message carries the current revision). Omit for
+            last-write-wins.
     WorkflowCreated:
       type: object
       additionalProperties: false
@@ -508,6 +516,7 @@ components:
       properties:
         workflowId: { type: string, format: uuid }
         status: { type: string, enum: [DRAFT, PUBLISHED, PAUSED] }
+        revision: { type: integer, format: int64, minimum: 0, description: Draft revision; incremented on every draft save. }
         triggers:
           type: array
           description: Safe readiness and timing projection for the workflow's current trigger registrations.

@@ -27,7 +27,7 @@ public final class WorkflowPersistenceMapper {
 
     public WorkflowJpaEntity toEntity(Workflow workflow) {
         Objects.requireNonNull(workflow, "workflow must not be null");
-        return new WorkflowJpaEntity(
+        WorkflowJpaEntity entity = new WorkflowJpaEntity(
                 workflow.getId(),
                 workflow.getWorkspaceId(),
                 workflow.getName(),
@@ -43,6 +43,8 @@ public final class WorkflowPersistenceMapper {
                 workflow.getPublishedAt(),
                 workflow.getDeletedAt(),
                 workflow.getDeletedBy());
+        entity.setRevision(workflow.getRevision());
+        return entity;
     }
 
     public WorkflowVersionJpaEntity toEntity(WorkflowVersion version) {
@@ -83,7 +85,8 @@ public final class WorkflowPersistenceMapper {
                 entity.getUpdatedAt(),
                 entity.getPublishedAt(),
                 entity.getDeletedAt(),
-                entity.getDeletedBy());
+                entity.getDeletedBy(),
+                entity.getRevision());
     }
 
     public WorkflowVersion toDomain(WorkflowVersionJpaEntity entity) {
@@ -125,6 +128,7 @@ public final class WorkflowPersistenceMapper {
         entity.setPublishedAt(workflow.getPublishedAt());
         entity.setDeletedAt(workflow.getDeletedAt());
         entity.setDeletedBy(workflow.getDeletedBy());
+        entity.setRevision(workflow.getRevision());
     }
 
     private Map<String, Object> objectMap(JsonNode node) {

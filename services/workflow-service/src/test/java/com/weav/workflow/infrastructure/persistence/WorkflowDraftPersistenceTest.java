@@ -2,6 +2,7 @@ package com.weav.workflow.infrastructure.persistence;
 
 import com.weav.workflow.WorkflowDraftTestConfiguration;
 import com.weav.workflow.application.dto.CreateWorkflowCommand;
+import com.weav.workflow.application.service.DraftRevisionConflictException;
 import com.weav.workflow.application.service.WorkflowDraftService;
 import com.weav.workflow.domain.definition.WorkflowDefinition;
 import com.weav.workflow.domain.model.aggregate.workflow.Workflow;
@@ -201,6 +202,34 @@ class WorkflowDraftPersistenceTest {
         assertEquals(publishedAt, restored.getPublishedAt());
         assertEquals(versionId, jdbcTemplate.queryForObject(
                 "select current_version_id from workflow.workflows where id = ?", UUID.class, existing.getId()));
+    }
+
+    @Test
+    void expectedRevisionDetectsStaleSavesAndAbsentRevisionStaysLastWriteWins() {
+        UUID workspaceId = UUID.fromString("10000000-0000-0000-0000-000000000065");
+        UUID actorId = UUID.fromString("20000000-0000-0000-0000-000000000065");
+        Workflow created = workflowDraftService.create(new CreateWorkflowCommand(
+                workspaceId, actorId, "Revisioned", "base"));
+        assertEquals(0L, created.getRevision());
+
+        Workflow first = workflowDraftService.save(workspaceId, created.getId(), actorId, "First", null,
+                definition("first"), Map.of(), 0L);
+        assertEquals(1L, first.getRevision());
+
+        DraftRevisionConflictException conflict = assertThrows(DraftRevisionConflictException.class,
+                () -> workflowDraftService.save(workspaceId, created.getId(), actorId, "Stale", null,
+                        definition("stale"), Map.of(), 0L));
+        assertEquals(1L, conflict.currentRevision());
+        Workflow unchanged = workflowRepository.findByWorkspaceAndId(workspaceId, created.getId()).orElseThrow();
+        assertEquals("First", unchanged.getName());
+        assertEquals("first", ((Map<?, ?>) unchanged.getDraftDefinition().get("variables")).get("marker"));
+        assertEquals(1L, unchanged.getRevision());
+
+        Workflow lastWriteWins = workflowDraftService.save(workspaceId, created.getId(), actorId, "Forced", null,
+                definition("forced"), Map.of());
+        assertEquals(2L, lastWriteWins.getRevision());
+        assertEquals(2L, jdbcTemplate.queryForObject(
+                "select revision from workflow.workflows where id = ?", Long.class, created.getId()));
     }
 
     @Test

@@ -99,6 +99,13 @@ public class WorkflowDraftService {
 
     public Workflow save(UUID workspaceId, UUID workflowId, UUID actorId, String name, String description,
                          WorkflowDefinition definition, Map<String, Object> editorState) {
+        return save(workspaceId, workflowId, actorId, name, description, definition, editorState, null);
+    }
+
+    /** A non-null {@code expectedRevision} that differs from the stored one fails with a 409; null keeps last-write-wins. */
+    public Workflow save(UUID workspaceId, UUID workflowId, UUID actorId, String name, String description,
+                         WorkflowDefinition definition, Map<String, Object> editorState,
+                         Long expectedRevision) {
         workspaceAuthorization.require(workspaceId, actorId, "WORKFLOW_EDIT");
         validateName(name);
         validateDefinition(definition);
@@ -119,6 +126,9 @@ public class WorkflowDraftService {
         return transactions.execute(status -> {
             Workflow workflow = workflowRepository.lockByWorkspaceAndId(workspaceId, workflowId)
                     .orElseThrow(() -> new ResourceNotFoundException("Workflow not found"));
+            if (expectedRevision != null && expectedRevision != workflow.getRevision()) {
+                throw new DraftRevisionConflictException(workflow.getRevision());
+            }
             requireReferenceProjectionIfNeeded(connectionIds(workflow.getDraftDefinition()), newReferences);
             connectionReferences.ifPresent(port -> port.replaceDraft(workflowId, newReferences));
 

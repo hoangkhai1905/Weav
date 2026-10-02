@@ -2,6 +2,7 @@ package com.weav.workflow.presentation.http.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import tools.jackson.databind.JsonNode;
 
@@ -14,6 +15,8 @@ public record SaveWorkflowDraftRequest(
         String description,
         @NotNull(message = "Workflow definition is required")
         JsonNode definition,
-        Map<String, Object> editorState
+        Map<String, Object> editorState,
+        @PositiveOrZero(message = "expectedRevision must not be negative")
+        Long expectedRevision
 ) {
 }

@@ -5,6 +5,7 @@ import com.weav.workflow.application.port.out.ConnectionReferenceUnavailableExce
 import com.weav.workflow.application.service.WorkflowDraftService;
 import com.weav.workflow.application.service.WorkflowDraftValidationException;
 import com.weav.workflow.application.service.DraftChangedException;
+import com.weav.workflow.application.service.DraftRevisionConflictException;
 import com.weav.workflow.application.service.TriggerDependencyUnavailableException;
 import com.weav.workflow.application.service.WorkflowPublicationService;
 import com.weav.workflow.domain.definition.DefinitionValidator;
@@ -126,7 +127,7 @@ public class WorkflowController {
         enforceBodySize(request);
         WorkflowDefinition definition = decodeDefinition(request);
         return WorkflowResponse.from(workflowDraftService.save(workspaceId, workflowId, actorId(jwt),
-                request.name(), request.description(), definition, request.editorState()));
+                request.name(), request.description(), definition, request.editorState(), request.expectedRevision()));
     }
 
     @PostMapping("/{workflowId}/publish")
@@ -182,6 +183,16 @@ public class WorkflowController {
             HttpServletRequest request) {
         return errorResponse(HttpStatus.SERVICE_UNAVAILABLE, "DEPENDENCY_UNAVAILABLE",
                 "Workflow connection reference protection is unavailable", List.of(), request);
+    }
+
+    @org.springframework.web.bind.annotation.ExceptionHandler(DraftRevisionConflictException.class)
+    public ResponseEntity<ApiErrorResponse> handleDraftRevisionConflict(
+            DraftRevisionConflictException exception,
+            HttpServletRequest request) {
+        return errorResponse(HttpStatus.CONFLICT, "DRAFT_REVISION_CONFLICT",
+                "Workflow draft was changed by another save",
+                List.of(new ApiErrorResponse.ErrorDetail("revision", String.valueOf(exception.currentRevision()))),
+                request);
     }
 
     @org.springframework.web.bind.annotation.ExceptionHandler(DraftChangedException.class)
