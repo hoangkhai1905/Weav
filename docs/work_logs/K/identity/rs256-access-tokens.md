@@ -70,3 +70,9 @@ Trạng thái: xong bước b cho verifier Node.
 - `./mvnw verify`: workspace 418/418; workflow 494/494; identity 360 test, 3 error (Avatar minio đã biết), 1 skipped.
 - gateway unit 107, e2e 82, build OK; notification unit 101, e2e 19, build OK, `test:integration` 8/8 (container tạm `test/compose.yml`, đã `down -v`).
 - Chưa làm: bước d (bỏ HS256 và `JWT_ACCESS_SECRET`) — chỉ làm sau khi chạy RS256 ổn định một thời gian. Để bật RS256 ở dev: `node scripts/identity-dev-keys.mjs`, đặt `JWT_ACCESS_ALG=RS256` trong `.env`, rebuild identity.
+
+## Live smoke RS256 (2026-10-03)
+
+- `compose.workflow-smoke.yml`: identity nhận `JWT_ACCESS_ALG=${WORKFLOW_SMOKE_JWT_ACCESS_ALG:-HS256}`, khóa `/run/identity-keys/identity-access.pem` (kid `identity-smoke-1`), mount read-only `tmp/service-keys/identity`. `start-workflow-v1-live-smoke.ps1`: kiểm tra cô lập cho phép đúng một bind mount read-only `/run/identity-keys` cho identity; các service khác vẫn cấm volume.
+- `WORKFLOW_SMOKE_JWT_ACCESS_ALG=RS256` + `start-workflow-v1-live-smoke.ps1`: PASS (đã xác nhận compose giải ra `JWT_ACCESS_ALG=RS256`; identity không khởi động được nếu không tải được khóa). Đăng ký/xác minh/đăng nhập, tạo workspace, workflow create/draft/publish/admission/detail, execution `SUCCESS` — tức token RS256 do identity ký được workspace và workflow xác minh qua JWKS thật.
+- Dọn dẹp: compose project và volume đã xoá; 3 schema `weav_workflow_smoke_*_20261002_a589be3cc73c` đã xoá theo đúng tên sau khi kiểm tra phụ thuộc và tạo backup branch `backup-before-smoke-cleanup-2026-10-03` (`br-weathered-field-b3f04tuc`).
