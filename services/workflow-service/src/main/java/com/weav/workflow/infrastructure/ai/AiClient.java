@@ -37,6 +37,7 @@ public class AiClient implements AiGenerationPort {
     private static final Set<String> DEPENDENCY = Set.of("AI_NOT_CONFIGURED", "AI_PROVIDER_AUTH", "UNAUTHENTICATED", "FORBIDDEN");
     private static final Set<String> CONFIGURATION = Set.of("INVALID_REQUEST", "AI_SCHEMA_INVALID", "PAYLOAD_TOO_LARGE");
     private static final Pattern TRACEPARENT = Pattern.compile("^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$");
+    private static final Pattern CORRELATION_ID = Pattern.compile("^[A-Za-z0-9._:-]{1,128}$");
 
     private final AiClientProperties properties;
     private final ServiceJwtSigner signer;
@@ -81,7 +82,7 @@ public class AiClient implements AiGenerationPort {
         claims.put("execution_id", context.executionId().toString());
         claims.put("node_execution_id", context.nodeExecutionId().toString());
         return call(context.workspaceId(), operation, payload, claims, context.traceparent(), properties.enabled(),
-                requestId(context));
+                requestId(context), context.correlationId());
     }
 
     /** AI-1: the same execution/node/attempt always yields the same id, so ai-service can dedup a retried call. */
@@ -93,12 +94,12 @@ public class AiClient implements AiGenerationPort {
     @Override
     public Map<String, Object> generate(UUID workspaceId, Map<String, Object> payload) {
         return call(workspaceId, "generate", payload, Map.of("mode", "generation"), null,
-                properties.generationEnabled(), UUID.randomUUID());
+                properties.generationEnabled(), UUID.randomUUID(), null);
     }
 
     private Map<String, Object> call(UUID workspaceId, String operation, Map<String, Object> payload,
                                      Map<String, Object> modeClaims, String traceparent, boolean enabled,
-                                     UUID requestId) {
+                                     UUID requestId, String correlationId) {
         if (!enabled) {
             throw new NodeExecutor.Failure("DEPENDENCY_NOT_CONFIGURED", "AI is not enabled.", false);
         }
@@ -128,6 +129,10 @@ public class AiClient implements AiGenerationPort {
                         headers.setContentType(MediaType.APPLICATION_JSON);
                         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
                         headers.set("X-Request-ID", requestId.toString());
+                        // X-15: the execution's stored correlation id, when it is safe for ai-service to accept.
+                        if (correlationId != null && CORRELATION_ID.matcher(correlationId).matches()) {
+                            headers.set("X-Correlation-ID", correlationId);
+                        }
                         if (traceparent != null && TRACEPARENT.matcher(traceparent).matches()) {
                             headers.set("traceparent", traceparent);
                         }

@@ -20,4 +20,7 @@ public interface WorkflowRepository {
     Optional<Workflow> lockByWorkspaceAndId(UUID workspaceId, UUID workflowId);
 
     Optional<Workflow> lockById(UUID workflowId);
+
+    /** As {@link #lockById(UUID)}, but every lock wait in the current transaction fails after {@code lockTimeout}. */
+    Optional<Workflow> lockById(UUID workflowId, java.time.Duration lockTimeout);
 }

@@ -8,9 +8,14 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import com.weav.workflow.application.port.out.WorkflowNotificationOutboxStore;
+import com.weav.workflow.domain.port.out.OutboxEventRepository;
+
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** WF-12: outbox and execution-history retention against real PostgreSQL. */
 @SpringBootTest(properties = {
@@ -25,6 +30,10 @@ class RetentionPurgeJobTest {
     private JdbcTemplate jdbc;
     @Autowired
     private PlatformTransactionManager transactions;
+    @Autowired
+    private WorkflowNotificationOutboxStore notificationOutbox;
+    @Autowired
+    private OutboxEventRepository executionOutbox;
 
     @Test
     void purgesOnlyOldPublishedOutboxRows() {
@@ -32,12 +41,67 @@ class RetentionPurgeJobTest {
         UUID oldPublished = outbox(aggregate, "PUBLISHED", 10);
         UUID recentPublished = outbox(aggregate, "PUBLISHED", 1);
         UUID oldPending = outbox(aggregate, "PENDING", 10);
+        UUID oldFailed = outbox(aggregate, "FAILED", 30);
 
         new RetentionPurgeJob(jdbc, transactions, "workflow", 7, 14, 0).purgeNow();
+        assertEquals(1, count("outbox_events", oldFailed));
 
         assertEquals(0, count("outbox_events", oldPublished));
         assertEquals(1, count("outbox_events", recentPublished));
         assertEquals(1, count("outbox_events", oldPending));
+    }
+
+    /** WF-13: the max-attempts-th failed publish is terminal; FAILED rows are never re-claimed or purged. */
+    @Test
+    void notificationEventBecomesFailedAfterMaxAttemptsAndIsNotClaimedOrPurged() {
+        UUID workflowId = UUID.randomUUID();
+        UUID retrying = notificationRow(workflowId, 8);
+        UUID exhausted = notificationRow(workflowId, 9);
+        UUID token = UUID.randomUUID();
+        jdbc.update("update workflow.notification_outbox set status = 'CLAIMED', claim_token = ?, "
+                + "lease_until = CURRENT_TIMESTAMP + INTERVAL '1 minute' where entity_id = ?", token, workflowId);
+
+        Instant now = Instant.now();
+        assertTrue(notificationOutbox.scheduleRetry(retrying, token, "BROKER_NACK", now, now));
+        assertTrue(notificationOutbox.scheduleRetry(exhausted, token, "BROKER_NACK", now, now));
+
+        assertEquals("PENDING", notificationStatus(retrying));
+        assertEquals("FAILED", notificationStatus(exhausted));
+        assertEquals(0, jdbc.queryForObject("select count(*) from workflow.notification_outbox where event_id = ? "
+                + "and ((status = 'PENDING' and next_attempt_at <= CURRENT_TIMESTAMP) "
+                + "or (status = 'CLAIMED' and lease_until <= CURRENT_TIMESTAMP))", Integer.class, exhausted));
+
+        new RetentionPurgeJob(jdbc, transactions, "workflow", 7, 14, 0).purgeNow();
+        assertEquals(1, jdbc.queryForObject(
+                "select count(*) from workflow.notification_outbox where event_id = ?", Integer.class, exhausted));
+    }
+
+    @Test
+    void executionOutboxEventBecomesFailedAfterMaxAttempts() {
+        UUID token = UUID.randomUUID();
+        UUID id = outbox(UUID.randomUUID(), "PENDING", 0);
+        jdbc.update("update workflow.outbox_events set retry_count = 9, publisher_lease_token = ?, "
+                + "publisher_lease_until = CURRENT_TIMESTAMP + INTERVAL '1 minute' where id = ?", token, id);
+
+        Instant now = Instant.now();
+        assertTrue(executionOutbox.scheduleRetry(id, token, now, now));
+
+        assertEquals("FAILED", jdbc.queryForObject(
+                "select status from workflow.outbox_events where id = ?", String.class, id));
+    }
+
+    private UUID notificationRow(UUID workflowId, int retryCount) {
+        UUID eventId = UUID.randomUUID();
+        jdbc.update("insert into workflow.notification_outbox (event_id, event_type, occurred_at, workspace_id, "
+                + "recipient_user_id, entity_kind, entity_id, requires_monitor_access, payload, retry_count) "
+                + "values (?, 'workflow.created', CURRENT_TIMESTAMP, ?, ?, 'WORKFLOW', ?, false, '{}'::jsonb, ?)",
+                eventId, UUID.randomUUID(), UUID.randomUUID(), workflowId, retryCount);
+        return eventId;
+    }
+
+    private String notificationStatus(UUID eventId) {
+        return jdbc.queryForObject("select status from workflow.notification_outbox where event_id = ?",
+                String.class, eventId);
     }
 
     @Test

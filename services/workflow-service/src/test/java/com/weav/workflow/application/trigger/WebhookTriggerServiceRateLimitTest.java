@@ -46,7 +46,7 @@ class WebhookTriggerServiceRateLimitTest {
         WebhookTriggerService service = service(2, 120);
         register("valid-endpoint", "good-secret");
         when(triggers.findWebhookByEndpoint("unknown")).thenReturn(Optional.empty());
-        when(workflows.lockById(any())).thenReturn(Optional.empty());
+        when(workflows.lockById(any(), any())).thenReturn(Optional.empty());
 
         for (int i = 0; i < 50; i++) {
             assertThrows(WebhookNotFoundException.class, () -> service.accept("unknown", "x", null, null, null));
@@ -64,12 +64,24 @@ class WebhookTriggerServiceRateLimitTest {
                 () -> service.accept("valid-endpoint", "good-secret", null, null, null));
     }
 
+    /** WF-14: a lock wait that exceeds the bound is shed as the retryable 429, not a 500. */
+    @Test
+    void lockTimeoutIsMappedToTheRetryableRateLimitError() {
+        WebhookTriggerService service = service(1000, 1000);
+        register("busy-endpoint", "busy-secret");
+        when(workflows.lockById(any(), any()))
+                .thenThrow(new org.springframework.dao.CannotAcquireLockException("lock timeout"));
+
+        assertThrows(WebhookRateLimitExceededException.class,
+                () -> service.accept("busy-endpoint", "busy-secret", null, null, null));
+    }
+
     @Test
     void anEndpointIsLimitedOnItsOwnWithoutStarvingOthers() {
         WebhookTriggerService service = service(1000, 1);
         register("first-endpoint", "first-secret");
         register("other-endpoint", "other-secret");
-        when(workflows.lockById(any())).thenReturn(Optional.empty());
+        when(workflows.lockById(any(), any())).thenReturn(Optional.empty());
 
         assertThrows(WebhookNotFoundException.class,
                 () -> service.accept("first-endpoint", "first-secret", null, null, null));

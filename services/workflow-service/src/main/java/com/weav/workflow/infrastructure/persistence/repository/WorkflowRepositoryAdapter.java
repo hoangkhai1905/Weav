@@ -126,6 +126,17 @@ public class WorkflowRepositoryAdapter implements WorkflowRepository {
 
     @Override
     @Transactional
+    public Optional<Workflow> lockById(UUID workflowId, java.time.Duration lockTimeout) {
+        Objects.requireNonNull(lockTimeout, "lockTimeout must not be null");
+        // WF-14: transaction-scoped (is_local = true), so it also bounds the admission locks that follow.
+        entityManager.createNativeQuery("select set_config('lock_timeout', ?1, true)")
+                .setParameter(1, lockTimeout.toMillis() + "ms")
+                .getSingleResult();
+        return lockById(workflowId);
+    }
+
+    @Override
+    @Transactional
     public Optional<Workflow> lockById(UUID workflowId) {
         Objects.requireNonNull(workflowId, "workflowId must not be null");
         List<WorkflowJpaEntity> matches = entityManager.createQuery(

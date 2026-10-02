@@ -22,6 +22,8 @@ import java.util.regex.Pattern;
 /** Short, fenced PostgreSQL claims for outbox delivery; message sends occur outside these transactions. */
 @Repository
 public class OutboxEventRepositoryAdapter implements OutboxEventRepository {
+    private static final org.slf4j.Logger LOGGER =
+            org.slf4j.LoggerFactory.getLogger(OutboxEventRepositoryAdapter.class);
     private static final Pattern SQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     @PersistenceContext
@@ -30,9 +32,12 @@ public class OutboxEventRepositoryAdapter implements OutboxEventRepository {
     private final JdbcTemplate jdbcTemplate;
     private final ExecutionPersistenceMapper mapper;
     private final String outboxTable;
+    private final int maxAttempts;
 
     public OutboxEventRepositoryAdapter(JdbcTemplate jdbcTemplate, ExecutionPersistenceMapper mapper,
-                                        @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema) {
+                                        @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema,
+                                        @Value("${weav.workflow.execution-outbox.max-attempts:10}") int maxAttempts) {
+        this.maxAttempts = Math.max(1, maxAttempts);
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate, "jdbcTemplate must not be null");
         this.mapper = Objects.requireNonNull(mapper, "mapper must not be null");
         if (schema == null || !SQL_IDENTIFIER.matcher(schema).matches()) {
@@ -121,13 +126,19 @@ public class OutboxEventRepositoryAdapter implements OutboxEventRepository {
         if (nextAttemptAt.isBefore(attemptedAt)) {
             throw new IllegalArgumentException("Outbox retry time cannot precede the attempt");
         }
-        int changed = jdbcTemplate.update("update " + outboxTable
+        // WF-13: the maxAttempts-th failure is terminal. A FAILED row is not re-claimed; the recovery job
+        // re-enqueues a still-QUEUED execution with a fresh event (bounded by the WF-9 recovery cap).
+        List<String> rows = jdbcTemplate.queryForList("update " + outboxTable
                         + " set retry_count = case when retry_count < 2147483647 "
                         + "then retry_count + 1 else retry_count end, next_attempt_at = ?, "
+                        + "status = case when retry_count + 1 >= ? then 'FAILED' else 'PENDING' end, "
                         + "publisher_lease_token = null, "
                         + "publisher_lease_until = null where id = ? and status = 'PENDING' "
-                        + "and publisher_lease_token = ?",
-                Timestamp.from(nextAttemptAt), eventId, leaseToken);
-        return changed == 1;
+                        + "and publisher_lease_token = ? returning status",
+                String.class, Timestamp.from(nextAttemptAt), maxAttempts, eventId, leaseToken);
+        if (rows.contains("FAILED")) {
+            LOGGER.error("Execution outbox event {} marked FAILED after {} attempts", eventId, maxAttempts);
+        }
+        return rows.size() == 1;
     }
 }

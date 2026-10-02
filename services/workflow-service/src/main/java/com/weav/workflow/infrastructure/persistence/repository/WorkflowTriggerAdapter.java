@@ -30,9 +30,13 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
 
     private final WorkflowPersistenceMapper mapper;
     private final String triggerTable;
+    private final java.time.Clock clock;
 
     public WorkflowTriggerAdapter(WorkflowPersistenceMapper mapper,
-                                  @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema) {
+                                  @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema,
+                                  @org.springframework.beans.factory.annotation.Qualifier("workflowExecutionClock")
+                                  java.time.Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.mapper = Objects.requireNonNull(mapper, "mapper must not be null");
         if (schema == null || !SQL_IDENTIFIER.matcher(schema).matches()) {
             throw new IllegalArgumentException("The configured workflow schema name is invalid");
@@ -202,7 +206,7 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
             return;
         }
         WorkflowTrigger domain = locked.get();
-        domain.recordScheduleFailure(retryAt, Instant.now());
+        domain.recordScheduleFailure(retryAt, clock.instant());
         WorkflowTriggerJpaEntity registration = entityManager.find(WorkflowTriggerJpaEntity.class, triggerId);
         registration.setLastError(mapper.toJsonNode(domain.getLastError()));
     }

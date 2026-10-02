@@ -58,3 +58,17 @@ Người dùng: "8. ok" (AI-1, AI-3) và "We're developing right now, so i think
 - Test mới: `AiClientContractTest` (requestId ổn định; quota chặn trước khi gọi HTTP), `AiQuotaTest` (tắt thì không ghi dòng nào; giới hạn 2 thì lần 3 fail không retry; purge 30 ngày), `WorkflowGenerationServiceTest` và `WorkflowGenerationHttpTest` (429), `RetryPolicyTest`.
 - Workflow có kiểm tra lại đồ thị sinh ra: `IntentCompiler` dùng `validatePublish` nên đồ thị sinh ra bị kiểm cạnh/chu trình/một manual trigger. Lưu draft thủ công (`validateDraft`) chỉ kiểm id, loại node, trường config, KHÔNG kiểm cạnh trỏ tới node có thật, chu trình, số trigger (để publish kiểm). Chưa sửa trong lane này.
 - `./mvnw verify` (UTC): 472 test, 0 failure, 0 error, 0 skipped (baseline 465 + 7 mới; không gặp lỗi môi trường đã biết). Compose config -q: PASS.
+
+## Step 3 / Low: WF-13, WF-14, WF-15, X-15
+
+Người dùng: "default" (WF-13 FAILED sau N lần; WF-14 khóa nhẹ + lock timeout, bỏ HMAC; WF-15 dùng clock được inject và ghi chú "một lần catch-up") và "skip OpenTelemetry, do only correlation-id propagation to ai-service".
+
+| Mục | Thay đổi | Ghi chú |
+| --- | --- | --- |
+| WF-13 | `notification_outbox` và `outbox_events`: lần fail thứ `max-attempts` (mặc định 10) chuyển hàng sang `FAILED`, log ERROR một lần (id, không payload), không claim lại | Property `weav.workflow.notification-outbox.max-attempts`, `weav.workflow.execution-outbox.max-attempts`. Migration `V10__notification_outbox_failed_status.sql` thêm `FAILED` vào CHECK. `RetentionPurgeJob` chỉ xóa `PUBLISHED` nên giữ nguyên `FAILED` (có test). `FAILED` của notification chặn purge execution liên quan (giữ để kiểm tra). Execution outbox `FAILED`: recovery job tự tạo event mới cho execution còn `QUEUED` (có trần WF-9) |
+| WF-14 | `WorkflowRepository.lockById(id, timeout)` đặt `lock_timeout` 2 s theo transaction; `PessimisticLockingFailureException` trong `WebhookTriggerService.accept` -> `WebhookRateLimitExceededException` (429) | KHÔNG dùng FOR SHARE: admission (`WorkflowExecutionRepositoryAdapter.createAutomatic`) lại lấy `PESSIMISTIC_WRITE` trên workflow và trigger để tuần tự hóa replay idempotency và ghi execution; hai request cùng giữ shared lock rồi nâng lên exclusive sẽ deadlock. Ghi (write lock) là bắt buộc, nên chỉ thêm timeout |
+| WF-15 | `WorkflowTriggerAdapter.recordScheduleFailure` dùng `Clock` (`workflowExecutionClock`); Javadoc `ScheduleTriggerProcessor.process`: lịch bị lỡ chỉ tạo tối đa một run bù | |
+| X-15 | `AiClient` gửi `X-Correlation-ID` = correlation id đã lưu của execution khi khớp `^[A-Za-z0-9._:-]{1,128}$`, nếu không thì bỏ header; sinh workflow không có correlation id nên không gửi | |
+
+- Test: `RetentionPurgeJobTest` (+2: notification và execution outbox thành FAILED, không bị claim/purge), `WebhookTriggerServiceRateLimitTest` (+1: lock timeout -> 429), `WorkflowTriggerAdapterClockTest` (mới), `AiClientContractTest` (+1, và kiểm tra header).
+- `./mvnw verify` (UTC): 485 test, 0 failure, 0 error, 0 skipped (baseline 480 + 5 mới).

@@ -125,6 +125,7 @@ class AiClientContractTest {
                     token.set(request.getHeaders().getFirst("Authorization").substring("Bearer ".length()));
                 })
                 .andExpect(header("traceparent", TRACEPARENT))
+                .andExpect(header("X-Correlation-ID", "correlation"))
                 .andExpect(headerDoesNotExist("X-Workspace-ID"))
                 .andRespond(request -> withSuccess("""
                         {"requestId":"%s","result":{"summary":"ok","truncated":false}}
@@ -198,6 +199,20 @@ class AiClientContractTest {
         NodeExecutor.Failure duplicate = assertThrows(NodeExecutor.Failure.class,
                 () -> client.execute(context(), "summarize", Map.of("text", "t", "maxLength", 10)));
         assertEquals("AI_RESPONSE_INVALID", duplicate.code());
+    }
+
+    /** X-15: no stored correlation id means no header, rather than a made-up one. */
+    @Test
+    void omitsCorrelationHeaderWhenTheExecutionHasNone() {
+        server.expect(requestTo("http://ai.internal/v1/summarize"))
+                .andExpect(headerDoesNotExist("X-Correlation-ID"))
+                .andRespond(request -> withSuccess("""
+                        {"requestId":"%s","result":{"summary":"ok","truncated":false}}
+                        """.formatted(request.getHeaders().getFirst("X-Request-ID")), MediaType.APPLICATION_JSON)
+                        .createResponse(request));
+        client.execute(new NodeExecutor.Context(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+                "ai-node", 1, null, null), "summarize", Map.of("text", "t", "maxLength", 10));
+        server.verify();
     }
 
     private NodeExecutor.Context context() {

@@ -34,6 +34,11 @@ public class ScheduleTriggerProcessor {
         this.schedules = Objects.requireNonNull(schedules);
     }
 
+    /**
+     * Admits the due slot and advances to the next slot after {@code scanTime}. Slots missed while the
+     * service was down or the workflow paused are therefore not replayed one by one: a missed schedule
+     * produces at most one catch-up run (the oldest due slot), then resumes on its normal cadence.
+     */
     @Transactional
     public boolean process(WorkflowTriggerPort.ScheduleCandidate candidate, Instant scanTime) {
         Objects.requireNonNull(candidate, "candidate must not be null");
