@@ -91,7 +91,12 @@ const schema = z
 export type Settings = z.infer<typeof schema>;
 export const SETTINGS = Symbol('NOTIFICATION_SETTINGS');
 export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
-  const result = schema.safeParse(env);
+  // RABBITMQ_TLS_ENABLED is canonical; RABBITMQ_TLS and RABBITMQ_SSL_ENABLED are legacy aliases.
+  const tls =
+    env.RABBITMQ_TLS_ENABLED ?? env.RABBITMQ_TLS ?? env.RABBITMQ_SSL_ENABLED;
+  const result = schema.safeParse(
+    tls === undefined ? env : { ...env, RABBITMQ_TLS: tls },
+  );
   if (!result.success)
     throw new Error(
       `Invalid notification configuration: ${[...new Set(result.error.issues.map((i) => i.path.join('.')))].join(', ')}`,

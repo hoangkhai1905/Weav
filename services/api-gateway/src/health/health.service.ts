@@ -114,7 +114,14 @@ export class GatewayHealthService {
     };
   }
 
-  async readiness(): Promise<GatewayHealthSnapshot> {
+  // Readiness is the gateway's own state only; an upstream outage yields 503
+  // per proxied route, not a failed probe (X-10).
+  readiness(): { status: 'ok'; details: { gateway: { status: 'up' } } } {
+    return this.liveness();
+  }
+
+  // Diagnostic fan-out to upstream readiness; not used as a probe.
+  async upstreams(): Promise<GatewayHealthSnapshot> {
     const [identity, workspace] = await Promise.all([
       this.probe('identity', this.gateway.upstreams.identity),
       this.probe('workspace', this.gateway.upstreams.workspace),

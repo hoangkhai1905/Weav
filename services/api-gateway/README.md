@@ -140,12 +140,14 @@ from the generic `{userId}` route so route precedence cannot widen the API.
 `GET /health` is process liveness. It is public, exempt from throttling, and
 does not call an upstream service.
 
-`GET /ready` is public and probes Identity and Workspace in parallel at their
-verified `/actuator/health/readiness` paths. Each probe has a two-second
-deadline that includes reading the response body. Both services must report
-HTTP 200 for Gateway `200`; a down, failed, redirected, or stalled probe yields
-Gateway `503`. The response exposes only aggregate `up`/`down` status and the
-correlation ID. Notification and OCR are not readiness dependencies.
+`GET /ready` is public and reports only the Gateway's own state (it does not
+call an upstream, so an Identity/Workspace outage never fails the probe; proxied
+routes return `503` individually). `GET /ready/upstreams` is a throttled
+diagnostic that probes Identity and Workspace in parallel at their
+`/actuator/health/readiness` paths with a two-second deadline each (body read
+included); a down, failed, redirected, or stalled probe yields `503`. Responses
+expose only aggregate `up`/`down` status and the correlation ID. Notification
+and OCR are not probed.
 
 The limiter is intentionally in-memory and single-replica:
 

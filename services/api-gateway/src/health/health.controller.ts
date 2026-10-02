@@ -25,14 +25,27 @@ export class HealthController {
   @Get('ready')
   @AuthPolicy('public')
   @SkipThrottle({ general: true, auth: true, ocr: true })
-  async readinessCheck(
+  readinessCheck(
     @Req() request: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
     const requestId = getRequestId(request);
     setResponseRequestId(reply, requestId);
     reply.header('Cache-Control', 'no-store');
-    const result = await this.health.readiness();
+    return { ...this.health.readiness(), requestId };
+  }
+
+  // Diagnostics only (probes upstreams); kept throttled and out of compose healthchecks.
+  @Get('ready/upstreams')
+  @AuthPolicy('public')
+  async upstreamsCheck(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ) {
+    const requestId = getRequestId(request);
+    setResponseRequestId(reply, requestId);
+    reply.header('Cache-Control', 'no-store');
+    const result = await this.health.upstreams();
     reply.code(result.status === 'ok' ? 200 : 503);
     return { ...result, requestId };
   }
