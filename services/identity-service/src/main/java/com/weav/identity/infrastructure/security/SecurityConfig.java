@@ -57,7 +57,8 @@ public class SecurityConfig {
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/auth/oauth/google/callback",
-                                "/auth/web/csrf"
+                                "/auth/web/csrf",
+                                "/.well-known/jwks.json"
                         ).permitAll()
                         .requestMatchers("/internal/directory/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/prometheus").permitAll()

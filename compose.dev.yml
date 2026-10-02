@@ -36,6 +36,10 @@ services:
       JWT_ISSUER: ${JWT_ISSUER:-weav-identity}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-weav-api}
       JWT_CLOCK_SKEW: ${JWT_CLOCK_SKEW:-30s}
+      # ID-6: HS256 until the verifiers accept RS256; run `node scripts/identity-dev-keys.mjs` to create the key.
+      JWT_ACCESS_ALG: ${JWT_ACCESS_ALG:-HS256}
+      JWT_SIGNING_KEY_LOCATION: /run/identity-keys/identity-access.pem
+      JWT_SIGNING_KEY_ID: ${JWT_SIGNING_KEY_ID:-identity-dev-1}
       IDENTITY_INTERNAL_SERVICE_KEY: ${IDENTITY_INTERNAL_SERVICE_KEY:-}
 
       # ID-2: honour X-Forwarded-For only from the gateway's pinned IP on the `edge` network
@@ -99,6 +103,9 @@ services:
     depends_on:
       rabbitmq:
         condition: service_started
+
+    volumes:
+      - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/identity:/run/identity-keys:ro
 
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]

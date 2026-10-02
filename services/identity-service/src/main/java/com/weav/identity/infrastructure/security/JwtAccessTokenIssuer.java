@@ -4,6 +4,7 @@ import com.weav.identity.application.dto.IssuedAccessToken;
 import com.weav.identity.application.port.out.AccessTokenIssuer;
 import com.weav.identity.domain.valueobject.SystemRole;
 import com.weav.identity.domain.valueobject.UserStatus;
+import org.springframework.security.oauth2.jose.jws.JwsAlgorithm;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -27,8 +28,18 @@ public final class JwtAccessTokenIssuer implements AccessTokenIssuer {
     private final JwtEncoder jwtEncoder;
     private final JwtProperties properties;
     private final Clock clock;
+    private final JwsAlgorithm algorithm;
+    private final String keyId;
 
     public JwtAccessTokenIssuer(JwtEncoder jwtEncoder, JwtProperties properties, Clock clock) {
+        this(jwtEncoder, properties, clock, MacAlgorithm.HS256, null);
+    }
+
+    /** {@code keyId} goes into the JWS header when non-blank (RS256). */
+    public JwtAccessTokenIssuer(JwtEncoder jwtEncoder, JwtProperties properties, Clock clock,
+                                JwsAlgorithm algorithm, String keyId) {
+        this.algorithm = Objects.requireNonNull(algorithm, "algorithm must not be null");
+        this.keyId = keyId;
         this.jwtEncoder = Objects.requireNonNull(jwtEncoder, "jwtEncoder must not be null");
         this.properties = Objects.requireNonNull(properties, "properties must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -56,9 +67,11 @@ public final class JwtAccessTokenIssuer implements AccessTokenIssuer {
                 .claim(USER_STATUS_CLAIM, userStatus.name())
                 .claim(TOKEN_USE_CLAIM, ACCESS_TOKEN_USE)
                 .build();
-        JwsHeader header = JwsHeader.with(MacAlgorithm.HS256)
-                .type("JWT")
-                .build();
+        JwsHeader.Builder headerBuilder = JwsHeader.with(algorithm).type("JWT");
+        if (keyId != null && !keyId.isBlank()) {
+            headerBuilder.keyId(keyId);
+        }
+        JwsHeader header = headerBuilder.build();
         String value = jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
         return new IssuedAccessToken(value, expiresAt);
     }
