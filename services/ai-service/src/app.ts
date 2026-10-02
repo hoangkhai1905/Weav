@@ -12,6 +12,7 @@ import { AiExceptionFilter } from './presentation/http/ai-exception.filter';
 import './presentation/http/request-signal';
 
 const BODY_LIMIT = 256 * 1024;
+const CORRELATION_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
 export async function createAiApp(
   deps: AiDeps,
@@ -25,6 +26,12 @@ export async function createAiApp(
 
   // The deadline starts before body parsing (spec §5); a client disconnect aborts the same signal.
   fastify.addHook('onRequest', async (request, reply) => {
+    // X-15: reuse the gateway's X-Correlation-ID when it is well-formed; otherwise ignore it.
+    const correlation = request.headers['x-correlation-id'];
+    if (typeof correlation === 'string' && CORRELATION_ID.test(correlation)) {
+      request.correlationId = correlation;
+      reply.header('x-correlation-id', correlation);
+    }
     const disconnect = new AbortController();
     reply.raw.on('close', () => {
       if (!reply.raw.writableFinished) disconnect.abort();

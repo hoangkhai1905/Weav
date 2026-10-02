@@ -45,9 +45,11 @@ export class AiController {
   ) {
     const startedAt = Date.now();
     const { provider, verifier } = this.deps;
-    if (!provider || !verifier) throw new AiError('AI_NOT_CONFIGURED');
-    if (!isOperation(operation)) throw new AiError('INVALID_REQUEST');
+    // AI-8: authenticate first so config state is never revealed to unauthenticated callers.
+    if (!verifier) throw new AiError('UNAUTHENTICATED');
     const claims = verifier.verify(request.headers.authorization);
+    if (!provider) throw new AiError('AI_NOT_CONFIGURED');
+    if (!isOperation(operation)) throw new AiError('INVALID_REQUEST');
     const requestId = request.headers['x-request-id'];
     if (typeof requestId !== 'string' || !UUID.test(requestId))
       throw new AiError('INVALID_REQUEST');
@@ -91,6 +93,7 @@ export class AiController {
         release();
         this.logger.log({
           requestId,
+          correlationId: request.correlationId,
           operation,
           workspaceId: body.workspaceId,
           outcome,

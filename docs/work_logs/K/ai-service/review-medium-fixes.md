@@ -27,3 +27,13 @@ Nguồn: `docs/reviews/2026-10-01-backend-review.md` (AI-1, AI-3). Nhánh `refac
 - Dedup không so sánh nội dung body: cùng `requestId` khác body trả kết quả cũ. Workflow chỉ tái dùng id cho cùng execution/node/attempt nên chấp nhận.
 - Cùng attempt đang chạy dở bị abort rồi worker khác chạy lại: bản trùng đợi chung một promise; nếu bản đầu lỗi thì bản chờ cũng lỗi (không cache) và engine retry.
 - Correlation id workflow -> ai-service chưa truyền (cần đổi cả hai phía).
+
+## Bước 3 (Low): AI-6, AI-8, AI-9, X-15 (phía ai-service), BOT-1
+
+- AI-6: `infrastructure/auth/load-verifier.ts` (tách khỏi `main.ts`) ghi log lỗi nạp JWKS (chỉ tên class lỗi và đường dẫn file, không nội dung khóa); readiness vẫn 503.
+- AI-8: `ai.controller.ts` xác thực JWT trước khi kiểm tra cấu hình. Chưa có verifier (JWKS lỗi) -> luôn 401; có verifier mà thiếu provider -> 503 `AI_NOT_CONFIGURED` chỉ cho caller đã xác thực. Dedup vẫn chạy sau xác thực.
+- AI-9: `infrastructure/llm/circuit-breaker-provider.ts` bọc provider trong `main.ts` (không sửa `DeepSeekProvider`). Mở sau 5 lỗi liên tiếp `AI_PROVIDER_UNAVAILABLE`/`AI_TIMEOUT`, mở 30 s trả ngay `AI_PROVIDER_UNAVAILABLE` (503, workflow coi là tạm thời), rồi cho 1 request thử (half-open). Lỗi output/auth không được tính. Log WARN khi đổi trạng thái. Hạn chế: client ngắt kết nối cũng có thể thành `AI_TIMEOUT` và bị tính.
+- X-15: đọc `X-Correlation-ID` (cùng tên header gateway dùng), hợp lệ khi `^[A-Za-z0-9._:-]{1,128}$`, đưa vào log của request và trả lại trong response (kể cả lỗi); giá trị sai bị bỏ qua. Không OpenTelemetry. Workflow chưa gửi header (lane sau).
+- BOT-1 (bot-service, scaffold chưa nối vào hệ thống): thêm `GET /health`, `enableShutdownHooks()`, `bootstrap().catch` log + exit 1, và `DenyAllGuard` toàn cục (403 mọi route trừ `@Public()`). Route `GET /` cũ giờ trả 403; sửa e2e bot (dùng Fastify `inject`, vì `platform-express` không được cài nên e2e cũ vốn đã lỗi).
+- Kiểm tra: ai-service `test` 90 pass (baseline 86), `test:e2e` 23 pass (baseline 21), `build` OK; bot-service `test` 1, `test:e2e` 2, `build` OK. eslint từng file file mới sạch, `ai.e2e-spec.ts` giữ nguyên 11 lỗi có sẵn.
+- GitNexus impact: `AiController` UNKNOWN (grep: chỉ `ai.module.ts`); `DeepSeekProvider`/`createAiApp` CRITICAL do trùng tên trong đồ thị, thực tế chỉ `main.ts` và test dùng; thay đổi mang tính cộng thêm.
