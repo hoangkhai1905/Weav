@@ -164,17 +164,31 @@ export class PrismaDeliveryRepository
   }
   async markRead(userId: string, id: string): Promise<Delivery | null> {
     // Read state must not change the worker's updated_at fencing value.
-    await this.client
-      .$executeRaw`UPDATE notification.notification_deliveries SET read_at=NOW()
-      WHERE user_id=${userId}::uuid AND id=${id}::uuid AND read_at IS NULL`;
+    // Write through to the v2 inbox row in the same transaction (NT-4).
+    await this.client.$transaction(async (tx) => {
+      // Mark every sibling delivery of the same inbox item too, so both APIs agree.
+      await tx.$executeRaw`UPDATE notification.notification_deliveries SET read_at=NOW()
+        WHERE user_id=${userId}::uuid AND read_at IS NULL
+          AND (id=${id}::uuid OR inbox_id IN (SELECT inbox_id FROM notification.notification_deliveries
+            WHERE id=${id}::uuid AND user_id=${userId}::uuid))`;
+      await tx.$executeRaw`UPDATE notification.notification_inbox SET read_at=date_trunc('milliseconds', clock_timestamp())
+        WHERE user_id=${userId}::uuid AND read_at IS NULL
+          AND id IN (SELECT inbox_id FROM notification.notification_deliveries
+            WHERE id=${id}::uuid AND user_id=${userId}::uuid)`;
+    });
     return (await this.client.notificationDelivery.findFirst({
       where: { userId, id },
     })) as Delivery | null;
   }
   async markAllRead(userId: string) {
-    return this.client
-      .$executeRaw`UPDATE notification.notification_deliveries SET read_at=NOW()
-      WHERE user_id=${userId}::uuid AND read_at IS NULL`;
+    return this.client.$transaction(async (tx) => {
+      const count =
+        await tx.$executeRaw`UPDATE notification.notification_deliveries SET read_at=NOW()
+        WHERE user_id=${userId}::uuid AND read_at IS NULL`;
+      await tx.$executeRaw`UPDATE notification.notification_inbox SET read_at=date_trunc('milliseconds', clock_timestamp())
+        WHERE user_id=${userId}::uuid AND read_at IS NULL`;
+      return count;
+    });
   }
   async claim(maxAttempts: number, leaseMs: number): Promise<Delivery | null> {
     return this.client.$transaction(async (tx) => {

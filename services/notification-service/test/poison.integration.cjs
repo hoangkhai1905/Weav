@@ -13,6 +13,8 @@ const settings = loadSettings({
   DB_USERNAME: 'unused',
   DB_PASSWORD: 'unused',
   JWT_ACCESS_SECRET: 'test-only-key-not-for-production-123456',
+  RABBITMQ_USERNAME: 'guest',
+  RABBITMQ_PASSWORD: 'guest',
   RABBITMQ_HOST: '127.0.0.1',
   RABBITMQ_PORT: '15689',
   NOTIFICATION_EXCHANGE: `weav.poison.${suffix}.events`,

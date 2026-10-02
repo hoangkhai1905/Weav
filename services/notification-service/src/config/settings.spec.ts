@@ -10,9 +10,20 @@ describe('notification configuration validation', () => {
       DB_USERNAME: s.DB_USERNAME,
       DB_PASSWORD: s.DB_PASSWORD,
       JWT_ACCESS_SECRET: s.JWT_ACCESS_SECRET,
+      RABBITMQ_USERNAME: s.RABBITMQ_USERNAME,
+      RABBITMQ_PASSWORD: s.RABBITMQ_PASSWORD,
       ...extra,
     };
   }
+  it.each(['RABBITMQ_USERNAME', 'RABBITMQ_PASSWORD'])(
+    'requires broker credential %s (no guest default)',
+    (key) => {
+      expect(() => loadSettings(env({ [key]: '' }))).toThrow(key);
+      const rest: Record<string, string> = env();
+      delete rest[key];
+      expect(() => loadSettings(rest)).toThrow(key);
+    },
+  );
   it.each([
     'https://user:private@example.com',
     'https://example.com?token=private',

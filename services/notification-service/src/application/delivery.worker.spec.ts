@@ -28,6 +28,14 @@ describe('durable delivery worker', () => {
       }),
     );
   });
+  it('retries only the persistence write after the provider accepted', async () => {
+    send.mockResolvedValue({ kind: 'sent' });
+    repo.finish.mockRejectedValueOnce(new Error('db blip'));
+    await worker.deliver(testDelivery());
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(repo.finish).toHaveBeenCalledTimes(2);
+    expect(repo.finish.mock.calls[1][1]).toMatchObject({ status: 'SENT' });
+  });
   it.each([true, false])(
     'classifies retryable=%s failures',
     async (retryable) => {
@@ -95,7 +103,8 @@ describe('durable delivery worker', () => {
     await expect(worker.deliver(testDelivery())).rejects.toThrow(
       'database down',
     );
-    expect(repo.finish).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(repo.finish).toHaveBeenCalledTimes(3);
   });
   it('claims one row before dispatch', async () => {
     repo.claim.mockResolvedValue(null);

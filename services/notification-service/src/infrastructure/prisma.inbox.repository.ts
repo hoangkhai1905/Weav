@@ -170,8 +170,7 @@ export class PrismaInboxRepository
           return;
         }
 
-        if (existingInbox.length > 0) return;
-
+        // A replay may carry more recipients: skipDuplicates adds only the missing rows (NT-6).
         const localized = {
           vi: renderNotification(event, 'vi'),
           en: renderNotification(event, 'en'),
@@ -179,6 +178,7 @@ export class PrismaInboxRepository
         const content = localized as unknown as Prisma.InputJsonObject;
 
         await tx.notificationInbox.createMany({
+          skipDuplicates: true,
           data: event.recipientUserIds.map((userId) => ({
             id: inboxIdForKey(inboxDedupKey(userId, event.eventId)),
             dedupKey: inboxDedupKey(userId, event.eventId),
@@ -195,6 +195,15 @@ export class PrismaInboxRepository
             occurredAt,
           })),
         });
+        // skipDuplicates must not hide a row that owns our id/key but belongs to another event.
+        const stored = await tx.notificationInbox.count({
+          where: {
+            sourceEventId: event.eventId,
+            userId: { in: event.recipientUserIds },
+          },
+        });
+        if (stored !== event.recipientUserIds.length)
+          throw new InboxPersistenceConflictError();
       },
       { maxWait: 10000, timeout: 30000 },
     );
@@ -249,13 +258,22 @@ export class PrismaInboxRepository
   async markRead(userId: string, id: string): Promise<InboxItem | null> {
     const canonicalUserId = canonicalUuid(userId);
     const canonicalId = canonicalUuid(id);
-    await this.client.$executeRaw`
-      UPDATE notification.notification_inbox
-      SET read_at = date_trunc('milliseconds', clock_timestamp())
-      WHERE user_id = ${canonicalUserId}::uuid
-        AND id = ${canonicalId}::uuid
-        AND read_at IS NULL
-    `;
+    // Write through to the v1 delivery rows linked by inbox_id in the same transaction (NT-4).
+    await this.client.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        UPDATE notification.notification_inbox
+        SET read_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE user_id = ${canonicalUserId}::uuid
+          AND id = ${canonicalId}::uuid
+          AND read_at IS NULL
+      `;
+      await tx.$executeRaw`
+        UPDATE notification.notification_deliveries SET read_at = NOW()
+        WHERE user_id = ${canonicalUserId}::uuid
+          AND inbox_id = ${canonicalId}::uuid
+          AND read_at IS NULL
+      `;
+    });
     const row = await this.client.notificationInbox.findFirst({
       where: { userId: canonicalUserId, id: canonicalId },
     });
@@ -264,12 +282,20 @@ export class PrismaInboxRepository
 
   markAllRead(userId: string): Promise<number> {
     const canonicalUserId = canonicalUuid(userId);
-    return this.client.$executeRaw`
-      UPDATE notification.notification_inbox
-      SET read_at = date_trunc('milliseconds', clock_timestamp())
-      WHERE user_id = ${canonicalUserId}::uuid
-        AND read_at IS NULL
-    `;
+    return this.client.$transaction(async (tx) => {
+      const count = await tx.$executeRaw`
+        UPDATE notification.notification_inbox
+        SET read_at = date_trunc('milliseconds', clock_timestamp())
+        WHERE user_id = ${canonicalUserId}::uuid
+          AND read_at IS NULL
+      `;
+      await tx.$executeRaw`
+        UPDATE notification.notification_deliveries SET read_at = NOW()
+        WHERE user_id = ${canonicalUserId}::uuid
+          AND read_at IS NULL
+      `;
+      return count;
+    });
   }
 
   async reconcileLegacy(batchSize: number): Promise<ReconcileResult> {

@@ -29,6 +29,8 @@ function testSettings(database) {
     DB_PASSWORD: 'unused-local-trust',
     DB_SSL_MODE: 'disable',
     JWT_ACCESS_SECRET: 'test-only-key-not-for-production-123456',
+    RABBITMQ_USERNAME: 'guest',
+    RABBITMQ_PASSWORD: 'guest',
   });
 }
 
@@ -1159,7 +1161,7 @@ test(
           const afterReplay = await repo.client.notificationInbox.findMany({
             where: { sourceEventId: event.eventId },
           });
-          assert.equal(afterReplay.length, 2);
+          assert.equal(afterReplay.length, 3); // NT-6: replay adds the new recipient only
           assert.equal(
             afterReplay.find((item) => item.userId === recipientA).id,
             beforeReplay.id,
@@ -1334,8 +1336,10 @@ test(
             await repo.client.notificationDelivery.findUnique({
               where: { id: delivery.id },
             });
+          // v2 read writes through to the linked delivery (NT-4) but never touches the lease fence.
+          assert(deliveryAfterRead.readAt instanceof Date);
           assert.deepEqual(
-            legacyFields(deliveryAfterRead),
+            legacyFields({ ...deliveryAfterRead, readAt: null }),
             legacyFields(deliveryBeforeRead),
           );
           assert.equal(foreign.userId, otherUserId);
@@ -1345,6 +1349,95 @@ test(
           await assert.rejects(repo.list(userId, { limit: 0 }));
           await assert.rejects(repo.list(userId, { limit: 101 }));
           await assert.rejects(repo.list(userId, { limit: 1.5 }));
+        },
+      );
+
+      await t.test(
+        'a re-emitted event adds only the missing recipient rows (NT-6)',
+        async () => {
+          const first = randomUUID();
+          const second = randomUUID();
+          const event = v2Event([first]);
+          await repo.ingest(event);
+          await repo.ingest({ ...event, recipientUserIds: [first, second] });
+          assert.equal(
+            await repo.client.notificationInbox.count({
+              where: { sourceEventId: event.eventId },
+            }),
+            2,
+          );
+          await repo.client.notificationInbox.deleteMany({
+            where: { sourceEventId: event.eventId },
+          });
+        },
+      );
+
+      await t.test(
+        'v1 and v2 read state write through to each other (NT-4)',
+        async () => {
+          const readStates = async (eventId) => ({
+            deliveries: (
+              await deliveryRepo.client.notificationDelivery.findMany({
+                where: { sourceEventId: eventId },
+              })
+            ).map((row) => row.readAt !== null),
+            inbox: (
+              await repo.client.notificationInbox.findMany({
+                where: { sourceEventId: eventId },
+              })
+            ).map((row) => row.readAt !== null),
+          });
+          const cleanup = async (eventId) => {
+            await deliveryRepo.client.notificationDelivery.deleteMany({
+              where: { sourceEventId: eventId },
+            });
+            await repo.client.notificationInbox.deleteMany({
+              where: { sourceEventId: eventId },
+            });
+          };
+          // v1 mark-read -> inbox row and sibling delivery
+          const a = legacyEvent();
+          await service.consume(a);
+          const [delivery] =
+            await deliveryRepo.client.notificationDelivery.findMany({
+              where: { sourceEventId: a.eventId },
+            });
+          await deliveryRepo.markRead(a.payload.userId, delivery.id);
+          assert.deepEqual(await readStates(a.eventId), {
+            deliveries: [true, true],
+            inbox: [true],
+          });
+          // v2 mark-read -> all linked deliveries
+          const b = legacyEvent();
+          await service.consume(b);
+          const [item] = await repo.client.notificationInbox.findMany({
+            where: { sourceEventId: b.eventId },
+          });
+          await repo.markRead(b.payload.userId, item.id);
+          assert.deepEqual(await readStates(b.eventId), {
+            deliveries: [true, true],
+            inbox: [true],
+          });
+          // read-all in both directions
+          const c = legacyEvent();
+          const d = legacyEvent();
+          await service.consume(c);
+          await service.consume(d);
+          await deliveryRepo.markAllRead(c.payload.userId);
+          assert.deepEqual(await readStates(c.eventId), {
+            deliveries: [true, true],
+            inbox: [true],
+          });
+          assert.deepEqual(await readStates(d.eventId), {
+            deliveries: [false, false],
+            inbox: [false],
+          });
+          await repo.markAllRead(d.payload.userId);
+          assert.deepEqual(await readStates(d.eventId), {
+            deliveries: [true, true],
+            inbox: [true],
+          });
+          for (const e of [a, b, c, d]) await cleanup(e.eventId);
         },
       );
 
@@ -1889,6 +1982,8 @@ test(
                 DB_PASSWORD: 'unused-local-trust',
                 DB_SSL_MODE: 'disable',
                 JWT_ACCESS_SECRET: 'test-only-key-not-for-production-123456',
+                RABBITMQ_USERNAME: 'guest',
+                RABBITMQ_PASSWORD: 'guest',
               },
             },
           );

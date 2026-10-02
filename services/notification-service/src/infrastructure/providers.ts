@@ -35,6 +35,7 @@ export class TelegramProvider implements NotificationProvider {
       throw new DeliveryError('INVALID_DESTINATION', false);
     if (!this.settings.NOTIFICATION_TELEGRAM_ENABLED)
       throw new DeliveryError('PROVIDER_DISABLED', false);
+    // At-least-once by design: Telegram has no idempotency key, so a crash after it accepts re-sends.
     try {
       const response = await fetch(
         `https://api.telegram.org/bot${this.settings.TELEGRAM_BOT_TOKEN}/sendMessage`,
@@ -145,6 +146,8 @@ export class ExpoProvider implements NotificationProvider {
           title: String(d.payload.title),
           body: String(d.payload.message),
           data: { notificationId: d.id, executionId: d.executionId },
+          // A re-send of the same delivery replaces the earlier push instead of stacking.
+          collapseId: d.id,
         },
       ]);
       const [ticket] = await client.sendPushNotificationsAsync(chunks[0]);
