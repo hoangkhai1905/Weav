@@ -124,7 +124,7 @@ class TestConnectionUseCaseTest {
         AtomicReference<Map<String, Object>> received = new AtomicReference<>();
         RecordingProvider provider = provider(ConnectionTestResult.verified(), received);
         TestFixtures fixtures = fixtures(connection, provider, Membership.owner(WORKSPACE, OWNER));
-        byte[] encrypted = crypto.encrypt(codec.encode(connection, Map.of("token", "synthetic-token")));
+        byte[] encrypted = crypto.encrypt(codec.encode(connection, Map.of("token", "synthetic-token")), CONNECTION_ID);
         when(fixtures.credentials().findByConnectionId(CONNECTION_ID)).thenReturn(Optional.of(
                 Credential.createNew(CONNECTION_ID, encrypted, "v1", null)));
 
@@ -205,7 +205,7 @@ class TestConnectionUseCaseTest {
         Connection connection = connection(ConnectionStatus.ACTIVE, ConnectionAuthType.TOKEN);
         RecordingProvider provider = provider(ConnectionTestResult.authInvalid(), null);
         TestFixtures fixtures = fixtures(connection, provider, Membership.owner(WORKSPACE, OWNER));
-        byte[] encrypted = crypto.encrypt(codec.encode(connection, Map.of("token", "old")));
+        byte[] encrypted = crypto.encrypt(codec.encode(connection, Map.of("token", "old")), CONNECTION_ID);
         when(fixtures.credentials().findByConnectionId(CONNECTION_ID)).thenReturn(Optional.of(
                 Credential.createNew(CONNECTION_ID, encrypted, "v1", null)));
         provider.onTest = () -> when(fixtures.credentials().findByConnectionId(CONNECTION_ID))

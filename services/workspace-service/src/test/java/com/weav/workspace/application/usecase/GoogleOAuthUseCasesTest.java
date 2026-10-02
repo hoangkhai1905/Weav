@@ -184,7 +184,7 @@ class GoogleOAuthUseCasesTest {
 
         Credential firstCredential = credentialRepository.findByConnectionId(connection.getId()).orElseThrow();
         byte[] firstCiphertext = firstCredential.getEncryptedPayload();
-        byte[] firstPlaintext = credentialCrypto.decrypt(firstCiphertext);
+        byte[] firstPlaintext = credentialCrypto.decrypt(firstCiphertext, credentialCrypto.currentKeyVersion(), connection.getId());
         assertThat(Arrays.equals(firstCiphertext, firstPlaintext)).isFalse();
         Map<String, Object> firstPayload = payloadCodec.decode(
                 connection, firstPlaintext);
@@ -257,7 +257,7 @@ class GoogleOAuthUseCasesTest {
         assertThat(afterStart.getUpdatedAt()).isEqualTo(beforeStart.getUpdatedAt());
         Credential abandoned = credentialRepository.findByConnectionId(connection.getId()).orElseThrow();
         assertThat(abandoned.getEncryptedPayload()).isEqualTo(original.getEncryptedPayload());
-        assertThat(payloadCodec.decode(connection, credentialCrypto.decrypt(abandoned.getEncryptedPayload())))
+        assertThat(payloadCodec.decode(connection, credentialCrypto.decrypt(abandoned.getEncryptedPayload(), credentialCrypto.currentKeyVersion(), connection.getId())))
                 .containsEntry("accessToken", "prior-synthetic-access");
 
         // Completing through the bound step swaps the credential and keeps the connection ACTIVE.
@@ -270,7 +270,7 @@ class GoogleOAuthUseCasesTest {
 
         Credential swapped = credentialRepository.findByConnectionId(connection.getId()).orElseThrow();
         assertThat(swapped.getId()).isEqualTo(original.getId());
-        assertThat(payloadCodec.decode(connection, credentialCrypto.decrypt(swapped.getEncryptedPayload())))
+        assertThat(payloadCodec.decode(connection, credentialCrypto.decrypt(swapped.getEncryptedPayload(), credentialCrypto.currentKeyVersion(), connection.getId())))
                 .containsEntry("accessToken", "reconnected-access")
                 .containsEntry("refreshToken", "reconnected-refresh");
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
@@ -794,7 +794,7 @@ class GoogleOAuthUseCasesTest {
         if (withCredential) {
             GoogleOAuthTokenResponse original = tokens(
                     "prior-synthetic-access", "prior-synthetic-refresh", scopes(provider));
-            byte[] encrypted = credentialCrypto.encrypt(payloadCodec.encodeGoogleOAuth(connection, original));
+            byte[] encrypted = credentialCrypto.encrypt(payloadCodec.encodeGoogleOAuth(connection, original), connection.getId());
             credentialRepository.save(Credential.createNew(
                     connection.getId(), encrypted, credentialCrypto.currentKeyVersion(), Instant.now().plusSeconds(1800)));
         }

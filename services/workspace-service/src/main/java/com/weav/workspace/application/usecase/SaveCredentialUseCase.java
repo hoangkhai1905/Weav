@@ -117,7 +117,7 @@ public final class SaveCredentialUseCase {
             Membership membership,
             Connection connection) {
         byte[] serialized = payloadCodec.encode(connection, command.payload());
-        byte[] encrypted = crypto.encrypt(serialized);
+        byte[] encrypted = crypto.encrypt(serialized, connection.getId());
         Credential current = credentialRepository.findByConnectionId(connection.getId()).orElse(null);
         Instant now = Instant.now();
         Credential replacement = current == null

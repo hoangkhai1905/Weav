@@ -162,7 +162,7 @@ class TestConnectionUseCasePersistenceIntegrationTest {
         credentialRepository.save(Credential.createNew(
                 connection.getId(),
                 credentialCrypto.encrypt(payloadCodec.encode(connection, Map.of(
-                        "apiKey", "synthetic-api-key"))),
+                        "apiKey", "synthetic-api-key")), connection.getId()),
                 credentialCrypto.currentKeyVersion(),
                 null));
 

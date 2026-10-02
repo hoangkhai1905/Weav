@@ -36,6 +36,8 @@ public final class RedisWorkspaceAuthorizationCache implements WorkspaceAuthoriz
                     + "return 1",
             Long.class);
 
+    private static final long[] EVICT_BACKOFF_MS = {50, 150, 400};
+
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper;
     private final Duration generationTtl;
@@ -164,15 +166,37 @@ public final class RedisWorkspaceAuthorizationCache implements WorkspaceAuthoriz
 
     @Override
     public void evict(UUID workspaceId, UUID userId) {
-        long started = System.nanoTime();
-        try {
-            redis.execute(
-                    EVICT_AND_ROTATE_GENERATION,
-                    List.of(generationKey(workspaceId, userId), key(workspaceId, userId)),
-                    UUID.randomUUID().toString(),
-                    Long.toString(generationTtl.toMillis()));
-        } catch (RuntimeException exception) {
-            logCacheFailure("evict", workspaceId, userId, exception, started);
+        // ponytail: worst case a removed member keeps access until the cache TTL (5 min) if Valkey stays
+        // unreachable past these retries; upgrade to outbox-driven eviction if that window matters.
+        // Callers already run this after the membership transaction commits.
+        for (int attempt = 0; ; attempt++) {
+            long started = System.nanoTime();
+            try {
+                redis.execute(
+                        EVICT_AND_ROTATE_GENERATION,
+                        List.of(generationKey(workspaceId, userId), key(workspaceId, userId)),
+                        UUID.randomUUID().toString(),
+                        Long.toString(generationTtl.toMillis()));
+                return;
+            } catch (RuntimeException exception) {
+                if (attempt >= EVICT_BACKOFF_MS.length) {
+                    log.error("event=workspace_authorization_cache_evict_failed requestId={} workspaceId={} "
+                                    + "attempts={} errorType={}",
+                            RequestCorrelationFilter.currentRequestId(), workspaceId, attempt + 1,
+                            exception.getClass().getSimpleName());
+                    return;
+                }
+                logCacheFailure("evict", workspaceId, userId, exception, started);
+                try {
+                    Thread.sleep(EVICT_BACKOFF_MS[attempt]);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    log.error("event=workspace_authorization_cache_evict_failed requestId={} workspaceId={} "
+                                    + "attempts={} errorType=Interrupted",
+                            RequestCorrelationFilter.currentRequestId(), workspaceId, attempt + 1);
+                    return;
+                }
+            }
         }
     }
 

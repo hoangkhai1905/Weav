@@ -245,7 +245,7 @@ class InternalConnectionUseCasesTest {
         assertThat(decrypted).containsEntry("accessToken", "synthetic-new-access-token")
                 .containsEntry("refreshToken", OLD_REFRESH_TOKEN)
                 .containsEntry("tokenType", "Bearer");
-        byte[] plaintext = credentialCrypto.decrypt(refreshed.getEncryptedPayload());
+        byte[] plaintext = credentialCrypto.decrypt(refreshed.getEncryptedPayload(), refreshed.getEncryptionKeyVersion(), connection.getId());
         assertThat(refreshed.getEncryptedPayload()).isNotEqualTo(plaintext);
         assertThat(new String(refreshed.getEncryptedPayload(), java.nio.charset.StandardCharsets.UTF_8))
                 .doesNotContain("synthetic-new-access-token", OLD_REFRESH_TOKEN);
@@ -537,7 +537,7 @@ class InternalConnectionUseCasesTest {
                     "synthetic-fresher-access", OLD_REFRESH_TOKEN, "Bearer", gmailScopes(), 7200);
             credentialRepository.save(new Credential(
                     original.getId(), connection.getId(),
-                    credentialCrypto.encrypt(payloadCodec.encodeGoogleOAuth(connection, fresher)),
+                    credentialCrypto.encrypt(payloadCodec.encodeGoogleOAuth(connection, fresher), connection.getId()),
                     credentialCrypto.currentKeyVersion(), clock.instant().plusSeconds(7200),
                     original.getCreatedAt(), clock.instant()));
         });
@@ -741,12 +741,12 @@ class InternalConnectionUseCasesTest {
     private Credential saveEncryptedCredential(Connection connection, byte[] plaintext, Instant expiresAt) {
         Instant now = clock.instant();
         return credentialRepository.save(new Credential(
-                UUID.randomUUID(), connection.getId(), credentialCrypto.encrypt(plaintext),
+                UUID.randomUUID(), connection.getId(), credentialCrypto.encrypt(plaintext, connection.getId()),
                 credentialCrypto.currentKeyVersion(), expiresAt, now, now));
     }
 
     private Map<String, Object> decode(Connection connection, Credential credential) {
-        return payloadCodec.decode(connection, credentialCrypto.decrypt(credential.getEncryptedPayload()));
+        return payloadCodec.decode(connection, credentialCrypto.decrypt(credential.getEncryptedPayload(), credential.getEncryptionKeyVersion(), connection.getId()));
     }
 
     private void assertUnchanged(Connection connection, Credential original) {

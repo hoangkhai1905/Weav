@@ -9,7 +9,13 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Configuration;
 
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.UUID;
 import java.util.Arrays;
 import java.util.Base64;
 
@@ -30,17 +36,76 @@ class AesGcmCredentialCryptoTest {
             15, 14, 13, 12, 11, 10, 9, 8,
             7, 6, 5, 4, 3, 2, 1, 0});
 
+    private static final UUID CONNECTION = UUID.fromString("11111111-2222-3333-4444-555555555555");
+    private static final UUID OTHER_CONNECTION = UUID.fromString("66666666-7777-8888-9999-000000000000");
+
     @Test
-    void encryptDecryptRoundTripUsesVersionedEnvelope() {
+    void encryptDecryptRoundTripUsesVersionedEnvelopeWithConnectionAad() {
         AesGcmCredentialCrypto crypto = crypto(KEY, "v7");
         byte[] plaintext = "credential-json".getBytes(StandardCharsets.UTF_8);
 
-        byte[] encrypted = crypto.encrypt(plaintext);
+        byte[] encrypted = crypto.encrypt(plaintext, CONNECTION);
 
         assertThat(encrypted).hasSize(1 + 12 + plaintext.length + 16);
-        assertThat(encrypted[0]).isEqualTo((byte) 1);
+        assertThat(encrypted[0]).isEqualTo((byte) 2);
         assertThat(crypto.currentKeyVersion()).isEqualTo("v7");
-        assertThat(crypto.decrypt(encrypted)).containsExactly(plaintext);
+        assertThat(crypto.decrypt(encrypted, "v7", CONNECTION)).containsExactly(plaintext);
+    }
+
+    @Test
+    void ciphertextDecryptsOnlyForItsOwnConnection() {
+        AesGcmCredentialCrypto crypto = crypto(KEY, "v1");
+        byte[] encrypted = crypto.encrypt("secret-value".getBytes(StandardCharsets.UTF_8), CONNECTION);
+
+        assertThatThrownBy(() -> crypto.decrypt(encrypted, "v1", OTHER_CONNECTION))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Credential ciphertext is invalid");
+    }
+
+    @Test
+    void legacyNoAadCiphertextStillDecryptsWithCurrentKey() throws Exception {
+        byte[] plaintext = "legacy-value".getBytes(StandardCharsets.UTF_8);
+        byte[] legacy = legacyEnvelope(KEY, plaintext);
+
+        // Legacy rows carry whatever version was stored; they must decrypt with any connection id.
+        assertThat(crypto(KEY, "v1").decrypt(legacy, "v1", CONNECTION)).containsExactly(plaintext);
+        assertThat(crypto(KEY, "v2").decrypt(legacy, "v1", OTHER_CONNECTION)).containsExactly(plaintext);
+    }
+
+    @Test
+    void rotatedKeyDecryptsOldDataFromPreviousKeysAndNextWriteUsesCurrentKey() {
+        byte[] plaintext = "rotating-value".getBytes(StandardCharsets.UTF_8);
+        byte[] oldCiphertext = crypto(KEY, "v1").encrypt(plaintext, CONNECTION);
+
+        AesGcmCredentialCrypto rotated = ringCrypto(OTHER_KEY, "v2", "v1:" + KEY);
+
+        assertThat(rotated.decrypt(oldCiphertext, "v1", CONNECTION)).containsExactly(plaintext);
+        byte[] rewritten = rotated.encrypt(plaintext, CONNECTION);
+        assertThat(rotated.currentKeyVersion()).isEqualTo("v2");
+        assertThat(rotated.decrypt(rewritten, "v2", CONNECTION)).containsExactly(plaintext);
+        // The rewritten payload no longer needs the retired key.
+        assertThat(crypto(OTHER_KEY, "v2").decrypt(rewritten, "v2", CONNECTION)).containsExactly(plaintext);
+    }
+
+    @Test
+    void unknownKeyVersionFailsClosedWithoutPreviousKey() {
+        byte[] oldCiphertext = crypto(KEY, "v1").encrypt("secret-value".getBytes(StandardCharsets.UTF_8), CONNECTION);
+
+        assertThatThrownBy(() -> crypto(OTHER_KEY, "v2").decrypt(oldCiphertext, "v1", CONNECTION))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Credential ciphertext is invalid")
+                .hasMessageNotContaining("secret-value");
+        assertThatThrownBy(() -> crypto(KEY, "v1").decrypt(oldCiphertext, null, CONNECTION))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void invalidPreviousKeysFailConstructionWithoutEchoingKeyMaterial() {
+        for (String bad : new String[] {"nocolon", ":" + KEY, "v1:" + KEY, "v0:not-base64", "v0:" + Base64.getEncoder().encodeToString(new byte[8])}) {
+            assertThatThrownBy(() -> ringCrypto(KEY, "v1", bad))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageNotContaining(KEY);
+        }
     }
 
     @Test
@@ -48,22 +113,22 @@ class AesGcmCredentialCryptoTest {
         AesGcmCredentialCrypto crypto = crypto(KEY, "v1");
         byte[] plaintext = "same-value".getBytes(StandardCharsets.UTF_8);
 
-        assertThat(crypto.encrypt(plaintext)).isNotEqualTo(crypto.encrypt(plaintext));
+        assertThat(crypto.encrypt(plaintext, CONNECTION)).isNotEqualTo(crypto.encrypt(plaintext, CONNECTION));
     }
 
     @Test
-    void tamperedTruncatedAndUnknownVersionEnvelopesFailWithoutPayloadDetails() {
+    void tamperedTruncatedAndUnknownFormatEnvelopesFailWithoutPayloadDetails() {
         AesGcmCredentialCrypto crypto = crypto(KEY, "v1");
-        byte[] encrypted = crypto.encrypt("secret-value".getBytes(StandardCharsets.UTF_8));
+        byte[] encrypted = crypto.encrypt("secret-value".getBytes(StandardCharsets.UTF_8), CONNECTION);
 
         byte[] tampered = encrypted.clone();
         tampered[tampered.length - 1] ^= 1;
         byte[] truncated = Arrays.copyOf(encrypted, encrypted.length - 1);
-        byte[] unknownVersion = encrypted.clone();
-        unknownVersion[0] = 2;
+        byte[] unknownFormat = encrypted.clone();
+        unknownFormat[0] = 3;
 
-        for (byte[] candidate : new byte[][] {tampered, truncated, unknownVersion}) {
-            assertThatThrownBy(() -> crypto.decrypt(candidate))
+        for (byte[] candidate : new byte[][] {tampered, truncated, unknownFormat}) {
+            assertThatThrownBy(() -> crypto.decrypt(candidate, "v1", CONNECTION))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("Credential ciphertext is invalid")
                     .hasMessageNotContaining("secret-value");
@@ -72,12 +137,27 @@ class AesGcmCredentialCryptoTest {
 
     @Test
     void wrongKeyFailsWithoutLeakingPlaintext() {
-        byte[] encrypted = crypto(KEY, "v1").encrypt("secret-value".getBytes(StandardCharsets.UTF_8));
+        byte[] encrypted = crypto(KEY, "v1").encrypt("secret-value".getBytes(StandardCharsets.UTF_8), CONNECTION);
 
-        assertThatThrownBy(() -> crypto(OTHER_KEY, "v1").decrypt(encrypted))
+        assertThatThrownBy(() -> crypto(OTHER_KEY, "v1").decrypt(encrypted, "v1", CONNECTION))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Credential ciphertext is invalid")
                 .hasMessageNotContaining("secret-value");
+    }
+
+    private static byte[] legacyEnvelope(String base64Key, byte[] plaintext) throws Exception {
+        byte[] nonce = new byte[12];
+        new SecureRandom().nextBytes(nonce);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(Base64.getDecoder().decode(base64Key), "AES"),
+                new GCMParameterSpec(128, nonce));
+        byte[] ciphertext = cipher.doFinal(plaintext);
+        return ByteBuffer.allocate(1 + nonce.length + ciphertext.length)
+                .put((byte) 1).put(nonce).put(ciphertext).array();
+    }
+
+    private static AesGcmCredentialCrypto ringCrypto(String key, String version, String previousKeys) {
+        return new AesGcmCredentialCrypto(new CredentialEncryptionProperties(key, version, previousKeys));
     }
 
     @Test

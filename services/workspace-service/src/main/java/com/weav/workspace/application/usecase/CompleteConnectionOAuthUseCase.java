@@ -264,7 +264,7 @@ public final class CompleteConnectionOAuthUseCase {
         final String encryptionKeyVersion;
         if (verification.outcome() == ConnectionTestResult.ConnectionTestOutcome.VERIFIED) {
             try {
-                encryptedCredential = crypto.encrypt(payloadCodec.encodeGoogleOAuth(connection, tokens));
+                encryptedCredential = crypto.encrypt(payloadCodec.encodeGoogleOAuth(connection, tokens), connection.getId());
                 encryptionKeyVersion = crypto.currentKeyVersion();
             } catch (RuntimeException exception) {
                 // Crypto diagnostics must never carry the in-memory OAuth payload to an error boundary.

@@ -192,7 +192,7 @@ public final class ResolveConnectionUseCase {
                     refresh.grantedScopes(),
                     refresh.expiresInSeconds());
             accessTokenExpiresAt = clock.instant().plusSeconds(replacementTokens.expiresInSeconds());
-            encryptedPayload = crypto.encrypt(payloadCodec.encodeGoogleOAuth(connection, replacementTokens));
+            encryptedPayload = crypto.encrypt(payloadCodec.encodeGoogleOAuth(connection, replacementTokens), connection.getId());
             keyVersion = crypto.currentKeyVersion();
         } catch (RuntimeException exception) {
             throw new DependencyUnavailableException();
@@ -301,7 +301,7 @@ public final class ResolveConnectionUseCase {
 
     private Map<String, Object> decodeStoredCredential(Connection connection, Credential credential) {
         try {
-            return payloadCodec.decode(connection, crypto.decrypt(credential.getEncryptedPayload()));
+            return payloadCodec.decode(connection, crypto.decrypt(credential.getEncryptedPayload(), credential.getEncryptionKeyVersion(), connection.getId()));
         } catch (RuntimeException exception) {
             throw new InvalidStateException("Stored connection credential is invalid");
         }

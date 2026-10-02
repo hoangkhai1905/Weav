@@ -268,7 +268,7 @@ class WorkspaceConnectionHttpIntegrationTest {
         String ciphertext = new String(credential.getEncryptedPayload(), StandardCharsets.UTF_8);
         assertFalse(ciphertext.contains(ACCESS_TOKEN));
         assertFalse(ciphertext.contains(REFRESH_TOKEN));
-        String plaintext = new String(credentialCrypto.decrypt(credential.getEncryptedPayload()),
+        String plaintext = new String(credentialCrypto.decrypt(credential.getEncryptedPayload(), credential.getEncryptionKeyVersion(), credential.getConnectionId()),
                 StandardCharsets.UTF_8);
         assertTrue(plaintext.contains(ACCESS_TOKEN));
         assertTrue(plaintext.contains(REFRESH_TOKEN));
@@ -486,7 +486,7 @@ class WorkspaceConnectionHttpIntegrationTest {
         var stored = credentialRepository.findByConnectionId(connectionId).orElseThrow();
         String ciphertext = new String(stored.getEncryptedPayload(), StandardCharsets.UTF_8);
         assertThat(ciphertext).doesNotContain(TELEGRAM_SECRET, TELEGRAM_REPLACEMENT_SECRET);
-        String plaintext = new String(credentialCrypto.decrypt(stored.getEncryptedPayload()), StandardCharsets.UTF_8);
+        String plaintext = new String(credentialCrypto.decrypt(stored.getEncryptedPayload(), stored.getEncryptionKeyVersion(), connectionId), StandardCharsets.UTF_8);
         assertThat(plaintext).contains(TELEGRAM_REPLACEMENT_SECRET).doesNotContain(TELEGRAM_SECRET);
         assertThat(output.getAll()).doesNotContain(TELEGRAM_SECRET, TELEGRAM_REPLACEMENT_SECRET);
     }
@@ -523,7 +523,7 @@ class WorkspaceConnectionHttpIntegrationTest {
         var stored = credentialRepository.findByConnectionId(connectionId).orElseThrow();
         String ciphertext = new String(stored.getEncryptedPayload(), StandardCharsets.UTF_8);
         assertThat(ciphertext).doesNotContain(GOOGLE_ACCESS_SECRET, GOOGLE_REFRESH_SECRET);
-        String plaintext = new String(credentialCrypto.decrypt(stored.getEncryptedPayload()), StandardCharsets.UTF_8);
+        String plaintext = new String(credentialCrypto.decrypt(stored.getEncryptedPayload(), stored.getEncryptionKeyVersion(), connectionId), StandardCharsets.UTF_8);
         assertThat(plaintext).contains(GOOGLE_ACCESS_SECRET, GOOGLE_REFRESH_SECRET, "spreadsheets")
                 .doesNotContain("gmail.metadata");
 
@@ -632,7 +632,8 @@ class WorkspaceConnectionHttpIntegrationTest {
         assertThat(connectionRepository.findByWorkspaceIdAndId(workspace.getId(), connectionId)).isPresent();
         assertThat(credentialRepository.findByConnectionId(connectionId)).isPresent();
         String plaintext = new String(credentialCrypto.decrypt(
-                credentialRepository.findByConnectionId(connectionId).orElseThrow().getEncryptedPayload()),
+                credentialRepository.findByConnectionId(connectionId).orElseThrow().getEncryptedPayload(),
+                credentialRepository.findByConnectionId(connectionId).orElseThrow().getEncryptionKeyVersion(), connectionId),
                 StandardCharsets.UTF_8);
         assertThat(plaintext).contains(HTTP_PASSWORD_REPLACEMENT_SECRET).doesNotContain(HTTP_PASSWORD_SECRET);
         assertThat(output.getAll()).doesNotContain(HTTP_PASSWORD_SECRET, HTTP_PASSWORD_REPLACEMENT_SECRET);

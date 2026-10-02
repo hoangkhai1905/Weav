@@ -34,3 +34,16 @@ Nguồn: `docs/reviews/2026-10-01-backend-review.md` (WS-5 trong "Other security
 - Single-flight chỉ trong một JVM; nhiều replica có thể refresh đôi (vô hại, xem trên).
 - Chưa chạy trên stack thật hoặc Google thật; kiểm chứng bằng Testcontainers và fixture Google.
 - Bước `detect_changes` và commit do coordinator thực hiện.
+
+## WS-7 và WS-10 (key ring, AAD, eviction không nuốt lỗi)
+
+| Quyết định | Lý do | Ghi chú |
+| --- | --- | --- |
+| WS-7: `AesGcmCredentialCrypto` có key ring: key hiện tại (`CREDENTIAL_ENCRYPTION_KEY` + `_VERSION`) và key cũ qua `CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS` (`version:base64key,version:base64key`, mặc định rỗng) | Xoay key không còn làm hỏng toàn bộ credential đã lưu | Key được kiểm tra (Base64, đúng 32 byte, version không trùng) khi khởi động; lỗi không in key. Decrypt chọn key theo `encryption_key_version` lưu cùng payload; version lạ trên payload format 2 thì fail closed (`Credential ciphertext is invalid`). |
+| WS-7: envelope format byte `2` = AAD là 16 byte UUID của connection (big-endian); format `1` là bản cũ không AAD | Chặn hoán đổi ciphertext giữa các connection | Dòng cũ trên Neon (format 1, key hiện tại) vẫn giải mã được; format 1 có version không có trong ring thì thử key hiện tại. Port đổi: `encrypt(plaintext, connectionId)`, `decrypt(payload, keyVersion, connectionId)`. |
+| WS-7: re-encrypt lazy | Không thêm job nền | Mọi lần ghi credential (save, OAuth complete, refresh) dùng key hiện tại + format 2. Không re-encrypt khi đọc. |
+| WS-10: `RedisWorkspaceAuthorizationCache.evict` thử lại 3 lần (50/150/400 ms), hết lần thì log ERROR (`workspace_authorization_cache_evict_failed`, chỉ workspaceId) và không ném lỗi | Lỗi evict từng bị nuốt, thành viên bị xoá có thể còn quyền | Caller đã evict sau commit (`afterCommitExecutor`). Có comment `ponytail:`: tối đa còn quyền tới hết TTL cache (5 phút) nếu Valkey chết quá thời gian retry; nâng cấp lên outbox nếu cần. Không dùng version-stamp. |
+
+Xoay key: đặt key cũ + version vào `CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS` (`v1:<base64>`), đặt key mới + version mới (`v2`) vào `CREDENTIAL_ENCRYPTION_KEY(_VERSION)`. Giữ key cũ trong danh sách tới khi mọi credential được ghi lại (refresh/reconnect/update). Chưa có công cụ liệt kê credential còn version cũ.
+
+File: `CredentialCryptoPort`, `AesGcmCredentialCrypto`, `CredentialEncryptionProperties` (thêm `previousKeys`, constructor 2 tham số giữ lại), `CompleteConnectionOAuthUseCase`, `ResolveConnectionUseCase`, `SaveCredentialUseCase`, `TestConnectionUseCase`, `RedisWorkspaceAuthorizationCache`, `application.properties`; `.env.example`, `.env`, `compose.dev.yml` (biến mới). Test: `AesGcmCredentialCryptoTest` (round trip format 2, hoán đổi connection thất bại, legacy giải mã được, xoay key + ghi lại bằng key mới, version lạ fail closed, previous keys sai), `RedisWorkspaceAuthorizationCacheLoggingTest` (retry rồi thành công; thất bại hẳn log ERROR, không ném lỗi), các test cũ cập nhật chữ ký mới.

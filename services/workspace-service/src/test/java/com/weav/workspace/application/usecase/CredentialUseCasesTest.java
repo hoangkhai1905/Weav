@@ -178,7 +178,7 @@ class CredentialUseCasesTest {
         assertThat(replacement.getCreatedAt()).isEqualTo(createdAt);
         assertThat(replacement.getExpiresAt()).isEqualTo(expiresAt);
         assertThat(replacement.getEncryptionKeyVersion()).isEqualTo("v1");
-        assertThat(crypto.decrypt(replacement.getEncryptedPayload()))
+        assertThat(crypto.decrypt(replacement.getEncryptedPayload(), "v1", CONNECTION_ID))
                 .contains(new byte[] {'"', 'a', 'p', 'i', 'K', 'e', 'y'});
         assertThat(result.status()).isEqualTo(ConnectionStatus.DISABLED);
         assertThat(result.hasCredential()).isTrue();
@@ -191,7 +191,7 @@ class CredentialUseCasesTest {
                 ConnectionProvider.HTTP, ConnectionAuthType.TOKEN);
         Credential existing = Credential.createNew(
                 CONNECTION_ID,
-                crypto.encrypt("{\"token\":\"delete-secret\"}".getBytes()),
+                crypto.encrypt("{\"token\":\"delete-secret\"}".getBytes(), CONNECTION_ID),
                 "v1",
                 null);
         ConnectionRepository connections = mock(ConnectionRepository.class);

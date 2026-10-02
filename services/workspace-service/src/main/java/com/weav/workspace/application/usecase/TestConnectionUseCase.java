@@ -222,7 +222,7 @@ public final class TestConnectionUseCase {
             throw new InvalidStoredCredentialException();
         }
         try {
-            byte[] plaintext = crypto.decrypt(stored.getEncryptedPayload());
+            byte[] plaintext = crypto.decrypt(stored.getEncryptedPayload(), stored.getEncryptionKeyVersion(), connection.getId());
             return payloadCodec.decode(connection, plaintext);
         } catch (RuntimeException exception) {
             // Missing/corrupt credentials fail closed as a confirmed invalid
