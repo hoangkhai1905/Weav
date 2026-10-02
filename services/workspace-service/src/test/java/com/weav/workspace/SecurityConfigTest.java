@@ -81,7 +81,7 @@ class SecurityConfigTest {
     @Test
     void internalServiceKeyDoesNotAuthenticatePublicConnectionApi() throws Exception {
         mockMvc.perform(get("/workspaces/10000000-0000-0000-0000-000000000001/connections")
-                        .header("X-Internal-Service-Key", "test-workspace-key"))
+                        .header("X-Internal-Service-Key", "test-workspace-key-0123456789-abcdefghij"))
                 .andExpect(status().isUnauthorized());
     }
 

@@ -85,7 +85,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @ExtendWith(OutputCaptureExtension.class)
 class WorkspaceConnectionHttpIntegrationTest {
 
-    private static final String INTERNAL_KEY = "test-workspace-key";
+    private static final String INTERNAL_KEY = "test-workspace-key-0123456789-abcdefghij";
     private static final String ACCESS_TOKEN = "access-token-fixture";
     private static final String REFRESH_TOKEN = "refresh-token-fixture";
     private static final String TELEGRAM_SECRET = "telegram-secret-123";

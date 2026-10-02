@@ -21,7 +21,7 @@ class InternalServiceKeyFilterTest {
             response.setStatus(401);
         };
         InternalServiceKeyFilter filter = new InternalServiceKeyFilter(
-                new InternalServiceKeyProperties("workspace-key"), entryPoint);
+                props(false), entryPoint, null);
         FilterChain chain = (request, response) -> ((MockHttpServletResponse) response).setStatus(200);
 
         MockHttpServletRequest missing = internalRequest(null);
@@ -35,7 +35,7 @@ class InternalServiceKeyFilterTest {
         filter.doFilter(wrong, wrongResponse, chain);
         assertEquals(401, wrongResponse.getStatus());
 
-        MockHttpServletRequest valid = internalRequest("workspace-key");
+        MockHttpServletRequest valid = internalRequest("workspace-key-0123456789-abcdefghijklmnop");
         MockHttpServletResponse validResponse = new MockHttpServletResponse();
         filter.doFilter(valid, validResponse, chain);
         assertEquals(200, validResponse.getStatus());
@@ -44,8 +44,8 @@ class InternalServiceKeyFilterTest {
     @Test
     void nonInternalRequestPassesThroughWithoutAKey() throws Exception {
         InternalServiceKeyFilter filter = new InternalServiceKeyFilter(
-                new InternalServiceKeyProperties("workspace-key"),
-                (request, response, exception) -> response.setStatus(401));
+                props(false),
+                (request, response, exception) -> response.setStatus(401), null);
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/workspace/workspaces");
         request.setContextPath("/workspace");
         request.setServletPath("/workspaces");
@@ -60,11 +60,11 @@ class InternalServiceKeyFilterTest {
     @Test
     void missingConfigurationFailsClosedForInternalRequest() throws Exception {
         InternalServiceKeyFilter filter = new InternalServiceKeyFilter(
-                new InternalServiceKeyProperties(""),
-                (request, response, exception) -> response.setStatus(401));
+                new InternalServiceKeyProperties("", null, false),
+                (request, response, exception) -> response.setStatus(401), null);
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        filter.doFilter(internalRequest("workspace-key"), response, (request, response1) ->
+        filter.doFilter(internalRequest("workspace-key-0123456789-abcdefghijklmnop"), response, (request, response1) ->
                 ((MockHttpServletResponse) response1).setStatus(200));
 
         assertEquals(401, response.getStatus());
@@ -79,5 +79,29 @@ class InternalServiceKeyFilterTest {
             request.addHeader(InternalServiceKeyFilter.HEADER_NAME, key);
         }
         return request;
+    }
+
+    static InternalServiceKeyProperties props(boolean requireJwt) {
+        return new InternalServiceKeyProperties("workspace-key-0123456789-abcdefghijklmnop", null, requireJwt);
+    }
+
+    @Test
+    void staticKeyIsRejectedWhenServiceJwtIsRequired() throws Exception {
+        InternalServiceKeyFilter filter = new InternalServiceKeyFilter(
+                props(true), (request, response, exception) -> response.setStatus(401), null);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(internalRequest("workspace-key-0123456789-abcdefghijklmnop"), response, (request, response1) ->
+                ((MockHttpServletResponse) response1).setStatus(200));
+
+        assertEquals(401, response.getStatus());
+    }
+
+    @Test
+    void shortStaticKeyFailsStartupValidation() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new InternalServiceKeyProperties("too-short", null, false));
+        // unset stays valid: the endpoints then simply fail closed
+        new InternalServiceKeyProperties("", null, false);
     }
 }

@@ -344,6 +344,65 @@ class WorkspaceClientTest {
         assertEquals(2, requestCount.get());
     }
 
+    @Test
+    void attachesAScopedSixtySecondJwtPerCallAndKeepsTheLegacyKeyWhenASignerIsConfigured(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.security.KeyPair pair = newRsaKeyPair();
+        java.nio.file.Path pem = dir.resolve("workflow.pem");
+        String body = java.util.Base64.getMimeEncoder(64, new byte[] {'\n'}).encodeToString(pair.getPrivate().getEncoded());
+        java.nio.file.Files.writeString(pem,
+                "-----BEGIN PRIVATE KEY-----\n" + body + "\n-----END PRIVATE KEY-----\n");
+        WorkspaceClient signed = new WorkspaceClient(
+                new WorkspaceClientProperties(URI.create(baseUrl), Duration.ofSeconds(1), Duration.ofSeconds(2), SERVICE_KEY),
+                new ObjectMapper(), WorkspaceClient.circuitBreaker(20, 50f, 10, Duration.ofSeconds(10), 3),
+                Duration.ofSeconds(30), com.github.benmanes.caffeine.cache.Ticker.systemTicker(),
+                new com.weav.workflow.infrastructure.security.ServiceJwtSigner(
+                        new org.springframework.core.io.DefaultResourceLoader(), "kid-1", pem.toUri().toString(),
+                        Duration.ofSeconds(60)));
+
+        stubResponse.set(new StubResponse(200, "{\"provider\":\"HTTP\",\"authType\":\"NONE\",\"auth\":{}}", true, 0));
+        signed.resolve(WORKSPACE_ID, CONNECTION_ID).close();
+        com.nimbusds.jwt.JWTClaimsSet resolve = claimsOf(lastRequest.get());
+        assertEquals(SERVICE_KEY, lastRequest.get().serviceKey());
+        assertEquals("connection:resolve", resolve.getStringClaim("scope"));
+        assertEquals(WORKSPACE_ID.toString(), resolve.getStringClaim("workspace_id"));
+        assertEquals(CONNECTION_ID.toString(), resolve.getStringClaim("connection_id"));
+        assertEquals("weav-workflow", resolve.getIssuer());
+        assertEquals(java.util.List.of("weav-workspace"), resolve.getAudience());
+        assertEquals(60_000, resolve.getExpirationTime().getTime() - resolve.getIssueTime().getTime());
+        assertTrue(resolve.getJWTID() != null);
+
+        stubResponse.set(new StubResponse(204, "", false, 0));
+        signed.reportAuthenticationRejected(WORKSPACE_ID, CONNECTION_ID);
+        assertEquals("connection:report-auth-failure", claimsOf(lastRequest.get()).getStringClaim("scope"));
+        signed.authorizeAttachment(WORKSPACE_ID, CONNECTION_ID, USER_ID);
+        assertEquals("connection:authorize-attachment", claimsOf(lastRequest.get()).getStringClaim("scope"));
+
+        stubResponse.set(new StubResponse(200, accessResponse(WORKSPACE_ID, USER_ID, "OWNER", "WORKSPACE_VIEW"), false, 0));
+        signed.getAccess(WORKSPACE_ID, USER_ID);
+        com.nimbusds.jwt.JWTClaimsSet access = claimsOf(lastRequest.get());
+        assertEquals("workspace:access", access.getStringClaim("scope"));
+        assertNull(access.getStringClaim("connection_id"));
+    }
+
+    @Test
+    void sendsNoBearerTokenWithoutASigner() {
+        stubResponse.set(new StubResponse(200, accessResponse(WORKSPACE_ID, USER_ID, "OWNER", "WORKSPACE_VIEW"), false, 0));
+        client.getAccess(WORKSPACE_ID, USER_ID);
+        assertEquals(SERVICE_KEY, lastRequest.get().serviceKey());
+        assertNull(lastRequest.get().authorization());
+    }
+
+    private static java.security.KeyPair newRsaKeyPair() throws Exception {
+        java.security.KeyPairGenerator generator = java.security.KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        return generator.generateKeyPair();
+    }
+
+    private static com.nimbusds.jwt.JWTClaimsSet claimsOf(RecordedRequest request) throws Exception {
+        return com.nimbusds.jwt.SignedJWT.parse(request.authorization().substring("Bearer ".length())).getJWTClaimsSet();
+    }
+
     private static UUID otherUserId() {
         return UUID.fromString("20000000-0000-0000-0000-000000000009");
     }
@@ -390,7 +449,8 @@ class WorkspaceClientTest {
                 exchange.getRequestURI().getPath(),
                 new String(requestBytes, StandardCharsets.UTF_8),
                 exchange.getRequestHeaders().getFirst("X-Internal-Service-Key"),
-                exchange.getRequestHeaders().getFirst(CorrelationIdFilter.HEADER_NAME)));
+                exchange.getRequestHeaders().getFirst(CorrelationIdFilter.HEADER_NAME),
+                exchange.getRequestHeaders().getFirst("Authorization")));
 
         StubResponse stub = stubResponse.get();
         if (stub.delayMillis() > 0) {
@@ -428,6 +488,7 @@ class WorkspaceClientTest {
     private record StubResponse(int status, String body, boolean noStore, long delayMillis) {
     }
 
-    private record RecordedRequest(String method, String path, String body, String serviceKey, String correlationId) {
+    private record RecordedRequest(String method, String path, String body, String serviceKey, String correlationId,
+                                   String authorization) {
     }
 }

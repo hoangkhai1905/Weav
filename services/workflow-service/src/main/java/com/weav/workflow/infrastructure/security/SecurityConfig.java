@@ -146,13 +146,20 @@ public class SecurityConfig {
             @Value("${weav.workflow.workspace-client.circuit-breaker.minimum-calls:10}") int minimumCalls,
             @Value("${weav.workflow.workspace-client.circuit-breaker.open-duration:10s}") java.time.Duration openFor,
             @Value("${weav.workflow.workspace-client.circuit-breaker.half-open-permits:3}") int halfOpenPermits,
-            @Value("${weav.workflow.workspace-client.access-cache-ttl:30s}") java.time.Duration accessCacheTtl) {
+            @Value("${weav.workflow.workspace-client.access-cache-ttl:30s}") java.time.Duration accessCacheTtl,
+            // Same RS256 key pair as the AI client; the signer is only built when the key is configured.
+            @Value("${weav.workflow.ai.key-id:}") String signingKeyId,
+            @Value("${weav.workflow.ai.private-key-location:}") String signingKeyLocation,
+            org.springframework.core.io.ResourceLoader resourceLoader) {
+        ServiceJwtSigner signer = signingKeyId.isBlank() || signingKeyLocation.isBlank() ? null
+                : new ServiceJwtSigner(resourceLoader, signingKeyId, signingKeyLocation, java.time.Duration.ofSeconds(60));
         return new WorkspaceClient(
                 properties,
                 objectMapper,
                 WorkspaceClient.circuitBreaker(window, failureRate, minimumCalls, openFor, halfOpenPermits),
                 accessCacheTtl,
-                com.github.benmanes.caffeine.cache.Ticker.systemTicker());
+                com.github.benmanes.caffeine.cache.Ticker.systemTicker(),
+                signer);
     }
 
     @Bean

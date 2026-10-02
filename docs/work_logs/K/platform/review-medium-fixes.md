@@ -30,6 +30,32 @@ Phụ thuộc mới: `io.github.resilience4j:resilience4j-circuitbreaker:2.3.0` 
 - Test: breaker mở sau 5xx/timeout rồi fail-fast không gọi HTTP, half-open -> closed; 4xx không mở; cache hit/miss theo workspace/user, hết hạn theo ticker, từ chối được cache, lỗi không cache, resolve không cache; workspace: breaker mở -> delete fail-closed, 4xx không mở.
 - Kiểm tra: workflow 478/478 (472 + 6 mới), workspace 395/395 (393 + 2 mới).
 
+## X-7 / WS-14 - service JWT có scope thay cho khóa nội bộ tĩnh
+
+Workflow ký JWT RS256 sống 60 s (cùng cặp khóa với lời gọi sang ai-service, `ServiceJwtSigner`); workspace xác thực bằng JWKS của workflow. Khóa tĩnh `WEAV_INTERNAL_SERVICE_KEY` vẫn dùng được trong giai đoạn chuyển tiếp.
+
+| Endpoint workspace | scope | claim phải khớp path |
+| --- | --- | --- |
+| `GET /internal/workspaces/{ws}/users/{uid}/access` | `workspace:access` | `workspace_id` |
+| `POST .../connections/{cid}/resolve` | `connection:resolve` | `workspace_id`, `connection_id` |
+| `POST .../connections/{cid}/auth-failure` | `connection:report-auth-failure` | `workspace_id`, `connection_id` |
+| `POST .../connections/{cid}/authorize-attachment` | `connection:authorize-attachment` | `workspace_id`, `connection_id` |
+
+- Claim: `iss=weav-workflow`, `aud=weav-workspace`, `scope`, `workspace_id`, `connection_id` (nếu path có), `iat`, `exp` (60 s), `jti`. Workspace kiểm: chữ ký RS256 + `kid` trong JWKS, iss/aud, `exp` chưa quá hạn quá 10 s, `iat` không ở tương lai quá 10 s, `exp - iat <= 70 s`, scope, id khớp path. Sai bất kỳ điều gì -> 401 envelope hiện có (không nói lý do); lý do ghi log WARN `event=internal_service_jwt_rejected reason=...` (không có token). JWT sai không được "cứu" bằng khóa tĩnh.
+- workflow `WorkspaceClient`: có signer (khi `WORKFLOW_AI_SIGNING_KEY_ID` và `WORKFLOW_AI_SIGNING_KEY_LOCATION` đều có giá trị) -> gửi `Authorization: Bearer <jwt>` + vẫn gửi `X-Internal-Service-Key` nếu có cấu hình. Không có signer -> chỉ header cũ như trước. Ký lỗi -> log WARN, rơi về header cũ.
+- workspace `InternalServiceKeyFilter`: Bearer hợp lệ -> OK; không có Bearer (hoặc không đọc được JWKS) -> khóa tĩnh, trừ khi `WORKSPACE_INTERNAL_REQUIRE_SERVICE_JWT=true` (khi đó chỉ nhận JWT, thiếu JWKS thì fail-closed). Filter đặt `Authentication` và `SecurityConfig` dùng `authenticated()` cho `/internal/workspaces/**` (thay `permitAll`); bearer resolver của resource-server bỏ qua đường dẫn internal để JWT RS256 không bị decoder HS256 từ chối.
+- WS-14: `WEAV_INTERNAL_SERVICE_KEY` có giá trị thì phải >= 32 ký tự, nếu không workspace fail khi khởi động (record `InternalServiceKeyProperties`). Để trống vẫn hợp lệ (endpoint fail-closed). `.env` dev hiện tại đã >= 32. Test dùng khóa 40 ký tự.
+- Env mới: `WORKSPACE_SERVICE_JWKS_FILE` (compose.dev.yml: `/run/weav-keys/workflow-service.jwks.json`, mount ro `${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/public`), `WORKSPACE_INTERNAL_REQUIRE_SERVICE_JWT` (mặc định `false`, có trong `.env.example` và `.env`).
+- Test: workspace `InternalServiceJwtVerifierTest` (6: đúng scope/id cho 4 endpoint; sai scope/workspace_id/connection_id/thiếu connection_id; hết hạn/sai aud/sai iss/sai chữ ký; JWT sai không rơi về khóa tĩnh; cờ require; thiếu file JWKS), `InternalServiceKeyFilterTest` (+2: require chặn khóa tĩnh, khóa ngắn fail startup); workflow `WorkspaceClientTest` (+2: JWT đúng claim/scope theo từng lời gọi + vẫn gửi khóa cũ; không signer thì không có Bearer).
+- Kiểm tra: workflow 480/480 (478 + 2), workspace 403/403 (395 + 8); `git diff --check` sạch; `docker compose config -q` OK (dev và dev + workflow-smoke).
+
+Rollout:
+1. `node scripts/ai-dev-keys.mjs` (tạo `tmp/service-keys/{private,public}`), đặt `WORKFLOW_AI_SIGNING_KEY_ID` (mặc định `workflow-dev-1` trong compose) cho workflow.
+2. Chạy lại stack (`docker compose ... up -d --build workflow-service workspace-service`): workflow bắt đầu gửi JWT, workspace xác thực bằng JWKS đã mount; khóa tĩnh vẫn còn làm dự phòng.
+3. Xác nhận không còn log `internal_service_jwt_rejected` / `internal_service_jwks_unavailable`, rồi đặt `WORKSPACE_INTERNAL_REQUIRE_SERVICE_JWT=true` cho workspace.
+4. Sau một thời gian ổn định: bỏ `WEAV_INTERNAL_SERVICE_KEY` khỏi workflow và workspace (và `compose.workflow-smoke.yml`).
+Lưu ý: overlay `compose.workflow-smoke.yml` không mount khóa nên vẫn dùng khóa tĩnh (cờ require phải để `false`). Production: mount JWKS vào workspace, cấp khóa riêng cho workflow, không commit khóa.
+
 ## Kiểm tra
 
 Xem báo cáo coordinator; gateway unit 93, e2e 82 (thêm 1 test `/ready` còn 200 khi upstream down).

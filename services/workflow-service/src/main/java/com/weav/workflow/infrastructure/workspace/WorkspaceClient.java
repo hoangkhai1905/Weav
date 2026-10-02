@@ -8,6 +8,7 @@ import com.weav.workflow.application.port.out.WorkspaceAccessPort;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
 import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableException;
 import com.weav.workflow.domain.exception.ForbiddenException;
+import com.weav.workflow.infrastructure.security.ServiceJwtSigner;
 import com.weav.workflow.infrastructure.web.CorrelationIdFilter;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
@@ -28,6 +29,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -57,6 +59,8 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
     private final WorkspaceClientProperties properties;
     private final ObjectMapper objectMapper;
     private final CircuitBreaker circuitBreaker;
+    /** Null when no signing key is configured: then only the legacy static key header is sent. */
+    private final ServiceJwtSigner serviceJwtSigner;
     /** Only access-check answers are cached: Access or DENIED. Never errors, never credentials. */
     private final Cache<AccessKey, Object> accessCache;
 
@@ -93,6 +97,17 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
             CircuitBreaker circuitBreaker,
             Duration accessCacheTtl,
             Ticker ticker) {
+        this(properties, objectMapper, circuitBreaker, accessCacheTtl, ticker, null);
+    }
+
+    public WorkspaceClient(
+            WorkspaceClientProperties properties,
+            ObjectMapper objectMapper,
+            CircuitBreaker circuitBreaker,
+            Duration accessCacheTtl,
+            Ticker ticker,
+            ServiceJwtSigner serviceJwtSigner) {
+        this.serviceJwtSigner = serviceJwtSigner;
         this.circuitBreaker = Objects.requireNonNull(circuitBreaker, "circuitBreaker must not be null");
         this.accessCache = Caffeine.newBuilder()
                 .maximumSize(ACCESS_CACHE_MAX_ENTRIES)
@@ -136,7 +151,7 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
     private Access fetchAccess(UUID workspaceId, UUID userId) {
         long started = System.nanoTime();
         String path = INTERNAL_PREFIX + workspaceId + "/users/" + userId + "/access";
-        ResponseEnvelope response = send("access", HttpMethod.GET, path, null, started);
+        ResponseEnvelope response = send("access", HttpMethod.GET, path, null, started, "workspace:access", workspaceId, null);
         if (isDenied(response.statusCode())) {
             throw new ForbiddenException();
         }
@@ -183,7 +198,7 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
         long started = System.nanoTime();
         byte[] body = jsonBody(Map.of("userId", userId.toString()));
         String path = INTERNAL_PREFIX + workspaceId + "/connections/" + connectionId + "/authorize-attachment";
-        ResponseEnvelope response = send("attachment", HttpMethod.POST, path, body, started);
+        ResponseEnvelope response = send("attachment", HttpMethod.POST, path, body, started, "connection:authorize-attachment", workspaceId, connectionId);
         if (isDenied(response.statusCode())) {
             throw new ForbiddenException();
         }
@@ -198,7 +213,7 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
         Objects.requireNonNull(connectionId, "connectionId must not be null");
         long started = System.nanoTime();
         String path = INTERNAL_PREFIX + workspaceId + "/connections/" + connectionId + "/resolve";
-        ResponseEnvelope response = send("resolve", HttpMethod.POST, path, null, started);
+        ResponseEnvelope response = send("resolve", HttpMethod.POST, path, null, started, "connection:resolve", workspaceId, connectionId);
         if (isDenied(response.statusCode())) {
             throw new ForbiddenException();
         }
@@ -240,7 +255,7 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
         long started = System.nanoTime();
         byte[] body = jsonBody(Map.of("failureCode", "AUTHENTICATION_REJECTED"));
         String path = INTERNAL_PREFIX + workspaceId + "/connections/" + connectionId + "/auth-failure";
-        ResponseEnvelope response = send("auth-failure", HttpMethod.POST, path, body, started);
+        ResponseEnvelope response = send("auth-failure", HttpMethod.POST, path, body, started, "connection:report-auth-failure", workspaceId, connectionId);
         if (isDenied(response.statusCode())) {
             throw new ForbiddenException();
         }
@@ -254,8 +269,15 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
             HttpMethod method,
             String path,
             byte[] body,
-            long started) {
-        String serviceKey = requiredServiceKey();
+            long started,
+            String scope,
+            UUID workspaceId,
+            UUID connectionId) {
+        String serviceKey = properties.hasServiceKey() ? properties.internalServiceKey() : null;
+        String jwt = serviceJwt(scope, workspaceId, connectionId);
+        if (serviceKey == null && jwt == null) {
+            throw new WorkspaceDependencyUnavailableException();
+        }
         URI uri = endpoint(path, operation, started);
         if (!circuitBreaker.tryAcquirePermission()) {
             throw new WorkspaceDependencyUnavailableException();
@@ -264,9 +286,15 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
         try {
             RestClient.RequestBodySpec request = restClient.method(method)
                     .uri(uri)
-                    .header(INTERNAL_KEY_HEADER, serviceKey)
                     .accept(MediaType.APPLICATION_JSON)
                     .headers(headers -> {
+                        // Transition: the legacy key is still sent next to the JWT until Workspace requires JWTs.
+                        if (serviceKey != null) {
+                            headers.set(INTERNAL_KEY_HEADER, serviceKey);
+                        }
+                        if (jwt != null) {
+                            headers.setBearerAuth(jwt);
+                        }
                         String correlationId = CorrelationIdFilter.currentCorrelationId();
                         if (correlationId != null) {
                             headers.set(CorrelationIdFilter.HEADER_NAME, correlationId);
@@ -293,11 +321,23 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
         }
     }
 
-    private String requiredServiceKey() {
-        if (!properties.hasServiceKey()) {
-            throw new WorkspaceDependencyUnavailableException();
+    /** One 60 s scoped token per call; null when no signer is configured or signing fails (legacy key only). */
+    private String serviceJwt(String scope, UUID workspaceId, UUID connectionId) {
+        if (serviceJwtSigner == null) {
+            return null;
         }
-        return properties.internalServiceKey();
+        Map<String, Object> claims = new LinkedHashMap<>();
+        claims.put("scope", scope);
+        claims.put("workspace_id", workspaceId.toString());
+        if (connectionId != null) {
+            claims.put("connection_id", connectionId.toString());
+        }
+        try {
+            return serviceJwtSigner.sign("weav-workflow", "weav-workspace", claims, Instant.now());
+        } catch (ServiceJwtSigner.Unavailable exception) {
+            log.warn("event=workspace_service_jwt_unavailable scope={}", scope);
+            return null;
+        }
     }
 
     private URI endpoint(String path, String operation, long started) {
