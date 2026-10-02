@@ -51,7 +51,7 @@ public final class GmailNodeExecutor implements NodeExecutor {
         ResolvedConnection connection = resolveConnection(context, request.connectionId());
         if (connection == null) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
-                    "The Gmail connection is unavailable.", true);
+                    "The Gmail connection is unavailable.", true, true);
         }
 
         try {
@@ -61,7 +61,7 @@ public final class GmailNodeExecutor implements NodeExecutor {
                 providerOutput = gmailClient.send(request.recipients(), request.subject(), request.body(), connection);
             } catch (NodeExecutor.Failure failure) {
                 if ("AUTHENTICATION_REJECTED".equals(failure.code())) {
-                    reportAuthenticationRejected(context.workspaceId(), request.connectionId());
+                    reportAuthenticationRejected(context.workspaceId(), request.connectionId(), connection);
                 }
                 throw failure;
             } catch (RuntimeException exception) {
@@ -157,10 +157,10 @@ public final class GmailNodeExecutor implements NodeExecutor {
                     "The Gmail connection is not available to this workspace.", false);
         } catch (WorkspaceDependencyUnavailableException exception) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
-                    "The connection service is unavailable.", true);
+                    "The connection service is unavailable.", true, true);
         } catch (RuntimeException exception) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
-                    "The connection service is unavailable.", true);
+                    "The connection service is unavailable.", true, true);
         }
     }
 
@@ -173,9 +173,9 @@ public final class GmailNodeExecutor implements NodeExecutor {
         }
     }
 
-    private void reportAuthenticationRejected(UUID workspaceId, UUID connectionId) {
+    private void reportAuthenticationRejected(UUID workspaceId, UUID connectionId, ResolvedConnection resolved) {
         try {
-            workspaceConnections.reportAuthenticationRejected(workspaceId, connectionId);
+            workspaceConnections.reportAuthenticationRejected(workspaceId, connectionId, resolved);
         } catch (RuntimeException ignored) {
             // The provider confirmed rejection; keep its safe classification if Workspace is unavailable.
         }

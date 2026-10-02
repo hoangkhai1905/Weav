@@ -44,8 +44,10 @@ public final class GoogleOAuthCallbackController {
         if (result.connectionId() != null) {
             builder.queryParam("connectionId", result.connectionId());
         }
-        if (result.succeeded()) {
-            builder.queryParam("oauth", "success");
+        if (result.isPending()) {
+            // The code is parked server-side; the signed-in user must POST the completion id.
+            builder.queryParam("oauth", "pending");
+            builder.queryParam("completion", result.completionId());
         } else {
             builder.queryParam("oauth", "failed");
             builder.queryParam("reason", result.failureReason().code());

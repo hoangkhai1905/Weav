@@ -36,6 +36,18 @@ public class CredentialRepositoryAdapter implements CredentialRepository {
     }
 
     @Override
+    public java.util.List<Credential> findAllByConnectionIdIn(java.util.Collection<UUID> connectionIds) {
+        return connectionIds.isEmpty()
+                ? java.util.List.of()
+                : repository.findAllByConnectionIdIn(connectionIds).stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public Optional<Credential> findByConnectionIdForUpdate(UUID connectionId) {
+        return repository.findForUpdateByConnectionId(connectionId).map(this::toDomain);
+    }
+
+    @Override
     public void deleteByConnectionId(UUID connectionId) {
         repository.deleteByConnectionId(connectionId);
     }

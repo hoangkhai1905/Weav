@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -49,9 +50,10 @@ public final class WorkspaceController {
     @PostMapping
     public ResponseEntity<WorkspaceResponse> create(
             @AuthenticationPrincipal Jwt jwt,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody CreateWorkspaceRequest request) {
         WorkspaceResponse response = createWorkspace.execute(
-                new CreateWorkspaceCommand(JwtActor.userId(jwt), request.name()));
+                new CreateWorkspaceCommand(JwtActor.userId(jwt), request.name(), idempotencyKey));
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

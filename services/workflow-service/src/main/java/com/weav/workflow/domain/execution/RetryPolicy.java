@@ -2,6 +2,8 @@ package com.weav.workflow.domain.execution;
 
 import java.time.Duration;
 import java.util.Set;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.DoubleSupplier;
 
 /** V1 retry limits for transient node execution failures. */
 public final class RetryPolicy {
@@ -13,26 +15,40 @@ public final class RetryPolicy {
             "WORKER_INTERRUPTED",
             "AI_BUSY",
             "AI_PROVIDER_UNAVAILABLE",
-            "AI_TIMEOUT");
+            "AI_TIMEOUT",
+            "HTTP_TIMEOUT",
+            "HTTP_RATE_LIMITED",
+            "HTTP_DEPENDENCY_UNAVAILABLE",
+            "CONNECTION_UNAVAILABLE",
+            "OCR_UNAVAILABLE");
     private static final Set<String> PERMANENT_CODES = Set.of(
             "MAPPING_ERROR",
             "CONFIGURATION_ERROR",
             "INVALID_CONFIGURATION",
             "DEPENDENCY_NOT_CONFIGURED",
+            "AI_QUOTA_EXCEEDED",
             "AUTHENTICATION_REJECTED");
 
-    public boolean retryable(String code, Integer httpStatus) {
-        if (code != null && PERMANENT_CODES.contains(code)) {
-            return false;
-        }
-        if (httpStatus != null) {
-            return httpStatus == 429 || httpStatus >= 500 && httpStatus <= 599;
-        }
-        return code != null && TRANSIENT_CODES.contains(code);
+    private final DoubleSupplier random;
+
+    public RetryPolicy() {
+        this(() -> ThreadLocalRandom.current().nextDouble());
     }
 
-    /** Returns the delay after the specified consumed attempt; there is no delay after the final attempt. */
-    public Duration delayAfter(int attemptNumber) {
+    /** @param random supplies values in [0, 1); injected so tests stay deterministic. */
+    public RetryPolicy(DoubleSupplier random) {
+        this.random = random;
+    }
+
+    public boolean retryable(String code) {
+        if (code == null || PERMANENT_CODES.contains(code)) {
+            return false;
+        }
+        return TRANSIENT_CODES.contains(code);
+    }
+
+    /** Nominal delay after the consumed attempt, before jitter. */
+    public Duration baseDelayAfter(int attemptNumber) {
         if (attemptNumber < 1 || attemptNumber > MAX_ATTEMPTS) {
             throw new IllegalArgumentException("Attempt number must be between one and the maximum attempts.");
         }
@@ -41,6 +57,12 @@ public final class RetryPolicy {
             case 2 -> Duration.ofSeconds(2);
             default -> Duration.ZERO;
         };
+    }
+
+    /** Delay after the consumed attempt with +/-50% jitter; there is no delay after the final attempt. */
+    public Duration delayAfter(int attemptNumber) {
+        long millis = baseDelayAfter(attemptNumber).toMillis();
+        return Duration.ofMillis(Math.round(millis * (0.5 + random.getAsDouble())));
     }
 
     public boolean canRetry(int attemptsConsumed, boolean retryable) {

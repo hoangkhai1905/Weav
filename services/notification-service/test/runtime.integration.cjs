@@ -48,6 +48,8 @@ const settings = loadSettings({
   DB_PASSWORD: 'unused-local-trust',
   DB_SSL_MODE: 'disable',
   JWT_ACCESS_SECRET: 'test-only-key-not-for-production-123456',
+  RABBITMQ_USERNAME: 'guest',
+  RABBITMQ_PASSWORD: 'guest',
   RABBITMQ_HOST: '127.0.0.1',
   RABBITMQ_PORT: '15689',
   NOTIFICATION_EXCHANGE: 'weav.notification.test.events',
@@ -288,7 +290,7 @@ test(
             'SENDING',
           );
           await repo.finish(fresh, { status: 'FAILED', scheduledAt: null });
-          assert.equal(await repo.markAllRead(row.userId), 1);
+          // Reading one delivery also read its sibling of the same inbox item (NT-4).
           assert.equal(await repo.markAllRead(row.userId), 0);
           assert.equal(await repo.unreadCount(row.userId), 0);
         },
@@ -428,11 +430,14 @@ test(
               });
               return Boolean(rejected);
             });
-            const safeRecord = JSON.parse(rejected.content.toString());
-            assert.deepEqual(Object.keys(safeRecord).sort(), [
-              'code',
-              'occurredAt',
-            ]);
+            // The broker dead-letters the ORIGINAL message: body kept, x-death present.
+            const original = JSON.parse(rejected.content.toString());
+            assert(
+              rejectedEvents.some(
+                (r) => JSON.stringify(r.event) === JSON.stringify(original),
+              ),
+            );
+            assert(rejected.properties.headers['x-death']);
           }
 
           class RuntimeModule {}

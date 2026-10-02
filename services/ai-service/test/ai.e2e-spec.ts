@@ -248,6 +248,34 @@ describe('AI HTTP', () => {
     });
   });
 
+  it('returns 401 for unauthenticated callers regardless of provider/JWKS config', async () => {
+    const res = await raw('{}', { 'content-type': 'application/json' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('echoes a valid X-Correlation-ID and ignores an invalid one', async () => {
+    const ok = await app.inject({
+      method: 'GET',
+      url: '/health/live',
+      headers: { 'x-correlation-id': 'corr-123' },
+    });
+    expect(ok.headers['x-correlation-id']).toBe('corr-123');
+    for (const bad of ['bad id!', 'x'.repeat(129)]) {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/health/live',
+        headers: { 'x-correlation-id': bad },
+      });
+      expect(res.headers['x-correlation-id']).toBeUndefined();
+    }
+    const err = await raw('{}', {
+      'content-type': 'application/json',
+      'x-correlation-id': 'corr-err',
+    });
+    expect(err.statusCode).toBe(401);
+    expect(err.headers['x-correlation-id']).toBe('corr-err');
+  });
+
   it('reports readiness', async () => {
     expect(
       (await app.inject({ method: 'GET', url: '/health/ready' })).statusCode,
@@ -270,7 +298,8 @@ describe('AI HTTP', () => {
       headers: { 'content-type': 'application/json' },
       payload: '{}',
     });
-    expect(res.json().error.code).toBe('AI_NOT_CONFIGURED');
+    expect(res.statusCode).toBe(401); // AI-8: no config leak before auth
+    expect(res.json().error.code).toBe('UNAUTHENTICATED');
     await unready.close();
   });
 });

@@ -22,6 +22,12 @@ public final class TriggerExecutionUseCase {
                 workspaceId, workflowId, actorId, input, correlationId, traceparent));
     }
 
+    public ExecutionResultDto manual(UUID workspaceId, UUID workflowId, UUID actorId, Object input,
+                                     String correlationId, String traceparent, String idempotencyKey) {
+        return ExecutionResultDto.from(admissionService.manual(
+                workspaceId, workflowId, actorId, input, correlationId, traceparent, idempotencyKey));
+    }
+
     public ExecutionResultDto automatic(UUID triggerId, Object input, Instant scheduledAt,
                                         String correlationId, String traceparent) {
         return ExecutionResultDto.from(admissionService.automatic(

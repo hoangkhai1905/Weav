@@ -81,6 +81,9 @@ public class WorkflowJpaEntity {
     @Column(name = "deleted_by")
     private UUID deletedBy;
 
+    @Column(nullable = false)
+    private long revision;
+
     protected WorkflowJpaEntity() {
     }
 
@@ -149,6 +152,7 @@ public class WorkflowJpaEntity {
     public Instant getPublishedAt() { return publishedAt; }
     public Instant getDeletedAt() { return deletedAt; }
     public UUID getDeletedBy() { return deletedBy; }
+    public long getRevision() { return revision; }
 
     public void setName(String name) { this.name = name; }
     public void setDescription(String description) { this.description = description; }
@@ -160,4 +164,5 @@ public class WorkflowJpaEntity {
     public void setPublishedAt(Instant publishedAt) { this.publishedAt = publishedAt; }
     public void setDeletedAt(Instant deletedAt) { this.deletedAt = deletedAt; }
     public void setDeletedBy(UUID deletedBy) { this.deletedBy = deletedBy; }
+    public void setRevision(long revision) { this.revision = revision; }
 }

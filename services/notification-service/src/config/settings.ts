@@ -22,8 +22,8 @@ const schema = z
     JWT_AUDIENCE: z.string().default('weav-api'),
     RABBITMQ_HOST: z.string().default('localhost'),
     RABBITMQ_PORT: integer(5672, 1, 65535),
-    RABBITMQ_USERNAME: z.string().default('guest'),
-    RABBITMQ_PASSWORD: z.string().default('guest'),
+    RABBITMQ_USERNAME: z.string().min(1),
+    RABBITMQ_PASSWORD: z.string().min(1),
     RABBITMQ_VHOST: z.string().default('/'),
     RABBITMQ_TLS: flag('false'),
     NOTIFICATION_EXCHANGE: z.string().min(1).default('weav.events'),
@@ -35,6 +35,15 @@ const schema = z
       .string()
       .min(1)
       .default('notification-service.execution-events.dlq'),
+    // Quorum queue that is consumed today; defaults to `<NOTIFICATION_QUEUE>.v2`.
+    NOTIFICATION_QUEUE_V2: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().min(1).optional(),
+    ),
+    // Broker dead-letters a message after this many failed deliveries.
+    NOTIFICATION_DELIVERY_LIMIT: integer(10, 1, 1000),
+    // Keep draining the old classic NOTIFICATION_QUEUE; set false once an operator deleted it.
+    NOTIFICATION_LEGACY_DRAIN: flag('true'),
     NOTIFICATION_MAX_ATTEMPTS: integer(5, 1, 20),
     NOTIFICATION_RETRY_BASE_MS: integer(1000),
     NOTIFICATION_RETRY_MAX_MS: integer(300000),
@@ -82,7 +91,20 @@ const schema = z
 export type Settings = z.infer<typeof schema>;
 export const SETTINGS = Symbol('NOTIFICATION_SETTINGS');
 export function loadSettings(env: NodeJS.ProcessEnv = process.env): Settings {
-  const result = schema.safeParse(env);
+  // RABBITMQ_TLS_ENABLED is canonical; RABBITMQ_TLS and RABBITMQ_SSL_ENABLED are legacy aliases.
+  const tls =
+    env.RABBITMQ_TLS_ENABLED ?? env.RABBITMQ_TLS ?? env.RABBITMQ_SSL_ENABLED;
+  // NOTIFICATION_RABBITMQ_* give this service its own broker user; empty falls back to the shared one.
+  const merged: NodeJS.ProcessEnv = {
+    ...env,
+    RABBITMQ_USERNAME:
+      env.NOTIFICATION_RABBITMQ_USERNAME || env.RABBITMQ_USERNAME,
+    RABBITMQ_PASSWORD:
+      env.NOTIFICATION_RABBITMQ_PASSWORD || env.RABBITMQ_PASSWORD,
+  };
+  const result = schema.safeParse(
+    tls === undefined ? merged : { ...merged, RABBITMQ_TLS: tls },
+  );
   if (!result.success)
     throw new Error(
       `Invalid notification configuration: ${[...new Set(result.error.issues.map((i) => i.path.join('.')))].join(', ')}`,

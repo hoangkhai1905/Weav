@@ -55,8 +55,14 @@ Rate-limit names:
 GATEWAY_GENERAL_RATE_LIMIT
 GATEWAY_AUTH_RATE_LIMIT
 GATEWAY_OCR_RATE_LIMIT
+GATEWAY_WEBHOOK_RATE_LIMIT
 GATEWAY_RATE_LIMIT_WINDOW_MS
+GATEWAY_THROTTLER_REDIS_URL   # optional redis(s):// URL; empty = in-memory
 ```
+
+Proxy trust: `GATEWAY_TRUST_PROXY_HOPS` (0-10, default 0 = `trustProxy` off).
+Set it to the number of trusted proxies in front of the Gateway so rate limits
+and the forwarded `X-Forwarded-For` use the real client IP.
 
 The validated defaults and production-only configuration checks live in
 `src/config/gateway.config.ts`. The local development OCR bypass is permitted
@@ -82,6 +88,10 @@ and unsupported methods are not forwarded.
 | `/api/users/me`                                                                  | `GET`, `PATCH`                  | Required bearer                                                        | Identity                            |
 | `/api/users/me/sessions`                                                         | `GET`, `DELETE`                 | Required bearer                                                        | Identity                            |
 | `/api/users/me/sessions/{sessionId}`                                             | `DELETE`                        | Required bearer                                                        | Identity                            |
+| `/api/users/me/oauth-accounts`                                                   | `GET`                           | Required bearer                                                        | Identity                            |
+| `/api/users/me/avatar`                                                           | `GET`, `PUT`, `DELETE`          | Required bearer (`PUT` streams multipart, 2 MiB + 64 KiB cap)         | Identity                            |
+| `/api/admin/users`, `/api/admin/users/{userId}`                                  | `GET`                           | Required bearer, `system_role=ADMIN` (403 otherwise)                   | Identity `/admin/users`             |
+| `/api/admin/users/{userId}/status`                                               | `PATCH`                         | Required bearer, `system_role=ADMIN`                                   | Identity                            |
 | `/api/v1/notifications/**`, `/api/notifications/**`                              | Registered notification methods | Required bearer                                                        | Notification                        |
 | `/api/v1/workspaces`                                                             | `POST`, `GET`                   | Required bearer                                                        | `/workspaces`                       |
 | `/api/v1/workspaces/{workspaceId}`                                               | `GET`, `PATCH`                  | Required bearer                                                        | `/workspaces/{workspaceId}`         |
@@ -90,16 +100,19 @@ and unsupported methods are not forwarded.
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/test`              | `POST`                          | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/disable`           | `POST`                          | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/authorize`   | `POST`                          | Required bearer                                                        | Matching Workspace suffix           |
+| `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/complete`    | `POST`                          | Required bearer (strict `{completion}` body)                           | Matching Workspace suffix           |
+| `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential`        | `PUT`, `DELETE`                 | Required bearer                                                        | Matching Workspace suffix           |
+| `/api/v1/workspaces/{workspaceId}/workflows/generate`                           | `POST`                          | Required bearer (32 KiB body, 80 s deadline)                           | Workflow                            |
+| `/api/v1/webhooks/{endpointKey}`                                                 | `POST`                          | Public (JSON only, per-endpoint `webhook` throttler)                   | Workflow `/webhooks/{endpointKey}`  |
 | `/api/v1/workspaces/{workspaceId}/members`                                       | `GET`, `POST`                   | Required bearer                                                        | `/workspaces/{workspaceId}/members` |
 | `/api/v1/workspaces/{workspaceId}/members/{userId}/permissions`                  | `PATCH`                         | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/members/{userId}`                              | `DELETE`                        | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/members/me`                                    | `DELETE`                        | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/ocr/extractions`                               | `POST`                          | Required bearer, or the existing development-only missing-token bypass | OCR `/v1/extractions`               |
 
-The Workspace rows are exactly the seventeen public operations in the Gateway
+The Workspace rows are exactly the twenty public operations in the Gateway
 OpenAPI contract. Connection routes are explicitly allow-listed; internal
-Workspace operations, manual credential routes, and the Google OAuth callback
-are not Gateway routes. The literal `members/me` route is registered separately
+Workspace operations and the Google OAuth callback are not Gateway routes. The literal `members/me` route is registered separately
 from the generic `{userId}` route so route precedence cannot widen the API.
 
 ## Transport and response behavior
@@ -122,20 +135,29 @@ from the generic `{userId}` route so route precedence cannot widen the API.
 - Redirects are rejected. Upstream connection failures, deadline expiry, or
   client disconnects return the existing sanitized service-unavailable contract;
   mutating requests are not retried. `429` responses include `Retry-After`.
+- A non-GET/HEAD upstream call that exceeds the 10 s deadline returns `504`
+  with code `UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN`: the write may have committed, so
+  clients should retry with the same `Idempotency-Key`. GET timeouts and
+  connection failures keep `503`.
+- Expected client errors (4xx) are logged at WARN; 5xx at ERROR.
 
 ## Health, readiness, and rate limits
 
 `GET /health` is process liveness. It is public, exempt from throttling, and
 does not call an upstream service.
 
-`GET /ready` is public and probes Identity and Workspace in parallel at their
-verified `/actuator/health/readiness` paths. Each probe has a two-second
-deadline that includes reading the response body. Both services must report
-HTTP 200 for Gateway `200`; a down, failed, redirected, or stalled probe yields
-Gateway `503`. The response exposes only aggregate `up`/`down` status and the
-correlation ID. Notification and OCR are not readiness dependencies.
+`GET /ready` is public and reports only the Gateway's own state (it does not
+call an upstream, so an Identity/Workspace outage never fails the probe; proxied
+routes return `503` individually). `GET /ready/upstreams` is a throttled
+diagnostic that probes Identity and Workspace in parallel at their
+`/actuator/health/readiness` paths with a two-second deadline each (body read
+included); a down, failed, redirected, or stalled probe yields `503`. Responses
+expose only aggregate `up`/`down` status and the correlation ID. Notification
+and OCR are not probed.
 
-The limiter is intentionally in-memory and single-replica:
+By default the limiter is in-memory and single-replica. Set
+`GATEWAY_THROTTLER_REDIS_URL` to a Valkey URL to share counters across replicas;
+if Valkey errors the gateway fails open (request allowed, WARN logged).
 
 - General traffic uses one socket-IP budget across routes.
 - Public authentication mutations use a separate socket-IP budget.
@@ -144,8 +166,6 @@ The limiter is intentionally in-memory and single-replica:
 - `trustProxy` is false, forwarded headers do not choose a bucket, and health
   plus CORS preflight are exempt.
 
-Distributed rate storage and multi-replica enforcement require a separate
-design and rollout decision.
 
 ## OCR streaming risk
 
@@ -154,10 +174,10 @@ ten-second upstream deadline covering response-body reads, plus disconnect
 cancellation. The established response is sanitized `503 OCR_BUSY` when the
 upstream cannot complete in time.
 
-The existing raw-stream path may bypass the ordinary Fastify parser body-size
-limit. This compatibility risk is intentionally not changed here; a strict
-stream cap needs a separate measurement, client-compatibility review, and
-rollout plan before being enabled.
+Uploads are capped at 10 MiB plus 64 KiB multipart framing (the OCR service
+caps the document at 10 MiB). A larger `Content-Length`, or a chunked stream that
+grows past the cap, returns `413 PAYLOAD_TOO_LARGE` in the OCR error envelope;
+a declared oversize body is rejected before the upstream is called.
 
 ## Verification commands
 
@@ -174,9 +194,10 @@ real Identity/Workspace deployment or an authenticated browser smoke test.
 
 ## Deferred features
 
-Workflow, AI, and Bot public routes; distributed throttling; OAuth browser
-cookie migration; realtime; client/database changes; admin/avatar expansion;
-and production stream-cap changes are outside this Gateway slice. Real-service
+AI and Bot public routes; distributed throttling; identity browser cookie and
+OAuth flows (`/auth/web/*`, Google OAuth start/exchange/callback, link,
+unlink); realtime; client/database changes; Workflow `DELETE`; and OCR
+stream-cap changes are outside this Gateway slice. Real-service
 login, Workspace mutation/access, and authenticated browser compatibility proof
 remain deployment-gated follow-up checks.
 

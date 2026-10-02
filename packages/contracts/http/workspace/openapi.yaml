@@ -23,6 +23,14 @@ paths:
       tags: [Workspaces]
       operationId: createWorkspace
       summary: Create a workspace for the authenticated user
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Optional retry key (8-128 chars of A-Za-z0-9._:-). Same key and body replays the original workspace; same key with a different body returns 422 IDEMPOTENCY_KEY_REUSED. Keys expire after 7 days.
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9._:-]{8,128}$'
       requestBody:
         required: true
         content:
@@ -544,16 +552,68 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /workspaces/{workspaceId}/connections/{connectionId}/oauth/complete:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/ConnectionId'
+    post:
+      tags: [OAuth]
+      operationId: completeGoogleConnectionOAuthAuthenticated
+      summary: Complete a pending Google authorization as the user who started it
+      description: >-
+        Consumes the single-use completion id parked by the public callback, requires the bearer subject
+        and the path workspace/connection to match the initiating user and connection, then exchanges the
+        code with the PKCE verifier, verifies the account and stores the encrypted credential. The id is
+        consumed atomically before any check, so it can never be retried. A replayed, expired, malformed,
+        unknown or mismatched id (wrong user, workspace or connection) all return the same 409, revealing
+        nothing about the record. 403/404 only apply when the initiating user has since lost access.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteOAuthRequest'
+      responses:
+        '200':
+          description: Verification outcome; the connection is ACTIVE when VERIFIED.
+          headers:
+            Cache-Control:
+              description: Set to no-store.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionTestResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /oauth/google/callback:
     get:
       tags: [OAuth]
       operationId: completeGoogleConnectionOAuth
-      summary: Complete Google authorization using the one-time server-stored state
+      summary: Receive the Google redirect and park the authorization code for authenticated completion
       description: >-
-        This server-owned callback is the only unauthenticated application route. It consumes state once,
-        rechecks current Workspace authorization, stores verified credentials encrypted, and redirects only
-        to the configured frontend return URL. Client-supplied redirect targets are ignored. When state is
-        invalid there is no trusted connection identifier, so the redirect omits connectionId.
+        This server-owned callback is the only unauthenticated application route. It consumes state once
+        and parks the authorization code (with its PKCE verifier) under a random single-use completion id
+        valid for five minutes. It stores no credential: the browser is not proven to belong to the user
+        who started the flow, so the web app must call POST .../oauth/complete with a bearer token.
+        It redirects only to the configured frontend return URL; client-supplied redirect targets are
+        ignored. When state is invalid there is no trusted connection identifier, so the redirect omits
+        connectionId.
       security: []
       parameters:
         - name: state
@@ -580,8 +640,9 @@ paths:
       responses:
         '302':
           description: >-
-            Redirect to the configured frontend return URL. Failures use only state_invalid, authorization_denied,
-            authorization_changed, token_exchange_failed, or verification_failed. Invalid state omits connectionId.
+            Redirect to the configured frontend return URL with oauth=pending, completion and connectionId
+            on success of the hand-off, or oauth=failed with reason one of state_invalid, authorization_denied
+            or token_exchange_failed. Invalid state omits connectionId.
           headers:
             Location:
               description: Server-configured frontend return URL with safe OAuth result query parameters.
@@ -932,6 +993,14 @@ components:
           type: string
           enum: [AUTHENTICATION_REJECTED]
           description: Only a confirmed authentication rejection may mark an ACTIVE connection INVALID.
+        credentialId:
+          type: string
+          format: uuid
+          description: Optional. When present and not the connection's current credential id, the report is ignored (204) so a stale report cannot invalidate a replaced credential.
+        credentialVersion:
+          type: integer
+          format: int64
+          description: Optional. The credentialVersion returned by resolve. When present and different from the current credential's version, the credential was refreshed or replaced since it was resolved and the report is ignored (204).
     ConnectionResponse:
       type: object
       additionalProperties: false
@@ -1013,6 +1082,15 @@ components:
         outcome:
           type: string
           enum: [VERIFIED, AUTH_INVALID]
+    CompleteOAuthRequest:
+      type: object
+      additionalProperties: false
+      required: [completion]
+      properties:
+        completion:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{32,128}$'
+          description: Single-use completion id from the oauth=pending redirect; a secret, do not log it.
     OAuthAuthorizationHttpResponse:
       type: object
       additionalProperties: false
@@ -1038,6 +1116,16 @@ components:
           description: >-
             Internal runtime authentication only. Google OAuth returns accessToken; the refresh token is never returned.
             Callers must not log or cache this response.
+        credentialId:
+          type: [string, 'null']
+          format: uuid
+          description: Current credential id; null when authType is NONE.
+        credentialVersion:
+          type: [integer, 'null']
+          format: int64
+          description: >-
+            The credential's updatedAt as epoch milliseconds; changes on every refresh, save and reconnect.
+            Echo it back on auth-failure so a stale report is ignored. Null when authType is NONE.
     CreateWorkspaceRequest:
       type: object
       additionalProperties: false

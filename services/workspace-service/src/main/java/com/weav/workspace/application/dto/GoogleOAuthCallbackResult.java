@@ -4,11 +4,14 @@ import java.util.Objects;
 import java.util.UUID;
 
 /** Safe callback result carrying only an identifier recovered from consumed server-side state. */
-public record GoogleOAuthCallbackResult(UUID connectionId, FailureReason failureReason) {
+public record GoogleOAuthCallbackResult(UUID connectionId, FailureReason failureReason, String completionId) {
 
     public GoogleOAuthCallbackResult {
         if (failureReason == null && connectionId == null) {
-            throw new IllegalArgumentException("A successful OAuth callback requires a connection");
+            throw new IllegalArgumentException("A pending OAuth callback requires a connection");
+        }
+        if ((failureReason == null) != (completionId != null)) {
+            throw new IllegalArgumentException("A completion id exists only for a pending callback");
         }
         if (failureReason == FailureReason.STATE_INVALID && connectionId != null) {
             throw new IllegalArgumentException("Invalid OAuth state cannot identify a connection");
@@ -18,22 +21,24 @@ public record GoogleOAuthCallbackResult(UUID connectionId, FailureReason failure
         }
     }
 
-    public static GoogleOAuthCallbackResult success(UUID connectionId) {
-        return new GoogleOAuthCallbackResult(Objects.requireNonNull(connectionId), null);
+    /** The code was received; an authenticated user must still complete the connection. */
+    public static GoogleOAuthCallbackResult pending(UUID connectionId, String completionId) {
+        return new GoogleOAuthCallbackResult(
+                Objects.requireNonNull(connectionId), null, Objects.requireNonNull(completionId));
     }
 
     public static GoogleOAuthCallbackResult failure(UUID connectionId, FailureReason reason) {
-        return new GoogleOAuthCallbackResult(connectionId, Objects.requireNonNull(reason));
+        return new GoogleOAuthCallbackResult(connectionId, Objects.requireNonNull(reason), null);
     }
 
-    public boolean succeeded() {
+    public boolean isPending() {
         return failureReason == null;
     }
 
     @Override
     public String toString() {
         return "GoogleOAuthCallbackResult[connectionId=" + connectionId
-                + ", outcome=" + (succeeded() ? "SUCCESS" : "FAILED")
+                + ", outcome=" + (isPending() ? "PENDING" : "FAILED")
                 + ", failureReason=" + (failureReason == null ? "<none>" : failureReason.code()) + "]";
     }
 

@@ -4,6 +4,7 @@ import com.weav.workspace.domain.exception.ConflictException;
 import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.domain.exception.DomainException;
 import com.weav.workspace.domain.exception.ForbiddenException;
+import com.weav.workspace.domain.exception.IdempotencyKeyReusedException;
 import com.weav.workspace.domain.exception.InvalidStateException;
 import com.weav.workspace.domain.exception.MembershipNotFoundException;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
@@ -159,7 +160,8 @@ public class GlobalExceptionHandler {
         if (exception instanceof ForbiddenException) {
             return HttpStatus.FORBIDDEN;
         }
-        if (exception instanceof InvalidStateException) {
+        if (exception instanceof InvalidStateException
+                || exception instanceof IdempotencyKeyReusedException) {
             return HttpStatus.UNPROCESSABLE_CONTENT;
         }
         return HttpStatus.BAD_REQUEST;

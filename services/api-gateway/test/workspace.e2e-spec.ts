@@ -62,6 +62,7 @@ const connectionResponse = {
 };
 
 const connectionTestResponse = { outcome: 'VERIFIED' };
+const COMPLETION_ID = 'Zm9vYmFyYmF6cXV4Zm9vYmFyYmF6cXV4MTIzNDU2Nzg';
 const oauthAuthorizationResponse = {
   authorizationUrl:
     'https://accounts.google.com/o/oauth2/v2/auth?state=fixture-state',
@@ -351,6 +352,11 @@ function handleFixtureRequest(
           'x-upstream-secret': 'never-forward',
         });
         return;
+      case `POST /workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/complete`:
+        writeJson(response, 200, connectionTestResponse, {
+          'x-upstream-secret': 'never-forward',
+        });
+        return;
       case 'POST /v1/extractions':
         writeJson(response, 200, { accepted: true });
         return;
@@ -418,7 +424,7 @@ function extractOperations(document: string): string[] {
       path = pathMatch[1];
       continue;
     }
-    const methodMatch = /^ {4}(get|post|patch|delete):$/.exec(line);
+    const methodMatch = /^ {4}(get|post|put|patch|delete):$/.exec(line);
     if (path && methodMatch) {
       operations.push(`${methodMatch[1].toUpperCase()} ${path}`);
     }
@@ -457,7 +463,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     restoreEnvironment();
   });
 
-  it('proxies all seventeen public operations with exact paths and preserved responses', async () => {
+  it('proxies all public operations with exact paths and preserved responses', async () => {
     const operations: Array<{
       method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
       url: string;
@@ -622,6 +628,14 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
         status: 200,
         expectedBody: oauthAuthorizationResponse,
       },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/complete`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/complete`,
+        payload: { completion: COMPLETION_ID },
+        status: 200,
+        expectedBody: connectionTestResponse,
+      },
     ];
 
     for (const [index, operation] of operations.entries()) {
@@ -717,7 +731,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
   it('rejects invalid UUID/query/body inputs before any upstream request', async () => {
     const authorization = signedAuthorization['normal-token'];
     const invalidRequests: Array<{
-      method: 'GET' | 'POST' | 'PATCH';
+      method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
       url: string;
       payload?: Record<string, unknown>;
     }> = [
@@ -824,6 +838,49 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
         url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}`,
         payload: { unexpected: true },
       },
+      {
+        method: 'PUT',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/not-a-uuid/credential`,
+        payload: { payload: { token: 'x' } },
+      },
+      {
+        method: 'PUT',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/credential`,
+        payload: { token: 'missing-payload-wrapper' },
+      },
+      {
+        method: 'PUT',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/credential`,
+        payload: { payload: { token: 'x' }, expiresAt: 'tomorrow' },
+      },
+      {
+        method: 'DELETE',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/not-a-uuid/credential`,
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/not-a-uuid/oauth/complete`,
+        payload: { completion: COMPLETION_ID },
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/complete`,
+        payload: { completion: 'too-short' },
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/complete`,
+        payload: { completion: `${COMPLETION_ID}!` },
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/complete`,
+        payload: { completion: COMPLETION_ID, extra: true },
+      },
+      {
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/complete`,
+      },
     ];
 
     for (const invalidRequest of invalidRequests) {
@@ -869,6 +926,26 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     expect(fixtureRequests).toHaveLength(0);
   });
 
+  it('rejects unauthenticated OAuth completion before reaching Workspace', async () => {
+    const url = `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/oauth/complete`;
+    const instance = app.getHttpAdapter().getInstance();
+    const missing = await instance.inject({
+      method: 'POST',
+      url,
+      payload: { completion: COMPLETION_ID },
+    });
+    const invalid = await instance.inject({
+      method: 'POST',
+      url,
+      headers: { authorization: 'Bearer invalid' },
+      payload: { completion: COMPLETION_ID },
+    });
+
+    expect(missing.statusCode).toBe(401);
+    expect(invalid.statusCode).toBe(401);
+    expect(fixtureRequests).toHaveLength(0);
+  });
+
   it('does not expose internal, traversal, encoded-separator, or unsupported-method routes', async () => {
     const authorization = {
       authorization: signedAuthorization['normal-token'],
@@ -895,11 +972,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
         url: `/api/v1/workspaces/${WORKSPACE_ID}`,
       },
       {
-        method: 'PUT' as const,
-        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/credential`,
-      },
-      {
-        method: 'DELETE' as const,
+        method: 'POST' as const,
         url: `/api/v1/workspaces/${WORKSPACE_ID}/connections/${CONNECTION_ID}/credential`,
       },
       {
@@ -1163,7 +1236,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     ).toBe(true);
   });
 
-  it('keeps the gateway contract to exactly seventeen Workspace method/path pairs and resolvable refs', () => {
+  it('keeps the gateway contract to exactly twenty Workspace method/path pairs and resolvable refs', () => {
     const gatewayPath = resolve(
       __dirname,
       '../../../packages/contracts/http/gateway/openapi.yaml',
@@ -1187,6 +1260,9 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       'POST /api/v1/workspaces/{workspaceId}/connections/{connectionId}/test',
       'POST /api/v1/workspaces/{workspaceId}/connections/{connectionId}/disable',
       'POST /api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/authorize',
+      'POST /api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/complete',
+      'PUT /api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential',
+      'DELETE /api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential',
     ];
     const actual = extractOperations(gatewayDocument);
 

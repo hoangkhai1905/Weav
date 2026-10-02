@@ -64,6 +64,8 @@ public final class AuthRateLimitFilter extends OncePerRequestFilter {
             case "POST" -> switch (request.getServletPath()) {
                 case "/auth/register" -> AuthRateLimiter.Scope.REGISTER_IP;
                 case "/auth/login" -> AuthRateLimiter.Scope.LOGIN_IP;
+                case "/auth/reset-password" -> AuthRateLimiter.Scope.RESET_PASSWORD_IP;
+                case "/auth/logout" -> AuthRateLimiter.Scope.LOGOUT_IP;
                 case "/auth/refresh" -> AuthRateLimiter.Scope.REFRESH_IP;
                 case "/auth/oauth/google/start" -> AuthRateLimiter.Scope.OAUTH_START_IP;
                 case "/auth/oauth/exchange" -> AuthRateLimiter.Scope.OAUTH_EXCHANGE_IP;

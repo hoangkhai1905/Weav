@@ -29,11 +29,16 @@ public interface SpringDataUserRepository extends JpaRepository<UserJpaEntity, U
 
     @Query("select user from UserJpaEntity user "
             + "where (:search = '' or "
-            + "lower(user.email) like lower(concat('%', :search, '%')) "
-            + "or lower(coalesce(user.displayName, '')) like lower(concat('%', :search, '%'))) "
+            + "lower(user.email) like lower(concat('%', :search, '%')) escape '!' "
+            + "or lower(coalesce(user.displayName, '')) like lower(concat('%', :search, '%')) escape '!') "
             + "and (:status is null or user.status = :status)")
+    /** {@code search} must already be LIKE-escaped with '!' (see {@link #escapeLike}). */
     Page<UserJpaEntity> search(
             @Param("search") String search,
             @Param("status") UserStatus status,
             Pageable pageable);
+
+    static String escapeLike(String value) {
+        return value == null ? null : value.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+    }
 }

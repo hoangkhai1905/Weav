@@ -64,6 +64,7 @@ class TestConnectionUseCaseTest {
     private final ConnectionProviderPolicy providerPolicy = new ConnectionProviderPolicy();
     private final CredentialPayloadCodec codec = new CredentialPayloadCodec(
             new tools.jackson.databind.ObjectMapper(), providerPolicy);
+    private final DirectTransactionRunner runner = new DirectTransactionRunner();
     private final CredentialCryptoPort crypto = new AesGcmCredentialCrypto(
             new CredentialEncryptionProperties(KEY, "v1"));
 
@@ -123,7 +124,7 @@ class TestConnectionUseCaseTest {
         AtomicReference<Map<String, Object>> received = new AtomicReference<>();
         RecordingProvider provider = provider(ConnectionTestResult.verified(), received);
         TestFixtures fixtures = fixtures(connection, provider, Membership.owner(WORKSPACE, OWNER));
-        byte[] encrypted = crypto.encrypt(codec.encode(connection, Map.of("token", "synthetic-token")));
+        byte[] encrypted = crypto.encrypt(codec.encode(connection, Map.of("token", "synthetic-token")), CONNECTION_ID);
         when(fixtures.credentials().findByConnectionId(CONNECTION_ID)).thenReturn(Optional.of(
                 Credential.createNew(CONNECTION_ID, encrypted, "v1", null)));
 
@@ -131,7 +132,7 @@ class TestConnectionUseCaseTest {
 
         assertEquals(ConnectionTestResult.ConnectionTestOutcome.VERIFIED, result.outcome());
         assertEquals(Map.of("token", "synthetic-token"), received.get());
-        verify(fixtures.credentials()).findByConnectionId(CONNECTION_ID);
+        verify(fixtures.credentials(), org.mockito.Mockito.times(2)).findByConnectionId(CONNECTION_ID); // phase 1 + phase 3 re-check
     }
 
     @Test
@@ -168,6 +169,53 @@ class TestConnectionUseCaseTest {
             assertEquals(List.of("connection.invalid"), fixtures.outbox().events.stream()
                     .map(WorkspaceNotificationEvent::eventType).toList());
         }
+    }
+
+    @Test
+    void providerIsCalledWithoutTransactionOrWorkspaceLock() {
+        Connection connection = connection(ConnectionStatus.DISABLED, ConnectionAuthType.NONE);
+        RecordingProvider provider = provider(ConnectionTestResult.verified(), null);
+        List<String> seen = new ArrayList<>();
+        provider.onTest = () -> seen.add(runner.depth + "/" + runner.lockTaken);
+        TestFixtures fixtures = fixtures(connection, provider, Membership.owner(WORKSPACE, OWNER));
+
+        fixtures.useCase().execute(OWNER, WORKSPACE, CONNECTION_ID);
+
+        assertEquals(List.of("0/false"), seen);
+        assertEquals(ConnectionStatus.ACTIVE, connection.getStatus());
+    }
+
+    @Test
+    void connectionChangedDuringProviderCallIsNotOverwritten() {
+        Connection connection = connection(ConnectionStatus.DISABLED, ConnectionAuthType.NONE);
+        RecordingProvider provider = provider(ConnectionTestResult.verified(), null);
+        provider.onTest = () -> connection.updateConfig(Map.of("baseUrl", "https://other.example.test"));
+        TestFixtures fixtures = fixtures(connection, provider, Membership.owner(WORKSPACE, OWNER));
+
+        assertThrows(com.weav.workspace.domain.exception.ConflictException.class,
+                () -> fixtures.useCase().execute(OWNER, WORKSPACE, CONNECTION_ID));
+
+        assertEquals(ConnectionStatus.DISABLED, connection.getStatus());
+        verify(fixtures.connections(), never()).save(any());
+        assertEquals(List.of(), fixtures.outbox().events);
+    }
+
+    @Test
+    void credentialReplacedDuringProviderCallIsNotOverwritten() {
+        Connection connection = connection(ConnectionStatus.ACTIVE, ConnectionAuthType.TOKEN);
+        RecordingProvider provider = provider(ConnectionTestResult.authInvalid(), null);
+        TestFixtures fixtures = fixtures(connection, provider, Membership.owner(WORKSPACE, OWNER));
+        byte[] encrypted = crypto.encrypt(codec.encode(connection, Map.of("token", "old")), CONNECTION_ID);
+        when(fixtures.credentials().findByConnectionId(CONNECTION_ID)).thenReturn(Optional.of(
+                Credential.createNew(CONNECTION_ID, encrypted, "v1", null)));
+        provider.onTest = () -> when(fixtures.credentials().findByConnectionId(CONNECTION_ID))
+                .thenReturn(Optional.of(Credential.createNew(CONNECTION_ID, encrypted, "v1", null)));
+
+        assertThrows(com.weav.workspace.domain.exception.ConflictException.class,
+                () -> fixtures.useCase().execute(OWNER, WORKSPACE, CONNECTION_ID));
+
+        assertEquals(ConnectionStatus.ACTIVE, connection.getStatus());
+        verify(fixtures.connections(), never()).save(any());
     }
 
     @Test
@@ -258,8 +306,8 @@ class TestConnectionUseCaseTest {
                 codec,
                 crypto,
                 (workspaceId, connectionId) -> false,
-                new DirectTransactionRunner(),
-                workspaceId -> { },
+                runner,
+                workspaceId -> runner.lockTaken = true,
                 recorder);
         return new TestFixtures(useCase, connections, credentials, provider, outbox);
     }
@@ -308,6 +356,7 @@ class TestConnectionUseCaseTest {
         private final ConnectionTestResult result;
         private final AtomicReference<Map<String, Object>> received;
         private int testCalls;
+        private Runnable onTest = () -> { };
 
         private RecordingProvider(
                 ConnectionTestResult result,
@@ -330,6 +379,7 @@ class TestConnectionUseCaseTest {
                 Connection connection,
                 Map<String, Object> decryptedCredential) {
             testCalls++;
+            onTest.run();
             if (received != null) {
                 received.set(decryptedCredential);
             }
@@ -338,14 +388,24 @@ class TestConnectionUseCaseTest {
     }
 
     private static final class DirectTransactionRunner implements TransactionRunner {
+        private int depth;
+        private boolean lockTaken;
+
         @Override
         public <T> T required(Supplier<T> work) {
-            return work.get();
+            depth++;
+            try {
+                return work.get();
+            } finally {
+                if (--depth == 0) {
+                    lockTaken = false;
+                }
+            }
         }
 
         @Override
         public <T> T requiresNew(Supplier<T> work) {
-            return work.get();
+            return required(work);
         }
     }
 }

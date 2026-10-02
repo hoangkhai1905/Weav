@@ -4,6 +4,8 @@ import com.weav.workspace.application.port.out.WorkflowConnectionUsagePort;
 import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.infrastructure.config.WorkflowServiceProperties;
 import com.weav.workspace.infrastructure.web.RequestCorrelationFilter;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClient;
@@ -15,7 +17,9 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 
 /**
@@ -33,11 +37,21 @@ public final class WorkflowConnectionUsageClient implements WorkflowConnectionUs
     private final RestClient restClient;
     private final WorkflowServiceProperties properties;
     private final ObjectMapper objectMapper;
+    private final CircuitBreaker circuitBreaker;
 
     public WorkflowConnectionUsageClient(
             RestClient restClient,
             WorkflowServiceProperties properties,
             ObjectMapper objectMapper) {
+        this(restClient, properties, objectMapper, circuitBreaker(20, 50f, 10, Duration.ofSeconds(10), 3));
+    }
+
+    public WorkflowConnectionUsageClient(
+            RestClient restClient,
+            WorkflowServiceProperties properties,
+            ObjectMapper objectMapper,
+            CircuitBreaker circuitBreaker) {
+        this.circuitBreaker = Objects.requireNonNull(circuitBreaker, "circuitBreaker must not be null");
         this.restClient = Objects.requireNonNull(restClient, "restClient must not be null");
         this.properties = Objects.requireNonNull(properties, "properties must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
@@ -51,18 +65,7 @@ public final class WorkflowConnectionUsageClient implements WorkflowConnectionUs
         URI usageUri = usageUri(workspaceId, connectionId);
         long started = System.nanoTime();
         try {
-            ResponseEnvelope response = restClient.get()
-                    .uri(usageUri)
-                    .header(INTERNAL_KEY_HEADER, serviceKey)
-                    .headers(headers -> {
-                        String requestId = RequestCorrelationFilter.currentRequestId();
-                        if (requestId != null) {
-                            headers.set(RequestCorrelationFilter.HEADER_NAME, requestId);
-                        }
-                    })
-                    .exchange((request, clientResponse) -> new ResponseEnvelope(
-                            clientResponse.getStatusCode().value(),
-                            readBounded(clientResponse.getBody())));
+            ResponseEnvelope response = callUsage(usageUri, serviceKey);
             if (response.statusCode() != 200) {
                 throw new InvalidUsageResponseException();
             }
@@ -81,6 +84,57 @@ public final class WorkflowConnectionUsageClient implements WorkflowConnectionUs
             logDependencyFailure(started);
             throw new DependencyUnavailableException();
         }
+    }
+
+    /**
+     * Fail-closed: an open breaker throws the same DependencyUnavailableException as a
+     * transport failure, so callers never treat "unknown usage" as "unused". Only transport
+     * errors, timeouts and 5xx count against the breaker.
+     */
+    private ResponseEnvelope callUsage(URI usageUri, String serviceKey) {
+        if (!circuitBreaker.tryAcquirePermission()) {
+            throw new DependencyUnavailableException();
+        }
+        long started = System.nanoTime();
+        try {
+            ResponseEnvelope response = restClient.get()
+                    .uri(usageUri)
+                    .header(INTERNAL_KEY_HEADER, serviceKey)
+                    .headers(headers -> {
+                        String requestId = RequestCorrelationFilter.currentRequestId();
+                        if (requestId != null) {
+                            headers.set(RequestCorrelationFilter.HEADER_NAME, requestId);
+                        }
+                    })
+                    .exchange((request, clientResponse) -> new ResponseEnvelope(
+                            clientResponse.getStatusCode().value(),
+                            readBounded(clientResponse.getBody())));
+            long elapsed = System.nanoTime() - started;
+            if (response.statusCode() >= 500) {
+                circuitBreaker.onError(elapsed, TimeUnit.NANOSECONDS, new IllegalStateException("5xx"));
+            } else {
+                circuitBreaker.onSuccess(elapsed, TimeUnit.NANOSECONDS);
+            }
+            return response;
+        } catch (RuntimeException exception) {
+            circuitBreaker.onError(System.nanoTime() - started, TimeUnit.NANOSECONDS, exception);
+            throw exception;
+        }
+    }
+
+    public static CircuitBreaker circuitBreaker(
+            int window, float failureRatePercent, int minimumCalls, Duration openFor, int halfOpenPermits) {
+        CircuitBreaker breaker = CircuitBreaker.of("workflow-service", CircuitBreakerConfig.custom()
+                .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
+                .slidingWindowSize(window)
+                .failureRateThreshold(failureRatePercent)
+                .minimumNumberOfCalls(minimumCalls)
+                .waitDurationInOpenState(openFor)
+                .permittedNumberOfCallsInHalfOpenState(halfOpenPermits)
+                .build());
+        breaker.getEventPublisher().onStateTransition(event ->
+                log.warn("event=workflow_circuit_breaker_transition transition={}", event.getStateTransition()));
+        return breaker;
     }
 
     private boolean parseInUse(byte[] body) {

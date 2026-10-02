@@ -127,6 +127,31 @@ export function setResponseRequestId(
   reply.header('X-Correlation-ID', requestId);
 }
 
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
+const NON_MUTATING_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * Adds the gateway-derived client IP (Fastify honours GATEWAY_TRUST_PROXY_HOPS)
+ * and, on mutations, a well-formed Idempotency-Key. Client-supplied
+ * X-Forwarded-For is never copied; it is always replaced by the derived IP.
+ */
+export function applyClientForwardingHeaders(
+  request: { headers?: Record<string, unknown>; ip?: unknown },
+  headers: Record<string, string>,
+  method: string,
+): void {
+  if (typeof request.ip === 'string' && request.ip.length > 0) {
+    headers['x-forwarded-for'] = request.ip;
+  }
+  if (NON_MUTATING_METHODS.has(method.toUpperCase())) {
+    return;
+  }
+  const idempotencyKey = readHeaderValue(request.headers, 'idempotency-key');
+  if (idempotencyKey && IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
+    headers['idempotency-key'] = idempotencyKey;
+  }
+}
+
 export function isValidTraceparent(value: unknown): value is string {
   if (typeof value !== 'string') {
     return false;
@@ -160,7 +185,24 @@ export function collectSafeUpstreamResponseHeaders(
 
 export interface UpstreamAbortHandle {
   signal: AbortSignal;
+  /** True only when the upstream deadline fired (not a client disconnect). */
+  readonly timedOut: boolean;
   cleanup(): void;
+}
+
+export const UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN = {
+  status: 504,
+  code: 'UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN',
+  message:
+    'Upstream timed out; the outcome is unknown. Retry with the same Idempotency-Key.',
+} as const;
+
+/** A write that timed out may have committed, so it gets 504, not 503. */
+export function isWriteTimeout(
+  handle: Pick<UpstreamAbortHandle, 'timedOut'>,
+  method: string,
+): boolean {
+  return handle.timedOut && !NON_MUTATING_METHODS.has(method.toUpperCase());
 }
 
 export function createUpstreamAbortHandle(
@@ -169,7 +211,9 @@ export function createUpstreamAbortHandle(
   timeoutMs: number,
 ): UpstreamAbortHandle {
   const controller = new AbortController();
+  let timedOut = false;
   const timer = setTimeout(() => {
+    timedOut = true;
     controller.abort(new Error('upstream timeout'));
   }, timeoutMs);
   const raw = request?.raw;
@@ -244,6 +288,9 @@ export function createUpstreamAbortHandle(
 
   return {
     signal: controller.signal,
+    get timedOut() {
+      return timedOut;
+    },
     cleanup: () => {
       clearTimeout(timer);
       for (const { target, event, listener } of listeners) {

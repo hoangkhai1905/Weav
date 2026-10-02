@@ -4,6 +4,7 @@ import com.weav.workspace.application.dto.ConnectionResponse;
 import com.weav.workspace.application.port.out.TransactionRunner;
 import com.weav.workspace.application.service.ConnectionViewAssembler;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
+import com.weav.workspace.domain.model.Connection;
 import com.weav.workspace.domain.model.Credential;
 import com.weav.workspace.domain.model.Membership;
 import com.weav.workspace.domain.port.out.ConnectionRepository;
@@ -11,12 +12,17 @@ import com.weav.workspace.domain.port.out.CredentialRepository;
 import com.weav.workspace.domain.port.out.MembershipRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
 @Service
 public final class ListConnectionsUseCase {
+
+    // ponytail: no paging param yet; the list is capped here. Add optional page/size when a workspace needs more.
+    static final int MAX_CONNECTIONS = 200;
 
     private final ConnectionRepository connectionRepository;
     private final MembershipRepository membershipRepository;
@@ -43,12 +49,13 @@ public final class ListConnectionsUseCase {
         return transactionRunner.required(() -> {
             Membership membership = membershipRepository.findByWorkspaceIdAndUserId(workspaceId, actorUserId)
                     .orElseThrow(() -> new ResourceNotFoundException("Workspace not found", workspaceId));
-            return connectionRepository.findAllByWorkspaceId(workspaceId).stream()
-                    .map(connection -> {
-                        Credential credential = credentialRepository.findByConnectionId(connection.getId())
-                                .orElse(null);
-                        return viewAssembler.assemble(connection, membership, credential);
-                    })
+            List<Connection> connections = connectionRepository.findAllByWorkspaceId(workspaceId, MAX_CONNECTIONS);
+            Map<UUID, Credential> credentials = new HashMap<>();
+            credentialRepository.findAllByConnectionIdIn(connections.stream().map(Connection::getId).toList())
+                    .forEach(credential -> credentials.put(credential.getConnectionId(), credential));
+            return connections.stream()
+                    .map(connection -> viewAssembler.assemble(
+                            connection, membership, credentials.get(connection.getId())))
                     .toList();
         });
     }

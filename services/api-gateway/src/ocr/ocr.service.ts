@@ -10,6 +10,14 @@ import {
   type RequestContextCarrier,
 } from '../common/request-context';
 
+// Forwarded as the x-workspace-id header, so only canonical UUIDs pass.
+const WORKSPACE_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// OCR service caps the document at 10 MiB (MAX_FILE_BYTES); allow multipart
+// framing overhead on top so a file at the cap still passes.
+export const OCR_MAX_REQUEST_BYTES = 10 * 1024 * 1024 + 64 * 1024;
+
 export interface ProxyExtractionResult {
   status: number;
   data: unknown;
@@ -117,7 +125,7 @@ export class OcrService {
     if (
       !workspaceId ||
       typeof workspaceId !== 'string' ||
-      workspaceId.trim() === ''
+      !WORKSPACE_ID_PATTERN.test(workspaceId)
     ) {
       return {
         status: 400,
@@ -184,6 +192,28 @@ export class OcrService {
       forwardHeaders['content-type'] = contentType.trim();
     }
 
+    const tooLargeResult = (): ProxyExtractionResult => ({
+      status: 413,
+      data: {
+        error: {
+          code: 'PAYLOAD_TOO_LARGE',
+          message: 'Upload exceeds the 10 MiB limit',
+          retryable: false,
+        },
+        requestId,
+      },
+      headers: errorHeaders,
+    });
+    const declaredLength = Number(
+      getRequestHeader(req?.headers, 'content-length'),
+    );
+    if (
+      Number.isFinite(declaredLength) &&
+      declaredLength > OCR_MAX_REQUEST_BYTES
+    ) {
+      return tooLargeResult();
+    }
+
     let body: unknown;
     let duplex: 'half' | undefined;
 
@@ -207,6 +237,27 @@ export class OcrService {
     } else if (isReadableStream(req?.raw)) {
       body = req.raw;
       duplex = 'half';
+    }
+
+    // Chunked uploads carry no Content-Length: count bytes while streaming.
+    let tooLarge = false;
+    if (
+      duplex &&
+      typeof (body as AsyncIterable<Uint8Array>)[Symbol.asyncIterator] ===
+        'function'
+    ) {
+      const source = body as AsyncIterable<Uint8Array>;
+      body = (async function* () {
+        let total = 0;
+        for await (const chunk of source) {
+          total += chunk.byteLength;
+          if (total > OCR_MAX_REQUEST_BYTES) {
+            tooLarge = true;
+            throw new Error('upload exceeds gateway limit');
+          }
+          yield chunk;
+        }
+      })();
     }
 
     const ocrBaseUrl = (
@@ -302,6 +353,9 @@ export class OcrService {
         headers: responseHeaders,
       };
     } catch {
+      if (tooLarge) {
+        return tooLargeResult();
+      }
       this.logger.error('OCR service upstream connection failed', {
         requestId,
       });

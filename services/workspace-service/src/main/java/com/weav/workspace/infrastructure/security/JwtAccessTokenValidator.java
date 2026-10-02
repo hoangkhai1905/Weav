@@ -26,7 +26,7 @@ public final class JwtAccessTokenValidator implements OAuth2TokenValidator<Jwt> 
     public static final String SYSTEM_ROLE_CLAIM = "system_role";
     public static final String USER_STATUS_CLAIM = "user_status";
     private static final Set<String> SYSTEM_ROLES = Set.of("USER", "ADMIN");
-    private static final Set<String> USER_STATUSES = Set.of("ACTIVE", "DISABLED");
+    private static final String ACTIVE_USER_STATUS = "ACTIVE";
 
     private static final OAuth2Error INVALID_TOKEN =
             new OAuth2Error("invalid_token", "The access token is invalid", null);
@@ -64,7 +64,7 @@ public final class JwtAccessTokenValidator implements OAuth2TokenValidator<Jwt> 
 
     private boolean hasExpectedAuthorizationClaims(Jwt token) {
         return SYSTEM_ROLES.contains(token.getClaimAsString(SYSTEM_ROLE_CLAIM))
-                && USER_STATUSES.contains(token.getClaimAsString(USER_STATUS_CLAIM));
+                && ACTIVE_USER_STATUS.equals(token.getClaimAsString(USER_STATUS_CLAIM));
     }
 
     private boolean hasValidTimeClaims(Jwt token) {

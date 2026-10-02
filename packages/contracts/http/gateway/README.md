@@ -1,7 +1,7 @@
 # API Gateway Workspace contract
 
 This directory documents the API Gateway’s public Workspace surface only. It
-contains exactly seventeen explicit operations under `/api/v1/workspaces`; the
+contains exactly twenty explicit operations under `/api/v1/workspaces`; the
 gateway does not expose the Workspace service’s service-to-service endpoints or
 any wildcard proxy route.
 
@@ -19,14 +19,16 @@ the shared 10-second abort covers upstream response-body reading and client
 disconnects. Successful responses cannot be sent after that abort; `204`
 responses remain bodyless.
 
-The eight connection operations are explicitly limited to collection and item
-metadata, test, disable, and Google authorization start. Internal, OAuth
-callback, and manual credential routes are not exposed. The OpenAPI file
+The eleven connection operations are explicitly limited to collection and item
+metadata, test, disable, Google authorization start and authenticated completion
+(`POST .../oauth/complete`), and manual credential
+replace/delete (`PUT`/`DELETE .../connections/{connectionId}/credential`).
+Internal and OAuth callback routes are not exposed. The OpenAPI file
 references the existing Workspace parameters, schemas, and business response
 contracts rather than redefining them. Gateway-generated
 validation, authentication, upstream-invalid-response, and unavailable errors
 use `GatewayErrorResponse`; valid downstream JSON/status bodies are otherwise
 passed through unchanged.
 
-The executable coverage for the nine method/path pairs and external reference
+The executable coverage for the method/path pairs and external reference
 files is in `services/api-gateway/test/workspace.e2e-spec.ts`.

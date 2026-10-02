@@ -6,12 +6,20 @@ import com.weav.workspace.domain.valueobject.ConnectionProvider;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 /** Minimal internal runtime credential. Google refresh tokens are never present. */
 public record ResolvedConnectionHttpResponse(
         ConnectionProvider provider,
         ConnectionAuthType authType,
-        Map<String, String> auth) {
+        Map<String, String> auth,
+        UUID credentialId,
+        Long credentialVersion) {
+
+    public ResolvedConnectionHttpResponse(
+            ConnectionProvider provider, ConnectionAuthType authType, Map<String, String> auth) {
+        this(provider, authType, auth, null, null);
+    }
 
     public ResolvedConnectionHttpResponse {
         Objects.requireNonNull(provider, "provider must not be null");
@@ -21,7 +29,8 @@ public record ResolvedConnectionHttpResponse(
 
     public static ResolvedConnectionHttpResponse from(ResolvedConnectionCredential credential) {
         return new ResolvedConnectionHttpResponse(
-                credential.provider(), credential.authType(), credential.auth());
+                credential.provider(), credential.authType(), credential.auth(),
+                credential.credentialId(), credential.credentialVersion());
     }
 
     @Override

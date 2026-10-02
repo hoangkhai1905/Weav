@@ -553,7 +553,9 @@ public class IdentityApplicationConfig {
             RefreshTokenGenerator refreshTokenGenerator,
             AccessTokenIssuer accessTokenIssuer,
             TransactionRunner transactionRunner,
-            Clock clock
+            Clock clock,
+            @org.springframework.beans.factory.annotation.Value("${weav.auth.refresh-reuse-grace:10s}")
+            java.time.Duration refreshReuseGrace
     ) {
         return new RefreshSessionUseCase(
                 userRepository,
@@ -561,7 +563,8 @@ public class IdentityApplicationConfig {
                 refreshTokenGenerator,
                 accessTokenIssuer,
                 transactionRunner,
-                clock
+                clock,
+                refreshReuseGrace
         );
     }
 

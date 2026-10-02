@@ -2,18 +2,20 @@ package com.weav.identity.infrastructure.security;
 
 import com.weav.identity.infrastructure.web.ApiErrorResponse;
 import jakarta.servlet.FilterChain;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.utility.DockerImageName;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -21,7 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AuthRateLimitFilterTest {
 
-    private static final Instant NOW = Instant.parse("2026-09-05T10:00:00Z");
+    private static final GenericContainer<?> VALKEY =
+            new GenericContainer<>(DockerImageName.parse("valkey/valkey:8-alpine")).withExposedPorts(6379);
+    private static LettuceConnectionFactory connectionFactory;
+    private static StringRedisTemplate redis;
     private static final String REMOTE_ADDRESS = "198.51.100.10";
 
     private ObjectMapper objectMapper;
@@ -30,8 +35,16 @@ class AuthRateLimitFilterTest {
 
     @BeforeEach
     void setUp() {
+        if (redis == null) {
+            VALKEY.start();
+            connectionFactory = new LettuceConnectionFactory(VALKEY.getHost(), VALKEY.getMappedPort(6379));
+            connectionFactory.afterPropertiesSet();
+            redis = new StringRedisTemplate(connectionFactory);
+            redis.afterPropertiesSet();
+        }
+        redis.getConnectionFactory().getConnection().serverCommands().flushDb();
         objectMapper = JsonMapper.builder().findAndAddModules().build();
-        rateLimiter = new AuthRateLimiter(Clock.fixed(NOW, ZoneOffset.UTC), 100);
+        rateLimiter = new AuthRateLimiter(redis);
         filter = new AuthRateLimitFilter(rateLimiter, objectMapper);
     }
 
@@ -57,7 +70,7 @@ class AuthRateLimitFilterTest {
 
         assertEquals(429, deniedResponse.getStatus());
         assertEquals(MediaType.APPLICATION_JSON_VALUE, deniedResponse.getContentType());
-        assertEquals("60", deniedResponse.getHeader(HttpHeaders.RETRY_AFTER));
+        assertRetryAfterNear(deniedResponse, 60);
         assertEquals("no-store", deniedResponse.getHeader(HttpHeaders.CACHE_CONTROL));
         assertEquals(5, downstreamCalls.get());
 
@@ -95,17 +108,12 @@ class AuthRateLimitFilterTest {
     }
 
     @Test
-    void passesThroughNonTargetAndLogoutRoutes() throws Exception {
+    void passesThroughNonTargetRoutes() throws Exception {
         AtomicInteger downstreamCalls = new AtomicInteger();
         FilterChain chain = countingChain(downstreamCalls);
 
         filter.doFilter(
                 request("GET", "/auth/register", REMOTE_ADDRESS),
-                new MockHttpServletResponse(),
-                chain
-        );
-        filter.doFilter(
-                request("POST", "/auth/logout", REMOTE_ADDRESS),
                 new MockHttpServletResponse(),
                 chain
         );
@@ -120,8 +128,8 @@ class AuthRateLimitFilterTest {
                 chain
         );
 
-        assertEquals(4, downstreamCalls.get());
-        assertEquals(0, rateLimiter.entryCount());
+        assertEquals(3, downstreamCalls.get());
+        assertEquals(0, redis.keys("identity:ratelimit:*").size());
     }
 
     @Test
@@ -141,7 +149,7 @@ class AuthRateLimitFilterTest {
         filter.doFilter(request("DELETE", accountPath, REMOTE_ADDRESS), deniedResponse, chain);
 
         assertEquals(429, deniedResponse.getStatus());
-        assertEquals("900", deniedResponse.getHeader(HttpHeaders.RETRY_AFTER));
+        assertRetryAfterNear(deniedResponse, 900);
         assertEquals("no-store", deniedResponse.getHeader(HttpHeaders.CACHE_CONTROL));
         assertEquals("no-referrer", deniedResponse.getHeader("Referrer-Policy"));
         assertEquals(10, downstreamCalls.get());
@@ -164,7 +172,7 @@ class AuthRateLimitFilterTest {
                 refreshDenied,
                 chain);
         assertEquals(429, refreshDenied.getStatus());
-        assertEquals("60", refreshDenied.getHeader(HttpHeaders.RETRY_AFTER));
+        assertRetryAfterNear(refreshDenied, 60);
         assertEquals("no-referrer", refreshDenied.getHeader("Referrer-Policy"));
 
         for (int attempt = 0; attempt < 10; attempt++) {
@@ -179,9 +187,35 @@ class AuthRateLimitFilterTest {
                 logoutDenied,
                 chain);
         assertEquals(429, logoutDenied.getStatus());
-        assertEquals("900", logoutDenied.getHeader(HttpHeaders.RETRY_AFTER));
+        assertRetryAfterNear(logoutDenied, 900);
         assertEquals("no-referrer", logoutDenied.getHeader("Referrer-Policy"));
         assertEquals(40, downstreamCalls.get());
+    }
+
+    @Test
+    void rateLimitsResetPasswordAndLogoutByRemoteAddress() throws Exception {
+        AtomicInteger downstreamCalls = new AtomicInteger();
+        FilterChain chain = countingChain(downstreamCalls);
+
+        assertDeniedAfter("/auth/reset-password", 10, "900", chain);
+        assertDeniedAfter("/auth/logout", 30, "60", chain);
+        assertEquals(40, downstreamCalls.get());
+    }
+
+    private void assertDeniedAfter(String path, int limit, String retryAfter, FilterChain chain) throws Exception {
+        for (int attempt = 0; attempt < limit; attempt++) {
+            filter.doFilter(request("POST", path, REMOTE_ADDRESS), new MockHttpServletResponse(), chain);
+        }
+        MockHttpServletResponse denied = new MockHttpServletResponse();
+        filter.doFilter(request("POST", path, REMOTE_ADDRESS), denied, chain);
+        assertEquals(429, denied.getStatus());
+        assertRetryAfterNear(denied, Long.parseLong(retryAfter));
+    }
+
+    /** Retry-After comes from the remaining Valkey TTL, so a slow run may see a few seconds less. */
+    private static void assertRetryAfterNear(MockHttpServletResponse response, long windowSeconds) {
+        long retry = Long.parseLong(response.getHeader(HttpHeaders.RETRY_AFTER));
+        assertTrue(retry <= windowSeconds && retry >= windowSeconds - 5, "Retry-After was " + retry);
     }
 
     private static MockHttpServletRequest request(String method, String servletPath, String remoteAddress) {
@@ -193,5 +227,11 @@ class AuthRateLimitFilterTest {
 
     private static FilterChain countingChain(AtomicInteger downstreamCalls) {
         return (request, response) -> downstreamCalls.incrementAndGet();
+    }
+
+    @AfterAll
+    static void stopValkey() {
+        if (connectionFactory != null) connectionFactory.destroy();
+        VALKEY.stop();
     }
 }

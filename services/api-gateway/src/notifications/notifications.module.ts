@@ -22,12 +22,17 @@ import { AuthPolicy } from '../auth/auth-policy.decorator';
 import {
   collectSafeUpstreamResponseHeaders,
   createUpstreamAbortHandle,
+  isWriteTimeout,
+  UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN,
   getRequestHeader,
   getRequestId,
   isValidTraceparent,
   setResponseRequestId,
   type RequestContextCarrier,
 } from '../common/request-context';
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface NotificationProxyTransportApi {
   forward(
@@ -64,7 +69,7 @@ export class NotificationProxyController {
     @Res() res: FastifyReply,
     @Param('id') id: string,
   ) {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new BadRequestException();
+    if (!UUID_PATTERN.test(id)) throw new BadRequestException();
     return this.forward(req, res, `/${id}/read`);
   }
   @Post('read-all') readAll(
@@ -128,7 +133,7 @@ export class NotificationV2ProxyController {
     @Param('id') id: string,
     @Query() query: Record<string, string>,
   ) {
-    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new BadRequestException();
+    if (!UUID_PATTERN.test(id)) throw new BadRequestException();
     return this.transport.forward(
       request,
       reply,
@@ -252,6 +257,13 @@ export class NotificationProxyTransport {
         return fail(502, 'BAD_GATEWAY', 'Invalid Notification response');
       }
     } catch {
+      if (isWriteTimeout(abortHandle, req.method)) {
+        return fail(
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.status,
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.code,
+          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.message,
+        );
+      }
       this.logger.error(`Notification upstream failed requestId=${requestId}`);
       return fail(
         503,

@@ -1,10 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  HealthIndicatorService,
-  type HealthIndicatorResult,
-} from '@nestjs/terminus';
 import type { GatewayConfig } from '../config/gateway.config';
+
+type ProbeStatus = { status: 'up' | 'down' };
 
 const READINESS_PATH = '/actuator/health/readiness';
 const READINESS_TIMEOUT_MS = 2_000;
@@ -99,40 +97,34 @@ async function readResponseBody(
 export class GatewayHealthService {
   private readonly gateway: GatewayConfig;
 
-  constructor(
-    config: ConfigService,
-    private readonly indicators: HealthIndicatorService,
-  ) {
+  constructor(config: ConfigService) {
     this.gateway = config.getOrThrow<GatewayConfig>('gateway');
   }
 
   liveness(): { status: 'ok'; details: { gateway: { status: 'up' } } } {
-    const gateway = this.indicators.check('gateway').up();
-    return {
-      status: 'ok',
-      details: { gateway: gateway.gateway },
-    };
+    return { status: 'ok', details: { gateway: { status: 'up' } } };
   }
 
-  async readiness(): Promise<GatewayHealthSnapshot> {
+  // Readiness is the gateway's own state only; an upstream outage yields 503
+  // per proxied route, not a failed probe (X-10).
+  readiness(): { status: 'ok'; details: { gateway: { status: 'up' } } } {
+    return this.liveness();
+  }
+
+  // Diagnostic fan-out to upstream readiness; not used as a probe.
+  async upstreams(): Promise<GatewayHealthSnapshot> {
     const [identity, workspace] = await Promise.all([
-      this.probe('identity', this.gateway.upstreams.identity),
-      this.probe('workspace', this.gateway.upstreams.workspace),
+      this.probe(this.gateway.upstreams.identity),
+      this.probe(this.gateway.upstreams.workspace),
     ]);
-    const details = {
-      identity: identity.identity,
-      workspace: workspace.workspace,
-    };
+    const details = { identity, workspace };
     const ready = Object.values(details).every(
       (detail) => detail.status === 'up',
     );
     return { status: ready ? 'ok' : 'error', details };
   }
 
-  private async probe(
-    name: 'identity' | 'workspace',
-    baseUrl: string,
-  ): Promise<HealthIndicatorResult> {
+  private async probe(baseUrl: string): Promise<ProbeStatus> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), READINESS_TIMEOUT_MS);
     try {
@@ -149,11 +141,9 @@ export class GatewayHealthService {
       if (controller.signal.aborted) {
         throw abortError(controller.signal);
       }
-      return response.status === 200
-        ? this.indicators.check(name).up()
-        : this.indicators.check(name).down();
+      return { status: response.status === 200 ? 'up' : 'down' };
     } catch {
-      return this.indicators.check(name).down();
+      return { status: 'down' };
     } finally {
       clearTimeout(timer);
     }

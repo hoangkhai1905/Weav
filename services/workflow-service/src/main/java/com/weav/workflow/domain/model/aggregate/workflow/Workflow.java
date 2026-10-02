@@ -26,11 +26,21 @@ public class Workflow {
     private Instant publishedAt;
     private Instant deletedAt;
     private UUID deletedBy;
+    private long revision;
 
     public Workflow(UUID id, UUID workspaceId, String name, String description, WorkflowStatus status,
                     String schemaVersion, Map<String, Object> draftDefinition, Map<String, Object> editorState,
                     UUID currentVersionId, UUID createdBy, Instant createdAt, Instant updatedAt,
                     Instant publishedAt, Instant deletedAt, UUID deletedBy) {
+        this(id, workspaceId, name, description, status, schemaVersion, draftDefinition, editorState,
+                currentVersionId, createdBy, createdAt, updatedAt, publishedAt, deletedAt, deletedBy, 0L);
+    }
+
+    public Workflow(UUID id, UUID workspaceId, String name, String description, WorkflowStatus status,
+                    String schemaVersion, Map<String, Object> draftDefinition, Map<String, Object> editorState,
+                    UUID currentVersionId, UUID createdBy, Instant createdAt, Instant updatedAt,
+                    Instant publishedAt, Instant deletedAt, UUID deletedBy, long revision) {
+        this.revision = revision;
         this.id = Objects.requireNonNull(id);
         this.workspaceId = Objects.requireNonNull(workspaceId);
         this.name = Objects.requireNonNull(name);
@@ -79,6 +89,7 @@ public class Workflow {
         this.description = description;
         this.draftDefinition = frozenDefinition;
         this.editorState = frozenEditorState;
+        this.revision++;
         touch();
     }
 
@@ -147,6 +158,7 @@ public class Workflow {
     public WorkflowStatus getStatus() { return status; }
     public String getSchemaVersion() { return schemaVersion; }
     public Map<String, Object> getDraftDefinition() { return draftDefinition; }
+    public long getRevision() { return revision; }
     public Map<String, Object> getEditorState() { return editorState; }
     public UUID getCurrentVersionId() { return currentVersionId; }
     public UUID getCreatedBy() { return createdBy; }

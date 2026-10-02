@@ -27,6 +27,7 @@ import java.util.function.Supplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -86,6 +87,8 @@ class RefreshSessionUseCaseTest {
 
         assertEquals(1, transactionRunner.invocations);
         assertEquals("replacement-refresh-hash", session.getRefreshTokenHash());
+        assertEquals(SUBMITTED_HASH, session.getPreviousRefreshTokenHash());
+        assertEquals(NOW, session.getRotatedAt());
         assertEquals(NOW, session.getLastUsedAt());
         assertEquals(absoluteExpiry, session.getExpiresAt());
         assertEquals("access-token", result.accessToken());
@@ -189,6 +192,60 @@ class RefreshSessionUseCaseTest {
         transactionTimedUseCase.execute(new RefreshTokenCommand(SUBMITTED_TOKEN));
 
         assertEquals(NOW, session.getLastUsedAt());
+    }
+
+    @Test
+    void retryWithPreviousTokenInsideGraceRotatesAgainAndKeepsSessionActive() {
+        UserSession session = rotatedSession(NOW.minusSeconds(4));
+        stubPreviousLookup(session);
+        when(refreshTokenGenerator.generate())
+                .thenReturn(new GeneratedRefreshToken("retry-refresh-token", "retry-refresh-hash"));
+        when(sessionRepository.save(session)).thenReturn(session);
+        when(accessTokenIssuer.issue(USER_ID, SESSION_ID, SystemRole.USER, UserStatus.ACTIVE))
+                .thenReturn(new IssuedAccessToken("access-token", NOW.plus(Duration.ofMinutes(15))));
+
+        TokenPairResult result = useCase.execute(new RefreshTokenCommand(SUBMITTED_TOKEN));
+
+        assertEquals("retry-refresh-token", result.refreshToken());
+        assertEquals("retry-refresh-hash", session.getRefreshTokenHash());
+        assertEquals("rotated-current-hash", session.getPreviousRefreshTokenHash());
+        assertEquals(NOW, session.getRotatedAt());
+        assertNull(session.getRevokedAt());
+    }
+
+    @Test
+    void previousTokenOutsideGraceRevokesSessionAndCommitsTheRevoke() {
+        UserSession session = rotatedSession(NOW.minusSeconds(11));
+        stubPreviousLookup(session);
+        when(sessionRepository.save(session)).thenAnswer(invocation -> {
+            assertTrue(transactionRunner.inTransaction);
+            return invocation.getArgument(0);
+        });
+
+        UnauthorizedException failure = assertUnauthorized();
+
+        assertEquals("Authentication failed", failure.getMessage());
+        assertEquals(NOW, session.getRevokedAt());
+        assertEquals("rotated-current-hash", session.getRefreshTokenHash());
+        verify(sessionRepository).save(session);
+        verify(refreshTokenGenerator, never()).generate();
+        verify(accessTokenIssuer, never()).issue(any(), any(), any(), any());
+    }
+
+    private void stubPreviousLookup(UserSession session) {
+        when(refreshTokenGenerator.hash(SUBMITTED_TOKEN)).thenReturn(SUBMITTED_HASH);
+        when(sessionRepository.findByRefreshTokenHash(SUBMITTED_HASH)).thenReturn(Optional.empty());
+        when(sessionRepository.findByPreviousRefreshTokenHash(SUBMITTED_HASH)).thenReturn(Optional.of(session));
+        when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user(UserStatus.ACTIVE)));
+        when(sessionRepository.findByRefreshTokenHashForUpdate(SUBMITTED_HASH)).thenReturn(Optional.empty());
+        when(sessionRepository.findByPreviousRefreshTokenHashForUpdate(SUBMITTED_HASH))
+                .thenReturn(Optional.of(session));
+    }
+
+    private static UserSession rotatedSession(Instant rotatedAt) {
+        return new UserSession(SESSION_ID, USER_ID, "rotated-current-hash", "test-agent", "127.0.0.1",
+                NOW.plus(Duration.ofDays(1)), null, rotatedAt, NOW.minus(Duration.ofDays(1)),
+                SUBMITTED_HASH, rotatedAt);
     }
 
     private UnauthorizedException assertUnauthorized() {

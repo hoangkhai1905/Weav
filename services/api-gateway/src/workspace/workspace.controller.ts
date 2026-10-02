@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -100,6 +101,19 @@ const updateConnectionBodySchema = z
       body.name !== undefined ||
       (body.config !== undefined && body.config !== null),
   );
+
+// Opaque single-use completion id issued by Workspace's Google callback redirect.
+const completeOAuthBodySchema = z
+  .object({ completion: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/) })
+  .strict();
+
+// Write-only provider secrets; Workspace validates provider-specific fields.
+const saveCredentialBodySchema = z
+  .object({
+    payload: z.record(z.string(), z.unknown()),
+    expiresAt: z.union([z.iso.datetime({ offset: true }), z.null()]).optional(),
+  })
+  .strict();
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
@@ -345,6 +359,42 @@ export class WorkspaceController {
     );
   }
 
+  @Put(':workspaceId/connections/:connectionId/credential')
+  saveConnectionCredential(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('connectionId') rawConnectionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const connection = workspaceId(rawConnectionId);
+    return this.proxy.forward(
+      'PUT',
+      request,
+      reply,
+      `/${workspace}/connections/${connection}/credential`,
+      { body: parse(saveCredentialBodySchema, body) },
+    );
+  }
+
+  @Delete(':workspaceId/connections/:connectionId/credential')
+  deleteConnectionCredential(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('connectionId') rawConnectionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const connection = workspaceId(rawConnectionId);
+    return this.proxy.forward(
+      'DELETE',
+      request,
+      reply,
+      `/${workspace}/connections/${connection}/credential`,
+    );
+  }
+
   @Post(':workspaceId/connections/:connectionId/oauth/authorize')
   startConnectionOAuth(
     @Param('workspaceId') rawWorkspaceId: string,
@@ -359,6 +409,25 @@ export class WorkspaceController {
       request,
       reply,
       `/${workspace}/connections/${connection}/oauth/authorize`,
+    );
+  }
+
+  @Post(':workspaceId/connections/:connectionId/oauth/complete')
+  completeConnectionOAuth(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('connectionId') rawConnectionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const connection = workspaceId(rawConnectionId);
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/${workspace}/connections/${connection}/oauth/complete`,
+      { body: parse(completeOAuthBodySchema, body) },
     );
   }
 }

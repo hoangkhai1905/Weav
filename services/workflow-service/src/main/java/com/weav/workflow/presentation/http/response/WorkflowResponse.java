@@ -23,6 +23,7 @@ public record WorkflowResponse(
         Instant createdAt,
         Instant updatedAt,
         Instant publishedAt,
+        long revision,
         List<TriggerRegistration> triggers) {
 
     public WorkflowResponse {
@@ -37,7 +38,7 @@ public record WorkflowResponse(
         return new WorkflowResponse(workflow.getId(), workflow.getName(), workflow.getDescription(),
                 workflow.getStatus(), workflow.getSchemaVersion(), workflow.getDraftDefinition(),
                 workflow.getEditorState(), workflow.getCurrentVersionId(), workflow.getCreatedAt(),
-                workflow.getUpdatedAt(), workflow.getPublishedAt(), registrations.stream()
+                workflow.getUpdatedAt(), workflow.getPublishedAt(), workflow.getRevision(), registrations.stream()
                 .map(TriggerRegistration::from).toList());
     }
 

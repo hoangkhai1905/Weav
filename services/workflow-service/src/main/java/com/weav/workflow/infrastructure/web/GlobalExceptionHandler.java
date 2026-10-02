@@ -3,6 +3,7 @@ package com.weav.workflow.infrastructure.web;
 import com.weav.workflow.domain.exception.ConflictException;
 import com.weav.workflow.domain.exception.DomainException;
 import com.weav.workflow.domain.exception.ForbiddenException;
+import com.weav.workflow.domain.exception.IdempotencyKeyReusedException;
 import com.weav.workflow.domain.exception.InvalidStateException;
 import com.weav.workflow.domain.exception.RateLimitExceededException;
 import com.weav.workflow.domain.exception.ResourceNotFoundException;
@@ -11,6 +12,7 @@ import com.weav.workflow.domain.exception.WebhookNotFoundException;
 import com.weav.workflow.domain.exception.WebhookRateLimitExceededException;
 import com.weav.workflow.domain.exception.GenerationRateLimitedException;
 import com.weav.workflow.domain.exception.AiUnavailableException;
+import com.weav.workflow.domain.exception.AiQuotaExceededException;
 import com.weav.workflow.domain.exception.AiTimeoutException;
 import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -238,7 +240,7 @@ public class GlobalExceptionHandler {
         if (exception instanceof ForbiddenException) {
             return HttpStatus.FORBIDDEN;
         }
-        if (exception instanceof InvalidStateException) {
+        if (exception instanceof InvalidStateException || exception instanceof IdempotencyKeyReusedException) {
             return HttpStatus.UNPROCESSABLE_CONTENT;
         }
         if (exception instanceof RateLimitExceededException) {
@@ -247,6 +249,7 @@ public class GlobalExceptionHandler {
         if (exception instanceof WebhookRateLimitExceededException) {
             return HttpStatus.TOO_MANY_REQUESTS;
         }
+        if (exception instanceof AiQuotaExceededException) return HttpStatus.TOO_MANY_REQUESTS;
         if (exception instanceof GenerationRateLimitedException) return HttpStatus.TOO_MANY_REQUESTS;
         if (exception instanceof AiUnavailableException) return HttpStatus.SERVICE_UNAVAILABLE;
         if (exception instanceof AiTimeoutException) return HttpStatus.GATEWAY_TIMEOUT;

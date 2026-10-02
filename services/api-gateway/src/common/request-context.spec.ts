@@ -2,6 +2,7 @@ import {
   collectSafeUpstreamResponseHeaders,
   createUpstreamAbortHandle,
   isValidTraceparent,
+  isWriteTimeout,
   resolveRequestId,
 } from './request-context';
 import { EventEmitter } from 'node:events';
@@ -111,6 +112,31 @@ describe('request context helpers', () => {
     const handle = createUpstreamAbortHandle({ raw }, undefined, 10_000);
 
     expect(handle.signal.aborted).toBe(true);
+    handle.cleanup();
+  });
+
+  it('flags a deadline as timed out and 504s only writes', () => {
+    jest.useFakeTimers();
+    try {
+      const handle = createUpstreamAbortHandle(undefined, undefined, 50);
+      expect(handle.timedOut).toBe(false);
+      jest.advanceTimersByTime(50);
+      expect(handle.timedOut).toBe(true);
+      expect(isWriteTimeout(handle, 'POST')).toBe(true);
+      expect(isWriteTimeout(handle, 'DELETE')).toBe(true);
+      expect(isWriteTimeout(handle, 'GET')).toBe(false);
+      handle.cleanup();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not flag a client disconnect as a timeout', () => {
+    const raw = new EventEmitter();
+    const handle = createUpstreamAbortHandle({ raw }, undefined, 5_000);
+    raw.emit('aborted');
+    expect(handle.signal.aborted).toBe(true);
+    expect(isWriteTimeout(handle, 'POST')).toBe(false);
     handle.cleanup();
   });
 });

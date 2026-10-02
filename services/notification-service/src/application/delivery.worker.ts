@@ -12,6 +12,7 @@ import {
 } from '../domain/notification';
 import type {
   Delivery,
+  DeliveryPatch,
   NotificationProvider,
   Provider,
 } from '../domain/notification';
@@ -56,6 +57,19 @@ export class DeliveryWorker implements OnModuleInit, OnModuleDestroy {
     );
     if (d) await this.deliver(d);
   }
+  // The provider already accepted the message: retry only this DB write, never the send.
+  // Delivery to Telegram/Expo stays at-least-once by design; if all writes fail the lease
+  // expires and the row is re-sent. No dedup store (see work log, NT-3).
+  private async persistAccepted(d: Delivery, patch: DeliveryPatch) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.repo.finish(d, patch);
+      } catch (error) {
+        if (attempt >= 3) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+      }
+    }
+  }
   async deliver(d: Delivery) {
     const provider = this.providers[d.provider];
     const receipt =
@@ -73,14 +87,14 @@ export class DeliveryWorker implements OnModuleInit, OnModuleDestroy {
           ? await provider.receipt(receipt)
           : await provider.send(d);
       if (result.kind === 'sent') {
-        await this.repo.finish(d, {
+        await this.persistAccepted(d, {
           status: 'SENT',
           sentAt: new Date(),
           scheduledAt: null,
           lastError: null,
         });
       } else {
-        await this.repo.finish(d, {
+        await this.persistAccepted(d, {
           status: 'PENDING',
           scheduledAt: new Date(Date.now() + 15 * 60000),
           lastError: null,

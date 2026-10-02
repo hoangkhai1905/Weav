@@ -113,7 +113,14 @@ class OAuthAccountControllerTest {
                 },
                 new AuthInputPolicy(),
                 mock(IdentitySecurityNotificationRecorder.class));
-        AuthRateLimiter rateLimiter = new AuthRateLimiter(clock);
+        AuthRateLimiter rateLimiter = mock(AuthRateLimiter.class);
+        java.util.concurrent.atomic.AtomicInteger sessionCalls = new java.util.concurrent.atomic.AtomicInteger();
+        org.mockito.Mockito.doAnswer(invocation -> {
+            if (sessionCalls.incrementAndGet() > 5) {
+                throw new AuthRateLimitExceededException(60);
+            }
+            return null;
+        }).when(rateLimiter).requireAllowed(eq(AuthRateLimiter.Scope.OAUTH_UNLINK_SESSION), org.mockito.ArgumentMatchers.anyString());
         OAuthCsrfTokenService csrfTokenService = new OAuthCsrfTokenService(
                 enabledConfiguration(),
                 new HmacKeyedFingerprint("controller-csrf-hmac-secret-012345678901234567"),

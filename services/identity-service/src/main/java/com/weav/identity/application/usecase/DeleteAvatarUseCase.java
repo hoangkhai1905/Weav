@@ -47,7 +47,7 @@ public final class DeleteAvatarUseCase {
         Objects.requireNonNull(sessionId, "sessionId must not be null");
         identityGuard.requireActiveUser(userId, sessionId);
 
-        String previousObjectKey = transactionRunner.required(() -> {
+        transactionRunner.required(() -> {
             User lockedUser = userRepository.findByIdForUpdate(userId)
                     .orElseThrow(() -> new UnauthorizedException(AUTHENTICATION_FAILED));
             identityGuard.requireActiveSessionForLockedUser(lockedUser, userId, sessionId);
@@ -55,19 +55,10 @@ public final class DeleteAvatarUseCase {
             if (oldObjectKey != null && !oldObjectKey.isBlank()) {
                 lockedUser.clearAvatarStorageKey(clock.instant());
                 userRepository.save(lockedUser);
+                // ID-7: the durable cleanup row commits or rolls back with the key clear.
+                cleanupReconciler.enqueue(userId, oldObjectKey);
             }
-            return oldObjectKey;
+            return null;
         });
-
-        if (previousObjectKey == null || previousObjectKey.isBlank()) {
-            return;
-        }
-        try {
-            avatarStorage.delete(userId, previousObjectKey);
-        } catch (RuntimeException cleanupFailure) {
-            cleanupReconciler.enqueue(userId, previousObjectKey);
-            log.warn("identity_avatar_cleanup_event userId={} action=DELETE_OLD result=RETRYABLE",
-                    userId);
-        }
     }
 }

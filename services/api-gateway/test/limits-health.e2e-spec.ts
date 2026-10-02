@@ -447,10 +447,35 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
     ).toBe(true);
   });
 
-  it('returns sanitized ready status for parallel upstream probes and recovers from a down service', async () => {
+  it('keeps /ready up and probe-free while an upstream is down', async () => {
+    identityState.mode = 'down';
+    const callsBefore = identityState.calls;
+    const ready = await inject(
+      {
+        method: 'GET',
+        url: '/ready',
+        headers: { 'x-request-id': 'ready-shallow' },
+      },
+      '198.51.100.30',
+    );
+    expect(ready.statusCode).toBe(200);
+    expect(ready.json()).toEqual({
+      status: 'ok',
+      requestId: 'ready-shallow',
+      details: { gateway: { status: 'up' } },
+    });
+    expect(identityState.calls).toBe(callsBefore);
+    identityState.mode = 'up';
+  });
+
+  it('returns sanitized /ready/upstreams status for parallel upstream probes and recovers from a down service', async () => {
     const startedAt = Date.now();
     const ready = await inject(
-      { method: 'GET', url: '/ready', headers: { 'x-request-id': 'ready-up' } },
+      {
+        method: 'GET',
+        url: '/ready/upstreams',
+        headers: { 'x-request-id': 'ready-up' },
+      },
       '198.51.100.17',
     );
     expect(ready.statusCode).toBe(200);
@@ -471,7 +496,7 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
 
     identityState.mode = 'down';
     const down = await inject(
-      { method: 'GET', url: '/ready' },
+      { method: 'GET', url: '/ready/upstreams' },
       '198.51.100.18',
     );
     expect(down.statusCode).toBe(503);
@@ -488,7 +513,7 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
 
     identityState.mode = 'up';
     const recovered = await inject(
-      { method: 'GET', url: '/ready' },
+      { method: 'GET', url: '/ready/upstreams' },
       '198.51.100.19',
     );
     expect(recovered.statusCode).toBe(200);
@@ -499,7 +524,7 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
     workspaceState.mode = 'up';
     const startedAt = Date.now();
     const stalled = await inject(
-      { method: 'GET', url: '/ready' },
+      { method: 'GET', url: '/ready/upstreams' },
       '198.51.100.20',
     );
     const elapsed = Date.now() - startedAt;
@@ -512,8 +537,8 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
 
     identityState.mode = 'up';
     const recovered = await Promise.all([
-      inject({ method: 'GET', url: '/ready' }, '198.51.100.21'),
-      inject({ method: 'GET', url: '/ready' }, '198.51.100.22'),
+      inject({ method: 'GET', url: '/ready/upstreams' }, '198.51.100.21'),
+      inject({ method: 'GET', url: '/ready/upstreams' }, '198.51.100.22'),
     ]);
     expect(recovered.map((response) => response.statusCode)).toEqual([
       200, 200,

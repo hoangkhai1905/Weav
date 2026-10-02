@@ -145,7 +145,7 @@ class CredentialUseCasesPersistenceIntegrationTest {
         byte[] firstRaw = rawPayload(connection.getId());
         byte[] firstPlaintext = objectMapper.writeValueAsBytes(firstPayload);
         assertThat(Arrays.equals(firstRaw, firstPlaintext)).isFalse();
-        assertThat(credentialCrypto.decrypt(firstRaw)).containsExactly(firstPlaintext);
+        assertThat(credentialCrypto.decrypt(firstRaw, credentialCrypto.currentKeyVersion(), connection.getId())).containsExactly(firstPlaintext);
         assertThat(first.getEncryptedPayload()).containsExactly(firstRaw);
 
         Map<String, Object> replacementPayload = Map.of("apiKey", "replacement-api-key");
@@ -160,7 +160,7 @@ class CredentialUseCasesPersistenceIntegrationTest {
         assertThat(replacement.getCreatedAt()).isEqualTo(first.getCreatedAt());
         assertThat(replacement.getUpdatedAt()).isAfterOrEqualTo(first.getUpdatedAt());
         assertThat(replacement.getExpiresAt()).isEqualTo(replacementExpiry);
-        assertThat(credentialCrypto.decrypt(rawPayload(connection.getId())))
+        assertThat(credentialCrypto.decrypt(rawPayload(connection.getId()), credentialCrypto.currentKeyVersion(), connection.getId()))
                 .containsExactly(objectMapper.writeValueAsBytes(replacementPayload));
 
         ConnectionResponse deleted = deleteCredentialUseCase.execute(ownerId, workspace.getId(), connection.getId());

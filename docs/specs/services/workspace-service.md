@@ -78,7 +78,8 @@ Public (user JWT):
 | POST | `.../connections/{connId}/test` | Provider verification | 502/503 on provider failure |
 | POST | `.../connections/{connId}/disable` | Manual disable | 403 |
 | POST | `.../connections/{connId}/oauth/authorize` | Server-built Google authorization URL | 400, 503 (Redis) |
-| GET | `/oauth/google/callback` | Unauthenticated; consumes one-time state, `302` to `GOOGLE_OAUTH_FRONTEND_RETURN_URL` with `oauth=success\|failed` | invalid state omits `connectionId` |
+| POST | `.../connections/{connId}/oauth/complete` | Bearer; body `{completion}`. Atomically consumes the single-use completion id, requires jwt `sub`, workspace and connection to match the user who started the flow, then exchanges the code (PKCE verifier), verifies Google and stores the encrypted credential | 400, 409 (unknown/expired/replayed/mismatched: one uniform response), 403/404 (access lost), 503 |
+| GET | `/oauth/google/callback` | Unauthenticated; consumes one-time state, parks the code under a random 256-bit completion id (`GOOGLE_OAUTH_COMPLETION_TTL`), stores no credential, `302` to `GOOGLE_OAUTH_FRONTEND_RETURN_URL` with `oauth=pending&completion=<id>&connectionId=<id>` or `oauth=failed&reason=` | invalid state omits `connectionId` |
 | GET | `/actuator/health`, `/actuator/health/**` | Unauthenticated health/liveness/readiness | - |
 
 Internal (header `X-Internal-Service-Key`; caller is Workflow):
@@ -88,9 +89,11 @@ Internal (header `X-Internal-Service-Key`; caller is Workflow):
 | GET | `/internal/workspaces/{ws}/users/{user}/access` | Role + capability snapshot |
 | POST | `/internal/workspaces/{ws}/connections/{conn}/authorize-attachment` | `204` if the member may attach the connection |
 | POST | `/internal/workspaces/{ws}/connections/{conn}/resolve` | Minimum runtime auth for an ACTIVE connection; `Cache-Control: no-store`; never returns a Google refresh token |
-| POST | `/internal/workspaces/{ws}/connections/{conn}/auth-failure` | `204`; confirmed provider authentication rejection -> `INVALID` |
+| POST | `/internal/workspaces/{ws}/connections/{conn}/auth-failure` | `204`; confirmed provider authentication rejection -> `INVALID`; optional `credentialId`/`credentialVersion` (from `resolve`, epoch-millis `updatedAt`) that no longer match the current credential make the report a no-op |
 
-Gateway exposure: [gateway openapi](../../../packages/contracts/http/gateway/openapi.yaml) lists workspace, member and connection routes (get/patch/delete, test, disable, oauth/authorize) but has no `credential` PUT/DELETE route (0 mentions of "credential"), so the web client cannot yet set manual credentials through the Gateway (Gateway is partner-owned: handoff needed).
+Gateway exposure: [gateway openapi](../../../packages/contracts/http/gateway/openapi.yaml) lists workspace, member and connection routes (get/patch/delete, test, disable, credential PUT/DELETE, oauth/authorize, oauth/complete); 20 operations in total.
+
+Google connect (authenticated completion, WS-6): `authorize` stores the PKCE `code_verifier` only in the Redis pending state (`workspace:oauth-state:*`) and sends the S256 challenge to Google. The public callback never touches the database: it consumes the state and saves `{state, code}` in Redis (`workspace:oauth-completion:*`, GETDEL-equivalent Lua on consume) under a SecureRandom 256-bit base64url id. The web app, signed in, posts the id to `oauth/complete`; the code exchange, Google verification and credential write happen only there, with the provider calls outside the final DB transaction. A browser that follows an attacker's Google URL therefore cannot attach a victim's tokens to the attacker's connection.
 
 ## Events and messaging
 
@@ -133,7 +136,7 @@ Names and defaults only; see the [README table](../../../services/workspace-serv
 | --- | --- | --- |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` | port `5432` | Neon datasource (no default for the rest) |
 | `DB_SSL_MODE`, `DB_SCHEMA` | `require`, `workspace` | SSL mode; service schema |
-| `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` | none (required) | Access verification key (>=32 bytes); refresh secret only for config parity |
+| `JWT_ACCESS_SECRET` | none (required) | Access verification key (>=32 bytes). Tokens must carry `user_status=ACTIVE`; DISABLED or missing -> 401. The refresh secret is not used here |
 | `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_CLOCK_SKEW` | `weav-identity`, `weav-api`, `30s` | JWT verification |
 | `WEAV_INTERNAL_SERVICE_KEY` | empty | Key accepted on Workspace internal routes |
 | `IDENTITY_SERVICE_URL`, `IDENTITY_INTERNAL_SERVICE_KEY` | `http://localhost:8081`, empty | Identity directory client |
@@ -149,12 +152,14 @@ Names and defaults only; see the [README table](../../../services/workspace-serv
 | `GOOGLE_OAUTH_REDIRECT_URI` | service `http://localhost:8080/oauth/google/callback`; Compose/.env.example `http://localhost:8082/oauth/google/callback` | Callback registered with Google |
 | `GOOGLE_OAUTH_FRONTEND_RETURN_URL` | service `http://localhost:3000/connections`; Compose/.env.example `http://localhost:5173/connections` | Post-consent redirect |
 | `GOOGLE_OAUTH_STATE_TTL` | `PT10M` | One-time state lifetime |
+| `GOOGLE_OAUTH_COMPLETION_TTL` | `PT5M` (1 s - 10 min) | Lifetime of the parked callback code before authenticated completion |
 
 ## Non-functional requirements
 
 - Timeouts: Identity and Workflow HTTP connect 3 s / read 5 s; RabbitMQ connect 3 s; publisher confirm 5 s; Hikari pool max 3, connection timeout 10 s, max lifetime 5 min (Neon limits).
 - Caching: cache-aside authorization snapshot `workspace:authz:{ws}:{user}` (TTL 5 min), evicted after commit with generation fencing; Valkey outage falls back to PostgreSQL. If eviction fails, stale value may live until TTL (no instant revocation claim). OAuth flow fails closed without Valkey.
 - Consistency: workspace/connection mutations take a workspace mutation lock; outbox row is written in the same transaction as the mutation; provider calls and Workflow checks stay outside the final transaction.
+- Transaction boundaries (no remote I/O under a DB transaction or the workspace lock): `TestConnection` = short read tx (authorize, validate, decrypt, snapshot auth type/config/credential id+updatedAt) -> provider call with no tx -> short write tx under the lock that re-checks the snapshot (changed => 409 `Connection changed while it was being tested`, nothing written). `AddMember` = owner pre-check tx -> Identity lookup with no tx -> lock + owner re-check + membership insert tx (unique constraint remains the backstop). `ListMembers` = short read tx (authorize + candidates) -> Identity calls with no tx -> short tx for the workspace-owned-sort page.
 - Idempotency/retries: outbox at-least-once with backoff; transient provider errors do not change connection status.
 - Observability: `/actuator/health` (liveness `livenessState`, readiness `readinessState`+`db`, details shown), `/actuator/info`; `X-Correlation-Id` echoed as `requestId`; sanitized structured error diagnostics. No metrics endpoint exposed.
 - Rate limiting: none in-service (Gateway concern). No paging limit beyond 100.

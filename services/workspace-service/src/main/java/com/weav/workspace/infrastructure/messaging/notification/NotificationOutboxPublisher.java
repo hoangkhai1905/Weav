@@ -42,6 +42,7 @@ public final class NotificationOutboxPublisher {
     private final int batchSize;
     private final Duration confirmTimeout;
     private final Duration maxRetryDelay;
+    private final int maxAttempts;
 
     public NotificationOutboxPublisher(
             JdbcTemplate jdbcTemplate,
@@ -51,7 +52,8 @@ public final class NotificationOutboxPublisher {
             @Value("${NOTIFICATION_EXCHANGE:weav.events}") String exchange,
             @Value("${weav.workspace.notification-outbox.batch-size:25}") int batchSize,
             @Value("${weav.workspace.notification-outbox.confirm-timeout:PT5S}") Duration confirmTimeout,
-            @Value("${weav.workspace.notification-outbox.max-retry-delay:PT60S}") Duration maxRetryDelay) {
+            @Value("${weav.workspace.notification-outbox.max-retry-delay:PT60S}") Duration maxRetryDelay,
+            @Value("${weav.workspace.notification-outbox.max-attempts:10}") int maxAttempts) {
         this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate);
         this.rabbitTemplate = Objects.requireNonNull(rabbitTemplate);
         this.transactionTemplate = new TransactionTemplate(Objects.requireNonNull(transactionManager));
@@ -64,6 +66,10 @@ public final class NotificationOutboxPublisher {
         this.batchSize = batchSize;
         this.confirmTimeout = Objects.requireNonNull(confirmTimeout);
         this.maxRetryDelay = Objects.requireNonNull(maxRetryDelay);
+        this.maxAttempts = maxAttempts;
+        if (maxAttempts < 1 || maxAttempts > 1000) {
+            throw new IllegalArgumentException("Workspace notification outbox bounds are invalid");
+        }
         if (batchSize < 1 || batchSize > 250 || confirmTimeout.toMillis() < 1
                 || confirmTimeout.compareTo(MAX_CONFIRM_TIMEOUT) > 0
                 || maxRetryDelay.toMillis() < 1
@@ -98,7 +104,7 @@ public final class NotificationOutboxPublisher {
 
     private boolean dispatchOne() {
         return jdbcTemplate.query("select event_id, event_type, payload::text, attempts from " + table
-                        + " where published_at is null and next_attempt_at <= current_timestamp "
+                        + " where published_at is null and failed_at is null and next_attempt_at <= current_timestamp "
                         + "order by next_attempt_at, created_at, event_id for update skip locked limit 1",
                 resultSet -> {
                     if (!resultSet.next()) {
@@ -152,6 +158,16 @@ public final class NotificationOutboxPublisher {
     }
 
     private void scheduleRetry(UUID eventId, int attempts, String failureCode) {
+        if (attempts + 1 >= maxAttempts) {
+            // WS-13: terminal FAILED state; the row is kept for inspection and never retried.
+            jdbcTemplate.update("update " + table
+                            + " set attempts = attempts + 1, failed_at = current_timestamp, last_failure_code = ? "
+                            + "where event_id = ? and published_at is null and failed_at is null",
+                    failureCode, eventId);
+            LOGGER.error("Workspace notification outbox event {} marked FAILED after {} attempts ({})",
+                    eventId, attempts + 1, failureCode);
+            return;
+        }
         long exponent = Math.min(Math.max(attempts, 0), 20);
         long delayMillis = Math.min(1_000L << exponent, maxRetryDelay.toMillis());
         jdbcTemplate.update("update " + table

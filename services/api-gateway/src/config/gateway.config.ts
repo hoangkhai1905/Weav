@@ -141,12 +141,26 @@ const environmentSchema = z.object({
   GATEWAY_GENERAL_RATE_LIMIT: positiveIntegerEnvironmentSchema(120),
   GATEWAY_AUTH_RATE_LIMIT: positiveIntegerEnvironmentSchema(10),
   GATEWAY_OCR_RATE_LIMIT: positiveIntegerEnvironmentSchema(10),
+  GATEWAY_WEBHOOK_RATE_LIMIT: positiveIntegerEnvironmentSchema(60),
   GATEWAY_RATE_LIMIT_WINDOW_MS: positiveIntegerEnvironmentSchema(60_000),
+  // Empty keeps the in-memory throttler storage (single replica / tests).
+  GATEWAY_THROTTLER_REDIS_URL: z
+    .string()
+    .trim()
+    .regex(/^rediss?:\/\//)
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+  // Number of trusted reverse-proxy hops in front of the gateway; 0 trusts none.
+  GATEWAY_TRUST_PROXY_HOPS: z.preprocess(
+    (value) => (value === undefined ? 0 : value),
+    z.coerce.number().int().min(0).max(10),
+  ),
 });
 
 export interface GatewayConfig {
   appEnv: 'development' | 'test' | 'production';
   port: number;
+  trustProxyHops: number;
   upstreams: {
     identity: string;
     workspace: string;
@@ -170,7 +184,9 @@ export interface GatewayConfig {
     generalPerMinute: number;
     authPerMinute: number;
     ocrPerMinute: number;
+    webhookPerMinute: number;
     windowMs: number;
+    throttlerRedisUrl?: string;
   };
   ocr: {
     allowUnauthenticatedDev: boolean;
@@ -288,6 +304,7 @@ export function validateGatewayEnvironment(
   return {
     appEnv,
     port: parsed.data.PORT,
+    trustProxyHops: parsed.data.GATEWAY_TRUST_PROXY_HOPS,
     upstreams: {
       identity: parsed.data.IDENTITY_SERVICE_URL,
       workspace: parsed.data.WORKSPACE_SERVICE_URL,
@@ -306,7 +323,9 @@ export function validateGatewayEnvironment(
       generalPerMinute: parsed.data.GATEWAY_GENERAL_RATE_LIMIT,
       authPerMinute: parsed.data.GATEWAY_AUTH_RATE_LIMIT,
       ocrPerMinute: parsed.data.GATEWAY_OCR_RATE_LIMIT,
+      webhookPerMinute: parsed.data.GATEWAY_WEBHOOK_RATE_LIMIT,
       windowMs: parsed.data.GATEWAY_RATE_LIMIT_WINDOW_MS,
+      throttlerRedisUrl: parsed.data.GATEWAY_THROTTLER_REDIS_URL,
     },
     ocr: {
       allowUnauthenticatedDev: parsed.data.OCR_ALLOW_UNAUTHENTICATED_DEV,

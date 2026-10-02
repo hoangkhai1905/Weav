@@ -5,6 +5,7 @@ import com.weav.workflow.application.port.out.ExecutionStatePort;
 import com.weav.workflow.application.notification.WorkflowNotificationEvent;
 import com.weav.workflow.application.port.out.WorkflowNotificationOutboxPort;
 import com.weav.workflow.domain.definition.JsonValues;
+import com.weav.workflow.domain.definition.NodeSideEffects;
 import com.weav.workflow.domain.definition.WorkflowDefinition;
 import com.weav.workflow.domain.execution.GraphState;
 import com.weav.workflow.domain.model.aggregate.execution.ExecutionLog;
@@ -17,6 +18,8 @@ import com.weav.workflow.domain.valueobject.ExecutionTriggerType;
 import com.weav.workflow.domain.valueobject.LogLevel;
 import com.weav.workflow.domain.valueobject.NodeExecutionStatus;
 import com.weav.workflow.infrastructure.definition.DefinitionJsonCodec;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -45,12 +48,18 @@ import java.util.regex.Pattern;
 /** PostgreSQL lease fencing, execution snapshots, and bounded recovery claims. */
 @Repository
 public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecoveryPort {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ExecutionStateAdapter.class);
     private static final Pattern SQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private static final String RECOVERY_AGGREGATE = "WORKFLOW_EXECUTION";
     private static final String RECOVERY_EVENT = "EXECUTION_REQUESTED";
     private static final int MAX_LEASE_MILLIS = 86_400_000;
     private static final String LEGACY_ERROR = "{\"code\":\"LEGACY_STATE_UNRECOVERABLE\","
             + "\"message\":\"Persisted execution state could not be recovered.\"}";
+    private static final String RECOVERY_EXHAUSTED_ERROR = "{\"code\":\"RECOVERY_EXHAUSTED\","
+            + "\"message\":\"The run was interrupted and recovered too many times, so it was stopped.\"}";
+    private static final String OUTCOME_UNKNOWN_ERROR = "{\"code\":\"OUTCOME_UNKNOWN\","
+            + "\"message\":\"The worker stopped while this step was calling an external service. "
+            + "The call may or may not have happened, so it was not repeated.\"}";
     private static final String INTERRUPTED_ERROR = "{\"code\":\"WORKER_INTERRUPTED\","
             + "\"message\":\"The worker stopped before the node attempt completed.\"}";
 
@@ -68,16 +77,19 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     private final String logTable;
     private final String outboxTable;
     private final WorkflowNotificationOutboxPort notificationOutbox;
+    private final int maxRecoveries;
 
     public ExecutionStateAdapter(JdbcTemplate jdbc, ObjectMapper objectMapper,
                                  @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema) {
-        this(jdbc, objectMapper, schema, event -> { });
+        this(jdbc, objectMapper, schema, event -> { }, 5);
     }
 
     @Autowired
     public ExecutionStateAdapter(JdbcTemplate jdbc, ObjectMapper objectMapper,
                                  @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema,
-                                 WorkflowNotificationOutboxPort notificationOutbox) {
+                                 WorkflowNotificationOutboxPort notificationOutbox,
+                                 @Value("${weav.workflow.execution.max-recoveries:5}") int maxRecoveries) {
+        this.maxRecoveries = maxRecoveries;
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.notificationOutbox = Objects.requireNonNull(notificationOutbox, "notificationOutbox must not be null");
@@ -131,23 +143,32 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
             return Optional.empty();
         }
 
-        List<Long> tokens = jdbc.query("""
+        List<long[]> tokens = jdbc.query("""
                 UPDATE %s
                 SET lease_owner = ?, lease_token = lease_token + 1,
                     lease_until = CURRENT_TIMESTAMP + (? * INTERVAL '1 millisecond'),
-                    status = 'RUNNING', started_at = COALESCE(started_at, CURRENT_TIMESTAMP)
+                    status = 'RUNNING', started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
+                    recovery_count = recovery_count + CASE WHEN status = 'RUNNING' THEN 1 ELSE 0 END
                 WHERE id = ? AND status IN ('QUEUED', 'RUNNING')
                   AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)
-                RETURNING lease_token
-                """.formatted(executionTable), (rs, rowNum) -> rs.getLong(1), owner, leaseMillis, executionId);
+                RETURNING lease_token, recovery_count
+                """.formatted(executionTable), (rs, rowNum) -> new long[] {rs.getLong(1), rs.getLong(2)},
+                owner, leaseMillis, executionId);
         if (tokens.isEmpty()) {
+            return Optional.empty();
+        }
+        if (tokens.getFirst()[1] > maxRecoveries) {
+            // WF-9: a run that keeps crashing at run level must not be re-queued forever.
+            LOGGER.warn("Execution {} exhausted its {} crash recoveries and was failed", executionId, maxRecoveries);
+            failExecution(executionId, RECOVERY_EXHAUSTED_ERROR);
+            recordTerminalNotification(executionId, ExecutionStatus.FAILED, Instant.now());
             return Optional.empty();
         }
 
         if (ExecutionStatus.RUNNING.name().equals(row.status())) {
             recordInterruptedAttempts(executionId);
         }
-        return Optional.of(new Lease(executionId, owner, tokens.getFirst()));
+        return Optional.of(new Lease(executionId, owner, tokens.getFirst()[0]));
     }
 
     @Override
@@ -293,25 +314,28 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
             persistLog(lease.executionId(), log);
         }
         if (transition.status() == ExecutionStatus.SUCCESS || transition.status() == ExecutionStatus.FAILED) {
-            TerminalRecipient recipient = jdbc.queryForObject("""
-                    SELECT e.workflow_id, w.workspace_id, w.name, w.created_by, e.trigger_type, e.triggered_by
-                    FROM %s e JOIN %s w ON w.id = e.workflow_id
-                    WHERE e.id = ?
-                    """.formatted(executionTable, workflowTable), (rs, rowNum) -> new TerminalRecipient(
-                    rs.getObject("workflow_id", UUID.class), rs.getObject("workspace_id", UUID.class),
-                    rs.getString("name"),
-                    rs.getObject("created_by", UUID.class), rs.getString("trigger_type"),
-                    rs.getObject("triggered_by", UUID.class)), lease.executionId());
-            boolean manual = "MANUAL".equals(recipient.triggerType());
-            UUID actor = manual ? recipient.triggeredBy() : null;
-            UUID candidate = manual ? recipient.triggeredBy() : recipient.createdBy();
-            String eventType = transition.status() == ExecutionStatus.SUCCESS
-                    ? "workflow.completed" : "workflow.failed";
-            notificationOutbox.record(WorkflowNotificationEvent.terminal(eventType, recipient.workspaceId(),
-                    actor, candidate, lease.executionId(), recipient.workflowId(),
-                    recipient.workflowName(), transition.finishedAt()));
+            recordTerminalNotification(lease.executionId(), transition.status(), transition.finishedAt());
         }
         return true;
+    }
+
+    private void recordTerminalNotification(UUID executionId, ExecutionStatus status, Instant finishedAt) {
+        TerminalRecipient recipient = jdbc.queryForObject("""
+                SELECT e.workflow_id, w.workspace_id, w.name, w.created_by, e.trigger_type, e.triggered_by
+                FROM %s e JOIN %s w ON w.id = e.workflow_id
+                WHERE e.id = ?
+                """.formatted(executionTable, workflowTable), (rs, rowNum) -> new TerminalRecipient(
+                rs.getObject("workflow_id", UUID.class), rs.getObject("workspace_id", UUID.class),
+                rs.getString("name"),
+                rs.getObject("created_by", UUID.class), rs.getString("trigger_type"),
+                rs.getObject("triggered_by", UUID.class)), executionId);
+        boolean manual = "MANUAL".equals(recipient.triggerType());
+        UUID actor = manual ? recipient.triggeredBy() : null;
+        UUID candidate = manual ? recipient.triggeredBy() : recipient.createdBy();
+        String eventType = status == ExecutionStatus.SUCCESS ? "workflow.completed" : "workflow.failed";
+        notificationOutbox.record(WorkflowNotificationEvent.terminal(eventType, recipient.workspaceId(),
+                actor, candidate, executionId, recipient.workflowId(),
+                recipient.workflowName(), finishedAt));
     }
 
     @Override
@@ -527,6 +551,26 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     }
 
     private void recordInterruptedAttempts(UUID executionId) {
+        // Side-effecting nodes (derived from the stored node type and config) must not be re-run blindly:
+        // the external call may already have happened, so they fail with OUTCOME_UNKNOWN instead of retrying.
+        List<UUID> outcomeUnknown = jdbc.query("""
+                SELECT id, node_type, input::text AS input_json FROM %s
+                WHERE execution_id = ? AND status = 'RUNNING'
+                """.formatted(nodeTable), (rs, rowNum) -> NodeSideEffects.isSideEffecting(
+                        rs.getString("node_type"), jsonObject(rs.getString("input_json")))
+                        ? rs.getObject("id", UUID.class) : null, executionId).stream()
+                .filter(Objects::nonNull).toList();
+        for (UUID nodeId : outcomeUnknown) {
+            jdbc.update("""
+                    UPDATE %s SET status = 'FAILED', error = CAST(? AS jsonb), finished_at = CURRENT_TIMESTAMP
+                    WHERE node_execution_id = ? AND status = 'RUNNING'
+                    """.formatted(attemptTable), OUTCOME_UNKNOWN_ERROR, nodeId);
+            jdbc.update("""
+                    UPDATE %s SET status = 'FAILED', error = CAST(? AS jsonb),
+                        next_attempt_at = NULL, finished_at = CURRENT_TIMESTAMP
+                    WHERE id = ? AND status = 'RUNNING'
+                    """.formatted(nodeTable), OUTCOME_UNKNOWN_ERROR, nodeId);
+        }
         jdbc.update("""
                 UPDATE %s a SET status = 'FAILED', error = CAST(? AS jsonb), finished_at = CURRENT_TIMESTAMP
                 FROM %s n
@@ -547,22 +591,26 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     }
 
     private void failLegacyState(UUID executionId) {
+        failExecution(executionId, LEGACY_ERROR);
+    }
+
+    private void failExecution(UUID executionId, String errorJson) {
         jdbc.update("""
                 UPDATE %s a SET status = 'FAILED', error = CAST(? AS jsonb), finished_at = CURRENT_TIMESTAMP
                 FROM %s n
                 WHERE n.execution_id = ? AND a.node_execution_id = n.id AND a.status = 'RUNNING'
-                """.formatted(attemptTable, nodeTable), LEGACY_ERROR, executionId);
+                """.formatted(attemptTable, nodeTable), errorJson, executionId);
         jdbc.update("""
                 UPDATE %s SET status = 'FAILED', error = CAST(? AS jsonb),
                     next_attempt_at = NULL, finished_at = CURRENT_TIMESTAMP
                 WHERE execution_id = ? AND status NOT IN ('SUCCESS', 'SKIPPED', 'FAILED', 'CANCELLED')
-                """.formatted(nodeTable), LEGACY_ERROR, executionId);
+                """.formatted(nodeTable), errorJson, executionId);
         jdbc.update("""
                 UPDATE %s SET status = 'FAILED', error = CAST(? AS jsonb),
                     finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP),
                     lease_owner = NULL, lease_until = NULL
                 WHERE id = ? AND status IN ('QUEUED', 'RUNNING')
-                """.formatted(executionTable), LEGACY_ERROR, executionId);
+                """.formatted(executionTable), errorJson, executionId);
     }
 
     private void validateTransition(Transition transition) {

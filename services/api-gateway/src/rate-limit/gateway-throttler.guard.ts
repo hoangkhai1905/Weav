@@ -72,6 +72,17 @@ export function isOcrRequest(request: GatewayRateLimitRequest): boolean {
   );
 }
 
+const WEBHOOK_PATH_PATTERN = /^\/api\/v1\/webhooks\/([^/]+)$/;
+
+export function webhookEndpointKey(
+  request: GatewayRateLimitRequest,
+): string | undefined {
+  if (request.method?.toUpperCase() !== 'POST') {
+    return undefined;
+  }
+  return WEBHOOK_PATH_PATTERN.exec(requestPath(request))?.[1];
+}
+
 export function isPublicAuthMutation(
   request: GatewayRateLimitRequest,
 ): boolean {
@@ -81,13 +92,15 @@ export function isPublicAuthMutation(
   );
 }
 
-function socketAddress(request: GatewayRateLimitRequest): string {
+function clientAddress(request: GatewayRateLimitRequest): string {
+  // Fastify's request.ip honours GATEWAY_TRUST_PROXY_HOPS; without trusted
+  // hops it equals the socket address.
+  if (typeof request.ip === 'string' && request.ip.length > 0) {
+    return request.ip;
+  }
   const rawAddress = request.raw?.socket?.remoteAddress;
   if (typeof rawAddress === 'string' && rawAddress.length > 0) {
     return rawAddress;
-  }
-  if (typeof request.ip === 'string' && request.ip.length > 0) {
-    return request.ip;
   }
   return 'unknown';
 }
@@ -163,7 +176,7 @@ export class GatewayThrottlerGuard extends ThrottlerGuard {
     if (isOcrRequest(request) && request.principal?.sub) {
       return Promise.resolve(`subject:${request.principal.sub}`);
     }
-    return Promise.resolve(`ip:${socketAddress(request)}`);
+    return Promise.resolve(`ip:${clientAddress(request)}`);
   }
 
   protected generateKey(

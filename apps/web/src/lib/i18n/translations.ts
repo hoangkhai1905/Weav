@@ -606,6 +606,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
       "Xóa kết nối này? Các quy trình đang dùng có thể bị ảnh hưởng.",
     "connections.oauth.start": "Kết nối Google",
     "connections.oauth.starting": "Đang mở Google…",
+    "connections.oauth.completing": "Đang hoàn tất kết nối Google…",
     "connections.oauth.returned":
       "Đã quay lại từ Google. Hãy kiểm tra trạng thái kết nối bên dưới.",
     "connections.oauth.context_missing":
@@ -1925,6 +1926,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
       "Delete this connection? Workflows using it may be affected.",
     "connections.oauth.start": "Connect Google",
     "connections.oauth.starting": "Opening Google…",
+    "connections.oauth.completing": "Completing the Google connection…",
     "connections.oauth.returned":
       "Authorization returned from Google. Check the connection status below.",
     "connections.oauth.context_missing":

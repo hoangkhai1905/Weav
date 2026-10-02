@@ -38,6 +38,7 @@ class WorkspaceContractValidationTest {
             "disableConnection",
             "startGoogleConnectionOAuth",
             "completeGoogleConnectionOAuth",
+            "completeGoogleConnectionOAuthAuthenticated",
             "authorizeConnectionAttachment",
             "resolveConnectionCredential",
             "reportConnectionAuthFailure");
@@ -105,7 +106,8 @@ class WorkspaceContractValidationTest {
                 "createConnection", "listConnections", "getConnection", "updateConnection",
                 "deleteConnection", "saveConnectionCredential", "deleteConnectionCredential",
                 "testConnection", "disableConnection", "startGoogleConnectionOAuth",
-                "completeGoogleConnectionOAuth", "authorizeConnectionAttachment",
+                "completeGoogleConnectionOAuth", "completeGoogleConnectionOAuthAuthenticated",
+                "authorizeConnectionAttachment",
                 "resolveConnectionCredential", "reportConnectionAuthFailure"));
 
         Map<String, Object> connectionProperties = map(map(schemas, "ConnectionResponse"), "properties");
@@ -120,8 +122,11 @@ class WorkspaceContractValidationTest {
         Map<String, Object> callbackResponses = map(callback, "responses");
         assertThat(callbackResponses).containsKey("302");
         String callbackDescription = map(callbackResponses, "302").get("description").toString();
-        assertThat(callbackDescription).contains("state_invalid", "authorization_denied",
-                "authorization_changed", "token_exchange_failed", "verification_failed");
+        assertThat(callbackDescription).contains("oauth=pending", "state_invalid", "authorization_denied",
+                "token_exchange_failed");
+        Map<String, Object> authenticated = operations.get("completeGoogleConnectionOAuthAuthenticated");
+        assertThat(map(authenticated, "responses")).containsKeys("200", "403", "409");
+        assertThat(schemas).containsKey("CompleteOAuthRequest");
         Map<String, Object> startResponse = map(
                 map(operations.get("startGoogleConnectionOAuth"), "responses"), "200");
         assertThat(map(startResponse, "headers")).containsKey("Cache-Control");

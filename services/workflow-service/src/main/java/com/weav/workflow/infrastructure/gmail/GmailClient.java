@@ -148,7 +148,7 @@ public class GmailClient {
         if (status == 429) {
             // Google refused the request before sending, so a retry cannot duplicate the email.
             throw new NodeExecutor.Failure("HTTP_RATE_LIMITED",
-                    "The Gmail provider rate limited the request.", true);
+                    "The Gmail provider rate limited the request.", true, true);
         }
         if (status == 403) {
             throw new NodeExecutor.Failure("HTTP_BUSINESS_REJECTED",

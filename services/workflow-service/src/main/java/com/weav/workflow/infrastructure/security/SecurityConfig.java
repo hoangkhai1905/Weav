@@ -65,7 +65,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/prometheus").permitAll()
                         .requestMatchers(HttpMethod.HEAD, INTERNAL_USAGE_PATH).denyAll()
                         .requestMatchers(HttpMethod.GET, INTERNAL_USAGE_PATH).permitAll()
                         .requestMatchers(HttpMethod.POST, WEBHOOK_PATH).permitAll()
@@ -138,8 +138,28 @@ public class SecurityConfig {
     }
 
     @Bean
-    public WorkspaceClient workspaceClient(WorkspaceClientProperties properties, ObjectMapper objectMapper) {
-        return new WorkspaceClient(properties, objectMapper);
+    public WorkspaceClient workspaceClient(
+            WorkspaceClientProperties properties,
+            ObjectMapper objectMapper,
+            @Value("${weav.workflow.workspace-client.circuit-breaker.window-size:20}") int window,
+            @Value("${weav.workflow.workspace-client.circuit-breaker.failure-rate-percent:50}") float failureRate,
+            @Value("${weav.workflow.workspace-client.circuit-breaker.minimum-calls:10}") int minimumCalls,
+            @Value("${weav.workflow.workspace-client.circuit-breaker.open-duration:10s}") java.time.Duration openFor,
+            @Value("${weav.workflow.workspace-client.circuit-breaker.half-open-permits:3}") int halfOpenPermits,
+            @Value("${weav.workflow.workspace-client.access-cache-ttl:30s}") java.time.Duration accessCacheTtl,
+            // Same RS256 key pair as the AI client; the signer is only built when the key is configured.
+            @Value("${weav.workflow.ai.key-id:}") String signingKeyId,
+            @Value("${weav.workflow.ai.private-key-location:}") String signingKeyLocation,
+            org.springframework.core.io.ResourceLoader resourceLoader) {
+        ServiceJwtSigner signer = signingKeyId.isBlank() || signingKeyLocation.isBlank() ? null
+                : new ServiceJwtSigner(resourceLoader, signingKeyId, signingKeyLocation, java.time.Duration.ofSeconds(60));
+        return new WorkspaceClient(
+                properties,
+                objectMapper,
+                WorkspaceClient.circuitBreaker(window, failureRate, minimumCalls, openFor, halfOpenPermits),
+                accessCacheTtl,
+                com.github.benmanes.caffeine.cache.Ticker.systemTicker(),
+                signer);
     }
 
     @Bean
@@ -206,7 +226,7 @@ public class SecurityConfig {
 
         private static final String ACCESS_TOKEN_USE = "access";
         private static final Set<String> SYSTEM_ROLES = Set.of("USER", "ADMIN");
-        private static final Set<String> USER_STATUSES = Set.of("ACTIVE", "DISABLED");
+        private static final String ACTIVE_USER_STATUS = "ACTIVE";
         private static final OAuth2Error INVALID_TOKEN =
                 new OAuth2Error("invalid_token", "The access token is invalid", null);
 
@@ -243,7 +263,7 @@ public class SecurityConfig {
 
         private boolean hasExpectedAuthorizationClaims(Jwt token) {
             return SYSTEM_ROLES.contains(token.getClaimAsString("system_role"))
-                    && USER_STATUSES.contains(token.getClaimAsString("user_status"));
+                    && ACTIVE_USER_STATUS.equals(token.getClaimAsString("user_status"));
         }
 
         private boolean hasValidTimeClaims(Jwt token) {

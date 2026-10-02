@@ -64,7 +64,7 @@ class ExecutionRecoveryTest {
     private static final String DEFINITION = """
             {"schemaVersion":"1.0","nodes":[
               {"id":"root","type":"trigger.manual","config":{}},
-              {"id":"action","type":"action.telegram","config":{}}],
+              {"id":"action","type":"http.request","config":{}}],
              "edges":[{"id":"root-action","source":"root","target":"action"}],"variables":{}}
             """;
 
@@ -141,6 +141,7 @@ class ExecutionRecoveryTest {
         jdbc.update("update workflow.workflow_executions set lease_until = CURRENT_TIMESTAMP - INTERVAL '1 second' "
                 + "where id = ?", fixture.executionId());
         jdbc.update("update workflow.node_executions set status = 'RUNNING', attempt_count = 1, "
+                + "input = cast('{\"method\":\"GET\"}' as jsonb), "
                 + "started_at = CURRENT_TIMESTAMP where execution_id = ? and node_id = 'action'",
                 fixture.executionId());
         jdbc.update("insert into workflow.node_execution_attempts "
@@ -303,7 +304,7 @@ class ExecutionRecoveryTest {
         jdbc.update("insert into workflow.node_executions "
                         + "(id, execution_id, node_id, node_type, status, attempt_count, created_at) "
                         + "values (?, ?, 'root', 'trigger.manual', 'PENDING', 0, CURRENT_TIMESTAMP), "
-                        + "(?, ?, 'action', 'action.telegram', 'PENDING', 0, CURRENT_TIMESTAMP)",
+                        + "(?, ?, 'action', 'http.request', 'PENDING', 0, CURRENT_TIMESTAMP)",
                 triggerNodeId, executionId, actionNodeId, executionId);
         return new Fixture(workspaceId, workflowId, versionId, executionId);
     }

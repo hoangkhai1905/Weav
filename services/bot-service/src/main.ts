@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import {
   FastifyAdapter,
@@ -10,6 +11,7 @@ async function bootstrap() {
     AppModule,
     new FastifyAdapter(),
   );
+  app.enableShutdownHooks();
 
   const port = Number(process.env.PORT ?? 3000);
 
@@ -19,4 +21,9 @@ async function bootstrap() {
   });
 }
 
-bootstrap();
+bootstrap().catch((error: unknown) => {
+  new Logger('bootstrap').error(
+    `bot-service failed to start: ${(error as Error)?.constructor?.name}`,
+  );
+  process.exit(1);
+});

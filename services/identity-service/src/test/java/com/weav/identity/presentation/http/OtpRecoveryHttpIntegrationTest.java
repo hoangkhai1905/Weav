@@ -3,11 +3,13 @@ package com.weav.identity.presentation.http;
 import com.weav.identity.TestcontainersConfiguration;
 import com.weav.identity.presentation.http.response.TokenResponse;
 import com.weav.identity.presentation.http.response.UserResponse;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -59,6 +61,15 @@ class OtpRecoveryHttpIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private StringRedisTemplate redis;
+
+    // Rate-limit counters now live in Valkey and outlive the per-test Spring context.
+    @BeforeEach
+    void resetRateLimits() {
+        redis.delete(redis.keys("identity:ratelimit:*"));
+    }
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3))

@@ -7,6 +7,7 @@ import com.weav.workflow.application.port.out.ScheduleValidationPort;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
 import com.weav.workflow.domain.definition.DefinitionValidator;
 import com.weav.workflow.domain.definition.NodeCatalog;
+import com.weav.workflow.domain.exception.AiQuotaExceededException;
 import com.weav.workflow.domain.exception.AiTimeoutException;
 import com.weav.workflow.domain.exception.AiUnavailableException;
 import com.weav.workflow.domain.exception.GenerationRateLimitedException;
@@ -57,6 +58,7 @@ public class WorkflowGenerationService {
         Map<String, Object> result;
         try { result = ai.generate(workspaceId, payload); }
         catch (NodeExecutor.Failure failure) {
+            if ("AI_QUOTA_EXCEEDED".equals(failure.code())) throw new AiQuotaExceededException();
             if ("AI_TIMEOUT".equals(failure.code()) || "TIMEOUT".equals(failure.code())) throw new AiTimeoutException();
             throw new AiUnavailableException();
         }

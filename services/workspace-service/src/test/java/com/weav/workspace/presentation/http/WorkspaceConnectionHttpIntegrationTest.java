@@ -85,7 +85,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @ExtendWith(OutputCaptureExtension.class)
 class WorkspaceConnectionHttpIntegrationTest {
 
-    private static final String INTERNAL_KEY = "test-workspace-key";
+    private static final String INTERNAL_KEY = "test-workspace-key-0123456789-abcdefghij";
     private static final String ACCESS_TOKEN = "access-token-fixture";
     private static final String REFRESH_TOKEN = "refresh-token-fixture";
     private static final String TELEGRAM_SECRET = "telegram-secret-123";
@@ -244,19 +244,22 @@ class WorkspaceConnectionHttpIntegrationTest {
         assertEquals(401, request("POST", internalPath + "/resolve", null, null, null).statusCode());
         assertEquals(401, request("POST", internalPath + "/resolve", null, "wrong-service-key", null).statusCode());
 
-        HttpResponse<String> callback = request(
-                "GET", "/oauth/google/callback?state=" + state + "&code=synthetic-code", null, null, null);
-        assertEquals(302, callback.statusCode());
-        URI successLocation = URI.create(callback.headers().firstValue("Location").orElseThrow());
-        Map<String, String> successQuery = queryParameters(successLocation);
-        assertEquals("success", successQuery.get("oauth"));
-        assertEquals(connectionId.toString(), successQuery.get("connectionId"));
-        assertEquals("localhost", successLocation.getHost());
-        assertEquals("/connections", successLocation.getPath());
-        assertThat(successLocation.toString()).doesNotContain(state, "synthetic-code");
-        assertEquals("no-store", callback.headers().firstValue("Cache-Control").orElseThrow());
-        assertFalse(successLocation.toString().contains(ACCESS_TOKEN));
-        assertFalse(successLocation.toString().contains(REFRESH_TOKEN));
+        String completion = pendingCompletion(state, "synthetic-code", connectionId);
+        // The callback alone persists nothing: the browser is not yet bound to a user.
+        assertThat(credentialRepository.findByConnectionId(connectionId)).isEmpty();
+        assertEquals(ConnectionStatus.DISABLED,
+                connectionRepository.findByWorkspaceIdAndId(workspace.getId(), connectionId)
+                        .orElseThrow().getStatus());
+        assertEquals(401, request("POST", connectionPath + "/oauth/complete", null, null,
+                "{\"completion\":\"" + completion + "\"}").statusCode());
+        assertEquals(400, complete(ownerId, connectionId, "short").statusCode());
+
+        HttpResponse<String> completed = complete(ownerId, connectionId, completion);
+        assertEquals(200, completed.statusCode());
+        assertEquals("no-store", completed.headers().firstValue("Cache-Control").orElseThrow());
+        assertEquals("VERIFIED", json(completed).path("outcome").asText());
+        assertThat(completed.body()).doesNotContain(ACCESS_TOKEN, REFRESH_TOKEN, completion);
+        assertEquals(409, complete(ownerId, connectionId, completion).statusCode());
         assertEquals(ConnectionStatus.ACTIVE,
                 connectionRepository.findByWorkspaceIdAndId(workspace.getId(), connectionId)
                         .orElseThrow().getStatus());
@@ -265,7 +268,7 @@ class WorkspaceConnectionHttpIntegrationTest {
         String ciphertext = new String(credential.getEncryptedPayload(), StandardCharsets.UTF_8);
         assertFalse(ciphertext.contains(ACCESS_TOKEN));
         assertFalse(ciphertext.contains(REFRESH_TOKEN));
-        String plaintext = new String(credentialCrypto.decrypt(credential.getEncryptedPayload()),
+        String plaintext = new String(credentialCrypto.decrypt(credential.getEncryptedPayload(), credential.getEncryptionKeyVersion(), credential.getConnectionId()),
                 StandardCharsets.UTF_8);
         assertTrue(plaintext.contains(ACCESS_TOKEN));
         assertTrue(plaintext.contains(REFRESH_TOKEN));
@@ -318,7 +321,7 @@ class WorkspaceConnectionHttpIntegrationTest {
     }
 
     @Test
-    void callbackMapsDenialExchangeAndVerificationFailuresToSafeRedirectsWithoutJwt() throws Exception {
+    void callbackDenialRedirectsSafelyAndCompletionFailuresAreSafe() throws Exception {
         UUID deniedConnectionId = createGoogleConnection(ownerId, "Denied account");
         String deniedState = startOAuth(ownerId, deniedConnectionId);
         HttpResponse<String> denied = request(
@@ -332,24 +335,21 @@ class WorkspaceConnectionHttpIntegrationTest {
         UUID exchangeFailureConnectionId = createGoogleConnection(ownerId, "Exchange failure account");
         String exchangeFailureState = startOAuth(ownerId, exchangeFailureConnectionId);
         String exchangeFailureCode = "synthetic-exchange-failure-code";
-        HttpResponse<String> exchangeFailure = request(
-                "GET", "/oauth/google/callback?state=" + exchangeFailureState
-                        + "&code=" + exchangeFailureCode,
-                null, null, null);
-        assertSafeCallbackFailure(
-                exchangeFailure, "token_exchange_failed", exchangeFailureConnectionId,
-                exchangeFailureCode, "private-token-endpoint-detail");
+        HttpResponse<String> exchangeFailure = complete(ownerId, exchangeFailureConnectionId,
+                pendingCompletion(exchangeFailureState, exchangeFailureCode, exchangeFailureConnectionId));
+        assertSafeCompletionFailure(exchangeFailure, 503, exchangeFailureCode, "private-token-endpoint-detail");
+        assertEquals(ConnectionStatus.DISABLED,
+                connectionRepository.findByWorkspaceIdAndId(workspace.getId(), exchangeFailureConnectionId)
+                        .orElseThrow().getStatus());
 
         UUID verificationFailureConnectionId = createGoogleConnection(ownerId, "Verification failure account");
         String verificationFailureState = startOAuth(ownerId, verificationFailureConnectionId);
         String verificationFailureCode = "synthetic-verification-failure-code";
-        HttpResponse<String> verificationFailure = request(
-                "GET", "/oauth/google/callback?state=" + verificationFailureState
-                        + "&code=" + verificationFailureCode,
-                null, null, null);
-        assertSafeCallbackFailure(
-                verificationFailure, "verification_failed", verificationFailureConnectionId,
-                verificationFailureCode, "private-verification-detail");
+        HttpResponse<String> verificationFailure = complete(ownerId, verificationFailureConnectionId,
+                pendingCompletion(verificationFailureState, verificationFailureCode,
+                        verificationFailureConnectionId));
+        assertSafeCompletionFailure(
+                verificationFailure, 503, verificationFailureCode, "private-verification-detail");
     }
 
     @Test
@@ -363,13 +363,12 @@ class WorkspaceConnectionHttpIntegrationTest {
             membershipRepository.delete(membership);
             return Boolean.TRUE;
         }));
-        HttpResponse<String> removedMemberCallback = request(
-                "GET", "/oauth/google/callback?state=" + memberState + "&code=synthetic-code",
-                null, null, null);
-        assertSafeCallbackFailure(
-                removedMemberCallback, "authorization_changed", memberConnectionId,
-                "synthetic-code", "access-token-fixture", "refresh-token-fixture");
+        HttpResponse<String> removedMemberCompletion = complete(memberId, memberConnectionId,
+                pendingCompletion(memberState, "synthetic-code", memberConnectionId));
+        assertThat(removedMemberCompletion.statusCode()).isIn(403, 404);
+        assertThat(removedMemberCompletion.body()).doesNotContain("synthetic-code", "access-token-fixture");
         assertThat(membershipRepository.findByWorkspaceIdAndUserId(workspace.getId(), memberId)).isEmpty();
+        assertThat(credentialRepository.findByConnectionId(memberConnectionId)).isEmpty();
 
         HttpResponse<String> removedMemberReplay = request(
                 "GET", "/oauth/google/callback?state=" + memberState + "&code=synthetic-code",
@@ -378,25 +377,46 @@ class WorkspaceConnectionHttpIntegrationTest {
 
         UUID persistenceFailureConnectionId = createGoogleConnection(ownerId, "Persistence failure account");
         String persistenceFailureState = startOAuth(ownerId, persistenceFailureConnectionId);
+        String persistenceCompletion = pendingCompletion(
+                persistenceFailureState, "synthetic-code", persistenceFailureConnectionId);
         faultingConnections.failNextSave();
-        HttpResponse<String> persistenceFailure = request(
-                "GET", "/oauth/google/callback?state=" + persistenceFailureState
-                        + "&code=synthetic-code",
-                null, null, null);
-        assertSafeCallbackFailure(
-                persistenceFailure, "authorization_changed", persistenceFailureConnectionId,
-                "synthetic-code", "synthetic-persistence-private-detail",
-                "access-token-fixture", "refresh-token-fixture");
+        HttpResponse<String> persistenceFailure = complete(
+                ownerId, persistenceFailureConnectionId, persistenceCompletion);
+        assertSafeCompletionFailure(persistenceFailure, 503, "synthetic-code",
+                "synthetic-persistence-private-detail", "access-token-fixture", "refresh-token-fixture");
         assertEquals(ConnectionStatus.DISABLED,
                 connectionRepository.findByWorkspaceIdAndId(workspace.getId(), persistenceFailureConnectionId)
                         .orElseThrow().getStatus());
         assertThat(credentialRepository.findByConnectionId(persistenceFailureConnectionId)).isEmpty();
+        assertEquals(409, complete(ownerId, persistenceFailureConnectionId, persistenceCompletion).statusCode());
+    }
 
-        HttpResponse<String> persistenceFailureReplay = request(
-                "GET", "/oauth/google/callback?state=" + persistenceFailureState
-                        + "&code=synthetic-code",
-                null, null, null);
-        assertInvalidStateWithoutConnectionId(persistenceFailureReplay);
+    @Test
+    void tokenOfADisabledUserIsRejectedWith401() throws Exception {
+        String path = "http://127.0.0.1:" + port + "/workspace/workspaces/" + workspace.getId() + "/connections";
+        for (String status : new String[] {"ACTIVE", "DISABLED"}) {
+            HttpResponse<String> response = HTTP.send(HttpRequest.newBuilder()
+                    .uri(URI.create(path))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Authorization", "Bearer " + signedToken(ownerId, status))
+                    .GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals("ACTIVE".equals(status) ? 200 : 401, response.statusCode(), status);
+        }
+    }
+
+    @Test
+    void completionByAnotherUserIsRejectedUniformlyAndBurnsTheCompletion() throws Exception {
+        UUID connectionId = createGoogleConnection(ownerId, "Bound account");
+        String completion = pendingCompletion(startOAuth(ownerId, connectionId), "synthetic-code", connectionId);
+
+        // memberId stands in for a victim whose browser followed the attacker's Google URL.
+        HttpResponse<String> victim = complete(memberId, connectionId, completion);
+        // Same status as an unknown id, so a mismatch reveals nothing about the record.
+        assertEquals(409, victim.statusCode());
+        assertThat(victim.body()).doesNotContain(completion, ACCESS_TOKEN, REFRESH_TOKEN);
+        assertThat(credentialRepository.findByConnectionId(connectionId)).isEmpty();
+        assertEquals(409, complete(ownerId, connectionId, completion).statusCode());
+        assertThat(credentialRepository.findByConnectionId(connectionId)).isEmpty();
     }
 
     @Test
@@ -466,7 +486,7 @@ class WorkspaceConnectionHttpIntegrationTest {
         var stored = credentialRepository.findByConnectionId(connectionId).orElseThrow();
         String ciphertext = new String(stored.getEncryptedPayload(), StandardCharsets.UTF_8);
         assertThat(ciphertext).doesNotContain(TELEGRAM_SECRET, TELEGRAM_REPLACEMENT_SECRET);
-        String plaintext = new String(credentialCrypto.decrypt(stored.getEncryptedPayload()), StandardCharsets.UTF_8);
+        String plaintext = new String(credentialCrypto.decrypt(stored.getEncryptedPayload(), stored.getEncryptionKeyVersion(), connectionId), StandardCharsets.UTF_8);
         assertThat(plaintext).contains(TELEGRAM_REPLACEMENT_SECRET).doesNotContain(TELEGRAM_SECRET);
         assertThat(output.getAll()).doesNotContain(TELEGRAM_SECRET, TELEGRAM_REPLACEMENT_SECRET);
     }
@@ -490,17 +510,12 @@ class WorkspaceConnectionHttpIntegrationTest {
                 .doesNotContain(TELEGRAM_SECRET, HTTP_PASSWORD_SECRET, GOOGLE_ACCESS_SECRET, GOOGLE_REFRESH_SECRET);
 
         String code = "synthetic-sheets-code";
-        HttpResponse<String> callback = request(
-                "GET", "/oauth/google/callback?state=" + state + "&code=" + code, null, null, null);
-        assertEquals(302, callback.statusCode());
-        assertEquals("no-store", callback.headers().firstValue("Cache-Control").orElseThrow());
-        URI successLocation = URI.create(callback.headers().firstValue("Location").orElseThrow());
-        assertEquals("success", queryParameters(successLocation).get("oauth"));
-        assertEquals(connectionId.toString(), queryParameters(successLocation).get("connectionId"));
-        assertThat(successLocation.toString()).doesNotContain(
-                state, code, GOOGLE_ACCESS_SECRET, GOOGLE_REFRESH_SECRET);
-        assertThat(callback.body()).isEmpty();
+        String completion = pendingCompletion(state, code, connectionId);
         assertThat(redis.keys("workspace:oauth-state:*")).isEmpty();
+        assertThat(credentialRepository.findByConnectionId(connectionId)).isEmpty();
+        HttpResponse<String> completed = complete(ownerId, connectionId, completion);
+        assertEquals(200, completed.statusCode());
+        assertThat(completed.body()).doesNotContain(GOOGLE_ACCESS_SECRET, GOOGLE_REFRESH_SECRET, code, completion);
         assertEquals(ConnectionStatus.ACTIVE,
                 connectionRepository.findByWorkspaceIdAndId(workspace.getId(), connectionId)
                         .orElseThrow().getStatus());
@@ -508,7 +523,7 @@ class WorkspaceConnectionHttpIntegrationTest {
         var stored = credentialRepository.findByConnectionId(connectionId).orElseThrow();
         String ciphertext = new String(stored.getEncryptedPayload(), StandardCharsets.UTF_8);
         assertThat(ciphertext).doesNotContain(GOOGLE_ACCESS_SECRET, GOOGLE_REFRESH_SECRET);
-        String plaintext = new String(credentialCrypto.decrypt(stored.getEncryptedPayload()), StandardCharsets.UTF_8);
+        String plaintext = new String(credentialCrypto.decrypt(stored.getEncryptedPayload(), stored.getEncryptionKeyVersion(), connectionId), StandardCharsets.UTF_8);
         assertThat(plaintext).contains(GOOGLE_ACCESS_SECRET, GOOGLE_REFRESH_SECRET, "spreadsheets")
                 .doesNotContain("gmail.metadata");
 
@@ -541,12 +556,10 @@ class WorkspaceConnectionHttpIntegrationTest {
         String failedState = startOAuth(ownerId, failedConnectionId);
         String failedCode = "synthetic-sheets-verification-failure-code";
         googleOAuth.failNextVerification();
-        HttpResponse<String> failedCallback = request(
-                "GET", "/oauth/google/callback?state=" + failedState + "&code=" + failedCode,
-                null, null, null);
-        assertSafeCallbackFailure(
-                failedCallback, "verification_failed", failedConnectionId,
-                failedState, failedCode, GOOGLE_ACCESS_SECRET, GOOGLE_REFRESH_SECRET);
+        HttpResponse<String> failedCompletion = complete(ownerId, failedConnectionId,
+                pendingCompletion(failedState, failedCode, failedConnectionId));
+        assertSafeCompletionFailure(
+                failedCompletion, 503, failedState, failedCode, GOOGLE_ACCESS_SECRET, GOOGLE_REFRESH_SECRET);
         assertEquals(ConnectionStatus.DISABLED,
                 connectionRepository.findByWorkspaceIdAndId(workspace.getId(), failedConnectionId)
                         .orElseThrow().getStatus());
@@ -619,7 +632,8 @@ class WorkspaceConnectionHttpIntegrationTest {
         assertThat(connectionRepository.findByWorkspaceIdAndId(workspace.getId(), connectionId)).isPresent();
         assertThat(credentialRepository.findByConnectionId(connectionId)).isPresent();
         String plaintext = new String(credentialCrypto.decrypt(
-                credentialRepository.findByConnectionId(connectionId).orElseThrow().getEncryptedPayload()),
+                credentialRepository.findByConnectionId(connectionId).orElseThrow().getEncryptedPayload(),
+                credentialRepository.findByConnectionId(connectionId).orElseThrow().getEncryptionKeyVersion(), connectionId),
                 StandardCharsets.UTF_8);
         assertThat(plaintext).contains(HTTP_PASSWORD_REPLACEMENT_SECRET).doesNotContain(HTTP_PASSWORD_SECRET);
         assertThat(output.getAll()).doesNotContain(HTTP_PASSWORD_SECRET, HTTP_PASSWORD_REPLACEMENT_SECRET);
@@ -648,6 +662,37 @@ class WorkspaceConnectionHttpIntegrationTest {
                 actorId, null, null);
         assertEquals(200, authorization.statusCode());
         return queryParameter(URI.create(json(authorization).path("authorizationUrl").asText()), "state");
+    }
+
+    /** Drives the public callback and returns the completion id from the pending redirect. */
+    private String pendingCompletion(String state, String code, UUID expectedConnectionId) throws Exception {
+        HttpResponse<String> callback = request(
+                "GET", "/oauth/google/callback?state=" + state + "&code=" + code, null, null, null);
+        assertEquals(302, callback.statusCode());
+        assertEquals("no-store", callback.headers().firstValue("Cache-Control").orElseThrow());
+        assertThat(callback.body()).isEmpty();
+        URI location = URI.create(callback.headers().firstValue("Location").orElseThrow());
+        assertEquals("localhost", location.getHost());
+        assertEquals("/connections", location.getPath());
+        Map<String, String> query = queryParameters(location);
+        assertEquals("pending", query.get("oauth"));
+        assertEquals(expectedConnectionId.toString(), query.get("connectionId"));
+        assertThat(query.keySet()).containsExactlyInAnyOrder("oauth", "completion", "connectionId");
+        assertThat(query.get("completion")).matches("[A-Za-z0-9_-]{43}");
+        assertThat(location.toString()).doesNotContain(state, code, ACCESS_TOKEN, REFRESH_TOKEN);
+        return query.get("completion");
+    }
+
+    private HttpResponse<String> complete(UUID actorId, UUID connectionId, String completion) throws Exception {
+        return request(
+                "POST", "/workspaces/" + workspace.getId() + "/connections/" + connectionId + "/oauth/complete",
+                actorId, null, "{\"completion\":\"" + completion + "\"}");
+    }
+
+    private void assertSafeCompletionFailure(
+            HttpResponse<String> response, int expectedStatus, String... forbiddenValues) {
+        assertEquals(expectedStatus, response.statusCode());
+        assertThat(response.body()).doesNotContain(forbiddenValues);
     }
 
     private void assertSafeCallbackFailure(
@@ -707,6 +752,10 @@ class WorkspaceConnectionHttpIntegrationTest {
     }
 
     private String signedToken(UUID subject) {
+        return signedToken(subject, "ACTIVE");
+    }
+
+    private String signedToken(UUID subject, String userStatus) {
         SecretKey key = new SecretKeySpec(jwtProperties.accessSecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256");
         NimbusJwtEncoder encoder = NimbusJwtEncoder.withSecretKey(key).algorithm(MacAlgorithm.HS256).build();
         Instant issuedAt = Instant.now().minusSeconds(5);
@@ -720,7 +769,7 @@ class WorkspaceConnectionHttpIntegrationTest {
                 .id(UUID.randomUUID().toString())
                 .claim("sid", UUID.randomUUID().toString())
                 .claim("system_role", "USER")
-                .claim("user_status", "ACTIVE")
+                .claim("user_status", userStatus)
                 .claim("token_use", "access")
                 .build();
         return encoder.encode(JwtEncoderParameters.from(
@@ -796,12 +845,12 @@ class WorkspaceConnectionHttpIntegrationTest {
         }
 
         @Override
-        public String authorizationUrl(ConnectionProvider provider, String state) {
+        public String authorizationUrl(ConnectionProvider provider, String state, String codeChallenge) {
             return "https://accounts.google.com/o/oauth2/v2/auth?provider=" + provider.name() + "&state=" + state;
         }
 
         @Override
-        public GoogleOAuthTokenResponse exchangeAuthorizationCode(String code) {
+        public GoogleOAuthTokenResponse exchangeAuthorizationCode(String code, String codeVerifier) {
             Runnable exchangeHook = beforeExchange.getAndSet(null);
             if (exchangeHook != null) {
                 exchangeHook.run();

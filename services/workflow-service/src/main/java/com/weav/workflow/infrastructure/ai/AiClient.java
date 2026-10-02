@@ -23,7 +23,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 @Component
@@ -35,12 +37,14 @@ public class AiClient implements AiGenerationPort {
     private static final Set<String> DEPENDENCY = Set.of("AI_NOT_CONFIGURED", "AI_PROVIDER_AUTH", "UNAUTHENTICATED", "FORBIDDEN");
     private static final Set<String> CONFIGURATION = Set.of("INVALID_REQUEST", "AI_SCHEMA_INVALID", "PAYLOAD_TOO_LARGE");
     private static final Pattern TRACEPARENT = Pattern.compile("^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$");
+    private static final Pattern CORRELATION_ID = Pattern.compile("^[A-Za-z0-9._:-]{1,128}$");
 
     private final AiClientProperties properties;
     private final ServiceJwtSigner signer;
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final Consumer<UUID> quota;
 
     protected AiClient() {
         properties = null;
@@ -48,21 +52,28 @@ public class AiClient implements AiGenerationPort {
         restClient = null;
         objectMapper = null;
         clock = null;
+        quota = null;
     }
 
     @Autowired
     public AiClient(AiClientProperties properties, @Qualifier("aiServiceJwtSigner") ServiceJwtSigner signer,
-                    @Qualifier("aiRestClient") RestClient restClient, ObjectMapper objectMapper) {
-        this(properties, signer, restClient, objectMapper, Clock.systemUTC());
+                    @Qualifier("aiRestClient") RestClient restClient, ObjectMapper objectMapper, AiQuota quota) {
+        this(properties, signer, restClient, objectMapper, Clock.systemUTC(), quota::consume);
     }
 
     AiClient(AiClientProperties properties, ServiceJwtSigner signer, RestClient restClient,
              ObjectMapper objectMapper, Clock clock) {
+        this(properties, signer, restClient, objectMapper, clock, workspaceId -> { });
+    }
+
+    AiClient(AiClientProperties properties, ServiceJwtSigner signer, RestClient restClient,
+             ObjectMapper objectMapper, Clock clock, Consumer<UUID> quota) {
         this.properties = Objects.requireNonNull(properties, "properties must not be null");
         this.signer = Objects.requireNonNull(signer, "signer must not be null");
         this.restClient = Objects.requireNonNull(restClient, "restClient must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.quota = Objects.requireNonNull(quota, "quota must not be null");
     }
 
     public Map<String, Object> execute(NodeExecutor.Context context, String operation, Map<String, Object> payload) {
@@ -70,20 +81,29 @@ public class AiClient implements AiGenerationPort {
         claims.put("mode", "execution");
         claims.put("execution_id", context.executionId().toString());
         claims.put("node_execution_id", context.nodeExecutionId().toString());
-        return call(context.workspaceId(), operation, payload, claims, context.traceparent(), properties.enabled());
+        return call(context.workspaceId(), operation, payload, claims, context.traceparent(), properties.enabled(),
+                requestId(context), context.correlationId());
+    }
+
+    /** AI-1: the same execution/node/attempt always yields the same id, so ai-service can dedup a retried call. */
+    static UUID requestId(NodeExecutor.Context context) {
+        return UUID.nameUUIDFromBytes((context.executionId() + ":" + context.nodeId() + ":" + context.attemptNumber())
+                .getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
     public Map<String, Object> generate(UUID workspaceId, Map<String, Object> payload) {
-        return call(workspaceId, "generate", payload, Map.of("mode", "generation"), null, properties.generationEnabled());
+        return call(workspaceId, "generate", payload, Map.of("mode", "generation"), null,
+                properties.generationEnabled(), UUID.randomUUID(), null);
     }
 
     private Map<String, Object> call(UUID workspaceId, String operation, Map<String, Object> payload,
-                                     Map<String, Object> modeClaims, String traceparent, boolean enabled) {
+                                     Map<String, Object> modeClaims, String traceparent, boolean enabled,
+                                     UUID requestId, String correlationId) {
         if (!enabled) {
             throw new NodeExecutor.Failure("DEPENDENCY_NOT_CONFIGURED", "AI is not enabled.", false);
         }
-        UUID requestId = UUID.randomUUID();
+        quota.accept(workspaceId);
         Map<String, Object> claims = new LinkedHashMap<>(modeClaims);
         claims.put("scope", "ai:" + operation);
         claims.put("workspace_id", workspaceId.toString());
@@ -109,6 +129,10 @@ public class AiClient implements AiGenerationPort {
                         headers.setContentType(MediaType.APPLICATION_JSON);
                         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
                         headers.set("X-Request-ID", requestId.toString());
+                        // X-15: the execution's stored correlation id, when it is safe for ai-service to accept.
+                        if (correlationId != null && CORRELATION_ID.matcher(correlationId).matches()) {
+                            headers.set("X-Correlation-ID", correlationId);
+                        }
                         if (traceparent != null && TRACEPARENT.matcher(traceparent).matches()) {
                             headers.set("traceparent", traceparent);
                         }

@@ -38,12 +38,14 @@ describe('workflow gateway routes', () => {
   afterAll(async () => app.close());
 
   it('forwards list pagination to the Workflow Service path', async () => {
-    const request = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        JSON.stringify({ items: [], page: 1, size: 20, totalElements: 0 }),
-        { headers: { 'content-type': 'application/json' } },
-      ),
-    );
+    const request = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ items: [], page: 1, size: 20, totalElements: 0 }),
+          { headers: { 'content-type': 'application/json' } },
+        ),
+      );
 
     const response = await app.inject({
       url: `/api/v1/workspaces/${workspaceId}/workflows?page=1&size=20`,
@@ -91,7 +93,10 @@ describe('workflow gateway routes', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body)).toMatchObject({ workflowId, status: 'DRAFT' });
+    expect(JSON.parse(response.body)).toMatchObject({
+      workflowId,
+      status: 'DRAFT',
+    });
     expect(globalThis.fetch).toHaveBeenCalledWith(
       `http://workflow.internal:8080/workspaces/${workspaceId}/workflows/${workflowId}/draft`,
       expect.objectContaining({
@@ -102,6 +107,41 @@ describe('workflow gateway routes', () => {
           'content-type': 'application/json',
         }) as unknown,
       }),
+    );
+  });
+
+  it('forwards expectedRevision and passes a draft revision conflict through', async () => {
+    const body = {
+      name: 'Daily report',
+      definition: { nodes: [], edges: [] },
+      expectedRevision: 3,
+    };
+    const conflict = {
+      error: {
+        code: 'DRAFT_REVISION_CONFLICT',
+        message: 'Workflow draft was changed by another save',
+        details: [{ field: 'revision', message: '4' }],
+      },
+    };
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(conflict), {
+        status: 409,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    const response = await app.inject({
+      method: 'PUT',
+      url: `/api/v1/workspaces/${workspaceId}/workflows/${workflowId}/draft`,
+      headers: { authorization: 'Bearer opaque-token' },
+      payload: body,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(JSON.parse(response.body)).toEqual(conflict);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ body: JSON.stringify(body) }),
     );
   });
 

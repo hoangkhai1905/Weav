@@ -364,6 +364,21 @@ export const connectionApi = {
     });
   },
 
+  /** Binds the Google return to the signed-in user; the completion id is single use. */
+  async completeGoogleOAuth(
+    workspaceId: string,
+    connectionId: string,
+    completion: string,
+  ): Promise<ConnectionTestResponse> {
+    return parseConnectionTest(
+      await request<unknown>({
+        method: "POST",
+        url: `${itemPath(workspaceId, connectionId)}/oauth/complete`,
+        data: { completion },
+      }),
+    );
+  },
+
   async startGoogleOAuth(
     workspaceId: string,
     connectionId: string,

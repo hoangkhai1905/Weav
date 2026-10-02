@@ -10,6 +10,8 @@ export function testSettings() {
     DB_USERNAME: 'test',
     DB_PASSWORD: 'test-only',
     JWT_ACCESS_SECRET: 'test-only-key-not-for-production-123456',
+    RABBITMQ_USERNAME: 'test-only',
+    RABBITMQ_PASSWORD: 'test-only',
     NOTIFICATION_TELEGRAM_ENABLED: 'true',
     TELEGRAM_BOT_TOKEN: 'test-only',
     NOTIFICATION_EXPO_ENABLED: 'true',

@@ -16,6 +16,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
@@ -28,6 +29,8 @@ import java.time.Clock;
 @EnableConfigurationProperties({JwtProperties.class, InternalServiceKeyProperties.class})
 public class SecurityConfig {
 
+    private static final DefaultBearerTokenResolver DEFAULT_BEARER = new DefaultBearerTokenResolver();
+
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
@@ -39,14 +42,17 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/prometheus").permitAll()
                         .requestMatchers(HttpMethod.GET, "/oauth/google/callback").permitAll()
-                        .requestMatchers("/internal/workspaces/**").permitAll()
+                        .requestMatchers("/internal/workspaces/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(Customizer.withDefaults())
+                        // Internal calls carry RS256 service JWTs that InternalServiceKeyFilter owns, not user HS256 tokens.
+                        .bearerTokenResolver(request -> InternalServiceKeyFilter.isInternalRequest(request)
+                                ? null : DEFAULT_BEARER.resolve(request))
                         .authenticationEntryPoint(authenticationEntryPoint))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(authenticationEntryPoint)
@@ -62,8 +68,14 @@ public class SecurityConfig {
     @Bean
     public InternalServiceKeyFilter internalServiceKeyFilter(
             InternalServiceKeyProperties properties,
-            ApiAuthenticationEntryPoint authenticationEntryPoint) {
-        return new InternalServiceKeyFilter(properties, authenticationEntryPoint);
+            ApiAuthenticationEntryPoint authenticationEntryPoint,
+            InternalServiceJwtVerifier internalServiceJwtVerifier) {
+        return new InternalServiceKeyFilter(properties, authenticationEntryPoint, internalServiceJwtVerifier);
+    }
+
+    @Bean
+    public InternalServiceJwtVerifier internalServiceJwtVerifier(InternalServiceKeyProperties properties, Clock jwtClock) {
+        return new InternalServiceJwtVerifier(properties.serviceJwksFile(), jwtClock);
     }
 
     @Bean

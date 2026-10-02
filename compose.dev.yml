@@ -4,16 +4,22 @@ services:
   # ==================================================
   identity-service:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 1g
 
     build:
       context: ./services/identity-service
       dockerfile: Dockerfile.dev
 
     ports:
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"
 
     environment:
       APP_ENV: ${APP_ENV:-development}
+      # X-16: dev runs `mvnw spring-boot:run` (Maven JVM + forked app JVM) under mem_limit;
+      # cap both heaps so the container is not OOM-killed.
+      MAVEN_OPTS: -Xmx192m
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=55
 
       DB_HOST: ${IDENTITY_DB_HOST}
       DB_PORT: ${IDENTITY_DB_PORT:-5432}
@@ -31,6 +37,10 @@ services:
       JWT_AUDIENCE: ${JWT_AUDIENCE:-weav-api}
       JWT_CLOCK_SKEW: ${JWT_CLOCK_SKEW:-30s}
       IDENTITY_INTERNAL_SERVICE_KEY: ${IDENTITY_INTERNAL_SERVICE_KEY:-}
+
+      # ID-2: honour X-Forwarded-For only from the gateway's pinned IP on the `edge` network
+      # (regex, keep in sync with the api-gateway ipv4_address below).
+      IDENTITY_TRUSTED_PROXY_PATTERN: 172[.]31[.]250[.]10
 
       # Optional Google OAuth. Compose interpolation forwards root .env values
       # into the container; blank credentials keep the provider disabled.
@@ -51,8 +61,10 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      IDENTITY_RABBITMQ_USERNAME: ${IDENTITY_RABBITMQ_USERNAME:-${RABBITMQ_USERNAME:-guest}}
+      IDENTITY_RABBITMQ_PASSWORD: ${IDENTITY_RABBITMQ_PASSWORD:-${RABBITMQ_PASSWORD:-guest}}
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
-      RABBITMQ_SSL_ENABLED: ${RABBITMQ_SSL_ENABLED:-false}
+      RABBITMQ_TLS_ENABLED: ${RABBITMQ_TLS_ENABLED:-${RABBITMQ_SSL_ENABLED:-false}}
       RABBITMQ_CONNECTION_TIMEOUT: ${IDENTITY_RABBITMQ_CONNECTION_TIMEOUT:-3s}
       NOTIFICATION_EXCHANGE: ${NOTIFICATION_EXCHANGE:-weav.events}
       IDENTITY_NOTIFICATION_OUTBOX_PUBLISHER_ENABLED: ${IDENTITY_NOTIFICATION_OUTBOX_PUBLISHER_ENABLED:-true}
@@ -82,7 +94,6 @@ services:
       AVATAR_S3_PATH_STYLE_ACCESS: ${AVATAR_S3_PATH_STYLE_ACCESS:-true}
       AVATAR_S3_KEY_PREFIX: ${AVATAR_S3_KEY_PREFIX:-avatars}
       AVATAR_S3_SIGNED_URL_TTL: ${AVATAR_S3_SIGNED_URL_TTL:-5m}
-      AVATAR_S3_CLEANUP_QUEUE_CAPACITY: ${AVATAR_S3_CLEANUP_QUEUE_CAPACITY:-1000}
       AVATAR_S3_CLEANUP_INTERVAL_MS: ${AVATAR_S3_CLEANUP_INTERVAL_MS:-30000}
 
     depends_on:
@@ -95,6 +106,13 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+
+    networks:
+      default: {}
+      edge:
+        # Only the gateway reaches identity through this alias, so its source IP is the pinned one.
+        aliases:
+          - identity-edge
 
     develop:
       watch:
@@ -113,16 +131,22 @@ services:
   # ==================================================
   workspace-service:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 1g
 
     build:
       context: ./services/workspace-service
       dockerfile: Dockerfile.dev
 
     ports:
-      - "8082:8080"
+      - "127.0.0.1:8082:8080"
 
     environment:
       APP_ENV: ${APP_ENV:-development}
+      # X-16: dev runs `mvnw spring-boot:run` (Maven JVM + forked app JVM) under mem_limit;
+      # cap both heaps so the container is not OOM-killed.
+      MAVEN_OPTS: -Xmx192m
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=55
 
       DB_HOST: ${WORKSPACE_DB_HOST}
       DB_PORT: ${WORKSPACE_DB_PORT:-5432}
@@ -133,7 +157,6 @@ services:
       DB_SCHEMA: workspace
 
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
       JWT_ISSUER: ${JWT_ISSUER:-weav-identity}
@@ -144,6 +167,9 @@ services:
       IDENTITY_SERVICE_URL: ${IDENTITY_SERVICE_URL:-http://identity-service:8080}
       IDENTITY_INTERNAL_SERVICE_KEY: ${IDENTITY_INTERNAL_SERVICE_KEY:-}
       WEAV_INTERNAL_SERVICE_KEY: ${WEAV_INTERNAL_SERVICE_KEY:-}
+      # Workflow's scoped service JWTs are verified against this JWKS (public half only).
+      WORKSPACE_SERVICE_JWKS_FILE: /run/weav-keys/workflow-service.jwks.json
+      WORKSPACE_INTERNAL_REQUIRE_SERVICE_JWT: ${WORKSPACE_INTERNAL_REQUIRE_SERVICE_JWT:-false}
       IDENTITY_CONNECT_TIMEOUT: ${IDENTITY_CONNECT_TIMEOUT:-3s}
       IDENTITY_READ_TIMEOUT: ${IDENTITY_READ_TIMEOUT:-5s}
 
@@ -153,6 +179,7 @@ services:
       WORKSPACE_AUTHORIZATION_CACHE_TTL: ${WORKSPACE_AUTHORIZATION_CACHE_TTL:-PT5M}
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
       CREDENTIAL_ENCRYPTION_KEY_VERSION: ${CREDENTIAL_ENCRYPTION_KEY_VERSION:-v1}
+      CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS: ${CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS:-}
 
       # Google OAuth connection flow. The callback URL uses the host port above.
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
@@ -160,6 +187,7 @@ services:
       GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-http://localhost:8082/oauth/google/callback}
       GOOGLE_OAUTH_FRONTEND_RETURN_URL: ${GOOGLE_OAUTH_FRONTEND_RETURN_URL:-http://localhost:5173/connections}
       GOOGLE_OAUTH_STATE_TTL: ${GOOGLE_OAUTH_STATE_TTL:-PT10M}
+      GOOGLE_OAUTH_COMPLETION_TTL: ${GOOGLE_OAUTH_COMPLETION_TTL:-PT5M}
 
       # Workspace calls Workflow to confirm whether a Connection is in use.
       WORKFLOW_SERVICE_URL: ${WORKFLOW_SERVICE_URL:-http://workflow-service:8080}
@@ -168,12 +196,14 @@ services:
       WORKFLOW_INTERNAL_SERVICE_KEY: ${WORKFLOW_INTERNAL_SERVICE_KEY:-}
 
       # Durable notification delivery is asynchronous; Workspace starts and serves mutations without RabbitMQ.
-      RABBITMQ_HOST: ${RABBITMQ_HOST:-rabbitmq}
-      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      WORKSPACE_RABBITMQ_USERNAME: ${WORKSPACE_RABBITMQ_USERNAME:-${RABBITMQ_USERNAME:-guest}}
+      WORKSPACE_RABBITMQ_PASSWORD: ${WORKSPACE_RABBITMQ_PASSWORD:-${RABBITMQ_PASSWORD:-guest}}
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
-      RABBITMQ_TLS_ENABLED: ${RABBITMQ_TLS_ENABLED:-false}
+      RABBITMQ_TLS_ENABLED: ${RABBITMQ_TLS_ENABLED:-${RABBITMQ_SSL_ENABLED:-false}}
       WORKSPACE_RABBITMQ_CONNECTION_TIMEOUT: ${WORKSPACE_RABBITMQ_CONNECTION_TIMEOUT:-3s}
       NOTIFICATION_EXCHANGE: ${NOTIFICATION_EXCHANGE:-weav.events}
       WORKSPACE_NOTIFICATION_PUBLISHER_ENABLED: ${WORKSPACE_NOTIFICATION_PUBLISHER_ENABLED:-true}
@@ -182,6 +212,10 @@ services:
       WORKSPACE_NOTIFICATION_OUTBOX_INITIAL_DELAY: ${WORKSPACE_NOTIFICATION_OUTBOX_INITIAL_DELAY:-1000}
       WORKSPACE_NOTIFICATION_OUTBOX_CONFIRM_TIMEOUT: ${WORKSPACE_NOTIFICATION_OUTBOX_CONFIRM_TIMEOUT:-PT5S}
       WORKSPACE_NOTIFICATION_OUTBOX_MAX_RETRY_DELAY: ${WORKSPACE_NOTIFICATION_OUTBOX_MAX_RETRY_DELAY:-PT60S}
+
+    # Only the public half of the dev key pair (node scripts/ai-dev-keys.mjs).
+    volumes:
+      - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/public:/run/weav-keys:ro
 
     develop:
       watch:
@@ -195,12 +229,22 @@ services:
         - action: rebuild
           path: ./services/workspace-service/pom.xml
 
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+
 
   # ==================================================
   # Workflow Service - Spring Boot
   # ==================================================
   workflow-service:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 1g
 
     build:
       context: ./services/workflow-service
@@ -209,10 +253,14 @@ services:
         contracts: ./packages/contracts
 
     ports:
-      - "8083:8080"
+      - "127.0.0.1:8083:8080"
 
     environment:
       APP_ENV: ${APP_ENV:-development}
+      # X-16: dev runs `mvnw spring-boot:run` (Maven JVM + forked app JVM) under mem_limit;
+      # cap both heaps so the container is not OOM-killed.
+      MAVEN_OPTS: -Xmx192m
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=55
 
       # Neon PostgreSQL pooled connection
       DB_HOST: ${WORKFLOW_DB_HOST}
@@ -223,7 +271,6 @@ services:
       DB_SSL_MODE: ${WORKFLOW_DB_SSL_MODE:-require}
       DB_SCHEMA: workflow
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
 
@@ -267,7 +314,12 @@ services:
       WORKFLOW_EXECUTION_WORKER_CONFIRM_TIMEOUT: ${WORKFLOW_EXECUTION_WORKER_CONFIRM_TIMEOUT:-5s}
       WORKFLOW_EXECUTION_WORKER_REDELIVERY_DELAY: ${WORKFLOW_EXECUTION_WORKER_REDELIVERY_DELAY:-5000}
       WORKFLOW_EXECUTION_WORKER_MAX_REDELIVERIES: ${WORKFLOW_EXECUTION_WORKER_MAX_REDELIVERIES:-3}
+      WORKFLOW_EXECUTION_WORKER_CONCURRENCY_MIN: ${WORKFLOW_EXECUTION_WORKER_CONCURRENCY_MIN:-2}
+      WORKFLOW_EXECUTION_WORKER_CONCURRENCY_MAX: ${WORKFLOW_EXECUTION_WORKER_CONCURRENCY_MAX:-4}
+      WORKFLOW_SCHEDULER_POOL_SIZE: ${WORKFLOW_SCHEDULER_POOL_SIZE:-4}
+      WORKFLOW_DB_POOL_SIZE: ${WORKFLOW_DB_POOL_SIZE:-10}
       WORKFLOW_EXECUTION_MAX_CONCURRENT_NODES: ${WORKFLOW_EXECUTION_MAX_CONCURRENT_NODES:-4}
+      WORKFLOW_EXECUTION_RETENTION_DAYS: ${WORKFLOW_EXECUTION_RETENTION_DAYS:-0}
       WORKFLOW_EXECUTION_EXECUTOR_THREADS: ${WORKFLOW_EXECUTION_EXECUTOR_THREADS:-8}
       WORKFLOW_EXECUTION_EXECUTOR_QUEUE_SIZE: ${WORKFLOW_EXECUTION_EXECUTOR_QUEUE_SIZE:-128}
       WORKFLOW_EXECUTION_TIMER_THREADS: ${WORKFLOW_EXECUTION_TIMER_THREADS:-2}
@@ -302,6 +354,7 @@ services:
       # AI nodes and generation stay off until a provider key is set and these flags are turned on.
       WORKFLOW_AI_ENABLED: ${WORKFLOW_AI_ENABLED:-false}
       WORKFLOW_AI_GENERATION_ENABLED: ${WORKFLOW_AI_GENERATION_ENABLED:-false}
+      WORKFLOW_AI_DAILY_LIMIT_PER_WORKSPACE: ${WORKFLOW_AI_DAILY_LIMIT_PER_WORKSPACE:-0}
       AI_SERVICE_PRIVATE_URL: ${AI_SERVICE_PRIVATE_URL:-http://ai-service:3000}
       WORKFLOW_AI_SIGNING_KEY_ID: ${WORKFLOW_AI_SIGNING_KEY_ID:-workflow-dev-1}
       WORKFLOW_AI_SIGNING_KEY_LOCATION: file:/run/weav-keys/workflow-service.pem
@@ -315,6 +368,10 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      WORKFLOW_RABBITMQ_USERNAME: ${WORKFLOW_RABBITMQ_USERNAME:-${RABBITMQ_USERNAME:-guest}}
+      WORKFLOW_RABBITMQ_PASSWORD: ${WORKFLOW_RABBITMQ_PASSWORD:-${RABBITMQ_PASSWORD:-guest}}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_TLS_ENABLED: ${RABBITMQ_TLS_ENABLED:-${RABBITMQ_SSL_ENABLED:-false}}
 
     # Only the private half of the dev key pair (node scripts/ai-dev-keys.mjs).
     volumes:
@@ -336,19 +393,29 @@ services:
         - action: rebuild
           path: ./services/workflow-service/pom.xml
 
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+
 
   # ==================================================
   # AI Service - NestJS
   # ==================================================
   ai-service:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 384m
 
     build:
       context: .
       dockerfile: services/ai-service/Dockerfile.dev
 
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
 
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -373,6 +440,8 @@ services:
   # ==================================================
   api-gateway:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 384m
 
     build:
       context: .
@@ -394,7 +463,8 @@ services:
       JWT_CLOCK_SKEW: ${JWT_CLOCK_SKEW:-30s}
 
       # Internal service URLs
-      IDENTITY_SERVICE_URL: ${IDENTITY_SERVICE_URL:-http://identity-service:8080}
+      # Via the `edge` network so identity sees the pinned gateway IP (X-Forwarded-For trust).
+      IDENTITY_SERVICE_URL: ${GATEWAY_IDENTITY_SERVICE_URL:-http://identity-edge:8080}
       WORKSPACE_SERVICE_URL: http://workspace-service:8080
       WORKFLOW_SERVICE_URL: http://workflow-service:8080
       AI_SERVICE_URL: http://ai-service:3000
@@ -403,6 +473,22 @@ services:
       NOTIFICATION_SERVICE_URL: http://notification-service:3000
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8081,http://127.0.0.1:8081}
       OCR_ALLOW_UNAUTHENTICATED_DEV: ${OCR_ALLOW_UNAUTHENTICATED_DEV:-false}
+      GATEWAY_TRUST_PROXY_HOPS: ${GATEWAY_TRUST_PROXY_HOPS:-0}
+      GATEWAY_WEBHOOK_RATE_LIMIT: ${GATEWAY_WEBHOOK_RATE_LIMIT:-60}
+      GATEWAY_THROTTLER_REDIS_URL: ${GATEWAY_THROTTLER_REDIS_URL:-${VALKEY_URL:-}}
+
+    networks:
+      default: {}
+      edge:
+        ipv4_address: 172.31.250.10
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
 
 
   # ==================================================
@@ -410,6 +496,8 @@ services:
   # ==================================================
   bot-service:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 384m
 
     build:
       context: .
@@ -440,12 +528,22 @@ services:
       rabbitmq:
         condition: service_healthy
 
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+
 
   # ==================================================
   # Notification Service - NestJS
   # ==================================================
   notification-service:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 512m
 
     build:
       context: .
@@ -484,10 +582,22 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      NOTIFICATION_RABBITMQ_USERNAME: ${NOTIFICATION_RABBITMQ_USERNAME:-${RABBITMQ_USERNAME:-guest}}
+      NOTIFICATION_RABBITMQ_PASSWORD: ${NOTIFICATION_RABBITMQ_PASSWORD:-${RABBITMQ_PASSWORD:-guest}}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      RABBITMQ_TLS_ENABLED: ${RABBITMQ_TLS_ENABLED:-${RABBITMQ_SSL_ENABLED:-false}}
 
     depends_on:
       rabbitmq:
         condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
 
 
   # ==================================================
@@ -501,7 +611,7 @@ services:
       dockerfile: Dockerfile.dev
 
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -513,3 +623,10 @@ services:
         source: ${OCR_MODEL_HOST_PATH:-./.data/ocr-models}
         target: /models
         read_only: true
+
+networks:
+  # Dedicated gateway<->identity network with a fixed subnet so the gateway IP can be pinned.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24

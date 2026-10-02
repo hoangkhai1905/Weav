@@ -71,7 +71,7 @@ class WorkflowPublicationConcurrencyTest {
     }
 
     @Test
-    void concurrentPublishersAllocateDistinctVersionsAndQueuedRunsStayPinned() throws Exception {
+    void concurrentPublishersOfAnUnchangedDraftCreateOneVersionAndQueuedRunsStayPinned() throws Exception {
         UUID workspaceId = UUID.randomUUID();
         UUID connectionId = UUID.fromString("30000000-0000-0000-0000-000000000061");
         Workflow workflow = createDraft(workspaceId, "Concurrent publication");
@@ -95,8 +95,11 @@ class WorkflowPublicationConcurrencyTest {
                     .stream().sorted(java.util.Comparator.comparingInt(WorkflowPublicationService.Publication::version))
                     .toList();
 
-            assertEquals(List.of(1, 2), publications.stream()
+            // The second publisher sees the identical draft already published and returns it unchanged (WF-3).
+            assertEquals(List.of(1, 1), publications.stream()
                     .map(WorkflowPublicationService.Publication::version).toList());
+            assertEquals(publications.getFirst().versionId(), publications.getLast().versionId());
+            assertEquals(1, versionCount(workflow.getId()));
             Workflow published = workflows.findByWorkspaceAndId(workspaceId, workflow.getId()).orElseThrow();
             assertEquals(publications.getLast().versionId(), published.getCurrentVersionId());
             assertEquals(WorkflowStatus.PUBLISHED, published.getStatus());
@@ -113,7 +116,7 @@ class WorkflowPublicationConcurrencyTest {
             WorkflowPublicationService.Publication third =
                     publicationService.publish(workspaceId, workflow.getId(), ACTOR_ID);
 
-            assertEquals(3, third.version());
+            assertEquals(2, third.version());
             assertEquals(pinnedVersionId, jdbcTemplate.queryForObject(
                     "select workflow_version_id from workflow.workflow_executions where id = ?",
                     UUID.class,

@@ -56,6 +56,7 @@ class NotificationOutboxPublisherTest {
                 "weav.events",
                 25,
                 confirmTimeout,
-                maxRetryDelay);
+                maxRetryDelay,
+                10);
     }
 }

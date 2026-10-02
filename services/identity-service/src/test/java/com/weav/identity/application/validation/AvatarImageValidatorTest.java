@@ -80,4 +80,33 @@ class AvatarImageValidatorTest {
         }
         return output.toByteArray();
     }
+
+    @Test
+    void acceptsLargePhoneJpegByDecodingItSubsampled() throws Exception {
+        java.io.ByteArrayOutputStream jpeg = new java.io.ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(4000, 3000, BufferedImage.TYPE_INT_RGB), "jpeg", jpeg); // flat: stays under 2 MiB
+        AvatarImage normalized = validator.normalize(jpeg.toByteArray(), "image/jpeg");
+
+        BufferedImage decoded = ImageIO.read(new java.io.ByteArrayInputStream(normalized.content()));
+        assertEquals(1000, decoded.getWidth());
+        assertEquals(750, decoded.getHeight());
+    }
+
+    @Test
+    void rejectsHeaderClaimingHugeDimensionsBeforeDecoding() {
+        // PNG with a valid signature and IHDR claiming 30000x30000 and no pixel data: only a header read can reject it.
+        java.nio.ByteBuffer ihdr = java.nio.ByteBuffer.allocate(13);
+        ihdr.putInt(30000).putInt(30000).put((byte) 8).put((byte) 2).put((byte) 0).put((byte) 0).put((byte) 0);
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update("IHDR".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        crc.update(ihdr.array());
+        java.nio.ByteBuffer png = java.nio.ByteBuffer.allocate(8 + 4 + 4 + 13 + 4);
+        png.put(new byte[]{(byte) 0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a});
+        png.putInt(13).put("IHDR".getBytes(java.nio.charset.StandardCharsets.US_ASCII)).put(ihdr.array())
+                .putInt((int) crc.getValue());
+
+        BadRequestException rejected = assertThrows(BadRequestException.class,
+                () -> validator.normalize(png.array(), "image/png"));
+        assertTrue(rejected.getMessage().contains("dimensions"));
+    }
 }

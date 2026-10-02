@@ -44,6 +44,7 @@ class WorkspaceClientTest {
     private static final UUID USER_ID = UUID.fromString("20000000-0000-0000-0000-000000000001");
     private static final UUID CONNECTION_ID = UUID.fromString("30000000-0000-0000-0000-000000000001");
 
+    private final java.util.concurrent.atomic.AtomicInteger requestCount = new java.util.concurrent.atomic.AtomicInteger();
     private final AtomicReference<RecordedRequest> lastRequest = new AtomicReference<>();
     private final AtomicReference<StubResponse> stubResponse = new AtomicReference<>(
             new StubResponse(200, "{}", false, 0));
@@ -217,6 +218,26 @@ class WorkspaceClientTest {
     }
 
     @Test
+    void resolveReadsCredentialVersionAndAuthFailureEchoesIt() {
+        UUID credentialId = UUID.fromString("00000000-0000-0000-0000-0000000000c2");
+        stubResponse.set(new StubResponse(200,
+                "{\"provider\":\"GOOGLE_SHEETS\",\"authType\":\"OAUTH2\","
+                        + "\"auth\":{\"accessToken\":\"access-token-secret\"},"
+                        + "\"credentialId\":\"" + credentialId + "\",\"credentialVersion\":1790000000123}",
+                true, 0));
+        ResolvedConnection resolved = client.resolve(WORKSPACE_ID, CONNECTION_ID);
+        assertEquals(credentialId, resolved.credentialId());
+        assertEquals(1790000000123L, resolved.credentialVersion());
+        assertFalse(resolved.toString().contains("1790000000123"));
+
+        stubResponse.set(new StubResponse(204, "", false, 0));
+        client.reportAuthenticationRejected(WORKSPACE_ID, CONNECTION_ID, resolved);
+
+        assertEquals("{\"failureCode\":\"AUTHENTICATION_REJECTED\",\"credentialId\":\"" + credentialId
+                + "\",\"credentialVersion\":1790000000123}", lastRequest.get().body());
+    }
+
+    @Test
     void authFailureReportsOnlyTheConfirmedAuthenticationRejection() {
         stubResponse.set(new StubResponse(204, "", false, 0));
 
@@ -237,10 +258,199 @@ class WorkspaceClientTest {
         assertNull(lastRequest.get());
     }
 
+    @Test
+    void breakerOpensOnRepeated5xxFailsFastThenHalfOpensAndCloses() throws InterruptedException {
+        io.github.resilience4j.circuitbreaker.CircuitBreaker breaker =
+                WorkspaceClient.circuitBreaker(4, 50f, 4, Duration.ofMillis(200), 2);
+        WorkspaceClient breakerClient = newClient(breaker, new java.util.concurrent.atomic.AtomicLong()::get);
+        stubResponse.set(new StubResponse(503, "{}", false, 0));
+
+        for (int i = 0; i < 4; i++) {
+            assertThrows(WorkspaceDependencyUnavailableException.class,
+                    () -> breakerClient.authorizeAttachment(WORKSPACE_ID, CONNECTION_ID, USER_ID));
+        }
+        assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.OPEN, breaker.getState());
+        assertEquals(4, requestCount.get());
+
+        assertThrows(WorkspaceDependencyUnavailableException.class,
+                () -> breakerClient.authorizeAttachment(WORKSPACE_ID, CONNECTION_ID, USER_ID));
+        assertEquals(4, requestCount.get(), "open breaker must not call workspace-service");
+
+        Thread.sleep(300);
+        stubResponse.set(new StubResponse(204, "", false, 0));
+        breakerClient.authorizeAttachment(WORKSPACE_ID, CONNECTION_ID, USER_ID);
+        assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.HALF_OPEN, breaker.getState());
+        breakerClient.authorizeAttachment(WORKSPACE_ID, CONNECTION_ID, USER_ID);
+        assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED, breaker.getState());
+    }
+
+    @Test
+    void breakerOpensOnTimeouts() {
+        io.github.resilience4j.circuitbreaker.CircuitBreaker breaker =
+                WorkspaceClient.circuitBreaker(2, 50f, 2, Duration.ofSeconds(30), 1);
+        WorkspaceClient slow = newClient(Duration.ofMillis(100), SERVICE_KEY, breaker);
+        stubResponse.set(new StubResponse(204, "", false, 500));
+
+        for (int i = 0; i < 2; i++) {
+            assertThrows(WorkspaceDependencyUnavailableException.class,
+                    () -> slow.authorizeAttachment(WORKSPACE_ID, CONNECTION_ID, USER_ID));
+        }
+        assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.OPEN, breaker.getState());
+    }
+
+    @Test
+    void clientErrorsNeverOpenTheBreaker() {
+        io.github.resilience4j.circuitbreaker.CircuitBreaker breaker =
+                WorkspaceClient.circuitBreaker(4, 50f, 4, Duration.ofSeconds(30), 1);
+        WorkspaceClient breakerClient = newClient(breaker, new java.util.concurrent.atomic.AtomicLong()::get);
+
+        for (int status : new int[] {403, 404, 401, 400, 403, 404, 401, 400}) {
+            stubResponse.set(new StubResponse(status, "{}", false, 0));
+            try {
+                breakerClient.authorizeAttachment(WORKSPACE_ID, CONNECTION_ID, USER_ID);
+            } catch (ForbiddenException | WorkspaceDependencyUnavailableException expected) {
+                // 403/404 are normal answers; other 4xx are rejected but are not outages.
+            }
+        }
+        assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED, breaker.getState());
+        assertEquals(8, requestCount.get());
+    }
+
+    @Test
+    void accessAnswersAreCachedPerWorkspaceAndUserUntilTtlExpires() {
+        java.util.concurrent.atomic.AtomicLong nanos = new java.util.concurrent.atomic.AtomicLong();
+        WorkspaceClient cached = newClient(WorkspaceClient.circuitBreaker(20, 50f, 10, Duration.ofSeconds(10), 3),
+                nanos::get);
+        stubResponse.set(new StubResponse(200,
+                "{\"workspaceId\":\"%WS%\",\"userId\":\"%USER%\",\"role\":\"OWNER\",\"capabilities\":[\"WORKSPACE_VIEW\"]}",
+                false, 0));
+        UUID otherUser = UUID.fromString("20000000-0000-0000-0000-000000000002");
+        UUID otherWorkspace = UUID.fromString("10000000-0000-0000-0000-000000000002");
+
+        cached.getAccess(WORKSPACE_ID, USER_ID);
+        cached.getAccess(WORKSPACE_ID, USER_ID);
+        assertEquals(1, requestCount.get());
+
+        cached.getAccess(WORKSPACE_ID, otherUser);
+        cached.getAccess(otherWorkspace, USER_ID);
+        assertEquals(3, requestCount.get());
+
+        nanos.addAndGet(Duration.ofSeconds(31).toNanos());
+        cached.getAccess(WORKSPACE_ID, USER_ID);
+        assertEquals(4, requestCount.get());
+    }
+
+    @Test
+    void deniedAnswersAreCachedButUnavailableOutcomesAreNot() {
+        WorkspaceClient cached = newClient(WorkspaceClient.circuitBreaker(20, 50f, 10, Duration.ofSeconds(10), 3),
+                new java.util.concurrent.atomic.AtomicLong()::get);
+        stubResponse.set(new StubResponse(404, "{}", false, 0));
+        assertThrows(ForbiddenException.class, () -> cached.getAccess(WORKSPACE_ID, USER_ID));
+        assertThrows(ForbiddenException.class, () -> cached.getAccess(WORKSPACE_ID, USER_ID));
+        assertEquals(1, requestCount.get());
+
+        stubResponse.set(new StubResponse(500, "{}", false, 0));
+        assertThrows(WorkspaceDependencyUnavailableException.class, () -> cached.getAccess(WORKSPACE_ID, otherUserId()));
+        assertThrows(WorkspaceDependencyUnavailableException.class, () -> cached.getAccess(WORKSPACE_ID, otherUserId()));
+        assertEquals(3, requestCount.get());
+    }
+
+    @Test
+    void connectionResolveIsNeverCached() {
+        stubResponse.set(new StubResponse(200,
+                "{\"provider\":\"HTTP\",\"authType\":\"NONE\",\"auth\":{}}", true, 0));
+        client.resolve(WORKSPACE_ID, CONNECTION_ID).close();
+        client.resolve(WORKSPACE_ID, CONNECTION_ID).close();
+        assertEquals(2, requestCount.get());
+    }
+
+    @Test
+    void attachesAScopedSixtySecondJwtPerCallAndKeepsTheLegacyKeyWhenASignerIsConfigured(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.security.KeyPair pair = newRsaKeyPair();
+        java.nio.file.Path pem = dir.resolve("workflow.pem");
+        String body = java.util.Base64.getMimeEncoder(64, new byte[] {'\n'}).encodeToString(pair.getPrivate().getEncoded());
+        java.nio.file.Files.writeString(pem,
+                "-----BEGIN PRIVATE KEY-----\n" + body + "\n-----END PRIVATE KEY-----\n");
+        WorkspaceClient signed = new WorkspaceClient(
+                new WorkspaceClientProperties(URI.create(baseUrl), Duration.ofSeconds(1), Duration.ofSeconds(2), SERVICE_KEY),
+                new ObjectMapper(), WorkspaceClient.circuitBreaker(20, 50f, 10, Duration.ofSeconds(10), 3),
+                Duration.ofSeconds(30), com.github.benmanes.caffeine.cache.Ticker.systemTicker(),
+                new com.weav.workflow.infrastructure.security.ServiceJwtSigner(
+                        new org.springframework.core.io.DefaultResourceLoader(), "kid-1", pem.toUri().toString(),
+                        Duration.ofSeconds(60)));
+
+        stubResponse.set(new StubResponse(200, "{\"provider\":\"HTTP\",\"authType\":\"NONE\",\"auth\":{}}", true, 0));
+        signed.resolve(WORKSPACE_ID, CONNECTION_ID).close();
+        com.nimbusds.jwt.JWTClaimsSet resolve = claimsOf(lastRequest.get());
+        assertEquals(SERVICE_KEY, lastRequest.get().serviceKey());
+        assertEquals("connection:resolve", resolve.getStringClaim("scope"));
+        assertEquals(WORKSPACE_ID.toString(), resolve.getStringClaim("workspace_id"));
+        assertEquals(CONNECTION_ID.toString(), resolve.getStringClaim("connection_id"));
+        assertEquals("weav-workflow", resolve.getIssuer());
+        assertEquals(java.util.List.of("weav-workspace"), resolve.getAudience());
+        assertEquals(60_000, resolve.getExpirationTime().getTime() - resolve.getIssueTime().getTime());
+        assertTrue(resolve.getJWTID() != null);
+
+        stubResponse.set(new StubResponse(204, "", false, 0));
+        signed.reportAuthenticationRejected(WORKSPACE_ID, CONNECTION_ID);
+        assertEquals("connection:report-auth-failure", claimsOf(lastRequest.get()).getStringClaim("scope"));
+        signed.authorizeAttachment(WORKSPACE_ID, CONNECTION_ID, USER_ID);
+        assertEquals("connection:authorize-attachment", claimsOf(lastRequest.get()).getStringClaim("scope"));
+
+        stubResponse.set(new StubResponse(200, accessResponse(WORKSPACE_ID, USER_ID, "OWNER", "WORKSPACE_VIEW"), false, 0));
+        signed.getAccess(WORKSPACE_ID, USER_ID);
+        com.nimbusds.jwt.JWTClaimsSet access = claimsOf(lastRequest.get());
+        assertEquals("workspace:access", access.getStringClaim("scope"));
+        assertNull(access.getStringClaim("connection_id"));
+    }
+
+    @Test
+    void sendsNoBearerTokenWithoutASigner() {
+        stubResponse.set(new StubResponse(200, accessResponse(WORKSPACE_ID, USER_ID, "OWNER", "WORKSPACE_VIEW"), false, 0));
+        client.getAccess(WORKSPACE_ID, USER_ID);
+        assertEquals(SERVICE_KEY, lastRequest.get().serviceKey());
+        assertNull(lastRequest.get().authorization());
+    }
+
+    private static java.security.KeyPair newRsaKeyPair() throws Exception {
+        java.security.KeyPairGenerator generator = java.security.KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        return generator.generateKeyPair();
+    }
+
+    private static com.nimbusds.jwt.JWTClaimsSet claimsOf(RecordedRequest request) throws Exception {
+        return com.nimbusds.jwt.SignedJWT.parse(request.authorization().substring("Bearer ".length())).getJWTClaimsSet();
+    }
+
+    private static UUID otherUserId() {
+        return UUID.fromString("20000000-0000-0000-0000-000000000009");
+    }
+
     private WorkspaceClient newClient(Duration readTimeout, String internalServiceKey) {
         WorkspaceClientProperties properties = new WorkspaceClientProperties(
                 URI.create(baseUrl), Duration.ofSeconds(1), readTimeout, internalServiceKey);
         return new WorkspaceClient(properties, new ObjectMapper());
+    }
+
+    private WorkspaceClient newClient(
+            io.github.resilience4j.circuitbreaker.CircuitBreaker breaker, com.github.benmanes.caffeine.cache.Ticker ticker) {
+        return newClient(Duration.ofSeconds(2), SERVICE_KEY, breaker, ticker);
+    }
+
+    private WorkspaceClient newClient(
+            Duration readTimeout, String key, io.github.resilience4j.circuitbreaker.CircuitBreaker breaker) {
+        return newClient(readTimeout, key, breaker, new java.util.concurrent.atomic.AtomicLong()::get);
+    }
+
+    private WorkspaceClient newClient(
+            Duration readTimeout,
+            String key,
+            io.github.resilience4j.circuitbreaker.CircuitBreaker breaker,
+            com.github.benmanes.caffeine.cache.Ticker ticker) {
+        WorkspaceClientProperties properties = new WorkspaceClientProperties(
+                URI.create(baseUrl), Duration.ofSeconds(1), readTimeout, key);
+        return new WorkspaceClient(properties, new ObjectMapper(), breaker, Duration.ofSeconds(30), ticker);
     }
 
     private String accessResponse(UUID workspaceId, UUID userId, String role, String... capabilities) {
@@ -253,12 +463,14 @@ class WorkspaceClientTest {
 
     private void handleRequest(HttpExchange exchange) throws IOException {
         byte[] requestBytes = exchange.getRequestBody().readAllBytes();
+        requestCount.incrementAndGet();
         lastRequest.set(new RecordedRequest(
                 exchange.getRequestMethod(),
                 exchange.getRequestURI().getPath(),
                 new String(requestBytes, StandardCharsets.UTF_8),
                 exchange.getRequestHeaders().getFirst("X-Internal-Service-Key"),
-                exchange.getRequestHeaders().getFirst(CorrelationIdFilter.HEADER_NAME)));
+                exchange.getRequestHeaders().getFirst(CorrelationIdFilter.HEADER_NAME),
+                exchange.getRequestHeaders().getFirst("Authorization")));
 
         StubResponse stub = stubResponse.get();
         if (stub.delayMillis() > 0) {
@@ -273,7 +485,11 @@ class WorkspaceClientTest {
         if (stub.noStore()) {
             exchange.getResponseHeaders().set("Cache-Control", "no-store");
         }
-        byte[] responseBytes = stub.body().getBytes(StandardCharsets.UTF_8);
+        String[] segments = exchange.getRequestURI().getPath().split("/");
+        String body = segments.length >= 6
+                ? stub.body().replace("%WS%", segments[3]).replace("%USER%", segments[5])
+                : stub.body();
+        byte[] responseBytes = body.getBytes(StandardCharsets.UTF_8);
         try {
             if (responseBytes.length == 0 || stub.status() == 204) {
                 exchange.sendResponseHeaders(stub.status(), -1);
@@ -292,6 +508,7 @@ class WorkspaceClientTest {
     private record StubResponse(int status, String body, boolean noStore, long delayMillis) {
     }
 
-    private record RecordedRequest(String method, String path, String body, String serviceKey, String correlationId) {
+    private record RecordedRequest(String method, String path, String body, String serviceKey, String correlationId,
+                                   String authorization) {
     }
 }

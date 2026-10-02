@@ -774,6 +774,106 @@ test.describe("workspace connection API adapter", () => {
     );
   });
 
+  test("OAuth pending return completes with the signed-in bearer token and clears the one-time id", async ({
+    page,
+  }) => {
+    const completion = "c".repeat(43);
+    let active = false;
+    let completeBody = "";
+    let completeAuthorization = "";
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, [
+        { ...connection(CONNECTION_GMAIL_ID, "GMAIL"), status: active ? "ACTIVE" : "DISABLED" },
+      ]),
+    );
+    await page.route(
+      `**/api/v1/workspaces/*/connections/${CONNECTION_GMAIL_ID}/oauth/complete`,
+      async (route) => {
+        completeBody = route.request().postData() ?? "";
+        completeAuthorization = route.request().headers().authorization ?? "";
+        active = true;
+        await fulfillJson(route, { outcome: "VERIFIED" });
+      },
+    );
+    await gotoAuthenticatedConnections(page);
+    await setPendingOAuthContext(page);
+    await pushSpaPath(
+      page,
+      `/connections?oauth=pending&completion=${completion}&connectionId=${CONNECTION_GMAIL_ID}`,
+    );
+
+    await expect(page.getByTestId("connections-oauth-notice")).toContainText(
+      "Authorization returned",
+    );
+    expect(JSON.parse(completeBody)).toEqual({ completion });
+    expect(completeAuthorization).toBe(`Bearer ${ACCESS_TOKEN}`);
+    await expect(
+      page.getByTestId(`connection-status-${CONNECTION_GMAIL_ID}`),
+    ).toHaveAttribute("data-status", "ACTIVE");
+    expect(
+      await page.evaluate(() => {
+        const browser = globalThis as unknown as BrowserNavigationContext;
+        return `${browser.location.pathname}${browser.location.search}`;
+      }),
+    ).toBe("/connections");
+  });
+
+  test("OAuth pending return with a consumed completion shows safe guidance", async ({
+    page,
+  }) => {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, [connection(CONNECTION_GMAIL_ID, "GMAIL")]),
+    );
+    await page.route(
+      `**/api/v1/workspaces/*/connections/${CONNECTION_GMAIL_ID}/oauth/complete`,
+      (route) =>
+        fulfillJson(
+          route,
+          { code: "CONFLICT", message: "private upstream detail", requestId: "r1" },
+          409,
+        ),
+    );
+    await gotoAuthenticatedConnections(page);
+    await setPendingOAuthContext(page);
+    await pushSpaPath(
+      page,
+      `/connections?oauth=pending&completion=${"d".repeat(43)}&connectionId=${CONNECTION_GMAIL_ID}`,
+    );
+
+    await expect(page.getByTestId("connections-oauth-notice")).toContainText(
+      "could not be verified. Start again",
+    );
+    await expect(page.getByTestId("connections-oauth-notice")).not.toContainText(
+      "private upstream detail",
+    );
+  });
+
+  test("OAuth pending return without a matching local context never calls complete", async ({
+    page,
+  }) => {
+    let completeCalls = 0;
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, []),
+    );
+    await page.route("**/oauth/complete", (route) => {
+      completeCalls += 1;
+      return fulfillJson(route, { outcome: "VERIFIED" });
+    });
+    await gotoAuthenticatedConnections(page);
+    await pushSpaPath(
+      page,
+      `/connections?oauth=pending&completion=${"e".repeat(43)}&connectionId=${CONNECTION_GMAIL_ID}`,
+    );
+
+    await expect(page.getByTestId("connections-oauth-notice")).toContainText(
+      "request context could not be verified",
+    );
+    expect(completeCalls).toBe(0);
+  });
+
   test("unknown OAuth failure reasons use generic guidance", async ({
     page,
   }) => {

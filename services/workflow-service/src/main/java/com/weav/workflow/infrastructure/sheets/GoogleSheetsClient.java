@@ -198,7 +198,7 @@ public class GoogleSheetsClient {
         }
         if (status == 429) {
             throw new NodeExecutor.Failure("HTTP_RATE_LIMITED",
-                    "The Google Sheets provider rate limited the request.", true);
+                    "The Google Sheets provider rate limited the request.", true, true);
         }
         if (status == 408 || status >= 500) {
             throw new NodeExecutor.Failure("HTTP_DEPENDENCY_UNAVAILABLE",

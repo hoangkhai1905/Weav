@@ -57,6 +57,9 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import com.weav.workspace.application.dto.OAuthPendingState;
+import java.security.MessageDigest;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -181,7 +184,7 @@ class GoogleOAuthUseCasesTest {
 
         Credential firstCredential = credentialRepository.findByConnectionId(connection.getId()).orElseThrow();
         byte[] firstCiphertext = firstCredential.getEncryptedPayload();
-        byte[] firstPlaintext = credentialCrypto.decrypt(firstCiphertext);
+        byte[] firstPlaintext = credentialCrypto.decrypt(firstCiphertext, credentialCrypto.currentKeyVersion(), connection.getId());
         assertThat(Arrays.equals(firstCiphertext, firstPlaintext)).isFalse();
         Map<String, Object> firstPayload = payloadCodec.decode(
                 connection, firstPlaintext);
@@ -216,7 +219,7 @@ class GoogleOAuthUseCasesTest {
     }
 
     @Test
-    void activeReauthorizationRestoresConnectionWithoutAddingConnectedNotification() {
+    void activeReauthorizationKeepsConnectionActiveWithoutAddingConnectedNotification() {
         UUID ownerId = UUID.randomUUID();
         Connection connection = createConnection(ownerId, ownerId, ConnectionProvider.GMAIL, true);
         assertThat(connection.getStatus()).isEqualTo(ConnectionStatus.ACTIVE);
@@ -226,7 +229,7 @@ class GoogleOAuthUseCasesTest {
                 connection.getWorkspaceId(), connection.getId()).authorizationUrl());
 
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
-                .isEqualTo(ConnectionStatus.DISABLED);
+                .isEqualTo(ConnectionStatus.ACTIVE);
         assertThat(notificationCount(connection.getId(), "connection.connected")).isZero();
 
         ConnectionTestResult result = completeOAuth.execute(state, "synthetic-reauthorization-code");
@@ -235,6 +238,43 @@ class GoogleOAuthUseCasesTest {
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
                 .isEqualTo(ConnectionStatus.ACTIVE);
         assertThat(notificationCount(connection.getId(), "connection.connected")).isZero();
+    }
+
+    @Test
+    void reconnectLeavesConnectionAndCredentialUntouchedUntilBoundCompletionSwapsIt() {
+        UUID ownerId = UUID.randomUUID();
+        Connection connection = createConnection(ownerId, ownerId, ConnectionProvider.GMAIL, true);
+        Credential original = credentialRepository.findByConnectionId(connection.getId()).orElseThrow();
+
+        Connection beforeStart = connectionRepository.findById(connection.getId()).orElseThrow();
+        // Start twice (second call mints another state) and abandon both: nothing may change.
+        startOAuth.execute(ownerId, connection.getWorkspaceId(), connection.getId());
+        String state = stateFrom(startOAuth.execute(
+                ownerId, connection.getWorkspaceId(), connection.getId()).authorizationUrl());
+
+        Connection afterStart = connectionRepository.findById(connection.getId()).orElseThrow();
+        assertThat(afterStart.getStatus()).isEqualTo(ConnectionStatus.ACTIVE);
+        assertThat(afterStart.getUpdatedAt()).isEqualTo(beforeStart.getUpdatedAt());
+        Credential abandoned = credentialRepository.findByConnectionId(connection.getId()).orElseThrow();
+        assertThat(abandoned.getEncryptedPayload()).isEqualTo(original.getEncryptedPayload());
+        assertThat(payloadCodec.decode(connection, credentialCrypto.decrypt(abandoned.getEncryptedPayload(), credentialCrypto.currentKeyVersion(), connection.getId())))
+                .containsEntry("accessToken", "prior-synthetic-access");
+
+        // Completing through the bound step swaps the credential and keeps the connection ACTIVE.
+        googleOAuth.tokens = tokens("reconnected-access", "reconnected-refresh", gmailScopes());
+        String completionId = completeOAuth.executeForCallback(state, "synthetic-code", null).completionId();
+        assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.ACTIVE);
+        completeOAuth.completeAuthenticated(
+                ownerId, connection.getWorkspaceId(), connection.getId(), completionId);
+
+        Credential swapped = credentialRepository.findByConnectionId(connection.getId()).orElseThrow();
+        assertThat(swapped.getId()).isEqualTo(original.getId());
+        assertThat(payloadCodec.decode(connection, credentialCrypto.decrypt(swapped.getEncryptedPayload(), credentialCrypto.currentKeyVersion(), connection.getId())))
+                .containsEntry("accessToken", "reconnected-access")
+                .containsEntry("refreshToken", "reconnected-refresh");
+        assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.ACTIVE);
     }
 
     @Test
@@ -298,7 +338,7 @@ class GoogleOAuthUseCasesTest {
         googleOAuth.afterAuthorizationUrl = () -> { };
 
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
-                .isEqualTo(ConnectionStatus.DISABLED);
+                .isEqualTo(ConnectionStatus.ACTIVE);
         completeOAuth.execute(state, "synthetic-locked-snapshot-code");
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
                 .isEqualTo(ConnectionStatus.ACTIVE);
@@ -361,7 +401,7 @@ class GoogleOAuthUseCasesTest {
         assertThat(credentialRepository.findByConnectionId(connection.getId()).orElseThrow().getEncryptedPayload())
                 .isEqualTo(originalCiphertext);
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
-                .isEqualTo(ConnectionStatus.DISABLED);
+                .isEqualTo(ConnectionStatus.ACTIVE);
         assertThat(googleOAuth.exchangeCalls.get()).isZero();
 
         String exchangeState = stateFrom(startOAuth.execute(ownerId,
@@ -374,7 +414,7 @@ class GoogleOAuthUseCasesTest {
         assertThat(credentialRepository.findByConnectionId(connection.getId()).orElseThrow().getEncryptedPayload())
                 .isEqualTo(originalCiphertext);
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
-                .isEqualTo(ConnectionStatus.DISABLED);
+                .isEqualTo(ConnectionStatus.ACTIVE);
     }
 
     @Test
@@ -422,11 +462,11 @@ class GoogleOAuthUseCasesTest {
         assertThat(credentialRepository.findByConnectionId(connection.getId()).orElseThrow().getEncryptedPayload())
                 .isEqualTo(originalCiphertext);
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
-                .isEqualTo(ConnectionStatus.DISABLED);
+                .isEqualTo(ConnectionStatus.ACTIVE);
     }
 
     @Test
-    void transientGoogleVerificationFailurePreservesThePriorCredentialAndSafeDisabledStatus() {
+    void transientGoogleVerificationFailurePreservesThePriorCredentialAndActiveStatus() {
         UUID ownerId = UUID.randomUUID();
         Connection connection = createConnection(ownerId, ownerId, ConnectionProvider.GMAIL, true);
         Credential original = credentialRepository.findByConnectionId(connection.getId()).orElseThrow();
@@ -442,7 +482,7 @@ class GoogleOAuthUseCasesTest {
         assertThat(current.getId()).isEqualTo(original.getId());
         assertThat(current.getEncryptedPayload()).isEqualTo(originalCiphertext);
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
-                .isEqualTo(ConnectionStatus.DISABLED);
+                .isEqualTo(ConnectionStatus.ACTIVE);
     }
 
     @Test
@@ -483,17 +523,17 @@ class GoogleOAuthUseCasesTest {
         jdbcTemplate.execute("alter table workspace.notification_outbox add constraint " + constraintName
                 + " check (event_type <> 'connection.connected' or payload -> 'entity' ->> 'id' <> '"
                 + connection.getId() + "')");
-        GoogleOAuthCallbackResult result;
+        GoogleOAuthCallbackResult callback = completeOAuth.executeForCallback(state, "synthetic-code", null);
         try {
-            result = completeOAuth.executeForCallback(state, "synthetic-code", null);
+            assertThatThrownBy(() -> completeOAuth.completeAuthenticated(
+                    ownerId, connection.getWorkspaceId(), connection.getId(), callback.completionId()))
+                    .isInstanceOf(DependencyUnavailableException.class);
         } finally {
             jdbcTemplate.execute("alter table workspace.notification_outbox drop constraint if exists "
                     + constraintName);
         }
 
-        assertThat(result.succeeded()).isFalse();
-        assertThat(result.failureReason()).isEqualTo(GoogleOAuthCallbackResult.FailureReason.VERIFICATION_FAILED);
-        assertThat(result.toString()).doesNotContain(ACCESS_TOKEN, REFRESH_TOKEN, "connection.connected");
+        assertThat(callback.toString()).doesNotContain(ACCESS_TOKEN, REFRESH_TOKEN, "connection.connected");
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
                 .isEqualTo(ConnectionStatus.DISABLED);
         assertThat(credentialRepository.findByConnectionId(connection.getId())).isEmpty();
@@ -504,6 +544,120 @@ class GoogleOAuthUseCasesTest {
         return jdbcTemplate.queryForObject("select count(*) from workspace.notification_outbox "
                 + "where event_type = ? and payload -> 'entity' ->> 'id' = ?",
                 Integer.class, eventType, connectionId.toString());
+    }
+
+    @Test
+    void startSendsS256ChallengeAndKeepsVerifierOnlyInServerSideState() throws Exception {
+        UUID ownerId = UUID.randomUUID();
+        Connection connection = createConnection(ownerId, ownerId, ConnectionProvider.GMAIL, false);
+        String url = startOAuth.execute(ownerId, connection.getWorkspaceId(), connection.getId())
+                .authorizationUrl();
+        String state = stateFrom(url);
+
+        OAuthPendingState pending = stateStore.consumeForCallback(state).orElseThrow().pendingState();
+        String challenge = googleOAuth.lastChallenge;
+        assertThat(pending.codeVerifier()).hasSizeGreaterThanOrEqualTo(43);
+        assertThat(challenge).isEqualTo(Base64.getUrlEncoder().withoutPadding().encodeToString(
+                MessageDigest.getInstance("SHA-256")
+                        .digest(pending.codeVerifier().getBytes(StandardCharsets.US_ASCII))));
+        assertThat(url).doesNotContain(pending.codeVerifier());
+        assertThat(pending.toString()).doesNotContain(pending.codeVerifier());
+    }
+
+    @Test
+    void callbackOnlyParksTheCodeAndCompletionByTheInitiatingUserPersistsTheCredential() {
+        UUID ownerId = UUID.randomUUID();
+        Connection connection = createConnection(ownerId, ownerId, ConnectionProvider.GMAIL, false);
+        String state = stateFrom(startOAuth.execute(ownerId,
+                connection.getWorkspaceId(), connection.getId()).authorizationUrl());
+
+        GoogleOAuthCallbackResult callback = completeOAuth.executeForCallback(state, "synthetic-code", null);
+
+        assertThat(callback.isPending()).isTrue();
+        assertThat(callback.connectionId()).isEqualTo(connection.getId());
+        assertThat(callback.completionId()).matches("[A-Za-z0-9_-]{43}");
+        assertThat(callback.toString()).doesNotContain(callback.completionId());
+        assertThat(googleOAuth.exchangeCalls.get()).isZero();
+        assertThat(credentialRepository.findByConnectionId(connection.getId())).isEmpty();
+        assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.DISABLED);
+
+        ConnectionTestResult result = completeOAuth.completeAuthenticated(
+                ownerId, connection.getWorkspaceId(), connection.getId(), callback.completionId());
+
+        assertThat(result.outcome()).isEqualTo(ConnectionTestResult.ConnectionTestOutcome.VERIFIED);
+        assertThat(googleOAuth.exchangeCalls.get()).isEqualTo(1);
+        assertThat(googleOAuth.lastVerifier).isNotBlank();
+        assertThat(credentialRepository.findByConnectionId(connection.getId())).isPresent();
+        assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
+                .isEqualTo(ConnectionStatus.ACTIVE);
+        assertThat(notificationCount(connection.getId(), "connection.connected")).isEqualTo(1);
+
+        // Replay of the consumed id is a clean 409, never a second connect.
+        assertThatThrownBy(() -> completeOAuth.completeAuthenticated(
+                ownerId, connection.getWorkspaceId(), connection.getId(), callback.completionId()))
+                .isInstanceOf(ConflictException.class);
+        assertThat(googleOAuth.exchangeCalls.get()).isEqualTo(1);
+    }
+
+    @Test
+    void completionByAnotherUserOrForAnotherConnectionIsRejectedAndConsumed() {
+        UUID ownerId = UUID.randomUUID();
+        UUID victimId = UUID.randomUUID();
+        Connection connection = createConnection(ownerId, ownerId, ConnectionProvider.GMAIL, false);
+        String state = stateFrom(startOAuth.execute(ownerId,
+                connection.getWorkspaceId(), connection.getId()).authorizationUrl());
+        String completionId = completeOAuth.executeForCallback(state, "synthetic-code", null).completionId();
+
+        assertThatThrownBy(() -> completeOAuth.completeAuthenticated(
+                victimId, connection.getWorkspaceId(), connection.getId(), completionId))
+                .isInstanceOf(ConflictException.class);
+        // The record is gone: not even the initiating user can retry it.
+        assertThatThrownBy(() -> completeOAuth.completeAuthenticated(
+                ownerId, connection.getWorkspaceId(), connection.getId(), completionId))
+                .isInstanceOf(ConflictException.class);
+        assertThat(googleOAuth.exchangeCalls.get()).isZero();
+        assertThat(credentialRepository.findByConnectionId(connection.getId())).isEmpty();
+
+        String secondState = stateFrom(startOAuth.execute(ownerId,
+                connection.getWorkspaceId(), connection.getId()).authorizationUrl());
+        String secondId = completeOAuth.executeForCallback(secondState, "synthetic-code", null).completionId();
+        assertThatThrownBy(() -> completeOAuth.completeAuthenticated(
+                ownerId, connection.getWorkspaceId(), UUID.randomUUID(), secondId))
+                .isInstanceOf(ConflictException.class);
+        assertThat(googleOAuth.exchangeCalls.get()).isZero();
+    }
+
+    @Test
+    void expiredOrUnknownCompletionIsAConflict() {
+        UUID ownerId = UUID.randomUUID();
+        Connection connection = createConnection(ownerId, ownerId, ConnectionProvider.GMAIL, false);
+        String state = stateFrom(startOAuth.execute(ownerId,
+                connection.getWorkspaceId(), connection.getId()).authorizationUrl());
+        String completionId = completeOAuth.executeForCallback(state, "synthetic-code", null).completionId();
+
+        redis.delete("workspace:oauth-completion:" + completionId); // what TTL expiry does
+
+        assertThatThrownBy(() -> completeOAuth.completeAuthenticated(
+                ownerId, connection.getWorkspaceId(), connection.getId(), completionId))
+                .isInstanceOf(ConflictException.class);
+        assertThatThrownBy(() -> completeOAuth.completeAuthenticated(
+                ownerId, connection.getWorkspaceId(), connection.getId(), "not-a-valid-id"))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void callbackDenialDoesNotCreateACompletion() {
+        UUID ownerId = UUID.randomUUID();
+        Connection connection = createConnection(ownerId, ownerId, ConnectionProvider.GMAIL, false);
+        String state = stateFrom(startOAuth.execute(ownerId,
+                connection.getWorkspaceId(), connection.getId()).authorizationUrl());
+
+        GoogleOAuthCallbackResult callback = completeOAuth.executeForCallback(state, null, "access_denied");
+
+        assertThat(callback.isPending()).isFalse();
+        assertThat(callback.completionId()).isNull();
+        assertThat(callback.failureReason()).isEqualTo(GoogleOAuthCallbackResult.FailureReason.AUTHORIZATION_DENIED);
     }
 
     @Test
@@ -567,7 +721,7 @@ class GoogleOAuthUseCasesTest {
         String state = stateFrom(startOAuth.execute(memberId,
                 connection.getWorkspaceId(), connection.getId()).authorizationUrl());
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
-                .isEqualTo(ConnectionStatus.DISABLED);
+                .isEqualTo(ConnectionStatus.ACTIVE);
 
         oauthClock.freezeAt(Instant.parse("2026-09-19T10:00:00Z"));
         googleOAuth.tokens = tokens("new-expiring-access", "new-expiring-refresh", gmailScopes(), 1);
@@ -584,7 +738,7 @@ class GoogleOAuthUseCasesTest {
         assertThat(current.getEncryptedPayload()).isEqualTo(originalCiphertext);
         assertThat(current.getExpiresAt()).isEqualTo(original.getExpiresAt());
         assertThat(connectionRepository.findById(connection.getId()).orElseThrow().getStatus())
-                .isEqualTo(ConnectionStatus.DISABLED);
+                .isEqualTo(ConnectionStatus.ACTIVE);
     }
 
     @Test
@@ -640,7 +794,7 @@ class GoogleOAuthUseCasesTest {
         if (withCredential) {
             GoogleOAuthTokenResponse original = tokens(
                     "prior-synthetic-access", "prior-synthetic-refresh", scopes(provider));
-            byte[] encrypted = credentialCrypto.encrypt(payloadCodec.encodeGoogleOAuth(connection, original));
+            byte[] encrypted = credentialCrypto.encrypt(payloadCodec.encodeGoogleOAuth(connection, original), connection.getId());
             credentialRepository.save(Credential.createNew(
                     connection.getId(), encrypted, credentialCrypto.currentKeyVersion(), Instant.now().plusSeconds(1800)));
         }
@@ -816,9 +970,12 @@ class GoogleOAuthUseCasesTest {
         private volatile Runnable afterVerify = () -> { };
         private volatile Instant exchangedAt;
         private volatile Instant verifiedAt;
+        private volatile String lastChallenge;
+        private volatile String lastVerifier;
 
         @Override
-        public String authorizationUrl(ConnectionProvider provider, String state) {
+        public String authorizationUrl(ConnectionProvider provider, String state, String codeChallenge) {
+            lastChallenge = codeChallenge;
             afterAuthorizationUrl.run();
             return "https://accounts.google.com/o/oauth2/v2/auth?state="
                     + URLEncoder.encode(state, StandardCharsets.UTF_8)
@@ -826,8 +983,9 @@ class GoogleOAuthUseCasesTest {
         }
 
         @Override
-        public GoogleOAuthTokenResponse exchangeAuthorizationCode(String authorizationCode) {
+        public GoogleOAuthTokenResponse exchangeAuthorizationCode(String authorizationCode, String codeVerifier) {
             exchangeCalls.incrementAndGet();
+            lastVerifier = codeVerifier;
             if (exchangeFailure != null) {
                 throw exchangeFailure;
             }

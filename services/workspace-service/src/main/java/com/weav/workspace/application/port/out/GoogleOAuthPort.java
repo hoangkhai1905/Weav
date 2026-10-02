@@ -10,9 +10,10 @@ import java.util.List;
 /** Google authorization-code exchange and provider verification boundary. */
 public interface GoogleOAuthPort {
 
-    String authorizationUrl(ConnectionProvider provider, String state);
+    /** {@code codeChallenge} is the PKCE S256 challenge; the verifier stays server-side. */
+    String authorizationUrl(ConnectionProvider provider, String state, String codeChallenge);
 
-    GoogleOAuthTokenResponse exchangeAuthorizationCode(String authorizationCode);
+    GoogleOAuthTokenResponse exchangeAuthorizationCode(String authorizationCode, String codeVerifier);
 
     GoogleOAuthRefreshResponse refreshAccessToken(String refreshToken);
 

@@ -113,6 +113,14 @@ class WorkflowSecurityTest {
     }
 
     @Test
+    void rejectsAnAccessJwtForADisabledUser() throws Exception {
+        String token = accessToken(USER_ID.toString(), "access", Instant.now().plusSeconds(120),
+                jwtProperties.accessSecret(), "DISABLED");
+
+        assertUnauthorized(token);
+    }
+
+    @Test
     void rejectsARefreshJwtOnPublicRoutes() throws Exception {
         String token = accessToken(USER_ID.toString(), "refresh", Instant.now().plusSeconds(120),
                 jwtProperties.accessSecret());
@@ -285,6 +293,11 @@ class WorkflowSecurityTest {
     }
 
     private String accessToken(String subject, String tokenUse, Instant expiresAt, String secret) throws Exception {
+        return accessToken(subject, tokenUse, expiresAt, secret, "ACTIVE");
+    }
+
+    private String accessToken(String subject, String tokenUse, Instant expiresAt, String secret, String userStatus)
+            throws Exception {
         Instant now = Instant.now();
         Map<String, Object> header = Map.of("alg", "HS256", "typ", "JWT");
         Map<String, Object> claims = new LinkedHashMap<>();
@@ -297,7 +310,7 @@ class WorkflowSecurityTest {
         claims.put("jti", UUID.randomUUID().toString());
         claims.put("sid", UUID.randomUUID().toString());
         claims.put("system_role", "USER");
-        claims.put("user_status", "ACTIVE");
+        claims.put("user_status", userStatus);
         claims.put("token_use", tokenUse);
         String encodedHeader = encodeJson(header);
         String encodedClaims = encodeJson(claims);

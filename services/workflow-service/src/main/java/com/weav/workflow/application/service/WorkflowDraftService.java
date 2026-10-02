@@ -17,7 +17,7 @@ import com.weav.workflow.domain.model.aggregate.workflow.Workflow;
 import com.weav.workflow.domain.port.out.WorkflowRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -41,6 +41,7 @@ public class WorkflowDraftService {
     private final WorkspaceConnectionPort workspaceConnections;
     private final Optional<ConnectionReferencePort> connectionReferences;
     private final WorkflowNotificationOutboxPort notificationOutbox;
+    private final TransactionOperations transactions;
     private final DefinitionValidator definitionValidator = new DefinitionValidator();
 
     public WorkflowDraftService(
@@ -53,7 +54,6 @@ public class WorkflowDraftService {
                 connectionReferences, event -> { });
     }
 
-    @Autowired
     public WorkflowDraftService(
             CreateWorkflowUseCase createWorkflow,
             WorkflowRepository workflowRepository,
@@ -61,6 +61,20 @@ public class WorkflowDraftService {
             WorkspaceConnectionPort workspaceConnections,
             Optional<ConnectionReferencePort> connectionReferences,
             WorkflowNotificationOutboxPort notificationOutbox) {
+        this(createWorkflow, workflowRepository, workspaceAuthorization, workspaceConnections,
+                connectionReferences, notificationOutbox, TransactionOperations.withoutTransaction());
+    }
+
+    @Autowired
+    public WorkflowDraftService(
+            CreateWorkflowUseCase createWorkflow,
+            WorkflowRepository workflowRepository,
+            WorkspaceAuthorization workspaceAuthorization,
+            WorkspaceConnectionPort workspaceConnections,
+            Optional<ConnectionReferencePort> connectionReferences,
+            WorkflowNotificationOutboxPort notificationOutbox,
+            TransactionOperations transactions) {
+        this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.createWorkflow = Objects.requireNonNull(createWorkflow, "createWorkflow must not be null");
         this.workflowRepository = Objects.requireNonNull(workflowRepository, "workflowRepository must not be null");
         this.workspaceAuthorization = Objects.requireNonNull(workspaceAuthorization, "workspaceAuthorization must not be null");
@@ -69,20 +83,29 @@ public class WorkflowDraftService {
         this.notificationOutbox = Objects.requireNonNull(notificationOutbox, "notificationOutbox must not be null");
     }
 
-    @Transactional
+    /** Remote authorization runs before, and outside, the short write transaction. */
     public Workflow create(CreateWorkflowCommand command) {
         Objects.requireNonNull(command, "command must not be null");
         workspaceAuthorization.require(command.workspaceId(), command.actorId(), "WORKFLOW_CREATE");
         validateName(command.name());
-        Workflow created = createWorkflow.execute(command);
-        notificationOutbox.record(WorkflowNotificationEvent.lifecycle("workflow.created", created.getWorkspaceId(),
-                command.actorId(), created.getId(), created.getName(), created.getCreatedAt()));
-        return created;
+        return transactions.execute(status -> {
+            Workflow created = createWorkflow.execute(command);
+            notificationOutbox.record(WorkflowNotificationEvent.lifecycle("workflow.created",
+                    created.getWorkspaceId(), command.actorId(), created.getId(), created.getName(),
+                    created.getCreatedAt()));
+            return created;
+        });
     }
 
-    @Transactional
     public Workflow save(UUID workspaceId, UUID workflowId, UUID actorId, String name, String description,
                          WorkflowDefinition definition, Map<String, Object> editorState) {
+        return save(workspaceId, workflowId, actorId, name, description, definition, editorState, null);
+    }
+
+    /** A non-null {@code expectedRevision} that differs from the stored one fails with a 409; null keeps last-write-wins. */
+    public Workflow save(UUID workspaceId, UUID workflowId, UUID actorId, String name, String description,
+                         WorkflowDefinition definition, Map<String, Object> editorState,
+                         Long expectedRevision) {
         workspaceAuthorization.require(workspaceId, actorId, "WORKFLOW_EDIT");
         validateName(name);
         validateDefinition(definition);
@@ -100,24 +123,26 @@ public class WorkflowDraftService {
             workspaceConnections.authorizeAttachment(workspaceId, connectionId, actorId);
         }
 
-        Workflow workflow = workflowRepository.lockByWorkspaceAndId(workspaceId, workflowId)
-                .orElseThrow(() -> new ResourceNotFoundException("Workflow not found"));
-        existingReferences = connectionIds(workflow.getDraftDefinition());
-        requireReferenceProjectionIfNeeded(existingReferences, newReferences);
-        connectionReferences.ifPresent(port -> port.replaceDraft(workflowId, newReferences));
+        return transactions.execute(status -> {
+            Workflow workflow = workflowRepository.lockByWorkspaceAndId(workspaceId, workflowId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Workflow not found"));
+            if (expectedRevision != null && expectedRevision != workflow.getRevision()) {
+                throw new DraftRevisionConflictException(workflow.getRevision());
+            }
+            requireReferenceProjectionIfNeeded(connectionIds(workflow.getDraftDefinition()), newReferences);
+            connectionReferences.ifPresent(port -> port.replaceDraft(workflowId, newReferences));
 
-        workflow.updateDraft(name, description, serializedDefinition, frozenEditorState);
-        return workflowRepository.save(workflow);
+            workflow.updateDraft(name, description, serializedDefinition, frozenEditorState);
+            return workflowRepository.save(workflow);
+        });
     }
 
-    @Transactional(readOnly = true)
     public Workflow get(UUID workspaceId, UUID workflowId, UUID actorId) {
         workspaceAuthorization.require(workspaceId, actorId, "WORKSPACE_VIEW");
         return workflowRepository.findByWorkspaceAndId(workspaceId, workflowId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workflow not found"));
     }
 
-    @Transactional(readOnly = true)
     public WorkflowPage list(UUID workspaceId, UUID actorId, int page, int size) {
         workspaceAuthorization.require(workspaceId, actorId, "WORKSPACE_VIEW");
         validatePage(page, size);

@@ -10,6 +10,8 @@ public class UserSession {
     private final UUID id;
     private final UUID userId;
     private String refreshTokenHash;
+    private String previousRefreshTokenHash;
+    private Instant rotatedAt;
     private String userAgent;
     private String ipAddress;
     private Instant expiresAt;
@@ -25,6 +27,16 @@ public class UserSession {
     public UserSession(UUID id, UUID userId, String refreshTokenHash, String userAgent,
                        String ipAddress, Instant expiresAt, Instant revokedAt,
                        Instant lastUsedAt, Instant createdAt) {
+        this(id, userId, refreshTokenHash, userAgent, ipAddress, expiresAt, revokedAt,
+                lastUsedAt, createdAt, null, null);
+    }
+
+    public UserSession(UUID id, UUID userId, String refreshTokenHash, String userAgent,
+                       String ipAddress, Instant expiresAt, Instant revokedAt,
+                       Instant lastUsedAt, Instant createdAt,
+                       String previousRefreshTokenHash, Instant rotatedAt) {
+        this.previousRefreshTokenHash = previousRefreshTokenHash;
+        this.rotatedAt = rotatedAt;
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.userId = Objects.requireNonNull(userId, "userId must not be null");
         this.refreshTokenHash = Objects.requireNonNull(refreshTokenHash, "refreshTokenHash must not be null");
@@ -63,6 +75,8 @@ public class UserSession {
         if (!isActive(now)) {
             throw new InvalidStateException("session is not active");
         }
+        this.previousRefreshTokenHash = this.refreshTokenHash;
+        this.rotatedAt = now;
         this.refreshTokenHash = newHash;
         this.lastUsedAt = now;
     }
@@ -72,6 +86,8 @@ public class UserSession {
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public String getRefreshTokenHash() { return refreshTokenHash; }
+    public String getPreviousRefreshTokenHash() { return previousRefreshTokenHash; }
+    public Instant getRotatedAt() { return rotatedAt; }
     public String getUserAgent() { return userAgent; }
     public String getIpAddress() { return ipAddress; }
     public Instant getExpiresAt() { return expiresAt; }

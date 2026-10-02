@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.weav.identity.TestcontainersConfiguration;
@@ -138,21 +139,49 @@ class RefreshConcurrencyIntegrationTest {
                 .filter(failure -> failure != null)
                 .toList();
 
-        assertEquals(1, successes.size());
-        assertEquals(1, failures.size());
-        assertInstanceOf(UnauthorizedException.class, failures.getFirst());
+        // Inside the reuse grace window the loser is treated as a retry: both calls succeed, serialized by
+        // the row lock, and the session ends with the second token current and the first one previous.
+        assertEquals(2, successes.size());
+        assertTrue(failures.isEmpty());
 
-        TokenPairResult winner = successes.getFirst();
-        String winnerHash = refreshTokenGenerator.hash(winner.refreshToken());
+        String firstHash = refreshTokenGenerator.hash(successes.get(0).refreshToken());
+        String secondHash = refreshTokenGenerator.hash(successes.get(1).refreshToken());
         UserSession stored = userSessionRepository.findById(fixture.sessionId()).orElseThrow();
 
-        assertEquals(winnerHash, stored.getRefreshTokenHash());
-        assertEquals(fixture.sessionId(), stored.getId());
+        assertTrue(stored.getRefreshTokenHash().equals(firstHash) || stored.getRefreshTokenHash().equals(secondHash));
+        assertTrue(stored.getPreviousRefreshTokenHash().equals(firstHash)
+                || stored.getPreviousRefreshTokenHash().equals(secondHash));
+        assertTrue(!stored.getRefreshTokenHash().equals(stored.getPreviousRefreshTokenHash()));
+        assertNull(stored.getRevokedAt());
         assertEquals(EXPIRES_AT, stored.getExpiresAt());
-        assertEquals(EXPIRES_AT, winner.refreshExpiresAt());
         assertTrue(userSessionRepository.findByRefreshTokenHash(fixture.oldHash()).isEmpty());
-        assertEquals(fixture.sessionId(),
-                userSessionRepository.findByRefreshTokenHash(winnerHash).orElseThrow().getId());
+    }
+
+    @Test
+    void retryWithPreviousTokenInsideGraceSucceedsAndOutsideGraceRevokesSession() {
+        SessionFixture fixture = persistSession();
+        TokenPairResult first = refreshSessionUseCase.execute(new RefreshTokenCommand(fixture.rawToken()));
+        UserSession rotated = userSessionRepository.findById(fixture.sessionId()).orElseThrow();
+        assertEquals(fixture.oldHash(), rotated.getPreviousRefreshTokenHash());
+        assertNotNull(rotated.getRotatedAt());
+
+        // Retry with the old token inside the 10 s grace (fixed test clock): issues a new pair.
+        TokenPairResult retry = refreshSessionUseCase.execute(new RefreshTokenCommand(fixture.rawToken()));
+        assertTrue(!retry.refreshToken().equals(first.refreshToken()));
+
+        // Age the rotation beyond the grace window, then replay the previous token: reuse detected.
+        UserSession stored = userSessionRepository.findById(fixture.sessionId()).orElseThrow();
+        userSessionRepository.save(new UserSession(stored.getId(), stored.getUserId(),
+                stored.getRefreshTokenHash(), stored.getUserAgent(), stored.getIpAddress(),
+                stored.getExpiresAt(), null, stored.getLastUsedAt(), stored.getCreatedAt(),
+                stored.getPreviousRefreshTokenHash(), stored.getRotatedAt().minusSeconds(60)));
+
+        // retry's previous hash is first.refreshToken() hash (the token replaced by the retry rotation).
+        assertThrows(UnauthorizedException.class,
+                () -> refreshSessionUseCase.execute(new RefreshTokenCommand(first.refreshToken())));
+        assertNotNull(userSessionRepository.findById(fixture.sessionId()).orElseThrow().getRevokedAt());
+        assertThrows(UnauthorizedException.class,
+                () -> refreshSessionUseCase.execute(new RefreshTokenCommand(retry.refreshToken())));
     }
 
     @Test

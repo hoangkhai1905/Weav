@@ -1,6 +1,6 @@
 # API Gateway
 
-> Status: Partial. Identity, Workspace, Notification, OCR and Workflow (draft/publish/run/monitor) routes are proxied at the edge; the AI generate route, webhook public ingress, Bot routes and distributed rate limiting are not in code. Owner: T (partner). Last verified: 2026-09-30 against `dev`.
+> Status: Partial. Identity (incl. avatar, OAuth-account list, admin users), Workspace (incl. credential replace/delete), Notification, OCR and Workflow (draft/publish/run/monitor, AI generate, public webhook ingress) routes are proxied at the edge; Bot routes, identity browser cookie/OAuth flows and distributed rate limiting are not. Owner: T (partner). Last verified: 2026-10-01 against `refactor/optimize-backend`.
 
 ## Purpose and scope
 
@@ -16,15 +16,15 @@ The Gateway only carries these use cases; the owning service implements them.
 
 | UC | Name | Status | Notes |
 | --- | --- | --- | --- |
-| UC001, UC002, UC003, UC004 | Sign in, forgot password, register, change password | Implemented | `api/auth/*` routes in [identity.module.ts](../../../services/api-gateway/src/identity/identity.module.ts) |
-| UC005-UC010 | Workspaces, members, permissions, connections | Implemented | 17 Workspace operations in [workspace.controller.ts](../../../services/api-gateway/src/workspace/workspace.controller.ts) |
+| UC001, UC002, UC003, UC004 | Sign in, forgot password, register, change password | Implemented | `api/auth/*` routes (plus `api/users/me/avatar`, `oauth-accounts`) in [identity.module.ts](../../../services/api-gateway/src/identity/identity.module.ts) |
+| UC005-UC010 | Workspaces, members, permissions, connections | Implemented | 19 Workspace operations (incl. credential PUT/DELETE) in [workspace.controller.ts](../../../services/api-gateway/src/workspace/workspace.controller.ts) |
 | UC011, UC012, UC013, UC015, UC016, UC018, UC019 | Create, edit, save draft, publish, pause/resume, run manually, monitor executions (per workflow) | Implemented | [workflow.module.ts](../../../services/api-gateway/src/workflow/workflow.module.ts); no `DELETE` route, so UC017 is missing |
-| UC014 | Generate workflow from natural language | Planned | Route `POST /api/v1/workspaces/:id/workflows/generate` not present (pending handoff) |
+| UC014 | Generate workflow from natural language | Implemented (gateway level) | `POST /api/v1/workspaces/:id/workflows/generate`, 32 KiB body, 80 s deadline |
 | UC017 | Delete workflow | Planned | No Gateway route; check Workflow contract before adding |
 | UC020 | Result notifications | Implemented | `api/v1`, `api/v2`, `api/notifications` routes |
-| UC021 | Trigger via webhook | Planned | No public webhook ingress in the Gateway |
+| UC021 | Trigger via webhook | Implemented (gateway level) | Public `POST /api/v1/webhooks/{endpointKey}` in `WebhookProxyController` |
 | UC022-UC024 | Telegram trigger, link, bot | Planned | No Bot routes (`BOT_SERVICE_URL` is validated but unused by any controller) |
-| UC025-UC028 | Admin: users, lock, all workspaces, all executions | Planned | README lists admin expansion as deferred; no routes |
+| UC025-UC028 | Admin: users, lock, all workspaces, all executions | Implemented (gateway level) | `api/admin/users` list, detail, status (edge ADMIN check); depends on the Identity admin endpoints |
 | n/a | OCR extraction (used by workflow OCR nodes/UI) | Implemented | [ocr.controller.ts](../../../services/api-gateway/src/ocr/ocr.controller.ts) |
 
 ## Business rules
@@ -33,7 +33,7 @@ The Gateway only carries these use cases; the owning service implements them.
 | --- | --- |
 | BR01 | Global `AccessTokenGuard` defaults every route to `required`; only routes tagged `public`/`optional` skip it ([access-token.guard.ts](../../../services/api-gateway/src/auth/access-token.guard.ts)). Scope checks stay downstream. |
 | BR02-BR05 | Not enforced here. The Gateway validates shape (UUIDs, strict bodies, pagination) and forwards the user JWT; Workspace/Workflow decide membership, Owner and publish rights. |
-| BR09 | Not applicable yet (no webhook/Telegram ingress). |
+| BR09 | Webhook ingress forwards the validated `X-Webhook-Secret` to Workflow, which enforces it; no Telegram ingress yet. |
 
 Component rules from code:
 - Unknown paths, internal service paths and unsupported methods are not forwarded (no wildcard proxy).
@@ -64,6 +64,10 @@ Upstream paths drop the `/api` or `/api/v1` prefix except Notification. Auth: Pu
 | GET | `/api/v1/notifications`, `/unread-count` (also `/api/notifications`) | Notification `/api/v1/notifications` | Required |
 | PATCH, POST | `.../{id}/read`, `.../read-all` | Notification v1 | Required |
 | GET, PATCH, POST | `/api/v2/notifications`, `/unread-count`, `/{id}/read`, `/read-all` | Notification `/api/v2/notifications` | Required |
+| GET | `/api/users/me/oauth-accounts` | Identity `/users/me/oauth-accounts` | Required |
+| GET, PUT, DELETE | `/api/users/me/avatar` | Identity `/users/me/avatar` (PUT streams multipart, 2 MiB + 64 KiB cap, 415 if not multipart) | Required |
+| GET | `/api/admin/users`, `/api/admin/users/{userId}` (list forwards `page`,`size`,`search`,`status`) | Identity `/admin/users` | Required, `system_role=ADMIN` else 403 |
+| PATCH | `/api/admin/users/{userId}/status` | Identity `/admin/users/{id}/status` | Required, ADMIN |
 | POST, GET | `/api/v1/workspaces` | Workspace `/workspaces` | Required |
 | GET, PATCH | `/api/v1/workspaces/{workspaceId}` | Workspace `/workspaces/{id}` | Required |
 | GET, POST | `.../{workspaceId}/members` | Workspace `.../members` | Required |
@@ -72,20 +76,24 @@ Upstream paths drop the `/api` or `/api/v1` prefix except Notification. Auth: Pu
 | POST, GET | `.../{workspaceId}/connections` | Workspace | Required |
 | GET, PATCH, DELETE | `.../connections/{connectionId}` | Workspace | Required |
 | POST | `.../connections/{connectionId}/test`, `/disable`, `/oauth/authorize` | Workspace | Required |
+| POST | `.../connections/{connectionId}/oauth/complete` (strict body `{completion}`, `^[A-Za-z0-9_-]{32,128}$`) | Workspace | Required |
+| PUT, DELETE | `.../connections/{connectionId}/credential` | Workspace | Required |
 | POST, GET | `/api/v1/workspaces/{workspaceId}/workflows` | Workflow `/workspaces/{id}/workflows` | Required |
 | GET | `.../workflows/{workflowId}` | Workflow | Required |
 | PUT | `.../workflows/{workflowId}/draft` | Workflow | Required |
+| POST | `.../workflows/generate` | Workflow `.../workflows/generate` (32 KiB, 80 s) | Required |
 | POST | `.../workflows/{workflowId}/publish`, `/pause`, `/resume` | Workflow | Required |
 | POST, GET | `.../workflows/{workflowId}/executions` | Workflow | Required |
 | GET | `.../workflows/{workflowId}/executions/{executionId}` (`logPage`,`logSize`) | Workflow | Required |
+| POST | `/api/v1/webhooks/{endpointKey}` | Workflow `/webhooks/{endpointKey}` (JSON only, 415 otherwise; client Authorization never forwarded; `X-Webhook-Secret` forwarded after validation) | Public (own `webhook` throttler per endpoint key) |
 | POST | `/api/v1/workspaces/{workspaceId}/ocr/extractions` | OCR `/v1/extractions` | Required (dev-only unauthenticated bypass) |
 
-Not routed (by design or pending): Workspace internal and manual credential routes, Google OAuth callback, AI `/v1/*`, Bot, `/webhooks/{endpointKey}` (Workflow contract path, no Gateway route), `POST .../workflows/generate`, Workflow `DELETE`.
+Not routed (by design or pending): Workspace internal routes, Google OAuth callbacks, identity browser cookie/OAuth flows (`/auth/web/*`, Google OAuth start/exchange/callback, account link, OAuth unlink; clients still call Identity directly), AI `/v1/*`, Bot, Workflow `DELETE`.
 
-Common errors: 400 validation, 401 missing/invalid bearer, 413 body too large (Identity 16 KiB, Workflow 1 MiB), 429 with `Retry-After`, 502 invalid upstream response, 503 upstream unavailable/timeout (`OCR_BUSY` for OCR). Downstream business errors (401/403/404/409/422) pass through unchanged.
+Common errors: 400 validation, 401 missing/invalid bearer, 413 body too large (Identity 16 KiB, avatar 2 MiB + 64 KiB, Workflow 1 MiB, generate 32 KiB), 429 with `Retry-After`, 502 invalid upstream response, 503 upstream unavailable/timeout (`OCR_BUSY` for OCR). Downstream business errors (401/403/404/409/422) pass through unchanged.
 
 ### Contracts
-- Public Workspace surface: [gateway openapi.yaml](../../../packages/contracts/http/gateway/openapi.yaml) and [README](../../../packages/contracts/http/gateway/README.md) (17 operations only).
+- Public Workspace surface: [gateway openapi.yaml](../../../packages/contracts/http/gateway/openapi.yaml) and [README](../../../packages/contracts/http/gateway/README.md) (20 operations only).
 - Workflow: [workflow openapi.yaml](../../../packages/contracts/http/workflow/openapi.yaml) (upstream contract, includes `generate` and `/webhooks/{endpointKey}`).
 - Notification v2: [notifications-v2.md](../../../packages/contracts/http/notifications-v2.md). Identity: `packages/contracts/http/auth`. OCR: `packages/contracts/http/ocr`.
 - Identity, Notification, Workflow and OCR routes have no Gateway OpenAPI document.
@@ -113,11 +121,13 @@ None. The Gateway neither publishes nor consumes RabbitMQ messages.
 
 - Edge JWT: `jose` HS256, checks issuer, audience, required claims, clock skew (default 30 s), `token_use`, ACTIVE status ([access-token.service.ts](../../../services/api-gateway/src/auth/access-token.service.ts)). Only the access secret is held; refresh and internal secrets stay out.
 - Authorization header must be a single `Bearer <token>` of at most 8192 chars. The original value is forwarded so downstream services re-verify.
-- Forwarded headers: Authorization, canonical `X-Request-ID`/`X-Correlation-ID`, valid `traceparent`, truncated `User-Agent`. Cookies, internal keys, forged user/role headers and forwarded-IP headers are dropped.
-- CORS: explicit origin allow-list, `credentials: false`, allowed headers Authorization, Content-Type, Traceparent, X-Correlation-ID, X-Request-ID.
+- Forwarded headers: Authorization, canonical `X-Request-ID`/`X-Correlation-ID`, valid `traceparent`, truncated `User-Agent`, a valid `Idempotency-Key` (`[A-Za-z0-9._:-]{8,128}`, non-GET only). `X-Forwarded-For` is set from the Gateway-derived client IP (`request.ip`); client-supplied values are never copied. Cookies, internal keys and forged user/role headers are dropped.
+- CORS: explicit origin allow-list, `credentials: false`, allowed headers Authorization, Content-Type, Idempotency-Key, Traceparent, X-Correlation-ID, X-Request-ID.
+- Response headers on every reply: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`.
+- Admin routes check `system_role === ADMIN` at the edge (403, no upstream call); Identity still re-checks.
 - Input validation before proxying: UUIDs, strict zod bodies (Workflow, Workspace), allow-listed query keys (Identity), pagination bounds (`size` 1-100).
 - Production checks: `CORS_ALLOWED_ORIGINS` required; `OCR_ALLOW_UNAUTHENTICATED_DEV` only valid in `development`; `JWT_ACCESS_SECRET` at least 32 bytes.
-- `trustProxy` is false, so behind a load balancer all clients may share one IP bucket.
+- `trustProxy` is false by default (`GATEWAY_TRUST_PROXY_HOPS=0`); set the hop count behind a load balancer so rate limits and `X-Forwarded-For` use the real client IP. Identity ignores `X-Forwarded-For` until `server.forward-headers-strategy` is configured.
 
 ## Configuration
 
@@ -141,6 +151,8 @@ Names and defaults from [gateway.config.ts](../../../services/api-gateway/src/co
 | `GATEWAY_GENERAL_RATE_LIMIT` | `120` | Requests per window per socket IP |
 | `GATEWAY_AUTH_RATE_LIMIT` | `10` | Public auth mutations per window per IP |
 | `GATEWAY_OCR_RATE_LIMIT` | `10` | OCR per window per JWT subject |
+| `GATEWAY_WEBHOOK_RATE_LIMIT` | `60` | Webhook ingress per window per endpoint key |
+| `GATEWAY_TRUST_PROXY_HOPS` | `0` | 0-10 trusted proxy hops; 0 disables `trustProxy` |
 | `GATEWAY_RATE_LIMIT_WINDOW_MS` | `60000` | Window and block duration |
 | `VALKEY_URL` | n/a | Set in `compose.yml`, not read by code |
 
@@ -150,20 +162,20 @@ Compose ([compose.yml](../../../compose.yml), profile `app`, port 3000) hardcode
 
 | Area | Value (from code) |
 | --- | --- |
-| Upstream deadline | 10 s for Identity, Workspace, Notification, OCR (includes response body read); 15 s for Workflow |
+| Upstream deadline | 10 s for Identity, Workspace, Notification, OCR (includes response body read); 15 s for Workflow; 80 s for workflow generate |
 | Health probes | 2 s per upstream, parallel, body read included |
-| Body limits | Identity JSON 16 KiB; Workflow JSON 1 MiB; OCR raw multipart stream not capped by the Gateway |
+| Body limits | Identity JSON 16 KiB; avatar multipart streamed with a 2 MiB + 64 KiB cap; Workflow JSON 1 MiB; generate 32 KiB; OCR raw multipart stream not capped by the Gateway |
 | Retries | None; mutations never retried |
-| Rate limits | 3 throttlers (general, auth, OCR), in-memory, single replica; health and CORS preflight exempt |
+| Rate limits | 4 throttlers (general, auth, OCR, webhook per endpoint key), in-memory, single replica; health and CORS preflight exempt |
 | Response caching | `Cache-Control: no-store` on Identity and Workflow responses |
 | Observability | `X-Request-ID`/`X-Correlation-ID` on every response; errors logged with request ID; `GET /health` liveness, `GET /ready` readiness (Identity + Workspace only) |
 | Error envelope | `{ error: { code, message, details }, requestId }`; proxy-generated errors also include `status` |
 
 ## Status and known gaps
 
-- Planned: `POST /api/v1/workspaces/:id/workflows/generate` (UC014), pending partner handoff. Spec in [AI Service design §9](../../../docs/superpowers/specs/2026-09-25-ai-service-v1-design.md): 32 KiB body, upstream timeout at least 80 s (current Workflow proxy allows 15 s and 1 MiB).
-- Planned: public webhook ingress (UC021) forwarding to Workflow `/webhooks/{endpointKey}`; requires a raw-body, signature-preserving route outside the JWT guard.
-- Planned: Bot routes, admin routes (UC025-UC028), workflow delete (UC017), realtime/WebSocket (empty `src/websocket`).
+- Done at gateway level: generate (UC014, per [AI Service design §9](../../../docs/superpowers/specs/2026-09-25-ai-service-v1-design.md)), webhook ingress (UC021) and admin user routes (UC025-UC028 as far as Identity exposes them).
+- Planned: Bot routes, workflow delete (UC017), realtime/WebSocket (empty `src/websocket`), identity browser cookie/OAuth flows through the Gateway.
+- Unchanged: upstream timeouts surface as 503, not 504; OCR upload has no byte cap.
 - Partial: distributed rate limiting (in-memory only, `VALKEY_URL` unused); readiness ignores Workflow, Notification, OCR.
 - Known risk: OCR raw-stream path may bypass the Fastify body-size limit (accepted, documented in README).
 - Real-service login/Workspace and authenticated browser smoke tests remain deployment-gated (README).
@@ -174,25 +186,25 @@ Compose ([compose.yml](../../../compose.yml), profile `app`, port 3000) hardcode
 Commands (from README and package scripts; do not run `lint`, it uses `--fix`):
 
 ```
-pnpm --dir services/api-gateway test -- --runInBand --silent
-pnpm --dir services/api-gateway test:e2e -- --runInBand --silent
+pnpm --dir services/api-gateway test --runInBand --silent
+pnpm --dir services/api-gateway test:e2e --runInBand --silent
 pnpm --dir services/api-gateway exec tsc --noEmit
 pnpm --dir services/api-gateway build
 pnpm --dir services/api-gateway exec eslint "{src,test}/**/*.ts"
 ```
 
-Last full result (2026-09-30, `dev`): 91/91 unit, 67/67 e2e. E2E suites in `services/api-gateway/test/`: `app`, `auth`, `limits-health`, `transport`, `workspace`. No known environment-only errors.
+Last full result (2026-10-01, `refactor/optimize-backend`): 92/92 unit, 80/80 e2e. E2E suites in `services/api-gateway/test/`: `app`, `auth`, `limits-health`, `routes`, `transport`, `workspace`. No known environment-only errors.
 
 ## Open questions
 
 1. Gateway README says Workflow public routes are deferred, but Workflow routes exist in code (`WorkflowModule`). Suggested: partner updates the README; treat code as truth.
 2. `compose.yml` passes `VALKEY_URL` and comments "rate limiting / cache", but the limiter is in-memory. Suggested: drop the variable or plan Valkey-backed throttling before multi-replica.
 3. Notion's diagram routes the Gateway to AI/OCR/Bot directly; the AI spec keeps AI private and code has no AI/Bot routes. Suggested: only OCR (already routed) and Bot (Telegram webhook, TBD) are public; AI stays private.
-4. Where does webhook public ingress live: Gateway route to Workflow `/webhooks/{endpointKey}`, or direct? No decision in code. Suggested: Gateway route, no JWT, raw body, its own rate-limit bucket.
+4. Resolved: webhook ingress is a Gateway route (no JWT, JSON only, own rate-limit bucket per endpoint key).
 5. Error envelope: README says Gateway errors include `status`; [gateway-exception.filter.ts](../../../services/api-gateway/src/common/gateway-exception.filter.ts) omits it (only proxy-generated errors add it). Suggested: pick one shape and document it in the OpenAPI `GatewayErrorResponse`.
-6. Workflow generate needs at least 80 s upstream and 32 KiB body, but the Workflow proxy uses a shared 15 s deadline. Suggested: per-route deadline option in the handoff.
+6. Resolved: generate has a per-route 80 s deadline and 32 KiB cap.
 7. UC017 (delete workflow): does the Workflow contract define `DELETE`? Not seen in the Workflow OpenAPI paths list; confirm before requesting a Gateway route.
-8. Deployment behind a proxy: with `trustProxy=false` all users share one IP bucket. Suggested: decide the trusted-proxy policy before production.
+8. Deployment behind a proxy: set `GATEWAY_TRUST_PROXY_HOPS` to the real hop count; Identity must be unreachable directly before it trusts `X-Forwarded-For`.
 9. Notification v1 and v2 both exposed, plus legacy `/api/notifications`; no Gateway OpenAPI for them. Suggested: document and set a deprecation date for v1.
 
 ## References

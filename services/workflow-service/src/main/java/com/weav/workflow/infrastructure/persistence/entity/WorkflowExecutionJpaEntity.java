@@ -94,6 +94,14 @@ public class WorkflowExecutionJpaEntity {
     @Column(name = "lease_until")
     private Instant leaseUntil;
 
+    /** Set only at admission; never rewritten by later state saves. */
+    @Column(name = "idempotency_key", length = 128, updatable = false)
+    private String idempotencyKey;
+
+    @JdbcTypeCode(SqlTypes.CHAR)
+    @Column(name = "request_hash", length = 64, columnDefinition = "char(64)", updatable = false)
+    private String requestHash;
+
     protected WorkflowExecutionJpaEntity() {
     }
 
@@ -144,6 +152,13 @@ public class WorkflowExecutionJpaEntity {
         if (createdAt == null) createdAt = Instant.now();
         if (edgeStates == null) edgeStates = JsonNodeFactory.instance.objectNode();
         if (leaseToken == null) leaseToken = 0L;
+    }
+
+    public String getIdempotencyKey() { return idempotencyKey; }
+    public String getRequestHash() { return requestHash; }
+    public void assignIdempotency(String idempotencyKey, String requestHash) {
+        this.idempotencyKey = idempotencyKey;
+        this.requestHash = requestHash;
     }
 
     public UUID getId() { return id; }

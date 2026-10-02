@@ -139,7 +139,9 @@ export class GatewayExceptionFilter implements ExceptionFilter {
 
     const requestId = getRequestId(request);
     const normalized = normalizeException(exception);
-    this.logger.error(
+    // Expected client errors (4xx) are not server faults: WARN, not ERROR.
+    const log = normalized.status >= 500 ? 'error' : 'warn';
+    this.logger[log](
       `Gateway exception ${normalized.error.code} status=${normalized.status} requestId=${requestId}`,
     );
     setResponseRequestId(reply, requestId);

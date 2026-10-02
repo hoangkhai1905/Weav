@@ -23,17 +23,22 @@ import java.util.regex.Pattern;
 /** Owns only Workflow-to-Notification event intent and its independently leased delivery state. */
 @Repository
 public class WorkflowNotificationOutboxAdapter implements WorkflowNotificationOutboxStore {
+    private static final org.slf4j.Logger LOGGER =
+            org.slf4j.LoggerFactory.getLogger(WorkflowNotificationOutboxAdapter.class);
     private static final Pattern SQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private static final int MAX_LEASE_MILLIS = 300_000;
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final String table;
+    private final int maxAttempts;
 
     public WorkflowNotificationOutboxAdapter(
             JdbcTemplate jdbc,
             ObjectMapper objectMapper,
-            @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema) {
+            @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema,
+            @Value("${weav.workflow.notification-outbox.max-attempts:10}") int maxAttempts) {
+        this.maxAttempts = Math.max(1, maxAttempts);
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         if (schema == null || !SQL_IDENTIFIER.matcher(schema).matches()) {
@@ -133,13 +138,22 @@ public class WorkflowNotificationOutboxAdapter implements WorkflowNotificationOu
     public boolean scheduleRetry(UUID eventId, UUID claimToken, String reasonCode,
                                  Instant nextAttemptAt, Instant at) {
         requireReasonCode(reasonCode);
-        return jdbc.update("""
-                UPDATE %s SET status = 'PENDING', claim_token = NULL, lease_until = NULL,
+        // WF-13: the maxAttempts-th failed publish is terminal; FAILED rows are never claimed or purged.
+        List<String> rows = jdbc.queryForList("""
+                UPDATE %s SET status = CASE WHEN retry_count + 1 >= ? THEN 'FAILED' ELSE 'PENDING' END,
+                              claim_token = NULL, lease_until = NULL,
                               retry_count = retry_count + 1, next_attempt_at = ?,
                               last_reason_code = ?, updated_at = ?
                 WHERE event_id = ? AND status = 'CLAIMED' AND claim_token = ?
                   AND lease_until > CURRENT_TIMESTAMP
-                """.formatted(table), timestamp(nextAttemptAt), reasonCode, timestamp(at), eventId, claimToken) == 1;
+                RETURNING status
+                """.formatted(table), String.class, maxAttempts, timestamp(nextAttemptAt), reasonCode,
+                timestamp(at), eventId, claimToken);
+        if (rows.contains("FAILED")) {
+            LOGGER.error("Workflow notification {} marked FAILED after {} attempts (reason {})",
+                    eventId, maxAttempts, reasonCode);
+        }
+        return rows.size() == 1;
     }
 
     private String envelope(UUID eventId, WorkflowNotificationEvent event) {

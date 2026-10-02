@@ -32,6 +32,8 @@ public final class HttpRequestNodeExecutor implements NodeExecutor {
     private static final String TYPE = "http.request";
     private static final Set<String> METHODS = Set.of(
             "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
+    private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD", "OPTIONS");
+    private static final String IDEMPOTENCY_KEY = "Idempotency-Key";
     private static final Pattern HEADER_NAME = Pattern.compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$");
     private static final Set<String> INLINE_CREDENTIAL_HEADERS = Set.of(
             "authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key", "api-key");
@@ -58,7 +60,7 @@ public final class HttpRequestNodeExecutor implements NodeExecutor {
     @Override
     public Result execute(Context context, Map<String, Object> resolvedConfig) {
         Objects.requireNonNull(context, "context must not be null");
-        Request request = parseRequest(resolvedConfig);
+        Request request = parseRequest(context, resolvedConfig);
 
         // Approve and pin the target before resolving any secret. This keeps a
         // blocked destination from causing an unnecessary credential fetch.
@@ -73,7 +75,7 @@ public final class HttpRequestNodeExecutor implements NodeExecutor {
                     connection = workspaceConnections.resolve(context.workspaceId(), request.connectionId());
                     if (connection == null) {
                         throw new Failure("CONNECTION_UNAVAILABLE",
-                                "The connection service returned no connection.", true);
+                                "The connection service returned no connection.", true, true);
                     }
                     Authentication authentication = authentication(connection);
                     authHeaders = authentication.headers();
@@ -83,22 +85,23 @@ public final class HttpRequestNodeExecutor implements NodeExecutor {
                             "The HTTP connection is not available to this workspace.", false);
                 } catch (WorkspaceDependencyUnavailableException exception) {
                     throw new Failure("CONNECTION_UNAVAILABLE",
-                            "The connection service is unavailable.", true);
+                            "The connection service is unavailable.", true, true);
                 } catch (Failure failure) {
                     throw failure;
                 } catch (RuntimeException exception) {
                     throw new Failure("CONNECTION_UNAVAILABLE",
-                            "The connection service is unavailable.", true);
+                            "The connection service is unavailable.", true, true);
                 }
             }
 
             PinnedHttpTransport.HttpResponse response = transport.executeWithAuthentication(
                     target, request.method(), request.headers(), authHeaders, request.query(), request.body());
+            ResolvedConnection used = connection;
             if (connection != null) {
                 connection.close();
                 connection = null;
             }
-            return classify(context, request.connectionId(), response, activeSecrets);
+            return classify(context, request.connectionId(), used, response, activeSecrets);
         } finally {
             if (connection != null) {
                 connection.close();
@@ -109,6 +112,7 @@ public final class HttpRequestNodeExecutor implements NodeExecutor {
     private Result classify(
             Context context,
             UUID connectionId,
+            ResolvedConnection used,
             PinnedHttpTransport.HttpResponse response,
             Set<String> activeSecrets) {
         int status = response.status();
@@ -118,7 +122,7 @@ public final class HttpRequestNodeExecutor implements NodeExecutor {
         if (status == 401) {
             if (connectionId != null) {
                 try {
-                    workspaceConnections.reportAuthenticationRejected(context.workspaceId(), connectionId);
+                    workspaceConnections.reportAuthenticationRejected(context.workspaceId(), connectionId, used);
                 } catch (RuntimeException ignored) {
                     // The provider already confirmed the rejection. A failure
                     // to record it must not expose a downstream body or change
@@ -130,7 +134,7 @@ public final class HttpRequestNodeExecutor implements NodeExecutor {
         }
         if (status == 429) {
             throw new Failure("HTTP_RATE_LIMITED",
-                    "The HTTP provider rate limited the request.", true);
+                    "The HTTP provider rate limited the request.", true, true);
         }
         if (status == 408 || status >= 500) {
             throw new Failure("HTTP_DEPENDENCY_UNAVAILABLE",
@@ -215,7 +219,7 @@ public final class HttpRequestNodeExecutor implements NodeExecutor {
         return value;
     }
 
-    private Request parseRequest(Map<String, Object> config) {
+    private Request parseRequest(Context context, Map<String, Object> config) {
         if (config == null) {
             throw new Failure("CONFIGURATION_ERROR", "HTTP request configuration is missing.", false);
         }
@@ -231,9 +235,23 @@ public final class HttpRequestNodeExecutor implements NodeExecutor {
             throw new Failure("CONFIGURATION_ERROR", "The HTTP URL is invalid.", false);
         }
 
-        Map<String, String> headers = parseHeaders(config.get("headers"));
+        Map<String, String> headers = withIdempotencyKey(method, parseHeaders(config.get("headers")), context);
         UUID connectionId = parseConnectionId(config.get("connectionId"));
         return new Request(method, uri, headers, config.get("query"), config.get("body"), connectionId);
+    }
+
+    /**
+     * Non-safe methods carry a provider idempotency key that is identical on every attempt of the node,
+     * so a retry after an unknown outcome cannot duplicate the effect. A key the user already set wins.
+     */
+    private Map<String, String> withIdempotencyKey(String method, Map<String, String> headers, Context context) {
+        if (SAFE_METHODS.contains(method)
+                || headers.keySet().stream().anyMatch(name -> name.equalsIgnoreCase(IDEMPOTENCY_KEY))) {
+            return headers;
+        }
+        Map<String, String> keyed = new LinkedHashMap<>(headers);
+        keyed.put(IDEMPOTENCY_KEY, context.executionId() + ":" + context.nodeId());
+        return Map.copyOf(keyed);
     }
 
     private Map<String, String> parseHeaders(Object value) {

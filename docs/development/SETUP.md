@@ -285,6 +285,8 @@ Kiểm tra:
 docker compose ps
 ```
 
+Trong compose dev, mọi cổng publish ra host đều bind `127.0.0.1` (RabbitMQ AMQP 5672 và management 15672, identity 8081, workspace 8082, workflow 8083, ai 3001, OCR 8000), chỉ `api-gateway` (3000) mở cho LAN để app mobile trên thiết bị thật gọi được. `localhost` vẫn dùng bình thường; nếu client resolve `localhost` sang `::1` thì dùng `127.0.0.1`.
+
 RabbitMQ Management UI:
 
 ```text

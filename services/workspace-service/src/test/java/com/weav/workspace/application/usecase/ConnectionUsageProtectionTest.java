@@ -645,6 +645,55 @@ class ConnectionUsageProtectionTest {
     }
 
     @Test
+    void openBreakerFailsDeleteClosedWithoutCallingWorkflow() throws Exception {
+        Connection connection = connection(ConnectionStatus.ACTIVE, MEMBER);
+        ConnectionRepository connections = mock(ConnectionRepository.class);
+        MembershipRepository memberships = mock(MembershipRepository.class);
+        when(memberships.findByWorkspaceIdAndUserId(WORKSPACE, OWNER))
+                .thenReturn(Optional.of(Membership.owner(WORKSPACE, OWNER)));
+        when(connections.findByWorkspaceIdAndId(WORKSPACE, CONNECTION_ID))
+                .thenReturn(Optional.of(connection));
+        AtomicInteger requests = new AtomicInteger();
+        startServer(exchange -> {
+            requests.incrementAndGet();
+            respond(exchange, 503, "synthetic downstream failure");
+        });
+        var breaker = WorkflowConnectionUsageClient.circuitBreaker(2, 50f, 2, Duration.ofSeconds(30), 1);
+        var delete = new DeleteConnectionUseCase(
+                connections,
+                new ConnectionUsageProtection(
+                        connections,
+                        memberships,
+                        authorizationPolicy,
+                        client(Duration.ofSeconds(1), Duration.ofSeconds(1), SERVICE_KEY, breaker),
+                        new DirectTransactionRunner(),
+                        NO_OP_WORKSPACE_LOCK));
+
+        for (int i = 0; i < 3; i++) {
+            assertThatThrownBy(() -> delete.execute(OWNER, WORKSPACE, CONNECTION_ID))
+                    .isInstanceOf(DependencyUnavailableException.class);
+        }
+
+        assertThat(breaker.getState()).isEqualTo(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.OPEN);
+        assertThat(requests).hasValue(2);
+        verify(connections, never()).delete(any());
+    }
+
+    @Test
+    void clientErrorsDoNotOpenTheBreaker() throws Exception {
+        startServer(exchange -> respond(exchange, 404, "not found"));
+        var breaker = WorkflowConnectionUsageClient.circuitBreaker(2, 50f, 2, Duration.ofSeconds(30), 1);
+        var usageClient = client(Duration.ofSeconds(1), Duration.ofSeconds(1), SERVICE_KEY, breaker);
+
+        for (int i = 0; i < 4; i++) {
+            assertThatThrownBy(() -> usageClient.isInUse(WORKSPACE, CONNECTION_ID))
+                    .isInstanceOf(DependencyUnavailableException.class);
+        }
+
+        assertThat(breaker.getState()).isEqualTo(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED);
+    }
+
+    @Test
     void workflowClientFailsClosedForInvalidStatusesBodiesAndMissingKey() throws Exception {
         for (int status : new int[] {401, 404, 429, 500}) {
             stopServer();
@@ -776,6 +825,15 @@ class ConnectionUsageProtectionTest {
             Duration connectTimeout,
             Duration readTimeout,
             String key) {
+        return client(connectTimeout, readTimeout, key,
+                WorkflowConnectionUsageClient.circuitBreaker(20, 50f, 10, Duration.ofSeconds(10), 3));
+    }
+
+    private WorkflowConnectionUsageClient client(
+            Duration connectTimeout,
+            Duration readTimeout,
+            String key,
+            io.github.resilience4j.circuitbreaker.CircuitBreaker breaker) {
         WorkflowServiceProperties properties = new WorkflowServiceProperties(
                 URI.create(baseUrl()), connectTimeout, readTimeout, key);
         HttpClient httpClient = HttpClient.newBuilder()
@@ -787,7 +845,8 @@ class ConnectionUsageProtectionTest {
         return new WorkflowConnectionUsageClient(
                 RestClient.builder().requestFactory(requestFactory).build(),
                 properties,
-                new ObjectMapper());
+                new ObjectMapper(),
+                breaker);
     }
 
     private void startServer(Handler handler) throws IOException {

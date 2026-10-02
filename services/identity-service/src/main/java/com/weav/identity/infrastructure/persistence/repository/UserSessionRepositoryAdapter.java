@@ -50,6 +50,17 @@ public class UserSessionRepositoryAdapter implements UserSessionRepository {
     }
 
     @Override
+    public Optional<UserSession> findByPreviousRefreshTokenHash(String previousRefreshTokenHash) {
+        return repository.findByPreviousRefreshTokenHash(previousRefreshTokenHash).map(mapper::toDomain);
+    }
+
+    @Override
+    public Optional<UserSession> findByPreviousRefreshTokenHashForUpdate(String previousRefreshTokenHash) {
+        return repository.findByPreviousRefreshTokenHashForUpdate(previousRefreshTokenHash)
+                .map(mapper::toDomain);
+    }
+
+    @Override
     public UserSessionPage findActiveByUserId(UUID userId, Instant now, int page, int size) {
         Page<UserSessionJpaEntity> result = repository.findByUserIdAndRevokedAtIsNullAndExpiresAtAfter(
                 userId,

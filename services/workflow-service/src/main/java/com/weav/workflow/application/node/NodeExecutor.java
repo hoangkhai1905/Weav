@@ -51,9 +51,20 @@ public interface NodeExecutor {
         private final String code;
         private final String safeMessage;
         private final boolean retryable;
+        private final boolean requestNotSent;
 
         public Failure(String code, String safeMessage, boolean retryable) {
+            this(code, safeMessage, retryable, false);
+        }
+
+        /**
+         * @param requestNotSent true only when the external call provably did not take effect (connection or
+         *                       resolution failed, or the provider rejected the request outright), so even a
+         *                       side-effecting node may be retried safely.
+         */
+        public Failure(String code, String safeMessage, boolean retryable, boolean requestNotSent) {
             super(sanitize(safeMessage));
+            this.requestNotSent = requestNotSent;
             if (code == null || code.isBlank() || code.length() > 128) {
                 throw new IllegalArgumentException("Failure code must be nonblank and at most 128 characters");
             }
@@ -72,6 +83,10 @@ public interface NodeExecutor {
 
         public boolean retryable() {
             return retryable;
+        }
+
+        public boolean requestNotSent() {
+            return requestNotSent;
         }
 
         private static String sanitize(String value) {

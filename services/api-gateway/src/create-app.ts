@@ -16,7 +16,9 @@ export async function createApp(): Promise<NestFastifyApplication> {
   const config = validateGatewayEnvironment(process.env);
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ trustProxy: false }),
+    new FastifyAdapter({
+      trustProxy: config.trustProxyHops > 0 ? config.trustProxyHops : false,
+    }),
   );
 
   app.useGlobalFilters(new GatewayExceptionFilter());
@@ -26,6 +28,9 @@ export async function createApp(): Promise<NestFastifyApplication> {
     const requestId = resolveRequestId(request.headers);
     attachRequestContext(request, requestId);
     setResponseRequestId(reply, requestId);
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Referrer-Policy', 'no-referrer');
     done();
   });
 
@@ -37,6 +42,7 @@ export async function createApp(): Promise<NestFastifyApplication> {
     allowedHeaders: [
       'Authorization',
       'Content-Type',
+      'Idempotency-Key',
       'Traceparent',
       'X-Correlation-ID',
       'X-Request-ID',

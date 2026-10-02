@@ -11,6 +11,7 @@ import com.weav.workspace.application.service.ConnectionAuthorizationPolicy;
 import com.weav.workspace.application.service.ConnectionProviderRegistry;
 import com.weav.workspace.application.service.ConnectionUsageProtection;
 import com.weav.workspace.application.service.CredentialPayloadCodec;
+import com.weav.workspace.domain.exception.ConflictException;
 import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.domain.exception.ForbiddenException;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
@@ -47,6 +48,7 @@ public final class TestConnectionUseCase {
     private final CredentialCryptoPort crypto;
     private final ConnectionUsageProtection usageProtection;
     private final ConnectionNotificationRecorder notificationRecorder;
+    private final TransactionRunner transactionRunner;
 
     @Autowired
     public TestConnectionUseCase(
@@ -76,7 +78,8 @@ public final class TestConnectionUseCase {
                         workflowConnectionUsagePort,
                         transactionRunner,
                         workspaceMutationLock),
-                notificationRecorder);
+                notificationRecorder,
+                transactionRunner);
     }
 
     private TestConnectionUseCase(
@@ -88,7 +91,10 @@ public final class TestConnectionUseCase {
             CredentialPayloadCodec payloadCodec,
             CredentialCryptoPort crypto,
             ConnectionUsageProtection usageProtection,
-            ConnectionNotificationRecorder notificationRecorder) {
+            ConnectionNotificationRecorder notificationRecorder,
+            TransactionRunner transactionRunner) {
+        this.transactionRunner = Objects.requireNonNull(
+                transactionRunner, "transactionRunner must not be null");
         this.connectionRepository = Objects.requireNonNull(
                 connectionRepository, "connectionRepository must not be null");
         this.membershipRepository = Objects.requireNonNull(
@@ -116,31 +122,78 @@ public final class TestConnectionUseCase {
         ConnectionUsageProtection.Authorization authorization = usageProtection.authorize(
                 actorUserId, workspaceId, connectionId);
         usageProtection.requireUnused(authorization, ConnectionUsageProtection.UsageScope.MEMBER_ONLY);
+        // Phase 1: short read transaction. Snapshot what the provider needs plus
+        // a staleness marker; no workspace lock is taken.
+        Prepared prepared = transactionRunner.required(() -> prepare(workspaceId, connectionId));
+
+        // Phase 2: provider I/O with no transaction, no DB connection, no lock.
+        ConnectionTestResult result = null; // null = stored credential unusable, no provider call
+        if (prepared.credential() != null) {
+            result = prepared.provider().test(prepared.connection(), prepared.credential());
+            if (result == null || result.outcome() == null
+                    || result.outcome() == ConnectionTestResult.ConnectionTestOutcome.DEPENDENCY_FAILURE) {
+                throw new DependencyUnavailableException();
+            }
+        }
+
+        // Phase 3: short write transaction under the workspace lock. If the
+        // connection or its credential changed since phase 1 the verdict is
+        // stale and is not written (409) instead of overwriting newer state.
+        ConnectionTestResult outcome = result;
         return usageProtection.reauthorizeAndMutate(
                 actorUserId,
                 workspaceId,
                 connectionId,
                 authorization,
                 ConnectionUsageProtection.UsageScope.MEMBER_ONLY,
-                (membership, connection) -> testInTransaction(actorUserId, connection));
+                (membership, connection) -> {
+                    if (!prepared.marker().equals(marker(connection, storedCredential(connection)))) {
+                        throw new ConflictException("Connection changed while it was being tested");
+                    }
+                    return apply(actorUserId, connection, outcome);
+                });
     }
 
-    private ConnectionTestResult testInTransaction(UUID actorUserId, Connection connection) {
-
+    private Prepared prepare(UUID workspaceId, UUID connectionId) {
+        Connection connection = connectionRepository.findByWorkspaceIdAndId(workspaceId, connectionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Connection not found", connectionId));
         ConnectionProviderPort provider = providerRegistry.resolve(connection.getProvider());
         provider.validateConfig(connection.getAuthType(), connection.getConfig());
-        final Map<String, Object> credential;
+        Credential stored = storedCredential(connection);
+        Marker marker = marker(connection, stored);
         try {
-            credential = decryptCredential(connection);
+            return new Prepared(connection, provider, decryptCredential(connection, stored), marker);
         } catch (InvalidStoredCredentialException exception) {
+            return new Prepared(connection, provider, null, marker);
+        }
+    }
+
+    private Credential storedCredential(Connection connection) {
+        return connection.getAuthType() == ConnectionAuthType.NONE ? null
+                : credentialRepository.findByConnectionId(connection.getId()).orElse(null);
+    }
+
+    // Staleness = what the provider call depends on (auth type, config, credential).
+    // Status/updatedAt are excluded so concurrent test runs still both apply.
+    private Marker marker(Connection connection, Credential stored) {
+        return new Marker(connection.getAuthType(), connection.getConfig(),
+                stored == null ? null : stored.getId(),
+                stored == null ? null : stored.getUpdatedAt());
+    }
+
+    private record Marker(ConnectionAuthType authType, Map<String, Object> config,
+                          UUID credentialId, Instant credentialUpdatedAt) {
+    }
+
+    private record Prepared(Connection connection, ConnectionProviderPort provider,
+                            Map<String, Object> credential, Marker marker) {
+    }
+
+    private ConnectionTestResult apply(UUID actorUserId, Connection connection, ConnectionTestResult result) {
+        if (result == null) {
             markInvalid(connection, actorUserId);
             return ConnectionTestResult.authInvalid();
         }
-        ConnectionTestResult result = provider.test(connection, credential);
-        if (result == null || result.outcome() == null) {
-            throw new DependencyUnavailableException();
-        }
-
         return switch (result.outcome()) {
             case VERIFIED -> {
                 boolean newlyConnected = connection.getStatus()
@@ -160,17 +213,16 @@ public final class TestConnectionUseCase {
         };
     }
 
-    private Map<String, Object> decryptCredential(Connection connection) {
+    private Map<String, Object> decryptCredential(Connection connection, Credential stored) {
         if (connection.getAuthType() == ConnectionAuthType.NONE) {
             return Map.of();
         }
 
-        Credential stored = credentialRepository.findByConnectionId(connection.getId()).orElse(null);
         if (stored == null) {
             throw new InvalidStoredCredentialException();
         }
         try {
-            byte[] plaintext = crypto.decrypt(stored.getEncryptedPayload());
+            byte[] plaintext = crypto.decrypt(stored.getEncryptedPayload(), stored.getEncryptionKeyVersion(), connection.getId());
             return payloadCodec.decode(connection, plaintext);
         } catch (RuntimeException exception) {
             // Missing/corrupt credentials fail closed as a confirmed invalid

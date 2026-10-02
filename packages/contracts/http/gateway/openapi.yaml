@@ -293,6 +293,110 @@ paths:
         "500": { $ref: "#/components/responses/GatewayInternalError" }
         "502": { $ref: "#/components/responses/GatewayBadGateway" }
 
+  /api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/complete:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+      - $ref: "../workspace/openapi.yaml#/components/parameters/ConnectionId"
+    post:
+      tags: [OAuth]
+      operationId: gatewayCompleteWorkspaceConnectionOAuth
+      summary: Complete Google authorization as the user who started it
+      description: >-
+        After Google redirects the browser back with oauth=pending, the signed-in web app posts the
+        single-use completion id here. Workspace consumes it atomically on first use and accepts it only
+        for the user, workspace and connection that started the flow. Replayed, expired, unknown or
+        mismatched ids all return the same 409 (nothing about the record is revealed); 403/404 only apply
+        when the initiating user has since lost access. The completion id is a secret and must not be logged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../workspace/openapi.yaml#/components/schemas/CompleteOAuthRequest"
+      responses:
+        "200":
+          description: Credential stored encrypted; the connection is ACTIVE when the outcome is VERIFIED.
+          headers:
+            Cache-Control:
+              description: Gateway forces no-store for Workspace responses.
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/ConnectionTestResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+
+  /api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+      - $ref: "../workspace/openapi.yaml#/components/parameters/ConnectionId"
+    put:
+      tags: [Connections]
+      operationId: gatewaySaveWorkspaceConnectionCredential
+      summary: Replace a write-only connection credential
+      description: >-
+        The gateway checks only the envelope shape (payload object, optional
+        RFC 3339 expiresAt or null). Workspace validates provider fields,
+        encrypts the payload and never returns it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../workspace/openapi.yaml#/components/schemas/SaveCredentialRequest"
+      responses:
+        "200":
+          description: Credential replaced; connection metadata only (left DISABLED pending a provider test).
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/ConnectionResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+    delete:
+      tags: [Connections]
+      operationId: gatewayDeleteWorkspaceConnectionCredential
+      summary: Remove a stored connection credential
+      responses:
+        "200":
+          description: Credential removed; connection metadata only.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/ConnectionResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+
   /api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/authorize:
     parameters:
       - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"

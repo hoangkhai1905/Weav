@@ -9,7 +9,6 @@ import java.util.Objects;
 @ConfigurationProperties(prefix = "weav.jwt")
 public record JwtProperties(
         String accessSecret,
-        String refreshSecret,
         String issuer,
         String audience,
         Duration accessExpiresIn,
@@ -21,7 +20,6 @@ public record JwtProperties(
 
     public JwtProperties {
         requireText(accessSecret, "accessSecret");
-        requireText(refreshSecret, "refreshSecret");
         requireText(issuer, "issuer");
         requireText(audience, "audience");
         requirePositive(accessExpiresIn, "accessExpiresIn");

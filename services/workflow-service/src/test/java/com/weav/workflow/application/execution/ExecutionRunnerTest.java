@@ -15,6 +15,7 @@ import com.weav.workflow.domain.valueobject.NodeExecutionStatus;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -222,6 +223,104 @@ class ExecutionRunnerTest {
         }
     }
 
+    @Test
+    void retriesTransientFailuresOnlyWhenARepeatCannotDuplicateAnExternalEffect() {
+        NodeExecutor.Failure timeout = new NodeExecutor.Failure("HTTP_TIMEOUT", "timed out", true);
+        NodeExecutor.Failure unavailable =
+                new NodeExecutor.Failure("HTTP_DEPENDENCY_UNAVAILABLE", "down", true);
+        NodeExecutor.Failure limitedBeforeEffect =
+                new NodeExecutor.Failure("HTTP_RATE_LIMITED", "limited", true, true);
+        NodeExecutor.Failure connect =
+                new NodeExecutor.Failure("CONNECTION_UNAVAILABLE", "no connection", true, true);
+
+        // Read-only nodes and keyed HTTP calls (even POST) retry; the code never needs an HTTP status number.
+        assertEquals(2, callsUntilDone("http.request", Map.of("method", "GET", "url", "https://example.test"), timeout));
+        assertEquals(2, callsUntilDone("http.request", Map.of("method", "POST", "url", "https://example.test"),
+                new NodeExecutor.Failure("HTTP_RATE_LIMITED", "limited", true)));
+        assertEquals(2, callsUntilDone("http.request", Map.of("method", "PUT", "url", "https://example.test"), unavailable));
+        assertEquals(2, callsUntilDone("google.sheets", Map.of("operation", "read"), unavailable));
+        // Side-effecting nodes without an idempotency key do not retry an ambiguous failure...
+        assertEquals(1, callsUntilDone("email.send", Map.of(), unavailable));
+        assertEquals(1, callsUntilDone("email.send", Map.of(), timeout));
+        assertEquals(1, callsUntilDone("google.sheets", Map.of("operation", "append"), timeout));
+        // ...but do when the failure provably happened before the effect.
+        assertEquals(2, callsUntilDone("email.send", Map.of(), limitedBeforeEffect));
+        assertEquals(2, callsUntilDone("google.sheets", Map.of("operation", "append"), connect));
+    }
+
+    /** Runs a single node that fails once with the failure and then succeeds; returns how often it was called. */
+    private int callsUntilDone(String type, Map<String, Object> config, NodeExecutor.Failure firstFailure) {
+        AtomicInteger calls = new AtomicInteger();
+        NodeExecutor action = executor(type, (context, resolved) -> {
+            if (calls.incrementAndGet() == 1) {
+                throw firstFailure;
+            }
+            return new NodeExecutor.Result(Map.of("ok", true), null);
+        });
+        WorkflowDefinition definition = definition(List.of(node("action", type, config)),
+                List.of(edge("root-action", "root", "action", null)));
+        AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-09-22T00:00:00Z"));
+        try (Harness harness = harness(definition, Map.of(), List.of(action), 1, eligibleAt -> {
+            now.set(eligibleAt);
+            return CompletableFuture.completedFuture(null);
+        }, mutableClock(now))) {
+            harness.runner.run(harness.lease);
+            return calls.get();
+        }
+    }
+
+    @Test
+    void leaseLossCancelsInFlightNodeCallsInsteadOfLettingThemRunConcurrentlyWithTheNextOwner() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch interrupted = new CountDownLatch(1);
+        NodeExecutor action = executor("http.request", (context, config) -> {
+            entered.countDown();
+            try {
+                Thread.sleep(30_000);
+            } catch (InterruptedException exception) {
+                interrupted.countDown();
+                Thread.currentThread().interrupt();
+            }
+            return new NodeExecutor.Result(Map.of(), null);
+        });
+        WorkflowDefinition definition = definition(List.of(node("action", "http.request", Map.of())),
+                List.of(edge("root-action", "root", "action", null)));
+        try (Harness harness = harness(definition, Map.of(), List.of(action), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null),
+                Clock.fixed(Instant.parse("2026-09-22T00:00:00Z"), ZoneOffset.UTC), Duration.ofMillis(50))) {
+            var run = harness.callers.submit(() -> harness.runner.run(harness.lease));
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+
+            harness.state.leaseLive = false;
+
+            assertTrue(interrupted.await(5, TimeUnit.SECONDS), "the in-flight node call should be cancelled");
+            run.get(5, TimeUnit.SECONDS);
+            assertEquals(NodeExecutionStatus.RUNNING, harness.state.snapshot().nodes().get("action").getStatus());
+        }
+    }
+
+    @Test
+    void anAlreadyFailedNodeFromRecoveryFailsTheRunWithItsErrorAndRunsNothing() {
+        AtomicInteger calls = new AtomicInteger();
+        NodeExecutor action = executor("email.send", (context, config) -> {
+            calls.incrementAndGet();
+            return new NodeExecutor.Result(Map.of(), null);
+        });
+        WorkflowDefinition definition = definition(List.of(node("action", "email.send", Map.of())),
+                List.of(edge("root-action", "root", "action", null)));
+        try (Harness harness = harness(definition, Map.of(), List.of(action), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            // Mirrors ExecutionStateAdapter.recordInterruptedAttempts for a side-effecting node.
+            harness.state.markFailedByRecovery("action", Map.of("code", "OUTCOME_UNKNOWN", "message", "unknown"));
+
+            harness.runner.run(harness.lease);
+
+            assertEquals(0, calls.get());
+            assertEquals(ExecutionStatus.FAILED, harness.state.snapshot().status(), harness.state::summary);
+            assertEquals("OUTCOME_UNKNOWN", harness.state.snapshot().nodes().get("action").getError().get("code"));
+        }
+    }
+
     private static NodeExecutor executor(String type, Invoker invoker) {
         return new NodeExecutor() {
             @Override
@@ -281,6 +380,12 @@ class ExecutionRunnerTest {
     private static Harness harness(WorkflowDefinition definition, Object input,
                                    List<NodeExecutor> executors, int concurrency,
                                    RetryWaitPort retryWait, Clock clock) {
+        return harness(definition, input, executors, concurrency, retryWait, clock, null);
+    }
+
+    private static Harness harness(WorkflowDefinition definition, Object input,
+                                   List<NodeExecutor> executors, int concurrency,
+                                   RetryWaitPort retryWait, Clock clock, Duration heartbeat) {
         UUID executionId = UUID.randomUUID();
         UUID workflowId = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
@@ -305,8 +410,11 @@ class ExecutionRunnerTest {
         ExecutorService nodeExecutor = Executors.newFixedThreadPool(concurrency);
         ScheduledExecutorService timer = Executors.newScheduledThreadPool(2);
         ExecutorService callers = Executors.newSingleThreadExecutor();
-        ExecutionRunner runner = new ExecutionRunner(state, new NodeExecutorRegistry(executors.toArray(NodeExecutor[]::new)),
-                retryWait, nodeExecutor, timer, clock, concurrency);
+        NodeExecutorRegistry registry = new NodeExecutorRegistry(executors.toArray(NodeExecutor[]::new));
+        ExecutionRunner runner = heartbeat == null
+                ? new ExecutionRunner(state, registry, retryWait, nodeExecutor, timer, clock, concurrency)
+                : new ExecutionRunner(state, registry, retryWait, nodeExecutor, timer, clock, concurrency,
+                        Duration.ofSeconds(5), heartbeat);
         return new Harness(runner, state, lease, nodeExecutor, timer, callers);
     }
 
@@ -330,6 +438,7 @@ class ExecutionRunnerTest {
     private static final class InMemoryState implements ExecutionStatePort {
         private volatile Snapshot snapshot;
         private final Lease lease;
+        private volatile boolean leaseLive = true;
 
         private InMemoryState(Snapshot snapshot, Lease lease) {
             this.snapshot = snapshot;
@@ -343,7 +452,7 @@ class ExecutionRunnerTest {
 
         @Override
         public boolean renew(Lease lease, java.time.Duration leaseDuration) {
-            return this.lease.equals(lease);
+            return leaseLive && this.lease.equals(lease);
         }
 
         @Override
@@ -371,6 +480,27 @@ class ExecutionRunnerTest {
         @Override
         public void release(Lease lease) {
             // The in-memory fixture does not need a release marker.
+        }
+
+        synchronized void markFailedByRecovery(String nodeId, Map<String, Object> error) {
+            NodeExecution old = snapshot.nodes().get(nodeId);
+            Map<String, NodeExecution> nodes = new LinkedHashMap<>(snapshot.nodes());
+            nodes.put(nodeId, new NodeExecution(old.getId(), old.getExecutionId(), nodeId, old.getNodeType(),
+                    NodeExecutionStatus.FAILED, old.getInput(), null, error, 1, Instant.parse("2026-09-22T00:00:00Z"),
+                    Instant.parse("2026-09-22T00:00:00Z"), old.getCreatedAt(), null));
+            // The root already succeeded in the crashed run, so the new owner skips initialization.
+            NodeExecution root = snapshot.nodes().get("root");
+            nodes.put("root", new NodeExecution(root.getId(), root.getExecutionId(), "root", root.getNodeType(),
+                    NodeExecutionStatus.SUCCESS, root.getInput(), Map.of("input", Map.of()), null, 0,
+                    Instant.parse("2026-09-22T00:00:00Z"), Instant.parse("2026-09-22T00:00:00Z"),
+                    root.getCreatedAt(), null));
+            Map<String, NodeExecutionStatus> statuses = new LinkedHashMap<>(snapshot.graph().nodes());
+            statuses.put("root", NodeExecutionStatus.SUCCESS);
+            statuses.put(nodeId, NodeExecutionStatus.FAILED);
+            snapshot = new Snapshot(snapshot.workflowId(), snapshot.workspaceId(), snapshot.version(),
+                    snapshot.definition(), snapshot.firingRoot(), snapshot.input(),
+                    new GraphState(statuses, snapshot.graph().edges()), nodes, snapshot.attempts(),
+                    snapshot.nextAttempts(), snapshot.correlationId(), snapshot.traceparent(), ExecutionStatus.RUNNING);
         }
 
         Snapshot snapshot() {

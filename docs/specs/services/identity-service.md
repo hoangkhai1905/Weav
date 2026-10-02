@@ -33,7 +33,7 @@ Component-specific rules (from code and the [auth contract README](../../../pack
 - Email is canonicalised (`lower(btrim(email))`, unique index `uk_users_canonical_email`); max 320 chars.
 - Password 8-72 characters and at most 72 UTF-8 bytes (BCrypt limit) ([AuthInputPolicy](../../../services/identity-service/src/main/java/com/weav/identity/application/validation/AuthInputPolicy.java)); display name max 120.
 - JSON with unknown properties is rejected (`spring.jackson.deserialization.fail-on-unknown-properties=true`), so privileged fields (`role`, `status`) cannot be mass-assigned.
-- Refresh tokens are opaque, stored hashed, rotated on refresh; change/reset password and admin disable revoke all sessions.
+- Refresh tokens are opaque, stored hashed, rotated on refresh; change/reset password and admin disable revoke all sessions. Rotation keeps the previous hash and `rotated_at`: the previous token is accepted once more for a 10 s grace window (a retry after a lost response; a new pair is issued and the previous slot moves on), and any later replay of an already-rotated token is treated as reuse, revokes the session (WARN log with the session id only) and returns the same 401. The web `/auth/web/refresh` route shares this behaviour.
 - Admin status changes reject any `ADMIN` target (including the actor) with `409`; the admin role is read from the DB, not the JWT.
 - One OAuth account per (user, provider) (V4) and per (provider, provider user id); unlinking the last login method is refused.
 - Recovery endpoints return the same opaque receipt whether or not an eligible local account exists (anti-enumeration).
@@ -45,7 +45,7 @@ Database `identity-db` on Neon, schema `identity` (`DB_SCHEMA`, default `identit
 | Table | Key columns | Notes |
 | --- | --- | --- |
 | `users` | `id` UUID PK, `email` (unique, plus canonical unique index V2), `password_hash` (nullable for OAuth-only), `display_name`, `avatar_storage_key`, `system_role`, `status`, `email_verified_at` (V3), timestamps | Roles `USER`/`ADMIN`; status `ACTIVE`/`DISABLED`. |
-| `user_sessions` | `id` UUID PK, `user_id` FK (cascade), `refresh_token_hash` unique, `user_agent`, `ip_address`, `expires_at`, `revoked_at`, `last_used_at`, `created_at` | Index on `user_id`. |
+| `user_sessions` | `id` UUID PK, `user_id` FK (cascade), `refresh_token_hash` unique, `previous_refresh_token_hash` (unique partial index, V6) and `rotated_at` (V6), `user_agent`, `ip_address`, `expires_at`, `revoked_at`, `last_used_at`, `created_at` | Index on `user_id`. |
 | `oauth_accounts` | `id`, `user_id` FK (cascade), `provider` (only `GOOGLE`), `provider_user_id`, `provider_email`, timestamps | Unique (provider, provider_user_id) and (user_id, provider, V4). |
 | `notification_outbox` | `event_id` PK, `event_type`, `payload` JSONB, `created_at`, `published_at`, `attempts`, `next_attempt_at`, `last_failure_code` (V5) | Partial index on unpublished rows. Additive; do not drop on rollback ([notes](../../../services/identity-service/notification-outbox.md)). |
 
@@ -112,6 +112,8 @@ Delivery is a transactional outbox (`notification_outbox`) drained by [IdentityN
 - `/internal/directory/**` is `permitAll` at the Spring level but guarded by the service-key filter; it must never be exposed through the Gateway.
 - Secrets (`JWT_*`, `OTP_HMAC_SECRET` at least 32 bytes, `IDENTITY_INTERNAL_SERVICE_KEY`, DB, SMTP, Google, R2 keys) come from environment only. Passwords, tokens, OAuth state/verifiers must not appear in logs, URLs, or error bodies.
 - Avatar upload: JPEG/PNG/WebP only, at most 2 MiB, at most 4096 px per side; magic-byte + decoder check and re-encode to strip metadata; object keys server-generated under `avatars/{userId}/`. Multipart hard limits 4 MB file / 5 MB request.
+- Client IP: `request.getRemoteAddr()` feeds the rate limiters and `user_sessions.ip_address`. Tomcat's RemoteIpValve (`server.forward-headers-strategy=native`) rewrites it from `X-Forwarded-For` only when the direct peer matches `IDENTITY_TRUSTED_PROXY_PATTERN` (Java regex; the gateway's pinned IP). Default `^$` trusts nobody, so a direct caller cannot spoof the header; the Tomcat default private-range trust is deliberately not used. The Gateway overwrites `X-Forwarded-For` with the real client IP.
+- Transaction boundaries: no network call runs inside a DB transaction that holds a lock. OTP verify reads the user, calls Valkey outside any transaction, then locks the user briefly to re-check state and mark the email verified (residual risk: a consumed challenge whose commit fails must be re-requested). The notification outbox publisher claims a batch with a short lease (`FOR UPDATE SKIP LOCKED`, `next_attempt_at` bump), publishes with confirms outside any transaction, then settles rows in a second short transaction.
 - Rate limits (per remote IP unless noted, in-memory): register 5/min, login 20/min, login per account 10/15 min, refresh 30/min, OAuth start 10/15 min, callback 20/min, exchange 30/min, link-start 10/15 min IP and 5/15 min session, unlink 10/15 min IP and 5/15 min session, CSRF 30/min, web refresh 30/min, web logout 10/15 min ([AuthRateLimiter](../../../services/identity-service/src/main/java/com/weav/identity/infrastructure/security/AuthRateLimiter.java)). OTP limits are Valkey-backed (below).
 
 ## Configuration
@@ -129,6 +131,8 @@ Names and defaults from [application.properties](../../../services/identity-serv
 | `OTP_HMAC_SECRET` | none (required) | HMAC key for OTP fingerprints. |
 | OTP policy (`weav.otp.*`) | challenge/grant TTL 5 min, resend cooldown 60 s, 5 challenges/account/h, 20/IP, 5 verify attempts, 30 verify/IP/min | Not env-exposed in properties; code defaults. |
 | `IDENTITY_INTERNAL_SERVICE_KEY` | none | Key for `/internal/directory/**`. |
+| `IDENTITY_TRUSTED_PROXY_PATTERN` | `^$` (trust nobody) | Regex of the peer IPs whose `X-Forwarded-For` is trusted; `compose.dev.yml` pins the gateway to `172.31.250.10` on the `edge` network. |
+| `weav.auth.refresh-reuse-grace` | `10s` | Window in which the previous refresh token is still accepted. |
 | `GOOGLE_OAUTH_ENABLED` | blank (auto-on if client id/secret set) | Toggle. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | redirect `http://localhost:8081/auth/oauth/google/callback` | Google client. |
 | `OAUTH_WEB_RETURN_TARGET_URI`, `OAUTH_WEB_ALLOWED_ORIGIN` | `http://localhost:5173/auth/callback`, `http://localhost:5173` | Web return target and allowed Origin. |
@@ -138,7 +142,7 @@ Names and defaults from [application.properties](../../../services/identity-serv
 | `SMTP_QUEUE_CAPACITY`, `SMTP_CORE_POOL_SIZE`, `SMTP_MAX_POOL_SIZE` | 100, 1, 2 | Mail dispatcher bounds. |
 | `AVATAR_S3_ENDPOINT`, `AVATAR_S3_BUCKET`, `AVATAR_S3_ACCESS_KEY_ID`, `AVATAR_S3_SECRET_ACCESS_KEY` | blank | Object storage. |
 | `AVATAR_S3_REGION`, `AVATAR_S3_PATH_STYLE_ACCESS`, `AVATAR_S3_KEY_PREFIX`, `AVATAR_S3_SIGNED_URL_TTL` | `auto`, `true`, `avatars`, `5m` | Storage tuning. |
-| `AVATAR_S3_CLEANUP_QUEUE_CAPACITY`, `AVATAR_S3_CLEANUP_INTERVAL_MS` | 1000, 30000 | Orphan cleanup. |
+| `AVATAR_S3_CLEANUP_INTERVAL_MS` | 30000 | Durable orphan cleanup (`avatar_cleanup` table). |
 | `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`, `RABBITMQ_VHOST`, `RABBITMQ_SSL_ENABLED`, `RABBITMQ_CONNECTION_TIMEOUT` | localhost, 5672, guest, `/`, false, 3s | Broker. |
 | `NOTIFICATION_EXCHANGE` | `weav.events` | Outbox exchange (documented in notification-outbox.md). |
 | `IDENTITY_NOTIFICATION_OUTBOX_PUBLISHER_ENABLED`, `_BATCH_SIZE`, `_POLL_INTERVAL`, `_INITIAL_DELAY`, `_CONFIRM_TIMEOUT`, `_MAX_RETRY_DELAY` | true, 25, 1000 ms, 1000 ms, PT5S, PT60S | Outbox publisher. |

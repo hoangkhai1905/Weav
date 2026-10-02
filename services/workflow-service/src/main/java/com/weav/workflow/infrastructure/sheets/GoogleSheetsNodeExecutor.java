@@ -46,7 +46,7 @@ public final class GoogleSheetsNodeExecutor implements NodeExecutor {
         ResolvedConnection connection = resolveConnection(context, request.connectionId());
         if (connection == null) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
-                    "The Google Sheets connection is unavailable.", true);
+                    "The Google Sheets connection is unavailable.", true, true);
         }
 
         try {
@@ -63,7 +63,7 @@ public final class GoogleSheetsNodeExecutor implements NodeExecutor {
                 };
             } catch (NodeExecutor.Failure failure) {
                 if ("AUTHENTICATION_REJECTED".equals(failure.code())) {
-                    reportAuthenticationRejected(context.workspaceId(), request.connectionId());
+                    reportAuthenticationRejected(context.workspaceId(), request.connectionId(), connection);
                 }
                 throw failure;
             } catch (RuntimeException exception) {
@@ -172,10 +172,10 @@ public final class GoogleSheetsNodeExecutor implements NodeExecutor {
                     "The Google Sheets connection is not available to this workspace.", false);
         } catch (WorkspaceDependencyUnavailableException exception) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
-                    "The connection service is unavailable.", true);
+                    "The connection service is unavailable.", true, true);
         } catch (RuntimeException exception) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
-                    "The connection service is unavailable.", true);
+                    "The connection service is unavailable.", true, true);
         }
     }
 
@@ -188,9 +188,9 @@ public final class GoogleSheetsNodeExecutor implements NodeExecutor {
         }
     }
 
-    private void reportAuthenticationRejected(UUID workspaceId, UUID connectionId) {
+    private void reportAuthenticationRejected(UUID workspaceId, UUID connectionId, ResolvedConnection resolved) {
         try {
-            workspaceConnections.reportAuthenticationRejected(workspaceId, connectionId);
+            workspaceConnections.reportAuthenticationRejected(workspaceId, connectionId, resolved);
         } catch (RuntimeException ignored) {
             // The provider confirmed rejection; keep its safe classification if Workspace is unavailable.
         }

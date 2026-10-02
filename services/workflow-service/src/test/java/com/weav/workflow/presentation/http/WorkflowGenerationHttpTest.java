@@ -85,6 +85,13 @@ class WorkflowGenerationHttpTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test void exhaustedAiQuotaIs429() throws Exception {
+        ai.failure = new com.weav.workflow.application.node.NodeExecutor.Failure("AI_QUOTA_EXCEEDED", "quota", false);
+        mvc.perform(request("{\"prompt\":\"ping\"}")).andExpect(status().isTooManyRequests())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .string(org.hamcrest.Matchers.containsString("AI_QUOTA_EXCEEDED")));
+    }
+
     @Test void bodyOver32KiBIs413() throws Exception {
         mvc.perform(request("{\"prompt\":\"" + "x".repeat(33 * 1024) + "\"}")).andExpect(status().isPayloadTooLarge());
     }
@@ -132,9 +139,11 @@ class WorkflowGenerationHttpTest {
     }
     static class FakeAi implements AiGenerationPort {
         int calls;
-        void reset() { calls = 0; }
+        com.weav.workflow.application.node.NodeExecutor.Failure failure;
+        void reset() { calls = 0; failure = null; }
         public Map<String,Object> generate(UUID workspaceId, Map<String,Object> payload) {
             calls++;
+            if (failure != null) throw failure;
             Map<String,Object> n1 = Map.of("id","start","type","trigger.manual","config",Map.of());
             Map<String,Object> n2 = Map.of("id","ping","type","http.request","config",
                     Map.of("method","GET","url","https://example.com"));
