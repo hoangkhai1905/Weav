@@ -1,0 +1,526 @@
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  ArrowLeft,
+  FileText,
+  LayoutGrid,
+  Sparkles,
+  Zap,
+  Plus,
+  ArrowRight,
+} from 'lucide-react';
+import { workflowApi } from '../api/workflow.api';
+import { useI18nStore } from '../store/useI18nStore';
+import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
+import { showSuccessToast } from '../lib/feedback/toast';
+import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
+
+interface TemplateCard {
+  id: string;
+  category: string;
+  categoryLabel: string;
+  title: string;
+  description: string;
+  stepsCount: number;
+  avgDuration: string;
+  triggerType: string;
+  triggerColor: string;
+  flow: Array<{ name: string; type: 'trigger' | 'ai' | 'action' | 'logic' }>;
+}
+
+const TEMPLATES: TemplateCard[] = [
+  {
+    id: 'tpl-1',
+    category: 'customer-ops',
+    categoryLabel: 'E-Commerce & Ops',
+    title: 'Order notification & fulfillment',
+    description: 'Ingest webhook payloads from Shopify or Stripe, extract line items with structured AI parser, and dispatch Slack alerts.',
+    stepsCount: 3,
+    avgDuration: '~140ms',
+    triggerType: 'Webhook',
+    triggerColor: 'bg-[#2563EB]',
+    flow: [
+      { name: 'Webhook', type: 'trigger' },
+      { name: 'AI Extract', type: 'ai' },
+      { name: 'Slack Alert', type: 'action' },
+    ],
+  },
+  {
+    id: 'tpl-2',
+    category: 'data-etl',
+    categoryLabel: 'DevOps & Data',
+    title: 'Daily DB backup & S3 audit',
+    description: 'Scheduled snapshot of PostgreSQL clusters with checksum validation, storage upload, and automated incident paging.',
+    stepsCount: 4,
+    avgDuration: '1.2m',
+    triggerType: 'Cron (Daily)',
+    triggerColor: 'bg-[#2563EB]',
+    flow: [
+      { name: 'Cron', type: 'trigger' },
+      { name: 'Postgres', type: 'action' },
+      { name: 'S3 Dump', type: 'action' },
+      { name: 'Audit', type: 'logic' },
+    ],
+  },
+  {
+    id: 'tpl-3',
+    category: 'customer-ops',
+    categoryLabel: 'CRM & Sales',
+    title: 'Customer onboarding & enrichment',
+    description: 'Enrich new signup domains via Clearbit, route VIP accounts to sales executives, and synchronize contacts to BigQuery.',
+    stepsCount: 3,
+    avgDuration: '~210ms',
+    triggerType: 'Event',
+    triggerColor: 'bg-[#2563EB]',
+    flow: [
+      { name: 'Webhook', type: 'trigger' },
+      { name: 'Enrich AI', type: 'ai' },
+      { name: 'BigQuery', type: 'action' },
+    ],
+  },
+  {
+    id: 'tpl-4',
+    category: 'ai-vectors',
+    categoryLabel: 'Support & AI',
+    title: 'Zendesk priority triage & vectors',
+    description: 'Classify incoming tickets by urgency score, vectorize customer context into Pinecone, and draft preliminary answers.',
+    stepsCount: 3,
+    avgDuration: '~580ms',
+    triggerType: 'Ticket Webhook',
+    triggerColor: 'bg-[#2563EB]',
+    flow: [
+      { name: 'Zendesk', type: 'trigger' },
+      { name: 'Embeddings', type: 'ai' },
+      { name: 'Vector DB', type: 'action' },
+    ],
+  },
+  {
+    id: 'tpl-5',
+    category: 'data-etl',
+    categoryLabel: 'Data Pipeline',
+    title: 'PostgreSQL to BigQuery ETL sync',
+    description: 'Incremental hourly extraction of transaction tables with strict type validation, row hashing, and automatic retry buffers.',
+    stepsCount: 4,
+    avgDuration: '~3.4m',
+    triggerType: 'Hourly',
+    triggerColor: 'bg-[#2563EB]',
+    flow: [
+      { name: 'Sched', type: 'trigger' },
+      { name: 'Postgres', type: 'action' },
+      { name: 'Transform', type: 'ai' },
+      { name: 'BigQuery', type: 'action' },
+    ],
+  },
+  {
+    id: 'tpl-6',
+    category: 'ai-vectors',
+    categoryLabel: 'Document AI',
+    title: 'Invoice PDF OCR & Slack dispatcher',
+    description: 'Extract invoice tables, tax identification numbers, and line items from email attachments to Google Sheets and Slack alerts.',
+    stepsCount: 4,
+    avgDuration: '~1.8s',
+    triggerType: 'IMAP / S3',
+    triggerColor: 'bg-[#2563EB]',
+    flow: [
+      { name: 'Email', type: 'trigger' },
+      { name: 'OCR AI', type: 'ai' },
+      { name: 'Sheets', type: 'action' },
+      { name: 'Slack', type: 'action' },
+    ],
+  },
+];
+
+const TEMPLATE_CATEGORY_KEYS: Record<string, string> = {
+  'tpl-1': 'create.category.ecommerce',
+  'tpl-2': 'create.category.devops',
+  'tpl-3': 'create.category.crm',
+  'tpl-4': 'create.category.support',
+  'tpl-5': 'create.category.pipeline',
+  'tpl-6': 'create.category.document_ai',
+};
+
+export const CreateWorkflowPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { t } = useI18nStore();
+  const refreshNotifications = useNotificationMilestoneRefresh();
+
+  const [selectedMethod, setSelectedMethod] = useState<'blank' | 'template' | 'ai'>('blank');
+  const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [aiPrompt, setAiPrompt] = useState<string>('');
+  const [isCreating, setIsCreating] = useState<boolean>(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  const handleStartBlank = async () => {
+    const mutationSession = captureNotificationSession();
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      const newWf = await workflowApi.createWorkflow({
+        name: 'Untitled Automation Pipeline',
+        description: 'Custom blank workflow created from canvas editor.',
+      });
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast('toast.workflow.created', mutationSession);
+      refreshNotifications(mutationSession);
+      navigate(`/workflows/${newWf.id}/builder`);
+    } catch (error) {
+      if (isCurrentNotificationSession(mutationSession)) {
+        setCreateError(error instanceof Error ? error.message : 'Workflow could not be created.');
+      }
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleUseTemplate = async (templateTitle: string) => {
+    const mutationSession = captureNotificationSession();
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      const newWf = await workflowApi.createWorkflow({
+        name: templateTitle,
+        description: `Workflow bootstrapped from template: ${templateTitle}`,
+      });
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast('toast.workflow.created', mutationSession);
+      refreshNotifications(mutationSession);
+      navigate(`/workflows/${newWf.id}/builder`);
+    } catch (error) {
+      if (isCurrentNotificationSession(mutationSession)) {
+        setCreateError(error instanceof Error ? error.message : 'Workflow could not be created.');
+      }
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleGenerateAiCanvas = () => {
+    if (!aiPrompt.trim()) {
+      navigate('/ai/workflow-generator');
+      return;
+    }
+    navigate('/ai/workflow-generator', { state: { initialPrompt: aiPrompt } });
+  };
+
+  const filteredTemplates = TEMPLATES.filter((tpl) => {
+    if (activeCategory === 'all') return true;
+    return tpl.category === activeCategory;
+  });
+
+  return (
+    <div className="space-y-6 text-slate-900 dark:text-slate-100 font-sans">
+      {createError && (
+        <div role="alert" data-testid="workflow-create-error" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-300">
+          {createError}
+        </div>
+      )}
+      {/* Top Breadcrumb & Page Heading */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <Link to="/workspace" className="hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
+            {t('create.workspace')}
+          </Link>
+          <span>/</span>
+          <Link to="/workflows" className="hover:text-slate-900 dark:hover:text-slate-100 transition-colors flex items-center gap-1">
+            <ArrowLeft size={12} />
+            <span>{t('nav.workflows')}</span>
+          </Link>
+          <span>/</span>
+          <span className="text-slate-900 dark:text-slate-100 font-semibold">{t('create.title')}</span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pt-1">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+              {t('create.title')}
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+              {t('create.subtitle')}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-mono border border-slate-200 dark:border-slate-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              {t('create.production_cluster')} (us-east-1)
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 3-Panel Creation Options Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Option 1: Blank Workflow */}
+        <div
+          onClick={() => setSelectedMethod('blank')}
+          className={`cursor-pointer rounded-xl p-5 bg-white dark:bg-slate-900 border transition-all flex flex-col justify-between ${
+            selectedMethod === 'blank'
+              ? 'border-[#2563EB] ring-1 ring-[#2563EB] shadow-md shadow-[#2563EB]/10'
+              : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+          }`}
+        >
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-800 dark:text-slate-200">
+                <FileText size={20} />
+              </div>
+              <span className="font-mono text-[10px] text-slate-400">v2.4 engine</span>
+            </div>
+
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t('create.blank')}</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed min-h-[40px]">
+              {t('create.blank_description')}
+            </p>
+
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {t('create.full_control')}
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {t('create.custom_triggers')}
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {t('create.any_payload')}
+              </span>
+            </div>
+          </div>
+
+          <div className="pt-5 mt-4 border-t border-slate-100 dark:border-slate-800/80">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleStartBlank();
+              }}
+              disabled={isCreating}
+              className="w-full h-8 px-3 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <Plus size={14} />
+              <span>{isCreating ? t('create.creating') : t('create.start_blank')}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Option 2: Pre-configured Template */}
+        <div
+          onClick={() => setSelectedMethod('template')}
+          className={`cursor-pointer rounded-xl p-5 bg-white dark:bg-slate-900 border transition-all flex flex-col justify-between ${
+            selectedMethod === 'template'
+              ? 'border-[#2563EB] ring-1 ring-[#2563EB] shadow-md shadow-[#2563EB]/10'
+              : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+          }`}
+        >
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-800 dark:text-slate-200">
+                <LayoutGrid size={20} />
+              </div>
+              <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {t('create.recipes')}
+              </span>
+            </div>
+
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t('create.from_template')}</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed min-h-[40px]">
+              {t('create.templates_description')}
+            </p>
+
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {t('create.preconfigured')}
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {t('create.schema_verified')}
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {t('create.zero_latency')}
+              </span>
+            </div>
+          </div>
+
+          <div className="pt-5 mt-4 border-t border-slate-100 dark:border-slate-800/80">
+            <a
+              href="#templates-list"
+              className="w-full h-8 px-3 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <LayoutGrid size={14} />
+              <span>{t('create.browse_templates')}</span>
+            </a>
+          </div>
+        </div>
+
+        {/* Option 3: Create with AI */}
+        <div
+          onClick={() => setSelectedMethod('ai')}
+          className={`cursor-pointer rounded-xl p-5 bg-white dark:bg-slate-900 border transition-all flex flex-col justify-between ${
+            selectedMethod === 'ai'
+              ? 'border-[#2563EB] ring-1 ring-[#2563EB] shadow-md shadow-[#2563EB]/10'
+              : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+          }`}
+        >
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-lg bg-[#2563EB]/10 flex items-center justify-center text-[#2563EB]">
+                <Sparkles size={20} />
+              </div>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-[#2563EB]/10 text-[#2563EB]">
+                {t('create.beta')}
+              </span>
+            </div>
+
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+              <span>{t('create.with_ai')}</span>
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed min-h-[40px]">
+              {t('create.ai_description')}
+            </p>
+
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {t('create.prompt_to_pipeline')}
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {t('create.auto_mapping')}
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {t('create.dry_run_preview')}
+              </span>
+            </div>
+          </div>
+
+          <div className="pt-5 mt-4 border-t border-slate-100 dark:border-slate-800/80">
+            <Link
+              to="/ai/workflow-generator"
+              className="w-full h-8 px-3 rounded bg-[#2563EB] hover:bg-[#1d4ed8] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+            >
+              <Zap size={14} />
+              <span>{t('create.synthesize')}</span>
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Inline AI Prompt Assistant Bar */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-center gap-3">
+        <div className="flex items-center gap-2 text-[#2563EB] shrink-0">
+          <Sparkles size={16} />
+          <span className="text-xs font-medium text-slate-900 dark:text-slate-100">{t('create.quick_prompt')}</span>
+        </div>
+
+        <div className="relative flex-1 w-full">
+          <input
+            type="text"
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+            placeholder={t('create.prompt_placeholder')}
+            className="w-full h-9 pl-3 pr-8 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 rounded-lg placeholder:text-slate-400 focus:outline-none focus:border-[#2563EB] border border-slate-200 dark:border-slate-700"
+          />
+        </div>
+
+        <button
+          onClick={handleGenerateAiCanvas}
+          className="w-full sm:w-auto h-9 px-4 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-medium text-slate-900 dark:text-slate-100 transition-colors flex items-center justify-center gap-1.5 shrink-0"
+        >
+          <span>{t('create.generate_canvas')}</span>
+          <ArrowRight size={14} />
+        </button>
+      </div>
+
+      {/* Popular Templates Section Header & Filter Controls */}
+      <div className="pt-2 space-y-4" id="templates-list">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{t('create.popular_templates')}</h2>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{t('create.select_template')}</p>
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-lg self-start sm:self-auto overflow-x-auto">
+            {[
+              { id: 'all', label: t('create.filter.all') },
+              { id: 'data-etl', label: t('create.filter.data_etl') },
+              { id: 'customer-ops', label: t('create.filter.customer_ops') },
+              { id: 'ai-vectors', label: t('create.filter.ai_vectors') },
+            ].map((filter) => (
+              <button
+                key={filter.id}
+                onClick={() => setActiveCategory(filter.id)}
+                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                  activeCategory === filter.id
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Templates Grid (Dense Technical Layout) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredTemplates.map((tpl) => (
+            <div
+              key={tpl.id}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-xl p-4 flex flex-col justify-between shadow-xs hover:shadow-md transition-all group"
+            >
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                    {t(TEMPLATE_CATEGORY_KEYS[tpl.id])}
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-400 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />
+                    {tpl.triggerType}
+                  </span>
+                </div>
+
+                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-[#2563EB] transition-colors">
+                  {tpl.title}
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                  {t(`create.template.${tpl.id}.description`)}
+                </p>
+
+                {/* Graph Flow Sequence Preview */}
+                <div className="my-3 p-2 rounded bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between font-mono text-[10px] text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800">
+                  {tpl.flow.map((node, i) => (
+                    <React.Fragment key={i}>
+                      <div className="flex items-center gap-1">
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            node.type === 'trigger'
+                              ? 'bg-amber-500'
+                              : node.type === 'ai'
+                              ? 'bg-[#2563EB]'
+                              : node.type === 'logic'
+                              ? 'bg-sky-500'
+                              : 'bg-emerald-500'
+                          }`}
+                        />
+                        <span className="truncate max-w-[64px]">{node.name}</span>
+                      </div>
+                      {i < tpl.flow.length - 1 && <span className="text-slate-400 font-bold">→</span>}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+                <span className="font-mono text-[10px] text-slate-400">
+                  {tpl.stepsCount} {t('create.steps')} • {tpl.avgDuration}
+                </span>
+                <button
+                  onClick={() => handleUseTemplate(tpl.title)}
+                  className="h-7 px-2.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-[#2563EB] hover:text-white text-slate-800 dark:text-slate-200 text-xs font-medium transition-colors flex items-center gap-1"
+                >
+                  <span>{t('create.use_template')}</span>
+                  <ArrowRight size={12} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};

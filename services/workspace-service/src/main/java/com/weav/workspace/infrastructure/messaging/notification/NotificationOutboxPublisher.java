@@ -1,0 +1,179 @@
+package com.weav.workspace.infrastructure.messaging.notification;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageDeliveryMode;
+import org.springframework.amqp.core.MessageProperties;
+import org.springframework.amqp.rabbit.connection.CorrelationData;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.regex.Pattern;
+
+/** Publishes stored payloads with confirms while holding only that outbox row's lock. */
+@Component
+@ConditionalOnProperty(prefix = "weav.workspace.notification-outbox", name = "publisher-enabled",
+        havingValue = "true", matchIfMissing = true)
+public final class NotificationOutboxPublisher {
+    private static final Logger LOGGER = LoggerFactory.getLogger(NotificationOutboxPublisher.class);
+    private static final Pattern SAFE_SCHEMA = Pattern.compile("[A-Za-z_][A-Za-z0-9_]{0,62}");
+    private static final Duration MAX_CONFIRM_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration MAX_RETRY_DELAY = Duration.ofSeconds(60);
+
+    private final JdbcTemplate jdbcTemplate;
+    private final RabbitTemplate rabbitTemplate;
+    private final TransactionTemplate transactionTemplate;
+    private final String table;
+    private final String exchange;
+    private final int batchSize;
+    private final Duration confirmTimeout;
+    private final Duration maxRetryDelay;
+    private final int maxAttempts;
+
+    public NotificationOutboxPublisher(
+            JdbcTemplate jdbcTemplate,
+            RabbitTemplate rabbitTemplate,
+            org.springframework.transaction.PlatformTransactionManager transactionManager,
+            @Value("${DB_SCHEMA:workspace}") String schema,
+            @Value("${NOTIFICATION_EXCHANGE:weav.events}") String exchange,
+            @Value("${weav.workspace.notification-outbox.batch-size:25}") int batchSize,
+            @Value("${weav.workspace.notification-outbox.confirm-timeout:PT5S}") Duration confirmTimeout,
+            @Value("${weav.workspace.notification-outbox.max-retry-delay:PT60S}") Duration maxRetryDelay,
+            @Value("${weav.workspace.notification-outbox.max-attempts:10}") int maxAttempts) {
+        this.jdbcTemplate = Objects.requireNonNull(jdbcTemplate);
+        this.rabbitTemplate = Objects.requireNonNull(rabbitTemplate);
+        this.transactionTemplate = new TransactionTemplate(Objects.requireNonNull(transactionManager));
+        this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        if (!SAFE_SCHEMA.matcher(schema).matches()) {
+            throw new IllegalArgumentException("DB_SCHEMA must be a simple PostgreSQL schema identifier");
+        }
+        this.table = '"' + schema + '"' + ".notification_outbox";
+        this.exchange = Objects.requireNonNull(exchange);
+        this.batchSize = batchSize;
+        this.confirmTimeout = Objects.requireNonNull(confirmTimeout);
+        this.maxRetryDelay = Objects.requireNonNull(maxRetryDelay);
+        this.maxAttempts = maxAttempts;
+        if (maxAttempts < 1 || maxAttempts > 1000) {
+            throw new IllegalArgumentException("Workspace notification outbox bounds are invalid");
+        }
+        if (batchSize < 1 || batchSize > 250 || confirmTimeout.toMillis() < 1
+                || confirmTimeout.compareTo(MAX_CONFIRM_TIMEOUT) > 0
+                || maxRetryDelay.toMillis() < 1
+                || maxRetryDelay.compareTo(MAX_RETRY_DELAY) > 0) {
+            throw new IllegalArgumentException("Workspace notification outbox bounds are invalid");
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${weav.workspace.notification-outbox.poll-interval:1000}",
+            initialDelayString = "${weav.workspace.notification-outbox.initial-delay:1000}")
+    public void publishPendingOnSchedule() {
+        publishPending();
+    }
+
+    public int publishPending() {
+        int published = 0;
+        for (int processed = 0; processed < batchSize; processed++) {
+            try {
+                Boolean didPublish = transactionTemplate.execute(status -> dispatchOne());
+                if (!Boolean.TRUE.equals(didPublish)) {
+                    break;
+                }
+                published++;
+            } catch (RuntimeException exception) {
+                LOGGER.warn("Workspace notification outbox dispatch transaction failed ({})",
+                        exception.getClass().getSimpleName());
+                break;
+            }
+        }
+        return published;
+    }
+
+    private boolean dispatchOne() {
+        return jdbcTemplate.query("select event_id, event_type, payload::text, attempts from " + table
+                        + " where published_at is null and failed_at is null and next_attempt_at <= current_timestamp "
+                        + "order by next_attempt_at, created_at, event_id for update skip locked limit 1",
+                resultSet -> {
+                    if (!resultSet.next()) {
+                        return false;
+                    }
+                    UUID eventId = resultSet.getObject(1, UUID.class);
+                    String eventType = resultSet.getString(2);
+                    String payload = resultSet.getString(3);
+                    int attempts = resultSet.getInt(4);
+                    return publishLocked(eventId, eventType, payload, attempts);
+                });
+    }
+
+    private boolean publishLocked(UUID eventId, String eventType, String payload, int attempts) {
+        try {
+            CorrelationData correlation = new CorrelationData(eventId.toString());
+            MessageProperties properties = new MessageProperties();
+            properties.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
+            properties.setContentType("application/json");
+            properties.setMessageId(eventId.toString());
+            Message message = new Message(payload.getBytes(StandardCharsets.UTF_8), properties);
+            rabbitTemplate.send(exchange, eventType, message, correlation);
+            CorrelationData.Confirm confirm = correlation.getFuture()
+                    .get(confirmTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            if (!confirm.ack()) {
+                scheduleRetry(eventId, attempts, "nack");
+                return false;
+            }
+            if (correlation.getReturned() != null) {
+                scheduleRetry(eventId, attempts, "unroutable");
+                return false;
+            }
+            int updated = jdbcTemplate.update("update " + table
+                            + " set published_at = current_timestamp, last_failure_code = null "
+                            + "where event_id = ? and published_at is null", eventId);
+            if (updated != 1) {
+                throw new IllegalStateException("Outbox row was not marked published");
+            }
+            return true;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            scheduleRetry(eventId, attempts, "interrupted");
+            return false;
+        } catch (ExecutionException | TimeoutException exception) {
+            scheduleRetry(eventId, attempts, exception instanceof TimeoutException ? "confirm-timeout" : "confirm-failed");
+            return false;
+        } catch (RuntimeException exception) {
+            scheduleRetry(eventId, attempts, "transport-failed");
+            return false;
+        }
+    }
+
+    private void scheduleRetry(UUID eventId, int attempts, String failureCode) {
+        if (attempts + 1 >= maxAttempts) {
+            // WS-13: terminal FAILED state; the row is kept for inspection and never retried.
+            jdbcTemplate.update("update " + table
+                            + " set attempts = attempts + 1, failed_at = current_timestamp, last_failure_code = ? "
+                            + "where event_id = ? and published_at is null and failed_at is null",
+                    failureCode, eventId);
+            LOGGER.error("Workspace notification outbox event {} marked FAILED after {} attempts ({})",
+                    eventId, attempts + 1, failureCode);
+            return;
+        }
+        long exponent = Math.min(Math.max(attempts, 0), 20);
+        long delayMillis = Math.min(1_000L << exponent, maxRetryDelay.toMillis());
+        jdbcTemplate.update("update " + table
+                        + " set attempts = attempts + 1, "
+                        + "next_attempt_at = current_timestamp + (? * interval '1 millisecond'), "
+                        + "last_failure_code = ? where event_id = ? and published_at is null",
+                delayMillis, failureCode, eventId);
+    }
+}

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1.0",
+  "document": {
+    "fileName": "test.png",
+    "mimeType": "image/png",
+    "pages": 1,
+    "pageInfo": [
+      {
+        "page": 1,
+        "width": 1000,
+        "height": 1000,
+        "dpi": null
+      }
+    ]
+  },
+  "text": {
+    "rawText": "Missing requestId"
+  },
+  "confidence": 0.95,
+  "blocks": [
+    {
+      "id": "p1-b1",
+      "order": 0,
+      "text": "Missing requestId",
+      "confidence": 0.95,
+      "page": 1,
+      "boundingBox": {
+        "x": 10.0,
+        "y": 10.0,
+        "width": 200.0,
+        "height": 30.0
+      }
+    }
+  ],
+  "tables": [],
+  "metadata": {
+    "language": "en",
+    "resolvedLanguage": "en",
+    "processingTimeMs": 100,
+    "engine": "paddleocr",
+    "engineVersion": "3.7.0",
+    "modelRevision": "test-v1",
+    "tableDetection": "not_requested",
+    "quality": "OK",
+    "preprocessing": [],
+    "warnings": []
+  }
+}

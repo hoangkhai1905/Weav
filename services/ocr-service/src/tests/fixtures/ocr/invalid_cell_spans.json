@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "1.0",
+  "requestId": "eeb24fb2-df80-4dcb-b22d-3a4884799c73",
+  "document": {
+    "fileName": "test.png",
+    "mimeType": "image/png",
+    "pages": 1,
+    "pageInfo": [
+      {
+        "page": 1,
+        "width": 1000,
+        "height": 1000,
+        "dpi": null
+      }
+    ]
+  },
+  "text": {
+    "rawText": "Invalid cell span"
+  },
+  "confidence": 0.95,
+  "blocks": [
+    {
+      "id": "p1-b1",
+      "order": 0,
+      "text": "Invalid cell span",
+      "confidence": 0.95,
+      "page": 1,
+      "boundingBox": {
+        "x": 100.0,
+        "y": 100.0,
+        "width": 200.0,
+        "height": 50.0
+      }
+    }
+  ],
+  "tables": [
+    {
+      "id": "p1-t1",
+      "page": 1,
+      "boundingBox": {
+        "x": 100.0,
+        "y": 100.0,
+        "width": 400.0,
+        "height": 200.0
+      },
+      "rowCount": 2,
+      "columnCount": 2,
+      "confidence": null,
+      "cells": [
+        {
+          "row": 0,
+          "column": 1,
+          "rowSpan": 1,
+          "columnSpan": 3,
+          "text": "Invalid cell span",
+          "confidence": 0.95,
+          "boundingBox": null,
+          "sourceBlockIds": [
+            "p1-b1"
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "language": "en",
+    "resolvedLanguage": "en",
+    "processingTimeMs": 100,
+    "engine": "paddleocr",
+    "engineVersion": "3.7.0",
+    "modelRevision": "test-v1",
+    "tableDetection": "completed",
+    "quality": "OK",
+    "preprocessing": [],
+    "warnings": []
+  }
+}

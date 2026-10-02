@@ -1,0 +1,9 @@
+{
+  "source": {
+    "type": "artifact",
+    "artifactId": "8eae413e-b229-490f-927a-3e2ee793d029",
+    "fileUrl": "https://storage.example.invalid/documents/report.pdf"
+  },
+  "language": "vi+en",
+  "detectTables": true
+}

@@ -1,0 +1,24 @@
+{
+  "cases": [
+    { "name": "nested object and array", "valid": true, "schema": { "type": "object", "properties": { "person": { "type": "object", "properties": { "name": { "type": "string" } }, "required": ["name"] }, "items": { "type": "array", "items": { "type": "string" } } } } },
+    { "name": "nullable via type array", "valid": true, "schema": { "type": "object", "properties": { "note": { "type": ["string", "null"] } } } },
+    { "name": "enum", "valid": true, "schema": { "type": "object", "properties": { "level": { "type": "string", "enum": ["low", "high"] } } } },
+    { "name": "credential-like property names", "valid": true, "schema": { "type": "object", "properties": { "token": { "type": "string" }, "apiKey": { "type": "string" }, "password": { "type": "string" } } } },
+    { "name": "mapping-looking description is literal", "valid": true, "schema": { "type": "object", "description": "use {{trigger.input.x}} literally", "properties": {} } },
+    { "name": "additionalProperties boolean", "valid": true, "schema": { "type": "object", "additionalProperties": false, "properties": { "a": { "type": "integer" } } } },
+    { "name": "nullable object with required", "valid": true, "schema": { "type": "object", "properties": { "o": { "type": ["object", "null"], "properties": { "a": { "type": "string" } }, "required": ["a"] } } } },
+    { "name": "required names undeclared property", "valid": false, "schema": { "type": "object", "properties": { "a": { "type": "string" } }, "required": ["b"] } },
+    { "name": "items on string type", "valid": false, "schema": { "type": "object", "properties": { "a": { "type": "string", "items": { "type": "string" } } } } },
+    { "name": "properties on string type", "valid": false, "schema": { "type": "object", "properties": { "a": { "type": "string", "properties": {} } } } },
+    { "name": "root array", "valid": false, "schema": { "type": "array", "items": { "type": "string" } } },
+    { "name": "ref", "valid": false, "schema": { "type": "object", "properties": { "a": { "$ref": "#/$defs/x" } } } },
+    { "name": "default carries a value", "valid": false, "schema": { "type": "object", "properties": { "a": { "type": "string", "default": "sk-live-123" } } } },
+    { "name": "const carries a value", "valid": false, "schema": { "type": "object", "properties": { "a": { "type": "string", "const": "x" } } } },
+    { "name": "examples carries values", "valid": false, "schema": { "type": "object", "properties": { "a": { "type": "string", "examples": ["x"] } } } },
+    { "name": "additionalProperties schema", "valid": false, "schema": { "type": "object", "additionalProperties": { "type": "string" } } },
+    { "name": "unknown type", "valid": false, "schema": { "type": "object", "properties": { "a": { "type": "date" } } } },
+    { "name": "missing type", "valid": false, "schema": { "type": "object", "properties": { "a": { "description": "x" } } } },
+    { "name": "prototype property name", "valid": false, "schema": { "type": "object", "properties": { "constructor": { "type": "string" } } } },
+    { "name": "empty property name", "valid": false, "schema": { "type": "object", "properties": { "": { "type": "string" } } } }
+  ]
+}

@@ -171,22 +171,44 @@ Copy-Item .env.example .env
 
 Điền credentials development vào `.env`.
 
-### Supabase
+### Neon PostgreSQL
 
 ```env
-SUPABASE_URL=
-SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
+# Use the pooled endpoint from Neon; the hostname contains "-pooler".
+IDENTITY_DB_HOST=
+IDENTITY_DB_PORT=5432
+IDENTITY_DB_NAME=
+IDENTITY_DB_USERNAME=
+IDENTITY_DB_PASSWORD=
+IDENTITY_DB_SSL_MODE=require
 
-DB_HOST=
-DB_PORT=5432
-DB_NAME=postgres
-DB_USERNAME=
-DB_PASSWORD=
+WORKSPACE_DB_HOST=
+WORKSPACE_DB_PORT=5432
+WORKSPACE_DB_NAME=
+WORKSPACE_DB_USERNAME=
+WORKSPACE_DB_PASSWORD=
+WORKSPACE_DB_SSL_MODE=require
 
-IDENTITY_DB_SCHEMA=identity
-WORKFLOW_DB_SCHEMA=workflow
-BOT_DB_SCHEMA=bot
+WORKFLOW_DB_HOST=
+WORKFLOW_DB_PORT=5432
+WORKFLOW_DB_NAME=
+WORKFLOW_DB_USERNAME=
+WORKFLOW_DB_PASSWORD=
+WORKFLOW_DB_SSL_MODE=require
+
+BOT_DB_HOST=
+BOT_DB_PORT=5432
+BOT_DB_NAME=
+BOT_DB_USERNAME=
+BOT_DB_PASSWORD=
+BOT_DB_SSL_MODE=require
+
+NOTIFICATION_DB_HOST=
+NOTIFICATION_DB_PORT=5432
+NOTIFICATION_DB_NAME=
+NOTIFICATION_DB_USERNAME=
+NOTIFICATION_DB_PASSWORD=
+NOTIFICATION_DB_SSL_MODE=require
 ```
 
 ### Aiven Valkey
@@ -197,6 +219,26 @@ VALKEY_HOST=
 VALKEY_PORT=
 VALKEY_USERNAME=
 VALKEY_PASSWORD=
+```
+
+### Workspace service-to-service and authorization
+
+Workspace uses the following non-secret names. Keep the two internal service
+keys in the local secret store and configure the Identity key to match on both
+the Identity and Workspace containers. When using Compose, `REDIS_URL` may be
+left unset if it should inherit the root `VALKEY_URL`.
+
+```env
+IDENTITY_SERVICE_URL=http://identity-service:8080
+IDENTITY_INTERNAL_SERVICE_KEY=
+WEAV_INTERNAL_SERVICE_KEY=
+IDENTITY_CONNECT_TIMEOUT=3s
+IDENTITY_READ_TIMEOUT=5s
+REDIS_URL=
+WORKSPACE_AUTHORIZATION_CACHE_TTL=PT5M
+JWT_ISSUER=weav-identity
+JWT_AUDIENCE=weav-api
+JWT_CLOCK_SKEW=30s
 ```
 
 ### RabbitMQ
@@ -243,6 +285,8 @@ Kiểm tra:
 docker compose ps
 ```
 
+Trong compose dev, mọi cổng publish ra host đều bind `127.0.0.1` (RabbitMQ AMQP 5672 và management 15672, identity 8081, workspace 8082, workflow 8083, ai 3001, OCR 8000), chỉ `api-gateway` (3000) mở cho LAN để app mobile trên thiết bị thật gọi được. `localhost` vẫn dùng bình thường; nếu client resolve `localhost` sang `::1` thì dùng `127.0.0.1`.
+
 RabbitMQ Management UI:
 
 ```text
@@ -279,6 +323,82 @@ cd services/identity-service
 .\mvnw.cmd clean compile
 ```
 
+Identity core authentication requires `JWT_ACCESS_SECRET` to contain at least 32 UTF-8 bytes. `JWT_REFRESH_SECRET` remains required for configuration compatibility but opaque refresh tokens are generated randomly and only their SHA-256 hashes are stored.
+
+### Optional Google OAuth web transport
+
+The Identity service reads these names from its process environment; no Spring or Maven startup path loads the repository-root `.env` automatically:
+
+```text
+GOOGLE_OAUTH_ENABLED        # blank = auto; false = force disabled; true = require complete config
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET        # secret value supplied out-of-band
+GOOGLE_REDIRECT_URI         # default: http://localhost:8081/auth/oauth/google/callback
+OAUTH_WEB_RETURN_TARGET_URI # default: http://localhost:5173/auth/callback
+OAUTH_WEB_ALLOWED_ORIGIN    # default: http://localhost:5173
+```
+
+The Google issuer is fixed to `https://accounts.google.com`; web cookies remain `Secure` and the allowed origin is an exact match. With both credential values empty, OAuth providers and routes stay disabled and core Identity still boots. Setting `GOOGLE_OAUTH_ENABLED=true` with a missing or malformed required value fails startup rather than silently enabling a partial flow.
+
+For Compose, load the local environment at the project root so interpolation forwards these values into `identity-service`, then validate without printing resolved values:
+
+```powershell
+docker compose --env-file .env -f compose.yml -f compose.dev.yml config --quiet
+docker compose --env-file .env -f compose.yml -f compose.dev.yml --profile app up identity-service
+```
+
+### Google Colab OCR development mode
+
+When OCR is running in a Google Colab notebook and exposed through a temporary
+HTTPS tunnel, point the Gateway at that URL in the local `.env`:
+
+```env
+OCR_SERVICE_URL=https://your-colab-tunnel.example
+OCR_ALLOW_UNAUTHENTICATED_DEV=true
+```
+
+Commit the generic Compose override from
+`compose.colab-ocr.dev.yml`, but never commit the real tunnel URL or an
+authentication token. Start only the services needed by the local Gateway so
+the local `ocr-service` container is not started:
+
+```powershell
+docker compose --env-file .env `
+  -f compose.yml `
+  -f compose.dev.yml `
+  -f compose.colab-ocr.dev.yml `
+  --profile app up -d --build identity-service workspace-service api-gateway
+```
+
+The local OCR container remains available for fallback testing. Run it by
+using the normal Compose files and the local model override; omit the Colab
+override so Gateway uses the internal `http://ocr-service:8000` URL:
+
+```powershell
+docker compose --env-file .env `
+  -f compose.yml `
+  -f compose.dev.yml `
+  -f compose.ocr-models.dev.yml `
+  --profile app up -d --build ocr-service api-gateway
+```
+
+The Colab tunnel is temporary and should only receive non-sensitive test
+documents. If the notebook restarts, update the local `.env` URL and recreate
+the Gateway container.
+
+For direct Maven startup, inject the same names into the process environment through the local shell or secret manager before starting `services/identity-service`; do not pass secret values on the command line or commit `.env`.
+
+The Identity-local OpenAPI contract is published at `packages/contracts/http/auth/openapi.yaml`. Version 1.1 adds the M1 contract target for profile display-name updates, self-service session listing/revocation, revoke-all, and local password change. These additions are contract-first: do not treat them as runtime-ready until the matching M1 implementation and HTTP tests pass. OTP/recovery, admin, avatar, Gateway, and mobile operations remain deferred; the M3 Google OAuth web transport still requires real-provider/browser acceptance.
+
+To run the complete Identity suite with disposable PostgreSQL 18:
+
+```powershell
+$env:JAVA_TOOL_OPTIONS='-Duser.timezone=UTC'
+.\mvnw.cmd -B '-Dstyle.color=never' test
+```
+
+The current baseline suite applies Flyway migrations to schema `identity` and verifies registration, login, bearer current-user lookup, refresh rotation, logout, duplicate-email/refresh races, and auth throttling. It does not use development Neon credentials. After M1 implementation lands, its focused profile/session/password-change HTTP and concurrency tests must pass together with this baseline suite before the new operations are considered available.
+
 Workflow:
 
 ```powershell
@@ -310,9 +430,138 @@ pnpm --dir services/bot-service build
 pnpm --dir services/notification-service build
 ```
 
+### API Gateway development setup
+
+Gateway chạy bằng NestJS/Fastify và nhận cấu hình từ process environment,
+Compose hoặc secret store được phê duyệt. Chỉ ghi tên biến, không ghi secret
+value vào file này hoặc vào shell history:
+
+```text
+APP_ENV, PORT
+JWT_ACCESS_SECRET, JWT_ISSUER, JWT_AUDIENCE, JWT_CLOCK_SKEW
+IDENTITY_SERVICE_URL, WORKSPACE_SERVICE_URL, WORKFLOW_SERVICE_URL
+AI_SERVICE_URL, BOT_SERVICE_URL, NOTIFICATION_SERVICE_URL, OCR_SERVICE_URL
+CORS_ALLOWED_ORIGINS, OCR_ALLOW_UNAUTHENTICATED_DEV
+GATEWAY_GENERAL_RATE_LIMIT, GATEWAY_AUTH_RATE_LIMIT, GATEWAY_OCR_RATE_LIMIT
+GATEWAY_RATE_LIMIT_WINDOW_MS
+```
+
+Từ repository root, sau khi đã cung cấp các tên cấu hình cần thiết:
+
+```powershell
+pnpm --dir services/api-gateway start:dev
+```
+
+Kiểm tra source-level Gateway mà không cần upstream thật:
+
+```powershell
+pnpm --dir services/api-gateway test -- --runInBand --silent
+pnpm --dir services/api-gateway test:e2e -- --runInBand --silent
+pnpm --dir services/api-gateway exec tsc --noEmit
+pnpm --dir services/api-gateway build
+pnpm --dir services/api-gateway exec eslint "{src,test}/**/*.ts"
+```
+
+`GET /health` là liveness public và không gọi Identity/Workspace. `GET /ready`
+là readiness public, probe song song hai service này qua
+`/actuator/health/readiness`, đọc cả response body trong deadline hai giây và
+trả aggregate `200`/`503` đã được sanitize. Notification và OCR không làm
+Gateway unready. Rate limiter dùng in-memory storage cho một Gateway replica;
+không coi đây là enforcement phân tán khi scale nhiều replica.
+
+Route matrix, mapping Workspace, auth policy, error contract, OCR streaming
+risk và rollback được ghi tại `services/api-gateway/README.md`. Contract
+Workspace phía Gateway nằm ở `packages/contracts/http/gateway/openapi.yaml`.
+
+Fixture E2E không thay thế real-service proof. Để kiểm tra login Identity →
+Workspace qua Gateway hoặc browser smoke, phải có deployment được ủy quyền,
+test account chuyên dụng và dữ liệu test có cleanup rõ ràng; không tự tạo dữ
+liệu production hoặc đọc/paste credential.
+
 ---
 
-## 10. Mobile
+## 10. Dev Mode (Watch Mode)
+
+Watch mode cho phép hot-reload khi thay đổi source — không cần restart container hay dev server thủ công.
+
+### Frontend (Vite)
+
+Chạy từ thư mục `apps/web`:
+
+```powershell
+# Setup .env lần đầu (chỉ cần làm 1 lần)
+Copy-Item apps\web\.env.example apps\web\.env
+
+# Chạy dev server
+pnpm --dir apps/web dev
+```
+
+Web app sẽ chạy tại `http://localhost:5173`.
+
+> **Quan trọng:** `apps/web/.env` phải tồn tại. Nếu thiếu, `VITE_API_MODE` sẽ là `undefined` và web sẽ cố gọi real API mà không có auth token, gây `ERR_FAILED` trên console.
+
+### Backend — Docker Watch Mode
+
+Phải chạy từ **root repository** (`T:\Weav`), **không phải** từ subdirectory:
+
+```powershell
+# Lần đầu hoặc sau khi sửa .env
+docker compose -f compose.yml -f compose.dev.yml --profile app build --no-cache
+
+# Chạy watch mode (hot-reload tất cả services)
+docker compose -f compose.yml -f compose.dev.yml --profile app watch
+```
+
+`compose.yml` cung cấp infrastructure (RabbitMQ), `compose.dev.yml` cung cấp các app services với `develop.watch` config.
+
+> **Lưu ý:** Nếu chạy lệnh từ sai thư mục (vd: `apps/web`), Docker sẽ báo lỗi `compose.yml not found`.
+
+### Sau khi sửa `.env`
+
+Compose không tự reload env khi file thay đổi. Cần force-recreate:
+
+```powershell
+docker compose -f compose.yml -f compose.dev.yml --profile app up --force-recreate -d
+```
+
+### Lưu ý: Flyway và Neon Connection Pooler
+
+Workflow service dùng **Neon PostgreSQL**. Flyway không tương thích với Neon connection pooler (pgBouncer transaction mode). Cấu hình đã được tách:
+
+- `DB_HOST` (pooler endpoint) → HikariCP runtime connection pool
+- `DB_DIRECT_HOST` (direct endpoint, bỏ `-pooler` khỏi hostname) → Flyway migrations
+
+Khi thêm Neon database mới cho một service, phải cung cấp cả hai biến trong `.env` và `compose.dev.yml`.
+
+### Rebuild khi dist/ bị thiếu module
+
+NestJS services (api-gateway, notification-service, v.v.) đôi khi bị thiếu file compiled trong `dist/` nếu image cũ không rebuild đúng. Triệu chứng: chỉ thấy `AppController {/}` trong log, không thấy các module khác.
+
+Fix:
+
+```powershell
+docker compose -f compose.yml -f compose.dev.yml --profile app build --no-cache
+docker compose -f compose.yml -f compose.dev.yml --profile app watch
+```
+
+### Tóm tắt — Chạy toàn bộ stack
+
+**Terminal 1 (Backend):**
+
+```powershell
+cd T:\Weav
+docker compose -f compose.yml -f compose.dev.yml --profile app watch
+```
+
+**Terminal 2 (Frontend):**
+
+```powershell
+pnpm --dir apps/web dev
+```
+
+---
+
+## 11. Mobile
 
 Mobile app đã được scaffold bằng Expo.
 
@@ -391,7 +640,7 @@ cd ..\..
 # 4. Environment variables
 Copy-Item .env.example .env
 
-# Điền Supabase / Aiven credentials vào .env
+# Điền Neon / Aiven credentials vào .env
 
 # 5. Start infrastructure
 docker compose up -d
@@ -483,7 +732,8 @@ Notification        → TypeScript + NestJS + Fastify
 
 OCR                 → Python 3.12 + FastAPI + PaddleOCR
 
-Database / Storage  → Supabase
+Database             → Neon PostgreSQL
+Storage              → Not configured
 Cache               → Aiven Valkey
 Message Broker      → RabbitMQ
 Development Runtime → Docker / Docker Compose

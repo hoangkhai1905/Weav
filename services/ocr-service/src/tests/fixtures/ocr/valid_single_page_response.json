@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "1.0",
+  "requestId": "eeb24fb2-df80-4dcb-b22d-3a4884799c73",
+  "document": {
+    "fileName": "meeting-notes.png",
+    "mimeType": "image/png",
+    "pages": 1,
+    "pageInfo": [
+      {
+        "page": 1,
+        "width": 1200,
+        "height": 1600,
+        "dpi": null
+      }
+    ]
+  },
+  "text": {
+    "rawText": "Biên bản thảo luận kỹ thuật / Technical Discussion Notes\nHệ thống xử lý tài liệu tự động phân tán."
+  },
+  "confidence": 0.984,
+  "blocks": [
+    {
+      "id": "p1-b1",
+      "order": 0,
+      "text": "Biên bản thảo luận kỹ thuật / Technical Discussion Notes",
+      "confidence": 0.988,
+      "page": 1,
+      "boundingBox": {
+        "x": 100.0,
+        "y": 150.0,
+        "width": 750.0,
+        "height": 36.0
+      },
+      "polygon": [
+        [100.0, 150.0],
+        [850.0, 150.0],
+        [850.0, 186.0],
+        [100.0, 186.0]
+      ]
+    },
+    {
+      "id": "p1-b2",
+      "order": 1,
+      "text": "Hệ thống xử lý tài liệu tự động phân tán.",
+      "confidence": 0.980,
+      "page": 1,
+      "boundingBox": {
+        "x": 100.0,
+        "y": 210.0,
+        "width": 520.0,
+        "height": 28.0
+      },
+      "polygon": [
+        [100.0, 210.0],
+        [620.0, 210.0],
+        [620.0, 238.0],
+        [100.0, 238.0]
+      ]
+    }
+  ],
+  "tables": [],
+  "metadata": {
+    "language": "vi+en",
+    "resolvedLanguage": "latin-multilingual",
+    "processingTimeMs": 850,
+    "engine": "paddleocr",
+    "engineVersion": "3.7.0",
+    "modelRevision": "approved-model-manifest-v1",
+    "tableDetection": "completed",
+    "quality": "OK",
+    "preprocessing": [
+      {
+        "page": 1,
+        "steps": [
+          "grayscale",
+          "contrast"
+        ]
+      }
+    ],
+    "warnings": []
+  }
+}

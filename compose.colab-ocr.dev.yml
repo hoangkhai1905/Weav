@@ -1,0 +1,6 @@
+services:
+  api-gateway:
+    environment:
+      # The OCR service runs in the Colab runtime through its temporary HTTPS tunnel.
+      OCR_SERVICE_URL: ${OCR_SERVICE_URL}
+      OCR_ALLOW_UNAUTHENTICATED_DEV: "true"

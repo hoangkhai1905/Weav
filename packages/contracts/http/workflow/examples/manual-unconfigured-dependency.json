@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "nodes": [
+    {
+      "id": "manual-root",
+      "type": "trigger.manual",
+      "config": {}
+    },
+    {
+      "id": "dependency",
+      "type": "telegram.send_message",
+      "config": {
+        "chatId": "workflow-v1-dependency-test",
+        "text": "The unsupported Telegram adapter must fail closed without sending."
+      }
+    }
+  ],
+  "edges": [
+    { "id": "manual-dependency", "source": "manual-root", "target": "dependency" }
+  ],
+  "variables": {}
+}

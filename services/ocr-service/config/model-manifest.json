@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "models": {
+    "vi": {
+      "text_detection_model_name": "PP-OCRv5_mobile_det",
+      "text_detection_model_dir": "/models/paddlex-cache/official_models/PP-OCRv5_mobile_det",
+      "text_recognition_model_name": "PP-OCRv6_medium_rec",
+      "text_recognition_model_dir": "/models/paddlex-cache/official_models/pp-ocrv6-medium-rec-vietnamese"
+    },
+    "vi+en": {
+      "text_detection_model_name": "PP-OCRv5_mobile_det",
+      "text_detection_model_dir": "/models/paddlex-cache/official_models/PP-OCRv5_mobile_det",
+      "text_recognition_model_name": "PP-OCRv6_medium_rec",
+      "text_recognition_model_dir": "/models/paddlex-cache/official_models/pp-ocrv6-medium-rec-vietnamese"
+    },
+    "en": {
+      "text_detection_model_name": "PP-OCRv5_mobile_det",
+      "text_detection_model_dir": "/models/paddlex-cache/official_models/PP-OCRv5_mobile_det",
+      "text_recognition_model_name": "en_PP-OCRv5_mobile_rec",
+      "text_recognition_model_dir": "/models/paddlex-cache/official_models/en_PP-OCRv5_mobile_rec"
+    },
+    "latin": {
+      "text_detection_model_name": "PP-OCRv5_mobile_det",
+      "text_detection_model_dir": "/models/paddlex-cache/official_models/PP-OCRv5_mobile_det",
+      "text_recognition_model_name": "en_PP-OCRv5_mobile_rec",
+      "text_recognition_model_dir": "/models/paddlex-cache/official_models/en_PP-OCRv5_mobile_rec"
+    }
+  }
+}

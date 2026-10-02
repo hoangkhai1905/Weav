@@ -1,0 +1,17 @@
+{
+  "error": {
+    "code": "UNSUPPORTED_MEDIA_TYPE",
+    "message": "File format is not supported. Only PNG, JPEG, WEBP, and PDF documents are allowed.",
+    "retryable": false,
+    "details": {
+      "detectedMimeType": "image/gif",
+      "allowedMimeTypes": [
+        "image/png",
+        "image/jpeg",
+        "image/webp",
+        "application/pdf"
+      ]
+    }
+  },
+  "requestId": "2f65a4c9-b789-4cb5-8d5c-7d983416b25a"
+}

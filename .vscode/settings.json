@@ -12,7 +12,10 @@
         "**/node_modules/**": true,
         "**/.venv/**": true
     },
+
     "java.configuration.updateBuildConfiguration": "automatic",
+    "java.import.gradle.enabled": false,
+
     "[java]": {
         "editor.defaultFormatter": "redhat.java"
     },

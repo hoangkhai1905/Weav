@@ -1,5 +1,35 @@
 # Welcome to your Expo app 👋
 
+## Notification API
+
+Notifications use the authenticated v2 inbox routes under `/api/v2/notifications`:
+localized list (`locale`, `category`, `unreadOnly`, cursor/limit), global unread
+count, mark-one-read, and mark-all-read. The server supplies localized title and
+message; read state comes from `readAt`. Delivery/provider status is not part of
+the inbox. Counts poll every 10 seconds and the list every 30 seconds.
+
+`EXPO_PUBLIC_API_MODE` defaults to `http`; set it explicitly to `mock` for the
+offline demo. Configure `EXPO_PUBLIC_API_BASE_URL` (local default:
+`http://localhost:3000`). A physical device needs the gateway's reachable LAN URL.
+Restart Expo after changing environment variables. HTTP mode starts signed out and
+requires a real Identity access token via the existing auth flow; it never falls
+back to mock data on HTTP errors. A 401 expires the current existing auth session,
+while a delayed response from a superseded session is ignored.
+
+The focused Node checks use the repository's existing `.test.cjs` convention and
+can be run from the repo root:
+
+```bash
+pnpm --dir apps/mobile exec node --test src/infrastructure/http/notification.http.contract.test.cjs src/infrastructure/http/notification.mapper.test.cjs src/features/notifications/notification.query.test.cjs src/features/notifications/notification.target.test.cjs src/features/auth/auth-session.scope.test.cjs src/features/feedback/milestone-toast.test.cjs src/features/feedback/milestone-toast.policy.test.cjs src/infrastructure/http/http-notification.repository.integration.test.cjs src/infrastructure/mock/mock-notification.repository.test.cjs
+pnpm --dir apps/mobile exec tsc --noEmit
+```
+
+An opt-in Expo Web smoke test reuses the existing workspace Playwright install;
+start Expo in explicit mock mode and with `EXPO_NO_DOTENV=1`, then run
+`pnpm --dir apps/web exec playwright test --config ../mobile/e2e/playwright.config.cjs`.
+The mock session is a UI fixture only, not proof of an Identity login or a live
+Gateway/Notification service.
+
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
 ## Get started

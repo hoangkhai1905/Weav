@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Weav Google OAuth handoff</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #f4f7fb; color: #162033; }
+    main { max-width: 760px; margin: 10vh auto; padding: 2rem; background: white; border: 1px solid #d7deea; border-radius: 12px; box-shadow: 0 8px 30px #16203318; }
+    button { border: 0; border-radius: 8px; padding: .7rem 1rem; background: #2457d6; color: white; font: inherit; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    pre { white-space: pre-wrap; background: #eef2f8; border-radius: 8px; padding: 1rem; min-height: 8rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Weav Google OAuth handoff</h1>
+    <p>This local handoff uses the configured Google provider. It never displays credentials, tokens, cookies, email addresses, or callback query values.</p>
+    <button id="run" type="button">Continue with Google</button>
+    <button id="session-checks" type="button" hidden>Run web session checks</button>
+    <pre id="status">Ready. Click the button to open the official Google sign-in page.</pre>
+  </main>
+  <script>
+    (() => {
+      const identityOrigin = "http://localhost:8081";
+      const expectedCallback = identityOrigin + "/auth/oauth/google/callback";
+      const verifierPrefix = "m3.live.oauth.verifier.";
+      const status = document.getElementById("status");
+      const button = document.getElementById("run");
+      const sessionButton = document.getElementById("session-checks");
+      const stages = new Set(["start", "provider-return", "csrf", "exchange", "current-user"]);
+      const errorCodes = new Set([
+        "none",
+        "start_network",
+        "start_http",
+        "start_invalid_response",
+        "provider_url_invalid",
+        "provider_cancelled",
+        "provider_unavailable",
+        "provider_return_invalid",
+        "callback_data_missing",
+        "verifier_missing",
+        "csrf_network",
+        "csrf_http",
+        "csrf_invalid_response",
+        "exchange_network",
+        "exchange_http",
+        "exchange_invalid_response",
+        "current_user_cors_or_network",
+        "current_user_http",
+        "session_csrf_network",
+        "session_csrf_http",
+        "session_csrf_invalid_response",
+        "session_refresh_network",
+        "session_refresh_http",
+        "session_refresh_invalid_response",
+        "session_current_user_cors_or_network",
+        "session_current_user_http",
+        "session_logout_network",
+        "session_logout_http",
+        "session_postlogout_http",
+        "session_unexpected",
+        "unexpected"
+      ]);
+      let activeStage = "start";
+      let activeSessionStep = "login";
+      let accessTokenInMemory = null;
+
+      const safeStatus = (value) => {
+        status.textContent = JSON.stringify(value, null, 2);
+      };
+
+      const isCallbackUrlClean = () => window.location.search === "" && window.location.hash === "";
+
+      const emit = ({ status: resultStatus, stage, httpStatus = 0, errorCode = "none", ...details }) => {
+        const safeStage = stages.has(stage) ? stage : "start";
+        const safeErrorCode = errorCodes.has(errorCode) ? errorCode : "unexpected";
+        safeStatus({
+          status: resultStatus,
+          stage: safeStage,
+          httpStatus: Number.isInteger(httpStatus) && httpStatus >= 0 && httpStatus <= 599 ? httpStatus : 0,
+          errorCode: safeErrorCode,
+          ...details,
+          callbackUrlClean: isCallbackUrlClean()
+        });
+      };
+
+      const base64Url = (bytes) => {
+        let value = "";
+        for (const byte of bytes) value += String.fromCharCode(byte);
+        return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+      };
+
+      const randomVerifier = () => {
+        const bytes = new Uint8Array(32);
+        crypto.getRandomValues(bytes);
+        return base64Url(bytes);
+      };
+
+      const jsonFetch = async (url, options) => {
+        let response;
+        try {
+          response = await fetch(url, options);
+        } catch (_) {
+          return { response: null, body: null };
+        }
+        let body = null;
+        try { body = await response.json(); } catch (_) { /* sanitized status only */ }
+        return { response, body };
+      };
+
+      const enableSessionChecks = () => {
+        sessionButton.hidden = false;
+        sessionButton.disabled = false;
+      };
+
+      const start = async () => {
+        activeStage = "start";
+        button.disabled = true;
+        emit({ status: "starting", stage: activeStage });
+        const verifier = randomVerifier();
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+        const codeChallenge = base64Url(new Uint8Array(digest));
+        const { response, body } = await jsonFetch(identityOrigin + "/auth/oauth/google/start", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientId: "web",
+            returnTargetId: "web",
+            codeChallenge,
+            codeChallengeMethod: "S256"
+          })
+        });
+        if (!response) {
+          emit({ status: "failed", stage: activeStage, errorCode: "start_network" });
+          return;
+        }
+        if (!response.ok) {
+          emit({ status: "failed", stage: activeStage, httpStatus: response.status, errorCode: "start_http" });
+          return;
+        }
+        if (!body?.authorizationUrl || !body?.transactionId) {
+          emit({ status: "failed", stage: activeStage, httpStatus: response.status, errorCode: "start_invalid_response" });
+          return;
+        }
+
+        const authorization = new URL(body.authorizationUrl);
+        const providerHostValid = authorization.protocol === "https:"
+          && authorization.hostname === "accounts.google.com";
+        const callbackValid = authorization.searchParams.get("redirect_uri") === expectedCallback;
+        const expectedProtocol = authorization.searchParams.get("response_type") === "code";
+        if (!providerHostValid || !callbackValid || !expectedProtocol) {
+          emit({
+            status: "blocked",
+            stage: activeStage,
+            httpStatus: response.status,
+            errorCode: "provider_url_invalid",
+            providerHostValid,
+            callbackValid,
+            responseTypeCode: expectedProtocol
+          });
+          return;
+        }
+
+        sessionStorage.setItem(verifierPrefix + body.transactionId, JSON.stringify({ verifier }));
+        emit({
+          status: "authorization-ready",
+          stage: activeStage,
+          httpStatus: response.status,
+          providerHostValid: true,
+          callbackValid: true,
+          responseTypeCode: true
+        });
+        // The URL itself is intentionally never rendered or logged. Navigation
+        // hands control to the user at the official Google origin.
+        window.location.assign(body.authorizationUrl);
+      };
+
+      const complete = async () => {
+        activeStage = "provider-return";
+        const query = new URLSearchParams(window.location.search);
+        const transactionId = query.get("transaction_id");
+        const handoffCode = query.get("handoff_code");
+        const oauthError = query.get("oauth_error");
+
+        // Inspect only the fixed provider outcomes before removing the query. Never render
+        // the provider's raw error, state, code or any other callback value.
+        if (oauthError === "cancelled" || oauthError === "provider_unavailable") {
+          window.history.replaceState(null, "", "/auth/callback");
+          if (transactionId) sessionStorage.removeItem(verifierPrefix + transactionId);
+          emit({
+            status: oauthError === "cancelled" ? "provider-cancelled" : "provider-unavailable",
+            stage: activeStage,
+            errorCode: oauthError === "cancelled" ? "provider_cancelled" : "provider_unavailable",
+            transactionPresent: Boolean(transactionId),
+            handoffPresent: false,
+            verifierPresent: false
+          });
+          return;
+        }
+        if (oauthError) {
+          window.history.replaceState(null, "", "/auth/callback");
+          if (transactionId) sessionStorage.removeItem(verifierPrefix + transactionId);
+          emit({
+            status: "failed",
+            stage: activeStage,
+            errorCode: "provider_return_invalid",
+            transactionPresent: Boolean(transactionId),
+            handoffPresent: Boolean(handoffCode),
+            verifierPresent: false
+          });
+          return;
+        }
+
+        // Remove handoff material before any asynchronous request or rendering.
+        window.history.replaceState(null, "", "/auth/callback");
+        let stored = null;
+        try {
+          stored = transactionId
+            ? JSON.parse(sessionStorage.getItem(verifierPrefix + transactionId) || "null")
+            : null;
+        } catch (_) {
+          stored = null;
+        }
+        const verifierPresent = typeof stored?.verifier === "string" && stored.verifier.length > 0;
+        if (!transactionId || !handoffCode) {
+          emit({
+            status: "failed",
+            stage: activeStage,
+            errorCode: "callback_data_missing",
+            transactionPresent: Boolean(transactionId),
+            handoffPresent: Boolean(handoffCode),
+            verifierPresent
+          });
+          return;
+        }
+        if (!verifierPresent) {
+          emit({
+            status: "failed",
+            stage: activeStage,
+            errorCode: "verifier_missing",
+            transactionPresent: true,
+            handoffPresent: true,
+            verifierPresent: false
+          });
+          return;
+        }
+
+        activeStage = "csrf";
+        const csrf = await jsonFetch(identityOrigin + "/auth/web/csrf", {
+          credentials: "include"
+        });
+        if (!csrf.response) {
+          emit({ status: "failed", stage: activeStage, errorCode: "csrf_network" });
+          return;
+        }
+        if (!csrf.response.ok) {
+          emit({ status: "failed", stage: activeStage, httpStatus: csrf.response.status, errorCode: "csrf_http" });
+          return;
+        }
+        if (typeof csrf.body?.csrfToken !== "string") {
+          emit({ status: "failed", stage: activeStage, httpStatus: csrf.response.status, errorCode: "csrf_invalid_response" });
+          return;
+        }
+
+        activeStage = "exchange";
+        const exchange = await jsonFetch(identityOrigin + "/auth/oauth/exchange", {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            "X-XSRF-TOKEN": csrf.body.csrfToken
+          },
+          // LOGIN deliberately has no Authorization header.
+          body: JSON.stringify({
+            clientId: "web",
+            returnTargetId: "web",
+            transactionId,
+            handoffCode,
+            codeVerifier: stored.verifier
+          })
+        });
+        if (!exchange.response) {
+          sessionStorage.removeItem(verifierPrefix + transactionId);
+          emit({ status: "failed", stage: activeStage, errorCode: "exchange_network" });
+          return;
+        }
+        if (!exchange.response.ok) {
+          sessionStorage.removeItem(verifierPrefix + transactionId);
+          emit({
+            status: "failed",
+            stage: activeStage,
+            httpStatus: exchange.response.status,
+            errorCode: "exchange_http"
+          });
+          return;
+        }
+        const exchangedAccessToken = exchange.body?.accessToken;
+        if (typeof exchangedAccessToken !== "string" || exchangedAccessToken.length === 0) {
+          sessionStorage.removeItem(verifierPrefix + transactionId);
+          emit({
+            status: "failed",
+            stage: activeStage,
+            httpStatus: exchange.response.status,
+            errorCode: "exchange_invalid_response",
+            exchangeSucceeded: false
+          });
+          return;
+        }
+
+        const accessOnly = !exchange.body?.refreshToken && !exchange.body?.refreshExpiresAt;
+        const exchangeHttpStatus = exchange.response.status;
+        accessTokenInMemory = exchangedAccessToken;
+        sessionStorage.removeItem(verifierPrefix + transactionId);
+        activeStage = "current-user";
+        const me = await jsonFetch(identityOrigin + "/users/me", {
+          credentials: "include",
+          headers: { Authorization: "Bearer " + accessTokenInMemory }
+        });
+        if (!me.response) {
+          enableSessionChecks();
+          emit({
+            status: "exchange-succeeded",
+            stage: activeStage,
+            errorCode: "current_user_cors_or_network",
+            exchangeSucceeded: true,
+            exchangeHTTP: exchangeHttpStatus,
+            accessOnly,
+            currentUserHTTP: 0
+          });
+          return;
+        }
+        if (!me.response.ok) {
+          enableSessionChecks();
+          emit({
+            status: "exchange-succeeded",
+            stage: activeStage,
+            httpStatus: me.response.status,
+            errorCode: "current_user_http",
+            exchangeSucceeded: true,
+            exchangeHTTP: exchangeHttpStatus,
+            accessOnly,
+            currentUserHTTP: me.response.status
+          });
+          return;
+        }
+        enableSessionChecks();
+        emit({
+          status: "login-complete",
+          stage: activeStage,
+          httpStatus: me.response.status,
+          exchangeSucceeded: true,
+          exchangeHTTP: exchangeHttpStatus,
+          accessOnly,
+          currentUserHTTP: me.response.status
+        });
+      };
+
+      const refreshCookieVisibleToJavaScript = () => document.cookie
+        .split(";")
+        .some(cookie => cookie.trim().startsWith("__Secure-weav_refresh="));
+
+      const runSessionChecks = async () => {
+        sessionButton.disabled = true;
+        let checksCompleted = false;
+        activeSessionStep = "refresh";
+        try {
+          if (typeof accessTokenInMemory !== "string" || accessTokenInMemory.length === 0) {
+            emit({
+              status: "session-check-failed",
+              stage: "current-user",
+              errorCode: "session_unexpected",
+              sessionStep: activeSessionStep,
+              accessInMemory: false
+            });
+            return;
+          }
+
+          const refreshCookieVisibleBefore = refreshCookieVisibleToJavaScript();
+          activeStage = "csrf";
+          const csrf = await jsonFetch(identityOrigin + "/auth/web/csrf", {
+            credentials: "include"
+          });
+          if (!csrf.response) {
+            emit({
+              status: "session-check-failed",
+              stage: activeStage,
+              errorCode: "session_csrf_network",
+              sessionStep: activeSessionStep,
+              refreshCookieVisibleBefore
+            });
+            return;
+          }
+          if (!csrf.response.ok) {
+            emit({
+              status: "session-check-failed",
+              stage: activeStage,
+              httpStatus: csrf.response.status,
+              errorCode: "session_csrf_http",
+              sessionStep: activeSessionStep,
+              refreshCookieVisibleBefore
+            });
+            return;
+          }
+          if (typeof csrf.body?.csrfToken !== "string") {
+            emit({
+              status: "session-check-failed",
+              stage: activeStage,
+              httpStatus: csrf.response.status,
+              errorCode: "session_csrf_invalid_response",
+              sessionStep: activeSessionStep,
+              refreshCookieVisibleBefore
+            });
+            return;
+          }
+
+          activeStage = "current-user";
+          const refresh = await jsonFetch(identityOrigin + "/auth/web/refresh", {
+            method: "POST",
+            credentials: "include",
+            headers: { "X-XSRF-TOKEN": csrf.body.csrfToken }
+          });
+          if (!refresh.response) {
+            emit({
+              status: "session-check-failed",
+              stage: activeStage,
+              errorCode: "session_refresh_network",
+              sessionStep: activeSessionStep,
+              refreshCookieVisibleBefore
+            });
+            return;
+          }
+          if (!refresh.response.ok) {
+            emit({
+              status: "session-check-failed",
+              stage: activeStage,
+              httpStatus: refresh.response.status,
+              errorCode: "session_refresh_http",
+              sessionStep: activeSessionStep,
+              refreshCookieVisibleBefore
+            });
+            return;
+          }
+          const refreshedAccessToken = refresh.body?.accessToken;
+          if (typeof refreshedAccessToken !== "string" || refreshedAccessToken.length === 0) {
+            emit({
+              status: "session-check-failed",
+              stage: activeStage,
+              httpStatus: refresh.response.status,
+              errorCode: "session_refresh_invalid_response",
+              sessionStep: activeSessionStep,
+              refreshCookieVisibleBefore
+            });
+            return;
+          }
+
+          accessTokenInMemory = refreshedAccessToken;
+          const refreshCookieVisibleAfterRefresh = refreshCookieVisibleToJavaScript();
+          activeSessionStep = "after-refresh";
+          const afterRefresh = await jsonFetch(identityOrigin + "/users/me", {
+            credentials: "include",
+            headers: { Authorization: "Bearer " + accessTokenInMemory }
+          });
+          if (!afterRefresh.response) {
+            emit({
+              status: "session-check-failed",
+              stage: activeStage,
+              errorCode: "session_current_user_cors_or_network",
+              sessionStep: activeSessionStep,
+              refreshHTTP: refresh.response.status,
+              refreshCookieVisibleBefore,
+              refreshCookieVisibleAfterRefresh
+            });
+            return;
+          }
+          if (!afterRefresh.response.ok) {
+            emit({
+              status: "session-check-failed",
+              stage: activeStage,
+              httpStatus: afterRefresh.response.status,
+              errorCode: "session_current_user_http",
+              sessionStep: activeSessionStep,
+              refreshHTTP: refresh.response.status,
+              afterRefreshCurrentUserHTTP: afterRefresh.response.status,
+              refreshCookieVisibleBefore,
+              refreshCookieVisibleAfterRefresh
+            });
+            return;
+          }
+
+          activeSessionStep = "logout";
+          const logout = await jsonFetch(identityOrigin + "/auth/web/logout", {
+            method: "POST",
+            credentials: "include",
+            headers: { "X-XSRF-TOKEN": csrf.body.csrfToken }
+          });
+          if (!logout.response) {
+            emit({
+              status: "session-check-failed",
+              stage: activeStage,
+              errorCode: "session_logout_network",
+              sessionStep: activeSessionStep,
+              refreshHTTP: refresh.response.status,
+              afterRefreshCurrentUserHTTP: afterRefresh.response.status,
+              refreshCookieVisibleBefore,
+              refreshCookieVisibleAfterRefresh
+            });
+            return;
+          }
+          if (!logout.response.ok) {
+            emit({
+              status: "session-check-failed",
+              stage: activeStage,
+              httpStatus: logout.response.status,
+              errorCode: "session_logout_http",
+              sessionStep: activeSessionStep,
+              refreshHTTP: refresh.response.status,
+              afterRefreshCurrentUserHTTP: afterRefresh.response.status,
+              logoutHTTP: logout.response.status,
+              refreshCookieVisibleBefore,
+              refreshCookieVisibleAfterRefresh
+            });
+            return;
+          }
+
+          activeSessionStep = "postlogout";
+          const postLogout = await jsonFetch(identityOrigin + "/users/me", {
+            credentials: "include",
+            headers: { Authorization: "Bearer " + accessTokenInMemory }
+          });
+          const refreshCookieVisibleAfterLogout = refreshCookieVisibleToJavaScript();
+          const postLogoutRejected = Boolean(postLogout.response) && postLogout.response.status === 401;
+          accessTokenInMemory = null;
+          if (!postLogout.response) {
+            emit({
+              status: "session-check-failed",
+              stage: activeStage,
+              errorCode: "session_current_user_cors_or_network",
+              sessionStep: activeSessionStep,
+              refreshHTTP: refresh.response.status,
+              afterRefreshCurrentUserHTTP: afterRefresh.response.status,
+              logoutHTTP: logout.response.status,
+              refreshCookieVisibleBefore,
+              refreshCookieVisibleAfterRefresh,
+              refreshCookieVisibleAfterLogout,
+              postLogoutRejected: false
+            });
+            return;
+          }
+          if (!postLogoutRejected) {
+            emit({
+              status: "session-check-failed",
+              stage: activeStage,
+              httpStatus: postLogout.response.status,
+              errorCode: "session_postlogout_http",
+              sessionStep: activeSessionStep,
+              refreshHTTP: refresh.response.status,
+              afterRefreshCurrentUserHTTP: afterRefresh.response.status,
+              logoutHTTP: logout.response.status,
+              postLogoutHTTP: postLogout.response.status,
+              refreshCookieVisibleBefore,
+              refreshCookieVisibleAfterRefresh,
+              refreshCookieVisibleAfterLogout,
+              postLogoutRejected: false
+            });
+            return;
+          }
+
+          checksCompleted = true;
+          emit({
+            status: "session-checks-complete",
+            stage: activeStage,
+            httpStatus: postLogout.response.status,
+            sessionStep: activeSessionStep,
+            refreshHTTP: refresh.response.status,
+            afterRefreshCurrentUserHTTP: afterRefresh.response.status,
+            logoutHTTP: logout.response.status,
+            postLogoutHTTP: postLogout.response.status,
+            refreshCookieVisibleBefore,
+            refreshCookieVisibleAfterRefresh,
+            refreshCookieVisibleAfterLogout,
+            postLogoutRejected: true
+          });
+        } catch (_) {
+          accessTokenInMemory = null;
+          emit({
+            status: "session-check-failed",
+            stage: activeStage,
+            errorCode: "session_unexpected",
+            sessionStep: activeSessionStep
+          });
+        } finally {
+          sessionButton.disabled = checksCompleted;
+        }
+      };
+
+      const run = async () => {
+        try {
+          if (window.location.pathname === "/auth/callback") await complete();
+          else await start();
+        } catch (_) {
+          emit({ status: "failed", stage: activeStage, errorCode: "unexpected" });
+        } finally {
+          button.disabled = false;
+        }
+      };
+
+      button.addEventListener("click", run);
+      sessionButton.addEventListener("click", runSessionChecks);
+      if (window.location.pathname === "/auth/callback") run();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,145 @@
+package com.weav.workspace;
+
+import com.weav.workspace.infrastructure.security.JwtProperties;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.WebApplicationContext;
+
+import java.time.Duration;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest(properties = "management.health.rabbit.enabled=false")
+@Import({TestcontainersConfiguration.class, SecurityConfigTest.TestControllerConfiguration.class})
+class SecurityConfigTest {
+
+    @Autowired
+    private WebApplicationContext webApplicationContext;
+
+    private MockMvc mockMvc;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    @Autowired
+    private JwtProperties jwtProperties;
+
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders
+                .webAppContextSetup(webApplicationContext)
+                .apply(SecurityMockMvcConfigurers.springSecurity())
+                .build();
+    }
+
+    @Test
+    void rejectsLocalAuthRoute() throws Exception {
+        mockMvc.perform(get("/auth/ping"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void allowsPublicHealthRoute() throws Exception {
+        mockMvc.perform(get("/actuator/health"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void protectsRoutesByDefault() throws Exception {
+        mockMvc.perform(get("/protected"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void permitsOnlyTheServerConfiguredGoogleOAuthCallbackWithoutJwt() throws Exception {
+        mockMvc.perform(get("/oauth/google/callback"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location",
+                        startsWith("http://localhost:3000/connections?oauth=failed&reason=state_invalid")))
+                .andExpect(header().string("Cache-Control", containsString("no-store")));
+    }
+
+    @Test
+    void internalServiceKeyDoesNotAuthenticatePublicConnectionApi() throws Exception {
+        mockMvc.perform(get("/workspaces/10000000-0000-0000-0000-000000000001/connections")
+                        .header("X-Internal-Service-Key", "test-workspace-key-0123456789-abcdefghij"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void connectionResolveRequiresInternalServiceKey() throws Exception {
+        String resolvePath = "/internal/workspaces/10000000-0000-0000-0000-000000000001"
+                + "/connections/30000000-0000-0000-0000-000000000001/resolve";
+
+        mockMvc.perform(post(resolvePath).servletPath(resolvePath))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post(resolvePath)
+                        .servletPath(resolvePath)
+                        .header("X-Internal-Service-Key", "wrong-service-key"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void doesNotAcceptHttpBasicAsWorkspaceAuthentication() throws Exception {
+        mockMvc.perform(get("/protected").with(httpBasic("user", "password")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void exposesBcryptPasswordEncoder() {
+        String encodedPassword = passwordEncoder.encode("test-password");
+
+        assertTrue(encodedPassword.startsWith("$2"));
+        assertTrue(passwordEncoder.matches("test-password", encodedPassword));
+    }
+
+    @Test
+    void bindsJwtConfigurationProperties() {
+        assertEquals(Duration.ofMinutes(15), jwtProperties.accessExpiresIn());
+        assertEquals(Duration.ofDays(7), jwtProperties.refreshExpiresIn());
+        assertEquals("weav-identity", jwtProperties.issuer());
+        assertEquals("weav-api", jwtProperties.audience());
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class TestControllerConfiguration {
+
+        @Bean
+        TestSecurityController testSecurityController() {
+            return new TestSecurityController();
+        }
+    }
+
+    @RestController
+    static class TestSecurityController {
+
+        @GetMapping("/auth/ping")
+        String authPing() {
+            return "ok";
+        }
+
+        @GetMapping("/protected")
+        String protectedRoute() {
+            return "protected";
+        }
+    }
+}
