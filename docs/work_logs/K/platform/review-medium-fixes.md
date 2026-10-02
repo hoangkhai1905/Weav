@@ -56,6 +56,29 @@ Rollout:
 4. Sau một thời gian ổn định: bỏ `WEAV_INTERNAL_SERVICE_KEY` khỏi workflow và workspace (và `compose.workflow-smoke.yml`).
 Lưu ý: overlay `compose.workflow-smoke.yml` không mount khóa nên vẫn dùng khóa tĩnh (cờ require phải để `false`). Production: mount JWKS vào workspace, cấp khóa riêng cho workflow, không commit khóa.
 
+## X-16 - restart, giới hạn bộ nhớ, healthcheck, image production
+
+- `compose.dev.yml` (7 service backend, không đụng `ocr-service`): `restart: unless-stopped`, `mem_limit`, healthcheck thật.
+
+| Service | mem_limit | Healthcheck |
+| --- | --- | --- |
+| identity, workspace, workflow | 1g | `curl -fsS localhost:8080/actuator/health/readiness` (image dev có curl); identity vốn đã có, thêm `start_period` 60s cho workspace/workflow |
+| api-gateway | 384m | `node -e fetch(.../ready)` (`/ready` nông, không gọi upstream) |
+| ai-service | 384m | giữ nguyên `/health/live` |
+| bot-service | 384m | `/health` |
+| notification-service | 512m | `/ready` (cần RabbitMQ + DB) |
+
+- Java dev chạy `mvnw spring-boot:run` (JVM Maven + JVM app): thêm `MAVEN_OPTS=-Xmx192m`, `JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=55` để hai heap không vượt `mem_limit`. Chưa đo tải thật: nếu bị OOM-kill trong dev thì tăng `mem_limit` (workflow chạy worker/executor nặng nhất).
+- `depends_on` giữ nguyên (không thêm điều kiện mới); workspace và workflow gọi nhau lúc chạy, không lúc khởi động, nên không tạo vòng.
+- `restart: unless-stopped` không tự restart container `unhealthy` (Compose không làm vậy); healthcheck để `docker ps`/orchestrator đọc.
+- Image production (file mới `services/<svc>/Dockerfile`, `Dockerfile.dev` giữ nguyên, compose dev vẫn dùng image dev):
+  - Java (identity, workspace, workflow), context = thư mục service: `docker build -f services/<svc>/Dockerfile services/<svc>`. Build `eclipse-temurin:25-jdk` (cache `~/.m2`, `-Dmaven.test.skip=true`, nên workflow không cần `packages/contracts`) -> chạy `eclipse-temurin:25-jre-alpine`, `USER 10001`, `java -XX:MaxRAMPercentage=75 -jar /app/app.jar`, HEALTHCHECK bằng busybox `wget` vào `/actuator/health/readiness`.
+  - Node (api-gateway, ai-service, notification-service, bot-service), context = gốc repo: `docker build -f services/<svc>/Dockerfile .`. `node:24-alpine`, `pnpm install --filter` + `build` + `pnpm --prod --legacy deploy /out` (`--legacy` vì pnpm 10+ đòi `inject-workspace-packages`; các service không có dependency `workspace:`), chạy `USER node` (uid 1000), `NODE_ENV=production`, `node dist/main.js`, HEALTHCHECK bằng `node -e fetch`. Notification copy thêm `node_modules/.prisma` (Prisma generate ghi vào đó khi build).
+  - `.dockerignore` gốc: thêm `tmp/`. Các thư mục service đã có `.dockerignore`.
+- Đã build thử: api-gateway (759MB, uid 1000, có `dist/main.js`, khởi động tới bước kiểm tra cấu hình thì dừng vì thiếu `JWT_ACCESS_SECRET`, đúng kỳ vọng) và workspace-service (454MB, uid 10001, `/app/app.jar` 78MB, HEALTHCHECK có trong image). Đã xóa cả hai image. Các service còn lại dùng cùng mẫu, chưa build.
+- Chưa kiểm: chạy image production với hạ tầng thật; healthcheck production của Java chưa chạy end-to-end; `mem_limit` dev chưa đo dưới tải; image gateway nặng do `prisma` nằm trong dependencies production của gateway (không thuộc X-16).
+- Kiểm tra: `docker compose -f compose.yml -f compose.dev.yml --profile app config -q` OK, cùng với `compose.workflow-smoke.yml` OK.
+
 ## Kiểm tra
 
 Xem báo cáo coordinator; gateway unit 93, e2e 82 (thêm 1 test `/ready` còn 200 khi upstream down).

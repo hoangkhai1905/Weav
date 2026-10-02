@@ -4,6 +4,8 @@ services:
   # ==================================================
   identity-service:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 1g
 
     build:
       context: ./services/identity-service
@@ -14,6 +16,10 @@ services:
 
     environment:
       APP_ENV: ${APP_ENV:-development}
+      # X-16: dev runs `mvnw spring-boot:run` (Maven JVM + forked app JVM) under mem_limit;
+      # cap both heaps so the container is not OOM-killed.
+      MAVEN_OPTS: -Xmx192m
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=55
 
       DB_HOST: ${IDENTITY_DB_HOST}
       DB_PORT: ${IDENTITY_DB_PORT:-5432}
@@ -124,6 +130,8 @@ services:
   # ==================================================
   workspace-service:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 1g
 
     build:
       context: ./services/workspace-service
@@ -134,6 +142,10 @@ services:
 
     environment:
       APP_ENV: ${APP_ENV:-development}
+      # X-16: dev runs `mvnw spring-boot:run` (Maven JVM + forked app JVM) under mem_limit;
+      # cap both heaps so the container is not OOM-killed.
+      MAVEN_OPTS: -Xmx192m
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=55
 
       DB_HOST: ${WORKSPACE_DB_HOST}
       DB_PORT: ${WORKSPACE_DB_PORT:-5432}
@@ -214,12 +226,22 @@ services:
         - action: rebuild
           path: ./services/workspace-service/pom.xml
 
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+
 
   # ==================================================
   # Workflow Service - Spring Boot
   # ==================================================
   workflow-service:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 1g
 
     build:
       context: ./services/workflow-service
@@ -232,6 +254,10 @@ services:
 
     environment:
       APP_ENV: ${APP_ENV:-development}
+      # X-16: dev runs `mvnw spring-boot:run` (Maven JVM + forked app JVM) under mem_limit;
+      # cap both heaps so the container is not OOM-killed.
+      MAVEN_OPTS: -Xmx192m
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=55
 
       # Neon PostgreSQL pooled connection
       DB_HOST: ${WORKFLOW_DB_HOST}
@@ -362,12 +388,22 @@ services:
         - action: rebuild
           path: ./services/workflow-service/pom.xml
 
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+
 
   # ==================================================
   # AI Service - NestJS
   # ==================================================
   ai-service:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 384m
 
     build:
       context: .
@@ -399,6 +435,8 @@ services:
   # ==================================================
   api-gateway:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 384m
 
     build:
       context: .
@@ -439,12 +477,22 @@ services:
       edge:
         ipv4_address: 172.31.250.10
 
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+
 
   # ==================================================
   # Bot - NestJS
   # ==================================================
   bot-service:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 384m
 
     build:
       context: .
@@ -475,12 +523,22 @@ services:
       rabbitmq:
         condition: service_healthy
 
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+
 
   # ==================================================
   # Notification Service - NestJS
   # ==================================================
   notification-service:
     profiles: ["app"]
+    restart: unless-stopped
+    mem_limit: 512m
 
     build:
       context: .
@@ -525,6 +583,14 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
 
 
   # ==================================================
