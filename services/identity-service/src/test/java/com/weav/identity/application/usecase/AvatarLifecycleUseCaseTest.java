@@ -10,12 +10,6 @@ import com.weav.identity.domain.model.User;
 import com.weav.identity.domain.port.out.UserRepository;
 import com.weav.identity.domain.valueobject.SystemRole;
 import com.weav.identity.domain.valueobject.UserStatus;
-import com.weav.identity.infrastructure.config.AvatarStorageProperties;
-import com.weav.identity.infrastructure.storage.AvatarCleanupReconciler;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
-import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
@@ -52,7 +46,7 @@ class AvatarLifecycleUseCaseTest {
     @Test
     void transactionFailureBeforeWorkDoesNotUploadObject() throws Exception {
         InMemoryAvatarStorage storage = new InMemoryAvatarStorage();
-        AvatarCleanupReconciler reconciler = reconciler(storage);
+        RecordingQueue reconciler = new RecordingQueue();
         UserRepository repository = mock(UserRepository.class);
         TransactionRunner failingTransaction = failingTransaction();
         UpdateAvatarUseCase useCase = updateUseCase(repository, storage, reconciler, failingTransaction);
@@ -61,15 +55,15 @@ class AvatarLifecycleUseCaseTest {
                 () -> useCase.execute(USER_ID, SESSION_ID, png(), "image/png"));
 
         assertTrue(storage.objects.isEmpty());
-        assertEquals(0, reconciler.pendingCount());
+        assertEquals(0, reconciler.keys.size());
     }
 
     @Test
-    void cleanupFailureIsQueuedAndReconciledIdempotentlyAfterCommit() throws Exception {
+    void replacedObjectIsQueuedForDurableCleanupInsteadOfDeletedInline() throws Exception {
         InMemoryAvatarStorage storage = new InMemoryAvatarStorage();
         storage.objects.put("avatars/old.png", png());
         storage.failDeletes.add("avatars/old.png");
-        AvatarCleanupReconciler reconciler = reconciler(storage);
+        RecordingQueue reconciler = new RecordingQueue();
         User user = user("avatars/old.png");
         UserRepository repository = mock(UserRepository.class);
         when(repository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
@@ -81,20 +75,16 @@ class AvatarLifecycleUseCaseTest {
         assertEquals(user.getAvatarStorageKey(), result.avatarStorageKey());
         assertFalse(result.avatarStorageKey().equals("avatars/old.png"));
         assertTrue(storage.objects.containsKey(result.avatarStorageKey()));
-        assertEquals(1, reconciler.pendingCount());
 
-        storage.failDeletes.clear();
-        reconciler.reconcileNow();
-        reconciler.reconcileNow();
-        assertEquals(0, reconciler.pendingCount());
-        assertFalse(storage.objects.containsKey("avatars/old.png"));
+        assertEquals(java.util.List.of("avatars/old.png"), reconciler.keys);
+        assertTrue(storage.objects.containsKey("avatars/old.png"));
     }
 
     @Test
     void transactionFailureBeforeWorkLeavesReferenceAndObjectUntouched() throws Exception {
         InMemoryAvatarStorage storage = new InMemoryAvatarStorage();
         storage.objects.put("avatars/old.png", png());
-        AvatarCleanupReconciler reconciler = reconciler(storage);
+        RecordingQueue reconciler = new RecordingQueue();
         User user = user("avatars/old.png");
         UserRepository repository = mock(UserRepository.class);
         TransactionRunner failingTransaction = failingTransaction();
@@ -104,14 +94,14 @@ class AvatarLifecycleUseCaseTest {
 
         assertEquals("avatars/old.png", user.getAvatarStorageKey());
         assertTrue(storage.objects.containsKey("avatars/old.png"));
-        assertEquals(0, reconciler.pendingCount());
+        assertEquals(0, reconciler.keys.size());
     }
 
     @Test
     void storageOutageAfterReferenceCommitIsRetryableAndDoesNotLeakKey() throws Exception {
         InMemoryAvatarStorage storage = new InMemoryAvatarStorage();
         storage.failDeletes.add("avatars/old.png");
-        AvatarCleanupReconciler reconciler = reconciler(storage);
+        RecordingQueue reconciler = new RecordingQueue();
         User user = user("avatars/old.png");
         UserRepository repository = mock(UserRepository.class);
         when(repository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
@@ -121,11 +111,11 @@ class AvatarLifecycleUseCaseTest {
         useCase.execute(USER_ID, SESSION_ID);
 
         assertTrue(user.getAvatarStorageKey() == null);
-        assertEquals(1, reconciler.pendingCount());
+        assertEquals(1, reconciler.keys.size());
     }
 
     @Test
-    void cleanupQueueFailureAfterCommitDoesNotDeleteCurrentAvatar() throws Exception {
+    void cleanupQueueFailureInsideTransactionAbortsSwapAndRemovesNewObject() throws Exception {
         InMemoryAvatarStorage storage = new InMemoryAvatarStorage();
         storage.objects.put("avatars/old.png", png());
         storage.failDeletes.add("avatars/old.png");
@@ -141,32 +131,8 @@ class AvatarLifecycleUseCaseTest {
         assertThrows(IllegalStateException.class,
                 () -> useCase.execute(USER_ID, SESSION_ID, png(), "image/png"));
 
-        String currentKey = user.getAvatarStorageKey();
-        assertTrue(currentKey != null && !currentKey.equals("avatars/old.png"));
-        assertTrue(storage.objects.containsKey(currentKey));
+        assertEquals(java.util.Set.of("avatars/old.png"), storage.objects.keySet());
         assertTrue(storage.objects.containsKey("avatars/old.png"));
-    }
-
-    @Test
-    void queueFullDropsAdditionalCleanupAndEmitsExplicitEvent() throws Exception {
-        InMemoryAvatarStorage storage = new InMemoryAvatarStorage();
-        AvatarCleanupReconciler reconciler = reconciler(storage, 1);
-        Logger logger = (Logger) LoggerFactory.getLogger(AvatarCleanupReconciler.class);
-        ListAppender<ILoggingEvent> appender = new ListAppender<>();
-        appender.start();
-        logger.addAppender(appender);
-        try {
-            reconciler.enqueue(USER_ID, "avatars/first.png");
-            reconciler.enqueue(USER_ID, "avatars/second.png");
-
-            assertEquals(1, reconciler.pendingCount());
-            assertTrue(appender.list.stream()
-                    .map(ILoggingEvent::getFormattedMessage)
-                    .anyMatch(message -> message.contains("action=ENQUEUE")
-                            && message.contains("result=QUEUE_FULL")));
-        } finally {
-            logger.detachAppender(appender);
-        }
     }
 
     private UpdateAvatarUseCase updateUseCase(
@@ -191,7 +157,7 @@ class AvatarLifecycleUseCaseTest {
     private DeleteAvatarUseCase deleteUseCase(
             UserRepository repository,
             AvatarStorage storage,
-            AvatarCleanupReconciler reconciler,
+            AvatarCleanupQueue reconciler,
             TransactionRunner transactionRunner
     ) {
         CurrentIdentityGuard guard = mock(CurrentIdentityGuard.class);
@@ -204,16 +170,6 @@ class AvatarLifecycleUseCaseTest {
                 reconciler,
                 transactionRunner,
                 CLOCK);
-    }
-
-    private static AvatarCleanupReconciler reconciler(AvatarStorage storage) {
-        return reconciler(storage, 10);
-    }
-
-    private static AvatarCleanupReconciler reconciler(AvatarStorage storage, int capacity) {
-        AvatarStorageProperties properties = new AvatarStorageProperties();
-        properties.setCleanupQueueCapacity(capacity);
-        return new AvatarCleanupReconciler(storage, properties, CLOCK);
     }
 
     private static TransactionRunner directTransaction() {
@@ -279,6 +235,15 @@ class AvatarLifecycleUseCaseTest {
                 throw new IllegalStateException("storage unavailable");
             }
             objects.remove(objectKey);
+        }
+    }
+
+    private static final class RecordingQueue implements AvatarCleanupQueue {
+        private final java.util.List<String> keys = new java.util.ArrayList<>();
+
+        @Override
+        public void enqueue(UUID userId, String objectKey) {
+            keys.add(objectKey);
         }
     }
 }

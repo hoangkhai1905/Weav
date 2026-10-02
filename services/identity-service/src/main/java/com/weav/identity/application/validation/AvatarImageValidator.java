@@ -5,6 +5,7 @@ import com.weav.identity.domain.exception.BadRequestException;
 
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
 import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
@@ -24,7 +25,10 @@ import java.util.Objects;
 public final class AvatarImageValidator {
 
     public static final int MAX_BYTES = 2 * 1024 * 1024;
-    public static final int MAX_DIMENSION = 4096;
+    public static final int MAX_DIMENSION = 8192;
+    public static final long MAX_PIXELS = 40_000_000L;
+    /** Decoded images are subsampled to at most this many pixels per side (about 4 MB ARGB). */
+    private static final int DECODE_TARGET = 1024;
 
     private static final String JPEG = "image/jpeg";
     private static final String PNG = "image/png";
@@ -66,9 +70,6 @@ public final class AvatarImageValidator {
         }
         if (image == null || image.getWidth() < 1 || image.getHeight() < 1) {
             throw new BadRequestException("Avatar image could not be decoded");
-        }
-        if (image.getWidth() > MAX_DIMENSION || image.getHeight() > MAX_DIMENSION) {
-            throw new BadRequestException("Avatar dimensions must be at most 4096 by 4096 pixels");
         }
 
         String extension = extensionFor(detectedContentType);
@@ -129,10 +130,15 @@ public final class AvatarImageValidator {
                 }
                 int width = reader.getWidth(0);
                 int height = reader.getHeight(0);
-                if (width < 1 || height < 1 || width > MAX_DIMENSION || height > MAX_DIMENSION) {
-                    throw new BadRequestException("Avatar dimensions must be at most 4096 by 4096 pixels");
+                if (width < 1 || height < 1 || width > MAX_DIMENSION || height > MAX_DIMENSION
+                        || (long) width * height > MAX_PIXELS) {
+                    throw new BadRequestException("Avatar dimensions must be at most 8192 by 8192 pixels and 40 megapixels");
                 }
-                return reader.read(0);
+                // Sizes come from the header before any pixel is decoded; subsample big images while decoding.
+                int step = Math.max(1, (Math.max(width, height) + DECODE_TARGET - 1) / DECODE_TARGET);
+                ImageReadParam readParam = reader.getDefaultReadParam();
+                readParam.setSourceSubsampling(step, step, 0, 0);
+                return reader.read(0, readParam);
             } finally {
                 reader.dispose();
             }

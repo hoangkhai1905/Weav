@@ -113,7 +113,8 @@ public final class AuthRateLimiter {
         OAUTH_UNLINK_SESSION(5, Duration.ofMinutes(15)),
         OAUTH_CSRF_IP(30, Duration.ofMinutes(1)),
         OAUTH_WEB_REFRESH_IP(30, Duration.ofMinutes(1)),
-        OAUTH_WEB_LOGOUT_IP(10, Duration.ofMinutes(15));
+        OAUTH_WEB_LOGOUT_IP(10, Duration.ofMinutes(15)),
+        AVATAR_UPLOAD_USER(10, Duration.ofHours(1));
 
         private final int limit;
         private final Duration window;

@@ -315,7 +315,7 @@ class OAuthAccountPersistenceIntegrationTest {
                     firstCreatedAt, firstUpdatedAt);
             assertOAuthRow(secondRow, secondAccountId, secondMigrationUserId, "valid-subject-2",
                     "provider@example.com", secondCreatedAt, secondUpdatedAt);
-            assertEquals("6", jdbcTemplate.queryForObject(
+            assertEquals("7", jdbcTemplate.queryForObject(
                     "select version from " + qualified(schema, "flyway_schema_history")
                             + " where success = true order by installed_rank desc limit 1",
                     String.class));

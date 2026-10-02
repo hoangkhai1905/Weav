@@ -67,7 +67,7 @@ public final class UpdateAvatarUseCase {
             throw storageFailure;
         }
 
-        AvatarMutation mutation;
+        AuthenticatedUserResult mutation;
         try {
             mutation = transactionRunner.required(() -> {
                 User lockedUser = userRepository.findByIdForUpdate(userId)
@@ -76,27 +76,18 @@ public final class UpdateAvatarUseCase {
                 String previousObjectKey = lockedUser.getAvatarStorageKey();
                 lockedUser.replaceAvatarStorageKey(newObjectKey, clock.instant());
                 AuthenticatedUserResult result = AuthenticatedUserResult.from(userRepository.save(lockedUser));
-                return new AvatarMutation(result, previousObjectKey);
+                // ID-7: the durable cleanup row commits or rolls back with the key swap.
+                if (previousObjectKey != null && !previousObjectKey.isBlank()
+                        && !previousObjectKey.equals(newObjectKey)) {
+                    cleanupReconciler.enqueue(userId, previousObjectKey);
+                }
+                return result;
             });
         } catch (RuntimeException databaseFailure) {
             cleanupNewObject(userId, newObjectKey);
             throw databaseFailure;
         }
-        cleanupPreviousObject(userId, mutation.previousObjectKey(), newObjectKey);
-        return mutation.result();
-    }
-
-    private void cleanupPreviousObject(UUID userId, String previousObjectKey, String newObjectKey) {
-        if (previousObjectKey == null || previousObjectKey.isBlank() || previousObjectKey.equals(newObjectKey)) {
-            return;
-        }
-        try {
-            avatarStorage.delete(userId, previousObjectKey);
-        } catch (RuntimeException cleanupFailure) {
-            cleanupReconciler.enqueue(userId, previousObjectKey);
-            log.warn("identity_avatar_cleanup_event userId={} action=DELETE_OLD result=RETRYABLE",
-                    userId);
-        }
+        return mutation;
     }
 
     private void cleanupNewObject(UUID userId, String objectKey) {
@@ -107,8 +98,5 @@ public final class UpdateAvatarUseCase {
             log.warn("identity_avatar_cleanup_event userId={} action=DELETE_NEW result=RETRYABLE",
                     userId);
         }
-    }
-
-    private record AvatarMutation(AuthenticatedUserResult result, String previousObjectKey) {
     }
 }

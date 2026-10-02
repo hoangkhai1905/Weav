@@ -7,6 +7,7 @@ import com.weav.identity.application.usecase.GetAvatarUseCase;
 import com.weav.identity.application.usecase.UpdateAvatarUseCase;
 import com.weav.identity.domain.exception.BadRequestException;
 import com.weav.identity.presentation.http.mapper.UserPresentationMapper;
+import com.weav.identity.infrastructure.security.AuthRateLimiter;
 import com.weav.identity.presentation.http.response.AvatarUrlResponse;
 import com.weav.identity.presentation.http.response.UserResponse;
 import org.springframework.http.CacheControl;
@@ -33,17 +34,20 @@ public class AvatarController {
     private final GetAvatarUseCase getAvatarUseCase;
     private final DeleteAvatarUseCase deleteAvatarUseCase;
     private final UserPresentationMapper userMapper;
+    private final AuthRateLimiter rateLimiter;
 
     public AvatarController(
             UpdateAvatarUseCase updateAvatarUseCase,
             GetAvatarUseCase getAvatarUseCase,
             DeleteAvatarUseCase deleteAvatarUseCase,
-            UserPresentationMapper userMapper
+            UserPresentationMapper userMapper,
+            AuthRateLimiter rateLimiter
     ) {
         this.updateAvatarUseCase = updateAvatarUseCase;
         this.getAvatarUseCase = getAvatarUseCase;
         this.deleteAvatarUseCase = deleteAvatarUseCase;
         this.userMapper = userMapper;
+        this.rateLimiter = rateLimiter;
     }
 
     @PutMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -51,6 +55,7 @@ public class AvatarController {
             @AuthenticationPrincipal Jwt jwt,
             @RequestPart(value = "file", required = false) MultipartFile file
     ) {
+        rateLimiter.requireAllowed(AuthRateLimiter.Scope.AVATAR_UPLOAD_USER, jwt.getSubject());
         if (file == null) {
             throw new BadRequestException("Avatar file is required");
         }

@@ -44,3 +44,24 @@ Xem mục "Kết quả" bên dưới.
 - Fail-open khi Valkey sập (đã nêu ở trên).
 - `LOGIN_ACCOUNT` có thể bị kẻ tấn công cố ý khoá một tài khoản bằng cách gửi sai mật khẩu 10 lần/15 phút; hành vi này đã tồn tại và không đổi.
 - Nên cân nhắc metric/alert cho số lần fail-open khi có Micrometer (X-15).
+
+## 7. ID-7: avatar (decode, giới hạn upload, dọn dẹp bền vững)
+
+| Quyết định | Lý do | Đánh đổi |
+| --- | --- | --- |
+| `AvatarImageValidator`: đọc width/height từ header ImageReader trước khi decode; từ chối > 8192 mỗi cạnh hoặc > 40 MP; ảnh lớn hơn 1024 px được decode bằng `setSourceSubsampling(n, n, 0, 0)` (n = ceil(max(w,h)/1024)) | Ảnh 4000x3000 từ điện thoại vẫn được chấp nhận (decode ra 1000x750 ~ 3 MB) mà header "30000x30000" bị từ chối trước khi cấp phát | Ảnh lớn bị thu nhỏ khi lưu (tối đa ~1024 px); reader WebP có thể bỏ qua subsampling, trần bộ nhớ khi đó là 40 MP |
+| `AuthRateLimiter.Scope.AVATAR_UPLOAD_USER(10, 1 giờ)`, key = user id (JWT subject), kiểm tra đầu `PUT /users/me/avatar` | Giới hạn chi phí decode/S3 mỗi user; cùng phản hồi 429 `RATE_LIMITED` như các scope khác | Mọi lần upload đều tốn đơn vị, kể cả upload lỗi |
+| Migration `V7__avatar_cleanup.sql`: bảng `avatar_cleanup(object_key PK, user_id, created_at, next_attempt_at, attempts, last_error)` | Thay hàng đợi trong bộ nhớ (mất khi restart, bị tràn) | Thêm `user_id` và `next_attempt_at` (cần cho `storage.delete(userId, key)` và backoff) |
+| `UpdateAvatarUseCase`/`DeleteAvatarUseCase` ghi hàng cleanup của key cũ trong CÙNG transaction đổi/xoá key; bỏ lệnh xoá S3 trực tiếp sau commit | Rollback không để lại hàng; commit không bao giờ mất key cũ; S3 vẫn ngoài transaction | Object cũ bị xoá trễ tối đa một chu kỳ reconciler (30 s) thay vì ngay |
+| `AvatarCleanupReconciler` (giữ lịch 30 s): claim tối đa 20 hàng `FOR UPDATE SKIP LOCKED` (lease 5 phút), xoá S3 ngoài transaction, rồi xoá hàng; lỗi thì `attempts+1`, `last_error` (tên exception), backoff luỹ thừa tối đa 10 phút; đủ 10 lần: log ERROR, giữ hàng, bỏ qua | An toàn nhiều replica, không giữ kết nối khi gọi S3 | Hàng bỏ cuộc cần xử lý thủ công |
+| Object mới mồ côi (upload xong nhưng DB lỗi) giữ đường cũ: xoá ngay, lỗi thì `enqueue` (autocommit) | Không đổi hành vi | - |
+
+File: `application/validation/AvatarImageValidator.java`, `infrastructure/security/AuthRateLimiter.java`, `presentation/http/AvatarController.java`, `application/usecase/{Update,Delete}AvatarUseCase.java`, `infrastructure/storage/AvatarCleanupReconciler.java`, `db/migration/V7__avatar_cleanup.sql`. Tồn đọng: `weav.avatar.storage.cleanup-queue-capacity` (`AVATAR_S3_CLEANUP_QUEUE_CAPACITY`) giờ không còn tác dụng, có thể xoá ở lượt dọn cấu hình sau.
+Test mới: `AvatarImageValidatorTest` (4000x3000 JPEG, header 30000x30000), `AvatarControllerRateLimitTest` (Valkey, lần 11 -> 429), `AvatarCleanupReconcilerIntegrationTest` (rollback không để lại hàng, xoá object+hàng, lỗi tăng attempts, bỏ cuộc sau 10 lần), `AvatarLifecycleUseCaseTest` (sửa theo hàng đợi bền vững).
+Kết quả ID-7: `./mvnw verify` 349 test, 0 failure, 3 error (3 Avatar minio đã biết), 1 skipped; `git diff --check` sạch.
+
+## 8. ID-5: đăng ký lộ email đã tồn tại (quyết định: chấp nhận rủi ro, ghi lại)
+
+| Quyết định | Lý do | Đánh đổi |
+| --- | --- | --- |
+| Giữ `POST /auth/register` trả 409 khi email đã tồn tại (phương án b) | Người dùng chọn (a) chỉ khi mail đã nối cho luồng đăng ký. Hiện mail chỉ dùng cho OTP; đăng ký tạo user `ACTIVE` ngay và trả user, nên đổi sang 202 + email là đổi contract mà web/mobile đang dùng | Kẻ tấn công dò được email đã đăng ký; giảm nhẹ bởi `REGISTER_IP` 5 lần/phút (Valkey, ID-3). Xem lại nếu thêm xác minh email khi đăng ký |
