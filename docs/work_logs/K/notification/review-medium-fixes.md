@@ -52,3 +52,10 @@ Test mới: thiếu credential RabbitMQ (settings.spec), ghi DB lỗi sau khi pr
 ## Quyết định nhỏ (2026-10-02, người dùng giao coordinator quyết)
 
 - NT-6 giữ chỉ cho v2: replay event v1 không thêm người nhận mới. Lý do: v1 là đường cũ, đẩy tới đích mới khi replay gây bất ngờ; v2 đã xử lý replay đúng.
+
+## Baseline Prisma migrations trên Neon (2026-10-03)
+
+- `notification_db` đã có 2 bảng (`notification_deliveries`, `notification_inbox`) nhưng thiếu `_prisma_migrations` (schema được tạo ngoài Prisma), nên `prisma migrate deploy` sẽ lỗi.
+- `.env`: điền `NOTIFICATION_MIGRATION_URL` từ các biến `NOTIFICATION_DB_*` sẵn có, dùng host direct (bỏ `-pooler`); không in giá trị.
+- `prisma migrate diff` (DB → schema.prisma): rỗng, tức cấu trúc khớp. Người dùng đồng ý → `prisma migrate resolve --applied` cho `202609090001_notification_deliveries` và `202609260001_notification_inbox` (chỉ tạo bảng `_prisma_migrations` và 2 dòng). `prisma migrate status`: "Database schema is up to date!".
+- Lưu ý: `prisma.config.ts` đọc `NOTIFICATION_MIGRATION_URL` từ biến môi trường tiến trình, không tự đọc `.env` gốc; khi chạy `pnpm db:migrate` cần export biến này trước.
