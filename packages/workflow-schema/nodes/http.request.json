@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/http.request",
+  "title": "HTTP request",
+  "description": "Calls an HTTP endpoint and returns the response.",
+  "x-weav-node": {
+    "type": "http.request",
+    "category": "action",
+    "label": "HTTP request",
+    "sideEffect": true
+  },
+  "type": "object",
+  "properties": {
+    "method": {
+      "type": "string",
+      "title": "Method",
+      "description": "HTTP method: GET, POST, PUT, PATCH, DELETE, HEAD or OPTIONS.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "url": {
+      "type": "string",
+      "title": "URL",
+      "description": "Absolute http or https address to call.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "headers": {
+      "type": "object",
+      "title": "Headers",
+      "description": "Request headers as name and text value pairs.",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "x-weav-template": true
+    },
+    "query": {
+      "type": "object",
+      "title": "Query parameters",
+      "description": "Query string parameters as name and value pairs.",
+      "x-weav-template": true
+    },
+    "body": {
+      "title": "Body",
+      "description": "Request body: text, number, object or list.",
+      "x-weav-template": true
+    },
+    "connectionId": {
+      "type": "string",
+      "title": "Connection",
+      "description": "Optional HTTP connection that supplies credentials for the request.",
+      "x-weav-connection": {
+        "provider": "HTTP"
+      }
+    }
+  },
+  "required": [
+    "method",
+    "url"
+  ],
+  "additionalProperties": false
+}

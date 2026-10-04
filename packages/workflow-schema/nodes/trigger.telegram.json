@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/trigger.telegram",
+  "title": "Telegram message",
+  "description": "Starts the workflow when the connected Telegram bot receives a message. Has no settings.",
+  "x-weav-node": {
+    "type": "trigger.telegram",
+    "category": "trigger",
+    "label": "Telegram message",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {},
+  "required": [],
+  "additionalProperties": false
+}

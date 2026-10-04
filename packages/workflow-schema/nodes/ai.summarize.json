@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/ai.summarize",
+  "title": "Summarize with AI",
+  "description": "Summarizes text using an AI model.",
+  "x-weav-node": {
+    "type": "ai.summarize",
+    "category": "ai",
+    "label": "Summarize with AI",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "inputText": {
+      "type": "string",
+      "title": "Text",
+      "description": "Text to summarize.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "maxLength": {
+      "type": "integer",
+      "minimum": 1,
+      "title": "Maximum length",
+      "description": "Upper bound on the summary length, as a positive whole number.",
+      "x-weav-template": true
+    }
+  },
+  "required": [
+    "inputText"
+  ],
+  "additionalProperties": false
+}

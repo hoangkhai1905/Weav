@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/ai.classify",
+  "title": "Classify with AI",
+  "description": "Assigns content to one of the given categories using an AI model.",
+  "x-weav-node": {
+    "type": "ai.classify",
+    "category": "ai",
+    "label": "Classify with AI",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "content": {
+      "type": "string",
+      "title": "Content",
+      "description": "Text to classify.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "categories": {
+      "type": "array",
+      "title": "Categories",
+      "description": "Allowed category names.",
+      "items": {
+        "type": "string"
+      },
+      "x-weav-template": true
+    }
+  },
+  "required": [
+    "content"
+  ],
+  "additionalProperties": false
+}

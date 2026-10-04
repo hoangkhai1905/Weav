@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/telegram.send_message",
+  "title": "Send Telegram message",
+  "description": "Sends a text message to a Telegram chat.",
+  "x-weav-node": {
+    "type": "telegram.send_message",
+    "category": "action",
+    "label": "Send Telegram message",
+    "sideEffect": true
+  },
+  "type": "object",
+  "properties": {
+    "chatId": {
+      "type": "string",
+      "title": "Chat ID",
+      "description": "Telegram chat that receives the message.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "text": {
+      "type": "string",
+      "title": "Message",
+      "description": "Message text to send.",
+      "x-weav-template": true,
+      "minLength": 1
+    }
+  },
+  "required": [
+    "chatId",
+    "text"
+  ],
+  "additionalProperties": false
+}
