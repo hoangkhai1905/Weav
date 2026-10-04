@@ -90,6 +90,31 @@ class HttpTransportIntegrationTest {
     }
 
     @Test
+    void keepsEncodedPathAndSendsRawBodyWithItsOwnContentType() throws Exception {
+        AtomicReference<String> rawPath = new AtomicReference<>();
+        AtomicReference<String> rawQuery = new AtomicReference<>();
+        AtomicReference<String> contentType = new AtomicReference<>();
+        AtomicReference<String> body = new AtomicReference<>();
+        start(exchange -> {
+            rawPath.set(exchange.getRequestURI().getRawPath());
+            rawQuery.set(exchange.getRequestURI().getRawQuery());
+            contentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
+            body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            respond(exchange, 200, "application/json", "{}");
+        }, "/calendar");
+
+        URI uri = URI.create("http://public.example.test:" + server.getAddress().getPort()
+                + "/calendar/v3/calendars/a%2Fb%40x.test/events");
+        transport().execute(approved(uri), "POST", Map.of(), Map.of("sendUpdates", "none"),
+                new PinnedHttpTransport.RawBody("raw".getBytes(StandardCharsets.UTF_8), "multipart/related; boundary=x"));
+
+        assertEquals("/calendar/v3/calendars/a%2Fb%40x.test/events", rawPath.get());
+        assertEquals("sendUpdates=none", rawQuery.get());
+        assertEquals("multipart/related; boundary=x", contentType.get());
+        assertEquals("raw", body.get());
+    }
+
+    @Test
     void doesNotFollowRedirectsToAnotherDestination() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         start(exchange -> {

@@ -23,6 +23,14 @@ public final class GoogleOAuthScopePolicy {
             "openid",
             EMAIL_SCOPE,
             "https://www.googleapis.com/auth/spreadsheets");
+    private static final List<String> CALENDAR_SCOPES = List.of(
+            "openid",
+            EMAIL_SCOPE,
+            "https://www.googleapis.com/auth/calendar.events");
+    private static final List<String> DRIVE_SCOPES = List.of(
+            "openid",
+            EMAIL_SCOPE,
+            "https://www.googleapis.com/auth/drive.file");
 
     public List<String> requiredScopes(ConnectionProvider provider) {
         if (provider == ConnectionProvider.GMAIL) {
@@ -30,6 +38,12 @@ public final class GoogleOAuthScopePolicy {
         }
         if (provider == ConnectionProvider.GOOGLE_SHEETS) {
             return SHEETS_SCOPES;
+        }
+        if (provider == ConnectionProvider.GOOGLE_CALENDAR) {
+            return CALENDAR_SCOPES;
+        }
+        if (provider == ConnectionProvider.GOOGLE_DRIVE) {
+            return DRIVE_SCOPES;
         }
         throw new BadRequestException("Google OAuth provider is not supported");
     }

@@ -87,6 +87,10 @@ class CredentialUseCasesTest {
                 Map.of("token", "oauth-secret"), "oauth-secret");
         assertInvalidPayload(ConnectionProvider.GOOGLE_SHEETS, ConnectionAuthType.OAUTH2,
                 Map.of("token", "oauth-secret"), "oauth-secret");
+        assertInvalidPayload(ConnectionProvider.GOOGLE_CALENDAR, ConnectionAuthType.OAUTH2,
+                Map.of("token", "oauth-secret"), "oauth-secret");
+        assertInvalidPayload(ConnectionProvider.GOOGLE_DRIVE, ConnectionAuthType.OAUTH2,
+                Map.of("token", "oauth-secret"), "oauth-secret");
         assertInvalidPayload(ConnectionProvider.HTTP, ConnectionAuthType.NONE,
                 Map.of("token", "none-secret"), "none-secret");
         assertInvalidPayload(ConnectionProvider.HTTP, ConnectionAuthType.API_KEY,

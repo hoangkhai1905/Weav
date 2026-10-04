@@ -32,6 +32,10 @@ class ConnectionAuthorizationPolicyTest {
                 .doesNotThrowAnyException();
         assertThatCode(() -> providerPolicy.validate(ConnectionProvider.GOOGLE_SHEETS, ConnectionAuthType.OAUTH2))
                 .doesNotThrowAnyException();
+        assertThatCode(() -> providerPolicy.validate(ConnectionProvider.GOOGLE_CALENDAR, ConnectionAuthType.OAUTH2))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> providerPolicy.validate(ConnectionProvider.GOOGLE_DRIVE, ConnectionAuthType.OAUTH2))
+                .doesNotThrowAnyException();
         assertThatCode(() -> providerPolicy.validate(ConnectionProvider.TELEGRAM, ConnectionAuthType.TOKEN))
                 .doesNotThrowAnyException();
         assertThatCode(() -> providerPolicy.validate(ConnectionProvider.HTTP, ConnectionAuthType.NONE))
@@ -118,7 +122,7 @@ class ConnectionAuthorizationPolicyTest {
 
     private static boolean isAllowed(ConnectionProvider provider, ConnectionAuthType authType) {
         return switch (provider) {
-            case GMAIL, GOOGLE_SHEETS -> authType == ConnectionAuthType.OAUTH2;
+            case GMAIL, GOOGLE_SHEETS, GOOGLE_CALENDAR, GOOGLE_DRIVE -> authType == ConnectionAuthType.OAUTH2;
             case TELEGRAM -> authType == ConnectionAuthType.TOKEN;
             case HTTP -> authType == ConnectionAuthType.NONE
                     || authType == ConnectionAuthType.API_KEY

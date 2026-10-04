@@ -25,8 +25,9 @@ public final class NodeSideEffects {
         return switch (type) {
             case "http.request" -> !(config != null && config.get("method") instanceof String method
                     && SAFE_HTTP_METHODS.contains(method.toUpperCase(Locale.ROOT)));
-            case "email.send", "telegram.send_message" -> true;
+            case "email.send", "telegram.send_message", "google.calendar" -> true;
             case "google.sheets" -> !(config != null && "read".equals(config.get("operation")));
+            case "google.drive" -> !(config != null && "list".equals(config.get("operation")));
             case "logic.condition", "ai.extract", "ai.classify", "ai.summarize", "ocr.extract" -> false;
             default -> type.startsWith("trigger.") ? false : true;
         };
