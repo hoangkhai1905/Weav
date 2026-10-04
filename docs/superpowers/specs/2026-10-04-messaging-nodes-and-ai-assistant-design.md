@@ -80,7 +80,23 @@ Assumes the current workflow: Sonnet agents implement per lane, the coordinator 
 
 The riskiest parts are `flow.loop`/`flow.delay` (engine state and recovery) and the assistant's tool-calling quality with DeepSeek; prototype the assistant's tool loop early.
 
-## Suggested order
+## Agreed scope and schedule (2026-10-04)
+
+Thesis deadline: 15 weeks from 2026-08-10, i.e. **2026-11-23**. Feature freeze **2026-11-01**; the remaining weeks are for bug fixes, thesis writing and demo rehearsal.
+
+- **In:** node config JSON Schema; Telegram trigger + send (remove bot-service); `google.calendar`, `google.drive`, `trigger.gmail`; `logic.switch`, `data.set`; `ai.generate`; AI assistant MVP; email node polish (details from K after the FE work).
+- **Deferred:** Discord and Slack nodes (K, if time is left), `flow.loop`, `flow.delay`, `ai.translate`.
+- **Fallback if behind:** first reduce the assistant (no persisted history, read-only tools + the generation tool), then drop `trigger.gmail`.
+
+| Week | Backend work |
+| --- | --- |
+| 1 (Oct 5–11) | Node config JSON Schema; Telegram trigger + send; remove bot-service; in parallel: Google Calendar + Drive |
+| 2 (Oct 12–18) | `logic.switch`, `data.set`, `ai.generate`; `trigger.gmail` (polling); assistant tool-calling prototype with DeepSeek |
+| 3 (Oct 19–25) | AI assistant MVP |
+| 4 (Oct 26–Nov 1) | Integrate with the FE, email node polish, real-provider end-to-end journey, demo deployment |
+| 5–7 (Nov 2–23) | Bug fixes only, thesis writing, demo rehearsal |
+
+## Suggested order (original proposal)
 
 1. Node config JSON Schema (unblocks the FE).
 2. Messaging nodes + remove bot-service (quick, visible win).
