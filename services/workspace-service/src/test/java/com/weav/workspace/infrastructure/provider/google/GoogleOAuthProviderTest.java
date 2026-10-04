@@ -88,6 +88,13 @@ class GoogleOAuthProviderTest {
                 .authorizationUrl(ConnectionProvider.GOOGLE_SHEETS, "B".repeat(43), CHALLENGE)).getRawQuery());
         assertThat(sheets.get("scope")).isEqualTo(SHEETS_SCOPES)
                 .doesNotContain("drive");
+        Map<String, String> calendar = query(URI.create(provider()
+                .authorizationUrl(ConnectionProvider.GOOGLE_CALENDAR, "C".repeat(43), CHALLENGE)).getRawQuery());
+        assertThat(calendar.get("scope")).isEqualTo(
+                "openid email https://www.googleapis.com/auth/calendar.events");
+        Map<String, String> drive = query(URI.create(provider()
+                .authorizationUrl(ConnectionProvider.GOOGLE_DRIVE, "D".repeat(43), CHALLENGE)).getRawQuery());
+        assertThat(drive.get("scope")).isEqualTo("openid email https://www.googleapis.com/auth/drive.file");
         assertThat(provider().authorizationUrl(ConnectionProvider.GMAIL, "A".repeat(43), CHALLENGE))
                 .doesNotContain(CLIENT_SECRET);
         assertThatThrownBy(() -> provider().authorizationUrl(ConnectionProvider.GMAIL, "bad state", CHALLENGE))

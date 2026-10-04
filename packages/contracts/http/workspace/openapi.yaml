@@ -1067,7 +1067,7 @@ components:
           format: date-time
     ConnectionProvider:
       type: string
-      enum: [TELEGRAM, HTTP, GMAIL, GOOGLE_SHEETS]
+      enum: [TELEGRAM, HTTP, GMAIL, GOOGLE_SHEETS, GOOGLE_CALENDAR, GOOGLE_DRIVE]
     ConnectionAuthType:
       type: string
       enum: [NONE, TOKEN, API_KEY, BASIC, OAUTH2]

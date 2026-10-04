@@ -27,7 +27,7 @@ public final class GoogleConnectionProvider implements ConnectionProviderPort {
             ConnectionProvider provider,
             GoogleOAuthPort googleOAuthPort,
             GoogleOAuthScopePolicy scopePolicy) {
-        if (provider != ConnectionProvider.GMAIL && provider != ConnectionProvider.GOOGLE_SHEETS) {
+        if (provider == null || !provider.isGoogleOAuth()) {
             throw new IllegalArgumentException("Google connection provider is not supported");
         }
         this.provider = provider;

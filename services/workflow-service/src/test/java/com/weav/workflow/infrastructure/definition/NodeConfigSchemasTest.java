@@ -34,19 +34,21 @@ class NodeConfigSchemasTest {
     private static final Set<String> TYPES = Set.of(
             "trigger.manual", "trigger.schedule", "trigger.webhook", "trigger.telegram", "http.request",
             "email.send", "google.sheets", "telegram.send_message", "logic.condition", "ai.extract",
-            "ai.classify", "ai.summarize", "ocr.extract");
+            "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive");
 
     /** The publish-required fields the validator hard-coded before schemas drove it. */
-    private static final Map<String, List<String>> REQUIRED = Map.of(
-            "trigger.schedule", List.of("cron", "timezone"),
-            "http.request", List.of("method", "url"),
-            "email.send", List.of("connectionId", "to", "subject", "body"),
-            "google.sheets", List.of("connectionId", "operation", "spreadsheetId", "range"),
-            "telegram.send_message", List.of("chatId", "text"),
-            "logic.condition", List.of("left", "operator", "right"),
-            "ai.extract", List.of("text"),
-            "ai.classify", List.of("content"),
-            "ai.summarize", List.of("inputText"));
+    private static final Map<String, List<String>> REQUIRED = Map.ofEntries(
+            Map.entry("trigger.schedule", List.of("cron", "timezone")),
+            Map.entry("http.request", List.of("method", "url")),
+            Map.entry("email.send", List.of("connectionId", "to", "subject", "body")),
+            Map.entry("google.sheets", List.of("connectionId", "operation", "spreadsheetId", "range")),
+            Map.entry("telegram.send_message", List.of("chatId", "text")),
+            Map.entry("logic.condition", List.of("left", "operator", "right")),
+            Map.entry("ai.extract", List.of("text")),
+            Map.entry("ai.classify", List.of("content")),
+            Map.entry("ai.summarize", List.of("inputText")),
+            Map.entry("google.calendar", List.of("connectionId", "summary", "start", "end")),
+            Map.entry("google.drive", List.of("connectionId", "operation")));
 
     @Test
     void registryLoadsAllThirteenNodeTypes() {
@@ -69,7 +71,9 @@ class NodeConfigSchemasTest {
             "google.sheets.spreadsheetId", "google.sheets.range", "telegram.send_message.chatId",
             "telegram.send_message.text", "trigger.schedule.cron", "trigger.schedule.timezone",
             "ai.extract.text", "ai.classify.content", "ai.summarize.inputText",
-            "ocr.extract.artifactId", "ocr.extract.fileUrl");
+            "ocr.extract.artifactId", "ocr.extract.fileUrl", "google.calendar.connectionId",
+            "google.calendar.summary", "google.calendar.start", "google.calendar.end",
+            "google.drive.connectionId", "google.drive.operation");
 
     private static Field field(String type, String name) {
         return NodeCatalog.schema(type).properties().get(name);
@@ -136,6 +140,10 @@ class NodeConfigSchemasTest {
         assertEquals("GOOGLE_SHEETS",
                 NodeCatalog.schema("google.sheets").properties().get("connectionId").connectionProvider());
         assertEquals("HTTP", NodeCatalog.schema("http.request").properties().get("connectionId").connectionProvider());
+        assertEquals("GOOGLE_CALENDAR",
+                NodeCatalog.schema("google.calendar").properties().get("connectionId").connectionProvider());
+        assertEquals("GOOGLE_DRIVE",
+                NodeCatalog.schema("google.drive").properties().get("connectionId").connectionProvider());
         for (String type : TYPES) {
             NodeCatalog.schema(type).properties().forEach((name, field) -> {
                 if (field.connectionProvider() != null) {
@@ -151,6 +159,18 @@ class NodeConfigSchemasTest {
         for (String type : TYPES) {
             assertEquals(NodeSideEffects.isSideEffecting(type, Map.of()), NodeCatalog.schema(type).sideEffect(), type);
         }
+    }
+
+    @Test
+    void googleNodesDeclareTheirSideEffects() {
+        assertTrue(NodeSideEffects.isSideEffecting("google.calendar", Map.of()));
+        assertTrue(NodeSideEffects.isSideEffecting("google.drive", Map.of("operation", "upload")));
+        assertTrue(NodeSideEffects.isSideEffecting("google.drive", Map.of("operation", "{{ trigger.op }}")));
+        assertFalse(NodeSideEffects.isSideEffecting("google.drive", Map.of("operation", "list")));
+        assertEquals(Set.of("upload", "list"), field("google.drive", "operation").enumValues());
+        assertFalse(field("google.drive", "operation").template());
+        assertEquals("boolean", field("google.calendar", "sendInvitations").type());
+        assertEquals(0, BigDecimal.ONE.compareTo(field("google.drive", "pageSize").minimum()));
     }
 
     @Test
