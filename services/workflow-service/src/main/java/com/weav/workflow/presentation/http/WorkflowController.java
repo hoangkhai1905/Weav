@@ -211,6 +211,16 @@ public class WorkflowController {
                 "Workflow trigger configuration is not available", List.of(), request);
     }
 
+    @org.springframework.web.bind.annotation.ExceptionHandler(
+            com.weav.workflow.application.service.TelegramTriggerException.class)
+    public ResponseEntity<ApiErrorResponse> handleTelegramTrigger(
+            com.weav.workflow.application.service.TelegramTriggerException exception,
+            HttpServletRequest request) {
+        HttpStatus status = com.weav.workflow.application.service.TelegramTriggerException.BOT_IN_USE
+                .equals(exception.code()) ? HttpStatus.CONFLICT : HttpStatus.BAD_GATEWAY;
+        return errorResponse(status, exception.code(), exception.getMessage(), List.of(), request);
+    }
+
     private ApiErrorResponse.ErrorDetail safeDetail(ValidationIssue issue) {
         String field = issue.nodeId() == null
                 ? issue.field()

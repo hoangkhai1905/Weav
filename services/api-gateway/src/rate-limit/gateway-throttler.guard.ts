@@ -72,7 +72,8 @@ export function isOcrRequest(request: GatewayRateLimitRequest): boolean {
   );
 }
 
-const WEBHOOK_PATH_PATTERN = /^\/api\/v1\/webhooks\/([^/]+)$/;
+// Covers /webhooks/<key> and the Telegram variant /webhooks/telegram/<key>; keys are random, so one bucket each.
+const WEBHOOK_PATH_PATTERN = /^\/api\/v1\/webhooks\/(?:telegram\/)?([^/]+)$/;
 
 export function webhookEndpointKey(
   request: GatewayRateLimitRequest,

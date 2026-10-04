@@ -249,10 +249,13 @@ class WorkflowPublicationTest {
     void telegramPublicationPersistsDisabledRegistrationWithOnlyTheDependencyReason() {
         Workflow telegram = workflow(WORKSPACE_ID, ACTOR_ID, WorkflowStatus.DRAFT, null,
                 definition(List.of(node("manual", "trigger.manual", Map.of()),
-                        node("telegram", "trigger.telegram", Map.of())), List.of(), "telegram"));
+                        node("telegram", "trigger.telegram", Map.of("connectionId", CONNECTION_ID.toString()))),
+                List.of(), "telegram"));
         when(workflows.findByWorkspaceAndId(WORKSPACE_ID, telegram.getId())).thenReturn(Optional.of(telegram));
         when(workflows.lockByWorkspaceAndId(WORKSPACE_ID, telegram.getId())).thenReturn(Optional.of(copy(telegram)));
         when(versions.nextNumber(telegram.getId())).thenReturn(1);
+        when(webhookSecrets.provision()).thenReturn(new WebhookSecretPort.IssuedKey(
+                "opaque-telegram-key", "telegram-secret-token", "sha256-verifier"));
 
         service(Optional.of(connectionReferences)).publish(WORKSPACE_ID, telegram.getId(), ACTOR_ID);
 

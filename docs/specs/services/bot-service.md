@@ -1,4 +1,13 @@
-# Bot Service
+# Bot Service (superseded)
+
+> **Superseded (2026-10-04).** `services/bot-service` was removed. A workspace now connects its **own** Telegram bot
+> (a token from @BotFather, stored as a `TELEGRAM` connection) and uses two workflow nodes instead:
+> `trigger.telegram` (Weav calls `setWebhook` with a `secret_token`; updates arrive at
+> `POST /api/v1/webhooks/telegram/{endpointKey}` through the Gateway, and `update_id` is the idempotency key) and
+> `telegram.send_message` (Bot API `sendMessage`). No account linking, no `/link` code and no `bot` schema remain.
+> See [workflow-service.md](workflow-service.md), [api-gateway.md](api-gateway.md), the design in
+> [messaging-nodes-and-ai-assistant-design.md](../../superpowers/specs/2026-10-04-messaging-nodes-and-ai-assistant-design.md)
+> and the work log `docs/work_logs/K/workflow/telegram-nodes.md`. The text below is the original plan, kept for history only.
 
 > Status: Planned (scope decided 2026-09-30: linking, Telegram trigger, group notifications). `services/bot-service` is a NestJS scaffold (a "Hello World" controller and empty layer folders); no Telegram, linking, or Workflow code exists. Owner: TBD. Last verified: 2026-09-30 against `dev`.
 

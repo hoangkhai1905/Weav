@@ -58,7 +58,7 @@ Weav is a graduation-thesis platform for automating and monitoring work processe
 | `apps/web` | React + Vite | `pnpm --dir apps/web exec tsc --noEmit`, `pnpm --dir apps/web build`, `VITE_API_MODE=http pnpm --dir apps/web exec playwright test --project=chromium` |
 | `apps/mobile` | React Native + Expo | `npx tsc --noEmit -p .` (from `apps/mobile`); no unit test script |
 | `services/identity-service`, `workspace-service`, `workflow-service` | Spring Boot | `JAVA_TOOL_OPTIONS=-Duser.timezone=UTC ./mvnw verify` (from the service folder) |
-| `services/api-gateway`, `ai-service`, `bot-service`, `notification-service` | NestJS | `pnpm --dir <path> test`, `test:e2e`, `build` |
+| `services/api-gateway`, `ai-service`, `notification-service` | NestJS | `pnpm --dir <path> test`, `test:e2e`, `build` |
 | `services/ocr-service` | FastAPI (uv) | `uv run pytest` (from the service folder) |
 | `packages/contracts`, `shared`, `workflow-schema` | Shared contracts and generic utilities only | consumers' tests |
 
@@ -96,6 +96,7 @@ Refactoring is allowed when it clearly improves correctness, maintainability, or
   - workflow-service `WorkflowNotificationLifecyclePersistenceIntegrationTest.compiledNotificationConsumerPersistsAllSixV2EventsInJwtScopedInbox`: needs a built `services/notification-service/dist`.
   - identity-service Avatar integration tests x3: the `minio/minio:RELEASE.2024-06-04T19-20-08Z` image can no longer be pulled from Docker Hub.
 - **Playwright.** Specs that stub the backend with `page.route` (for example `workspace-connections.spec.ts`) need `VITE_API_MODE=http`, the default in `apps/web/.env.example`. `mock` swaps the API clients for in-app demo data, so the route stubs never fire. The full suite was already red on `dev` (stale text and demo-data assertions) as of 2026-10-02. The live AI generation case also needs `AI_E2E=1` and the Gateway generate route.
+- **Telegram trigger needs a public URL.** `trigger.telegram` registers its webhook with Telegram, so set `WORKFLOW_PUBLIC_BASE_URL` to the gateway's public HTTPS URL (a `cloudflared tunnel --url http://localhost:3000` quick tunnel in dev); empty keeps it `DEPENDENCY_NOT_CONFIGURED`. A workspace's own bot (token from @BotFather) is a `TELEGRAM` connection; there is no bot-service.
 - **Local web against the real stack.** Run Vite on `localhost:5173`; the Gateway's CORS allow-list does not include other ports.
 - **AI Service.** Off by default. To enable: `node scripts/ai-dev-keys.mjs` (writes `tmp/service-keys/public/` and `private/`), set `DEEPSEEK_API_KEY` and `DEEPSEEK_MODEL` in `.env`, set `WORKFLOW_AI_ENABLED=true` and `WORKFLOW_AI_GENERATION_ENABLED=true`, then start the stack without `compose.ai-local.yml`. Check `curl http://localhost:3001/health/ready`.
 - **Windows long paths.** Deleting a folder that contains `node_modules` can fail with "Filename too long"; remove it with `cmd /c rd /s /q \\?\<absolute path>`.

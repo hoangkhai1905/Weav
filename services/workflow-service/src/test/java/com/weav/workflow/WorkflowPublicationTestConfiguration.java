@@ -116,6 +116,21 @@ public class WorkflowPublicationTestConfiguration {
             }
 
             @Override
+            public Optional<WorkflowTrigger> findTelegramByEndpoint(String endpointKey) {
+                return delegate.findTelegramByEndpoint(endpointKey);
+            }
+
+            @Override
+            public boolean isTelegramConnectionInUse(UUID connectionId, UUID excludingWorkflowId) {
+                return delegate.isTelegramConnectionInUse(connectionId, excludingWorkflowId);
+            }
+
+            @Override
+            public void replaceSecretHash(UUID triggerId, String secretHash) {
+                delegate.replaceSecretHash(triggerId, secretHash);
+            }
+
+            @Override
             public List<WorkflowTrigger> findCurrent(UUID workflowId, UUID versionId) {
                 return delegate.findCurrent(workflowId, versionId);
             }

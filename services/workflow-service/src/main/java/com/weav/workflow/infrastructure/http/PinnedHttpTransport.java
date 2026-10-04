@@ -57,6 +57,8 @@ public class PinnedHttpTransport {
     private static final String GOOGLE_SHEETS_HOST = "sheets.googleapis.com";
     private static final String GMAIL_HOST = "gmail.googleapis.com";
     private static final String GMAIL_SEND_PATH = "/gmail/v1/users/me/messages/send";
+    private static final String TELEGRAM_HOST = "api.telegram.org";
+    private static final Pattern TELEGRAM_PATH = Pattern.compile("/bot[0-9]{1,20}:[A-Za-z0-9_-]{1,128}/[A-Za-z]{1,32}");
     private static final Set<String> FORBIDDEN_HEADERS = Set.of(
             "host", "content-length", "transfer-encoding", "connection", "proxy-connection",
             "keep-alive", "te", "trailer", "upgrade", "authorization", "proxy-authorization",
@@ -178,6 +180,17 @@ public class PinnedHttpTransport {
         OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
         return executeWithAuthentication(target, "POST", Map.of(),
                 Map.of("Authorization", "Bearer " + accessToken), null, body);
+    }
+
+    /**
+     * Calls one Telegram Bot API method. The endpoint is fixed to api.telegram.org over HTTPS; the bot
+     * token is part of the Bot API path (there is no auth header), so the URI is never logged or echoed
+     * in a failure. DNS is approved and pinned here immediately before the request is sent.
+     */
+    public HttpResponse executeTelegramBotApi(URI uri, Object body) {
+        validateTelegramUri(uri);
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "POST", Map.of(), Map.of(), null, body);
     }
 
     /**
@@ -505,6 +518,24 @@ public class PinnedHttpTransport {
                 || !GMAIL_SEND_PATH.equals(uri.getRawPath())) {
             throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
                     "The Gmail destination is invalid.", false);
+        }
+    }
+
+    private void validateTelegramUri(URI uri) {
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(TELEGRAM_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || uri.getRawPath() == null
+                || !TELEGRAM_PATH.matcher(uri.getRawPath()).matches()) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Telegram destination is invalid.", false);
         }
     }
 

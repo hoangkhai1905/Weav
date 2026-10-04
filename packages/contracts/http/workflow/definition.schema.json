@@ -128,10 +128,7 @@
           "if": {
             "properties": {
               "type": {
-                "enum": [
-                  "trigger.webhook",
-                  "trigger.telegram"
-                ]
+                "const": "trigger.webhook"
               }
             },
             "required": [
@@ -143,6 +140,31 @@
               "config": {
                 "type": "object",
                 "maxProperties": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "trigger.telegram"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -289,6 +311,9 @@
               "config": {
                 "type": "object",
                 "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
                   "chatId": {
                     "type": "string"
                   },

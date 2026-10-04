@@ -2,6 +2,8 @@ package com.weav.workflow.presentation.http;
 
 import com.weav.workflow.application.trigger.WebhookTriggerService;
 import com.weav.workflow.infrastructure.web.CorrelationIdFilter;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import com.weav.workflow.presentation.http.response.ExecutionResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -36,5 +38,24 @@ public final class WebhookController {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(new ExecutionResponse.Accepted(admission.executionId(), admission.workflowId(),
                         admission.workflowVersionId(), admission.status()));
+    }
+
+    /**
+     * Telegram delivers updates here (registered by publishing a trigger.telegram). Telegram only needs a 2xx, so
+     * an admitted update, a redelivery and a non-text update are all answered with 200.
+     */
+    @PostMapping("/telegram/{endpointKey}")
+    public ResponseEntity<Map<String, Object>> acceptTelegram(
+            @PathVariable String endpointKey,
+            @RequestHeader(value = "X-Telegram-Bot-Api-Secret-Token", required = false) String secret,
+            @RequestBody(required = false) Object update,
+            HttpServletRequest request,
+            @RequestHeader(value = "traceparent", required = false) String traceparent) {
+        var admission = webhooks.acceptTelegram(endpointKey, secret, update,
+                CorrelationIdFilter.requestId(request), traceparent);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("ok", true);
+        admission.ifPresent(accepted -> body.put("executionId", accepted.executionId()));
+        return ResponseEntity.ok(body);
     }
 }

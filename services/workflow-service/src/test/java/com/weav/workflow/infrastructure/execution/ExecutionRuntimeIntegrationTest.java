@@ -23,8 +23,6 @@ import com.weav.workflow.infrastructure.scheduling.ExecutionRecoveryScanner;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -303,40 +301,6 @@ class ExecutionRuntimeIntegrationTest {
         assertEquals(1, aiClient.calls());
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"telegram.send_message"})
-    void unavailableIntegrationFailsOnceInRealDatabaseWithoutPersistingOutput(String type) throws Exception {
-        NodeExecutor registered = registry.executors().get(type);
-        assertNotNull(registered, "unavailable integration should have an explicit executor");
-        assertEquals(type, registered.type());
-
-        Fixture fixture = admit("unavailable-" + type.replace('.', '-'), unavailableActionDefinition(type), Map.of());
-        assertEquals(ExecutionStatus.QUEUED.name(), status(fixture.executionId()),
-                "manual admission should still accept the workflow");
-        assertTrue(publisher.publishPending() >= 1);
-        awaitTerminal(fixture.executionId());
-
-        assertEquals(ExecutionStatus.FAILED.name(), status(fixture.executionId()));
-        assertEquals("FAILED", nodeStatus(fixture.executionId(), "unavailable"));
-        assertEquals(1, count("select count(*) from workflow.node_execution_attempts a "
-                + "join workflow.node_executions n on n.id = a.node_execution_id "
-                + "where n.execution_id = ? and n.node_id = 'unavailable'", fixture.executionId()));
-        assertEquals("DEPENDENCY_NOT_CONFIGURED", scalar("select a.error ->> 'code' "
-                + "from workflow.node_execution_attempts a "
-                + "join workflow.node_executions n on n.id = a.node_execution_id "
-                + "where n.execution_id = ? and n.node_id = 'unavailable'", fixture.executionId()));
-        assertEquals(1, count("select count(*) from workflow.node_executions "
-                + "where execution_id = ? and node_id = 'unavailable' and status = 'FAILED' "
-                + "and output = '{}'::jsonb",
-                fixture.executionId()));
-        assertEquals(1, count("select count(*) from workflow.node_execution_attempts a "
-                + "join workflow.node_executions n on n.id = a.node_execution_id "
-                + "where n.execution_id = ? and n.node_id = 'unavailable' "
-                + "and a.output = '{}'::jsonb",
-                fixture.executionId()));
-        assertEquals(0, fakeExecutor.calls("unavailable"));
-    }
-
     @Test
     void recoveryRepublishesExpiredWorkAndTheRunnerPreservesTheConsumedAttemptBudget() throws Exception {
         Fixture fixture = admit("recovery", singleActionDefinition("recovery"), Map.of());
@@ -519,20 +483,6 @@ class ExecutionRuntimeIntegrationTest {
                 node("root", "trigger.manual", Map.of()),
                 httpNode(actionId, "https://example.test/" + actionId)),
                 List.of(edge("root-" + actionId, "root", actionId, null)), Map.of());
-    }
-
-    private WorkflowDefinition unavailableActionDefinition(String type) {
-        Map<String, Object> config = switch (type) {
-            case "email.send" -> Map.of("to", "person@example.test", "subject", "Ready", "body", "Done");
-            case "telegram.send_message" -> Map.of("chatId", "123", "text", "Done");
-            case "ai.extract" -> Map.of("text", "Extract this");
-            case "ai.classify" -> Map.of("content", "Classify this");
-            case "ai.summarize" -> Map.of("inputText", "Summarize this", "maxLength", 200);
-            default -> throw new IllegalArgumentException("Unsupported test type");
-        };
-        return new WorkflowDefinition("1.0", List.of(
-                node("root", "trigger.manual", Map.of()), node("unavailable", type, config)),
-                List.of(edge("root-unavailable", "root", "unavailable", null)), Map.of());
     }
 
     private WorkflowDefinition aiActionDefinition() {

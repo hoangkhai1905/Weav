@@ -12,7 +12,6 @@ const DEFAULT_UPSTREAMS = {
   workspace: 'http://workspace-service:8080',
   workflow: 'http://workflow-service:8080',
   ai: 'http://ai-service:3000',
-  bot: 'http://bot-service:3000',
   notification: 'http://notification-service:3000',
   ocr: 'http://ocr-service:8000',
 } as const;
@@ -135,7 +134,6 @@ const environmentSchema = z.object({
   WORKSPACE_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.workspace),
   WORKFLOW_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.workflow),
   AI_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.ai),
-  BOT_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.bot),
   NOTIFICATION_SERVICE_URL: upstreamUrlSchema.default(
     DEFAULT_UPSTREAMS.notification,
   ),
@@ -170,7 +168,6 @@ export interface GatewayConfig {
     workspace: string;
     workflow: string;
     ai: string;
-    bot: string;
     notification: string;
     ocr: string;
   };
@@ -318,7 +315,6 @@ export function validateGatewayEnvironment(
       workspace: parsed.data.WORKSPACE_SERVICE_URL,
       workflow: parsed.data.WORKFLOW_SERVICE_URL,
       ai: parsed.data.AI_SERVICE_URL,
-      bot: parsed.data.BOT_SERVICE_URL,
       notification: parsed.data.NOTIFICATION_SERVICE_URL,
       ocr: parsed.data.OCR_SERVICE_URL,
     },

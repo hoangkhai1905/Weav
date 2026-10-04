@@ -42,7 +42,8 @@ class NodeConfigSchemasTest {
             "http.request", List.of("method", "url"),
             "email.send", List.of("connectionId", "to", "subject", "body"),
             "google.sheets", List.of("connectionId", "operation", "spreadsheetId", "range"),
-            "telegram.send_message", List.of("chatId", "text"),
+            "trigger.telegram", List.of("connectionId"),
+            "telegram.send_message", List.of("connectionId", "chatId", "text"),
             "logic.condition", List.of("left", "operator", "right"),
             "ai.extract", List.of("text"),
             "ai.classify", List.of("content"),
@@ -66,8 +67,9 @@ class NodeConfigSchemasTest {
     private static final Set<String> NON_BLANK = Set.of(
             "http.request.method", "http.request.url", "email.send.connectionId", "email.send.to",
             "email.send.subject", "google.sheets.connectionId", "google.sheets.operation",
-            "google.sheets.spreadsheetId", "google.sheets.range", "telegram.send_message.chatId",
-            "telegram.send_message.text", "trigger.schedule.cron", "trigger.schedule.timezone",
+            "google.sheets.spreadsheetId", "google.sheets.range", "telegram.send_message.connectionId",
+            "telegram.send_message.chatId", "telegram.send_message.text", "trigger.telegram.connectionId",
+            "trigger.schedule.cron", "trigger.schedule.timezone",
             "ai.extract.text", "ai.classify.content", "ai.summarize.inputText",
             "ocr.extract.artifactId", "ocr.extract.fileUrl");
 
@@ -136,6 +138,10 @@ class NodeConfigSchemasTest {
         assertEquals("GOOGLE_SHEETS",
                 NodeCatalog.schema("google.sheets").properties().get("connectionId").connectionProvider());
         assertEquals("HTTP", NodeCatalog.schema("http.request").properties().get("connectionId").connectionProvider());
+        assertEquals("TELEGRAM",
+                NodeCatalog.schema("trigger.telegram").properties().get("connectionId").connectionProvider());
+        assertEquals("TELEGRAM",
+                NodeCatalog.schema("telegram.send_message").properties().get("connectionId").connectionProvider());
         for (String type : TYPES) {
             NodeCatalog.schema(type).properties().forEach((name, field) -> {
                 if (field.connectionProvider() != null) {

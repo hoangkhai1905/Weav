@@ -5,8 +5,8 @@ import java.util.Set;
 
 /** Explicit fail-closed adapters for integrations without an approved runtime contract. */
 public final class UnavailableNodeExecutor implements NodeExecutor {
-    public static final Set<String> UNAVAILABLE_NODE_TYPES = Set.of(
-            "telegram.send_message");
+    /** Empty today: every catalog action has an executor. Add a type here to fail it closed again. */
+    public static final Set<String> UNAVAILABLE_NODE_TYPES = Set.of();
 
     private final String type;
 

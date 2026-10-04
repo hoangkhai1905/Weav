@@ -80,7 +80,8 @@ class WorkflowGenerationServiceTest {
         service(ai, new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null,
                 Map.of("google.sheets", connectionId));
         String payload = String.valueOf(ai.payload);
-        assertFalse(payload.contains("telegram.send_message"));
+        assertFalse(payload.contains("trigger.telegram"), "no public base URL, so the trigger is unavailable");
+        assertTrue(payload.contains("telegram.send_message"));
         assertFalse(payload.contains("connectionId"));
         assertFalse(payload.contains("schemaDescription"));
         assertFalse(payload.contains(connectionId.toString()));

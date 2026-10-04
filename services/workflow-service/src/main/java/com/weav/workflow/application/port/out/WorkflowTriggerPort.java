@@ -18,6 +18,19 @@ public interface WorkflowTriggerPort {
     /** Looks up an ingress candidate by its opaque endpoint identifier. */
     Optional<WorkflowTrigger> findWebhookByEndpoint(String endpointKey);
 
+    /** Looks up a Telegram ingress candidate by its opaque endpoint identifier (never returns webhook triggers). */
+    Optional<WorkflowTrigger> findTelegramByEndpoint(String endpointKey);
+
+    /**
+     * Whether a workflow other than {@code excludingWorkflowId} has an active, undeleted Telegram trigger on this
+     * connection (one bot can point at one webhook). Takes a transaction-scoped advisory lock on the connection
+     * so two concurrent publishes cannot both pass the check; call it inside the publishing transaction.
+     */
+    boolean isTelegramConnectionInUse(UUID connectionId, UUID excludingWorkflowId);
+
+    /** Replaces the stored verifier of a provisioned webhook or Telegram trigger (secret rotation on resume). */
+    void replaceSecretHash(UUID triggerId, String secretHash);
+
     List<WorkflowTrigger> findCurrent(UUID workflowId, UUID versionId);
 
     List<ScheduleCandidate> findDueSchedules(Instant now, int limit);

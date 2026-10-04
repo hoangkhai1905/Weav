@@ -103,6 +103,8 @@ const MAX_GENERATE_REQUEST_BYTES = 32_768;
 const GENERATE_TIMEOUT_MS = 80_000;
 const WEBHOOK_ENDPOINT_KEY_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 const WEBHOOK_SECRET_PATTERN = /^[\x21-\x7e]{1,512}$/;
+// Telegram's secret_token alphabet and length (setWebhook): 1-256 of A-Z a-z 0-9 _ -.
+const TELEGRAM_SECRET_TOKEN_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
 
 const generateWorkflowSchema = z
   .object({
@@ -533,8 +535,61 @@ export class WebhookProxyController {
   }
 }
 
+/**
+ * Telegram bot updates for a trigger.telegram registration. Telegram calls this
+ * URL (registered with setWebhook), not a user, so there is no JWT. Only the
+ * X-Telegram-Bot-Api-Secret-Token header is forwarded; client Authorization
+ * never is. Workflow compares the token in constant time.
+ */
+@Controller('api/v1/webhooks/telegram')
+@AuthPolicy('public')
+export class TelegramWebhookProxyController {
+  constructor(private readonly proxy: WorkflowProxyService) {}
+
+  @Post(':endpointKey')
+  accept(
+    @Param('endpointKey') endpointKey: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    if (!WEBHOOK_ENDPOINT_KEY_PATTERN.test(endpointKey)) {
+      throw new BadRequestException('Request validation failed');
+    }
+    const contentType = getRequestHeader(request.headers, 'content-type');
+    if (
+      body !== undefined &&
+      !contentType?.toLowerCase().startsWith('application/json')
+    ) {
+      throw new UnsupportedMediaTypeException('application/json required');
+    }
+    const extraHeaders: Record<string, string> = {};
+    const secret = getRequestHeader(
+      request.headers,
+      'x-telegram-bot-api-secret-token',
+    );
+    if (secret !== undefined) {
+      if (!TELEGRAM_SECRET_TOKEN_PATTERN.test(secret)) {
+        throw new BadRequestException('Request validation failed');
+      }
+      extraHeaders['x-telegram-bot-api-secret-token'] = secret;
+    }
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/webhooks/telegram/${endpointKey}`,
+      { body, auth: 'none', extraHeaders },
+    );
+  }
+}
+
 @Module({
-  controllers: [WorkflowProxyController, WebhookProxyController],
+  controllers: [
+    WorkflowProxyController,
+    WebhookProxyController,
+    TelegramWebhookProxyController,
+  ],
   providers: [WorkflowProxyService],
 })
 export class WorkflowModule {}

@@ -486,6 +486,69 @@ describe('Gateway routes added for full service coverage (Fastify e2e)', () => {
     expect(other.statusCode).toBe(202);
   });
 
+  it('forwards Telegram updates with only the secret-token header and never Authorization', async () => {
+    const key = 'G'.repeat(32);
+    const response = await inject({
+      method: 'POST',
+      url: `/api/v1/webhooks/telegram/${key}`,
+      headers: {
+        authorization: 'Bearer client-token-must-not-leak',
+        'x-telegram-bot-api-secret-token': 'tg_secret-0123456789',
+      },
+      payload: { update_id: 7, message: { text: 'hello' } },
+    });
+
+    expect(response.statusCode).toBe(202);
+    const forwarded = fixtureRequests[0];
+    expect(forwarded.path).toBe(`/webhooks/telegram/${key}`);
+    expect(forwarded.headers.authorization).toBeUndefined();
+    expect(forwarded.headers['x-telegram-bot-api-secret-token']).toBe(
+      'tg_secret-0123456789',
+    );
+    expect(JSON.parse(forwarded.body.toString())).toEqual({
+      update_id: 7,
+      message: { text: 'hello' },
+    });
+  });
+
+  it('rejects malformed Telegram keys and secret tokens before forwarding', async () => {
+    const badKey = await inject({
+      method: 'POST',
+      url: '/api/v1/webhooks/telegram/short',
+      payload: {},
+    });
+    const badToken = await inject({
+      method: 'POST',
+      url: `/api/v1/webhooks/telegram/${'K'.repeat(32)}`,
+      headers: { 'x-telegram-bot-api-secret-token': 'not valid!' },
+      payload: {},
+    });
+    expect(badKey.statusCode).toBe(400);
+    expect(badToken.statusCode).toBe(400);
+    expect(fixtureRequests).toHaveLength(0);
+  });
+
+  it('rate-limits Telegram webhooks per endpoint key too', async () => {
+    const hot = 'Q'.repeat(32);
+    const statuses: number[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      const response = await inject({
+        method: 'POST',
+        url: `/api/v1/webhooks/telegram/${hot}`,
+        payload: { update_id: i },
+      });
+      statuses.push(response.statusCode);
+    }
+    const other = await inject({
+      method: 'POST',
+      url: `/api/v1/webhooks/telegram/${'R'.repeat(32)}`,
+      payload: {},
+    });
+
+    expect(statuses).toEqual([202, 202, 202, 429]);
+    expect(other.statusCode).toBe(202);
+  });
+
   it('rejects non-UUID notification ids at the edge', async () => {
     const notification = await inject({
       method: 'PATCH',

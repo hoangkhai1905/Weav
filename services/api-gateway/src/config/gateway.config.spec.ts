@@ -173,6 +173,23 @@ describe('validateGatewayEnvironment', () => {
     expect(config.trustProxyHops).toBe(0);
   });
 
+  it('no longer has a bot upstream and ignores a leftover BOT_SERVICE_URL', () => {
+    const config = validateGatewayEnvironment({
+      ...developmentEnvironment(),
+      BOT_SERVICE_URL: 'not a url at all',
+    });
+
+    expect(Object.keys(config.upstreams).sort()).toEqual([
+      'ai',
+      'identity',
+      'notification',
+      'ocr',
+      'workflow',
+      'workspace',
+    ]);
+    expect('bot' in config.upstreams).toBe(false);
+  });
+
   it('bounds the trusted proxy hop count', () => {
     expect(
       validateGatewayEnvironment({

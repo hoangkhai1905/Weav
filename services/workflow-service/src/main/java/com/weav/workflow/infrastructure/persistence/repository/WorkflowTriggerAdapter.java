@@ -30,6 +30,7 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
 
     private final WorkflowPersistenceMapper mapper;
     private final String triggerTable;
+    private final String workflowTable;
     private final java.time.Clock clock;
 
     public WorkflowTriggerAdapter(WorkflowPersistenceMapper mapper,
@@ -42,6 +43,7 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
             throw new IllegalArgumentException("The configured workflow schema name is invalid");
         }
         this.triggerTable = "\"" + schema + "\".workflow_triggers";
+        this.workflowTable = "\"" + schema + "\".workflows";
     }
 
     @Override
@@ -83,18 +85,63 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
     @Override
     @Transactional(readOnly = true)
     public Optional<WorkflowTrigger> findWebhookByEndpoint(String endpointKey) {
+        return findByEndpoint(endpointKey, com.weav.workflow.domain.valueobject.TriggerType.WEBHOOK);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<WorkflowTrigger> findTelegramByEndpoint(String endpointKey) {
+        return findByEndpoint(endpointKey, com.weav.workflow.domain.valueobject.TriggerType.TELEGRAM);
+    }
+
+    private Optional<WorkflowTrigger> findByEndpoint(
+            String endpointKey, com.weav.workflow.domain.valueobject.TriggerType type) {
         Objects.requireNonNull(endpointKey, "endpointKey must not be null");
         return entityManager.createQuery(
                         "select trigger from WorkflowTriggerJpaEntity trigger "
                                 + "where trigger.endpointKey = :endpointKey and trigger.type = :type",
                         WorkflowTriggerJpaEntity.class)
                 .setParameter("endpointKey", endpointKey)
-                .setParameter("type", com.weav.workflow.domain.valueobject.TriggerType.WEBHOOK)
+                .setParameter("type", type)
                 .setMaxResults(1)
                 .getResultList()
                 .stream()
                 .findFirst()
                 .map(mapper::toDomain);
+    }
+
+    @Override
+    @Transactional
+    public boolean isTelegramConnectionInUse(UUID connectionId, UUID excludingWorkflowId) {
+        Objects.requireNonNull(connectionId, "connectionId must not be null");
+        Objects.requireNonNull(excludingWorkflowId, "excludingWorkflowId must not be null");
+        String connection = connectionId.toString();
+        entityManager.createNativeQuery("select pg_advisory_xact_lock(hashtextextended(:connection, 0))")
+                .setParameter("connection", "telegram-bot:" + connection)
+                .getSingleResult();
+        Number matches = (Number) entityManager.createNativeQuery(
+                        "select count(*) from " + triggerTable + " t "
+                                + "join " + workflowTable + " w on w.id = t.workflow_id "
+                                + "where t.type = 'TELEGRAM' and t.status = 'ACTIVE' and w.deleted_at is null "
+                                + "and lower(t.config->>'connectionId') = :connection and t.workflow_id <> :workflowId")
+                .setParameter("connection", connection)
+                .setParameter("workflowId", excludingWorkflowId)
+                .getSingleResult();
+        return matches.longValue() > 0;
+    }
+
+    @Override
+    @Transactional
+    public void replaceSecretHash(UUID triggerId, String secretHash) {
+        Objects.requireNonNull(triggerId, "triggerId must not be null");
+        if (secretHash == null || secretHash.isBlank()) {
+            throw new IllegalArgumentException("secretHash must not be blank");
+        }
+        WorkflowTriggerJpaEntity trigger = entityManager.find(WorkflowTriggerJpaEntity.class, triggerId);
+        if (trigger == null || trigger.getEndpointKey() == null) {
+            throw new ResourceNotFoundException("Workflow trigger not found");
+        }
+        trigger.setSecretHash(secretHash);
     }
 
     @Override

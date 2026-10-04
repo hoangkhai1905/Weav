@@ -294,6 +294,8 @@ services:
       WORKFLOW_EXECUTION_INPUT_MAX_DEPTH: ${WORKFLOW_EXECUTION_INPUT_MAX_DEPTH:-32}
       WORKFLOW_WEBHOOK_RATE_LIMIT_REQUESTS_PER_WINDOW: ${WORKFLOW_WEBHOOK_RATE_LIMIT_REQUESTS_PER_WINDOW:-6000}
       WORKFLOW_WEBHOOK_RATE_LIMIT_WINDOW: ${WORKFLOW_WEBHOOK_RATE_LIMIT_WINDOW:-1m}
+      # Public HTTPS base URL of the gateway (a tunnel in dev); empty keeps trigger.telegram unavailable
+      WORKFLOW_PUBLIC_BASE_URL: ${WORKFLOW_PUBLIC_BASE_URL:-}
       WORKFLOW_EXECUTION_OUTBOX_BATCH_SIZE: ${WORKFLOW_EXECUTION_OUTBOX_BATCH_SIZE:-50}
       WORKFLOW_EXECUTION_OUTBOX_POLL_INTERVAL: ${WORKFLOW_EXECUTION_OUTBOX_POLL_INTERVAL:-1000}
       WORKFLOW_EXECUTION_OUTBOX_INITIAL_DELAY: ${WORKFLOW_EXECUTION_OUTBOX_INITIAL_DELAY:-1000}
@@ -477,7 +479,6 @@ services:
       WORKFLOW_SERVICE_URL: http://workflow-service:8080
       AI_SERVICE_URL: http://ai-service:3000
       OCR_SERVICE_URL: http://ocr-service:8000
-      BOT_SERVICE_URL: http://bot-service:3000
       NOTIFICATION_SERVICE_URL: http://notification-service:3000
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8081,http://127.0.0.1:8081}
       OCR_ALLOW_UNAUTHENTICATED_DEV: ${OCR_ALLOW_UNAUTHENTICATED_DEV:-false}
@@ -492,52 +493,6 @@ services:
 
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
-
-
-
-  # ==================================================
-  # Bot - NestJS
-  # ==================================================
-  bot-service:
-    profiles: ["app"]
-    restart: unless-stopped
-    mem_limit: 384m
-
-    build:
-      context: .
-      dockerfile: services/bot-service/Dockerfile.dev
-
-    environment:
-      APP_ENV: ${APP_ENV:-development}
-
-      # Neon PostgreSQL pooled connection
-      DB_HOST: ${BOT_DB_HOST}
-      DB_PORT: ${BOT_DB_PORT:-5432}
-      DB_NAME: ${BOT_DB_NAME}
-      DB_USERNAME: ${BOT_DB_USERNAME}
-      DB_PASSWORD: ${BOT_DB_PASSWORD}
-      DB_SSL_MODE: ${BOT_DB_SSL_MODE:-require}
-      DB_SCHEMA: bot
-
-      # RabbitMQ
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
-
-      # Workflow Service
-      WORKFLOW_SERVICE_URL: http://workflow-service:8080
-
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
