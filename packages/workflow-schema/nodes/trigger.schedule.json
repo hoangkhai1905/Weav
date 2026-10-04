@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/trigger.schedule",
+  "title": "Schedule",
+  "description": "Starts the workflow on a recurring cron schedule.",
+  "x-weav-node": {
+    "type": "trigger.schedule",
+    "category": "trigger",
+    "label": "Schedule",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "cron": {
+      "type": "string",
+      "title": "Cron expression",
+      "description": "When to run, as a cron expression (for example 0 9 * * 1-5).",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "timezone": {
+      "type": "string",
+      "title": "Time zone",
+      "description": "IANA time zone the schedule is evaluated in (for example Asia/Ho_Chi_Minh).",
+      "x-weav-template": true,
+      "minLength": 1
+    }
+  },
+  "required": [
+    "cron",
+    "timezone"
+  ],
+  "additionalProperties": false
+}

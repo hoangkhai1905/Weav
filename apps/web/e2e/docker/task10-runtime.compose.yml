@@ -166,6 +166,7 @@ services:
       dockerfile: ../../apps/web/e2e/docker/Dockerfile.task10-workflow
       additional_contexts:
         contracts: ../../../../packages/contracts
+        workflow-schema: ../../../../packages/workflow-schema
     environment:
       APP_ENV: test
       DB_HOST: workflow-db

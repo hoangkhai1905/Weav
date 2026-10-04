@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/ocr.extract",
+  "title": "Extract text from file (OCR)",
+  "description": "Reads text and tables from an uploaded file or a file URL. Configure either artifactId or fileUrl, not both.",
+  "x-weav-node": {
+    "type": "ocr.extract",
+    "category": "ai",
+    "label": "Extract text from file (OCR)",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "artifactId": {
+      "type": "string",
+      "title": "Uploaded file",
+      "description": "Identifier of an uploaded file. Use this or File URL, not both.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "fileUrl": {
+      "type": "string",
+      "title": "File URL",
+      "description": "Address of a file to read. Use this or Uploaded file, not both.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language hint for recognition.",
+      "x-weav-template": true
+    },
+    "detectTables": {
+      "type": "boolean",
+      "title": "Detect tables",
+      "description": "Also detect tables in the document.",
+      "x-weav-template": true
+    }
+  },
+  "required": [],
+  "additionalProperties": false,
+  "x-weav-mutually-exclusive": [
+    [
+      "artifactId",
+      "fileUrl"
+    ]
+  ]
+}

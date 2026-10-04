@@ -191,6 +191,7 @@ services:
       dockerfile: Dockerfile.dev
       additional_contexts:
         contracts: ./packages/contracts
+        workflow-schema: ./packages/workflow-schema
     ports:
       - "127.0.0.1:${WORKFLOW_SMOKE_WORKFLOW_PORT}:8080"
     environment:

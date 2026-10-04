@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/logic.condition",
+  "title": "Condition",
+  "description": "Compares two values and continues along the true or false branch.",
+  "x-weav-node": {
+    "type": "logic.condition",
+    "category": "logic",
+    "label": "Condition",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "left": {
+      "title": "Left value",
+      "description": "First value to compare.",
+      "x-weav-template": true
+    },
+    "operator": {
+      "type": "string",
+      "title": "Operator",
+      "description": "Comparison: eq, ne, gt, gte, lt or lte. Ordering operators need numbers.",
+      "x-weav-template": true,
+      "enum": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte"
+      ]
+    },
+    "right": {
+      "title": "Right value",
+      "description": "Second value to compare.",
+      "x-weav-template": true
+    }
+  },
+  "required": [
+    "left",
+    "operator",
+    "right"
+  ],
+  "additionalProperties": false
+}

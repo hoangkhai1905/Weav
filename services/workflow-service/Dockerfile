@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # Production image (X-16). Build context: this service folder.
-#   docker build -t weav-workflow -f Dockerfile .
+#   docker build --build-context workflow-schema=../../packages/workflow-schema -t weav-workflow -f Dockerfile .
+# The workflow-schema build context supplies the node config schemas packaged into the jar.
 # Dev uses Dockerfile.dev (mvnw spring-boot:run); this file is not used by compose.dev.yml.
 FROM eclipse-temurin:25-jdk AS build
 WORKDIR /build
@@ -10,6 +11,8 @@ COPY mvnw pom.xml ./
 RUN chmod +x mvnw
 
 COPY src/ src/
+# Node config schemas are packaged as classpath resources (pom.xml: ../../packages/workflow-schema/nodes).
+COPY --from=workflow-schema . /packages/workflow-schema/
 # -Dmaven.test.skip skips test compilation too (tests need ../../packages/contracts, not the image).
 RUN --mount=type=cache,target=/root/.m2 \
     ./mvnw -B -q -Dmaven.test.skip=true package \

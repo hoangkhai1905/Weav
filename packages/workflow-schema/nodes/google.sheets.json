@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/google.sheets",
+  "title": "Google Sheets",
+  "description": "Reads rows from, or writes rows to, a Google Sheets spreadsheet.",
+  "x-weav-node": {
+    "type": "google.sheets",
+    "category": "action",
+    "label": "Google Sheets",
+    "sideEffect": true
+  },
+  "type": "object",
+  "properties": {
+    "connectionId": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Connection",
+      "description": "Google Sheets connection used to access the spreadsheet.",
+      "x-weav-connection": {
+        "provider": "GOOGLE_SHEETS"
+      }
+    },
+    "operation": {
+      "type": "string",
+      "title": "Operation",
+      "description": "What to do with the sheet range.",
+      "x-weav-template": true,
+      "enum": [
+        "read",
+        "append",
+        "update"
+      ],
+      "minLength": 1
+    },
+    "spreadsheetId": {
+      "type": "string",
+      "title": "Spreadsheet ID",
+      "description": "Identifier of the spreadsheet (the long id in its URL).",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "range": {
+      "type": "string",
+      "title": "Range",
+      "description": "Cell range in A1 notation (for example Sheet1!A1:C10).",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "values": {
+      "title": "Values",
+      "description": "Rows to write. Required for append and update operations.",
+      "x-weav-template": true
+    }
+  },
+  "required": [
+    "connectionId",
+    "operation",
+    "spreadsheetId",
+    "range"
+  ],
+  "additionalProperties": false
+}
