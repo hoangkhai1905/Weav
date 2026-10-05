@@ -555,7 +555,7 @@ export function WorkflowsPage() {
                     <strong className="font-medium">{t('workflows.empty_step1_title')}</strong>{' '}
                     <span className="text-text-2">
                       {t('workflows.empty_step1_desc')}{' '}
-                      <Link to="/connections" className="text-accent-ink hover:underline">
+                      <Link to="/workspace/connections" className="text-accent-ink hover:underline">
                         {t('workflows.empty_open_connections')}
                       </Link>
                     </span>

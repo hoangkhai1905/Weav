@@ -1669,7 +1669,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     </select>
                     {!isLoadingConnections && gmailConnections.length === 0 && (
                       <p className="mt-1 text-[10px] text-muted-foreground">
-                        {t('builder.cfg.no_gmail')} <Link to="/connections" className="text-run underline">{t('builder.cfg.connect_gmail')}</Link> {t('builder.cfg.connect_first')}
+                        {t('builder.cfg.no_gmail')} <Link to="/workspace/connections" className="text-run underline">{t('builder.cfg.connect_gmail')}</Link> {t('builder.cfg.connect_first')}
                       </p>
                     )}
                   </div>

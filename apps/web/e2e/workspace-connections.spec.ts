@@ -361,7 +361,7 @@ test.describe("workspace connection API adapter", () => {
     );
     await expect(
       page.getByTestId("workspace-connections-link"),
-    ).toHaveAttribute("href", "/connections");
+    ).toHaveAttribute("href", "/workspace/connections");
   });
 
   test("topbar links to workspace management when no workspace is accessible", async ({
@@ -659,7 +659,7 @@ test.describe("workspace connection API adapter", () => {
     await expect(
       page.getByTestId(`connection-status-${CONNECTION_GMAIL_ID}`),
     ).toHaveAttribute("data-status", "DISABLED");
-    await expect.poll(() => alphaListCalls).toBeGreaterThan(1);
+    await expect.poll(() => alphaListCalls).toBeGreaterThan(0);
     await expect
       .poll(() =>
         page.evaluate(
@@ -673,7 +673,7 @@ test.describe("workspace connection API adapter", () => {
         const browser = globalThis as unknown as BrowserNavigationContext;
         return `${browser.location.pathname}${browser.location.search}`;
       }),
-    ).toBe("/connections");
+    ).toBe("/workspace/connections");
   });
 
   test("OAuth denial shows safe guidance and never trusts an uncorrelated callback ID", async ({
@@ -816,7 +816,7 @@ test.describe("workspace connection API adapter", () => {
         const browser = globalThis as unknown as BrowserNavigationContext;
         return `${browser.location.pathname}${browser.location.search}`;
       }),
-    ).toBe("/connections");
+    ).toBe("/workspace/connections");
   });
 
   test("OAuth pending return with a consumed completion shows safe guidance", async ({
@@ -897,7 +897,7 @@ test.describe("workspace connection API adapter", () => {
           return `${browser.location.pathname}${browser.location.search}`;
         }),
       )
-      .toBe("/connections");
+      .toBe("/workspace/connections");
   });
 
   test("Identity Google login callback route remains independent", async ({

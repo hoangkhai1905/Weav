@@ -75,7 +75,6 @@ test('Dashboard to Workflows to run history and back stays within the API reques
   await page.getByRole('link', { name: 'Dashboard', exact: true }).first().click();
   await expect(page.getByText('Workflow 1', { exact: true }).first()).toBeVisible();
 
-  // eslint-disable-next-line no-console
   console.log('API_REQUESTS', total, JSON.stringify([...counts.entries()]));
   expect(total).toBeLessThan(25);
 });

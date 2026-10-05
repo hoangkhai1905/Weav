@@ -2,11 +2,9 @@ import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  Activity,
   GitFork,
   HelpCircle,
   LayoutDashboard,
-  Link2,
   LogOut,
   Settings,
   Sparkles,
@@ -35,8 +33,6 @@ const MAIN_NAV_ITEMS: NavItem[] = [
     icon: LayoutDashboard,
   },
   { translationKey: "nav.workflows", path: "/workflows", icon: GitFork },
-  { translationKey: "nav.executions", path: "/executions", icon: Activity },
-  { translationKey: "nav.connections", path: "/connections", icon: Link2 },
   { translationKey: "nav.workspace", path: "/workspace", icon: Users },
   {
     translationKey: "nav.ai_generator",

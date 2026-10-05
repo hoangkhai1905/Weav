@@ -315,7 +315,7 @@ function ConnectionRow({
   );
 }
 
-export function ConnectionsPage() {
+export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const refreshNotifications = useNotificationMilestoneRefresh();
   const { t } = useI18nStore();
   const {
@@ -421,14 +421,14 @@ export function ConnectionsPage() {
       // The URL carries a single-use secret: clear it now and keep it in memory only.
       const completion = params.get("completion") ?? "";
       if (!pendingIsValid || !pending || !OAUTH_COMPLETION_ID_PATTERN.test(completion)) {
-        navigate("/connections", {
+        navigate("/workspace/connections", {
           replace: true,
           state: { oauthNoticeKey: "connections.oauth.context_missing" },
         });
         return;
       }
       const { workspaceId, connectionId } = pending;
-      navigate("/connections", {
+      navigate("/workspace/connections", {
         replace: true,
         state: { oauthNoticeKey: "connections.oauth.completing" },
       });
@@ -453,7 +453,7 @@ export function ConnectionsPage() {
             queryKey: connectionKeys.detail(userId, workspaceId, connectionId),
             exact: true,
           });
-          navigate("/connections", {
+          navigate("/workspace/connections", {
             replace: true,
             state: { oauthNoticeKey: finalKey },
           });
@@ -467,7 +467,7 @@ export function ConnectionsPage() {
           ? "connections.oauth.returned"
           : "connections.oauth.context_missing"
         : (OAUTH_FAILURE_KEYS[reason] ?? "connections.oauth.failed_generic");
-    navigate("/connections", {
+    navigate("/workspace/connections", {
       replace: true,
       state: { oauthNoticeKey: noticeKey },
     });
@@ -626,7 +626,7 @@ export function ConnectionsPage() {
   return (
     <main
       data-testid="connections-page"
-      className="-m-4 flex h-[calc(100%+2rem)] min-h-0 flex-col overflow-y-auto bg-card sm:-m-5 sm:h-[calc(100%+2.5rem)]"
+      className={embedded ? "flex min-h-0 flex-col rounded-lg border border-border bg-card" : "-m-4 flex h-[calc(100%+2rem)] min-h-0 flex-col overflow-y-auto bg-card sm:-m-5 sm:h-[calc(100%+2.5rem)]"}
     >
       <header className="flex min-h-14 shrink-0 flex-col gap-2 border-b border-border px-5 py-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">

@@ -4,7 +4,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   AlertCircle,
-  Building2,
   Check,
   Loader2,
   RefreshCw,
@@ -34,6 +33,7 @@ import { captureNotificationSession, isCurrentNotificationSession } from '../lib
 import { showSuccessToast } from '../lib/feedback/toast';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 import { appLocale } from '../lib/i18n/tr';
+import { WorkspaceHeader, WorkspaceTabs } from '../components/workspace/WorkspaceTabs';
 
 function getWorkspaceErrorMessage(error: unknown, t: (key: string) => string): string {
   if (error instanceof WorkspaceApiError) {
@@ -437,14 +437,9 @@ export function WorkspacePage() {
       animate="animate"
       variants={pageMotion}
     >
-      <motion.div variants={itemMotion} className="flex flex-col gap-1">
-        <div className="flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-lg border border-run/30 bg-run-bg text-run">
-            <Building2 size={17} aria-hidden="true" />
-          </span>
-          <h1 className="text-xl font-bold text-foreground">{t('workspace.title')}</h1>
-        </div>
-        <p className="max-w-2xl text-xs text-text-2">{t('workspace.subtitle')}</p>
+      <motion.div variants={itemMotion} className="space-y-3">
+        <WorkspaceHeader />
+        <WorkspaceTabs />
       </motion.div>
 
       <motion.section variants={itemMotion} className="rounded-2xl border border-border bg-card p-5" aria-label={t('workspace.title')}>
@@ -576,7 +571,7 @@ export function WorkspacePage() {
               <p className="mt-1 text-xs text-muted-foreground">{t('workspace.workspace_id')} {activeWorkspace.id}</p>
               <Link
                 data-testid="workspace-connections-link"
-                to="/connections"
+                to="/workspace/connections"
                 className="mt-2 inline-flex min-h-9 items-center rounded-lg border border-run/30 px-3 text-xs font-semibold text-run transition-colors hover:bg-run-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run/30"
               >
                 {t('workspace.connections_link')}

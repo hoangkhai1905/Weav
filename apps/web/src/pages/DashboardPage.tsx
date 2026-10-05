@@ -120,7 +120,7 @@ function DashboardQuickActions({ prefersReducedMotion, onOpenAi }: DashboardQuic
         </Link>
 
         <Link
-          to="/executions"
+          to="/workflows"
           className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-ok-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-run/30"
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ok-bg text-ok transition-transform duration-200 group-hover:-translate-y-0.5">

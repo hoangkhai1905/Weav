@@ -9,7 +9,9 @@ import { useAuthStore } from '../../store/useAuthStore';
 const getTopbarPageKey = (pathname: string) => {
   if (pathname.startsWith('/workflows')) return 'nav.workflows';
   if (pathname.startsWith('/executions')) return 'nav.executions';
-  if (pathname.startsWith('/connections')) return 'nav.connections';
+  if (pathname.startsWith('/connections') || pathname.startsWith('/workspace/connections')) return 'workspace.tab.connections';
+  if (pathname.startsWith('/workspace/members')) return 'workspace.tab.members';
+  if (pathname.startsWith('/workspace/settings')) return 'workspace.tab.settings';
   if (pathname.startsWith('/workspace')) return 'nav.workspace';
   if (pathname.startsWith('/ai')) return 'nav.ai_generator';
   if (pathname.startsWith('/telegram')) return 'nav.telegram';
@@ -50,6 +52,12 @@ export function Topbar() {
         <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
           <span>{t('topbar.home')}</span>
           <span aria-hidden="true" className="text-muted-foreground/50">/</span>
+          {location.pathname.startsWith('/workspace/') && (
+            <>
+              <Link to="/workspace" className="hover:text-foreground">{t('nav.workspace')}</Link>
+              <span aria-hidden="true" className="text-muted-foreground/50">/</span>
+            </>
+          )}
           <span data-testid="topbar-breadcrumb-current" className="font-medium text-foreground">
             {t(currentPageKey)}
           </span>

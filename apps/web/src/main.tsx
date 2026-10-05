@@ -14,7 +14,6 @@ const queryClient = new QueryClient({
         const status = (error as { status?: unknown } | null)?.status;
         return count < 1 && !(typeof status === 'number' && status >= 400 && status < 500);
       },
-      staleTime: 15_000,
     },
   },
 });

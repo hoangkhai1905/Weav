@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { LoaderCircle } from 'lucide-react';
 import { executionApi } from '../api/execution.api';
-import { ExecutionsTriPane } from '../components/executions/ExecutionsTriPane';
 import { useI18nStore } from '../store/useI18nStore';
 
 /** Run detail: resolves the owning workflow from the real API, then shows the 3-pane run view. */
@@ -33,7 +32,7 @@ export function LiveExecutionDetailPage() {
 
   const workflowId = queryWorkflowId ?? (resolved?.id === id ? resolved.workflowId : null);
 
-  if (workflowId) return <ExecutionsTriPane key={workflowId} workflowId={workflowId} selectedExecutionId={id} />;
+  if (workflowId) return <Navigate to={`/workflows/${encodeURIComponent(workflowId)}/executions?run=${encodeURIComponent(id)}`} replace />;
 
   const notFound = failure ?? (resolved?.id === id ? t('runs.not_found') : null);
   return notFound ? (

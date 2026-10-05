@@ -150,9 +150,25 @@ test('execution history loads service data and queues reruns through the real AP
     });
   });
 
-  await page.goto('/executions');
-  await expect(page.getByText('00000000-0000-4000-8000-000000000003', { exact: true })).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'Real API workflow' })).toBeVisible();
+  await page.route(`**/api/v1/workspaces/${workspaceId}/workflows/${workflowId}/executions/00000000-0000-4000-8000-000000000003?logPage=0&logSize=100`, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      executionId: '00000000-0000-4000-8000-000000000003',
+      workflowId,
+      workflowVersionId: '00000000-0000-4000-8000-000000000004',
+      status: 'SUCCESS',
+      triggerType: 'MANUAL',
+      createdAt: '2026-09-24T10:00:00Z',
+      startedAt: '2026-09-24T10:00:01Z',
+      finishedAt: '2026-09-24T10:00:02Z',
+      nodes: [],
+      logs: { items: [], page: 0, size: 100, totalElements: 0, hasNext: false },
+    }),
+  }));
+  await page.goto(`/workflows/${workflowId}/executions`);
+  await expect(page.getByTestId('execution-run-item')).toHaveCount(1);
+  await expect(page.getByRole('heading', { name: 'Real API workflow' })).toBeVisible();
   await expect(page.getByText('Order processing & notification', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Run again' }).click();
   await expect.poll(() => manualRunBody).toEqual({ input: {} });
