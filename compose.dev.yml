@@ -437,6 +437,16 @@ services:
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       AI_SERVICE_JWKS_FILE: /run/weav-keys/workflow-service.jwks.json
       AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-60000}
+      # Assistant spike: off by default. Needs identity on RS256 (JWT_ACCESS_ALG=RS256) so its JWKS can verify user tokens.
+      AI_ASSISTANT_ENABLED: ${AI_ASSISTANT_ENABLED:-false}
+      AI_WORKFLOW_API_URL: ${AI_WORKFLOW_API_URL:-http://workflow-service:8080}
+      AI_ASSISTANT_MAX_TOKENS: ${AI_ASSISTANT_MAX_TOKENS:-1024}
+      AI_ASSISTANT_MAX_CONCURRENT: ${AI_ASSISTANT_MAX_CONCURRENT:-4}
+      AI_ASSISTANT_RATE_LIMIT_PER_MINUTE: ${AI_ASSISTANT_RATE_LIMIT_PER_MINUTE:-20}
+      JWT_JWKS_URI: ${JWT_JWKS_URI:-http://identity-service:8080/.well-known/jwks.json}
+      JWT_ISSUER: ${JWT_ISSUER:-weav-identity}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-weav-api}
+      JWT_CLOCK_SKEW: ${JWT_CLOCK_SKEW:-30s}
     volumes:
       # Only the public JWKS; a missing folder just leaves AI not-ready.
       - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/public:/run/weav-keys:ro
@@ -486,6 +496,7 @@ services:
       OCR_ALLOW_UNAUTHENTICATED_DEV: ${OCR_ALLOW_UNAUTHENTICATED_DEV:-false}
       GATEWAY_TRUST_PROXY_HOPS: ${GATEWAY_TRUST_PROXY_HOPS:-0}
       GATEWAY_WEBHOOK_RATE_LIMIT: ${GATEWAY_WEBHOOK_RATE_LIMIT:-60}
+      GATEWAY_ASSISTANT_RATE_LIMIT: ${GATEWAY_ASSISTANT_RATE_LIMIT:-20}
       GATEWAY_THROTTLER_REDIS_URL: ${GATEWAY_THROTTLER_REDIS_URL:-${VALKEY_URL:-}}
 
     networks:

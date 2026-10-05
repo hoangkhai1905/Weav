@@ -72,6 +72,13 @@ export function isOcrRequest(request: GatewayRateLimitRequest): boolean {
   );
 }
 
+export function isAssistantRequest(request: GatewayRateLimitRequest): boolean {
+  return (
+    request.method?.toUpperCase() === 'POST' &&
+    requestPath(request) === '/api/v1/assistant/chat'
+  );
+}
+
 // Covers /webhooks/<key> and the Telegram variant /webhooks/telegram/<key>; keys are random, so one bucket each.
 const WEBHOOK_PATH_PATTERN = /^\/api\/v1\/webhooks\/(?:telegram\/)?([^/]+)$/;
 
@@ -153,7 +160,10 @@ export class GatewayThrottlerGuard extends ThrottlerGuard {
       return true;
     }
 
-    if (isOcrRequest(request) && !request.principal?.sub) {
+    if (
+      (isOcrRequest(request) || isAssistantRequest(request)) &&
+      !request.principal?.sub
+    ) {
       const token = authorizationToken(request);
       if (token) {
         try {
@@ -174,7 +184,10 @@ export class GatewayThrottlerGuard extends ThrottlerGuard {
   }
 
   protected getTracker(request: GatewayRateLimitRequest): Promise<string> {
-    if (isOcrRequest(request) && request.principal?.sub) {
+    if (
+      (isOcrRequest(request) || isAssistantRequest(request)) &&
+      request.principal?.sub
+    ) {
       return Promise.resolve(`subject:${request.principal.sub}`);
     }
     return Promise.resolve(`ip:${clientAddress(request)}`);

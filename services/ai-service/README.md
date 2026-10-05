@@ -37,6 +37,18 @@ key goes to `tmp/service-keys/private/`). In Compose, ai-service mounts only
 the `public/` folder read-only at `/run/weav-keys`; workflow-service mounts
 only `private/`.
 
+## Assistant chat (spike)
+
+`POST /v1/assistant/chat` streams an assistant turn as SSE (`delta`, `tool_call`,
+`tool_result`, `done`, `error`). It exists only when `AI_ASSISTANT_ENABLED=true`.
+It accepts **user** access tokens (identity RS256, verified against
+`JWT_JWKS_URI` with the gateway's `JWT_ISSUER` / `JWT_AUDIENCE`), never service
+JWTs; the service-JWT routes above never accept user tokens. Its two read-only
+tools (`list_workflows`, `explain_run_failure`) call workflow-service's public
+API (`AI_WORKFLOW_API_URL`) with the caller's own bearer token. Reach it through
+the gateway at `POST /api/v1/assistant/chat`. Live check against DeepSeek:
+`pnpm --dir services/ai-service exec ts-node scripts/assistant-live-check.ts`.
+
 ## Tests
 
 No test calls DeepSeek: unit tests use a fake `LlmProvider` and the

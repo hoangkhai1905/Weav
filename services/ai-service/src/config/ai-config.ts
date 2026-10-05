@@ -21,6 +21,40 @@ const schema = z.object({
     .min(1)
     .max(64)
     .default(2),
+  // Assistant spike (spec 2026-10-04 section 3). Off by default: the route then does not exist.
+  AI_ASSISTANT_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  // Own concurrency pool so chat streams cannot starve the service-JWT routes.
+  AI_ASSISTANT_MAX_CONCURRENT: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(64)
+    .default(4),
+  AI_ASSISTANT_MAX_TOKENS: z.coerce
+    .number()
+    .int()
+    .min(64)
+    .max(4096)
+    .default(1024),
+  AI_ASSISTANT_RATE_LIMIT_PER_MINUTE: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(600)
+    .default(20),
+  // The assistant calls workflow-service's public API with the user's own token.
+  AI_WORKFLOW_API_URL: z.url().default('http://workflow-service:8080'),
+  // User access tokens: same names/defaults as the gateway. No JWKS URI keeps the assistant unauthenticated (401).
+  JWT_JWKS_URI: z.url().optional(),
+  JWT_ISSUER: z.string().min(1).default('weav-identity'),
+  JWT_AUDIENCE: z.string().min(1).default('weav-api'),
+  JWT_CLOCK_SKEW: z
+    .string()
+    .regex(/^\d{1,3}s?$/)
+    .default('30s'),
 });
 
 export type AiConfig = z.infer<typeof schema>;
