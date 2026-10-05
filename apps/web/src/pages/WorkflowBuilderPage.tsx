@@ -61,7 +61,8 @@ import { definitionToCanvas, type GenerationResponse } from '../api/workflow-v1.
 import { workflowToReactFlow, reactFlowToWorkflow } from '../lib/mappers/workflowMapper';
 import type { WorkflowDefinition } from '../types/workflow.types';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
-import { showSuccessToast } from '../lib/feedback/toast';
+import { showErrorToast, showSuccessToast } from '../lib/feedback/toast';
+import { ConfirmModal } from '../components/common/ConfirmModal';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 import { tr } from '../lib/i18n/tr';
 
@@ -457,6 +458,35 @@ export const WorkflowBuilderPage: React.FC = () => {
       }
     } finally {
       setIsSavingWorkflow(false);
+    }
+  };
+
+  const [isTogglingActive, setIsTogglingActive] = useState(false);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+
+  // Optimistic pause/resume of a published workflow; rolls back and toasts on failure.
+  const applyActive = async (next: boolean) => {
+    if (!workflow || isTogglingActive) return;
+    const previous = workflow.status;
+    const mutationSession = captureNotificationSession();
+    setWorkflowError(null);
+    setIsTogglingActive(true);
+    setWorkflow((current) => (current ? { ...current, status: next ? 'PUBLISHED' : 'PAUSED' } : current));
+    try {
+      const updated = next ? await workflowApi.resumeWorkflow(workflow.id) : await workflowApi.pauseWorkflow(workflow.id);
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      setWorkflow((current) => (current ? { ...current, status: updated.status } : current));
+      showSuccessToast(next ? 'toast.workflow.resumed' : 'toast.workflow.paused', mutationSession);
+      refreshNotifications(mutationSession);
+    } catch (error) {
+      setWorkflow((current) => (current ? { ...current, status: previous } : current));
+      if (isCurrentNotificationSession(mutationSession)) {
+        showErrorToast('toast.workflow.status_failed', mutationSession);
+        setWorkflowError(error instanceof Error ? error.message : tr('msg.workflow_status_could_not_be_changed'));
+      }
+    } finally {
+      setIsTogglingActive(false);
+      setConfirmDeactivate(false);
     }
   };
 
@@ -955,6 +985,24 @@ export const WorkflowBuilderPage: React.FC = () => {
           >
             {isPreviewing ? <Loader2 size={15} className="motion-safe:animate-spin" aria-hidden="true" /> : <Play size={15} aria-hidden="true" />}
           </button>
+          {(workflow?.status === 'PUBLISHED' || workflow?.status === 'PAUSED') && (
+            <button
+              type="button"
+              role="switch"
+              data-testid="workflow-active-switch"
+              aria-checked={workflow.status === 'PUBLISHED'}
+              aria-label={t('builder.active.label')}
+              title={workflow.status === 'PUBLISHED' ? t('builder.active.on') : t('builder.active.off')}
+              disabled={isTogglingActive || isLoadingWorkflow}
+              onClick={() => (workflow.status === 'PUBLISHED' ? setConfirmDeactivate(true) : void applyActive(true))}
+              className="inline-flex h-8 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-1.5 text-xs text-text-2 transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+            >
+              <span aria-hidden="true" className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full p-0.5 transition-colors ${workflow.status === 'PUBLISHED' ? 'justify-end bg-ok' : 'justify-start bg-border-strong'}`}>
+                <span className="h-3.5 w-3.5 rounded-full bg-white" />
+              </span>
+              <span className="hidden xl:inline">{workflow.status === 'PUBLISHED' ? t('builder.active.on') : t('builder.active.off')}</span>
+            </button>
+          )}
           {workflow?.status === 'PUBLISHED' && (
             <button
               data-testid="workflow-run"
@@ -1980,6 +2028,17 @@ export const WorkflowBuilderPage: React.FC = () => {
           </div>
         )}
       </div>
+      <ConfirmModal
+        isOpen={confirmDeactivate}
+        onClose={() => setConfirmDeactivate(false)}
+        onConfirm={() => applyActive(false)}
+        title={t('builder.active.confirm_title')}
+        description={t('builder.active.confirm_body')}
+        confirmText={t('builder.active.confirm_ok')}
+        cancelText={t('builder.active.confirm_cancel')}
+        variant="danger"
+        loading={isTogglingActive}
+      />
       <GenerateWorkflowPanel
         open={isGeneratePanelOpen}
         onClose={() => setIsGeneratePanelOpen(false)}
