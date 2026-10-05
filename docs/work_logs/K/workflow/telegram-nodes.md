@@ -148,3 +148,9 @@ Do this by hand; nothing here was run by the agent.
 ## Live test
 
 Run `scripts/live-test-nodes.ps1` (see `scripts/README.md`) for an end-to-end live check through the gateway; it replaces the UI until the web app supports these nodes.
+
+## 11. Live-test finding: numeric chatId (fix/telegram-chat-id-type)
+
+- Finding: the echo workflow (`chatId = {{ trigger.input.message.chat.id }}`) failed every run with CONFIGURATION_ERROR. `ExecutionRunner.resolveConfig` re-validates the resolved config with `validateDraft`; Telegram's `chat.id` is a JSON number but `chatId` was declared `type: string`. Calendar and drive passed the same live test.
+- Fix: `chatId` is now `oneOf [string minLength 1, integer]` (template-capable) in `packages/workflow-schema/nodes/telegram.send_message.json` and the mirrored block in `packages/contracts/http/workflow/definition.schema.json`. A blank string is still REQUIRED_FIELD_MISSING at publish; boolean/decimal is INVALID_FIELD_TYPE. The executor already accepted integral numbers.
+- Tests: DefinitionValidatorTest (integer draft/publish, blank, boolean/decimal), NodeConfigSchemasTest (shape/blank), ExecutionRunnerTest (numeric chat id mapped from trigger input reaches the send node).

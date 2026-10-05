@@ -21,11 +21,18 @@
       }
     },
     "chatId": {
-      "type": "string",
       "title": "Chat ID",
-      "description": "Telegram chat that receives the message.",
+      "description": "Telegram chat that receives the message: a numeric chat id or an @channel username.",
       "x-weav-template": true,
-      "minLength": 1
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "integer"
+        }
+      ]
     },
     "text": {
       "type": "string",
