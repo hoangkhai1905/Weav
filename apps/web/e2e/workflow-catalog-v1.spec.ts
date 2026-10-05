@@ -81,6 +81,7 @@ test('catalog matches exactly the Workflow V1 node set and contract defaults', a
 
 test('builder palette derives from the catalog and offers exactly the V1 node set', async ({ page }) => {
   await loginAndOpenBuilder(page);
+  await page.getByTestId('workflow-add-step').click();
 
   const paletteItems = page.getByTestId('workflow-palette-item');
   await expect(paletteItems).toHaveCount(13);

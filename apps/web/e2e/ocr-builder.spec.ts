@@ -157,6 +157,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
 
     // Add / open OCR node
+    await page.getByTestId('workflow-add-step').click();
     const ocrBtn = page.getByRole('button', { name: 'OCR Text Extract' });
     await expect(ocrBtn).toBeVisible();
     await ocrBtn.click();
@@ -228,6 +229,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     });
 
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('workflow-add-step').click();
     const ocrBtn = page.getByRole('button', { name: 'OCR Text Extract' });
     await expect(ocrBtn).toBeVisible();
     await ocrBtn.click();
@@ -258,6 +260,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     });
 
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('workflow-add-step').click();
     const ocrBtn = page.getByRole('button', { name: 'OCR Text Extract' });
     await expect(ocrBtn).toBeVisible();
     await ocrBtn.click();
@@ -325,6 +328,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     });
 
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('workflow-add-step').click();
     const ocrBtn = page.getByRole('button', { name: 'OCR Text Extract' });
     await expect(ocrBtn).toBeVisible();
     await ocrBtn.click();
@@ -394,6 +398,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     });
 
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('workflow-add-step').click();
     const ocrBtn = page.getByRole('button', { name: 'OCR Text Extract' });
     await expect(ocrBtn).toBeVisible();
     await ocrBtn.click();
@@ -444,6 +449,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     });
 
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('workflow-add-step').click();
     const ocrBtn = page.getByRole('button', { name: 'OCR Text Extract' });
     await expect(ocrBtn).toBeVisible();
     await ocrBtn.click();
@@ -486,6 +492,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     });
 
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('workflow-add-step').click();
     const ocrBtn = page.getByRole('button', { name: 'OCR Text Extract' });
     await expect(ocrBtn).toBeVisible();
     await ocrBtn.click();
@@ -528,6 +535,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
 
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
     const inspector = page.getByTestId('workflow-inspector');
+    await page.getByTestId('workflow-add-step').click();
     await page.getByRole('button', { name: 'OCR Text Extract' }).click();
     await inspector.getByTestId('ocr-file-input').setInputFiles({
       name: 'retry.png',
@@ -555,6 +563,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
 
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
     const inspector = page.getByTestId('workflow-inspector');
+    await page.getByTestId('workflow-add-step').click();
     await page.getByRole('button', { name: 'OCR Text Extract' }).click();
     await inspector.getByTestId('ocr-file-input').setInputFiles({
       name: 'duplicate.png',
@@ -586,6 +595,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
 
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
     const inspector = page.getByTestId('workflow-inspector');
+    await page.getByTestId('workflow-add-step').click();
     await page.getByRole('button', { name: 'OCR Text Extract' }).click();
     await inspector.getByTestId('ocr-file-input').setInputFiles({
       name: 'status.png',
@@ -621,6 +631,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
 
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
     const inspector = page.getByTestId('workflow-inspector');
+    await page.getByTestId('workflow-add-step').click();
     await page.getByRole('button', { name: 'OCR Text Extract' }).click();
     await inspector.getByTestId('ocr-file-input').setInputFiles({
       name: 'auth.png',
@@ -648,6 +659,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
 
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
     const inspector = page.getByTestId('workflow-inspector');
+    await page.getByTestId('workflow-add-step').click();
     await page.getByRole('button', { name: 'OCR Text Extract' }).click();
     await inspector.getByTestId('ocr-file-input').setInputFiles({
       name: 'late.png',
@@ -684,6 +696,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
 
     await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
     const inspector = page.getByTestId('workflow-inspector');
+    await page.getByTestId('workflow-add-step').click();
     await page.getByRole('button', { name: 'OCR Text Extract' }).click();
     await inspector.getByTestId('ocr-file-input').setInputFiles({
       name: 'no-workspace.png',

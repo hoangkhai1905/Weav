@@ -132,7 +132,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
         data-readiness={readiness.state}
         className={`inline-flex h-[18px] max-w-[110px] shrink-0 items-center truncate rounded px-1.5 text-[11px] font-medium ${readinessClass}`}
       >
-        {readiness.label}
+        {t(readiness.labelKey)}
       </span>
     );
   };
