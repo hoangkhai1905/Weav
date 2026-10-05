@@ -49,6 +49,11 @@ const pageResult = <T>(items: T[]) => ({
   totalPages: items.length ? 1 : 0,
 });
 
+/** Row actions other than the primary one live in the "..." menu. */
+async function openRowMenu(page: Page, id: string) {
+  await page.getByTestId(`connection-row-${id}`).getByTestId("connection-row-menu").click();
+}
+
 function connection(
   id: string,
   provider: "TELEGRAM" | "HTTP" | "GMAIL" | "GOOGLE_SHEETS",
@@ -982,6 +987,7 @@ test.describe("workspace connection API adapter", () => {
       },
     );
     await gotoAuthenticatedConnections(page);
+    await openRowMenu(page, CONNECTION_GMAIL_ID);
     await page.getByTestId(`connection-rename-${CONNECTION_GMAIL_ID}`).click();
     await page
       .getByTestId(`connection-rename-input-${CONNECTION_GMAIL_ID}`)
@@ -995,6 +1001,7 @@ test.describe("workspace connection API adapter", () => {
     await expect(page.getByText("Connection updated.", { exact: true })).toHaveCount(1);
     expect(renameBody).toEqual({ name: "Renamed Gmail" });
 
+    await openRowMenu(page, CONNECTION_GMAIL_ID);
     await page.getByTestId(`connection-test-${CONNECTION_GMAIL_ID}`).click();
     await expect(
       page.getByTestId(`connection-action-message-${CONNECTION_GMAIL_ID}`),
@@ -1003,6 +1010,7 @@ test.describe("workspace connection API adapter", () => {
       page.getByTestId(`connection-status-${CONNECTION_GMAIL_ID}`),
     ).toHaveAttribute("data-status", "INVALID");
 
+    await openRowMenu(page, CONNECTION_GMAIL_ID);
     await page.getByTestId(`connection-disable-${CONNECTION_GMAIL_ID}`).click();
     await expect(
       page.getByTestId(`connection-status-${CONNECTION_GMAIL_ID}`),
@@ -1010,6 +1018,7 @@ test.describe("workspace connection API adapter", () => {
     await expect(page.getByText("Connection disabled.", { exact: true })).toHaveCount(1);
 
     page.on("dialog", (dialog) => dialog.accept());
+    await openRowMenu(page, CONNECTION_GMAIL_ID);
     await page.getByTestId(`connection-delete-${CONNECTION_GMAIL_ID}`).click();
     await expect(page.getByTestId("connections-empty-state")).toBeVisible();
     expect(deleteCalls).toBe(1);
@@ -1040,6 +1049,7 @@ test.describe("workspace connection API adapter", () => {
       );
       await gotoAuthenticatedConnections(page);
       page.on("dialog", (dialog) => dialog.accept());
+      await openRowMenu(page, CONNECTION_GMAIL_ID);
       await page
         .getByTestId(`connection-delete-${CONNECTION_GMAIL_ID}`)
         .click();
@@ -1084,7 +1094,8 @@ test.describe("workspace connection API adapter", () => {
           ),
       );
       await gotoAuthenticatedConnections(page);
-      await page.getByTestId(`connection-test-${CONNECTION_GMAIL_ID}`).click();
+      await openRowMenu(page, CONNECTION_GMAIL_ID);
+    await page.getByTestId(`connection-test-${CONNECTION_GMAIL_ID}`).click();
 
       const actionMessage = page.getByTestId(
         `connection-action-message-${CONNECTION_GMAIL_ID}`,
@@ -1299,5 +1310,28 @@ test.describe("workflow builder Gmail connection picker", () => {
     const hint = page.getByTestId("google-connection-empty");
     await expect(hint).toBeVisible();
     await expect(hint.getByRole("link")).toHaveAttribute("href", "/workspace/connections");
+  });
+
+  test("row menu is keyboard accessible, shows one primary action and returns focus on Escape", async ({ page }) => {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, [{ ...connection(CONNECTION_GMAIL_ID, "GMAIL", WORKSPACE_ID, "ACTIVE"), hasCredential: true }]),
+    );
+    await gotoAuthenticatedConnections(page);
+    const row = page.getByTestId(`connection-row-${CONNECTION_GMAIL_ID}`);
+    // A healthy Google connection shows "test" as the primary action; authorization moves into the menu.
+    await expect(row.getByTestId(`connection-test-${CONNECTION_GMAIL_ID}`)).toBeVisible();
+    await expect(row.getByTestId(`connection-oauth-${CONNECTION_GMAIL_ID}`)).toHaveCount(0);
+    const trigger = row.getByTestId("connection-row-menu");
+    await expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    await trigger.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(row.getByRole("menu")).toBeVisible();
+    await expect(row.getByTestId(`connection-rename-${CONNECTION_GMAIL_ID}`)).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(row.getByTestId(`connection-delete-${CONNECTION_GMAIL_ID}`)).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(row.getByRole("menu")).toHaveCount(0);
+    await expect(trigger).toBeFocused();
   });
 });

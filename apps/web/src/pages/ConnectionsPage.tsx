@@ -2,7 +2,7 @@ import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Plus, RefreshCw, X } from "lucide-react";
+import { LoaderCircle, MoreHorizontal, Plus, RefreshCw, X } from "lucide-react";
 import {
   ConnectionApiError,
   connectionApi,
@@ -101,8 +101,6 @@ const ctl =
   "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 const ctlPrimary =
   "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:border-primary-hover hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-wait disabled:opacity-60";
-const ctlDanger =
-  "inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border border-err-border bg-card px-3 text-[13px] font-medium text-err transition-colors hover:bg-err-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 const fieldCls =
   "h-8 w-full rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary";
 
@@ -133,6 +131,105 @@ function getErrorMessage(error: unknown, t: (key: string) => string): string {
     return errorKey ? t(errorKey) : error.message;
   }
   return t("connections.error.generic");
+}
+
+interface RowMenuItem {
+  key: string;
+  testId: string;
+  label: string;
+  onSelect: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}
+
+/** "…" overflow menu: aria-haspopup button, arrow-key navigation, Esc closes and returns focus. */
+function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const close = (returnFocus: boolean) => {
+    setOpen(false);
+    if (returnFocus) requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+  const focusItem = (index: number) => {
+    const nodes = menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+    if (!nodes || nodes.length === 0) return;
+    nodes[(index + nodes.length) % nodes.length].focus();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    focusItem(0);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!menuRef.current?.contains(target) && !triggerRef.current?.contains(target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  const onMenuKeyDown = (event: React.KeyboardEvent) => {
+    const nodes = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []);
+    const current = nodes.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === "ArrowDown") { event.preventDefault(); focusItem(current + 1); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); focusItem(current - 1); }
+    else if (event.key === "Home") { event.preventDefault(); focusItem(0); }
+    else if (event.key === "End") { event.preventDefault(); focusItem(nodes.length - 1); }
+    else if (event.key === "Escape") { event.preventDefault(); close(true); }
+    else if (event.key === "Tab") setOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        data-testid="connection-row-menu"
+        onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && !open) { event.preventDefault(); setOpen(true); }
+        }}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-strong bg-card text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <MoreHorizontal size={16} aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={label}
+          onKeyDown={onMenuKeyDown}
+          className="absolute right-0 top-9 z-30 flex w-48 flex-col rounded-lg border border-border bg-popover p-1 text-[13px] shadow-pop"
+        >
+          {items.map((item, index) => (
+            <div key={item.key} className="contents">
+              {item.danger && index > 0 && <div role="separator" className="my-1 h-px bg-border" />}
+              <button
+                type="button"
+                role="menuitem"
+                data-testid={item.testId}
+                disabled={item.disabled}
+                onClick={() => {
+                  close(false);
+                  item.onSelect();
+                }}
+                className={`flex h-8 items-center rounded-md px-2 text-left font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${
+                  item.danger ? "text-err hover:bg-err-bg" : "text-popover-foreground hover:bg-subtle"
+                }`}
+              >
+                {item.label}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ConnectionRow({
@@ -166,6 +263,10 @@ function ConnectionRow({
   actionMessage: string;
   isWorking: boolean;
 }) {
+  const isGoogleOAuth =
+    (connection.provider === "GMAIL" || connection.provider === "GOOGLE_SHEETS") && connection.authType === "OAUTH2";
+  // Primary contextual action: (re)authorize a Google connection that needs it, otherwise verify it.
+  const primaryIsOAuth = isGoogleOAuth && (connection.status !== "ACTIVE" || !connection.hasCredential);
   return (
     <li
       data-testid={`connection-row-${connection.id}`}
@@ -245,61 +346,46 @@ function ConnectionRow({
               </button>
             </form>
           ) : (
-            <button
-              type="button"
-              data-testid={`connection-rename-${connection.id}`}
-              onClick={onStartRename}
-              className={ctl}
-            >
-              {t("connections.rename.action")}
-            </button>
+            <>
+              {primaryIsOAuth ? (
+                <button
+                  type="button"
+                  data-testid={`connection-oauth-${connection.id}`}
+                  onClick={onStartOAuth}
+                  disabled={isWorking}
+                  className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border border-primary px-3 text-[13px] font-medium text-accent-ink transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isWorking ? t("connections.oauth.starting") : t("connections.oauth.start")}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  data-testid={`connection-test-${connection.id}`}
+                  onClick={onTest}
+                  disabled={isWorking}
+                  className={ctl}
+                >
+                  {isWorking ? t("connections.test.pending") : t("connections.test.action")}
+                </button>
+              )}
+              <RowMenu
+                label={t("connections.more_actions")}
+                items={[
+                  { key: "rename", testId: `connection-rename-${connection.id}`, label: t("connections.rename.action"), onSelect: onStartRename },
+                  ...(primaryIsOAuth
+                    ? [{ key: "test", testId: `connection-test-${connection.id}`, label: isWorking ? t("connections.test.pending") : t("connections.test.action"), onSelect: onTest, disabled: isWorking }]
+                    : []),
+                  ...(connection.status !== "DISABLED"
+                    ? [{ key: "disable", testId: `connection-disable-${connection.id}`, label: t("connections.disable.action"), onSelect: onDisable, disabled: isWorking }]
+                    : []),
+                  ...(isGoogleOAuth && !primaryIsOAuth
+                    ? [{ key: "oauth", testId: `connection-oauth-${connection.id}`, label: isWorking ? t("connections.oauth.starting") : t("connections.oauth.start"), onSelect: onStartOAuth, disabled: isWorking }]
+                    : []),
+                  { key: "delete", testId: `connection-delete-${connection.id}`, label: t("connections.delete"), onSelect: onRemove, disabled: isWorking, danger: true },
+                ]}
+              />
+            </>
           )}
-          <button
-            type="button"
-            data-testid={`connection-test-${connection.id}`}
-            onClick={onTest}
-            disabled={isWorking}
-            className={ctl}
-          >
-            {isWorking
-              ? t("connections.test.pending")
-              : t("connections.test.action")}
-          </button>
-          {connection.status !== "DISABLED" && (
-            <button
-              type="button"
-              data-testid={`connection-disable-${connection.id}`}
-              onClick={onDisable}
-              disabled={isWorking}
-              className={ctl}
-            >
-              {t("connections.disable.action")}
-            </button>
-          )}
-          {(connection.provider === "GMAIL" ||
-            connection.provider === "GOOGLE_SHEETS") &&
-            connection.authType === "OAUTH2" && (
-              <button
-                type="button"
-                data-testid={`connection-oauth-${connection.id}`}
-                onClick={onStartOAuth}
-                disabled={isWorking}
-                className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border border-primary px-3 text-[13px] font-medium text-accent-ink transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isWorking
-                  ? t("connections.oauth.starting")
-                  : t("connections.oauth.start")}
-              </button>
-            )}
-          <button
-            type="button"
-            data-testid={`connection-delete-${connection.id}`}
-            onClick={onRemove}
-            disabled={isWorking}
-            className={ctlDanger}
-          >
-            {t("connections.delete")}
-          </button>
         </div>
       )}
       {actionMessage && (
