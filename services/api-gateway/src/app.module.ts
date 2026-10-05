@@ -11,6 +11,7 @@ import { WorkspaceModule } from './workspace/workspace.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { HealthModule } from './health/health.module';
 import { WorkflowModule } from './workflow/workflow.module';
+import { AssistantModule } from './assistant/assistant.module';
 
 function loadGatewayConfiguration(): Record<string, unknown> {
   const gateway = validateGatewayEnvironment(process.env);
@@ -48,6 +49,7 @@ function loadGatewayConfiguration(): Record<string, unknown> {
     IdentityModule,
     WorkspaceModule,
     WorkflowModule,
+    AssistantModule,
   ],
   controllers: [AppController],
   providers: [AppService],
