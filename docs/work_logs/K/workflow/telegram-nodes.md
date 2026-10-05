@@ -144,3 +144,7 @@ Do this by hand; nothing here was run by the agent.
 
 - `docs/superpowers/specs/2026-10-04-messaging-nodes-and-ai-assistant-design.md` (section 1)
 - `packages/workflow-schema/README.md`, `docs/work_logs/K/workflow/node-config-schema.md`
+
+## Live test
+
+Run `scripts/live-test-nodes.ps1` (see `scripts/README.md`) for an end-to-end live check through the gateway; it replaces the UI until the web app supports these nodes.
