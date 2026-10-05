@@ -72,16 +72,22 @@
 - Cố ý giữ tiếng Anh: dữ liệu mock/demo (tên quy trình, log, bước của mock ExecutionsPage/ExecutionDetailPage/AiGenerator), id kỹ thuật (`trigger.schedule`, phương thức HTTP), tên thương hiệu (Gmail, Google Sheets, Telegram, Slack, OCR), mức log (`[ERROR]`), ví dụ placeholder, attribution "React Flow", alt logo "WEAV app logo", thông điệp lỗi backend hiển thị nguyên văn.
 - Kiểm tra: quét DOM tiếng Việt qua mock mode cho 24 route/trạng thái và chụp ảnh `vi-*.png`.
 
-## 6. Rủi ro và chưa làm
+## 6. Khôi phục sau merge và đổi chữ "workflow" (aa8e7b9)
 
-- Trang chi tiết lượt chạy 3 cột (Executions.dc.html: waterfall, "Cách sửa") chưa dựng lại; mới đổi màu theo token.
-- `ExecutionsPage` (mock) vẫn là bố cục dashboard cũ, chỉ đổi token.
-- Editor: chưa có palette ⌘K, công tắc bật/tắt, tab Cài đặt, canvas dọc; giữ bố cục ngang và palette bên trái.
-- Dashboard, Workspace, Settings, AI, Telegram, Notifications, Help chưa codemod màu cứng.
-- `LiveWorkflowExecutionsPage` và danh sách quy trình ở chế độ http chưa chụp ảnh với dữ liệu thật (chỉ kiểm tra bằng type/build/e2e).
+- Merge `d4fa9f4` (sau khi viết lại tên tác giả) giữ phía chưa dịch khi gặp xung đột, làm mất key i18n trong `translations.ts`, chuỗi đã dịch trong `WorkflowBuilderPage.tsx` và mục work log của `7d79d27`. Đã khôi phục 3 file này từ `7d79d27`.
+- Đổi "Tất cả workflow" → "Tất cả quy trình", thông báo chạy lại và `dashboard.ai_unavailable` sang "quy trình".
+- Kiểm tra: tsc, build, `git diff --check` qua; Playwright http (5 spec chính + workflow-api-v1) 35 failed / 49 passed, đúng tập lỗi baseline; GitNexus detect-changes: critical vì đổi module dịch dùng chung.
 
-## 7. Việc tiếp theo
+## 7. Rủi ro và chưa làm
 
-1. Dựng chi tiết lượt chạy theo Executions.dc.html (danh sách lượt, bảng bước có waterfall, panel Input/Output/Lỗi).
-2. Codemod màu cứng cho các trang còn lại và rà soát dark mode.
-3. Thêm palette ⌘K và công tắc kích hoạt cho editor khi API hỗ trợ.
+- Tab Cài đặt, công tắc bật/tắt quy trình, undo/redo, "chạy lại từ bước" và gợi ý cách sửa: chưa có API backend.
+- Chưa kiểm tra với backend thật đang chạy; ảnh chụp dùng response giả lập theo kiểu API thật.
+- `ExecutionsPage`/`ExecutionDetailPage` ở mock mode vẫn bố cục cũ, chỉ đổi token.
+- Dashboard, Workspace, Settings, AI, Telegram, Notifications, Help chưa được rà soát giao diện bằng mắt.
+- Còn tiếng Anh có chủ đích: dữ liệu mẫu, mã kỹ thuật, tên thương hiệu, ví dụ placeholder, lỗi gốc từ backend.
+
+## 8. Việc tiếp theo
+
+1. Chạy thử với stack thật (Compose dev) và kiểm tra editor, lịch sử chạy, kết nối.
+2. Rà soát giao diện các trang còn lại ở light/dark.
+3. Thêm công tắc kích hoạt và tab Cài đặt khi backend có API.
