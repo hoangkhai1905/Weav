@@ -141,15 +141,15 @@ function WorkspaceRenameForm({ workspace, isPending, error, onSubmit }: Workspac
           value={name}
           onChange={(event) => setName(event.target.value)}
           disabled={isPending}
-          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+          className="w-full rounded-xl border border-border bg-subtle px-3 py-2 text-xs text-foreground outline-none transition-colors focus:border-run/30 focus:ring-2 focus:ring-run/30 disabled:cursor-wait disabled:opacity-60"
         />
-        {error && <p data-testid="workspace-rename-error" className="mt-1 text-xs text-rose-700 dark:text-rose-300" role="alert">{error}</p>}
+        {error && <p data-testid="workspace-rename-error" className="mt-1 text-xs text-err" role="alert">{error}</p>}
       </div>
       <button
         type="submit"
         data-testid="workspace-rename-submit"
         disabled={isPending}
-        className="inline-flex items-center justify-center rounded-xl border border-slate-300 px-3.5 py-2 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+        className="inline-flex items-center justify-center rounded-xl border border-border-strong px-3.5 py-2 text-xs font-bold text-text-2 transition-colors hover:bg-subtle disabled:cursor-wait disabled:opacity-60"
       >
         {isPending ? t('workspace.saving') : t('workspace.rename')}
       </button>
@@ -439,24 +439,24 @@ export function WorkspacePage() {
     >
       <motion.div variants={itemMotion} className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-300">
+          <span className="flex size-8 items-center justify-center rounded-lg border border-run/30 bg-run-bg text-run">
             <Building2 size={17} aria-hidden="true" />
           </span>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">{t('workspace.title')}</h1>
+          <h1 className="text-xl font-bold text-foreground">{t('workspace.title')}</h1>
         </div>
-        <p className="max-w-2xl text-xs text-slate-600 dark:text-slate-400">{t('workspace.subtitle')}</p>
+        <p className="max-w-2xl text-xs text-text-2">{t('workspace.subtitle')}</p>
       </motion.div>
 
-      <motion.section variants={itemMotion} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:shadow-xl" aria-label={t('workspace.title')}>
+      <motion.section variants={itemMotion} className="rounded-2xl border border-border bg-card p-5" aria-label={t('workspace.title')}>
         {workspacesQuery.isPending && (
-          <div data-testid="workspace-loading" className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <div data-testid="workspace-loading" className="flex items-center gap-2 text-sm text-text-2">
             <Loader2 size={16} className="animate-spin" aria-hidden="true" />
             <span>{t('workspace.loading')}</span>
           </div>
         )}
 
         {workspacesQuery.isError && (
-          <div data-testid="workspace-error" className="flex flex-col gap-3 text-sm text-rose-700 dark:text-rose-300" role="alert">
+          <div data-testid="workspace-error" className="flex flex-col gap-3 text-sm text-err" role="alert">
             <div className="flex items-start gap-2">
               <AlertCircle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
               <span>{getWorkspaceErrorMessage(workspacesQuery.error, t)}</span>
@@ -464,7 +464,7 @@ export function WorkspacePage() {
             <button
               type="button"
               onClick={() => void workspacesQuery.refetch()}
-              className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold hover:bg-rose-50 dark:border-rose-900/70 dark:hover:bg-rose-950/30"
+              className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-err-border px-3 py-1.5 text-xs font-semibold hover:bg-err-bg"
             >
               <RefreshCw size={13} aria-hidden="true" />
               {t('workspace.retry')}
@@ -473,8 +473,8 @@ export function WorkspacePage() {
         )}
 
         {workspacesQuery.isSuccess && workspaces.length === 0 && (
-          <div data-testid="workspace-empty" className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300">
-            <AlertCircle size={16} className="mt-0.5 shrink-0 text-amber-500" aria-hidden="true" />
+          <div data-testid="workspace-empty" className="flex items-start gap-2 text-sm text-text-2">
+            <AlertCircle size={16} className="mt-0.5 shrink-0 text-warn" aria-hidden="true" />
             <span>{t('workspace.none_accessible')}</span>
           </div>
         )}
@@ -482,7 +482,7 @@ export function WorkspacePage() {
         {workspaces.length > 0 && (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
-              <label htmlFor="workspace-selector" className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+              <label htmlFor="workspace-selector" className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                 {t('nav.workspace')}
               </label>
               <select
@@ -492,7 +492,7 @@ export function WorkspacePage() {
                 onChange={(event) => {
                   selectWorkspace(event.target.value || null);
                 }}
-                className="min-w-64 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                className="min-w-64 rounded-xl border border-border bg-subtle px-3 py-2 text-sm font-semibold text-foreground outline-none focus:border-run/30 focus:ring-2 focus:ring-run/30"
               >
                 {workspaces.map((workspace) => (
                   <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
@@ -500,8 +500,8 @@ export function WorkspacePage() {
               </select>
             </div>
             {activeWorkspace && (
-              <p data-testid="workspace-selected-name" className="text-xs text-slate-500 dark:text-slate-400">
-                {t('workspace.selected')} <span className="font-semibold text-slate-800 dark:text-slate-200">{activeWorkspace.name}</span>
+              <p data-testid="workspace-selected-name" className="text-xs text-muted-foreground">
+                {t('workspace.selected')} <span className="font-semibold text-foreground">{activeWorkspace.name}</span>
               </p>
             )}
           </div>
@@ -510,11 +510,11 @@ export function WorkspacePage() {
         <form
           data-testid="workspace-create-form"
           onSubmit={handleCreate}
-          className="mt-5 flex flex-col gap-2 border-t border-slate-200 pt-4 dark:border-slate-800 sm:flex-row sm:items-start"
+          className="mt-5 flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-start"
           aria-label={t('workspace.create')}
         >
           <div className="min-w-0 flex-1">
-            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400" htmlFor="workspace-create-name">
+            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground" htmlFor="workspace-create-name">
               {t('workspace.new_name')} <span className="font-normal normal-case tracking-normal">{t('workspace.optional')}</span>
             </label>
             <input
@@ -527,22 +527,22 @@ export function WorkspacePage() {
               }}
               placeholder={t('workspace.name_placeholder')}
               disabled={isCreating}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
+              className="w-full rounded-xl border border-border bg-subtle px-3 py-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-run/30 focus:ring-2 focus:ring-run/30 disabled:cursor-wait disabled:opacity-60"
             />
-            {createError && <p data-testid="workspace-create-error" className="mt-1 text-xs text-rose-700 dark:text-rose-300" role="alert">{createError}</p>}
+            {createError && <p data-testid="workspace-create-error" className="mt-1 text-xs text-err" role="alert">{createError}</p>}
           </div>
           <button
             type="submit"
             data-testid="workspace-create-submit"
             disabled={isCreating || !userId}
-            className="mt-6 inline-flex items-center justify-center rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm shadow-blue-600/20 transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:mt-6"
+            className="mt-6 inline-flex items-center justify-center rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60 sm:mt-6"
           >
             {isCreating ? t('workspace.creating') : t('workspace.create')}
           </button>
         </form>
 
         {workspaceAccessError && (
-          <div data-testid="workspace-members-error" className="mt-3 flex items-start gap-2 text-xs text-rose-700 dark:text-rose-300" role="alert">
+          <div data-testid="workspace-members-error" className="mt-3 flex items-start gap-2 text-xs text-err" role="alert">
             <AlertCircle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
             <span>{workspaceAccessError} {t('workspace.select_another')}</span>
           </div>
@@ -553,31 +553,31 @@ export function WorkspacePage() {
         <>
           <motion.section variants={itemMotion} className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label={t('workspace.summary')}>
             {[
-              { label: t('workspace.members'), value: members.length, icon: Users, tone: 'text-blue-600 dark:text-blue-300 bg-blue-50 dark:bg-blue-400/10' },
-              { label: t('workspace.publishing_access'), value: members.filter((member) => member.canPublishWorkflow).length, icon: ShieldCheck, tone: 'text-emerald-600 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-400/10' },
-              { label: t('workspace.environment'), value: t('workspace.environment.production'), icon: Zap, tone: 'text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-400/10' },
+              { label: t('workspace.members'), value: members.length, icon: Users, tone: 'text-run bg-run-bg' },
+              { label: t('workspace.publishing_access'), value: members.filter((member) => member.canPublishWorkflow).length, icon: ShieldCheck, tone: 'text-ok bg-ok-bg' },
+              { label: t('workspace.environment'), value: t('workspace.environment.production'), icon: Zap, tone: 'text-warn bg-warn-bg' },
             ].map(({ label, value, icon: Icon, tone }) => (
-              <motion.div key={label} variants={itemMotion} whileHover={prefersReducedMotion ? undefined : { y: -2, transition: { duration: 0.15 } }} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:shadow-lg">
+              <motion.div key={label} variants={itemMotion} whileHover={prefersReducedMotion ? undefined : { y: -2, transition: { duration: 0.15 } }} className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
                 <span className={`flex size-9 items-center justify-center rounded-lg ${tone}`}><Icon size={17} aria-hidden="true" /></span>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">{label}</p>
-                  <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">{value}</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+                  <p className="mt-0.5 text-lg font-bold tabular-nums text-foreground">{value}</p>
                 </div>
               </motion.div>
             ))}
           </motion.section>
 
-          <motion.section variants={itemMotion} className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:shadow-xl md:flex-row md:items-center md:justify-between">
+          <motion.section variants={itemMotion} className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <h2 data-testid="workspace-selected-heading" className="text-base font-bold text-slate-900 dark:text-slate-100">{activeWorkspace.name}</h2>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-400/10 dark:text-emerald-300"><span className="size-1.5 rounded-full bg-emerald-500" />{t('workspace.active')}</span>
+                <h2 data-testid="workspace-selected-heading" className="text-base font-bold text-foreground">{activeWorkspace.name}</h2>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-ok/30 bg-ok-bg px-2 py-1 text-[10px] font-bold text-ok"><span className="size-1.5 rounded-full bg-ok" />{t('workspace.active')}</span>
               </div>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('workspace.workspace_id')} {activeWorkspace.id}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t('workspace.workspace_id')} {activeWorkspace.id}</p>
               <Link
                 data-testid="workspace-connections-link"
                 to="/connections"
-                className="mt-2 inline-flex min-h-9 items-center rounded-lg border border-blue-200 px-3 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-blue-400/30 dark:text-blue-300 dark:hover:bg-blue-400/10"
+                className="mt-2 inline-flex min-h-9 items-center rounded-lg border border-run/30 px-3 text-xs font-semibold text-run transition-colors hover:bg-run-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-run/30"
               >
                 {t('workspace.connections_link')}
               </Link>
@@ -605,7 +605,7 @@ export function WorkspacePage() {
                 }}
                 disabled={memberActionsDisabled}
                 title={memberActionsDisabled ? t('workspace.owner_manage_locked') : undefined}
-                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
+                className="min-w-0 flex-1 rounded-xl border border-border bg-subtle px-3 py-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-run/30 focus:ring-2 focus:ring-run/30 disabled:cursor-not-allowed disabled:opacity-60"
               />
               <motion.button
                 type="submit"
@@ -614,7 +614,7 @@ export function WorkspacePage() {
                 variants={buttonPress}
                 whileHover="hover"
                 whileTap="tap"
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm shadow-blue-600/20 transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <UserPlus size={14} aria-hidden="true" />
                 <span>{memberMutationKey?.startsWith('add:') ? t('workspace.adding') : t('workspace.add_member')}</span>
@@ -623,25 +623,25 @@ export function WorkspacePage() {
           </motion.section>
 
           {!membersLoading && !canManageMembers && (
-            <p data-testid="workspace-unsupported-members" className="text-xs text-amber-700 dark:text-amber-300" role="status">
+            <p data-testid="workspace-unsupported-members" className="text-xs text-warn" role="status">
               {currentMember?.role === 'MEMBER'
                 ? t('workspace.owner_manage_notice')
                 : t('workspace.members_loading_notice')}
             </p>
           )}
-          {memberActionError && <p data-testid="workspace-member-error" className="text-xs text-rose-700 dark:text-rose-300" role="alert">{memberActionError}</p>}
+          {memberActionError && <p data-testid="workspace-member-error" className="text-xs text-err" role="alert">{memberActionError}</p>}
 
-          <motion.section variants={itemMotion} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-              <div><h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t('workspace.members')}</h2><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t('workspace.member_help')}</p></div>
-              <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{members.length} {t('workspace.total')}</span>
+          <motion.section variants={itemMotion} className="overflow-hidden rounded-2xl border border-border bg-card">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div><h2 className="text-sm font-bold text-foreground">{t('workspace.members')}</h2><p className="mt-0.5 text-xs text-muted-foreground">{t('workspace.member_help')}</p></div>
+              <span className="rounded-full bg-subtle px-2 py-1 text-[10px] font-bold text-text-2">{members.length} {t('workspace.total')}</span>
             </div>
 
             {currentMember?.role === 'MEMBER' && (
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+              <div className="flex items-center justify-between border-b border-border px-5 py-4">
                 <div>
-                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">{t('workspace.leave')}</p>
-                  <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">{t('workspace.leave_warning')}</p>
+                  <p className="text-xs font-semibold text-foreground">{t('workspace.leave')}</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">{t('workspace.leave_warning')}</p>
                 </div>
                 <ConfirmButton
                   onConfirm={handleLeave}
@@ -651,40 +651,40 @@ export function WorkspacePage() {
                   cancelText={t('workspace.cancel')}
                   variant="danger"
                   disabled={Boolean(memberMutationKey)}
-                  className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-600 transition-colors hover:bg-rose-500/20 dark:text-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-lg border border-err-border bg-err-bg px-2.5 py-1 text-[11px] font-semibold text-err transition-colors hover:bg-err-bg disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span data-testid="workspace-leave">{t('workspace.leave')}</span>
                 </ConfirmButton>
               </div>
             )}
             {currentMember?.role === 'OWNER' && (
-              <p data-testid="workspace-owner-leave-restriction" className="border-b border-slate-200 px-5 py-4 text-[11px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              <p data-testid="workspace-owner-leave-restriction" className="border-b border-border px-5 py-4 text-[11px] text-muted-foreground">
                 {t('workspace.owner_cannot_leave')}
               </p>
             )}
 
             {membersLoading && (
-              <div data-testid="workspace-members-loading" className="flex items-center gap-2 p-5 text-xs text-slate-600 dark:text-slate-300">
+              <div data-testid="workspace-members-loading" className="flex items-center gap-2 p-5 text-xs text-text-2">
                 <Loader2 size={15} className="animate-spin" aria-hidden="true" />
                 {t('workspace.loading')}
               </div>
             )}
 
             {membersQuery.isError && !membersLoading && (
-              <div data-testid="workspace-members-error" className="flex items-start gap-2 p-5 text-xs text-rose-700 dark:text-rose-300" role="alert">
+              <div data-testid="workspace-members-error" className="flex items-start gap-2 p-5 text-xs text-err" role="alert">
                 <AlertCircle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
                 <span>{getWorkspaceErrorMessage(membersQuery.error, t)}</span>
               </div>
             )}
 
             {!membersLoading && !membersQuery.isError && members.length === 0 && (
-              <div className="p-5 text-xs text-slate-600 dark:text-slate-300">{t('workspace.no_members')}</div>
+              <div className="p-5 text-xs text-text-2">{t('workspace.no_members')}</div>
             )}
 
             {!membersLoading && !membersQuery.isError && members.length > 0 && (
               <div className="overflow-x-auto">
-                <motion.table variants={listMotion} initial="initial" animate="animate" className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
-                  <thead className="bg-slate-50 text-slate-500 dark:bg-slate-800/60 dark:text-slate-400 uppercase font-semibold text-[10px] tracking-wider">
+                <motion.table variants={listMotion} initial="initial" animate="animate" className="w-full text-left text-xs text-text-2">
+                  <thead className="bg-subtle text-muted-foreground uppercase font-semibold text-[10px] tracking-wider">
                     <tr>
                       <th className="px-5 py-3.5">{t('workspace.member')}</th>
                       <th className="px-5 py-3.5">{t('workspace.email')}</th>
@@ -695,15 +695,15 @@ export function WorkspacePage() {
                     </tr>
                   </thead>
                   <AnimatePresence initial={false}>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60">
+                    <tbody className="divide-y divide-border">
                       {members.map((member) => (
-                        <motion.tr key={member.id} data-testid="workspace-member-row" layout variants={itemMotion} initial="initial" animate="animate" exit="exit" className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                          <td className="flex items-center gap-3 px-5 py-4 font-bold text-slate-900 dark:text-slate-100">
-                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-500 text-xs font-bold text-white">{member.name.slice(0, 2).toUpperCase()}</div>
+                        <motion.tr key={member.id} data-testid="workspace-member-row" layout variants={itemMotion} initial="initial" animate="animate" exit="exit" className="transition-colors hover:bg-subtle">
+                          <td className="flex items-center gap-3 px-5 py-4 font-bold text-foreground">
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-err text-xs font-bold text-background">{member.name.slice(0, 2).toUpperCase()}</div>
                             <span>{member.name}</span>
                           </td>
-                          <td className="px-5 py-4 text-slate-500 dark:text-slate-400">{member.email}</td>
-                          <td className="px-5 py-4"><span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${member.role === 'OWNER' ? 'border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400' : 'border-slate-500/20 bg-slate-500/10 text-slate-600 dark:text-slate-400'}`}>{member.role === 'OWNER' ? t('workspace.owner') : t('workspace.role_member')}</span></td>
+                          <td className="px-5 py-4 text-muted-foreground">{member.email}</td>
+                          <td className="px-5 py-4"><span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${member.role === 'OWNER' ? 'border-err-border bg-err-bg text-err' : 'border-border bg-muted-foreground text-text-2'}`}>{member.role === 'OWNER' ? t('workspace.owner') : t('workspace.role_member')}</span></td>
                           <td className="px-5 py-4">
                             <button
                               type="button"
@@ -711,7 +711,7 @@ export function WorkspacePage() {
                               onClick={() => void handleTogglePermission(member, 'canPublishWorkflow')}
                               disabled={member.role === 'OWNER' || memberActionsDisabled}
                               title={member.role === 'OWNER' ? t('workspace.owner_permissions_locked') : undefined}
-                              className={`flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1 text-[11px] font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${member.canPublishWorkflow ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400' : 'border-amber-500/20 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300'}`}
+                              className={`flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1 text-[11px] font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${member.canPublishWorkflow ? 'border-ok/30 bg-ok-bg text-ok hover:bg-ok-bg' : 'border-warn/30 bg-warn-bg text-warn hover:bg-warn-bg'}`}
                             >
                               {member.canPublishWorkflow ? <Check size={12} /> : <X size={12} />}
                               <span>{member.canPublishWorkflow ? t('workspace.allowed') : t('workspace.restricted')}</span>
@@ -722,13 +722,13 @@ export function WorkspacePage() {
                               onClick={() => void handleTogglePermission(member, 'canManageWorkflowState')}
                               disabled={member.role === 'OWNER' || memberActionsDisabled}
                               title={member.role === 'OWNER' ? t('workspace.owner_permissions_locked') : undefined}
-                              className={`mt-1 flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1 text-[11px] font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${member.canManageWorkflowState ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400' : 'border-amber-500/20 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300'}`}
+                              className={`mt-1 flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1 text-[11px] font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${member.canManageWorkflowState ? 'border-ok/30 bg-ok-bg text-ok hover:bg-ok-bg' : 'border-warn/30 bg-warn-bg text-warn hover:bg-warn-bg'}`}
                             >
                               <ShieldCheck size={12} aria-hidden="true" />
                               <span>{member.canManageWorkflowState ? t('workspace.allowed') : t('workspace.restricted')}</span>
                             </button>
                           </td>
-                          <td className="px-5 py-4 text-[11px] text-slate-500 dark:text-slate-400">{new Date(member.joinedAt).toLocaleDateString(appLocale())}</td>
+                          <td className="px-5 py-4 text-[11px] text-muted-foreground">{new Date(member.joinedAt).toLocaleDateString(appLocale())}</td>
                           <td className="px-5 py-4 text-right">
                             {member.role !== 'OWNER' && (
                               <ConfirmButton
@@ -741,7 +741,7 @@ export function WorkspacePage() {
                                 dataTestId={`workspace-member-remove-${member.id}`}
                                 disabled={memberActionsDisabled}
                                 titleTooltip={memberActionsDisabled ? t('workspace.owner_manage_locked') : undefined}
-                                className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-600 transition-colors hover:bg-rose-500/20 dark:text-rose-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="rounded-lg border border-err-border bg-err-bg px-2.5 py-1 text-[11px] font-semibold text-err transition-colors hover:bg-err-bg disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {t('workspace.remove')}
                               </ConfirmButton>

@@ -18,10 +18,16 @@ import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { Toaster } from 'sonner';
+import { useEffect } from 'react';
 import { useI18nStore } from './store/useI18nStore';
+import { useUIStore } from './store/useUIStore';
 
 export function App() {
   const t = useI18nStore((state) => state.t);
+  const initTheme = useUIStore((state) => state.initTheme);
+  useEffect(() => {
+    initTheme();
+  }, [initTheme]);
   return (
     <>
       <Toaster position="top-right" richColors closeButton containerAriaLabel={t('toast.region')} />

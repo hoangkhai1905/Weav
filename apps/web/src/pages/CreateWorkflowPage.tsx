@@ -38,7 +38,7 @@ const TEMPLATES: TemplateCard[] = [
     stepsCount: 3,
     avgDuration: '~140ms',
     triggerType: 'Webhook',
-    triggerColor: 'bg-[#2563EB]',
+    triggerColor: 'bg-primary',
     flow: [
       { name: 'Webhook', type: 'trigger' },
       { name: 'AI Extract', type: 'ai' },
@@ -54,7 +54,7 @@ const TEMPLATES: TemplateCard[] = [
     stepsCount: 4,
     avgDuration: '1.2m',
     triggerType: 'Cron (Daily)',
-    triggerColor: 'bg-[#2563EB]',
+    triggerColor: 'bg-primary',
     flow: [
       { name: 'Cron', type: 'trigger' },
       { name: 'Postgres', type: 'action' },
@@ -71,7 +71,7 @@ const TEMPLATES: TemplateCard[] = [
     stepsCount: 3,
     avgDuration: '~210ms',
     triggerType: 'Event',
-    triggerColor: 'bg-[#2563EB]',
+    triggerColor: 'bg-primary',
     flow: [
       { name: 'Webhook', type: 'trigger' },
       { name: 'Enrich AI', type: 'ai' },
@@ -87,7 +87,7 @@ const TEMPLATES: TemplateCard[] = [
     stepsCount: 3,
     avgDuration: '~580ms',
     triggerType: 'Ticket Webhook',
-    triggerColor: 'bg-[#2563EB]',
+    triggerColor: 'bg-primary',
     flow: [
       { name: 'Zendesk', type: 'trigger' },
       { name: 'Embeddings', type: 'ai' },
@@ -103,7 +103,7 @@ const TEMPLATES: TemplateCard[] = [
     stepsCount: 4,
     avgDuration: '~3.4m',
     triggerType: 'Hourly',
-    triggerColor: 'bg-[#2563EB]',
+    triggerColor: 'bg-primary',
     flow: [
       { name: 'Sched', type: 'trigger' },
       { name: 'Postgres', type: 'action' },
@@ -120,7 +120,7 @@ const TEMPLATES: TemplateCard[] = [
     stepsCount: 4,
     avgDuration: '~1.8s',
     triggerType: 'IMAP / S3',
-    triggerColor: 'bg-[#2563EB]',
+    triggerColor: 'bg-primary',
     flow: [
       { name: 'Email', type: 'trigger' },
       { name: 'OCR AI', type: 'ai' },
@@ -211,19 +211,20 @@ export const CreateWorkflowPage: React.FC = () => {
   const optionCard = (method: typeof selectedMethod) =>
     `group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border bg-card p-5 transition-all ${
       selectedMethod === method
-        ? 'border-primary/50 shadow-lift ring-1 ring-primary/20'
-        : 'border-border shadow-soft hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-lift'
+        ? 'border-primary/50 shadow-pop ring-1 ring-primary/20'
+        : 'border-border hover:-translate-y-0.5 hover:border-primary/25'
     }`;
   const flowDot: Record<string, string> = {
-    trigger: 'bg-amber-500',
-    ai: 'bg-violet-500',
-    logic: 'bg-sky-500',
+    trigger: 'bg-t-trigger',
+    ai: 'bg-t-ai',
+    logic: 'bg-t-logic',
+    action: 'bg-t-action',
   };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-12 font-sans text-foreground">
       {createError && (
-        <div role="alert" data-testid="workflow-create-error" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-300">
+        <div role="alert" data-testid="workflow-create-error" className="rounded-xl border border-err-border bg-err-bg px-4 py-3 text-sm text-err">
           {createError}
         </div>
       )}
@@ -253,18 +254,18 @@ export const CreateWorkflowPage: React.FC = () => {
             </p>
           </div>
 
-          <span className="inline-flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1 font-mono text-xs text-muted-foreground shadow-soft sm:self-auto">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.18)]" />
+          <span className="inline-flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1 font-mono text-xs text-muted-foreground sm:self-auto">
+            <span className="h-1.5 w-1.5 rounded-full bg-ok " />
             {t('create.production_cluster')} (us-east-1)
           </span>
         </div>
       </div>
 
       {/* Quick AI prompt — the fastest path, so it leads the page */}
-      <div className="rounded-2xl bg-brand-gradient p-px shadow-brand">
-        <div className="page-hero-glow flex flex-col items-stretch gap-3 rounded-[15px] bg-card p-4 sm:flex-row sm:items-center">
+      <div className="rounded-lg border border-border bg-card">
+        <div className="flex flex-col items-stretch gap-3 rounded-lg p-4 sm:flex-row sm:items-center">
           <div className="flex shrink-0 items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-gradient text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white">
               <Sparkles size={17} />
             </span>
             <span className="text-sm font-semibold text-foreground">{t('create.quick_prompt')}</span>
@@ -284,7 +285,7 @@ export const CreateWorkflowPage: React.FC = () => {
 
           <button
             onClick={handleGenerateAiCanvas}
-            className="flex h-10 w-full shrink-0 items-center justify-center gap-1.5 rounded-xl bg-brand-gradient px-4 text-sm font-semibold text-white transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto"
+            className="flex h-10 w-full shrink-0 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto"
           >
             <span>{t('create.generate_canvas')}</span>
             <ArrowRight size={15} />
@@ -298,7 +299,7 @@ export const CreateWorkflowPage: React.FC = () => {
         <div onClick={() => setSelectedMethod('blank')} className={optionCard('blank')}>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-700 dark:bg-slate-500/10 dark:text-slate-200">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-subtle text-text-2">
                 <FileText size={20} />
               </div>
               <span className="font-mono text-[10px] text-muted-foreground">v2.4 engine</span>
@@ -335,7 +336,7 @@ export const CreateWorkflowPage: React.FC = () => {
         <div onClick={() => setSelectedMethod('template')} className={optionCard('template')}>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-run-bg text-run">
                 <LayoutGrid size={20} />
               </div>
               <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
@@ -368,10 +369,9 @@ export const CreateWorkflowPage: React.FC = () => {
 
         {/* Option 3: Create with AI */}
         <div onClick={() => setSelectedMethod('ai')} className={optionCard('ai')}>
-          <span aria-hidden="true" className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-brand-gradient opacity-15 blur-2xl" />
           <div className="relative space-y-3">
             <div className="flex items-center justify-between">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-brand">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-white">
                 <Sparkles size={20} />
               </div>
               <span className="rounded-md bg-accent px-2 py-0.5 text-[10px] font-semibold text-primary">
@@ -394,7 +394,7 @@ export const CreateWorkflowPage: React.FC = () => {
           <div className="relative mt-5">
             <Link
               to="/ai/workflow-generator"
-              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-brand-gradient px-3 text-sm font-semibold text-white shadow-brand transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-semibold text-white transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Zap size={15} />
               <span>{t('create.synthesize')}</span>
@@ -424,7 +424,7 @@ export const CreateWorkflowPage: React.FC = () => {
                 aria-pressed={activeCategory === filter.id}
                 className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                   activeCategory === filter.id
-                    ? 'bg-card text-foreground shadow-soft'
+                    ? 'bg-card text-foreground'
                     : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -438,7 +438,7 @@ export const CreateWorkflowPage: React.FC = () => {
           {filteredTemplates.map((tpl) => (
             <div
               key={tpl.id}
-              className="group flex flex-col justify-between rounded-2xl border border-border bg-card p-4 shadow-soft transition-all hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-lift"
+              className="group flex flex-col justify-between rounded-2xl border border-border bg-card p-4 transition-all hover:-translate-y-0.5 hover:border-primary/25"
             >
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
@@ -460,8 +460,8 @@ export const CreateWorkflowPage: React.FC = () => {
                 <div className="my-3 flex items-center gap-1 overflow-hidden rounded-xl border border-border bg-muted/40 p-2 font-mono text-[10px] text-foreground/80">
                   {tpl.flow.map((node, i) => (
                     <React.Fragment key={i}>
-                      <div className="flex min-w-0 items-center gap-1 rounded-md border border-border bg-card px-1.5 py-1 shadow-soft">
-                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${flowDot[node.type] ?? 'bg-emerald-500'}`} />
+                      <div className="flex min-w-0 items-center gap-1 rounded-md border border-border bg-card px-1.5 py-1">
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${flowDot[node.type] ?? 'bg-ok'}`} />
                         <span className="max-w-[64px] truncate">{t(`create.flow.${node.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`)}</span>
                       </div>
                       {i < tpl.flow.length - 1 && <span aria-hidden="true" className="h-px min-w-2 flex-1 bg-border" />}

@@ -13,17 +13,17 @@ export function HelpPage() {
     <motion.div data-testid="help-page" className="mx-auto max-w-5xl space-y-6 pb-10" initial="initial" animate="animate" variants={pageMotion}>
       <motion.div variants={itemMotion}>
         <div className="flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-blue-600 dark:border-blue-400/20 dark:bg-blue-400/10 dark:text-blue-300"><HelpCircle size={17} aria-hidden="true" /></span>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">{t('nav.help')}</h1>
+          <span className="flex size-8 items-center justify-center rounded-lg border border-run/30 bg-run-bg text-run"><HelpCircle size={17} aria-hidden="true" /></span>
+          <h1 className="text-xl font-bold text-foreground">{t('nav.help')}</h1>
         </div>
-        <p className="mt-1 max-w-2xl text-xs text-slate-600 dark:text-slate-400">{t('help.subtitle')}</p>
+        <p className="mt-1 max-w-2xl text-xs text-text-2">{t('help.subtitle')}</p>
       </motion.div>
 
       <motion.div variants={itemMotion} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <motion.article variants={itemMotion} whileHover={prefersReducedMotion ? undefined : { y: -2, transition: { duration: 0.15 } }} className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900 dark:shadow-xl">
-          <div className="flex items-start justify-between"><span className="flex size-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-400/10 dark:text-blue-300"><BookOpen size={20} aria-hidden="true" /></span><ArrowUpRight size={16} className="text-slate-400 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" /></div>
-          <h2 className="mt-5 text-sm font-bold text-slate-900 dark:text-slate-100">{t('help.frontend_title')}</h2>
-          <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-400">{t('help.frontend_description')}</p>
+        <motion.article variants={itemMotion} whileHover={prefersReducedMotion ? undefined : { y: -2, transition: { duration: 0.15 } }} className="group rounded-2xl border border-border bg-card p-6 transition-colors">
+          <div className="flex items-start justify-between"><span className="flex size-10 items-center justify-center rounded-xl bg-run-bg text-run"><BookOpen size={20} aria-hidden="true" /></span><ArrowUpRight size={16} className="text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" /></div>
+          <h2 className="mt-5 text-sm font-bold text-foreground">{t('help.frontend_title')}</h2>
+          <p className="mt-2 text-xs leading-5 text-text-2">{t('help.frontend_description')}</p>
           <motion.a
             href="file:///d:/End/Weav/docs/development/FRONTEND_GUIDE.md"
             target="_blank"
@@ -31,17 +31,17 @@ export function HelpPage() {
             variants={buttonPress}
             whileHover="hover"
             whileTap="tap"
-            className="mt-5 inline-flex items-center gap-1.5 rounded-lg text-xs font-bold text-blue-600 outline-none transition-colors hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:text-blue-300 dark:hover:text-blue-200"
+            className="mt-5 inline-flex items-center gap-1.5 rounded-lg text-xs font-bold text-run outline-none transition-colors hover:text-run focus-visible:ring-2 focus-visible:ring-run/30"
           >
             <span>{t('help.open_guide')}</span>
             <ExternalLink size={13} />
           </motion.a>
         </motion.article>
 
-        <motion.article variants={itemMotion} whileHover={prefersReducedMotion ? undefined : { y: -2, transition: { duration: 0.15 } }} className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-colors dark:border-slate-800 dark:bg-slate-900 dark:shadow-xl">
-          <div className="flex items-start justify-between"><span className="flex size-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-400/10 dark:text-emerald-300"><Code size={20} aria-hidden="true" /></span><ArrowUpRight size={16} className="text-slate-400 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" /></div>
-          <h2 className="mt-5 text-sm font-bold text-slate-900 dark:text-slate-100">{t('help.specification_title')}</h2>
-          <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-slate-400">{t('help.specification_description')}</p>
+        <motion.article variants={itemMotion} whileHover={prefersReducedMotion ? undefined : { y: -2, transition: { duration: 0.15 } }} className="group rounded-2xl border border-border bg-card p-6 transition-colors">
+          <div className="flex items-start justify-between"><span className="flex size-10 items-center justify-center rounded-xl bg-ok-bg text-ok"><Code size={20} aria-hidden="true" /></span><ArrowUpRight size={16} className="text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" /></div>
+          <h2 className="mt-5 text-sm font-bold text-foreground">{t('help.specification_title')}</h2>
+          <p className="mt-2 text-xs leading-5 text-text-2">{t('help.specification_description')}</p>
           <motion.a
             href="file:///d:/End/Weav/apps/RULE.md"
             target="_blank"
@@ -49,7 +49,7 @@ export function HelpPage() {
             variants={buttonPress}
             whileHover="hover"
             whileTap="tap"
-            className="mt-5 inline-flex items-center gap-1.5 rounded-lg text-xs font-bold text-emerald-600 outline-none transition-colors hover:text-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-500/40 dark:text-emerald-300 dark:hover:text-emerald-200"
+            className="mt-5 inline-flex items-center gap-1.5 rounded-lg text-xs font-bold text-ok outline-none transition-colors hover:text-ok focus-visible:ring-2 focus-visible:ring-ok/30"
           >
             <span>{t('help.open_specification')}</span>
             <ExternalLink size={13} />
@@ -57,9 +57,9 @@ export function HelpPage() {
         </motion.article>
       </motion.div>
 
-      <motion.section variants={itemMotion} className="flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-400/20 dark:bg-blue-400/10">
-        <CircleHelp size={17} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-300" aria-hidden="true" />
-        <div><h2 className="text-xs font-bold text-blue-950 dark:text-blue-100">{t('help.starting_point')}</h2><p className="mt-1 text-xs leading-5 text-blue-800/80 dark:text-blue-100/70">{t('help.starting_point_description')}</p></div>
+      <motion.section variants={itemMotion} className="flex items-start gap-3 rounded-2xl border border-run/30 bg-run-bg p-4">
+        <CircleHelp size={17} className="mt-0.5 shrink-0 text-run" aria-hidden="true" />
+        <div><h2 className="text-xs font-bold text-run">{t('help.starting_point')}</h2><p className="mt-1 text-xs leading-5 text-run">{t('help.starting_point_description')}</p></div>
       </motion.section>
     </motion.div>
   );

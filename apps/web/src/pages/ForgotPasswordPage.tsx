@@ -198,42 +198,42 @@ export function ForgotPasswordPage() {
   };
 
   return (
-    <main data-testid="password-recovery-page" className="grid min-h-screen place-items-center bg-slate-50 px-4 dark:bg-slate-950">
-      <section className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-xl dark:border-slate-800 dark:bg-slate-900">
-        <Link to="/login" className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-blue-600"><ArrowLeft size={14} />{t('forgot.back_to_sign_in')}</Link>
-        <div className="mt-6 flex size-11 items-center justify-center rounded-2xl bg-blue-50 text-blue-600 dark:bg-blue-400/10 dark:text-blue-300"><ShieldCheck size={22} /></div>
-        <h1 className="mt-5 text-2xl font-bold text-slate-900 dark:text-slate-100">{t('forgot.title')}</h1>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t('forgot.subtitle')}</p>
+    <main data-testid="password-recovery-page" className="grid min-h-screen place-items-center bg-subtle px-4">
+      <section className="w-full max-w-md rounded-3xl border border-border bg-card p-8 shadow-pop">
+        <Link to="/login" className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-run"><ArrowLeft size={14} />{t('forgot.back_to_sign_in')}</Link>
+        <div className="mt-6 flex size-11 items-center justify-center rounded-2xl bg-run-bg text-run"><ShieldCheck size={22} /></div>
+        <h1 className="mt-5 text-2xl font-bold text-foreground">{t('forgot.title')}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{t('forgot.subtitle')}</p>
 
         {step === 'request' ? (
           <form onSubmit={(event) => void requestCode(event)} className="mt-6 space-y-4">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300" htmlFor="reset-email">{t('forgot.email')}</label>
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 dark:border-slate-700 dark:bg-slate-800"><Mail size={15} className="text-slate-400" /><input id="reset-email" aria-label={t('forgot.email')} type="email" required value={email} onChange={(event) => setEmail(event.target.value)} className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none" /></div>
-            <button data-testid="request-reset-button" type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.request_code')}</button>
+            <label className="block text-xs font-semibold text-text-2" htmlFor="reset-email">{t('forgot.email')}</label>
+            <div className="flex items-center gap-2 rounded-xl border border-border bg-subtle px-3.5"><Mail size={15} className="text-muted-foreground" /><input id="reset-email" aria-label={t('forgot.email')} type="email" required value={email} onChange={(event) => setEmail(event.target.value)} className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none" /></div>
+            <button data-testid="request-reset-button" type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.request_code')}</button>
           </form>
         ) : (
           <form onSubmit={(event) => void resetPassword(event)} className="mt-6 space-y-4">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300" htmlFor="reset-code">{t('forgot.verification_code')}</label>
-            <input id="reset-code" aria-label={t('forgot.verification_code')} required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={t('forgot.code_placeholder')} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-800" />
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300" htmlFor="reset-new-password">{t('forgot.new_password')}</label>
-            <input id="reset-new-password" aria-label={t('forgot.new_password')} required minLength={8} maxLength={72} type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-800" />
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300" htmlFor="reset-confirm-password">{t('forgot.confirm_password')}</label>
-            <input id="reset-confirm-password" aria-label={t('forgot.confirm_password')} required minLength={8} maxLength={72} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm outline-none dark:border-slate-700 dark:bg-slate-800" />
-            <p className="text-xs text-slate-500 dark:text-slate-400">{t('forgot.code_help')} {expiresIn !== null && `${expiresIn} ${t('forgot.seconds')}`}</p>
-            <button data-testid="complete-reset-button" type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.reset_password')}</button>
+            <label className="block text-xs font-semibold text-text-2" htmlFor="reset-code">{t('forgot.verification_code')}</label>
+            <input id="reset-code" aria-label={t('forgot.verification_code')} required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={t('forgot.code_placeholder')} className="w-full rounded-xl border border-border bg-subtle px-3.5 py-3 text-sm outline-none" />
+            <label className="block text-xs font-semibold text-text-2" htmlFor="reset-new-password">{t('forgot.new_password')}</label>
+            <input id="reset-new-password" aria-label={t('forgot.new_password')} required minLength={8} maxLength={72} type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="w-full rounded-xl border border-border bg-subtle px-3.5 py-3 text-sm outline-none" />
+            <label className="block text-xs font-semibold text-text-2" htmlFor="reset-confirm-password">{t('forgot.confirm_password')}</label>
+            <input id="reset-confirm-password" aria-label={t('forgot.confirm_password')} required minLength={8} maxLength={72} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="w-full rounded-xl border border-border bg-subtle px-3.5 py-3 text-sm outline-none" />
+            <p className="text-xs text-muted-foreground">{t('forgot.code_help')} {expiresIn !== null && `${expiresIn} ${t('forgot.seconds')}`}</p>
+            <button data-testid="complete-reset-button" type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.reset_password')}</button>
             <div className="flex items-center justify-between gap-3 text-xs">
-              <button data-testid="resend-reset-button" type="button" disabled={loading || cooldownRemaining > 0} onClick={() => void requestCode()} className="font-semibold text-blue-600 hover:underline disabled:cursor-not-allowed disabled:text-slate-400 disabled:no-underline">
+              <button data-testid="resend-reset-button" type="button" disabled={loading || cooldownRemaining > 0} onClick={() => void requestCode()} className="font-semibold text-run hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline">
                 {cooldownRemaining > 0 ? t('forgot.resend_unavailable') : t('forgot.resend')}
               </button>
-              <button type="button" disabled={loading} onClick={startOver} className="font-semibold text-slate-500 hover:text-blue-600 disabled:cursor-not-allowed">{t('forgot.use_different_email')}</button>
+              <button type="button" disabled={loading} onClick={startOver} className="font-semibold text-muted-foreground hover:text-run disabled:cursor-not-allowed">{t('forgot.use_different_email')}</button>
             </div>
-            <p data-testid="cooldown-message" className="text-xs text-slate-500 dark:text-slate-400" aria-live="polite">
+            <p data-testid="cooldown-message" className="text-xs text-muted-foreground" aria-live="polite">
               {cooldownRemaining > 0 ? `${t('forgot.cooldown_prefix')} ${cooldownRemaining} ${t('forgot.cooldown_suffix')}` : t('forgot.resend_available')}
             </p>
           </form>
         )}
-        {message && <p className="mt-4 text-xs font-medium text-emerald-600 dark:text-emerald-300">{message}</p>}
-        {error && <p role="alert" className="mt-4 text-xs font-medium text-rose-600 dark:text-rose-300">{error}</p>}
+        {message && <p className="mt-4 text-xs font-medium text-ok">{message}</p>}
+        {error && <p role="alert" className="mt-4 text-xs font-medium text-err">{error}</p>}
       </section>
     </main>
   );

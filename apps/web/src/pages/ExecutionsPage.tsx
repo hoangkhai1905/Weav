@@ -380,9 +380,9 @@ function MockExecutionsPage() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="fixed top-16 right-8 z-50 bg-subtle text-white text-xs px-4 py-2.5 rounded-xl shadow-xl border border-border flex items-center gap-2"
+            className="fixed top-16 right-8 z-50 bg-foreground text-background text-xs px-4 py-2.5 rounded-xl shadow-pop border border-border flex items-center gap-2"
           >
-            <Activity size={14} className="text-[#2563EB] animate-pulse" />
+            <Activity size={14} className="text-run animate-pulse" />
             <span>{toastMessage}</span>
           </motion.div>
         )}
@@ -393,7 +393,7 @@ function MockExecutionsPage() {
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2.5">
             <h1 className="text-xl font-bold text-foreground tracking-tight">{t('executions.title')}</h1>
-            <span className="px-2 py-0.5 rounded-full bg-run-bg text-[#2563EB] font-mono text-[11px] font-semibold border border-run/30">
+            <span className="px-2 py-0.5 rounded-full bg-run-bg text-run font-mono text-[11px] font-semibold border border-run/30">
               v2.4-stream
             </span>
           </div>
@@ -408,18 +408,18 @@ function MockExecutionsPage() {
             onClick={() => setAutoRefresh(!autoRefresh)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
               autoRefresh
-                ? 'bg-run-bg text-[#2563EB] border-run/30'
+                ? 'bg-run-bg text-run border-run/30'
                 : 'bg-card text-text-2 border-border hover:bg-subtle'
             }`}
           >
             <span className="relative flex h-2 w-2">
               {autoRefresh && (
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-75"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
               )}
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${autoRefresh ? 'bg-[#2563EB]' : 'bg-muted-foreground'}`}></span>
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${autoRefresh ? 'bg-primary' : 'bg-muted-foreground'}`}></span>
             </span>
             <span>{t('executions.auto_refresh')} ({autoRefresh ? '5s' : 'Off'})</span>
-            <RefreshCw size={13} className={autoRefresh ? 'animate-spin text-[#2563EB]' : 'text-muted-foreground'} />
+            <RefreshCw size={13} className={autoRefresh ? 'animate-spin text-run' : 'text-muted-foreground'} />
           </button>
 
           {/* Re-run Last Failed */}
@@ -429,7 +429,7 @@ function MockExecutionsPage() {
               if (failed) handleReRun(failed);
               else triggerToast(t('executions.no_failed'));
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card text-text-2 border border-border hover:bg-subtle transition-colors text-xs font-medium shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card text-text-2 border border-border hover:bg-subtle transition-colors text-xs font-medium"
           >
             <RotateCcw size={13} className="text-muted-foreground" />
             <span>{t('executions.rerun_failed')}</span>
@@ -438,7 +438,7 @@ function MockExecutionsPage() {
           {/* Export CSV */}
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card text-text-2 border border-border hover:bg-subtle transition-colors text-xs font-medium shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card text-text-2 border border-border hover:bg-subtle transition-colors text-xs font-medium"
           >
             <Download size={13} className="text-muted-foreground" />
             <span>{t('executions.export_csv')}</span>
@@ -446,7 +446,7 @@ function MockExecutionsPage() {
 
           {/* Environment Pill */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-subtle text-text-2 font-xs text-[11px]">
-            <Cloud size={13} className="text-[#2563EB]" />
+            <Cloud size={13} className="text-run" />
             <span className="font-mono font-medium">us-east-1</span>
             <span className="text-muted-foreground">/</span>
             <span className="font-semibold text-foreground">{t('connections.environment.production')}</span>
@@ -457,7 +457,7 @@ function MockExecutionsPage() {
       {/* Operational Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Card 1: Total Runs */}
-        <div className="bg-card p-4 rounded-xl border border-border shadow-sm flex flex-col justify-between relative overflow-hidden">
+        <div className="bg-card p-4 rounded-xl border border-border flex flex-col justify-between relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t('executions.metric_total')}
@@ -472,19 +472,19 @@ function MockExecutionsPage() {
             </div>
           </div>
           <div className="w-full bg-subtle h-1.5 rounded-full mt-3 overflow-hidden">
-            <div className="bg-[#2563EB] h-full rounded-full" style={{ width: '78%' }}></div>
+            <div className="bg-primary h-full rounded-full" style={{ width: '78%' }}></div>
           </div>
         </div>
 
         {/* Card 2: Active Executions */}
-        <div className="bg-card p-4 rounded-xl border border-border shadow-sm flex flex-col justify-between relative overflow-hidden">
+        <div className="bg-card p-4 rounded-xl border border-border flex flex-col justify-between relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t('executions.metric_active')}
             </span>
             <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-60"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#2563EB]"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-60"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
             </span>
           </div>
           <div className="flex items-baseline justify-between mt-2">
@@ -494,17 +494,17 @@ function MockExecutionsPage() {
               </span>
               <span className="text-xs text-muted-foreground">{t('executions.running_now')}</span>
             </div>
-            <span className="px-2 py-0.5 rounded-full bg-run-bg text-[#2563EB] text-[11px] font-semibold">
+            <span className="px-2 py-0.5 rounded-full bg-run-bg text-run text-[11px] font-semibold">
               12 {t('executions.queued')}
             </span>
           </div>
           <div className="w-full bg-subtle h-1.5 rounded-full mt-3 overflow-hidden">
-            <div className="bg-[#2563EB] h-full rounded-full animate-pulse" style={{ width: '25%' }}></div>
+            <div className="bg-primary h-full rounded-full animate-pulse" style={{ width: '25%' }}></div>
           </div>
         </div>
 
         {/* Card 3: Success Rate */}
-        <div className="bg-card p-4 rounded-xl border border-border shadow-sm flex flex-col justify-between relative overflow-hidden">
+        <div className="bg-card p-4 rounded-xl border border-border flex flex-col justify-between relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t('executions.metric_success')}
@@ -522,7 +522,7 @@ function MockExecutionsPage() {
         </div>
 
         {/* Card 4: Avg Execution Time */}
-        <div className="bg-card p-4 rounded-xl border border-border shadow-sm flex flex-col justify-between relative overflow-hidden">
+        <div className="bg-card p-4 rounded-xl border border-border flex flex-col justify-between relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t('executions.metric_avg_time')}
@@ -543,14 +543,14 @@ function MockExecutionsPage() {
       </div>
 
       {/* Live Run in Progress Panel */}
-      <div className="bg-card rounded-xl p-4 border border-border shadow-sm flex flex-col gap-3">
+      <div className="bg-card rounded-xl p-4 border border-border flex flex-col gap-3">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 pb-1 border-b border-border">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2563EB]"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
             </span>
-            <span className="text-xs font-bold uppercase tracking-wider text-[#2563EB]">{t('executions.live_run')}</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-run">{t('executions.live_run')}</span>
             <span className="text-muted-foreground">•</span>
             <span className="font-mono text-xs font-bold text-foreground">{activeRunning.id}</span>
             <span className="text-muted-foreground">—</span>
@@ -565,13 +565,13 @@ function MockExecutionsPage() {
               <Clock size={13} className="text-muted-foreground" />
               <span>
                 {t('executions.started_at')} {activeRunning.startedTime} (
-                <span className="text-[#2563EB] font-medium">{formatStartedRelative(activeRunning.startedRelative)}</span>)
+                <span className="text-run font-medium">{formatStartedRelative(activeRunning.startedRelative)}</span>)
               </span>
             </div>
             <span className="text-foreground">|</span>
             <button
               onClick={() => navigate(`/executions/${activeRunning.id.replace('#', '')}`)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded bg-run-bg text-[#2563EB] text-[11px] font-semibold hover:bg-[#2563EB] hover:text-white transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-run-bg text-run text-[11px] font-semibold hover:bg-primary hover:text-white transition-colors"
             >
               <Activity size={13} />
               <span>{t('executions.view_trace')}</span>
@@ -590,7 +590,7 @@ function MockExecutionsPage() {
         <div className="bg-subtle rounded-lg p-3 flex flex-col md:flex-row items-center justify-between gap-4 overflow-x-auto">
           <div className="flex items-center gap-2 w-full min-w-[620px]">
             {/* Step 1 */}
-            <div className="flex items-center gap-2 bg-card px-3 py-2 rounded-lg border border-border shadow-sm shrink-0">
+            <div className="flex items-center gap-2 bg-card px-3 py-2 rounded-lg border border-border shrink-0">
               <CheckCircle2 size={16} className="text-ok" />
               <div className="flex flex-col">
                 <span className="text-[11px] font-semibold text-foreground">1. Webhook</span>
@@ -604,7 +604,7 @@ function MockExecutionsPage() {
             </div>
 
             {/* Step 2 */}
-            <div className="flex items-center gap-2 bg-card px-3 py-2 rounded-lg border border-border shadow-sm shrink-0">
+            <div className="flex items-center gap-2 bg-card px-3 py-2 rounded-lg border border-border shrink-0">
               <CheckCircle2 size={16} className="text-ok" />
               <div className="flex flex-col">
                 <span className="text-[11px] font-semibold text-foreground">2. PostgreSQL</span>
@@ -614,17 +614,17 @@ function MockExecutionsPage() {
 
             <div className="flex-1 flex items-center justify-center relative min-w-[30px]">
               <div className="w-full border-t-2 border-run/30"></div>
-              <ChevronRight size={12} className="text-[#2563EB] absolute right-0" />
+              <ChevronRight size={12} className="text-run absolute right-0" />
             </div>
 
             {/* Step 3 */}
-            <div className="flex items-center gap-2 bg-card px-3 py-2 rounded-lg border border-[#2563EB]/40 shadow-sm shrink-0">
+            <div className="flex items-center gap-2 bg-card px-3 py-2 rounded-lg border border-run/40 shrink-0">
               <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#2563EB]"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"></span>
               </span>
               <div className="flex flex-col">
-                <span className="text-[11px] font-semibold text-[#2563EB]">3. AI Extract</span>
+                <span className="text-[11px] font-semibold text-run">3. AI Extract</span>
                 <span className="font-mono text-[10px] text-muted-foreground animate-pulse">{t('executions.processing_chunk')} 2...</span>
               </div>
             </div>
@@ -650,7 +650,7 @@ function MockExecutionsPage() {
               <span className="font-mono text-[10px] text-muted-foreground">75% {t('executions.elapsed')}</span>
             </div>
             <div className="w-16 bg-muted h-2 rounded-full overflow-hidden">
-              <div className="bg-[#2563EB] h-full rounded-full" style={{ width: '75%' }}></div>
+              <div className="bg-primary h-full rounded-full" style={{ width: '75%' }}></div>
             </div>
           </div>
         </div>
@@ -658,7 +658,7 @@ function MockExecutionsPage() {
 
       {/* Filter & Search Toolbar */}
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-card p-3 rounded-xl border border-border">
           {/* Search Bar */}
           <div className="flex items-center flex-1 max-w-lg bg-subtle rounded-lg px-3 py-1.5 border border-border">
             <Search size={15} className="text-muted-foreground mr-2 shrink-0" />
@@ -702,7 +702,7 @@ function MockExecutionsPage() {
                     onClick={() => setStatusFilter(tab)}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
                       isActive
-                        ? 'bg-card text-[#2563EB] shadow-sm font-semibold'
+                        ? 'bg-card text-run font-semibold'
                         : 'text-text-2 hover:text-foreground'
                     }`}
                   >
@@ -773,7 +773,7 @@ function MockExecutionsPage() {
         </div>
 
         {/* Execution Table */}
-        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -783,7 +783,7 @@ function MockExecutionsPage() {
                       type="checkbox"
                       checked={isAllSelected}
                       onChange={toggleSelectAll}
-                      className="w-3.5 h-3.5 rounded border-border-strong text-[#2563EB] focus:ring-0 cursor-pointer"
+                      className="w-3.5 h-3.5 rounded border-border-strong text-run focus:ring-0 cursor-pointer"
                     />
                   </th>
                   <th className="py-2.5 px-3 font-semibold">{t('executions.col_id')}</th>
@@ -810,7 +810,7 @@ function MockExecutionsPage() {
                             setTriggerFilter('ALL');
                             setSearchQuery('');
                           }}
-                          className="mt-1 text-xs text-[#2563EB] hover:underline font-medium"
+                          className="mt-1 text-xs text-run hover:underline font-medium"
                         >
                           {t('executions.reset_filters')}
                         </button>
@@ -834,14 +834,14 @@ function MockExecutionsPage() {
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggleSelect(exec.id)}
-                            className="w-3.5 h-3.5 rounded border-border-strong text-[#2563EB] focus:ring-0 cursor-pointer"
+                            className="w-3.5 h-3.5 rounded border-border-strong text-run focus:ring-0 cursor-pointer"
                           />
                         </td>
 
                         {/* Execution ID */}
                         <td
                           onClick={() => navigate(`/executions/${exec.id.replace('#', '')}`)}
-                          className="py-2.5 px-3 font-mono text-xs font-bold text-[#2563EB] hover:underline cursor-pointer"
+                          className="py-2.5 px-3 font-mono text-xs font-bold text-run hover:underline cursor-pointer"
                         >
                           {exec.id}
                         </td>
@@ -859,8 +859,8 @@ function MockExecutionsPage() {
                         {/* Status */}
                         <td className="py-2.5 px-3">
                           {exec.status === 'RUNNING' && (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-run-bg text-[#2563EB] font-semibold text-[11px]">
-                              <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-ping"></span>
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-run-bg text-run font-semibold text-[11px]">
+                              <span className="h-1.5 w-1.5 rounded-full bg-primary animate-ping"></span>
                               {t('status.running')}
                             </span>
                           )}
@@ -935,7 +935,7 @@ function MockExecutionsPage() {
                             <div className="flex items-center gap-2 min-w-[140px]">
                               <div className="w-16 bg-subtle h-1.5 rounded-full overflow-hidden">
                                 <div
-                                  className={`${exec.status === 'RUNNING' ? 'bg-[#2563EB]' : 'bg-ok'} h-full rounded-full`}
+                                  className={`${exec.status === 'RUNNING' ? 'bg-primary' : 'bg-ok'} h-full rounded-full`}
                                   style={{ width: `${(exec.stepsCompleted / exec.stepsTotal) * 100}%` }}
                                 ></div>
                               </div>
@@ -950,7 +950,7 @@ function MockExecutionsPage() {
                         {/* Triggered By */}
                         <td className="py-2.5 px-3">
                           <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-subtle text-text-2 text-[11px]">
-                            {exec.triggerType === 'Webhook' && <Zap size={12} className="text-[#2563EB]" />}
+                            {exec.triggerType === 'Webhook' && <Zap size={12} className="text-run" />}
                             {exec.triggerType === 'Schedule' && <Clock size={12} className="text-warn" />}
                             {exec.triggerType === 'Manual' && <Play size={12} className="text-ok" />}
                             {exec.triggerType === 'Event' && <Activity size={12} className="text-run" />}
@@ -1040,7 +1040,7 @@ function MockExecutionsPage() {
               >
                 {t('executions.previous')}
               </button>
-              <button className="px-2.5 py-1 rounded bg-[#2563EB] text-white font-bold text-xs">1</button>
+              <button className="px-2.5 py-1 rounded bg-primary text-white font-bold text-xs">1</button>
               <button className="px-2.5 py-1 rounded hover:bg-muted text-text-2 text-xs transition-colors">
                 2
               </button>
@@ -1067,12 +1067,12 @@ function MockExecutionsPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-subtle text-foreground rounded-xl border border-border w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col"
+              className="bg-subtle text-foreground rounded-xl border border-border w-full max-w-2xl overflow-hidden shadow-pop flex flex-col"
             >
               {/* Modal Header */}
               <div className="px-4 py-3 bg-subtle border-b border-border flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Terminal size={16} className="text-[#2563EB]" />
+                  <Terminal size={16} className="text-run" />
                   <span className="font-mono font-bold text-xs text-white">{activeLogModal.id} {t('executions.telemetry_debug')}</span>
                   <span
                     className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -1080,7 +1080,7 @@ function MockExecutionsPage() {
                         ? 'bg-err text-err'
                         : activeLogModal.status === 'SUCCESS'
                         ? 'bg-ok text-ok'
-                        : 'bg-primary text-run'
+                        : 'bg-run-bg text-run'
                     }`}
                   >
                     {activeLogModal.status === 'RUNNING' ? t('status.running') : activeLogModal.status === 'SUCCESS' ? t('status.success') : activeLogModal.status === 'FAILED' ? t('status.failed') : t('executions.status_cancelled')}
@@ -1162,7 +1162,7 @@ function MockExecutionsPage() {
                     setActiveLogModal(null);
                     navigate(`/executions/${activeLogModal.id.replace('#', '')}`);
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#2563EB] text-white font-sans text-xs font-semibold hover:bg-primary transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-primary text-white font-sans text-xs font-semibold hover:bg-primary transition-colors"
                 >
                   <span>{t('executions.open_detail')}</span>
                   <ExternalLink size={13} />

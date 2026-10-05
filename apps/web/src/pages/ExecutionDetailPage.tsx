@@ -502,7 +502,7 @@ function MockExecutionDetailPage() {
   if (!execution || !workflow) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[70vh] gap-3 text-muted-foreground">
-        <RefreshCw size={24} className="animate-spin text-[#2563EB]" />
+        <RefreshCw size={24} className="animate-spin text-run" />
         <span className="font-mono text-xs">{t('executions.loading_detail')}</span>
       </div>
     );
@@ -536,16 +536,16 @@ function MockExecutionDetailPage() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="fixed top-16 right-8 z-50 bg-subtle text-white text-xs px-4 py-2.5 rounded-xl shadow-xl border border-border flex items-center gap-2"
+            className="fixed top-16 right-8 z-50 bg-foreground text-background text-xs px-4 py-2.5 rounded-xl shadow-pop border border-border flex items-center gap-2"
           >
-            <Activity size={14} className="text-[#2563EB] animate-pulse" />
+            <Activity size={14} className="text-run animate-pulse" />
             <span>{toastMessage}</span>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Top Header & Execution Telemetry Ribbon */}
-      <div className="h-16 bg-card border-b border-border px-6 flex items-center justify-between shrink-0 z-20 shadow-xs">
+      <div className="h-16 bg-card border-b border-border px-6 flex items-center justify-between shrink-0 z-20">
         {/* Left Title & Breadcrumb */}
         <div className="flex items-center gap-4">
           <button
@@ -560,7 +560,7 @@ function MockExecutionDetailPage() {
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground font-medium">{t('nav.workspace')} / {t('nav.executions')}</span>
               <span className="text-muted-foreground">/</span>
-              <span className="font-mono text-xs font-bold text-[#2563EB]">{execution.id}</span>
+              <span className="font-mono text-xs font-bold text-run">{execution.id}</span>
             </div>
             <div className="flex items-center gap-2.5">
               <h1 className="font-bold text-foreground text-sm tracking-tight">{execution.workflowName}</h1>
@@ -576,8 +576,8 @@ function MockExecutionDetailPage() {
           {/* Status Badge */}
           <div className="flex items-center gap-1.5">
             {execution.status === 'RUNNING' && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-run-bg text-[#2563EB] font-semibold text-[11px]">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-ping"></span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-run-bg text-run font-semibold text-[11px]">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary animate-ping"></span>
                 {t('status.running')}
               </span>
             )}
@@ -627,7 +627,7 @@ function MockExecutionDetailPage() {
           <button
             onClick={startPacketAnimation}
             disabled={isPlayingAnimation}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-run-bg text-[#2563EB] hover:bg-[#2563EB] hover:text-white transition-all text-xs font-medium border border-run/30 shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-run-bg text-run hover:bg-primary hover:text-white transition-all text-xs font-medium border border-run/30"
           >
             <Sparkles size={13} className={isPlayingAnimation ? 'animate-spin' : ''} />
             <span>{isPlayingAnimation ? t('execution_detail.simulating') : t('execution_detail.replay')}</span>
@@ -645,7 +645,7 @@ function MockExecutionDetailPage() {
           {/* Re-run / Retry Button */}
           <button
             onClick={() => triggerToast(t('execution_detail.rerun_toast').replace('{id}', execution.id))}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2563EB] hover:bg-primary text-white transition-colors text-xs font-semibold shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary text-white transition-colors text-xs font-semibold"
           >
             <RotateCcw size={13} />
             <span>{t('executions.rerun')}</span>
@@ -673,23 +673,23 @@ function MockExecutionDetailPage() {
 
           {/* Signature Data Flow Packet Particle Overlay */}
           {isPlayingAnimation && (
-            <div className="absolute top-4 left-6 z-10 bg-foreground/90 text-white text-[11px] px-3 py-1.5 rounded-full border border-border flex items-center gap-2 backdrop-blur-md shadow-lg">
+            <div className="absolute top-4 left-6 z-10 bg-foreground text-background text-[11px] px-3 py-1.5 rounded-full border border-border flex items-center gap-2 shadow-pop">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2563EB]"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
               </span>
               <span className="font-mono">{t('execution_detail.tracing')} {packetProgress}%</span>
             </div>
           )}
 
           {/* Floating Canvas Legend */}
-          <div className="absolute bottom-4 left-4 z-10 bg-card/90 backdrop-blur-md p-2.5 rounded-xl border border-border shadow-sm flex items-center gap-4 text-[11px] font-medium text-text-2">
+          <div className="absolute bottom-4 left-4 z-10 bg-card/90 p-2.5 rounded-xl border border-border flex items-center gap-4 text-[11px] font-medium text-text-2">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-ok"></span>
               <span>{t('execution_detail.completed')}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-[#2563EB] animate-pulse"></span>
+              <span className="w-2.5 h-2.5 rounded-full bg-primary animate-pulse"></span>
               <span>{t('execution_detail.processing')}</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -704,14 +704,14 @@ function MockExecutionDetailPage() {
         </div>
 
         {/* Right Inspector Drawer (Width ~380px) */}
-        <div className="w-[380px] bg-card border-l border-border flex flex-col z-10 shadow-lg">
+        <div className="w-[380px] bg-card border-l border-border flex flex-col z-10 shadow-pop">
           {/* Inspector Segmented Tabs */}
           <div className="p-3 border-b border-border bg-subtle flex items-center gap-1">
             <button
               onClick={() => setInspectorTab('DETAILS')}
               className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all ${
                 inspectorTab === 'DETAILS'
-                  ? 'bg-card text-[#2563EB] shadow-xs border border-border'
+                  ? 'bg-card text-run border border-border'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -721,7 +721,7 @@ function MockExecutionDetailPage() {
               onClick={() => setInspectorTab('LOGS')}
               className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all ${
                 inspectorTab === 'LOGS'
-                  ? 'bg-card text-[#2563EB] shadow-xs border border-border'
+                  ? 'bg-card text-run border border-border'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -731,7 +731,7 @@ function MockExecutionDetailPage() {
               onClick={() => setInspectorTab('PAYLOAD')}
               className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all ${
                 inspectorTab === 'PAYLOAD'
-                  ? 'bg-card text-[#2563EB] shadow-xs border border-border'
+                  ? 'bg-card text-run border border-border'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -756,7 +756,7 @@ function MockExecutionDetailPage() {
                               : selectedNodeResult.status === 'FAILED'
                               ? 'bg-err-bg text-err border-err-border'
                               : selectedNodeResult.status === 'RUNNING'
-                              ? 'bg-run-bg text-[#2563EB] border-run/30'
+                              ? 'bg-run-bg text-run border-run/30'
                               : 'bg-subtle text-muted-foreground border-border'
                           }`}
                         >
@@ -777,7 +777,7 @@ function MockExecutionDetailPage() {
                         </div>
                         <div>
                           <span className="text-muted-foreground text-[10px]">{t('execution_detail.duration')}</span>
-                          <div className="font-semibold text-[#2563EB]">
+                          <div className="font-semibold text-run">
                             {selectedNodeResult.durationMs ? `${selectedNodeResult.durationMs}ms` : '—'}
                           </div>
                         </div>
@@ -816,7 +816,7 @@ function MockExecutionDetailPage() {
                         </span>
                         <button
                           onClick={() => copyToClipboard(JSON.stringify(selectedNodeResult.input, null, 2), 'execution_detail.input_payload')}
-                          className="text-[10px] text-[#2563EB] hover:underline font-mono"
+                          className="text-[10px] text-run hover:underline font-mono"
                         >
                           {t('execution_detail.copy_input')}
                         </button>
@@ -834,7 +834,7 @@ function MockExecutionDetailPage() {
                         </span>
                         <button
                           onClick={() => copyToClipboard(JSON.stringify(selectedNodeResult.output, null, 2), 'execution_detail.output_payload')}
-                          className="text-[10px] text-[#2563EB] hover:underline font-mono"
+                          className="text-[10px] text-run hover:underline font-mono"
                         >
                           {t('execution_detail.copy_output')}
                         </button>
@@ -865,7 +865,7 @@ function MockExecutionDetailPage() {
                         'execution_detail.all_logs'
                       )
                     }
-                    className="text-[10px] text-[#2563EB] hover:underline font-mono"
+                    className="text-[10px] text-run hover:underline font-mono"
                   >
                     {t('execution_detail.copy_all_logs')}
                   </button>
@@ -906,7 +906,7 @@ function MockExecutionDetailPage() {
                   </span>
                   <button
                     onClick={() => copyToClipboard(JSON.stringify(execution.nodeResults['node-1']?.input || {}, null, 2), 'execution_detail.trigger_payload')}
-                    className="text-[10px] text-[#2563EB] hover:underline font-mono"
+                    className="text-[10px] text-run hover:underline font-mono"
                   >
                     {t('execution_detail.copy_raw_json')}
                   </button>
@@ -928,7 +928,7 @@ function MockExecutionDetailPage() {
           className="px-6 py-2 bg-subtle flex items-center justify-between cursor-pointer hover:bg-subtle transition-colors"
         >
           <div className="flex items-center gap-2 text-xs font-bold text-foreground">
-            <Terminal size={14} className="text-[#2563EB]" />
+            <Terminal size={14} className="text-run" />
             <span>{t('execution_detail.console')}</span>
             <span className="px-1.5 py-0.5 rounded bg-muted text-text-2 font-mono text-[10px]">
               {filteredLogs.length} {t('execution_detail.events')}
@@ -957,7 +957,7 @@ function MockExecutionDetailPage() {
         {isConsoleOpen && (
           <div className="h-36 bg-subtle p-4 font-mono text-[11px] overflow-y-auto space-y-1.5 border-t border-border">
             {filteredLogs.map((log) => (
-              <div key={log.id} className="flex items-start gap-3 hover:bg-foreground/60 p-0.5 rounded transition-colors">
+              <div key={log.id} className="flex items-start gap-3 hover:bg-foreground/30 p-0.5 rounded transition-colors">
                 <span className="text-muted-foreground shrink-0">[{log.timestamp}]</span>
                 <span
                   className={
