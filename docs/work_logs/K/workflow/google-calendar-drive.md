@@ -96,3 +96,8 @@ Round 2 verify: workflow-service `./mvnw verify` 523 tests, 0 failures, 2 errors
 ## Live test
 
 Run `scripts/live-test-nodes.ps1` (see `scripts/README.md`) for an end-to-end live check through the gateway; it replaces the UI until the web app supports these nodes.
+
+## Live test result (2026-10-05) — done
+
+- `scripts/live-test-nodes.ps1 -Flow google` against real Google: GOOGLE_CALENDAR and GOOGLE_DRIVE OAuth hand-off completed (redirect URL pasted, since the web app is not running), the Calendar → Drive upload → Drive list workflow succeeded. Reported by K: all steps passed.
+- Left behind: the "Weav live test" calendar event and `weav-live-test-<timestamp>.txt` in K's Google account, and the test workspace/connections listed in `telegram-nodes.md` section 12.

@@ -154,3 +154,11 @@ Run `scripts/live-test-nodes.ps1` (see `scripts/README.md`) for an end-to-end li
 - Finding: the echo workflow (`chatId = {{ trigger.input.message.chat.id }}`) failed every run with CONFIGURATION_ERROR. `ExecutionRunner.resolveConfig` re-validates the resolved config with `validateDraft`; Telegram's `chat.id` is a JSON number but `chatId` was declared `type: string`. Calendar and drive passed the same live test.
 - Fix: `chatId` is now `oneOf [string minLength 1, integer]` (template-capable) in `packages/workflow-schema/nodes/telegram.send_message.json` and the mirrored block in `packages/contracts/http/workflow/definition.schema.json`. A blank string is still REQUIRED_FIELD_MISSING at publish; boolean/decimal is INVALID_FIELD_TYPE. The executor already accepted integral numbers.
 - Tests: DefinitionValidatorTest (integer draft/publish, blank, boolean/decimal), NodeConfigSchemasTest (shape/blank), ExecutionRunnerTest (numeric chat id mapped from trigger input reaches the send node).
+
+## 12. Live test result (2026-10-05) — done
+
+- Setup: dev stack without ocr-service, Cloudflare quick tunnel to the gateway, `WORKFLOW_PUBLIC_BASE_URL` set to the tunnel URL, `scripts/live-test-nodes.ps1 -Flow telegram -Cleanup`.
+- Result after the chatId fix (`df65a31`, workflow-service rebuilt): connection VERIFIED, publish registered the webhook, the bot replied `Echo: <text>`, cleanup paused the workflow. Reported by K: all steps passed.
+- Observed once: the first Telegram connection test right after workspace-service started returned 503 (DependencyUnavailable, ~6 s); the same test passed seconds later (1.3 s). Possible cold-start flake; watch for it.
+- Dev stack note: api-gateway (384m) and notification-service (512m) OOM during `nest start --watch` in the dev containers; worked around with `docker update --memory 1g --memory-swap 1g`. Raising `mem_limit` in `compose.dev.yml` is still open.
+- Left behind on Neon / Telegram (local dev test data, delete when no longer useful): identity user `weav-livetest@example.com` (credentials only in the git-ignored `tmp/live-test-account.txt`), its workspace "Live test" (`adaea5f1-7b46-48f3-b8d4-e92c32e55395`) with two TELEGRAM connections (`f38c27c6-…`, `e81ec4d0-…`), Google Calendar/Drive connections and the paused live-test workflows; K's test bot (webhook removed by the pause).
