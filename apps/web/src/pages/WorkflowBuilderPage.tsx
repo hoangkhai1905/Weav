@@ -1069,9 +1069,11 @@ export const WorkflowBuilderPage: React.FC = () => {
           <span className={`inline-flex h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded px-1.5 text-xs font-medium before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] ${isSaved ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'}`}>
             {isSaved ? t('builder.saved') : t('builder.edited')}
           </span>
-          <span className="hidden h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded bg-pause-bg px-1.5 text-xs font-medium text-pause before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] xl:inline-flex">
-            {workflow?.status === 'PUBLISHED' ? t('workflows.status_on') : workflow?.status === 'PAUSED' ? t('workflows.tab_paused') : t('workflows.tab_draft')}
-          </span>
+          {workflow?.status !== 'PUBLISHED' && workflow?.status !== 'PAUSED' && (
+            <span className="hidden h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded bg-pause-bg px-1.5 text-xs font-medium text-pause before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] xl:inline-flex">
+              {t('workflows.tab_draft')}
+            </span>
+          )}
           <span
             data-testid="builder-workspace-context"
             title={t('builder.workspace_context').replace('{workspace}', activeWorkspaceId ?? t('builder.workspace_not_selected'))}
@@ -1151,7 +1153,7 @@ export const WorkflowBuilderPage: React.FC = () => {
               <span aria-hidden="true" className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full p-0.5 transition-colors ${workflow.status === 'PUBLISHED' ? 'justify-end bg-ok' : 'justify-start bg-border-strong'}`}>
                 <span className="h-3.5 w-3.5 rounded-full bg-white" />
               </span>
-              <span className="hidden xl:inline">{workflow.status === 'PUBLISHED' ? t('builder.active.on') : t('builder.active.off')}</span>
+              <span className="hidden lg:inline">{workflow.status === 'PUBLISHED' ? t('builder.active.on') : t('builder.active.off')}</span>
             </button>
           )}
           {workflow?.status === 'PUBLISHED' && (

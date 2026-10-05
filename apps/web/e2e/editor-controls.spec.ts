@@ -172,4 +172,12 @@ test.describe('editor controls', () => {
     await page.getByTestId('workflow-redo').click();
     await expect(nodes).toHaveCount(1);
   });
+
+  test('header shows the active state once: the switch for published workflows, a Draft chip otherwise', async ({ page }) => {
+    await setup(page, 'PUBLISHED');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/workflows/${workflowId}/builder`);
+    await expect(page.getByTestId('workflow-active-switch')).toBeVisible();
+    await expect(page.locator('header').getByText('On', { exact: true })).toHaveCount(1);
+  });
 });
