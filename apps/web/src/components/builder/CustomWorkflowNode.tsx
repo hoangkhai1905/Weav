@@ -15,7 +15,6 @@ import {
   Bot,
   Scan,
   AlertCircle,
-  Zap,
   CheckCircle2,
   Loader2,
   XCircle,
@@ -82,50 +81,56 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
   const isAI = nodeType.startsWith('ai') || nodeType.startsWith('agent');
   const isLogic = nodeType.startsWith('logic');
 
+  const badge = (tone: string, children: React.ReactNode) => (
+    <span className={`inline-flex h-[18px] max-w-[110px] shrink-0 items-center gap-1 truncate rounded px-1.5 text-[11px] font-medium ${tone}`}>
+      {children}
+    </span>
+  );
+
   // Badge status render helper
   const renderStatusBadge = () => {
     if (status === 'processing') {
-      return (
-        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-          <Loader2 size={10} className="text-amber-500 motion-safe:animate-spin" />
+      return badge('bg-run-bg text-run', (
+        <>
+          <Loader2 size={10} className="motion-safe:animate-spin" aria-hidden="true" />
           {t('builder.status.running')}
-        </span>
-      );
+        </>
+      ));
     }
     if (status === 'success') {
-      return (
-        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-          <CheckCircle2 size={10} className="text-emerald-500" />
+      return badge('bg-ok-bg text-ok', (
+        <>
+          <CheckCircle2 size={10} aria-hidden="true" />
           {executionTime || '200 OK'}
-        </span>
-      );
+        </>
+      ));
     }
     if (status === 'tested') {
-      return (
-        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-          <CheckCircle2 size={10} className="text-emerald-500" />
+      return badge('bg-ok-bg text-ok', (
+        <>
+          <CheckCircle2 size={10} aria-hidden="true" />
           {`${nodeType === 'ocr.extract' ? 'OCR test passed' : 'Test passed'}${executionTime ? ` · ${executionTime}` : ''}`}
-        </span>
-      );
+        </>
+      ));
     }
     if (status === 'error') {
-      return (
-        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
-          <XCircle size={10} className="text-rose-500" />
+      return badge('bg-err-bg text-err', (
+        <>
+          <XCircle size={10} aria-hidden="true" />
           {t('builder.status.error')}
-        </span>
-      );
+        </>
+      ));
     }
     const readinessClass = readiness.state === 'unsupported'
-      ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20'
+      ? 'bg-err-bg text-err'
       : readiness.state === 'ready' || readiness.state === 'draft'
-        ? 'text-muted-foreground bg-muted border-border'
-        : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20';
+        ? 'bg-muted text-text-2'
+        : 'bg-warn-bg text-warn';
     return (
       <span
         data-testid="workflow-node-readiness"
         data-readiness={readiness.state}
-        className={`shrink-0 rounded-md border px-1.5 py-0.5 font-mono text-[10px] ${readinessClass}`}
+        className={`inline-flex h-[18px] max-w-[110px] shrink-0 items-center truncate rounded px-1.5 text-[11px] font-medium ${readinessClass}`}
       >
         {readiness.label}
       </span>
@@ -133,35 +138,18 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
   };
 
   // Node container styling based on selection and status
-  let borderStyle = 'border-border';
+  let borderStyle = 'border-border-strong hover:border-muted-foreground';
   if (isNodeSelected) {
-    borderStyle = 'border-primary ring-4 ring-primary/15 shadow-lift';
+    borderStyle = status === 'error' ? 'border-err ring-1 ring-err' : 'border-primary ring-1 ring-primary';
   } else if (status === 'processing') {
-    borderStyle = 'border-amber-500 ring-1 ring-amber-500/30';
+    borderStyle = 'border-run motion-safe:animate-[weav-node-pulse_1.4s_ease-in-out_infinite]';
   } else if (status === 'error') {
-    borderStyle = 'border-rose-500 ring-1 ring-rose-500/30';
-  } else if (status === 'success') {
-    borderStyle = 'border-emerald-500/60 dark:border-emerald-500/40';
+    borderStyle = 'border-err';
   }
 
-  // Accent icon background
-  const iconBgClass = isTrigger
-    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-    : isAI
-    ? 'bg-violet-500/10 text-violet-600 border-violet-500/20 dark:text-violet-300'
-    : isLogic
-    ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20'
-    : 'bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-300';
-
-  // Category accent along the top edge so node roles read at a glance
-  const accentClass = isTrigger
-    ? 'from-amber-400 to-orange-500'
-    : isAI
-    ? 'from-[var(--brand-from)] to-[var(--brand-to)]'
-    : isLogic
-    ? 'from-sky-400 to-cyan-500'
-    : 'from-blue-400 to-blue-600';
-  const handleClass = '!h-3 !w-3 !rounded-full !border-2 !border-card !bg-primary shadow-soft cursor-crosshair transition-transform hover:!scale-125';
+  // Type stripe: 3px on the left edge, colour = step type
+  const stripeClass = isTrigger ? 'bg-t-trigger' : isAI ? 'bg-t-ai' : isLogic ? 'bg-t-logic' : 'bg-t-action';
+  const handleClass = '!h-2 !w-2 !rounded-full !border-[1.5px] !border-muted-foreground !bg-card cursor-crosshair transition-colors hover:!border-primary hover:!bg-primary';
 
   const iconMotion = prefersReducedMotion
     ? { scale: 1 }
@@ -180,49 +168,38 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
       data-node-type={nodeType}
       data-status={status}
       data-readiness={readiness.state}
-      initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.985, y: 4 }}
-      animate={prefersReducedMotion ? { opacity: 1, scale: 1 } : { opacity: 1, scale: 1, y: isNodeSelected ? -1 : 0 }}
-      transition={{ duration: prefersReducedMotion ? 0.01 : 0.18, ease: [0.16, 1, 0.3, 1] }}
-      className={`relative w-64 select-none rounded-xl border bg-card p-3 pt-3.5 shadow-soft transition-[border-color,box-shadow] duration-200 hover:shadow-lift ${borderStyle}`}
+      initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.985 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: prefersReducedMotion ? 0.01 : 0.15, ease: [0.16, 1, 0.3, 1] }}
+      className={`relative w-[232px] select-none rounded-lg border bg-card py-2.5 pl-[15px] pr-3 transition-[border-color,box-shadow] duration-150 ${borderStyle}`}
     >
-      <span aria-hidden="true" className={`pointer-events-none absolute inset-x-3 top-0 h-[3px] rounded-b-full bg-gradient-to-r ${accentClass}`} />
+      <span aria-hidden="true" className={`pointer-events-none absolute -bottom-px -left-px -top-px w-[3px] rounded-l-lg ${stripeClass}`} />
       {/* Target Handle (Left) */}
       {!isTrigger && (
         <Handle
           type="target"
           position={Position.Left}
-          className={`${handleClass} !-left-1.5`}
+          className={`${handleClass} !-left-1`}
         />
       )}
 
-      {/* Selected Indicator Pill */}
-      {isNodeSelected && (
-        <div className="absolute -top-2.5 right-3 rounded-full bg-brand-gradient px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white shadow-brand">
-          {t('builder.status.inspecting')}
-        </div>
-      )}
-
       {/* Node Header */}
-      <div className="flex items-start gap-2.5">
+      <div className="flex items-center gap-2.5">
         <motion.div
           data-testid="workflow-node-icon"
           animate={iconMotion}
           transition={iconTransition}
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${iconBgClass}`}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-subtle text-text-2"
         >
-          <Icon size={16} aria-hidden="true" />
+          <Icon size={15} aria-hidden="true" />
         </motion.div>
 
-        <div className="flex flex-col min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-1">
-            <span className="truncate text-[13px] font-semibold text-foreground">{name}</span>
-            {isTrigger && (
-              <span className="flex items-center gap-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase">
-                <Zap size={9} /> {t('builder.status.trigger')}
-              </span>
-            )}
-          </div>
-          <span className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{nodeType}</span>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-[13px] font-medium text-foreground">{name}</span>
+          <span className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+            {isTrigger ? `${t('builder.status.trigger')} · ` : ''}
+            {data.id ? String(data.id) : nodeType}
+          </span>
         </div>
       </div>
 
@@ -230,17 +207,14 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
         <div
           data-testid="unsupported-node-warning"
           role="note"
-          className="mt-2 rounded border border-rose-500/20 bg-rose-500/10 px-2 py-1 text-[9px] font-medium text-rose-700 dark:text-rose-300"
+          className="mt-1.5 rounded bg-err-bg px-2 py-0.5 text-[10px] font-medium text-err"
         >
           Unsupported in Workflow V1 · preserved from draft
         </div>
       )}
 
-      {/* Footer Info */}
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2 text-[10px]">
-        <span className="truncate font-mono text-muted-foreground">
-          {data.id ? String(data.id) : 'step_1'}
-        </span>
+      <div className="mt-1.5 flex items-center justify-between gap-2">
+        <span className="truncate font-mono text-[11px] text-muted-foreground">{nodeType}</span>
         {renderStatusBadge()}
       </div>
 
@@ -253,11 +227,11 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
               type="source"
               position={Position.Right}
               style={{ top: `${42 + index * 24}%` }}
-              className={`${handleClass} !-right-1.5`}
+              className={`${handleClass} !-right-1`}
             />
             <span
               aria-hidden="true"
-              className="pointer-events-none absolute right-2 text-[9px] font-medium text-slate-500 dark:text-slate-400"
+              className="pointer-events-none absolute right-2 text-[10px] font-medium text-text-2"
               style={{ top: `calc(${42 + index * 24}% - 6px)` }}
             >
               {port.label}
@@ -268,7 +242,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
         <Handle
           type="source"
           position={Position.Right}
-          className={`${handleClass} !-right-1.5`}
+          className={`${handleClass} !-right-1`}
         />
       )}
     </motion.div>
