@@ -61,6 +61,10 @@
 - Node điều kiện: nhãn nhánh Đúng/Sai nằm ngoài node bên phải cạnh handle (testid `condition-port-label-*`), không đè badge "Sẵn sàng".
 - Toàn bộ nhãn tiếng Anh trong form inspector (điều kiện, cron, webhook, HTTP, email, Sheets, Telegram, OCR, AI, schema, thông điệp readiness) chuyển sang key `builder.cfg.*` VI/EN; bản EN giữ nguyên chữ cũ nên selector e2e không đổi. Giá trị lưu không đổi.
 
+## 5d. Pan khi mở inspector
+
+- Khi chọn node (click hoặc thêm từ palette) và inspector 400px mở, nếu node + 80px cho nhãn nhánh không nằm trọn trong vùng canvas nhìn thấy (trừ 400px và lề 24px) thì viewport được pan (200ms, 0 khi giảm chuyển động) mà không đổi zoom. Chỉ chạy khi đổi lựa chọn. `fitViewOptions` chừa 424px bên phải khi panel mở; minimap đã dịch trái 412px.
+
 ## 6. Rủi ro và chưa làm
 
 - Trang chi tiết lượt chạy 3 cột (Executions.dc.html: waterfall, "Cách sửa") chưa dựng lại; mới đổi màu theo token.
