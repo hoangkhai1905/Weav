@@ -24,6 +24,7 @@ import static com.weav.workflow.domain.valueobject.NodeExecutionStatus.SUCCESS;
 /** Plans DAG readiness using only the execution's node and edge statuses. */
 public final class ReadinessPlanner {
     private static final String CONDITION_TYPE = "logic.condition";
+    private static final String SWITCH_TYPE = "logic.switch";
     private static final Set<String> CONDITION_PORTS = Set.of("true", "false");
 
     public GraphState initialize(WorkflowDefinition definition, String firingRoot) {
@@ -147,6 +148,19 @@ public final class ReadinessPlanner {
             for (WorkflowDefinition.Edge edge : outgoing) {
                 if (edge.sourcePort() == null || !CONDITION_PORTS.contains(edge.sourcePort())) {
                     throw new IllegalArgumentException("Condition edges must use a true or false source port.");
+                }
+                states.put(edge.id(), selectedPort.equals(edge.sourcePort()) ? ACTIVE : INACTIVE);
+            }
+            return states;
+        }
+
+        if (SWITCH_TYPE.equals(node.type())) {
+            if (selectedPort == null) {
+                throw new IllegalArgumentException("A switch must select an output port.");
+            }
+            for (WorkflowDefinition.Edge edge : outgoing) {
+                if (edge.sourcePort() == null) {
+                    throw new IllegalArgumentException("Switch edges must use a source port.");
                 }
                 states.put(edge.id(), selectedPort.equals(edge.sourcePort()) ? ACTIVE : INACTIVE);
             }

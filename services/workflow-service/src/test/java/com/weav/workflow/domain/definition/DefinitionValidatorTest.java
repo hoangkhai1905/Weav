@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -149,7 +150,8 @@ class DefinitionValidatorTest {
     void exposesExactlyTheSupportedNodeTypes() {
         assertEquals(Set.of("trigger.manual", "trigger.schedule", "trigger.webhook", "trigger.telegram",
                 "http.request", "email.send", "google.sheets", "telegram.send_message", "logic.condition",
-                "ai.extract", "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive"),
+                "ai.extract", "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive",
+                "logic.switch", "data.set"),
                 NodeCatalog.supportedTypes());
     }
 
@@ -352,7 +354,7 @@ class DefinitionValidatorTest {
                 node("condition", "logic.condition", Map.of("operator", "run-code")),
                 node("summary", "ai.summarize", Map.of("maxLength", 0)),
                 node("ocr", "ocr.extract", Map.of("artifactId", "artifact", "fileUrl", "https://example.test/file"))),
-                List.of(new WorkflowDefinition.Edge("port", "manual", "summary", "next")));
+                List.of(new WorkflowDefinition.Edge("port", "manual", "summary", " ")));
 
         List<ValidationIssue> issues = validator.validateDraft(graph);
 
@@ -519,6 +521,131 @@ class DefinitionValidatorTest {
                         edge("dotted-source-consumer", "source.output", "consumer")));
         assertTrue(validator.validatePublish(ambiguous).stream()
                 .anyMatch(issue -> issue.nodeId().equals("consumer") && issue.code().equals("MAPPING_ERROR")));
+    }
+
+    private static WorkflowDefinition switchGraph(List<String> cases, String... ports) {
+        List<WorkflowDefinition.Node> nodes = new ArrayList<>();
+        List<WorkflowDefinition.Edge> edges = new ArrayList<>();
+        nodes.add(manual("manual"));
+        nodes.add(node("switch", "logic.switch", Map.of("value", "{{ trigger.input.plan }}", "cases", cases)));
+        edges.add(edge("e0", "manual", "switch"));
+        for (int index = 0; index < ports.length; index++) {
+            nodes.add(node("t" + index, "http.request", httpConfig()));
+            edges.add(new WorkflowDefinition.Edge("p" + index, "switch", "t" + index, ports[index]));
+        }
+        return definition(nodes, edges);
+    }
+
+    private static boolean has(List<ValidationIssue> issues, String code) {
+        return issues.stream().anyMatch(issue -> issue.code().equals(code));
+    }
+
+    @Test
+    void switchEdgesMayUseCasesDefaultAndFanOutOnPublish() {
+        var graph = switchGraph(List.of("gold", "silver"), "gold", "gold", "default");
+
+        assertEquals(List.of(), validator.validateDraft(graph));
+        assertEquals(List.of(), validator.validatePublish(graph));
+    }
+
+    @Test
+    void switchEdgesRejectUnknownMissingAndConditionPortsOnPublishButNotDraftShape() {
+        for (String port : new String[] {"bronze", "true"}) {
+            var graph = switchGraph(List.of("gold"), port);
+            assertEquals(List.of(), validator.validateDraft(graph), port);
+            assertTrue(has(validator.validatePublish(graph), "INVALID_SOURCE_PORT"), port);
+        }
+        var missing = switchGraph(List.of("gold"), (String) null);
+        assertTrue(has(validator.validatePublish(missing), "INVALID_SOURCE_PORT"));
+    }
+
+    @Test
+    void draftAcceptsAnyNonBlankPortOfAtMost64CharactersAndRejectsBlankOrLongOnes() {
+        assertEquals(List.of(), validator.validateDraft(switchGraph(List.of("x"), "any thing", "a".repeat(64))));
+        assertTrue(has(validator.validateDraft(switchGraph(List.of("x"), " ")), "INVALID_SOURCE_PORT"));
+        assertTrue(has(validator.validateDraft(switchGraph(List.of("x"), "a".repeat(65))), "INVALID_SOURCE_PORT"));
+    }
+
+    @Test
+    void conditionAndOtherNodesKeepTheirPortRulesOnPublish() {
+        var condition = definition(List.of(manual("manual"),
+                node("c", "logic.condition", Map.of("left", 1, "operator", "eq", "right", 1)),
+                node("a", "http.request", httpConfig()), node("b", "http.request", httpConfig())),
+                List.of(edge("e0", "manual", "c"),
+                        new WorkflowDefinition.Edge("e1", "c", "a", "true"),
+                        new WorkflowDefinition.Edge("e2", "c", "b", "false")));
+        assertEquals(List.of(), validator.validatePublish(condition));
+
+        for (String port : new String[] {"default", "maybe", null}) {
+            var bad = definition(List.of(manual("manual"),
+                    node("c", "logic.condition", Map.of("left", 1, "operator", "eq", "right", 1)),
+                    node("a", "http.request", httpConfig())),
+                    List.of(edge("e0", "manual", "c"), new WorkflowDefinition.Edge("e1", "c", "a", port)));
+            assertTrue(has(validator.validatePublish(bad), "INVALID_SOURCE_PORT"), String.valueOf(port));
+        }
+        var plainWithPort = definition(List.of(manual("manual"), node("a", "http.request", httpConfig())),
+                List.of(new WorkflowDefinition.Edge("e1", "manual", "a", "default")));
+        assertTrue(has(validator.validatePublish(plainWithPort), "INVALID_SOURCE_PORT"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidSwitchCases")
+    void rejectsInvalidSwitchCasesOnPublish(String name, List<Object> cases) {
+        var graph = manualThen("switch", "logic.switch", Map.of("value", "x", "cases", cases));
+
+        assertTrue(has(validator.validatePublish(graph), "INVALID_SWITCH_CASES")
+                || has(validator.validatePublish(graph), "REQUIRED_FIELD_MISSING"), name);
+        if (!name.equals("empty")) {
+            assertTrue(has(validator.validatePublish(graph), "INVALID_SWITCH_CASES"), name);
+        }
+    }
+
+    static Stream<Arguments> invalidSwitchCases() {
+        return Stream.of(
+                Arguments.of("duplicate", List.<Object>of("a", "a")),
+                Arguments.of("blank", List.<Object>of("a", " ")),
+                Arguments.of("too long", List.<Object>of("a".repeat(65))),
+                Arguments.of("reserved default", List.<Object>of("default")),
+                Arguments.of("mapping", List.<Object>of("{{ trigger.input.x }}")),
+                Arguments.of("mapping short", List.<Object>of("{{x}}")),
+                Arguments.of("half mapping", List.<Object>of("a{{")),
+                Arguments.of("too many", IntStream.range(0, 21).mapToObj(i -> (Object) ("c" + i)).toList()),
+                Arguments.of("empty", List.<Object>of()));
+    }
+
+    @Test
+    void acceptsTwentyCasesAndRequiresValueAndCasesOnPublish() {
+        var twenty = IntStream.range(0, 20).mapToObj(i -> "c" + i).toList();
+        assertEquals(List.of(), validator.validatePublish(
+                manualThen("switch", "logic.switch", Map.of("value", "x", "cases", twenty))));
+        assertTrue(has(validator.validatePublish(
+                manualThen("switch", "logic.switch", Map.of("cases", List.of("a")))), "REQUIRED_FIELD_MISSING"));
+        assertTrue(has(validator.validatePublish(
+                manualThen("switch", "logic.switch", Map.of("value", "x"))), "REQUIRED_FIELD_MISSING"));
+        assertTrue(has(validator.validateDraft(
+                manualThen("switch", "logic.switch", Map.of("value", "x", "cases", "a"))), "INVALID_FIELD_TYPE"));
+    }
+
+    @Test
+    void dataSetNeedsOneToHundredNonBlankKeysOfAtMost128Characters() {
+        assertEquals(List.of(), validator.validatePublish(manualThen("set", "data.set", Map.of("fields",
+                Map.of("a", 1, "b", Map.of("c", List.of("{{ trigger.input.x }}")), "n", Boolean.TRUE)))));
+        assertEquals(List.of(), validator.validatePublish(manualThen("set", "data.set", Map.of("fields",
+                IntStream.range(0, 100).boxed().collect(java.util.stream.Collectors.toMap(i -> "k" + i, i -> i))))));
+        assertEquals(List.of(), validator.validatePublish(manualThen("set", "data.set",
+                Map.of("fields", Map.of("a".repeat(128), 1)))));
+        assertEquals(List.of(), validator.validateDraft(manualThen("set", "data.set", Map.of())));
+
+        assertTrue(has(validator.validatePublish(manualThen("set", "data.set", Map.of())),
+                "REQUIRED_FIELD_MISSING"));
+        for (Map<String, Object> fields : List.<Map<String, Object>>of(Map.of(), Map.of(" ", 1),
+                Map.of("a".repeat(129), 1),
+                IntStream.range(0, 101).boxed().collect(java.util.stream.Collectors.toMap(i -> "k" + i, i -> i)))) {
+            assertTrue(has(validator.validatePublish(manualThen("set", "data.set", Map.of("fields", fields))),
+                    "INVALID_DATA_SET_FIELDS"), fields.keySet().toString().length() + "");
+        }
+        assertTrue(has(validator.validateDraft(manualThen("set", "data.set", Map.of("fields", "text"))),
+                "INVALID_FIELD_TYPE"));
     }
 
     private static WorkflowDefinition definition(List<WorkflowDefinition.Node> nodes,

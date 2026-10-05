@@ -76,8 +76,10 @@ public class WorkflowGenerationService {
             default -> invalidIntent();
         };
     }
-    private static List<Map<String,Object>> capabilities() {
-        return NodeCatalog.supportedTypes().stream().sorted().filter(t -> IntegrationReadiness.forType(t).configured())
+    /** logic.switch is withheld: ai-service generation only allows true/false edge ports (re-enable in week 3). */
+    static List<Map<String,Object>> capabilities() {
+        return NodeCatalog.supportedTypes().stream().sorted().filter(t -> !t.equals("logic.switch"))
+                .filter(t -> IntegrationReadiness.forType(t).configured())
                 .map(t -> Map.<String,Object>of("type", t, "configFields", NodeCatalog.configFields(t).stream()
                         .filter(f -> !f.equals("connectionId") && !f.equals("schemaDescription")).sorted().toList())).toList();
     }

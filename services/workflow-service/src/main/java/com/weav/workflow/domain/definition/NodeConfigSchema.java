@@ -35,6 +35,15 @@ public record NodeConfigSchema(
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
+    /** Template fields declared as plain {@code type: string} (no oneOf, no untyped "any value"). */
+    public Set<String> stringOnlyFields() {
+        return properties.entrySet().stream()
+                .filter(entry -> entry.getValue().template() && "string".equals(entry.getValue().type())
+                        && entry.getValue().oneOf().isEmpty())
+                .map(Map.Entry::getKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
     /**
      * One property schema. {@code type} is null for "any value"; {@code minLength} 1 means non-blank.
      *

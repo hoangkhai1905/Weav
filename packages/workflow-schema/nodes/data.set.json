@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/data.set",
+  "title": "Set data",
+  "description": "Builds an object from the given fields. Use mappings to rename, copy or reshape values from earlier steps.",
+  "x-weav-node": {
+    "type": "data.set",
+    "category": "logic",
+    "label": "Set data",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "fields": {
+      "type": "object",
+      "title": "Fields",
+      "description": "Field names and values (1 to 100 fields). Values can be any JSON value and may contain mappings at any depth.",
+      "x-weav-template": true
+    }
+  },
+  "required": [
+    "fields"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/logic.switch",
+  "title": "Switch",
+  "description": "Compares a value with a list of cases and continues along the output port of the first match, or the default port when nothing matches.",
+  "x-weav-node": {
+    "type": "logic.switch",
+    "category": "logic",
+    "label": "Switch",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "value": {
+      "title": "Value",
+      "description": "Value to match. Matching is an exact text comparison (case- and whitespace-sensitive). Numbers are compared as text without a trailing \".0\" (2.0 matches case 2); booleans as true or false.",
+      "x-weav-template": true
+    },
+    "cases": {
+      "type": "array",
+      "title": "Cases",
+      "description": "Case values (1 to 20, unique, at most 64 characters). Each case is an output port; the default port is used when no case matches.",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "value",
+    "cases"
+  ],
+  "additionalProperties": false
+}

@@ -84,7 +84,7 @@ public record WorkflowDefinition(
         }
     }
 
-    /** A directed edge; only condition nodes use {@code sourcePort}. */
+    /** A directed edge; only condition (true/false) and switch (case or default) nodes use {@code sourcePort}. */
     public record Edge(String id, String source, String target, String sourcePort) {
     }
 }
