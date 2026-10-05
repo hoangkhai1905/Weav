@@ -103,7 +103,7 @@ function LiveGlobalExecutionsPage() {
     try {
       const workflow = await workflowApi.getWorkflow(execution.workflowId);
       if (!workflow || workflow.status !== 'PUBLISHED') {
-        setNotice(isVietnamese ? 'Chỉ có thể chạy lại workflow đang Published.' : tr('msg.only_published_workflows_can_be_run_again'));
+        setNotice(isVietnamese ? 'Chỉ có thể chạy lại quy trình đã xuất bản.' : tr('msg.only_published_workflows_can_be_run_again'));
         return;
       }
       const receipt = await workflowApi.runWorkflow(execution.workflowId);
@@ -161,7 +161,7 @@ function LiveGlobalExecutionsPage() {
         </label>
         {!workflowId && (
           <select aria-label={t('executions.col_workflow')} value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} className={fieldCls}>
-            <option value="ALL">{isVietnamese ? 'Tất cả workflow' : 'All workflows'}</option>
+            <option value="ALL">{isVietnamese ? 'Tất cả quy trình' : 'All workflows'}</option>
             {workflows.map((workflow) => <option key={workflow.id} value={workflow.name}>{workflow.name}</option>)}
           </select>
         )}

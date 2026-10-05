@@ -65,6 +65,13 @@
 
 - Khi chọn node (click hoặc thêm từ palette) và inspector 400px mở, nếu node + 80px cho nhãn nhánh không nằm trọn trong vùng canvas nhìn thấy (trừ 400px và lề 24px) thì viewport được pan (200ms, 0 khi giảm chuyển động) mà không đổi zoom. Chỉ chạy khi đổi lựa chọn. `fitViewOptions` chừa 424px bên phải khi panel mở; minimap đã dịch trái 412px.
 
+## 5e. Quét chuỗi tiếng Anh khi ngôn ngữ là Tiếng Việt
+
+- Thêm `lib/i18n/tr.ts` (`tr(key)`, `appLocale()`) cho module ngoài React. Toàn bộ thông báo lỗi của API client (workflow, OCR, kết nối, thông báo, auth, workspace), lỗi fallback ở trang Quy trình/Builder/Dashboard/Live executions/AI panel chuyển sang khóa `msg.*`; bản EN giữ nguyên chữ cũ.
+- Builder: mô tả/tên node Telegram, lý do chặn xuất bản, nhãn cạnh (aria), ghi chú node không hỗ trợ, badge "Test passed". Toaster có `containerAriaLabel`. Mẫu quy trình (tiêu đề, trigger, tên bước), nhãn trigger của lượt chạy, định dạng ngày theo ngôn ngữ.
+- Cố ý giữ tiếng Anh: dữ liệu mock/demo (tên quy trình, log, bước của mock ExecutionsPage/ExecutionDetailPage/AiGenerator), id kỹ thuật (`trigger.schedule`, phương thức HTTP), tên thương hiệu (Gmail, Google Sheets, Telegram, Slack, OCR), mức log (`[ERROR]`), ví dụ placeholder, attribution "React Flow", alt logo "WEAV app logo", thông điệp lỗi backend hiển thị nguyên văn.
+- Kiểm tra: quét DOM tiếng Việt qua mock mode cho 24 route/trạng thái và chụp ảnh `vi-*.png`.
+
 ## 6. Rủi ro và chưa làm
 
 - Trang chi tiết lượt chạy 3 cột (Executions.dc.html: waterfall, "Cách sửa") chưa dựng lại; mới đổi màu theo token.
