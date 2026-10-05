@@ -72,6 +72,16 @@
 - Cố ý giữ tiếng Anh: dữ liệu mock/demo (tên quy trình, log, bước của mock ExecutionsPage/ExecutionDetailPage/AiGenerator), id kỹ thuật (`trigger.schedule`, phương thức HTTP), tên thương hiệu (Gmail, Google Sheets, Telegram, Slack, OCR), mức log (`[ERROR]`), ví dụ placeholder, attribution "React Flow", alt logo "WEAV app logo", thông điệp lỗi backend hiển thị nguyên văn.
 - Kiểm tra: quét DOM tiếng Việt qua mock mode cho 24 route/trạng thái và chụp ảnh `vi-*.png`.
 
+## 5h. Vòng 5: picker Sheets, sidebar hover, tab Workspace, menu hàng kết nối
+
+- Inspector Google Sheets: picker kết nối giống Gmail (chỉ liệt kê kết nối Sheets ACTIVE, gợi ý rỗng có link tới Workspace → Kết nối, bỏ `font-mono`); thêm 3 test e2e.
+- Sidebar: hover/focus mở rộng dạng overlay (không đẩy nội dung), nút ghim/bỏ ghim; test không dịch layout.
+- Header editor: trạng thái "Đang bật" chỉ hiện một lần (chip nháp chỉ khi chưa xuất bản/tạm dừng; nhãn công tắc ẩn dưới lg).
+- Workspace tách `/workspace`, `/workspace/members`, `/workspace/settings`; test members/read-switch/notification-integration trỏ lại đường dẫn mới.
+- Hàng kết nối: một nút chính + menu "…" (bàn phím: mở, mũi tên, Esc), xóa ở cuối sau đường phân cách.
+- Kiểm tra: tsc, build, eslint (chỉ 4 lỗi cũ); Playwright 35 failed / 66 passed đúng tập lỗi baseline; workspace-connections 35/35; workspace-members + read-switch 8 failed / 13 passed như trước (1 test read-switch flaky khi chạy song song). notification-integration "validated targets" lỗi sẵn có.
+- GitNexus: LOW; WorkspacePage impact không xác định rõ (index cũ), đã kiểm tra callers bằng grep.
+
 ## 6. Khôi phục sau merge và đổi chữ "workflow" (aa8e7b9)
 
 - Merge `d4fa9f4` (sau khi viết lại tên tác giả) giữ phía chưa dịch khi gặp xung đột, làm mất key i18n trong `translations.ts`, chuỗi đã dịch trong `WorkflowBuilderPage.tsx` và mục work log của `7d79d27`. Đã khôi phục 3 file này từ `7d79d27`.
