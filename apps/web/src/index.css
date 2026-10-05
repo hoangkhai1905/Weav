@@ -349,3 +349,13 @@ body {
     @apply font-sans;
   }
 }
+
+@keyframes weav-node-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--run) 20%, transparent);
+  }
+}

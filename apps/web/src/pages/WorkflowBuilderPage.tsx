@@ -808,53 +808,52 @@ export const WorkflowBuilderPage: React.FC = () => {
   return (
     <div
       onPointerDownCapture={handleWorkspacePointerDown}
-      className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden bg-background font-sans text-foreground sm:-m-6"
+      className="-m-4 flex h-[calc(100vh-3rem)] flex-col overflow-hidden bg-background font-sans text-foreground sm:-m-5"
     >
-      {/* TOP EDITOR HEADER (~48px) */}
-      <header className="z-20 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-3 sm:px-4">
-        <div className="flex items-center gap-3">
+      {/* TOP EDITOR HEADER (48px) */}
+      <header className="z-20 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-3 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2">
           <Link
             to="/workflows"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          title={t('builder.back_to_workflows')}
+            className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[13px] text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title={t('builder.back_to_workflows')}
+            aria-label={t('builder.back_to_workflows')}
           >
-            <ArrowLeft size={16} />
+            <ArrowLeft size={14} aria-hidden="true" />
+            <span className="hidden sm:inline">{t('nav.workflows')}</span>
           </Link>
-
-          <div className="flex items-center gap-2">
-            <input
-              data-testid="workflow-title"
-              aria-label="Workflow name"
-              type="text"
-              value={workflowTitle}
-              disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
-              onChange={(e) => {
-                setWorkflowTitle(e.target.value);
-                setIsSaved(false);
-              }}
-              className="h-8 w-40 min-w-0 rounded-lg sm:w-72 border border-transparent bg-transparent px-2 text-sm font-semibold text-foreground transition-colors hover:border-border focus:border-primary/40 focus:bg-card focus:outline-none focus:ring-4 focus:ring-primary/10"
-            />
-            <span className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-medium ring-1 ring-inset ${isSaved ? 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/20 dark:text-emerald-300' : 'bg-amber-500/10 text-amber-700 ring-amber-500/20 dark:text-amber-300'}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${isSaved ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-              {isSaved ? t('builder.saved') : t('builder.edited')}
-            </span>
-          </div>
+          <span aria-hidden="true" className="text-muted-foreground">/</span>
+          <input
+            data-testid="workflow-title"
+            aria-label="Workflow name"
+            type="text"
+            value={workflowTitle}
+            disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
+            onChange={(e) => {
+              setWorkflowTitle(e.target.value);
+              setIsSaved(false);
+            }}
+            className="h-7 w-36 min-w-0 rounded-md border border-transparent bg-transparent px-1.5 text-sm font-semibold text-foreground transition-colors hover:border-border focus:border-primary focus:bg-card focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 sm:w-64"
+          />
+          <span className={`inline-flex h-5 items-center gap-[5px] whitespace-nowrap rounded px-1.5 text-xs font-medium before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] ${isSaved ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'}`}>
+            {isSaved ? t('builder.saved') : t('builder.edited')}
+          </span>
         </div>
 
-        {/* Header Zoom & Canvas Controls */}
-        <div className="hidden items-center gap-0.5 rounded-lg border border-border bg-muted p-0.5 text-xs lg:flex">
-          <button className="h-7 rounded-md px-2.5 text-foreground/80 transition-colors hover:bg-card hover:text-foreground">
-            -
-          </button>
-          <span className="px-1.5 font-mono text-[11px] text-muted-foreground">100%</span>
-          <button className="h-7 rounded-md px-2.5 text-foreground/80 transition-colors hover:bg-card hover:text-foreground">
-            +
-          </button>
-          <span className="mx-0.5 h-3.5 w-px bg-border" />
-          <button className="h-7 rounded-md px-2.5 text-[11px] text-foreground/80 transition-colors hover:bg-card hover:text-foreground">
-            {t('builder.fit_view')}
-          </button>
-        </div>
+        {/* Editor / Executions tabs */}
+        <nav aria-label={t('builder.workflow_sections')} className="hidden h-12 items-stretch gap-5 md:flex">
+          <span aria-current="page" className="inline-flex items-center border-b-2 border-foreground px-0.5 text-[13px] font-medium text-foreground">
+            {t('builder.section_editor')}
+          </span>
+          {workflow && (
+            <Link
+              to={`/executions?workflowId=${encodeURIComponent(workflow.id)}`}
+              className="inline-flex items-center border-b-2 border-transparent px-0.5 text-[13px] font-medium text-text-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {t('nav.executions')}
+            </Link>
+          )}
+        </nav>
 
         {/* Top Header Action Buttons */}
         <div className="flex items-center gap-2">
@@ -862,22 +861,11 @@ export const WorkflowBuilderPage: React.FC = () => {
             data-testid="workflow-generate-ai"
             onClick={() => setIsGeneratePanelOpen(true)}
             disabled={isLoadingWorkflow || !workflow}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-primary/20 bg-accent px-3 text-xs font-semibold text-primary transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Sparkles size={13} />
+            <Sparkles size={13} aria-hidden="true" />
             <span>{t('ai.generate_with_ai')}</span>
           </button>
-          <button
-            data-testid="workflow-save"
-            onClick={handleSaveDraft}
-            disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
-            aria-busy={isSavingWorkflow}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-medium text-foreground shadow-soft transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-50"
-          >
-            {isSavingWorkflow ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-            <span>{isSavingWorkflow ? 'Saving…' : t('builder.save')}</span>
-          </button>
-
           <button
             data-testid="workflow-publish"
             onClick={handlePublishWorkflow}
@@ -885,7 +873,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             title={publishBlockers.length > 0 ? publishBlockers.join('; ') : undefined}
             disabled={publishBlockers.length > 0 || isLoadingWorkflow || isSavingWorkflow || !workflow}
             aria-busy={isSavingWorkflow}
-            className="hidden sm:flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-medium text-foreground shadow-soft transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="hidden h-8 items-center gap-1.5 rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 sm:inline-flex"
           >
             <span>{t('builder.publish')}</span>
           </button>
@@ -894,52 +882,61 @@ export const WorkflowBuilderPage: React.FC = () => {
             <button
               data-testid="workflow-run"
               onClick={handleRunWorkflow}
-              className="hidden h-8 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white shadow-soft transition-colors hover:bg-emerald-700 sm:flex"
+              className="hidden h-8 items-center gap-1.5 rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex"
             >
-              <Play size={13} />
+              <Play size={13} aria-hidden="true" />
               <span>Run</span>
             </button>
           )}
 
-          <motion.button
+          <button
             data-testid="workflow-preview"
             onClick={handlePreviewFlow}
             disabled={isPreviewing}
             title="Visual preview only. No Workflow Service run or node provider is called."
             aria-label="Preview workflow (visual only)"
             aria-busy={isPreviewing}
-            whileHover={prefersReducedMotion ? undefined : { y: -1, scale: 1.01 }}
-            whileTap={prefersReducedMotion ? undefined : { scale: 0.97 }}
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-brand-gradient px-3.5 text-xs font-semibold text-white shadow-brand transition-[filter] hover:brightness-110 disabled:cursor-wait disabled:opacity-80"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70"
           >
             {isPreviewing ? (
               <>
-                <span className="relative flex size-3.5 items-center justify-center"><span className="absolute size-3.5 animate-ping rounded-full bg-white/45 motion-reduce:animate-none" /><Loader2 size={13} className="relative motion-safe:animate-spin" /></span>
+                <Loader2 size={13} className="motion-safe:animate-spin" aria-hidden="true" />
                 <span>Previewing…</span>
               </>
             ) : (
               <>
-                <Play size={13} className="fill-white" />
+                <Play size={13} aria-hidden="true" />
                 <span>Preview flow</span>
               </>
             )}
-          </motion.button>
+          </button>
+
+          <button
+            data-testid="workflow-save"
+            onClick={handleSaveDraft}
+            disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
+            aria-busy={isSavingWorkflow}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-primary bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:border-primary-hover hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-wait disabled:opacity-50"
+          >
+            {isSavingWorkflow ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Save size={13} aria-hidden="true" />}
+            <span>{isSavingWorkflow ? 'Saving…' : t('builder.save')}</span>
+          </button>
         </div>
       </header>
 
-      {isLoadingWorkflow && <div role="status" className="border-b border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">Loading workflow…</div>}
-      {workflowError && <div role="alert" data-testid="workflow-builder-error" className="border-b border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">{workflowError}</div>}
+      {isLoadingWorkflow && <div role="status" className="border-b border-border bg-white px-3 py-2 text-xs text-text-2">Loading workflow…</div>}
+      {workflowError && <div role="alert" data-testid="workflow-builder-error" className="border-b border-err-border bg-err-bg px-3 py-2 text-xs text-err">{workflowError}</div>}
       {publishedWebhooks.length > 0 && (
-        <section aria-label="One-time webhook credentials" className="space-y-2 border-b border-amber-300 bg-amber-50 px-3 py-3 text-xs text-amber-950">
+        <section aria-label="One-time webhook credentials" className="space-y-2 border-b border-warn/30 bg-warn-bg px-3 py-3 text-xs text-warn">
           <div className="flex items-center justify-between gap-3">
             <p className="font-semibold">Copy these webhook credentials now. The secret will not be returned again.</p>
-            <button type="button" onClick={() => setPublishedWebhooks([])} className="rounded px-2 py-1 hover:bg-amber-100">Dismiss</button>
+            <button type="button" onClick={() => setPublishedWebhooks([])} className="rounded px-2 py-1 hover:bg-warn-bg">Dismiss</button>
           </div>
           {publishedWebhooks.map((webhook) => (
             <div key={webhook.triggerId} className="flex flex-wrap items-center gap-2 font-mono">
               <span>Endpoint key: {webhook.endpointKey}</span>
               <span>Secret: {webhook.secret}</span>
-              <button type="button" onClick={() => void navigator.clipboard.writeText(webhook.secret)} className="inline-flex items-center gap-1 rounded border border-amber-400 px-2 py-1 hover:bg-amber-100">
+              <button type="button" onClick={() => void navigator.clipboard.writeText(webhook.secret)} className="inline-flex items-center gap-1 rounded border border-warn/30 px-2 py-1 hover:bg-warn-bg">
                 <Copy size={12} /> Copy secret
               </button>
             </div>
@@ -952,7 +949,7 @@ export const WorkflowBuilderPage: React.FC = () => {
           id="publish-blocker-summary"
           data-testid="publish-blocker-summary"
           role="status"
-          className="border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-300"
+          className="border-b border-warn/30 bg-warn-bg px-3 py-1.5 text-[11px] text-warn"
         >
           Publish unavailable: {publishBlockers[0]}
           {publishBlockers.length > 1 ? ` (+${publishBlockers.length - 1} more)` : ''}
@@ -963,20 +960,19 @@ export const WorkflowBuilderPage: React.FC = () => {
         <div
           data-testid="unsupported-draft-warning"
           role="alert"
-          className="border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800 dark:border-rose-900/70 dark:bg-rose-950/25 dark:text-rose-300"
+          className="border-b border-err-border bg-err-bg px-3 py-1.5 text-[11px] text-err"
         >
           Unsupported V1 nodes are preserved in this draft: {unsupportedNodeTypes.join(', ')}. Remove or replace them before publishing.
         </div>
       )}
 
       {/* COMPACT EDITOR TOOLBAR / SUB-HEADER (~40px) */}
-      <div className="z-10 flex h-10 shrink-0 items-center justify-between gap-3 border-b border-border bg-card/60 px-3 text-xs backdrop-blur sm:px-4">
+      <div className="z-10 flex h-9 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-3 text-xs sm:px-4">
         <div className="flex min-w-0 items-center gap-3 overflow-hidden whitespace-nowrap font-mono text-[11px] text-muted-foreground">
-          <span className="flex items-center gap-1.5 rounded-full bg-accent px-2 py-0.5 font-medium text-primary">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+          <span className="inline-flex h-5 items-center gap-[5px] rounded bg-pause-bg px-1.5 font-sans text-xs font-medium text-pause before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-['']">
             {workflow?.status ?? 'Draft'}
           </span>
-          <span className="text-border">|</span>
+          <span aria-hidden="true" className="text-border-strong">|</span>
           <span data-testid="workflow-preview-notice" className="truncate">
             Visual preview only · no workflow or provider calls
           </span>
@@ -1036,7 +1032,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                 placeholder={t('builder.search_actions')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-9 w-full rounded-lg border border-border bg-muted/50 pl-8 pr-2.5 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                className="h-9 w-full rounded-md border border-border-strong bg-card pl-8 pr-2.5 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
           </div>
@@ -1063,9 +1059,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                           disabled={isLoadingWorkflow || !workflow}
                           onClick={() => handleAddCatalogItem(item.type, item.nameKey ? t(item.nameKey) : item.title, item.nameKey ?? '')}
                           aria-label={item.nameKey ? t(item.nameKey) : item.title}
-                          className="group flex w-full cursor-pointer items-center gap-2.5 rounded-lg border border-transparent p-2 text-left transition-[background-color,border-color,box-shadow,transform] hover:-translate-y-px hover:border-border hover:bg-card hover:shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:hover:translate-y-0"
+                          className="group flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-transparent px-2 py-1.5 text-left transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${item.type.startsWith('trigger') ? 'border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400' : item.type.startsWith('ai') || item.type.startsWith('agent') ? 'border-violet-500/20 bg-violet-500/10 text-violet-600 dark:text-violet-300' : item.type.startsWith('logic') ? 'border-sky-500/20 bg-sky-500/10 text-sky-600 dark:text-sky-400' : 'border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-300'}`}>
+                          <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-subtle text-text-2">
+                            <span aria-hidden="true" className={`absolute -left-px top-1 bottom-1 w-[3px] rounded-r-sm ${item.type.startsWith('trigger') ? 'bg-t-trigger' : item.type.startsWith('ai') || item.type.startsWith('agent') ? 'bg-t-ai' : item.type.startsWith('logic') ? 'bg-t-logic' : 'bg-t-action'}`} />
                             <ItemIcon size={15} />
                           </span>
                           <div className="flex flex-col min-w-0 flex-1">
@@ -1104,25 +1101,25 @@ export const WorkflowBuilderPage: React.FC = () => {
                 variant={BackgroundVariant.Dots}
                 gap={20}
                 size={1}
-                color={theme === 'dark' ? '#2a3245' : '#c3cad8'}
+                color={theme === 'dark' ? 'rgba(237,235,233,0.14)' : 'rgba(28,25,23,0.18)'}
               />
             )}
-            <Controls className="workflow-controls !overflow-hidden !rounded-xl !border !border-border !bg-card !shadow-lift" />
+            <Controls className="workflow-controls !overflow-hidden !rounded-lg !border !border-border !bg-card !shadow-pop" />
             {showMinimap && (
               <MiniMap
                 data-testid="workflow-minimap"
                 aria-label={t('builder.workflow_minimap')}
-                className="workflow-minimap hidden sm:block !bottom-3 !right-3 !m-0 !h-28 !w-44 !overflow-hidden !rounded-xl !border !border-border !bg-slate-200/90 !shadow-lift dark:!bg-slate-950/90"
-                style={{ width: 176, height: 112, borderRadius: 12 }}
+                className="workflow-minimap hidden sm:block !bottom-3 !right-3 !m-0 !h-28 !w-44 !overflow-hidden !rounded-lg !border !border-border !bg-card !shadow-pop"
+                style={{ width: 176, height: 112, borderRadius: 8 }}
                 nodeColor={(node) => {
                   const status = String(node.data?.status ?? 'idle');
-                  return status === 'success' ? '#10b981' : status === 'processing' ? '#f59e0b' : '#5b7bfa';
+                  return status === 'success' ? (theme === 'dark' ? '#5bc98a' : '#15803d') : status === 'processing' ? (theme === 'dark' ? '#8fb0f5' : '#2b5fd9') : (theme === 'dark' ? '#7d8791' : '#a8a29e');
                 }}
-                nodeStrokeColor={theme === 'dark' ? '#64748b' : '#94a3b8'}
+                nodeStrokeColor={theme === 'dark' ? '#3d3a37' : '#d6d3d1'}
                 nodeStrokeWidth={1.5}
                 nodeBorderRadius={4}
-                maskColor={theme === 'dark' ? 'rgba(15, 24, 38, 0.62)' : 'rgba(71, 85, 105, 0.42)'}
-                maskStrokeColor={theme === 'dark' ? '#94a3b8' : '#64748b'}
+                maskColor={theme === 'dark' ? 'rgba(0, 0, 0, 0.45)' : 'rgba(28, 25, 23, 0.1)'}
+                maskStrokeColor={theme === 'dark' ? '#3d3a37' : '#d6d3d1'}
                 maskStrokeWidth={1.5}
                 pannable
                 zoomable
@@ -1142,7 +1139,7 @@ export const WorkflowBuilderPage: React.FC = () => {
           animate={{ opacity: 1, x: 0 }}
           exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: 16 }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.24, ease: [0.16, 1, 0.3, 1] }}
-          className="absolute inset-y-0 right-0 z-10 flex w-88 flex-col border-l border-border bg-card shadow-lift"
+          className="absolute inset-y-0 right-0 z-10 flex w-88 flex-col border-l border-border bg-card shadow-pop"
         >
           {/* Inspector Header */}
           <div className="flex items-center justify-between gap-2 border-b border-border p-3.5">
@@ -1157,8 +1154,8 @@ export const WorkflowBuilderPage: React.FC = () => {
               </span>
             </div>
             <span className={selectedNodeReadiness?.state === 'ready'
-              ? 'shrink-0 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-700 dark:text-emerald-300'
-              : 'shrink-0 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] text-amber-700 dark:text-amber-400'}>
+              ? 'shrink-0 rounded bg-ok-bg px-1.5 py-0.5 text-[11px] font-medium text-ok'
+              : 'shrink-0 rounded bg-warn-bg px-1.5 py-0.5 text-[11px] font-medium text-warn'}>
               ● {selectedNodeReadiness?.label ?? t('builder.ready')}
             </span>
           </div>
@@ -1167,14 +1164,14 @@ export const WorkflowBuilderPage: React.FC = () => {
             <div
               data-testid="integration-readiness"
               role="status"
-              className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-300"
+              className="border-b border-warn/30 bg-warn-bg px-3 py-2 text-[11px] leading-relaxed text-warn"
             >
               {selectedNodeReadinessMessage}
               {isUnsupportedNode && <span className="block">Existing configuration is preserved and read-only.</span>}
             </div>
           )}
           {selectedNodeType === 'trigger.webhook' && (
-            <div data-testid="webhook-endpoint-readiness" role="status" className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+            <div data-testid="webhook-endpoint-readiness" role="status" className="border-b border-border bg-subtle px-3 py-2 text-[11px] text-text-2">
               The endpoint key and secret are provisioned on publish. The public path is system-managed.
             </div>
           )}
@@ -1185,9 +1182,9 @@ export const WorkflowBuilderPage: React.FC = () => {
               <button
                 key={tab}
                 onClick={() => setInspectorTab(tab)}
-                className={`-mb-px flex-1 border-b-2 py-2.5 text-center font-medium capitalize transition-colors ${
+                className={`-mb-px flex-1 border-b-2 py-2 text-center text-[13px] font-medium transition-colors ${
                   inspectorTab === tab
-                    ? 'border-primary text-primary'
+                    ? 'border-foreground text-foreground'
                     : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
@@ -1201,130 +1198,130 @@ export const WorkflowBuilderPage: React.FC = () => {
             {inspectorTab === 'config' && (
               isUnsupportedNode ? (
                 <div data-testid="unsupported-node-config" className="space-y-3">
-                  <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                  <p className="text-[11px] leading-relaxed text-text-2">
                     This node is outside Workflow V1. Its saved configuration stays intact and cannot be edited or published here.
                   </p>
-                  <pre className="max-h-72 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 font-mono text-[10px] text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                  <pre className="max-h-72 overflow-auto rounded border border-border bg-subtle p-2 font-mono text-[10px] text-text-2">
                     {JSON.stringify(selectedNodeConfig, null, 2)}
                   </pre>
                 </div>
               ) : selectedNodeType === 'logic.condition' ? (
                 <div data-testid="condition-config" className="space-y-3">
                   <div>
-                    <label htmlFor="condition-left" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Left value</label>
+                    <label htmlFor="condition-left" className="mb-1 block text-[11px] font-medium text-text-2">Left value</label>
                     <input
                       id="condition-left"
                       data-testid="condition-left"
                       value={String(selectedNodeConfig.left ?? '')}
                       placeholder="{{ trigger.input.email }}"
                       onChange={(event) => updateSelectedNodeConfig({ left: event.target.value })}
-                      className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                   </div>
                   <div>
-                    <label htmlFor="condition-operator" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Operator</label>
+                    <label htmlFor="condition-operator" className="mb-1 block text-[11px] font-medium text-text-2">Operator</label>
                     <select
                       id="condition-operator"
                       data-testid="condition-operator"
                       value={String(selectedNodeConfig.operator ?? 'eq')}
                       onChange={(event) => updateSelectedNodeConfig({ operator: event.target.value })}
-                      className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     >
                       {CONDITION_OPERATORS.map((operator) => <option key={operator.value} value={operator.value}>{operator.label}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="condition-right" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Right value</label>
+                    <label htmlFor="condition-right" className="mb-1 block text-[11px] font-medium text-text-2">Right value</label>
                     <input
                       id="condition-right"
                       data-testid="condition-right"
                       value={String(selectedNodeConfig.right ?? '')}
                       placeholder="500 or {{ variables.threshold }}"
                       onChange={(event) => updateSelectedNodeConfig({ right: event.target.value })}
-                      className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                   </div>
-                  <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">Use JSON values or V1 mappings. Expressions, operators, and code are not accepted as values.</p>
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">Use JSON values or V1 mappings. Expressions, operators, and code are not accepted as values.</p>
                 </div>
               ) : selectedNodeType === 'trigger.schedule' ? (
                 <div data-testid="schedule-config" className="space-y-3">
                   <div>
-                    <label htmlFor="schedule-cron" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Six-field cron</label>
+                    <label htmlFor="schedule-cron" className="mb-1 block text-[11px] font-medium text-text-2">Six-field cron</label>
                     <input
                       id="schedule-cron"
                       data-testid="schedule-cron"
                       value={String(selectedNodeConfig.cron ?? '')}
                       placeholder="0 0 9 * * *"
                       onChange={(event) => updateSelectedNodeConfig({ cron: event.target.value })}
-                      className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                   </div>
                   <div>
-                    <label htmlFor="schedule-timezone" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">IANA timezone</label>
+                    <label htmlFor="schedule-timezone" className="mb-1 block text-[11px] font-medium text-text-2">IANA timezone</label>
                     <input
                       id="schedule-timezone"
                       data-testid="schedule-timezone"
                       value={String(selectedNodeConfig.timezone ?? '')}
                       placeholder="Asia/Ho_Chi_Minh"
                       onChange={(event) => updateSelectedNodeConfig({ timezone: event.target.value })}
-                      className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                   </div>
                 </div>
               ) : selectedNodeType === 'trigger.webhook' ? (
                 <div data-testid="webhook-config" className="space-y-3">
-                  <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">The endpoint key and secret are provisioned on publish and shown once. This draft does not choose a public path.</p>
-                  <div className="rounded border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                  <p className="text-[11px] leading-relaxed text-text-2">The endpoint key and secret are provisioned on publish and shown once. This draft does not choose a public path.</p>
+                  <div className="rounded border border-border bg-subtle px-2.5 py-2 text-[11px] text-text-2">
                     Method: <span className="font-mono">POST</span>
                   </div>
                 </div>
               ) : selectedNodeType === 'trigger.manual' ? (
                 <div>
-                  <label htmlFor="manual-button-label" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Button label</label>
+                  <label htmlFor="manual-button-label" className="mb-1 block text-[11px] font-medium text-text-2">Button label</label>
                   <input
                     id="manual-button-label"
                     value={String(selectedNodeConfig.buttonLabel ?? '')}
                     onChange={(event) => updateSelectedNodeConfig({ buttonLabel: event.target.value })}
-                    className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                    className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                   />
                 </div>
               ) : selectedNodeType === 'trigger.telegram' ? (
-                <div data-testid="telegram-trigger-config" className="rounded border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-300">
+                <div data-testid="telegram-trigger-config" className="rounded border border-warn/30 bg-warn-bg p-3 text-[11px] leading-relaxed text-warn">
                   This trigger can be saved as a draft. Bot Service owns Telegram event normalization; no payload or ingress contract is available yet.
                 </div>
               ) : selectedNodeType === 'telegram.send_message' ? (
                 <div data-testid="telegram-send-config" className="space-y-3">
                   <div>
-                    <label htmlFor="telegram-chat-id" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Chat ID</label>
-                    <input id="telegram-chat-id" value={String(selectedNodeConfig.chatId ?? '')} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10" />
+                    <label htmlFor="telegram-chat-id" className="mb-1 block text-[11px] font-medium text-text-2">Chat ID</label>
+                    <input id="telegram-chat-id" value={String(selectedNodeConfig.chatId ?? '')} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                   <div>
-                    <label htmlFor="telegram-text" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Message</label>
-                    <textarea id="telegram-text" rows={3} value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full resize-y rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10" />
+                    <label htmlFor="telegram-text" className="mb-1 block text-[11px] font-medium text-text-2">Message</label>
+                    <textarea id="telegram-text" rows={3} value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                 </div>
               ) : selectedNodeType === 'http.request' ? (
                 <div data-testid="http-request-config" className="space-y-3">
                   <div>
-                    <label htmlFor="http-method" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Method</label>
-                    <select id="http-method" value={String(selectedNodeConfig.method ?? 'GET')} onChange={(event) => updateSelectedNodeConfig({ method: event.target.value })} className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10">
+                    <label htmlFor="http-method" className="mb-1 block text-[11px] font-medium text-text-2">Method</label>
+                    <select id="http-method" value={String(selectedNodeConfig.method ?? 'GET')} onChange={(event) => updateSelectedNodeConfig({ method: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary">
                       {['GET', 'POST', 'PUT', 'DELETE'].map((method) => <option key={method}>{method}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="http-url" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">URL</label>
-                    <input id="http-url" value={String(selectedNodeConfig.url ?? '')} onChange={(event) => updateSelectedNodeConfig({ url: event.target.value })} placeholder="https://example.com/api" className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10" />
+                    <label htmlFor="http-url" className="mb-1 block text-[11px] font-medium text-text-2">URL</label>
+                    <input id="http-url" value={String(selectedNodeConfig.url ?? '')} onChange={(event) => updateSelectedNodeConfig({ url: event.target.value })} placeholder="https://example.com/api" className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                   <div>
-                    <label htmlFor="http-body" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Body</label>
-                    <textarea id="http-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} placeholder="JSON or mapping" className="w-full resize-y rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10" />
+                    <label htmlFor="http-body" className="mb-1 block text-[11px] font-medium text-text-2">Body</label>
+                    <textarea id="http-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} placeholder="JSON or mapping" className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">Successful responses expose their body as output.data.</p>
+                  <p className="text-[10px] text-muted-foreground">Successful responses expose their body as output.data.</p>
                 </div>
               ) : selectedNodeType === 'email.send' ? (
                 <div data-testid="email-config" className="space-y-3">
                   <div>
-                    <label htmlFor="email-connection" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Gmail connection</label>
+                    <label htmlFor="email-connection" className="mb-1 block text-[11px] font-medium text-text-2">Gmail connection</label>
                     <select
                       id="email-connection"
                       data-testid="email-connection"
@@ -1332,7 +1329,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       // Omit the key when cleared: the Workflow Service rejects an empty connectionId even in drafts.
                       onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value || undefined })}
                       disabled={isLoadingConnections}
-                      className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10 disabled:opacity-60"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-60"
                     >
                       <option value="">{isLoadingConnections ? 'Loading connections…' : 'Select a Gmail connection'}</option>
                       {gmailConnections.map((connection) => (
@@ -1344,22 +1341,22 @@ export const WorkflowBuilderPage: React.FC = () => {
                       )}
                     </select>
                     {!isLoadingConnections && gmailConnections.length === 0 && (
-                      <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-                        No active Gmail connection. <Link to="/connections" className="text-blue-600 underline dark:text-blue-400">Connect Gmail</Link> first.
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        No active Gmail connection. <Link to="/connections" className="text-run underline">Connect Gmail</Link> first.
                       </p>
                     )}
                   </div>
                   <div>
-                    <label htmlFor="email-to" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Recipient</label>
-                    <input id="email-to" value={String(selectedNodeConfig.to ?? '')} onChange={(event) => updateSelectedNodeConfig({ to: event.target.value })} className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10" />
+                    <label htmlFor="email-to" className="mb-1 block text-[11px] font-medium text-text-2">Recipient</label>
+                    <input id="email-to" value={String(selectedNodeConfig.to ?? '')} onChange={(event) => updateSelectedNodeConfig({ to: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                   <div>
-                    <label htmlFor="email-subject" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Subject</label>
-                    <input id="email-subject" value={String(selectedNodeConfig.subject ?? '')} onChange={(event) => updateSelectedNodeConfig({ subject: event.target.value })} className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10" />
+                    <label htmlFor="email-subject" className="mb-1 block text-[11px] font-medium text-text-2">Subject</label>
+                    <input id="email-subject" value={String(selectedNodeConfig.subject ?? '')} onChange={(event) => updateSelectedNodeConfig({ subject: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                   <div>
-                    <label htmlFor="email-body" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Body</label>
-                    <textarea id="email-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} className="w-full resize-y rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10" />
+                    <label htmlFor="email-body" className="mb-1 block text-[11px] font-medium text-text-2">Body</label>
+                    <textarea id="email-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                 </div>
               ) : selectedNodeType.startsWith('ai.') ? (
@@ -1372,68 +1369,68 @@ export const WorkflowBuilderPage: React.FC = () => {
                         onChange={(outputSchema) => updateSelectedNodeConfig({ outputSchema })}
                       />
                       <div>
-                        <label htmlFor="ai-input-text" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Input text</label>
-                        <input id="ai-input-text" value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10" />
+                        <label htmlFor="ai-input-text" className="mb-1 block text-[11px] font-medium text-text-2">Input text</label>
+                        <input id="ai-input-text" value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                       </div>
                     </div>
                   )}
                   {selectedNodeType === 'ai.classify' && (
                     <div>
-                      <label htmlFor="ai-categories" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Categories (comma separated)</label>
-                      <input id="ai-categories" value={Array.isArray(selectedNodeConfig.categories) ? selectedNodeConfig.categories.join(', ') : ''} onChange={(event) => updateSelectedNodeConfig({ categories: event.target.value.split(',').map((value) => value.trim()).filter(Boolean) })} className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10" />
+                      <label htmlFor="ai-categories" className="mb-1 block text-[11px] font-medium text-text-2">Categories (comma separated)</label>
+                      <input id="ai-categories" value={Array.isArray(selectedNodeConfig.categories) ? selectedNodeConfig.categories.join(', ') : ''} onChange={(event) => updateSelectedNodeConfig({ categories: event.target.value.split(',').map((value) => value.trim()).filter(Boolean) })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                     </div>
                   )}
                   {selectedNodeType === 'ai.summarize' && (
                     <div>
-                      <label htmlFor="ai-max-length" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Maximum length</label>
-                      <input id="ai-max-length" type="number" min="1" value={String(selectedNodeConfig.maxLength ?? 200)} onChange={(event) => updateSelectedNodeConfig({ maxLength: Number(event.target.value) })} className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10" />
+                      <label htmlFor="ai-max-length" className="mb-1 block text-[11px] font-medium text-text-2">Maximum length</label>
+                      <input id="ai-max-length" type="number" min="1" value={String(selectedNodeConfig.maxLength ?? 200)} onChange={(event) => updateSelectedNodeConfig({ maxLength: Number(event.target.value) })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                     </div>
                   )}
                 </div>
               ) : selectedNodeType === 'ocr.extract' ? (
                 <div className="space-y-4">
-                  <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-900/70 dark:bg-blue-950/25">
+                  <div className="rounded-lg border border-run/30 bg-run-bg p-3">
                     <div className="flex items-start gap-2">
-                      <Scan size={16} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                      <Scan size={16} className="mt-0.5 shrink-0 text-run" />
                       <div>
-                        <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">{t('ocr.title')}</p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">{t('ocr.description')}</p>
+                        <p className="text-xs font-semibold text-foreground">{t('ocr.title')}</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-text-2">{t('ocr.description')}</p>
                       </div>
                     </div>
                   </div>
 
-                  <div data-testid="ocr-workflow-source" className="space-y-2 rounded border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-800 dark:bg-slate-950/60">
-                    <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">Workflow source (choose exactly one)</p>
+                  <div data-testid="ocr-workflow-source" className="space-y-2 rounded border border-border bg-subtle p-2.5">
+                    <p className="text-[11px] font-semibold text-text-2">Workflow source (choose exactly one)</p>
                     <div>
-                      <label htmlFor="ocr-artifact-id" className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-400">Workspace artifact ID</label>
+                      <label htmlFor="ocr-artifact-id" className="mb-1 block text-[10px] font-medium text-text-2">Workspace artifact ID</label>
                       <input
                         id="ocr-artifact-id"
                         data-testid="ocr-artifact-id"
                         value={String(selectedNodeConfig.artifactId ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value, fileUrl: '' })}
-                        className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                        className="w-full rounded border border-border bg-white px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
                     <div>
-                      <label htmlFor="ocr-file-url" className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-400">File URL</label>
+                      <label htmlFor="ocr-file-url" className="mb-1 block text-[10px] font-medium text-text-2">File URL</label>
                       <input
                         id="ocr-file-url"
                         data-testid="ocr-file-url"
                         value={String(selectedNodeConfig.fileUrl ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value, artifactId: '' })}
                         placeholder="https://..."
-                        className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs text-foreground outline-none focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                        className="w-full rounded border border-border bg-white px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
-                    <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">Leave both empty while drafting; filling one clears the other. URL execution stays disabled until its security checks are verified.</p>
+                    <p className="text-[10px] leading-relaxed text-muted-foreground">Leave both empty while drafting; filling one clears the other. URL execution stays disabled until its security checks are verified.</p>
                   </div>
 
                   <div>
-                    <label htmlFor="ocr-file-input" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                    <label htmlFor="ocr-file-input" className="mb-1 block text-[11px] font-medium text-text-2">
                       Try OCR now (separate from the workflow source)
                     </label>
-                    <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed border-slate-300 bg-slate-50 px-2.5 py-2 text-xs text-slate-600 transition-colors hover:border-blue-400 hover:bg-blue-50/60 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:border-blue-500/60 dark:hover:bg-blue-950/25">
-                      <Upload size={14} className="shrink-0 text-blue-600 dark:text-blue-400" />
+                    <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed border-border-strong bg-subtle px-2.5 py-2 text-xs text-text-2 transition-colors hover:border-run/30 hover:bg-run-bg">
+                      <Upload size={14} className="shrink-0 text-run" />
                       <span className="min-w-0 flex-1 truncate">{currentUserOcrFile?.name ?? t('ocr.choose_file')}</span>
                       <input
                         id="ocr-file-input"
@@ -1445,12 +1442,12 @@ export const WorkflowBuilderPage: React.FC = () => {
                         className="sr-only"
                       />
                     </label>
-                    <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t('ocr.accepted')}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">{t('ocr.accepted')}</p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label htmlFor="ocr-language" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                      <label htmlFor="ocr-language" className="mb-1 block text-[11px] font-medium text-text-2">
                         {t('ocr.language')}
                       </label>
                       <select
@@ -1460,14 +1457,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                           setOcrLanguage(event.target.value);
                           updateSelectedNodeConfig({ language: event.target.value });
                         }}
-                        className="w-full rounded-lg border border-border bg-muted/40 px-2 py-1.5 font-mono text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                        className="w-full rounded-md border border-border-strong bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       >
                         <option value="vi+en">{t('builder.language.vi_en')}</option>
                         <option value="vi">{t('settings.vietnamese')}</option>
                         <option value="en">{t('settings.english')}</option>
                       </select>
                     </div>
-                    <label className="mt-5 flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                    <label className="mt-5 flex items-center gap-2 text-[11px] text-text-2">
                       <input
                         type="checkbox"
                         checked={ocrDetectTables}
@@ -1475,7 +1472,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           setOcrDetectTables(event.target.checked);
                           updateSelectedNodeConfig({ detectTables: event.target.checked });
                         }}
-                        className="size-3.5 accent-blue-600"
+                        className="size-3.5 accent-run"
                       />
                       {t('ocr.detect_tables')}
                     </label>
@@ -1485,14 +1482,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <div
                       role="alert"
                       data-testid="ocr-error"
-                      className="rounded border border-rose-200 bg-rose-50 p-2.5 text-[11px] text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-300"
+                      className="rounded border border-err-border bg-err-bg p-2.5 text-[11px] text-err"
                     >
                       <div className="flex items-center justify-between gap-1.5">
-                        <span className="font-mono text-[10px] font-semibold uppercase bg-rose-200/70 dark:bg-rose-900/60 px-1 py-0.5 rounded">
+                        <span className="font-mono text-[10px] font-semibold uppercase bg-err-bg px-1 py-0.5 rounded">
                           {visibleOcrError.code}
                         </span>
                         {visibleOcrError.retryable && (
-                          <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
+                          <span className="text-[10px] text-warn font-medium">
                             Retryable
                           </span>
                         )}
@@ -1504,7 +1501,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           data-testid="ocr-retry"
                           onClick={handleRetryOcr}
                           disabled={isOcrRunning}
-                          className="mt-2 rounded border border-rose-300 px-2 py-1 text-[10px] font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-wait disabled:opacity-70 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                          className="mt-2 rounded border border-err-border px-2 py-1 text-[10px] font-semibold text-err transition-colors hover:bg-err-bg disabled:cursor-wait disabled:opacity-70"
                         >
                           Retry OCR
                         </button>
@@ -1524,22 +1521,22 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </button>
 
                   {visibleOcrResult && (
-                    <div data-testid="ocr-result" className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                    <div data-testid="ocr-result" className="space-y-3 rounded-lg border border-border bg-subtle p-3">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{t('ocr.result')}</span>
+                          <span className="text-[11px] font-semibold text-foreground">{t('ocr.result')}</span>
                           {visibleOcrResult.metadata.quality === 'OK' && (
-                            <span data-testid="ocr-quality-badge" className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                            <span data-testid="ocr-quality-badge" className="rounded border border-ok/30 bg-ok-bg px-1.5 py-0.5 font-mono text-[10px] font-medium text-ok">
                               ● OK
                             </span>
                           )}
                           {visibleOcrResult.metadata.quality === 'LOW_CONFIDENCE' && (
-                            <span data-testid="ocr-quality-badge" className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                            <span data-testid="ocr-quality-badge" className="rounded border border-warn/30 bg-warn-bg px-1.5 py-0.5 font-mono text-[10px] font-medium text-warn">
                               ▲ Low Confidence
                             </span>
                           )}
                           {visibleOcrResult.metadata.quality === 'EMPTY' && (
-                            <span data-testid="ocr-quality-badge" className="rounded border border-slate-400/20 bg-slate-400/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                            <span data-testid="ocr-quality-badge" className="rounded border border-border-strong bg-muted-foreground px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
                               ○ Empty
                             </span>
                           )}
@@ -1547,39 +1544,39 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={clearOcrResult}
-                          className="rounded p-0.5 text-slate-500 transition-colors hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800"
+                          className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted"
                           aria-label={t('ocr.dismiss_result')}
                         >
                           <X size={13} />
                         </button>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-[10px]">
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">{t('ocr.pages')}: <strong>{visibleOcrResult.document.pages}</strong></span>
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+                        <span className="rounded bg-white/70 px-2 py-1.5 text-text-2">{t('ocr.pages')}: <strong>{visibleOcrResult.document.pages}</strong></span>
+                        <span className="rounded bg-white/70 px-2 py-1.5 text-text-2">
                           {t('ocr.confidence')}: <strong>{visibleOcrResult.confidence !== null ? `${(visibleOcrResult.confidence * 100).toFixed(1)}%` : '—'}</strong>
                         </span>
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+                        <span className="rounded bg-white/70 px-2 py-1.5 text-text-2">
                           {t('ocr.mime_type')}: <strong>{visibleOcrResult.document.mimeType}</strong>
                         </span>
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+                        <span className="rounded bg-white/70 px-2 py-1.5 text-text-2">
                           {t('ocr.tables')}: <strong>{visibleOcrResult.tables?.length ?? 0}</strong>
                         </span>
                       </div>
 
                       {visibleOcrResult.metadata.quality === 'EMPTY' && (
-                        <div data-testid="ocr-empty-note" className="rounded border border-amber-200/60 bg-amber-50/50 p-2 text-[11px] text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+                        <div data-testid="ocr-empty-note" className="rounded border border-warn/30 bg-warn-bg p-2 text-[11px] text-warn">
                           {t('ocr.empty_text')}
                         </div>
                       )}
 
                       {visibleOcrResult.metadata.warnings && visibleOcrResult.metadata.warnings.length > 0 && (
                         <div data-testid="ocr-warnings" className="space-y-1">
-                          <span className="block text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                          <span className="block text-[10px] font-medium text-warn">
                             {t('ocr.warnings')} ({visibleOcrResult.metadata.warnings.length})
                           </span>
                           <div className="space-y-1">
                             {visibleOcrResult.metadata.warnings.map((w, idx) => (
-                              <div key={idx} className="rounded border border-amber-200/80 bg-amber-50/70 px-2 py-1 text-[10px] text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+                              <div key={idx} className="rounded border border-warn/30 bg-warn-bg px-2 py-1 text-[10px] text-warn">
                                 <span className="font-mono font-semibold">[{w.code}]</span>{' '}
                                 {w.page ? `(p.${w.page}) ` : ''}
                                 {w.message}
@@ -1590,30 +1587,30 @@ export const WorkflowBuilderPage: React.FC = () => {
                       )}
 
                       <div>
-                        <span className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-400">{t('ocr.raw_text')}</span>
-                        <pre data-testid="ocr-raw-text" className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-slate-200 bg-white/70 p-2 font-mono text-[10px] leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">{visibleOcrResult.text.rawText || '(No text detected)'}</pre>
+                        <span className="mb-1 block text-[10px] font-medium text-text-2">{t('ocr.raw_text')}</span>
+                        <pre data-testid="ocr-raw-text" className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-border bg-white/70 p-2 font-mono text-[10px] leading-relaxed text-text-2">{visibleOcrResult.text.rawText || '(No text detected)'}</pre>
                       </div>
                     </div>
                   )}
                 </div>
               ) : isGoogleNode ? (
                 <div className="space-y-4">
-                  <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-900/70 dark:bg-blue-950/25">
+                  <div className="rounded-lg border border-run/30 bg-run-bg p-3">
                     <div className="flex items-start gap-2">
                       {isGoogleSheetsNode ? (
-                        <FileSpreadsheet size={16} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                        <FileSpreadsheet size={16} className="mt-0.5 shrink-0 text-run" />
                       ) : (
-                        <FileText size={16} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                        <FileText size={16} className="mt-0.5 shrink-0 text-run" />
                       )}
                       <div>
-                        <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">{t('builder.google.title')}</p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">{t('builder.google.description')}</p>
+                        <p className="text-xs font-semibold text-foreground">{t('builder.google.title')}</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-text-2">{t('builder.google.description')}</p>
                       </div>
                     </div>
                   </div>
 
                   <div>
-                    <label htmlFor="google-connection" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                    <label htmlFor="google-connection" className="mb-1 block text-[11px] font-medium text-text-2">
                       {t('builder.google.connection')}
                     </label>
                     <select
@@ -1621,7 +1618,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       data-testid="google-connection"
                       value={String(selectedNodeConfig.connectionId ?? '')}
                       onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value })}
-                      className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     >
                       <option value="">Select an authorized connection</option>
                       {String(selectedNodeConfig.connectionId ?? '').trim() && (
@@ -1631,14 +1628,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label htmlFor="google-operation" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                    <label htmlFor="google-operation" className="mb-1 block text-[11px] font-medium text-text-2">
                       {t('builder.google.operation')}
                     </label>
                     <select
                       id="google-operation"
                       value={googleOperation}
                       onChange={(event) => updateSelectedNodeConfig({ operation: event.target.value })}
-                      className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     >
                       {isGoogleSheetsNode ? (
                         <>
@@ -1659,7 +1656,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                   {isGoogleSheetsNode && (
                     <>
                       <div>
-                        <label htmlFor="google-spreadsheet-id" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        <label htmlFor="google-spreadsheet-id" className="mb-1 block text-[11px] font-medium text-text-2">
                           {t('builder.google.spreadsheet_id')}
                         </label>
                         <input
@@ -1667,14 +1664,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                           type="text"
                           value={String(selectedNodeConfig.spreadsheetId ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ spreadsheetId: event.target.value })}
-                          className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                         />
                       </div>
 
                       {googleOperation === 'append' ? (
                         <>
                           <div>
-                            <label htmlFor="google-sheet-name" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                            <label htmlFor="google-sheet-name" className="mb-1 block text-[11px] font-medium text-text-2">
                               {t('builder.google.sheet_name')}
                             </label>
                             <input
@@ -1682,11 +1679,11 @@ export const WorkflowBuilderPage: React.FC = () => {
                               type="text"
                               value={String(selectedNodeConfig.sheetName ?? '')}
                               onChange={(event) => updateSelectedNodeConfig({ sheetName: event.target.value })}
-                              className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                              className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                             />
                           </div>
                           <div>
-                            <label htmlFor="google-row-variable" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                            <label htmlFor="google-row-variable" className="mb-1 block text-[11px] font-medium text-text-2">
                               {t('builder.google.row_variable')}
                             </label>
                             <input
@@ -1694,13 +1691,13 @@ export const WorkflowBuilderPage: React.FC = () => {
                               type="text"
                               value={String(selectedNodeConfig.rowDataVariable ?? '')}
                               onChange={(event) => updateSelectedNodeConfig({ rowDataVariable: event.target.value })}
-                              className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                              className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                             />
                           </div>
                         </>
                       ) : (
                         <div>
-                          <label htmlFor="google-range" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                          <label htmlFor="google-range" className="mb-1 block text-[11px] font-medium text-text-2">
                             {t('builder.google.range')}
                           </label>
                           <input
@@ -1708,14 +1705,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                             type="text"
                             value={String(selectedNodeConfig.range ?? '')}
                             onChange={(event) => updateSelectedNodeConfig({ range: event.target.value })}
-                            className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                            className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                           />
                         </div>
                       )}
 
                       {googleOperation === 'update' && (
                         <div>
-                          <label htmlFor="google-value-variable" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                          <label htmlFor="google-value-variable" className="mb-1 block text-[11px] font-medium text-text-2">
                             {t('builder.google.value_variable')}
                           </label>
                           <input
@@ -1723,7 +1720,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                             type="text"
                             value={String(selectedNodeConfig.valueVariable ?? '')}
                             onChange={(event) => updateSelectedNodeConfig({ valueVariable: event.target.value })}
-                            className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                            className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                           />
                         </div>
                       )}
@@ -1732,7 +1729,7 @@ export const WorkflowBuilderPage: React.FC = () => {
 
                   {isGoogleDocsNode && googleOperation === 'create' && (
                     <div>
-                      <label htmlFor="google-document-title" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                      <label htmlFor="google-document-title" className="mb-1 block text-[11px] font-medium text-text-2">
                         {t('builder.google.title_field')}
                       </label>
                       <input
@@ -1740,14 +1737,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                         type="text"
                         value={String(selectedNodeConfig.title ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ title: event.target.value })}
-                        className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
                   )}
 
                   {isGoogleDocsNode && googleOperation !== 'create' && (
                     <div>
-                      <label htmlFor="google-document-id" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                      <label htmlFor="google-document-id" className="mb-1 block text-[11px] font-medium text-text-2">
                         {t('builder.google.document_id')}
                       </label>
                       <input
@@ -1755,14 +1752,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                         type="text"
                         value={String(selectedNodeConfig.documentId ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ documentId: event.target.value })}
-                        className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
                   )}
 
                   {isGoogleDocsNode && (googleOperation === 'create' || googleOperation === 'append') && (
                     <div>
-                      <label htmlFor="google-content-variable" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                      <label htmlFor="google-content-variable" className="mb-1 block text-[11px] font-medium text-text-2">
                         {t('builder.google.content_variable')}
                       </label>
                       <input
@@ -1770,47 +1767,47 @@ export const WorkflowBuilderPage: React.FC = () => {
                         type="text"
                         value={String(selectedNodeConfig.contentVariable ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ contentVariable: event.target.value })}
-                        className="w-full rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors focus:border-primary/50 focus:bg-card focus:ring-4 focus:ring-primary/10"
+                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
                   )}
 
-                  <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">{t('builder.google.id_hint')}</p>
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.google.id_hint')}</p>
                 </div>
               ) : (
-                <div data-testid="node-config-fallback" className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                <div data-testid="node-config-fallback" className="text-[11px] leading-relaxed text-muted-foreground">
                   No editable V1 configuration is defined for this node.
                 </div>
               )
             )}
 
             {inspectorTab === 'input' && (
-              <div data-testid="workflow-no-input" className="text-[11px] text-slate-500 dark:text-slate-400">
+              <div data-testid="workflow-no-input" className="text-[11px] text-muted-foreground">
                 No workflow input data is available because this draft has not been executed.
               </div>
             )}
 
             {inspectorTab === 'output' && (
-              <div data-testid="workflow-no-output" className="text-[11px] text-slate-500 dark:text-slate-400">
+              <div data-testid="workflow-no-output" className="text-[11px] text-muted-foreground">
                 No workflow output data is available because this draft has not been executed.
               </div>
             )}
 
             {inspectorTab === 'logs' && (
-              <div data-testid="workflow-no-node-logs" className="text-[11px] text-slate-500 dark:text-slate-400">
+              <div data-testid="workflow-no-node-logs" className="text-[11px] text-muted-foreground">
                 No Workflow Service node logs are available for this draft.
               </div>
             )}
           </div>
 
           {/* Inspector Footer Actions */}
-          <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50">
+          <div className="p-3 border-t border-border flex items-center justify-between bg-subtle">
             <button
               data-testid="workflow-preview-inspector"
               onClick={handlePreviewFlow}
               disabled={isPreviewing}
               aria-label="Preview workflow (visual only)"
-              className="px-2.5 py-1 text-xs font-medium bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded transition-colors"
+              className="px-2.5 py-1 text-xs font-medium bg-muted hover:bg-muted text-foreground rounded transition-colors"
             >
               Preview flow
             </button>
@@ -1838,10 +1835,10 @@ export const WorkflowBuilderPage: React.FC = () => {
         >
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 font-semibold text-foreground">
-              <Terminal size={13} className="text-primary" />
+              <Terminal size={13} className="text-text-2" />
               Draft activity
             </span>
-            <span className="text-border">|</span>
+            <span aria-hidden="true" className="text-border-strong">|</span>
             <span className="text-muted-foreground">No V1 execution history</span>
           </div>
 
@@ -1861,26 +1858,26 @@ export const WorkflowBuilderPage: React.FC = () => {
 
         {/* Console Log Content */}
         {telemetryOpen && (
-          <div className="h-28 overflow-y-auto bg-[#0b0f17] p-3 font-mono text-[11px] text-slate-300 sm:px-4">
-            <p data-testid="workflow-telemetry-preview-notice" role="note" className="mb-2 text-slate-400">
+          <div className="h-28 overflow-y-auto bg-subtle p-3 font-mono text-[11px] text-muted-foreground sm:px-4">
+            <p data-testid="workflow-telemetry-preview-notice" role="note" className="mb-2 text-muted-foreground">
               Visual preview only. This action does not call the Workflow Service or node integrations.
             </p>
             <div className="space-y-1 text-[11px]">
               {logs.length === 0 && (
-                <p data-testid="workflow-telemetry-empty" className="text-slate-500">
+                <p data-testid="workflow-telemetry-empty" className="text-muted-foreground">
                   No execution telemetry is available for this draft.
                 </p>
               )}
               {logs.map((log) => (
                 <div key={log.id} className="flex items-center gap-2">
-                  <span className="text-slate-500 text-[10px]">{log.time}</span>
+                  <span className="text-muted-foreground text-[10px]">{log.time}</span>
                   <span
                     className={
                       log.level === 'success'
-                        ? 'text-emerald-400'
+                        ? 'text-ok'
                         : log.level === 'warn'
-                        ? 'text-amber-400'
-                        : 'text-slate-300'
+                        ? 'text-warn'
+                        : 'text-muted-foreground'
                     }
                   >
                     {log.msg}
