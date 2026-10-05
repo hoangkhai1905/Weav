@@ -161,7 +161,7 @@ export function WorkflowsPage() {
       const accepted = await workflowApi.runWorkflow(id);
       if (!isCurrentNotificationSession(mutationSession)) return;
       showSuccessToast('toast.workflow.run_accepted', mutationSession);
-      navigate(`/executions?workflowId=${encodeURIComponent(id)}&executionId=${encodeURIComponent(accepted.executionId)}`);
+      navigate(`/workflows/${encodeURIComponent(id)}/executions?run=${encodeURIComponent(accepted.executionId)}`);
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
         setApiError(error instanceof Error ? error.message : 'Workflow could not be started.');
@@ -321,7 +321,7 @@ export function WorkflowsPage() {
     if (isErrored(wf)) {
       return (
         <Link
-          to={`/executions?workflowId=${encodeURIComponent(wf.id)}`}
+          to={`/workflows/${encodeURIComponent(wf.id)}/executions`}
           title={t('workflows.view_failed_runs')}
           className={`${statusBadgeClass('err')} hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
         >
@@ -481,6 +481,8 @@ export function WorkflowsPage() {
             >
               {t('workflows.bulk_clear')}
             </button>
+            {isWorkflowMockMode && (
+              <>
             <span aria-hidden="true" className="mx-1 h-[18px] w-px bg-border-strong" />
             <button
               type="button"
@@ -493,6 +495,8 @@ export function WorkflowsPage() {
               <Trash2 size={13} aria-hidden="true" />
               {t('workflows.btn_delete')}…
             </button>
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -732,7 +736,7 @@ export function WorkflowsPage() {
                           >
                             <Link
                               role="menuitem"
-                              to={`/executions?workflowId=${encodeURIComponent(wf.id)}`}
+                              to={`/workflows/${encodeURIComponent(wf.id)}/executions`}
                               className="flex h-8 items-center gap-2 rounded-md px-2 hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             >
                               <History size={14} className="text-muted-foreground" />
@@ -767,6 +771,8 @@ export function WorkflowsPage() {
                                 </>
                               )}
                             </button>
+                            {isWorkflowMockMode && (
+                              <>
                             <div className="my-1 h-px bg-border" />
                             <button
                               type="button"
@@ -782,6 +788,8 @@ export function WorkflowsPage() {
                               {isWorkflowMockMode ? <Trash2 size={14} /> : <Lock size={14} />}
                               <span>{t('workflows.btn_delete')}…</span>
                             </button>
+                              </>
+                            )}
                           </motion.div>
                         )}
                       </AnimatePresence>

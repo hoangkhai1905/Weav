@@ -45,6 +45,16 @@
 | E2E | `VITE_API_MODE=http npx playwright test -c playwright.local.config.ts workflow-ui workspace-connections localization dashboard-real-data workflow-catalog-v1` | 35 failed / 45 passed, trùng tập lỗi baseline; toàn bộ workspace-connections PASS |
 | Ảnh chụp | script Playwright (chromium) ở chế độ mock | Sáng/tối cho Quy trình, Editor, Lượt chạy, Kết nối; 0 lỗi console |
 
+## 5b. Phiên tiếp theo: editor toàn màn hình, chi tiết lượt chạy 3 cột, API thật
+
+- Trang editor (`/workflows/:id`, `/builder`) và trang lượt chạy (`/workflows/:id/executions`, `/executions/:id`, chỉ khi không ở mock mode) ẩn Topbar, sidebar thu thành rail 56px, không padding; canvas chiếm toàn bộ phần còn lại.
+- Bỏ palette trái cố định; thêm bảng "Thêm bước" (nút nổi trên canvas hoặc Ctrl/⌘+K, Esc đóng) dùng cùng `PALETTE_CATALOG` và `handleAddCatalogItem`. Inspector 400px chỉ khi chọn node, Esc đóng. Log đáy 32px, mặc định thu gọn (tự mở khi xem trước). fitView tối thiểu zoom 0.85.
+- `ExecutionsTriPane`: danh sách lượt (API `getExecutions(workflowId)`), bảng bước có waterfall tính từ timestamp, panel Input/Output(Lỗi)/Nhật ký. Input hiển thị thông báo vì service không lưu input từng bước. Không dựng "Chạy lại từ bước" hay mẹo sửa lỗi vì API không có.
+- Badge "Lỗi" và tab Lịch sử chạy trỏ tới `/workflows/:id/executions` (trước đây `/executions?workflowId=` bị trang live bỏ qua).
+- Xóa quy trình bị ẩn khi không ở mock mode (API chưa có). Chuỗi tiếng Anh còn lại trong builder đã chuyển sang i18n (header, banner, log, nhãn readiness); các nhãn form trong inspector (Left value, Operator...) vẫn là tiếng Anh.
+- Settings tab và công tắc Active: bỏ qua vì chưa có endpoint tương ứng trong UI/API. Undo/redo: không có sẵn.
+- E2E: `addNode` và các test OCR/catalog mở palette trước; test logs trong `workflow-api-v1` bấm tab Logs. Kết quả 5 spec chính vẫn 35 failed / 45 passed, trùng baseline; `workspace-read-switch` + `ocr-builder` 20 failed / 7 passed, trùng baseline trước phiên này.
+
 ## 6. Rủi ro và chưa làm
 
 - Trang chi tiết lượt chạy 3 cột (Executions.dc.html: waterfall, "Cách sửa") chưa dựng lại; mới đổi màu theo token.

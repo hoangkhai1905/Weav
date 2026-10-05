@@ -40,6 +40,7 @@ import {
   Upload,
   X,
   Copy,
+  Plus,
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
@@ -463,7 +464,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       const accepted = await workflowApi.runWorkflow(workflow.id, {});
       if (!isCurrentNotificationSession(mutationSession)) return;
       showSuccessToast('toast.workflow.run_accepted', mutationSession);
-      navigate(`/executions?workflowId=${encodeURIComponent(workflow.id)}&executionId=${encodeURIComponent(accepted.executionId)}`);
+      navigate(`/workflows/${encodeURIComponent(workflow.id)}/executions?run=${encodeURIComponent(accepted.executionId)}`);
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
         setWorkflowError(error instanceof Error ? error.message : 'Workflow execution could not be queued.');
@@ -472,7 +473,8 @@ export const WorkflowBuilderPage: React.FC = () => {
   };
 
   // Telemetry Console State
-  const [telemetryOpen, setTelemetryOpen] = useState(true);
+  const [telemetryOpen, setTelemetryOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [logs, setLogs] = useState<Array<{ id: string; time: string; level: 'info' | 'success' | 'warn'; msg: string }>>([]);
 
   const nodeTypes = useMemo(() => ({ customNode: CustomWorkflowNode }), []);
@@ -519,6 +521,23 @@ export const WorkflowBuilderPage: React.FC = () => {
     setSelectedNodeId(null);
     setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, selected: false } })));
   }, [setNodes]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setSearchQuery('');
+        setPaletteOpen((open) => !open);
+        return;
+      }
+      if (event.key === 'Escape') {
+        if (paletteOpen) setPaletteOpen(false);
+        else if (inspectorOpen) closeInspector();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [paletteOpen, inspectorOpen, closeInspector]);
 
   const handleNodesChange = useCallback(
     (changes: Parameters<typeof onNodesChange>[0]) => {
@@ -782,6 +801,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     clearExecutionTimers();
     setActiveEdgeId(null);
     setIsPreviewing(true);
+    setTelemetryOpen(true);
     const time = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date());
     setLogs((prev) => [
       ...prev,
@@ -789,7 +809,7 @@ export const WorkflowBuilderPage: React.FC = () => {
         id: String(++logSequenceRef.current),
         time,
         level: 'info',
-        msg: 'Preview only; this action does not call the Workflow Service or node integrations.',
+        msg: t('builder.preview_log_notice'),
       },
     ]);
 
@@ -808,7 +828,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   return (
     <div
       onPointerDownCapture={handleWorkspacePointerDown}
-      className="-m-4 flex h-[calc(100vh-3rem)] flex-col overflow-hidden bg-background font-sans text-foreground sm:-m-5"
+      className="flex h-full w-full flex-col overflow-hidden bg-background font-sans text-foreground"
     >
       {/* TOP EDITOR HEADER (48px) */}
       <header className="z-20 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-3 sm:px-4">
@@ -825,7 +845,7 @@ export const WorkflowBuilderPage: React.FC = () => {
           <span aria-hidden="true" className="text-muted-foreground">/</span>
           <input
             data-testid="workflow-title"
-            aria-label="Workflow name"
+            aria-label={t('builder.workflow_name')}
             type="text"
             value={workflowTitle}
             disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
@@ -838,19 +858,25 @@ export const WorkflowBuilderPage: React.FC = () => {
           <span className={`inline-flex h-5 items-center gap-[5px] whitespace-nowrap rounded px-1.5 text-xs font-medium before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] ${isSaved ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'}`}>
             {isSaved ? t('builder.saved') : t('builder.edited')}
           </span>
+          <span className="inline-flex h-5 items-center gap-[5px] whitespace-nowrap rounded bg-pause-bg px-1.5 text-xs font-medium text-pause before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-['']">
+            {workflow?.status === 'PUBLISHED' ? t('workflows.status_on') : workflow?.status === 'PAUSED' ? t('workflows.tab_paused') : t('workflows.tab_draft')}
+          </span>
+          <span data-testid="builder-workspace-context" className="hidden max-w-[260px] truncate text-xs text-muted-foreground 2xl:inline">
+            {t('builder.workspace_context').replace('{workspace}', activeWorkspaceId ?? t('builder.workspace_not_selected'))}
+          </span>
         </div>
 
         {/* Editor / Executions tabs */}
-        <nav aria-label={t('builder.workflow_sections')} className="hidden h-12 items-stretch gap-5 md:flex">
+        <nav aria-label={t('builder.workflow_sections')} className="hidden h-12 shrink-0 items-stretch gap-5 whitespace-nowrap md:flex">
           <span aria-current="page" className="inline-flex items-center border-b-2 border-foreground px-0.5 text-[13px] font-medium text-foreground">
             {t('builder.section_editor')}
           </span>
           {workflow && (
             <Link
-              to={`/executions?workflowId=${encodeURIComponent(workflow.id)}`}
+              to={`/workflows/${encodeURIComponent(workflow.id)}/executions`}
               className="inline-flex items-center border-b-2 border-transparent px-0.5 text-[13px] font-medium text-text-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {t('nav.executions')}
+              {t('runs.tab_runs')}
             </Link>
           )}
         </nav>
@@ -859,12 +885,14 @@ export const WorkflowBuilderPage: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             data-testid="workflow-generate-ai"
+            title={t('ai.generate_with_ai')}
+            aria-label={t('ai.generate_with_ai')}
             onClick={() => setIsGeneratePanelOpen(true)}
             disabled={isLoadingWorkflow || !workflow}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Sparkles size={13} aria-hidden="true" />
-            <span>{t('ai.generate_with_ai')}</span>
+            <span className="hidden xl:inline">{t('ai.generate_with_ai')}</span>
           </button>
           <button
             data-testid="workflow-publish"
@@ -873,7 +901,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             title={publishBlockers.length > 0 ? publishBlockers.join('; ') : undefined}
             disabled={publishBlockers.length > 0 || isLoadingWorkflow || isSavingWorkflow || !workflow}
             aria-busy={isSavingWorkflow}
-            className="hidden h-8 items-center gap-1.5 rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 sm:inline-flex"
+            className="hidden h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 sm:inline-flex"
           >
             <span>{t('builder.publish')}</span>
           </button>
@@ -882,10 +910,10 @@ export const WorkflowBuilderPage: React.FC = () => {
             <button
               data-testid="workflow-run"
               onClick={handleRunWorkflow}
-              className="hidden h-8 items-center gap-1.5 rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex"
+              className="hidden h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex"
             >
               <Play size={13} aria-hidden="true" />
-              <span>Run</span>
+              <span>{t('builder.run')}</span>
             </button>
           )}
 
@@ -893,20 +921,20 @@ export const WorkflowBuilderPage: React.FC = () => {
             data-testid="workflow-preview"
             onClick={handlePreviewFlow}
             disabled={isPreviewing}
-            title="Visual preview only. No Workflow Service run or node provider is called."
-            aria-label="Preview workflow (visual only)"
+            title={t('builder.preview_title')}
+            aria-label={t('builder.preview_aria')}
             aria-busy={isPreviewing}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70"
           >
             {isPreviewing ? (
               <>
                 <Loader2 size={13} className="motion-safe:animate-spin" aria-hidden="true" />
-                <span>Previewing…</span>
+                <span>{t('builder.previewing')}</span>
               </>
             ) : (
               <>
                 <Play size={13} aria-hidden="true" />
-                <span>Preview flow</span>
+                <span className="hidden xl:inline">{t('builder.preview_flow')}</span>
               </>
             )}
           </button>
@@ -916,28 +944,28 @@ export const WorkflowBuilderPage: React.FC = () => {
             onClick={handleSaveDraft}
             disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
             aria-busy={isSavingWorkflow}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-primary bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:border-primary-hover hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-wait disabled:opacity-50"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:border-primary-hover hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-wait disabled:opacity-50"
           >
             {isSavingWorkflow ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Save size={13} aria-hidden="true" />}
-            <span>{isSavingWorkflow ? 'Saving…' : t('builder.save')}</span>
+            <span>{isSavingWorkflow ? t('builder.saving') : t('builder.save')}</span>
           </button>
         </div>
       </header>
 
-      {isLoadingWorkflow && <div role="status" className="border-b border-border bg-card px-3 py-2 text-xs text-text-2">Loading workflow…</div>}
-      {workflowError && <div role="alert" data-testid="workflow-builder-error" className="border-b border-err-border bg-err-bg px-3 py-2 text-xs text-err">{workflowError}</div>}
+      {isLoadingWorkflow && <div role="status" className="shrink-0 border-b border-border bg-card px-3 py-1.5 text-xs text-text-2">{t('builder.loading')}</div>}
+      {workflowError && <div role="alert" data-testid="workflow-builder-error" className="shrink-0 border-b border-err-border bg-err-bg px-3 py-1.5 text-xs text-err">{workflowError}</div>}
       {publishedWebhooks.length > 0 && (
-        <section aria-label="One-time webhook credentials" className="space-y-2 border-b border-warn/30 bg-warn-bg px-3 py-3 text-xs text-warn">
+        <section aria-label={t('builder.webhook_credentials_label')} className="shrink-0 space-y-2 border-b border-warn/30 bg-warn-bg px-3 py-2 text-xs text-foreground">
           <div className="flex items-center justify-between gap-3">
-            <p className="font-semibold">Copy these webhook credentials now. The secret will not be returned again.</p>
-            <button type="button" onClick={() => setPublishedWebhooks([])} className="rounded px-2 py-1 hover:bg-warn-bg">Dismiss</button>
+            <p className="font-medium">{t('builder.webhook_credentials_notice')}</p>
+            <button type="button" onClick={() => setPublishedWebhooks([])} className="rounded px-2 py-1 hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('builder.dismiss')}</button>
           </div>
           {publishedWebhooks.map((webhook) => (
             <div key={webhook.triggerId} className="flex flex-wrap items-center gap-2 font-mono">
-              <span>Endpoint key: {webhook.endpointKey}</span>
-              <span>Secret: {webhook.secret}</span>
-              <button type="button" onClick={() => void navigator.clipboard.writeText(webhook.secret)} className="inline-flex items-center gap-1 rounded border border-warn/30 px-2 py-1 hover:bg-warn-bg">
-                <Copy size={12} /> Copy secret
+              <span>{t('builder.endpoint_key')}: {webhook.endpointKey}</span>
+              <span>{t('builder.secret')}: {webhook.secret}</span>
+              <button type="button" onClick={() => void navigator.clipboard.writeText(webhook.secret)} className="inline-flex items-center gap-1 rounded border border-border-strong bg-card px-2 py-1 hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <Copy size={12} /> {t('builder.copy_secret')}
               </button>
             </div>
           ))}
@@ -949,10 +977,10 @@ export const WorkflowBuilderPage: React.FC = () => {
           id="publish-blocker-summary"
           data-testid="publish-blocker-summary"
           role="status"
-          className="border-b border-warn/30 bg-warn-bg px-3 py-1.5 text-[11px] text-warn"
+          className="shrink-0 border-b border-warn/30 bg-warn-bg px-3 py-1 text-xs text-warn"
         >
-          Publish unavailable: {publishBlockers[0]}
-          {publishBlockers.length > 1 ? ` (+${publishBlockers.length - 1} more)` : ''}
+          {t('builder.publish_unavailable')}: {publishBlockers[0]}
+          {publishBlockers.length > 1 ? ` (+${publishBlockers.length - 1} ${t('builder.more')})` : ''}
         </div>
       )}
 
@@ -960,126 +988,20 @@ export const WorkflowBuilderPage: React.FC = () => {
         <div
           data-testid="unsupported-draft-warning"
           role="alert"
-          className="border-b border-err-border bg-err-bg px-3 py-1.5 text-[11px] text-err"
+          className="shrink-0 border-b border-err-border bg-err-bg px-3 py-1 text-xs text-err"
         >
-          Unsupported V1 nodes are preserved in this draft: {unsupportedNodeTypes.join(', ')}. Remove or replace them before publishing.
+          {t('builder.unsupported_preserved')}: {unsupportedNodeTypes.join(', ')}. {t('builder.unsupported_remove')}
         </div>
       )}
 
-      {/* COMPACT EDITOR TOOLBAR / SUB-HEADER (~40px) */}
-      <div className="z-10 flex h-9 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-3 text-xs sm:px-4">
-        <div className="flex min-w-0 items-center gap-3 overflow-hidden whitespace-nowrap font-mono text-[11px] text-muted-foreground">
-          <span className="inline-flex h-5 items-center gap-[5px] rounded bg-pause-bg px-1.5 font-sans text-xs font-medium text-pause before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-['']">
-            {workflow?.status ?? 'Draft'}
-          </span>
-          <span aria-hidden="true" className="text-border-strong">|</span>
-          <span data-testid="workflow-preview-notice" className="truncate">
-            Visual preview only · no workflow or provider calls
-          </span>
-          <span data-testid="builder-workspace-context" className="hidden truncate md:inline">
-            {t('builder.workspace_context').replace(
-              '{workspace}',
-              activeWorkspaceId ?? t('builder.workspace_not_selected'),
-            )}
-          </span>
+      {isPreviewing && (
+        <div className="shrink-0 border-b border-border bg-subtle px-3 py-1 text-xs text-text-2">
+          <span data-testid="workflow-preview-notice">{t('builder.preview_notice')}</span>
         </div>
-
-        <span className="hidden whitespace-nowrap font-mono text-[11px] text-muted-foreground xl:flex">
-          No Workflow Service execution history
-        </span>
-
-        {/* Right Toolbar View Toggles */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setShowGrid(!showGrid)}
-            aria-pressed={showGrid}
-            className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
-              showGrid ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-            }`}
-            title={t('builder.toggle_grid')}
-          >
-            <Grid size={14} />
-          </button>
-          <button
-            onClick={() => setShowMinimap(!showMinimap)}
-            aria-pressed={showMinimap}
-            className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
-              showMinimap ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-            }`}
-            title={t('builder.toggle_minimap')}
-          >
-            <Map size={14} />
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* CENTER WORKSPACE LAYOUT */}
       <div className="flex-1 flex min-h-0 relative">
-        {/* LEFT PALETTE SIDEBAR (~240px) */}
-        <aside className="z-10 flex w-64 shrink-0 flex-col border-r border-border bg-card">
-          <div className="space-y-2.5 border-b border-border p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                {t('builder.add_step')}
-              </span>
-              <span data-testid="workflow-palette-count" className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{PALETTE_CATALOG.reduce((total, category) => total + category.items.length, 0)} {t('builder.available')}</span>
-            </div>
-
-            <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-2.5 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder={t('builder.search_actions')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-9 w-full rounded-md border border-border-strong bg-card pl-8 pr-2.5 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-              />
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
-            {PALETTE_CATALOG.map((cat) => (
-              <div key={cat.categoryKey} className="space-y-1.5">
-                <span className="block px-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-                  {t(cat.categoryKey)}
-                </span>
-                <div className="space-y-1">
-                  {cat.items
-                    .filter((item) => {
-                      const name = item.nameKey ? t(item.nameKey) : item.title;
-                      return name.toLowerCase().includes(searchQuery.toLowerCase());
-                    })
-                    .map((item) => {
-                      const ItemIcon = item.icon;
-                      return (
-                        <button
-                          key={item.type}
-                          data-testid="workflow-palette-item"
-                          data-node-type={item.type}
-                          disabled={isLoadingWorkflow || !workflow}
-                          onClick={() => handleAddCatalogItem(item.type, item.nameKey ? t(item.nameKey) : item.title, item.nameKey ?? '')}
-                          aria-label={item.nameKey ? t(item.nameKey) : item.title}
-                          className="group flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-transparent px-2 py-1.5 text-left transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-subtle text-text-2">
-                            <span aria-hidden="true" className={`absolute -left-px top-1 bottom-1 w-[3px] rounded-r-sm ${item.type.startsWith('trigger') ? 'bg-t-trigger' : item.type.startsWith('ai') || item.type.startsWith('agent') ? 'bg-t-ai' : item.type.startsWith('logic') ? 'bg-t-logic' : 'bg-t-action'}`} />
-                            <ItemIcon size={15} />
-                          </span>
-                          <div className="flex flex-col min-w-0 flex-1">
-                            <span className="truncate text-xs font-medium text-foreground transition-colors group-hover:text-primary">
-                              {item.nameKey ? t(item.nameKey) : item.title}
-                            </span>
-                            <span className="truncate text-[10.5px] text-muted-foreground">{item.descKey ? t(item.descKey) : item.description}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </aside>
-
         {/* WORKFLOW CANVAS (CENTER) */}
         <main data-testid="workflow-canvas" className="relative h-full flex-1 overflow-hidden bg-background">
           <ReactFlow
@@ -1094,6 +1016,8 @@ export const WorkflowBuilderPage: React.FC = () => {
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView
+            fitViewOptions={{ padding: 0.15, minZoom: 0.85, maxZoom: 1.2 }}
+            minZoom={0.2}
             colorMode={theme}
           >
             {showGrid && (
@@ -1109,8 +1033,8 @@ export const WorkflowBuilderPage: React.FC = () => {
               <MiniMap
                 data-testid="workflow-minimap"
                 aria-label={t('builder.workflow_minimap')}
-                className="workflow-minimap hidden sm:block !bottom-3 !right-3 !m-0 !h-28 !w-44 !overflow-hidden !rounded-lg !border !border-border !bg-card !shadow-pop"
-                style={{ width: 176, height: 112, borderRadius: 8 }}
+                className="workflow-minimap hidden sm:block !bottom-3 !m-0 !h-28 !w-44 !overflow-hidden !rounded-lg !border !border-border !bg-card !shadow-pop"
+                style={{ width: 176, height: 112, borderRadius: 8, right: inspectorOpen && selectedNode ? 412 : 12 }}
                 nodeColor={(node) => {
                   const status = String(node.data?.status ?? 'idle');
                   return status === 'success' ? (theme === 'dark' ? '#5bc98a' : '#15803d') : status === 'processing' ? (theme === 'dark' ? '#8fb0f5' : '#2b5fd9') : (theme === 'dark' ? '#7d8791' : '#a8a29e');
@@ -1126,6 +1050,121 @@ export const WorkflowBuilderPage: React.FC = () => {
               />
             )}
           </ReactFlow>
+
+          {/* Floating canvas toolbar */}
+          <div className="absolute left-3 top-3 z-10 flex items-center gap-1 rounded-lg border border-border bg-card p-1 shadow-pop">
+            <button
+              type="button"
+              data-testid="workflow-add-step"
+              onClick={() => {
+                setSearchQuery('');
+                setPaletteOpen(true);
+              }}
+              disabled={isLoadingWorkflow || !workflow}
+              aria-haspopup="dialog"
+              aria-keyshortcuts="Control+K Meta+K"
+              className="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Plus size={13} strokeWidth={2} aria-hidden="true" />
+              {t('builder.add_step')}
+              <kbd className="ml-1 rounded border border-primary-foreground/30 px-1 font-mono text-[10px] leading-4">⌘K</kbd>
+            </button>
+            <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-border" />
+            <button
+              type="button"
+              onClick={() => setShowGrid(!showGrid)}
+              aria-pressed={showGrid}
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${showGrid ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-subtle hover:text-foreground'}`}
+              title={t('builder.toggle_grid')}
+              aria-label={t('builder.toggle_grid')}
+            >
+              <Grid size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowMinimap(!showMinimap)}
+              aria-pressed={showMinimap}
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${showMinimap ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-subtle hover:text-foreground'}`}
+              title={t('builder.toggle_minimap')}
+              aria-label={t('builder.toggle_minimap')}
+            >
+              <Map size={14} />
+            </button>
+          </div>
+
+          {/* Add-step palette (⌘K) */}
+          {paletteOpen && (
+            <div className="absolute inset-0 z-20 flex items-start justify-center pt-[12%]">
+              <button
+                type="button"
+                aria-label={t('builder.close_palette')}
+                onClick={() => setPaletteOpen(false)}
+                className="absolute inset-0 cursor-default bg-foreground/20"
+              />
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-label={t('builder.add_step')}
+                data-testid="workflow-palette"
+                className="relative flex max-h-[min(480px,70%)] w-[480px] max-w-[calc(100%-24px)] flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-pop"
+              >
+                <div className="flex items-center gap-2 border-b border-border px-3">
+                  <Search size={14} aria-hidden="true" className="text-muted-foreground" />
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder={t('builder.search_actions')}
+                    aria-label={t('builder.search_actions')}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-10 min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+                  />
+                  <span data-testid="workflow-palette-count" className="font-mono text-[11px] text-muted-foreground">
+                    {PALETTE_CATALOG.reduce((total, category) => total + category.items.length, 0)} {t('builder.available')}
+                  </span>
+                </div>
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
+                  {PALETTE_CATALOG.map((cat) => {
+                    const items = cat.items.filter((item) => {
+                      const name = item.nameKey ? t(item.nameKey) : item.title;
+                      return name.toLowerCase().includes(searchQuery.toLowerCase());
+                    });
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={cat.categoryKey}>
+                        <span className="block px-2 pb-1 text-[11px] font-medium text-muted-foreground">{t(cat.categoryKey)}</span>
+                        {items.map((item) => {
+                          const ItemIcon = item.icon;
+                          return (
+                            <button
+                              key={item.type}
+                              type="button"
+                              data-testid="workflow-palette-item"
+                              data-node-type={item.type}
+                              disabled={isLoadingWorkflow || !workflow}
+                              onClick={() => {
+                                handleAddCatalogItem(item.type, item.nameKey ? t(item.nameKey) : item.title, item.nameKey ?? '');
+                                setPaletteOpen(false);
+                              }}
+                              aria-label={item.nameKey ? t(item.nameKey) : item.title}
+                              className="group flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md border border-transparent px-2 text-left transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border bg-subtle text-text-2">
+                                <span aria-hidden="true" className={`absolute -left-px bottom-1 top-1 w-[3px] rounded-r-sm ${item.type.startsWith('trigger') ? 'bg-t-trigger' : item.type.startsWith('ai') || item.type.startsWith('agent') ? 'bg-t-ai' : item.type.startsWith('logic') ? 'bg-t-logic' : 'bg-t-action'}`} />
+                                <ItemIcon size={14} />
+                              </span>
+                              <span className="truncate text-[13px] font-medium text-foreground">{item.nameKey ? t(item.nameKey) : item.title}</span>
+                              <span className="ml-auto hidden max-w-[45%] truncate text-xs text-muted-foreground sm:block">{item.descKey ? t(item.descKey) : item.description}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+          )}
         </main>
 
         {/* RIGHT INSPECTOR PANEL (~360px) */}
@@ -1139,7 +1178,7 @@ export const WorkflowBuilderPage: React.FC = () => {
           animate={{ opacity: 1, x: 0 }}
           exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: 16 }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.24, ease: [0.16, 1, 0.3, 1] }}
-          className="absolute inset-y-0 right-0 z-10 flex w-88 flex-col border-l border-border bg-card shadow-pop"
+          className="absolute inset-y-0 right-0 z-10 flex w-[400px] max-w-full flex-col border-l border-border bg-card shadow-pop"
         >
           {/* Inspector Header */}
           <div className="flex items-center justify-between gap-2 border-b border-border p-3.5">
@@ -1150,13 +1189,13 @@ export const WorkflowBuilderPage: React.FC = () => {
                   : (selectedNode.data.name as string) || t('builder.step_inspector')}
               </span>
               <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                {(selectedNode.data.id as string) || 'extract_order_v1'}
+                {(selectedNode.data.id as string) || selectedNodeType}
               </span>
             </div>
             <span className={selectedNodeReadiness?.state === 'ready'
               ? 'shrink-0 rounded bg-ok-bg px-1.5 py-0.5 text-[11px] font-medium text-ok'
               : 'shrink-0 rounded bg-warn-bg px-1.5 py-0.5 text-[11px] font-medium text-warn'}>
-              ● {selectedNodeReadiness?.label ?? t('builder.ready')}
+              ● {(selectedNodeReadiness ? t(selectedNodeReadiness.labelKey) : null) ?? t('builder.ready')}
             </span>
           </div>
 
@@ -1806,10 +1845,10 @@ export const WorkflowBuilderPage: React.FC = () => {
               data-testid="workflow-preview-inspector"
               onClick={handlePreviewFlow}
               disabled={isPreviewing}
-              aria-label="Preview workflow (visual only)"
+              aria-label={t('builder.preview_aria')}
               className="px-2.5 py-1 text-xs font-medium bg-muted hover:bg-muted text-foreground rounded transition-colors"
             >
-              Preview flow
+              {t('builder.preview_flow')}
             </button>
             <button
               data-testid="workflow-save-inspector"
@@ -1830,16 +1869,25 @@ export const WorkflowBuilderPage: React.FC = () => {
       <div className="z-20 shrink-0 border-t border-border bg-card">
         {/* Telemetry Bar Header */}
         <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={telemetryOpen}
           onClick={() => setTelemetryOpen(!telemetryOpen)}
-          className="flex h-9 cursor-pointer items-center justify-between border-b border-border bg-card px-3 font-mono text-[11px] transition-colors hover:bg-muted/60 sm:px-4"
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              setTelemetryOpen(!telemetryOpen);
+            }
+          }}
+          className="flex h-8 cursor-pointer items-center justify-between border-b border-border bg-card px-3 font-mono text-[11px] transition-colors hover:bg-muted/60 sm:px-4"
         >
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 font-semibold text-foreground">
               <Terminal size={13} className="text-text-2" />
-              Draft activity
+              {t('builder.draft_activity')}
             </span>
             <span aria-hidden="true" className="text-border-strong">|</span>
-            <span className="text-muted-foreground">No V1 execution history</span>
+            <span className="text-muted-foreground">{t('builder.no_execution_history')}</span>
           </div>
 
           <div className="flex items-center gap-2 text-muted-foreground">
@@ -1860,7 +1908,7 @@ export const WorkflowBuilderPage: React.FC = () => {
         {telemetryOpen && (
           <div className="h-28 overflow-y-auto bg-subtle p-3 font-mono text-[11px] text-muted-foreground sm:px-4">
             <p data-testid="workflow-telemetry-preview-notice" role="note" className="mb-2 text-muted-foreground">
-              Visual preview only. This action does not call the Workflow Service or node integrations.
+              {t('builder.preview_log_notice')}
             </p>
             <div className="space-y-1 text-[11px]">
               {logs.length === 0 && (
