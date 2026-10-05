@@ -124,6 +124,9 @@ const INITIAL_EDGES: Edge[] = [
   { id: 'edge-3-4', source: 'node-condition', sourceHandle: 'true', target: 'node-notify', type: 'execution', animated: false, style: { stroke: '#94a3b8', strokeWidth: 1.75 } },
 ];
 
+const INSPECTOR_WIDTH = 400;
+const PORT_LABEL_ROOM = 80;
+
 const CONDITION_OPERATORS = [
   { value: 'eq', labelKey: 'builder.cfg.op_eq' },
   { value: 'ne', labelKey: 'builder.cfg.op_ne' },
@@ -475,6 +478,12 @@ export const WorkflowBuilderPage: React.FC = () => {
   // Telemetry Console State
   const [telemetryOpen, setTelemetryOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const flowRef = useRef<{
+    getNode: (id: string) => Node | undefined;
+    getViewport: () => { x: number; y: number; zoom: number };
+    setViewport: (viewport: { x: number; y: number; zoom: number }, options?: { duration?: number }) => Promise<boolean>;
+  } | null>(null);
+  const canvasRef = useRef<HTMLElement | null>(null);
   const [logs, setLogs] = useState<Array<{ id: string; time: string; level: 'info' | 'success' | 'warn'; msg: string }>>([]);
 
   const nodeTypes = useMemo(() => ({ customNode: CustomWorkflowNode }), []);
@@ -521,6 +530,40 @@ export const WorkflowBuilderPage: React.FC = () => {
     setSelectedNodeId(null);
     setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, selected: false } })));
   }, [setNodes]);
+
+  // Keep the selected node (plus room for its branch labels) clear of the 400px inspector.
+  // Runs on selection change only and never changes the zoom.
+  useEffect(() => {
+    if (!inspectorOpen || !selectedNodeId) return;
+    const flow = flowRef.current;
+    const canvas = canvasRef.current;
+    if (!flow || !canvas) return;
+    const frame = window.requestAnimationFrame(() => {
+      const node = flow.getNode(selectedNodeId);
+      if (!node) return;
+      const { x, y, zoom } = flow.getViewport();
+      const bounds = canvas.getBoundingClientRect();
+      const margin = 24;
+      const visibleRight = bounds.width - INSPECTOR_WIDTH - margin;
+      const width = node.measured?.width ?? 232;
+      const height = node.measured?.height ?? 80;
+      const left = node.position.x * zoom + x;
+      const top = node.position.y * zoom + y;
+      const right = left + (width + PORT_LABEL_ROOM) * zoom;
+      const bottom = top + height * zoom;
+      let dx = 0;
+      let dy = 0;
+      if (right > visibleRight) dx = visibleRight - right;
+      if (left + dx < margin) dx = margin - left;
+      if (top < margin + 48) dy = margin + 48 - top;
+      else if (bottom > bounds.height - margin) dy = bounds.height - margin - bottom;
+      if (dx === 0 && dy === 0) return;
+      void flow.setViewport({ x: x + dx, y: y + dy, zoom }, { duration: prefersReducedMotion ? 0 : 200 });
+    });
+    return () => window.cancelAnimationFrame(frame);
+    // Only selection changes should pan; viewport/size reads are taken at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedNodeId, inspectorOpen]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -995,7 +1038,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       {/* CENTER WORKSPACE LAYOUT */}
       <div className="flex-1 flex min-h-0 relative">
         {/* WORKFLOW CANVAS (CENTER) */}
-        <main data-testid="workflow-canvas" className="relative h-full flex-1 overflow-hidden bg-background">
+        <main ref={canvasRef} data-testid="workflow-canvas" className="relative h-full flex-1 overflow-hidden bg-background">
           <ReactFlow
             ariaLabelConfig={ariaLabelConfig}
             nodes={nodes}
@@ -1008,7 +1051,14 @@ export const WorkflowBuilderPage: React.FC = () => {
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView
-            fitViewOptions={{ padding: 0.15, minZoom: 0.85, maxZoom: 1.2 }}
+            onInit={(instance) => {
+              flowRef.current = instance;
+            }}
+            fitViewOptions={{
+              padding: { top: '15%', left: '15%', bottom: '15%', right: inspectorOpen && selectedNode ? `${INSPECTOR_WIDTH + 24}px` : '15%' },
+              minZoom: 0.85,
+              maxZoom: 1.2,
+            }}
             minZoom={0.2}
             colorMode={theme}
           >
