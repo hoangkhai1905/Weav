@@ -453,7 +453,7 @@ services:
   api-gateway:
     profiles: ["app"]
     restart: unless-stopped
-    mem_limit: 384m
+    mem_limit: 1g  # nest start --watch OOMs at 384m
 
     build:
       context: .
@@ -508,7 +508,7 @@ services:
   notification-service:
     profiles: ["app"]
     restart: unless-stopped
-    mem_limit: 512m
+    mem_limit: 1g  # nest start --watch OOMs at 512m
 
     build:
       context: .
