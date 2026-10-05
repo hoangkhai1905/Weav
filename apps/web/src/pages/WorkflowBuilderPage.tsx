@@ -252,6 +252,12 @@ export const WorkflowBuilderPage: React.FC = () => {
     ),
     [workspaceConnections],
   );
+  const sheetsConnections = useMemo(
+    () => (workspaceConnections ?? []).filter(
+      (connection) => connection.provider === 'GOOGLE_SHEETS' && connection.status === 'ACTIVE' && connection.canAttach,
+    ),
+    [workspaceConnections],
+  );
   const unsupportedNodeTypes = useMemo(
     () => [...new Set(nodes.map((node) => String(node.data?.nodeType ?? '')).filter((type) => !SUPPORTED_NODE_TYPES.has(type)))],
     [nodes]
@@ -1944,14 +1950,26 @@ export const WorkflowBuilderPage: React.FC = () => {
                       id="google-connection"
                       data-testid="google-connection"
                       value={String(selectedNodeConfig.connectionId ?? '')}
-                      onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value })}
-                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                      // Omit the key when cleared: the Workflow Service rejects an empty connectionId even in drafts.
+                      onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value || undefined })}
+                      disabled={isLoadingConnections}
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-60"
                     >
-                      <option value="">{t('builder.cfg.select_authorized')}</option>
-                      {String(selectedNodeConfig.connectionId ?? '').trim() && (
-                        <option value={String(selectedNodeConfig.connectionId)}>{t('builder.cfg.existing_connection')}</option>
+                      <option value="">{isLoadingConnections ? t('builder.cfg.loading_connections') : t('builder.cfg.select_sheets')}</option>
+                      {sheetsConnections.map((connection) => (
+                        <option key={connection.id} value={connection.id}>{connection.name}</option>
+                      ))}
+                      {String(selectedNodeConfig.connectionId ?? '').trim()
+                        && !sheetsConnections.some((connection) => connection.id === selectedNodeConfig.connectionId) && (
+                        <option value={String(selectedNodeConfig.connectionId)}>{t('builder.cfg.unavailable_connection')}</option>
                       )}
                     </select>
+                    {!isLoadingConnections && sheetsConnections.length === 0 && (
+                      <p data-testid="google-connection-empty" className="mt-1 text-[10px] text-muted-foreground">
+                        {t('builder.cfg.no_sheets')} {t('builder.cfg.sheets_create_in')}{' '}
+                        <Link to="/workspace/connections" className="text-run underline">{t('builder.cfg.sheets_link')}</Link>.
+                      </p>
+                    )}
                   </div>
 
                   <div>

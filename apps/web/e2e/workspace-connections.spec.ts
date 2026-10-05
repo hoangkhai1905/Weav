@@ -1222,4 +1222,82 @@ test.describe("workflow builder Gmail connection picker", () => {
     await expect.poll(() => savedDrafts.length).toBe(2);
     expect(emailConfig).not.toHaveProperty("connectionId");
   });
+
+  test("lists only active attachable Google Sheets connections and saves the selected connectionId", async ({ page }) => {
+    await installAuthFixture(page);
+    const savedDrafts: Array<Record<string, unknown>> = [];
+    let sheetsConfig: Record<string, unknown> = { operation: "read" };
+    let connections: unknown[] = [
+      connection(CONNECTION_SHEETS_ID, "GOOGLE_SHEETS", WORKSPACE_ID, "ACTIVE"),
+      connection(CONNECTION_GMAIL_ID, "GMAIL", WORKSPACE_ID, "ACTIVE"),
+      connection("00000000-0000-4000-8000-0000000000e9", "GOOGLE_SHEETS", WORKSPACE_ID, "INVALID"),
+    ];
+    await page.route("**/api/v1/workspaces/*/connections", (route) => fulfillJson(route, connections));
+    const detail = () => ({
+      workflowId: WORKFLOW_ID,
+      name: "Sheet report",
+      status: "DRAFT",
+      schemaVersion: "1.0",
+      currentVersionId: null,
+      createdAt: "2026-08-01T00:00:00Z",
+      updatedAt: "2026-08-01T00:00:00Z",
+      definition: {
+        schemaVersion: "1.0",
+        nodes: [
+          { id: "manual", type: "trigger.manual", config: {} },
+          { id: "sheets", type: "google.sheets", config: sheetsConfig },
+        ],
+        edges: [{ id: "manual-sheets", source: "manual", target: "sheets" }],
+        variables: {},
+      },
+      editorState: { nodes: { manual: { name: "Start", position: { x: 0, y: 0 } }, sheets: { name: "Read sheet", position: { x: 320, y: 0 } } } },
+    });
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/draft") && route.request().method() === "PUT") {
+        const body = route.request().postDataJSON() as Record<string, unknown>;
+        savedDrafts.push(body);
+        const nodes = (body.definition as { nodes: Array<{ id: string; config: Record<string, unknown> }> }).nodes;
+        sheetsConfig = nodes.find((node) => node.id === "sheets")?.config ?? {};
+        return fulfillJson(route, detail());
+      }
+      if (url.pathname.endsWith(`/workflows/${WORKFLOW_ID}`)) return fulfillJson(route, detail());
+      return fulfillJson(route, pageResult([]));
+    });
+
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+    await page.locator('[data-testid="workflow-node"][data-node-type="google.sheets"]').click();
+
+    const picker = page.getByTestId("google-connection");
+    await expect(picker.locator("option")).toHaveText(["Select a Google Sheets connection", "Project Sheets"]);
+    await expect(picker).not.toHaveClass(/font-mono/);
+
+    await picker.selectOption(CONNECTION_SHEETS_ID);
+    await page.getByTestId("workflow-save-inspector").click();
+    await expect.poll(() => savedDrafts.length).toBe(1);
+    expect(sheetsConfig).toMatchObject({ connectionId: CONNECTION_SHEETS_ID });
+
+    await picker.selectOption("");
+    await page.getByTestId("workflow-save-inspector").click();
+    await expect.poll(() => savedDrafts.length).toBe(2);
+    expect(sheetsConfig).not.toHaveProperty("connectionId");
+  });
+
+  test("shows a hint linking to Workspace connections when no Google Sheets connection exists", async ({ page }) => {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) => fulfillJson(route, [connection(CONNECTION_GMAIL_ID, "GMAIL", WORKSPACE_ID, "ACTIVE")]));
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}**`, (route) =>
+      fulfillJson(route, {
+        workflowId: WORKFLOW_ID, name: "Sheet report", status: "DRAFT", schemaVersion: "1.0", currentVersionId: null,
+        createdAt: "2026-08-01T00:00:00Z", updatedAt: "2026-08-01T00:00:00Z",
+        definition: { schemaVersion: "1.0", nodes: [{ id: "sheets", type: "google.sheets", config: {} }], edges: [], variables: {} },
+        editorState: { nodes: { sheets: { name: "Read sheet", position: { x: 0, y: 0 } } } },
+      }),
+    );
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+    await page.locator('[data-testid="workflow-node"][data-node-type="google.sheets"]').click();
+    const hint = page.getByTestId("google-connection-empty");
+    await expect(hint).toBeVisible();
+    await expect(hint.getByRole("link")).toHaveAttribute("href", "/workspace/connections");
+  });
 });
