@@ -251,7 +251,8 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort, GmailTrigger
     @Transactional
     public void advanceGmailPoll(UUID triggerId, Instant nextPollAt) {
         WorkflowTriggerJpaEntity trigger = entityManager.find(WorkflowTriggerJpaEntity.class, triggerId);
-        if (trigger == null || trigger.getType() != com.weav.workflow.domain.valueobject.TriggerType.GMAIL) {
+        if (trigger == null || trigger.getType() != com.weav.workflow.domain.valueobject.TriggerType.GMAIL
+                || trigger.getStatus() != TriggerStatus.ACTIVE) {
             return;
         }
         trigger.setNextRunAt(Objects.requireNonNull(nextPollAt, "nextPollAt must not be null"));

@@ -260,6 +260,51 @@ class GmailTriggerProcessorTest {
     }
 
     @Test
+    void anAdmissionRejectedAsBadInputIsSteppedOverWithASkippedNotice() {
+        mailboxResult = List.of(message("m1", "2026-10-05T09:58:30Z"));
+        lenient().when(admissions.automatic(any(), any(), any(), any(), any(), anyString()))
+                .thenThrow(new com.weav.workflow.domain.exception.BadRequestException("Execution input exceeds the supported size"));
+
+        assertEquals(0, processor.poll(CANDIDATE, NOW));
+
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:58:30Z"), "m1",
+                "GMAIL_MESSAGE_SKIPPED");
+    }
+
+    @Test
+    void aFullSliceBringsTheNextPollForwardToNowSoABacklogDrainsPerTick() {
+        for (int poll = 1; poll <= 3; poll++) {
+            int size = poll < 3 ? 10 : 5; // 25 mails: 10, 10, 5
+            List<GmailMailboxPort.Message> slice = new ArrayList<>();
+            for (int i = 0; i < size; i++) {
+                slice.add(message("m" + poll + "-" + i, "2026-10-05T09:59:00Z"));
+            }
+            mailboxResult = slice;
+
+            assertEquals(size, processor.poll(CANDIDATE, NOW));
+        }
+
+        // claim pushes next_run_at by the interval each time (3x); only the two full slices pull it back to now
+        verify(gmailTriggers, org.mockito.Mockito.times(3)).advanceGmailPoll(TRIGGER_ID, NOW.plus(Duration.ofMinutes(7)));
+        verify(gmailTriggers, org.mockito.Mockito.times(2)).advanceGmailPoll(TRIGGER_ID, NOW);
+    }
+
+    @Test
+    void aFailedOrStoppedPollKeepsTheNormalCadenceEvenWithAFullSlice() {
+        List<GmailMailboxPort.Message> slice = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            slice.add(message("m" + i, "2026-10-05T09:59:00Z"));
+        }
+        mailboxResult = slice;
+        lenient().when(admissions.automatic(any(), any(), any(), any(), any(), eq("gmail:" + TRIGGER_ID + ":m3")))
+                .thenThrow(new IllegalStateException("database down"));
+
+        processor.poll(CANDIDATE, NOW);
+
+        verify(gmailTriggers, never()).advanceGmailPoll(TRIGGER_ID, NOW);
+    }
+
+    @Test
     void notDuePausedReplacedOrForeignRegistrationsNeverReachGmail() {
         trigger = new WorkflowTrigger(TRIGGER_ID, WORKFLOW_ID, VERSION_ID, "gmail", TriggerType.GMAIL,
                 TriggerStatus.ACTIVE, Map.of("connectionId", CONNECTION_ID.toString()), null, null,

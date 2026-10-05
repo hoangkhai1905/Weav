@@ -95,6 +95,12 @@ Rollout note: every existing GMAIL connection (granted `gmail.metadata` + `gmail
 - M2 Limit stated plainly: more than 100 matching mails inside one poll interval loses the oldest ones beyond the newest 100. This is flagged by `GMAIL_BACKLOG_TRUNCATED` on the trigger and by the log line `event=gmail_backlog_truncated`.
 - L1 the 256 KiB HTML cut backs off one char when it would split a surrogate pair. L3 comment in `GmailClient` records the assumption that Google rejects quota errors on send before processing (same precedent as 429).
 
+## 7d. Review round 3
+
+- A mail whose admission is rejected as bad input (for example over the input size cap) is stepped over and now also sets the poll notice `GMAIL_MESSAGE_SKIPPED`.
+- Backlog drain: a poll that handled a full slice (10 entries) without error or stop moves `next_run_at` back to now (the claim had pushed it by the interval), so a backlog drains at about 10 mails per scanner tick. The claim still advances `next_run_at` atomically, so two scanners cannot claim the same poll. Errors, a paused or replaced trigger and short slices keep the normal cadence.
+- Known limits: (1) the list order of mails with equal internalDate is assumed stable between polls; a flip could step over a mail. (2) A mail delivered late with an internalDate before the stored position is stepped over. (3) One mail that keeps failing admission with an unexpected error blocks the trigger; it shows as `GMAIL_POLL_FAILED` and is deliberate, so transient database errors never lose mail.
+
 ## 8. Risks and notes
 
 - The web app (`apps/web/src/api/workflow-v1.api.ts` `triggerType` union) and api-gateway enum lists do not know `GMAIL` yet; not edited (apps/ and gateway out of lane). The node editor reads node schemas, so `trigger.gmail` appears automatically if the catalog is served from the schema package.

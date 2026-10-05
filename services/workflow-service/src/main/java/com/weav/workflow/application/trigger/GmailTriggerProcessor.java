@@ -106,6 +106,8 @@ public class GmailTriggerProcessor {
         Instant cursor = null;
         String lastId = null;
         String error = null;
+        String skippedNotice = null;
+        boolean stopped = false;
         for (GmailMailboxPort.Message message : fetched.messages()) {
             if (message.isSkipMarker()) {
                 lastId = message.id(); // unreadable or from before the cursor: move the position past it
@@ -114,6 +116,7 @@ public class GmailTriggerProcessor {
             try {
                 Outcome outcome = admit(claim, message);
                 if (outcome == Outcome.GONE) {
+                    stopped = true;
                     break; // paused, replaced or deleted while polling: nothing more to admit, keep the cursor
                 }
                 if (outcome == Outcome.SKIPPED) {
@@ -123,21 +126,31 @@ public class GmailTriggerProcessor {
             } catch (IdempotencyKeyReusedException alreadyAdmitted) {
                 // An overlapping poll or an earlier tick admitted this email (or its labels changed since).
             } catch (InvalidStateException | ResourceNotFoundException gone) {
+                stopped = true;
                 break;
             } catch (BadRequestException rejected) {
-                logger.warn("event=gmail_message_skipped triggerId={} reason=admission_rejected", claim.triggerId());
+                logger.warn("event=gmail_message_skipped triggerId={} messageId={} reason=admission_rejected",
+                        claim.triggerId(), message.id());
+                skippedNotice = "GMAIL_MESSAGE_SKIPPED";
             } catch (RuntimeException failure) {
                 // Unexpected (for example a database error): stop here, keep the position before this email so the
                 // next poll retries it. Never skipped silently.
                 logger.warn("event=gmail_admission_failed triggerId={} messageId={} errorType={}", claim.triggerId(),
                         message.id(), failure.getClass().getSimpleName());
                 error = GENERIC_FAILURE;
+                stopped = true;
                 break;
             }
             lastId = message.id();
             cursor = cursor == null || message.internalDate().isAfter(cursor) ? message.internalDate() : cursor;
         }
-        gmailTriggers.recordGmailPoll(claim.triggerId(), cursor, lastId, error != null ? error : fetched.notice());
+        gmailTriggers.recordGmailPoll(claim.triggerId(), cursor, lastId, error != null ? error
+                : skippedNotice != null ? skippedNotice : fetched.notice());
+        if (!stopped && fetched.messages().size() >= MAX_MESSAGES_PER_POLL) {
+            // A full slice means more may be waiting: poll again on the next tick instead of after the interval,
+            // so a backlog drains at about 10 mails per tick. The claim already moved next_run_at atomically.
+            gmailTriggers.advanceGmailPoll(claim.triggerId(), scanTime);
+        }
         if (error != null) {
             logger.warn("event=gmail_poll_failed triggerId={} code={}", claim.triggerId(), error);
         } else if (fetched.notice() != null) {
