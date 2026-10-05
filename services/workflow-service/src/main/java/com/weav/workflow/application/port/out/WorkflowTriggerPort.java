@@ -28,6 +28,18 @@ public interface WorkflowTriggerPort {
      */
     boolean isTelegramConnectionInUse(UUID connectionId, UUID excludingWorkflowId);
 
+    /** Whether any active, undeleted Telegram trigger uses this connection. Runs in its own transaction. */
+    boolean hasActiveTelegramTrigger(UUID connectionId);
+
+    /**
+     * Compensation write that must survive a rolled-back caller, so it runs in its own transaction: optionally
+     * replaces the secret verifier and sets (or, with null, clears) {@code lastError} of a Telegram trigger.
+     */
+    void updateTelegramRegistration(UUID triggerId, String newSecretHash, Map<String, Object> lastError);
+
+    /** Turns a Telegram trigger off with the readiness reason {@code DEPENDENCY_NOT_CONFIGURED}. */
+    void disableTelegramNotConfigured(UUID triggerId);
+
     /** Replaces the stored verifier of a provisioned webhook or Telegram trigger (secret rotation on resume). */
     void replaceSecretHash(UUID triggerId, String secretHash);
 

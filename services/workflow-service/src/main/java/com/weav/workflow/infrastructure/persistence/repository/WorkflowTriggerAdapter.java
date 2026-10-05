@@ -131,6 +131,50 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
     }
 
     @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW,
+            readOnly = true)
+    public boolean hasActiveTelegramTrigger(UUID connectionId) {
+        Objects.requireNonNull(connectionId, "connectionId must not be null");
+        Number matches = (Number) entityManager.createNativeQuery(
+                        "select count(*) from " + triggerTable + " t "
+                                + "join " + workflowTable + " w on w.id = t.workflow_id "
+                                + "where t.type = 'TELEGRAM' and t.status = 'ACTIVE' and w.deleted_at is null "
+                                + "and lower(t.config->>'connectionId') = :connection")
+                .setParameter("connection", connectionId.toString())
+                .getSingleResult();
+        return matches.longValue() > 0;
+    }
+
+    @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void updateTelegramRegistration(UUID triggerId, String newSecretHash, Map<String, Object> lastError) {
+        Objects.requireNonNull(triggerId, "triggerId must not be null");
+        WorkflowTriggerJpaEntity trigger = entityManager.find(WorkflowTriggerJpaEntity.class, triggerId);
+        if (trigger == null || trigger.getType() != com.weav.workflow.domain.valueobject.TriggerType.TELEGRAM) {
+            return;
+        }
+        if (newSecretHash != null) {
+            if (newSecretHash.isBlank()) {
+                throw new IllegalArgumentException("secretHash must not be blank");
+            }
+            trigger.setSecretHash(newSecretHash);
+        }
+        trigger.setLastError(lastError == null ? null : mapper.toJsonNode(lastError));
+    }
+
+    @Override
+    @Transactional
+    public void disableTelegramNotConfigured(UUID triggerId) {
+        Objects.requireNonNull(triggerId, "triggerId must not be null");
+        WorkflowTriggerJpaEntity trigger = entityManager.find(WorkflowTriggerJpaEntity.class, triggerId);
+        if (trigger == null || trigger.getType() != com.weav.workflow.domain.valueobject.TriggerType.TELEGRAM) {
+            return;
+        }
+        trigger.setStatus(TriggerStatus.DISABLED);
+        trigger.setLastError(mapper.toJsonNode(Map.of("code", "DEPENDENCY_NOT_CONFIGURED")));
+    }
+
+    @Override
     @Transactional
     public void replaceSecretHash(UUID triggerId, String secretHash) {
         Objects.requireNonNull(triggerId, "triggerId must not be null");

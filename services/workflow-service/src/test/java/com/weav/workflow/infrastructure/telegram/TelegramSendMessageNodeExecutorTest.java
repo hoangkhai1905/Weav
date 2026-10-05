@@ -38,6 +38,7 @@ class TelegramSendMessageNodeExecutorTest {
         assertEquals(Map.of("messageId", 77L, "chatId", -1001234567890L), result.output());
         assertEquals("https://api.telegram.org/bot" + TOKEN + "/sendMessage", telegram.uri.toString());
         assertEquals(Map.of("chat_id", "555", "text", "hello"), telegram.body);
+        assertEquals(java.util.Collections.singletonList(null), telegram.timeouts, "send keeps the normal call timeout");
         assertEquals(WORKSPACE_ID, workspace.workspaceId);
         assertEquals(CONNECTION_ID, workspace.connectionId);
         assertThrows(IllegalStateException.class, workspace.resolved::auth);
@@ -87,6 +88,18 @@ class TelegramSendMessageNodeExecutorTest {
             assertFalse(failure.getMessage().contains(TOKEN));
             assertEquals(0, workspace.reportCalls);
         }
+    }
+
+    @Test
+    void telegramDescriptionNeverCarriesTheBotToken() {
+        FakeTelegram telegram = new FakeTelegram(400, Map.of("ok", false, "description",
+                "Bad Request: wrong token " + TOKEN + " in request"));
+
+        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                () -> executor(telegram, new FakeWorkspace()).execute(context(), config()));
+
+        assertFalse(failure.getMessage().contains(TOKEN));
+        assertTrue(failure.getMessage().contains("wrong token *** in request"));
     }
 
     @Test
@@ -198,9 +211,12 @@ class TelegramSendMessageNodeExecutorTest {
                 "https://api.telegram.org:8443/bot1:abc/sendMessage",
                 "https://api.telegram.org/file/bot1:abc/sendMessage",
                 "https://api.telegram.org/bot1:abc/sendMessage?x=1",
-                "https://api.telegram.org/bot1:abc/../sendMessage")) {
+                "https://api.telegram.org/bot1:abc/../sendMessage",
+                "https://api.telegram.org/bot1:abc/getMe",
+                "https://api.telegram.org/bot1:abc/sendPhoto",
+                "https://api.telegram.org/bot1:abc/getUpdates")) {
             NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
-                    () -> transport.executeTelegramBotApi(URI.create(target), Map.of()), target);
+                    () -> transport.executeTelegramBotApi(URI.create(target), Map.of(), null), target);
             assertEquals("HTTP_REQUEST_INVALID", failure.code(), target);
             assertFalse(failure.retryable());
         }
@@ -239,6 +255,7 @@ class TelegramSendMessageNodeExecutorTest {
         private final int status;
         private final Object data;
         private boolean called;
+        private final java.util.List<java.time.Duration> timeouts = new java.util.ArrayList<>();
         private URI uri;
         private Object body;
         private NodeExecutor.Failure failure;
@@ -251,8 +268,9 @@ class TelegramSendMessageNodeExecutorTest {
         }
 
         @Override
-        public HttpResponse executeTelegramBotApi(URI target, Object requestBody) {
+        public HttpResponse executeTelegramBotApi(URI target, Object requestBody, java.time.Duration timeout) {
             called = true;
+            timeouts.add(timeout);
             uri = target;
             body = requestBody;
             if (failure != null) {

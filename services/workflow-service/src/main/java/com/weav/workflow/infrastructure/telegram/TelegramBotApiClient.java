@@ -3,9 +3,12 @@ package com.weav.workflow.infrastructure.telegram;
 import com.weav.workflow.application.node.NodeExecutor;
 import com.weav.workflow.application.port.out.ResolvedConnection;
 import com.weav.workflow.infrastructure.http.PinnedHttpTransport;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,11 +25,29 @@ public class TelegramBotApiClient {
     private static final String BASE_URL = "https://api.telegram.org/bot";
     private static final Pattern BOT_TOKEN = Pattern.compile("[0-9]{1,20}:[A-Za-z0-9_-]{1,128}");
     private static final int MAX_DESCRIPTION_LENGTH = 200;
+    private static final Duration DEFAULT_CONTROL_TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration MAX_CONTROL_TIMEOUT = Duration.ofSeconds(60);
 
     private final PinnedHttpTransport transport;
+    private final Duration controlTimeout;
 
     public TelegramBotApiClient(PinnedHttpTransport transport) {
+        this(transport, DEFAULT_CONTROL_TIMEOUT);
+    }
+
+    /**
+     * @param controlTimeout call timeout for setWebhook/deleteWebhook, which run inside the publish transaction;
+     *                       sendMessage keeps the transport's normal call timeout
+     */
+    @Autowired
+    public TelegramBotApiClient(
+            PinnedHttpTransport transport,
+            @Value("${weav.workflow.telegram.control-timeout:10s}") Duration controlTimeout) {
         this.transport = Objects.requireNonNull(transport, "transport must not be null");
+        this.controlTimeout = Objects.requireNonNull(controlTimeout, "controlTimeout must not be null");
+        if (controlTimeout.isZero() || controlTimeout.isNegative() || controlTimeout.compareTo(MAX_CONTROL_TIMEOUT) > 0) {
+            throw new IllegalArgumentException("weav.workflow.telegram.control-timeout must be between 1 ms and 60 s");
+        }
     }
 
     /** Sends a text message and returns {@code messageId} and {@code chatId} from Telegram's answer. */
@@ -34,7 +55,7 @@ public class TelegramBotApiClient {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("chat_id", chatId);
         body.put("text", text);
-        Map<String, Object> result = call(connection, "sendMessage", body);
+        Map<String, Object> result = call(connection, "sendMessage", body, null);
         Map<String, Object> output = new LinkedHashMap<>();
         if (result.get("message_id") instanceof Number messageId) {
             output.put("messageId", messageId.longValue());
@@ -54,21 +75,22 @@ public class TelegramBotApiClient {
         body.put("url", webhookUrl);
         body.put("secret_token", secretToken);
         body.put("allowed_updates", List.of("message"));
-        call(connection, "setWebhook", body);
+        call(connection, "setWebhook", body, controlTimeout);
     }
 
     public void deleteWebhook(ResolvedConnection connection) {
-        call(connection, "deleteWebhook", Map.of());
+        call(connection, "deleteWebhook", Map.of(), controlTimeout);
     }
 
-    private Map<String, Object> call(ResolvedConnection connection, String method, Map<String, Object> body) {
+    private Map<String, Object> call(
+            ResolvedConnection connection, String method, Map<String, Object> body, Duration timeout) {
         String token = botToken(connection);
         PinnedHttpTransport.HttpResponse response =
-                transport.executeTelegramBotApi(URI.create(BASE_URL + token + "/" + method), body);
-        return successfulResult(response);
+                transport.executeTelegramBotApi(URI.create(BASE_URL + token + "/" + method), body, timeout);
+        return successfulResult(response, token);
     }
 
-    private Map<String, Object> successfulResult(PinnedHttpTransport.HttpResponse response) {
+    private Map<String, Object> successfulResult(PinnedHttpTransport.HttpResponse response, String token) {
         if (response == null) {
             throw invalidResponse();
         }
@@ -101,16 +123,16 @@ public class TelegramBotApiClient {
         if (status >= 400) {
             // 400, 403 and 404 are permanent for this request: bad chat, blocked bot, unknown method.
             throw new NodeExecutor.Failure("HTTP_BUSINESS_REJECTED",
-                    "Telegram rejected the request" + describe(envelope) + ".", false, true);
+                    "Telegram rejected the request" + describe(envelope, token) + ".", false, true);
         }
         throw invalidResponse();
     }
 
-    private static String describe(Map<String, Object> envelope) {
+    private static String describe(Map<String, Object> envelope, String token) {
         if (!(envelope.get("description") instanceof String description) || description.isBlank()) {
             return "";
         }
-        String clean = description.replaceAll("[\\x00-\\x1F\\x7F]+", " ").trim();
+        String clean = description.replace(token, "***").replaceAll("[\\x00-\\x1F\\x7F]+", " ").trim();
         if (clean.length() > MAX_DESCRIPTION_LENGTH) {
             clean = clean.substring(0, MAX_DESCRIPTION_LENGTH);
         }

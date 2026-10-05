@@ -22,6 +22,8 @@ import com.weav.workflow.domain.model.aggregate.workflow.WorkflowVersion;
 import com.weav.workflow.domain.port.out.WorkflowRepository;
 import com.weav.workflow.domain.valueobject.TriggerType;
 import com.weav.workflow.domain.valueobject.WorkflowStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.support.TransactionOperations;
@@ -43,6 +45,10 @@ import java.util.UUID;
 /** Coordinates immutable publication and state changes in one workflow transaction. */
 @Service
 public class WorkflowPublicationService {
+
+    private static final Logger log = LoggerFactory.getLogger(WorkflowPublicationService.class);
+    /** Registration runs inside the publish transaction, one short call per bot, so the count is bounded. */
+    public static final int MAX_TELEGRAM_TRIGGERS = 5;
 
     private static final String PUBLISH_CAPABILITY = "WORKFLOW_PUBLISH";
     private static final String STATE_CAPABILITY = "WORKFLOW_MANAGE_STATE";
@@ -146,6 +152,7 @@ public class WorkflowPublicationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Workflow not found"));
         WorkflowDefinition validatedDefinition = definitionFor(beforeAuthorization);
         validateForPublish(validatedDefinition);
+        requireTelegramTriggerLimit(validatedDefinition);
         Set<UUID> referencedConnections = connectionIds(validatedDefinition);
         for (UUID connectionId : referencedConnections) {
             workspaceConnections.authorizeAttachment(workspaceId, connectionId, actorId);
@@ -191,21 +198,22 @@ public class WorkflowPublicationService {
         Map<UUID, String> telegramSecrets = new LinkedHashMap<>();
         List<WorkflowTrigger> newTriggers = triggersFor(workflowId, version.getId(), validatedDefinition,
                 previousStatus == WorkflowStatus.PAUSED, publishedAt, webhookProvisionings, telegramSecrets);
-        Set<UUID> retiredBots = previousVersionId == null
-                ? Set.of() : activeTelegramConnections(triggers.findCurrent(workflowId, previousVersionId));
+        List<WorkflowTrigger> retired = previousVersionId == null
+                ? List.of() : activeTelegramTriggers(triggers.findCurrent(workflowId, previousVersionId));
         triggers.replaceCurrent(workflowId, version.getId(), newTriggers);
         connectionReferences.ifPresent(port -> port.appendVersion(workflowId, version.getId(), referencedConnections));
         notificationOutbox.record(WorkflowNotificationEvent.lifecycle("workflow.published", locked.getWorkspaceId(),
                 actorId, locked.getId(), locked.getName(), publishedAt));
 
-        // Last step on purpose: a registration failure rolls everything above back, and a failed commit
-        // afterwards un-registers the webhook again. Telegram holds one webhook per bot, so a bot that is
-        // registered again simply replaces the retired one; bots this workflow no longer uses are cleared.
+        // Last step on purpose: a registration failure rolls everything above back. Telegram holds one webhook per
+        // bot, so a bot that is registered again simply replaces the retired one. After a rollback (failed call or
+        // failed commit) a retired trigger that is active again gets its webhook restored with a new secret, and
+        // bots nobody serves any more are cleared; after a commit, bots this workflow no longer uses are cleared.
         List<WorkflowTrigger> activeTelegram = newTriggers.stream()
                 .filter(trigger -> trigger.getType() == TriggerType.TELEGRAM
                         && trigger.getStatus() == com.weav.workflow.domain.valueobject.TriggerStatus.ACTIVE)
                 .toList();
-        registerTelegram(workspaceId, activeTelegram, telegramSecrets, telegramBaseUrl, retiredBots);
+        registerTelegram(workspaceId, activeTelegram, telegramSecrets, telegramBaseUrl, retired);
 
         return new Publication(workflowId, version.getId(), versionNumber, locked.getStatus(), webhookProvisionings);
     }
@@ -248,7 +256,7 @@ public class WorkflowPublicationService {
                     triggers.findCurrent(workflowId, workflow.getCurrentVersionId()));
             triggers.setCurrentEnabled(workflowId, workflow.getCurrentVersionId(), false,
                     Instant.now(), java.util.Map.of());
-            afterCompletion(() -> unregisterTelegram(workspaceId, pausedBots), () -> { });
+            afterCompletion(() -> clearUnusedBots(workspaceId, pausedBots), () -> { });
         } else {
             workflow.resume();
             Instant resumedAt = Instant.now();
@@ -265,7 +273,12 @@ public class WorkflowPublicationService {
         }
         Workflow saved = workflowRepository.save(workflow);
         if (!telegramToResume.isEmpty()) {
-            reRegisterTelegram(workspaceId, telegramToResume);
+            if (telegramBaseUrl() == null) {
+                // Without a public https URL Telegram cannot deliver: keep the trigger off like a publish would.
+                telegramToResume.forEach(trigger -> triggers.disableTelegramNotConfigured(trigger.getId()));
+            } else {
+                reRegisterTelegram(workspaceId, telegramToResume);
+            }
         }
         if (saved.getStatus() != previousStatus) {
             String eventType = saved.getStatus() == WorkflowStatus.PAUSED
@@ -304,6 +317,16 @@ public class WorkflowPublicationService {
             throw new TriggerDependencyUnavailableException();
         }
         throw new WorkflowDraftValidationException(issues);
+    }
+
+    private static void requireTelegramTriggerLimit(WorkflowDefinition definition) {
+        long telegramTriggers = definition.nodes().stream()
+                .filter(node -> node != null && "trigger.telegram".equals(node.type())).count();
+        if (telegramTriggers > MAX_TELEGRAM_TRIGGERS) {
+            throw new WorkflowDraftValidationException(List.of(new ValidationIssue(null, "nodes",
+                    "TELEGRAM_TRIGGER_LIMIT_EXCEEDED",
+                    "A workflow can have at most " + MAX_TELEGRAM_TRIGGERS + " Telegram triggers.")));
+        }
     }
 
     private WorkflowDefinition definitionFor(Workflow workflow) {
@@ -455,26 +478,33 @@ public class WorkflowPublicationService {
         return UUID.fromString((String) trigger.getConfig().get("connectionId"));
     }
 
-    private Set<UUID> activeTelegramConnections(List<WorkflowTrigger> current) {
+    private static List<WorkflowTrigger> activeTelegramTriggers(List<WorkflowTrigger> current) {
+        return current.stream()
+                .filter(trigger -> trigger.getType() == TriggerType.TELEGRAM
+                        && trigger.getStatus() == com.weav.workflow.domain.valueobject.TriggerStatus.ACTIVE)
+                .toList();
+    }
+
+    private static Set<UUID> activeTelegramConnections(List<WorkflowTrigger> current) {
         Set<UUID> bots = new LinkedHashSet<>();
-        for (WorkflowTrigger trigger : current) {
-            if (trigger.getType() == TriggerType.TELEGRAM
-                    && trigger.getStatus() == com.weav.workflow.domain.valueobject.TriggerStatus.ACTIVE) {
-                bots.add(telegramConnection(trigger));
-            }
-        }
+        activeTelegramTriggers(current).forEach(trigger -> bots.add(telegramConnection(trigger)));
         return bots;
     }
 
     /** One bot can have one webhook: refuse a bot another workflow uses, or two nodes of this workflow. */
     private void requireTelegramBotsFree(WorkflowDefinition definition, UUID workflowId) {
-        Set<UUID> seen = new LinkedHashSet<>();
+        Set<UUID> seen = new java.util.TreeSet<>();
         for (WorkflowDefinition.Node node : definition.nodes()) {
             if (node == null || !"trigger.telegram".equals(node.type())) {
                 continue;
             }
-            UUID bot = UUID.fromString((String) node.config().get("connectionId"));
-            if (!seen.add(bot) || triggers.isTelegramConnectionInUse(bot, workflowId)) {
+            if (!seen.add(UUID.fromString((String) node.config().get("connectionId")))) {
+                throw botInUse();
+            }
+        }
+        // Sorted, so two publishes that share several bots take the advisory locks in the same order.
+        for (UUID bot : seen) {
+            if (triggers.isTelegramConnectionInUse(bot, workflowId)) {
                 throw botInUse();
             }
         }
@@ -486,25 +516,75 @@ public class WorkflowPublicationService {
     }
 
     private void registerTelegram(UUID workspaceId, List<WorkflowTrigger> active, Map<UUID, String> secrets,
-                                  String baseUrl, Set<UUID> retiredBots) {
+                                  String baseUrl, List<WorkflowTrigger> retired) {
         TelegramWebhookPort port = telegram.orElse(null);
         Set<UUID> registered = new LinkedHashSet<>();
-        for (WorkflowTrigger trigger : active) {
-            UUID bot = telegramConnection(trigger);
-            registered.add(bot);
-            try {
+        Set<UUID> retiredBots = new LinkedHashSet<>();
+        retired.forEach(trigger -> retiredBots.add(telegramConnection(trigger)));
+        Runnable onCommit = () -> {
+            Set<UUID> toClear = new LinkedHashSet<>(retiredBots);
+            toClear.removeAll(registered);
+            clearUnusedBots(workspaceId, toClear);
+        };
+        Runnable onRollback = () -> recoverAfterRollback(workspaceId, registered, retired, baseUrl);
+        // Inside a transaction both outcomes are handled once it ends; without one (unit tests) right here.
+        boolean deferred = TransactionSynchronizationManager.isSynchronizationActive();
+        if (deferred) {
+            afterCompletion(onCommit, onRollback);
+        }
+        try {
+            for (WorkflowTrigger trigger : active) {
+                UUID bot = telegramConnection(trigger);
+                // Added before the call: a failing call may have half-applied.
+                registered.add(bot);
                 port.register(workspaceId, bot, webhookUrl(baseUrl, trigger), secrets.get(trigger.getId()));
-            } catch (RuntimeException failure) {
-                // Telegram may already have accepted an earlier bot of this publish; undo it. The failing bot
-                // is cleared too, because the call may have half-applied.
-                unregisterTelegram(workspaceId, registered);
-                throw failure;
+            }
+        } catch (RuntimeException failure) {
+            if (!deferred) {
+                onRollback.run();
+            }
+            throw failure;
+        }
+        if (!deferred) {
+            onCommit.run();
+        }
+    }
+
+    /**
+     * The publish did not commit. Telegram may already point at the rolled-back registration. A bot that a retired
+     * trigger of this workflow serves is active again in the database, so that trigger gets a fresh secret and its
+     * webhook back; every other bot is cleared unless something active uses it.
+     */
+    private void recoverAfterRollback(UUID workspaceId, Set<UUID> registered, List<WorkflowTrigger> retired,
+                                      String baseUrl) {
+        Set<UUID> clear = new LinkedHashSet<>();
+        for (UUID bot : registered) {
+            List<WorkflowTrigger> restorable = retired.stream()
+                    .filter(trigger -> telegramConnection(trigger).equals(bot)).toList();
+            if (restorable.isEmpty()) {
+                clear.add(bot);
+            }
+            restorable.forEach(trigger -> restoreRegistration(workspaceId, trigger, baseUrl));
+        }
+        clearUnusedBots(workspaceId, clear);
+    }
+
+    private void restoreRegistration(UUID workspaceId, WorkflowTrigger trigger, String baseUrl) {
+        try {
+            WebhookSecretPort.IssuedKey issued = webhookSecrets.provision();
+            triggers.updateTelegramRegistration(trigger.getId(), issued.secretHash(), null);
+            telegram.orElseThrow().register(workspaceId, telegramConnection(trigger),
+                    webhookUrl(baseUrl, trigger), issued.secret());
+        } catch (RuntimeException failure) {
+            log.warn("event=telegram_webhook_restore_failed triggerId={} errorType={}",
+                    trigger.getId(), failure.getClass().getSimpleName());
+            try {
+                triggers.updateTelegramRegistration(trigger.getId(), null,
+                        Map.of("code", TelegramTriggerException.REGISTRATION_FAILED));
+            } catch (RuntimeException ignored) {
+                log.warn("event=telegram_webhook_restore_error_not_recorded triggerId={}", trigger.getId());
             }
         }
-        Set<UUID> toClear = new LinkedHashSet<>(retiredBots);
-        toClear.removeAll(registered);
-        afterCompletion(() -> unregisterTelegram(workspaceId, toClear),
-                () -> unregisterTelegram(workspaceId, registered));
     }
 
     private static String webhookUrl(String baseUrl, WorkflowTrigger trigger) {
@@ -518,10 +598,16 @@ public class WorkflowPublicationService {
                     && "DEPENDENCY_NOT_CONFIGURED".equals(trigger.getLastError().get("code"));
             if (trigger.getType() == TriggerType.TELEGRAM && !readinessBlocked
                     && trigger.getStatus() == com.weav.workflow.domain.valueobject.TriggerStatus.DISABLED) {
+                result.add(trigger);
+            }
+        }
+        result.sort(java.util.Comparator.comparing(WorkflowPublicationService::telegramConnection));
+        if (telegramBaseUrl() != null) {
+            // Sorted above so concurrent resumes take the advisory locks in the same order.
+            for (WorkflowTrigger trigger : result) {
                 if (triggers.isTelegramConnectionInUse(telegramConnection(trigger), workflowId)) {
                     throw botInUse();
                 }
-                result.add(trigger);
             }
         }
         return result;
@@ -530,21 +616,30 @@ public class WorkflowPublicationService {
     /** The old secret is unrecoverable (only its hash is stored), so resuming issues a new one. */
     private void reRegisterTelegram(UUID workspaceId, List<WorkflowTrigger> resumed) {
         String baseUrl = telegramBaseUrl();
-        if (baseUrl == null) {
-            throw new TelegramTriggerException(TelegramTriggerException.REGISTRATION_FAILED,
-                    "The public base URL for Telegram webhooks is not configured.");
-        }
         Map<UUID, String> secrets = new LinkedHashMap<>();
         for (WorkflowTrigger trigger : resumed) {
             WebhookSecretPort.IssuedKey issued = webhookSecrets.provision();
             triggers.replaceSecretHash(trigger.getId(), issued.secretHash());
             secrets.put(trigger.getId(), issued.secret());
         }
-        registerTelegram(workspaceId, resumed, secrets, baseUrl, Set.of());
+        registerTelegram(workspaceId, resumed, secrets, baseUrl, List.of());
     }
 
-    private void unregisterTelegram(UUID workspaceId, Set<UUID> bots) {
-        telegram.ifPresent(port -> bots.forEach(bot -> port.unregister(workspaceId, bot)));
+    /**
+     * Deletes the webhook of each bot unless an active Telegram trigger uses it by now (checked in a new
+     * transaction, since another workflow may have taken the bot between the decision and this call).
+     */
+    private void clearUnusedBots(UUID workspaceId, Set<UUID> bots) {
+        for (UUID bot : bots) {
+            try {
+                if (!triggers.hasActiveTelegramTrigger(bot)) {
+                    telegram.ifPresent(port -> port.unregister(workspaceId, bot));
+                }
+            } catch (RuntimeException failure) {
+                log.warn("event=telegram_webhook_clear_skipped connectionId={} errorType={}",
+                        bot, failure.getClass().getSimpleName());
+            }
+        }
     }
 
     /** Runs after the surrounding transaction ends; immediately when there is none (unit tests). */

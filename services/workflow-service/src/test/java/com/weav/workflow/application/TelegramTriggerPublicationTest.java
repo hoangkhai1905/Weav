@@ -235,6 +235,93 @@ class TelegramTriggerPublicationTest {
         assertTrue(telegram.calls.isEmpty());
     }
 
+    @Test
+    void resumeWithoutAPublicBaseUrlActivatesTheRestAndLeavesTelegramDisabledNotConfigured() {
+        UUID versionId = UUID.randomUUID();
+        Workflow paused = workflowWith(draftDefinition(BOT), WorkflowStatus.PAUSED, versionId);
+        when(workflows.lockByWorkspaceAndId(WORKSPACE_ID, paused.getId())).thenReturn(Optional.of(paused));
+        WorkflowTrigger disabled = telegramTrigger(paused.getId(), versionId, BOT, TriggerStatus.DISABLED, null);
+        when(triggers.findCurrent(paused.getId(), versionId)).thenReturn(List.of(disabled));
+
+        Workflow resumed = service(null).resume(WORKSPACE_ID, paused.getId(), ACTOR_ID);
+
+        assertEquals(WorkflowStatus.PUBLISHED, resumed.getStatus());
+        verify(triggers).setCurrentEnabled(eq(paused.getId()), eq(versionId), eq(true), any(), any());
+        verify(triggers).disableTelegramNotConfigured(disabled.getId());
+        verify(triggers, never()).isTelegramConnectionInUse(any(), any());
+        assertTrue(telegram.calls.isEmpty());
+    }
+
+    @Test
+    void moreThanFiveTelegramTriggersAreRejectedWithAStableCode() {
+        for (int count : new int[] {5, 6}) {
+            Map<String, Object> definition = draftDefinition(BOT);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> nodes = (List<Map<String, Object>>) definition.get("nodes");
+            nodes.clear();
+            nodes.add(node("manual", "trigger.manual", Map.of()));
+            for (int i = 0; i < count; i++) {
+                nodes.add(node("telegram-" + i, "trigger.telegram", Map.of("connectionId", UUID.randomUUID().toString())));
+            }
+            Workflow draft = workflowWith(definition, WorkflowStatus.DRAFT, null);
+            stubPublishable(draft);
+            if (count == 5) {
+                service(BASE_URL).publish(WORKSPACE_ID, draft.getId(), ACTOR_ID);
+                assertEquals(5, telegram.calls.size());
+            } else {
+                com.weav.workflow.application.service.WorkflowDraftValidationException failure = assertThrows(
+                        com.weav.workflow.application.service.WorkflowDraftValidationException.class,
+                        () -> service(BASE_URL).publish(WORKSPACE_ID, draft.getId(), ACTOR_ID));
+                assertEquals("TELEGRAM_TRIGGER_LIMIT_EXCEEDED", failure.issues().getFirst().code());
+            }
+        }
+    }
+
+    @Test
+    void botLocksAreTakenInSortedOrderWhateverTheNodeOrder() {
+        List<UUID> bots = new ArrayList<>(List.of(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()));
+        Map<String, Object> definition = draftDefinition(BOT);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> nodes = (List<Map<String, Object>>) definition.get("nodes");
+        nodes.clear();
+        nodes.add(node("manual", "trigger.manual", Map.of()));
+        for (UUID bot : bots) {
+            nodes.add(node("t-" + bot, "trigger.telegram", Map.of("connectionId", bot.toString())));
+        }
+        java.util.Collections.shuffle(nodes.subList(1, nodes.size()), new java.util.Random(7));
+        Workflow draft = workflowWith(definition, WorkflowStatus.DRAFT, null);
+        stubPublishable(draft);
+
+        service(BASE_URL).publish(WORKSPACE_ID, draft.getId(), ACTOR_ID);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(triggers);
+        new java.util.TreeSet<>(bots).forEach(bot -> order.verify(triggers).isTelegramConnectionInUse(bot, draft.getId()));
+    }
+
+    @Test
+    void afterCommitClearingSkipsABotThatAnActiveTriggerUsesByNow() {
+        UUID previousVersion = UUID.randomUUID();
+        Workflow switched = workflowWith(draftDefinition(OTHER_BOT), WorkflowStatus.PUBLISHED, previousVersion);
+        stubPublishable(switched);
+        stubPreviousTelegramTrigger(switched.getId(), previousVersion, BOT);
+        when(triggers.hasActiveTelegramTrigger(BOT)).thenReturn(true);
+
+        service(BASE_URL).publish(WORKSPACE_ID, switched.getId(), ACTOR_ID);
+
+        assertEquals(1, telegram.calls.size(), telegram.calls::toString);
+        assertTrue(telegram.calls.getFirst().startsWith("register " + OTHER_BOT));
+
+        telegram.calls.clear();
+        UUID versionId = UUID.randomUUID();
+        Workflow published = workflowWith(draftDefinition(BOT), WorkflowStatus.PUBLISHED, versionId);
+        when(workflows.lockByWorkspaceAndId(WORKSPACE_ID, published.getId())).thenReturn(Optional.of(published));
+        stubPreviousTelegramTrigger(published.getId(), versionId, BOT);
+
+        service(BASE_URL).pause(WORKSPACE_ID, published.getId(), ACTOR_ID);
+
+        assertTrue(telegram.calls.isEmpty(), "the bot is in use again, so its webhook stays");
+    }
+
     // ---- helpers
 
     private WorkflowTrigger telegramTrigger() {

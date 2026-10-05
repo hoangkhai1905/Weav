@@ -131,6 +131,22 @@ public class WorkflowPublicationTestConfiguration {
             }
 
             @Override
+            public boolean hasActiveTelegramTrigger(UUID connectionId) {
+                return delegate.hasActiveTelegramTrigger(connectionId);
+            }
+
+            @Override
+            public void updateTelegramRegistration(UUID triggerId, String newSecretHash,
+                                                   java.util.Map<String, Object> lastError) {
+                delegate.updateTelegramRegistration(triggerId, newSecretHash, lastError);
+            }
+
+            @Override
+            public void disableTelegramNotConfigured(UUID triggerId) {
+                delegate.disableTelegramNotConfigured(triggerId);
+            }
+
+            @Override
             public List<WorkflowTrigger> findCurrent(UUID workflowId, UUID versionId) {
                 return delegate.findCurrent(workflowId, versionId);
             }

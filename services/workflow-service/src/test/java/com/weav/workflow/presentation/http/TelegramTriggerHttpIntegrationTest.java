@@ -67,6 +67,7 @@ class TelegramTriggerHttpIntegrationTest {
         final List<String[]> registered = new CopyOnWriteArrayList<>();
         final List<UUID> unregistered = new CopyOnWriteArrayList<>();
         volatile boolean fail;
+        volatile long delayMillis;
 
         @Override
         public String publicBaseUrl() {
@@ -78,6 +79,13 @@ class TelegramTriggerHttpIntegrationTest {
             if (fail) {
                 throw new TelegramTriggerException(TelegramTriggerException.REGISTRATION_FAILED,
                         "The Telegram webhook could not be registered: Telegram rejected the request.");
+            }
+            if (delayMillis > 0) {
+                try {
+                    Thread.sleep(delayMillis);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
             }
             registered.add(new String[] {connectionId.toString(), webhookUrl, secretToken});
         }
@@ -115,6 +123,7 @@ class TelegramTriggerHttpIntegrationTest {
         telegram.registered.clear();
         telegram.unregistered.clear();
         telegram.fail = false;
+        telegram.delayMillis = 0;
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
                 .addFilters(bodyLimitFilter)
                 .apply(SecurityMockMvcConfigurers.springSecurity())
@@ -206,6 +215,45 @@ class TelegramTriggerHttpIntegrationTest {
         telegramUpdate(key, firstCall[2], update(21, "old secret")).andExpect(status().isNotFound());
         telegramUpdate(key, resumedCall[2], update(21, "new secret")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.executionId").exists());
+    }
+
+    @Test
+    void twoConcurrentPublishesOnTheSameBotLetExactlyOneWin() throws Exception {
+        Workflow first = draft("Concurrent A", bot);
+        Workflow second = draft("Concurrent B", bot);
+        telegram.delayMillis = 400; // keeps the winner inside its transaction so the loser really waits on the lock
+        String token = accessToken();
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            List<java.util.concurrent.Future<org.springframework.mock.web.MockHttpServletResponse>> results = new ArrayList<>();
+            for (Workflow workflow : List.of(first, second)) {
+                results.add(pool.submit(() -> {
+                    go.await();
+                    return mockMvc.perform(post(path(workflow, "publish")).header("Authorization", "Bearer " + token))
+                            .andReturn().getResponse();
+                }));
+            }
+            go.countDown();
+            List<Integer> statuses = new ArrayList<>();
+            int conflicts = 0;
+            for (var result : results) {
+                var response = result.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                statuses.add(response.getStatus());
+                if (response.getStatus() == 409) {
+                    assertTrue(response.getContentAsString().contains("TELEGRAM_BOT_IN_USE"));
+                    conflicts++;
+                }
+            }
+            assertEquals(1, statuses.stream().filter(status -> status == 200).count(), statuses::toString);
+            assertEquals(1, conflicts, statuses::toString);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertEquals(1, telegram.registered.size());
+        assertEquals(1, jdbc.queryForObject("select count(*) from workflow.workflow_triggers t "
+                + "join workflow.workflows w on w.id = t.workflow_id where w.workspace_id = ? "
+                + "and t.type = 'TELEGRAM' and t.status = 'ACTIVE'", Integer.class, workspaceId));
     }
 
     @Test

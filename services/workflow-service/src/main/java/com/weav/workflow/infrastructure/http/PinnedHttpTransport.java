@@ -60,6 +60,7 @@ public class PinnedHttpTransport {
     private static final Pattern GOOGLE_CALENDAR_EVENTS_PATH = Pattern.compile("^/calendar/v3/calendars/[^/]+/events$");
     private static final String GMAIL_SEND_PATH = "/gmail/v1/users/me/messages/send";
     private static final String TELEGRAM_HOST = "api.telegram.org";
+    private static final Set<String> TELEGRAM_METHODS = Set.of("sendMessage", "setWebhook", "deleteWebhook");
     private static final Pattern TELEGRAM_PATH = Pattern.compile("/bot[0-9]{1,20}:[A-Za-z0-9_-]{1,128}/[A-Za-z]{1,32}");
     private static final Set<String> FORBIDDEN_HEADERS = Set.of(
             "host", "content-length", "transfer-encoding", "connection", "proxy-connection",
@@ -189,10 +190,11 @@ public class PinnedHttpTransport {
      * token is part of the Bot API path (there is no auth header), so the URI is never logged or echoed
      * in a failure. DNS is approved and pinned here immediately before the request is sent.
      */
-    public HttpResponse executeTelegramBotApi(URI uri, Object body) {
+    public HttpResponse executeTelegramBotApi(URI uri, Object body, Duration timeout) {
         validateTelegramUri(uri);
         OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
-        return executeWithAuthentication(target, "POST", Map.of(), Map.of(), null, body);
+        return executeWithAuthentication(target, "POST", Map.of(), Map.of(), null, body,
+                timeout == null ? callTimeout : timeout);
     }
 
     /**
@@ -234,6 +236,17 @@ public class PinnedHttpTransport {
             Map<String, String> authenticationHeaders,
             Object query,
             Object body) {
+        return executeWithAuthentication(target, method, headers, authenticationHeaders, query, body, callTimeout);
+    }
+
+    private HttpResponse executeWithAuthentication(
+            OutboundTargetPolicy.ApprovedTarget target,
+            String method,
+            Map<String, String> headers,
+            Map<String, String> authenticationHeaders,
+            Object query,
+            Object body,
+            Duration callTimeout) {
         Objects.requireNonNull(target, "target must not be null");
         String normalizedMethod = normalizeMethod(method);
         Map<String, String> safeHeaders = validateHeaders(headers);
@@ -609,7 +622,8 @@ public class PinnedHttpTransport {
                 || uri.getRawQuery() != null
                 || uri.getRawFragment() != null
                 || uri.getRawPath() == null
-                || !TELEGRAM_PATH.matcher(uri.getRawPath()).matches()) {
+                || !TELEGRAM_PATH.matcher(uri.getRawPath()).matches()
+                || !TELEGRAM_METHODS.contains(uri.getRawPath().substring(uri.getRawPath().lastIndexOf('/') + 1))) {
             throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
                     "The Telegram destination is invalid.", false);
         }

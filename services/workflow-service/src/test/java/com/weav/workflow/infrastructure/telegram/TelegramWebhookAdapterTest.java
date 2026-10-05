@@ -36,6 +36,19 @@ class TelegramWebhookAdapterTest {
         assertEquals(Map.of("url", "https://weav.example.test/api/v1/webhooks/telegram/key",
                 "secret_token", "secret-token", "allowed_updates", List.of("message")), transport.bodies.getFirst());
         assertEquals("https://weav.example.test", adapter.publicBaseUrl());
+        assertEquals(java.time.Duration.ofSeconds(10), transport.timeouts.getFirst(), "control calls use the short default");
+    }
+
+    @Test
+    void controlCallsUseTheConfiguredTimeoutAndItIsBounded() {
+        FakeTransport transport = new FakeTransport(200, Map.of("ok", true, "result", true));
+        new TelegramBotApiClient(transport, java.time.Duration.ofSeconds(3)).deleteWebhook(
+                new ResolvedConnection("TELEGRAM", "TOKEN", Map.of("token", TOKEN)));
+        assertEquals(java.time.Duration.ofSeconds(3), transport.timeouts.getFirst());
+        assertThrows(IllegalArgumentException.class,
+                () -> new TelegramBotApiClient(transport, java.time.Duration.ZERO));
+        assertThrows(IllegalArgumentException.class,
+                () -> new TelegramBotApiClient(transport, java.time.Duration.ofMinutes(5)));
     }
 
     @Test
@@ -95,6 +108,7 @@ class TelegramWebhookAdapterTest {
     private static final class FakeTransport extends PinnedHttpTransport {
         private final int status;
         private final Object data;
+        private final List<java.time.Duration> timeouts = new ArrayList<>();
         private final List<URI> uris = new ArrayList<>();
         private final List<Object> bodies = new ArrayList<>();
 
@@ -105,7 +119,8 @@ class TelegramWebhookAdapterTest {
         }
 
         @Override
-        public HttpResponse executeTelegramBotApi(URI target, Object body) {
+        public HttpResponse executeTelegramBotApi(URI target, Object body, java.time.Duration timeout) {
+            timeouts.add(timeout);
             uris.add(target);
             bodies.add(body);
             return new HttpResponse(status, data, Map.of());
