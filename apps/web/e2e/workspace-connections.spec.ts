@@ -1238,7 +1238,7 @@ test.describe("workflow builder Gmail connection picker", () => {
     await installAuthFixture(page);
     const savedDrafts: Array<Record<string, unknown>> = [];
     let sheetsConfig: Record<string, unknown> = { operation: "read" };
-    let connections: unknown[] = [
+    const connections: unknown[] = [
       connection(CONNECTION_SHEETS_ID, "GOOGLE_SHEETS", WORKSPACE_ID, "ACTIVE"),
       connection(CONNECTION_GMAIL_ID, "GMAIL", WORKSPACE_ID, "ACTIVE"),
       connection("00000000-0000-4000-8000-0000000000e9", "GOOGLE_SHEETS", WORKSPACE_ID, "INVALID"),

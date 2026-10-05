@@ -94,9 +94,6 @@ export function Sidebar() {
     }, delay);
   }, []);
   useEffect(() => () => clearTimer(), []);
-  useEffect(() => {
-    if (!sidebarCollapsed) setHovered(false);
-  }, [sidebarCollapsed]);
   const isCoarsePointer = () => typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
   const overlayOpen = sidebarCollapsed && hovered;
 
@@ -233,16 +230,12 @@ export function Sidebar() {
           if (!sidebarCollapsed || event.pointerType === "touch" || isCoarsePointer()) return;
           scheduleHover(true, 150);
         }}
-        onPointerLeave={() => {
-          if (!sidebarCollapsed) return;
-          scheduleHover(false, 200);
-        }}
+        onPointerLeave={() => scheduleHover(false, 200)}
         onFocus={(event) => {
           if (!sidebarCollapsed || isCoarsePointer()) return;
           if (event.target.matches(":focus-visible")) scheduleHover(true, 0);
         }}
         onBlur={(event) => {
-          if (!sidebarCollapsed) return;
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) scheduleHover(false, 200);
         }}
         className={`relative z-30 hidden h-full shrink-0 flex-col md:flex ${
