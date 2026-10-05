@@ -165,6 +165,84 @@ class ReadinessPlannerTest {
         assertEquals(INACTIVE, afterOuter.edges().get("nested-false-join"));
     }
 
+    @Test
+    void activatesOnlyTheSelectedSwitchPortIncludingDefaultAndLeavesUnusedPortsHarmless() {
+        WorkflowDefinition definition = workflow(
+                manual("manual"), switchNode("switch"), action("gold"), action("silver"), action("other"),
+                edge("manual-switch", "manual", "switch"),
+                branch("switch-gold", "switch", "gold", "gold"),
+                branch("switch-silver", "switch", "silver", "silver"),
+                branch("switch-other", "switch", "other", "default"));
+        GraphState initial = planner.initialize(definition, "manual");
+        assertEquals(List.of("switch"), planner.ready(definition, initial));
+
+        GraphState afterGold = planner.afterSuccess(definition, initial, "switch", "gold");
+        assertEquals(ACTIVE, afterGold.edges().get("switch-gold"));
+        assertEquals(INACTIVE, afterGold.edges().get("switch-silver"));
+        assertEquals(INACTIVE, afterGold.edges().get("switch-other"));
+        assertEquals(List.of("gold"), planner.ready(definition, afterGold));
+        assertEquals(SKIPPED, afterGold.nodes().get("silver"));
+        assertEquals(SKIPPED, afterGold.nodes().get("other"));
+
+        // a port with no edge (here "bronze") leaves every edge inactive
+        GraphState afterBronze = planner.afterSuccess(definition, initial, "switch", "bronze");
+        assertEquals(List.of(), planner.ready(definition, afterBronze));
+        assertEquals(SKIPPED, afterBronze.nodes().get("gold"));
+        assertEquals(SKIPPED, afterBronze.nodes().get("other"));
+    }
+
+    @Test
+    void twoSwitchPortsFeedingOneJoinLeaveOneActiveEdgeAndTheJoinStillRuns() {
+        WorkflowDefinition definition = workflow(
+                manual("manual"), switchNode("switch"), action("join"),
+                edge("manual-switch", "manual", "switch"),
+                branch("switch-join-a", "switch", "join", "a"),
+                branch("switch-join-b", "switch", "join", "b"));
+        GraphState initial = planner.initialize(definition, "manual");
+        planner.ready(definition, initial);
+
+        GraphState afterSwitch = planner.afterSuccess(definition, initial, "switch", "b");
+
+        assertEquals(INACTIVE, afterSwitch.edges().get("switch-join-a"));
+        assertEquals(ACTIVE, afterSwitch.edges().get("switch-join-b"));
+        assertEquals(List.of("join"), planner.ready(definition, afterSwitch));
+    }
+
+    @Test
+    void aSkippedSwitchMarksEveryPortEdgeInactive() {
+        WorkflowDefinition definition = workflow(
+                manual("manual"), condition("gate"), switchNode("switch"), action("a"), action("other"),
+                edge("manual-gate", "manual", "gate"),
+                branch("gate-switch", "gate", "switch", "true"),
+                branch("switch-a", "switch", "a", "a"),
+                branch("switch-other", "switch", "other", "default"));
+        GraphState initial = planner.initialize(definition, "manual");
+        planner.ready(definition, initial);
+
+        GraphState afterGate = planner.afterSuccess(definition, initial, "gate", "false");
+        planner.ready(definition, afterGate);
+
+        assertEquals(SKIPPED, afterGate.nodes().get("switch"));
+        assertEquals(INACTIVE, afterGate.edges().get("switch-a"));
+        assertEquals(INACTIVE, afterGate.edges().get("switch-other"));
+        assertEquals(SKIPPED, afterGate.nodes().get("a"));
+        assertEquals(SKIPPED, afterGate.nodes().get("other"));
+    }
+
+    @Test
+    void aSwitchMustSelectAPortAndEveryEdgeMustCarryOne() {
+        WorkflowDefinition definition = workflow(
+                manual("manual"), switchNode("switch"), action("next"),
+                edge("manual-switch", "manual", "switch"), edge("switch-next", "switch", "next"));
+        GraphState initial = planner.initialize(definition, "manual");
+        planner.ready(definition, initial);
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> planner.afterSuccess(definition, initial, "switch", null));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> planner.afterSuccess(definition, initial, "switch", "gold"));
+    }
+
     private static WorkflowDefinition workflow(Object... graphElements) {
         List<WorkflowDefinition.Node> nodes = new java.util.ArrayList<>();
         List<WorkflowDefinition.Edge> edges = new java.util.ArrayList<>();
@@ -194,6 +272,10 @@ class ReadinessPlannerTest {
 
     private static WorkflowDefinition.Node condition(String id) {
         return new WorkflowDefinition.Node(id, "logic.condition", Map.of());
+    }
+
+    private static WorkflowDefinition.Node switchNode(String id) {
+        return new WorkflowDefinition.Node(id, "logic.switch", Map.of());
     }
 
     private static WorkflowDefinition.Edge edge(String id, String source, String target) {

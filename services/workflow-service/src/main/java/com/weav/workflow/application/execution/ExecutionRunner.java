@@ -7,6 +7,7 @@ import com.weav.workflow.application.port.out.RetryWaitPort;
 import com.weav.workflow.domain.definition.DefinitionValidator;
 import com.weav.workflow.domain.definition.JsonValues;
 import com.weav.workflow.domain.definition.NodeCatalog;
+import com.weav.workflow.domain.definition.NodeConfigSchema;
 import com.weav.workflow.domain.definition.NodeSideEffects;
 import com.weav.workflow.domain.definition.ValidationIssue;
 import com.weav.workflow.domain.definition.WorkflowDefinition;
@@ -378,6 +379,14 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
         for (String field : staticFields) {
             if (definitionNode.config().containsKey(field)) {
                 config.put(field, definitionNode.config().get(field));
+            }
+        }
+        // Mapped numbers and booleans become text where the field is string-only (e.g. a numeric id into a
+        // subject). ponytail: top-level fields only; array items and nested objects are not coerced.
+        NodeConfigSchema schema = NodeCatalog.schema(definitionNode.type());
+        for (String field : schema == null ? Set.<String>of() : schema.stringOnlyFields()) {
+            if (config.get(field) instanceof Number || config.get(field) instanceof Boolean) {
+                config.put(field, JsonValues.scalarText(config.get(field)));
             }
         }
         WorkflowDefinition single = new WorkflowDefinition("1.0",

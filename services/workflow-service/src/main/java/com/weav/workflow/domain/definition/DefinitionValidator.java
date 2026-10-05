@@ -27,6 +27,11 @@ public final class DefinitionValidator {
 
     private static final Set<String> CONDITION_OPERATORS = enumValues("logic.condition", "operator");
     private static final Set<String> CONDITION_PORTS = Set.of("true", "false");
+    private static final String DEFAULT_PORT = "default";
+    private static final int MAX_PORT_LENGTH = 64;
+    private static final int MAX_SWITCH_CASES = 20;
+    private static final int MAX_DATA_SET_FIELDS = 100;
+    private static final int MAX_DATA_SET_KEY_LENGTH = 128;
     private static final Set<String> SHEETS_OPERATIONS = enumValues("google.sheets", "operation");
     private static final Set<String> HTTP_METHODS = Set.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
 
@@ -125,9 +130,10 @@ public final class DefinitionValidator {
             }
             validateId(edge.source(), null, "edges.source", "INVALID_EDGE_SOURCE", issues);
             validateId(edge.target(), null, "edges.target", "INVALID_EDGE_TARGET", issues);
-            if (edge.sourcePort() != null && !CONDITION_PORTS.contains(edge.sourcePort())) {
+            if (edge.sourcePort() != null
+                    && (edge.sourcePort().isBlank() || edge.sourcePort().length() > MAX_PORT_LENGTH)) {
                 add(issues, null, "edges.sourcePort", "INVALID_SOURCE_PORT",
-                        "Only true or false source ports are supported.");
+                        "A source port must be non-blank and at most 64 characters.");
             }
         }
 
@@ -231,12 +237,61 @@ public final class DefinitionValidator {
             }
             validateAbsoluteHttpUrl(node, issues);
         }
+        if ("logic.switch".equals(node.type())) {
+            validateSwitchCases(node, issues);
+        }
+        if ("data.set".equals(node.type())) {
+            validateDataSetFields(node, issues);
+        }
         if ("logic.condition".equals(node.type())) {
             Object operator = config.get("operator");
             if (operator instanceof String text && Set.of("gt", "gte", "lt", "lte").contains(text)) {
                 validateOrderingOperand(node, "left", issues);
                 validateOrderingOperand(node, "right", issues);
             }
+        }
+    }
+
+    /** Literal case strings of a switch; non-string items are ignored (the shape check reports them). */
+    private static List<String> switchCases(WorkflowDefinition.Node node) {
+        return node.config().get("cases") instanceof List<?> list
+                ? list.stream().filter(String.class::isInstance).map(String.class::cast).toList() : List.of();
+    }
+
+    private static void validateSwitchCases(WorkflowDefinition.Node node, List<ValidationIssue> issues) {
+        if (!(node.config().get("cases") instanceof List<?> cases) || cases.isEmpty()) {
+            return; // missing or empty is REQUIRED_FIELD_MISSING (required + minItems)
+        }
+        Set<String> seen = new HashSet<>();
+        String problem = cases.size() > MAX_SWITCH_CASES ? "A switch supports at most 20 cases." : null;
+        for (Object item : cases) {
+            if (problem != null || !(item instanceof String text)) {
+                break;
+            }
+            if (text.isBlank() || text.length() > MAX_PORT_LENGTH) {
+                problem = "Each case must be non-blank and at most 64 characters.";
+            } else if (DEFAULT_PORT.equals(text)) {
+                problem = "The case name default is reserved.";
+            } else if (containsMappingDelimiter(text)) {
+                problem = "Cases must be literal text, not mappings.";
+            } else if (!seen.add(text)) {
+                problem = "Cases must be unique.";
+            }
+        }
+        if (problem != null) {
+            add(issues, node.id(), "config.cases", "INVALID_SWITCH_CASES", problem);
+        }
+    }
+
+    private static void validateDataSetFields(WorkflowDefinition.Node node, List<ValidationIssue> issues) {
+        if (!(node.config().get("fields") instanceof Map<?, ?> fields)) {
+            return; // missing is REQUIRED_FIELD_MISSING; a mapping string resolves at run time
+        }
+        boolean badKey = fields.keySet().stream().anyMatch(key ->
+                !(key instanceof String text) || text.isBlank() || text.length() > MAX_DATA_SET_KEY_LENGTH);
+        if (fields.isEmpty() || fields.size() > MAX_DATA_SET_FIELDS || badKey) {
+            add(issues, node.id(), "config.fields", "INVALID_DATA_SET_FIELDS",
+                    "Set data needs 1 to 100 fields, each named with 1 to 128 non-blank characters.");
         }
     }
 
@@ -386,12 +441,20 @@ public final class DefinitionValidator {
                 add(issues, target.id(), "edges", "TRIGGER_HAS_INCOMING_EDGE", "Trigger nodes cannot have incoming edges.");
             }
 
-            boolean validPort = "logic.condition".equals(source.type())
-                    ? CONDITION_PORTS.contains(edge.sourcePort())
-                    : edge.sourcePort() == null;
-            if (!validPort && (edge.sourcePort() == null || CONDITION_PORTS.contains(edge.sourcePort()))) {
-                add(issues, source.id(), "edges.sourcePort", "INVALID_SOURCE_PORT",
-                        "Only condition nodes may use true or false output ports.");
+            if ("logic.switch".equals(source.type())) {
+                if (edge.sourcePort() == null || !DEFAULT_PORT.equals(edge.sourcePort())
+                        && !switchCases(source).contains(edge.sourcePort())) {
+                    add(issues, source.id(), "edges.sourcePort", "INVALID_SOURCE_PORT",
+                            "A switch edge must use one of its cases or the default port.");
+                }
+            } else {
+                boolean validPort = "logic.condition".equals(source.type())
+                        ? edge.sourcePort() != null && CONDITION_PORTS.contains(edge.sourcePort())
+                        : edge.sourcePort() == null;
+                if (!validPort) {
+                    add(issues, source.id(), "edges.sourcePort", "INVALID_SOURCE_PORT",
+                            "Only condition nodes may use true or false output ports.");
+                }
             }
             outgoing.get(source.id()).add(target.id());
             indegree.compute(target.id(), (ignored, degree) -> degree + 1);

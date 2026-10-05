@@ -45,4 +45,9 @@ public class AiClientConfiguration {
     NodeExecutor aiSummarizeExecutor(AiClient client) {
         return new AiNodeExecutor("ai.summarize", client);
     }
+
+    @Bean
+    NodeExecutor aiGenerateExecutor(AiClient client) {
+        return new AiNodeExecutor("ai.generate", client);
+    }
 }

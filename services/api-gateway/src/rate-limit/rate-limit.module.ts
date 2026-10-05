@@ -8,6 +8,7 @@ import type { GatewayConfig } from '../config/gateway.config';
 import { FailOpenThrottlerStorage } from './fail-open-throttler-storage';
 import {
   GatewayThrottlerGuard,
+  isAssistantRequest,
   isOcrRateLimitEligible,
   isOcrRequest,
   isOperationalRequest,
@@ -68,6 +69,16 @@ function requestFromContext(context: {
               ttl: gateway.limits.windowMs,
               blockDuration: gateway.limits.windowMs,
               skipIf: skipOcr,
+            },
+            {
+              // Per user: each chat turn can cost several model calls.
+              name: 'assistant',
+              limit: gateway.limits.assistantPerMinute,
+              ttl: gateway.limits.windowMs,
+              blockDuration: gateway.limits.windowMs,
+              skipIf: (context: ExecutionContext) =>
+                skipOperational(context) ||
+                !isAssistantRequest(requestFromContext(context)),
             },
             {
               // Per endpoint key, on top of the general per-IP bucket, so one

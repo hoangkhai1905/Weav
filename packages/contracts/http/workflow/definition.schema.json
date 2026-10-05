@@ -65,6 +65,9 @@
             "ai.classify",
             "ai.summarize",
             "ocr.extract",
+            "logic.switch",
+            "data.set",
+            "ai.generate",
             "trigger.gmail"
           ]
         },
@@ -615,6 +618,97 @@
           "if": {
             "properties": {
               "type": {
+                "const": "logic.switch"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "value": {},
+                  "cases": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "data.set"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "fields": {
+                    "type": "object",
+                    "maxProperties": 100
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ai.generate"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  },
+                  "maxLength": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
                 "const": "trigger.gmail"
               }
             },
@@ -675,11 +769,8 @@
             "string",
             "null"
           ],
-          "enum": [
-            "true",
-            "false",
-            null
-          ]
+          "minLength": 1,
+          "maxLength": 64
         }
       },
       "additionalProperties": false

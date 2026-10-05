@@ -167,6 +167,14 @@ class WorkflowGenerationServiceTest {
 
     @FunctionalInterface private interface BooleanSupplier extends java.util.function.BooleanSupplier {}
 
+    @Test void capabilitiesWithholdSwitchButOfferDataSet() {
+        List<String> types = WorkflowGenerationService.capabilities().stream()
+                .map(capability -> (String) capability.get("type")).toList();
+        assertFalse(types.contains("logic.switch"));
+        assertTrue(types.contains("data.set"));
+        assertTrue(types.contains("logic.condition"));
+    }
+
     private static final class FakeAi implements AiGenerationPort {
         private final Deque<Object> responses = new ArrayDeque<>();
         private Map<String, Object> payload;

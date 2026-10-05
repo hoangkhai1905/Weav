@@ -24,6 +24,12 @@ export async function createApp(): Promise<NestFastifyApplication> {
   app.useGlobalFilters(new GatewayExceptionFilter());
 
   const fastify = app.getHttpAdapter().getInstance();
+  // Reject oversized assistant bodies while reading, before they are buffered (zod bounds still apply).
+  fastify.addHook('onRoute', (route) => {
+    if (route.url === '/api/v1/assistant/chat' && route.method === 'POST') {
+      route.bodyLimit = 262_144;
+    }
+  });
   fastify.addHook('onRequest', (request, reply, done) => {
     const requestId = resolveRequestId(request.headers);
     attachRequestContext(request, requestId);

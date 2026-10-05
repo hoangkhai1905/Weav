@@ -31,6 +31,13 @@ export const ENVELOPES = {
     text: codePoints(50_000),
     maxLength: z.number().int().min(1).max(5_000),
   }),
+  prompt: z.strictObject({
+    ...base,
+    operation: z.literal('prompt'),
+    prompt: codePoints(50_000).refine((s) => s.trim() !== ''),
+    instructions: codePoints(2_000).optional(),
+    maxLength: z.number().int().min(1).max(5_000).default(1_000),
+  }),
   generate: z.strictObject({
     ...base,
     operation: z.literal('generate'),

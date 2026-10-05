@@ -83,6 +83,54 @@ describe('AI HTTP', () => {
     });
   });
 
+  describe('prompt operation', () => {
+    it('returns text with the default maxLength and sends it to the provider', async () => {
+      provider.next = () => Promise.resolve({ text: 'Xin chào' });
+      const res = await call('prompt', { prompt: 'Chào hỏi' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({
+        result: { text: 'Xin chào', truncated: false },
+      });
+      expect(JSON.parse(provider.calls[0].user)).toEqual({
+        prompt: 'Chào hỏi',
+        maxLength: 1000,
+      });
+    });
+
+    it('bounds the output to maxLength', async () => {
+      provider.next = () => Promise.resolve({ text: 'abcdef' });
+      const res = await call('prompt', { prompt: 'p', maxLength: 3 });
+      expect(res.json().result).toEqual({ text: 'abc', truncated: true });
+    });
+
+    it('rejects a summarize-scoped token for the prompt route', async () => {
+      const res = await call(
+        'prompt',
+        { prompt: 'p' },
+        { scope: 'ai:summarize' },
+      );
+      expect(res.statusCode).toBe(403);
+      expect(provider.calls).toHaveLength(0);
+    });
+
+    it.each([
+      ['blank prompt', { prompt: '   ' }],
+      ['missing prompt', {}],
+      ['maxLength over 5000', { prompt: 'p', maxLength: 5001 }],
+      ['non-integer maxLength', { prompt: 'p', maxLength: 1.5 }],
+      [
+        'instructions over 2000',
+        { prompt: 'p', instructions: 'x'.repeat(2001) },
+      ],
+      ['unknown field', { prompt: 'p', text: 't' }],
+    ])('rejects %s as INVALID_REQUEST', async (_n, body) => {
+      const res = await call('prompt', body);
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error.code).toBe('INVALID_REQUEST');
+      expect(provider.calls).toHaveLength(0);
+    });
+  });
+
   it.each([
     ['wrong issuer', { iss: 'weav-ocr' }, 401],
     ['wrong audience', { aud: 'weav-ocr' }, 401],

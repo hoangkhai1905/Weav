@@ -145,13 +145,14 @@ Names and defaults from [gateway.config.ts](../../../services/api-gateway/src/co
 | `WORKFLOW_SERVICE_URL` | `http://workflow-service:8080` | Upstream |
 | `NOTIFICATION_SERVICE_URL` | `http://notification-service:3000` | Upstream |
 | `OCR_SERVICE_URL` | `http://ocr-service:8000` | Upstream |
-| `AI_SERVICE_URL` | `http://ai-service:3000` | Validated, unused |
+| `AI_SERVICE_URL` | `http://ai-service:3000` | Upstream of `POST /api/v1/assistant/chat` (SSE) only |
 | `CORS_ALLOWED_ORIGINS` | localhost/127.0.0.1 on 5173 and 8081; required in production | Comma list of origins |
 | `OCR_ALLOW_UNAUTHENTICATED_DEV` | `false` | Dev-only OCR bypass with no Authorization header |
 | `GATEWAY_GENERAL_RATE_LIMIT` | `120` | Requests per window per socket IP |
 | `GATEWAY_AUTH_RATE_LIMIT` | `10` | Public auth mutations per window per IP |
 | `GATEWAY_OCR_RATE_LIMIT` | `10` | OCR per window per JWT subject |
 | `GATEWAY_WEBHOOK_RATE_LIMIT` | `60` | Webhook ingress per window per endpoint key |
+| `GATEWAY_ASSISTANT_RATE_LIMIT` | `20` | Assistant chat per window per user |
 | `GATEWAY_TRUST_PROXY_HOPS` | `0` | 0-10 trusted proxy hops; 0 disables `trustProxy` |
 | `GATEWAY_RATE_LIMIT_WINDOW_MS` | `60000` | Window and block duration |
 | `VALKEY_URL` | n/a | Set in `compose.yml`, not read by code |
