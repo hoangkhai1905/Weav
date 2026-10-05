@@ -144,6 +144,7 @@ const environmentSchema = z.object({
   GATEWAY_AUTH_RATE_LIMIT: positiveIntegerEnvironmentSchema(10),
   GATEWAY_OCR_RATE_LIMIT: positiveIntegerEnvironmentSchema(10),
   GATEWAY_WEBHOOK_RATE_LIMIT: positiveIntegerEnvironmentSchema(60),
+  GATEWAY_ASSISTANT_RATE_LIMIT: positiveIntegerEnvironmentSchema(20),
   GATEWAY_RATE_LIMIT_WINDOW_MS: positiveIntegerEnvironmentSchema(60_000),
   // Empty keeps the in-memory throttler storage (single replica / tests).
   GATEWAY_THROTTLER_REDIS_URL: z
@@ -187,6 +188,7 @@ export interface GatewayConfig {
     authPerMinute: number;
     ocrPerMinute: number;
     webhookPerMinute: number;
+    assistantPerMinute: number;
     windowMs: number;
     throttlerRedisUrl?: string;
   };
@@ -328,6 +330,7 @@ export function validateGatewayEnvironment(
       authPerMinute: parsed.data.GATEWAY_AUTH_RATE_LIMIT,
       ocrPerMinute: parsed.data.GATEWAY_OCR_RATE_LIMIT,
       webhookPerMinute: parsed.data.GATEWAY_WEBHOOK_RATE_LIMIT,
+      assistantPerMinute: parsed.data.GATEWAY_ASSISTANT_RATE_LIMIT,
       windowMs: parsed.data.GATEWAY_RATE_LIMIT_WINDOW_MS,
       throttlerRedisUrl: parsed.data.GATEWAY_THROTTLER_REDIS_URL,
     },

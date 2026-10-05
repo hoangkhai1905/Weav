@@ -40,6 +40,29 @@ public final class JsonValues {
         return freezeObject(value, new IdentityHashMap<>());
     }
 
+    /**
+     * Text of a scalar for string-only fields and switch matching: strings as is, booleans as
+     * "true"/"false", numbers without a decimal point or exponent when integral (12.0 gives "12").
+     *
+     * @return the text, or null for null, objects, arrays and non-finite numbers
+     */
+    public static String scalarText(Object value) {
+        if (value instanceof String || value instanceof Boolean) {
+            return value.toString();
+        }
+        if (value instanceof BigInteger || value instanceof Byte || value instanceof Short
+                || value instanceof Integer || value instanceof Long) {
+            return value.toString();
+        }
+        if (value instanceof BigDecimal decimal) {
+            return decimal.signum() == 0 ? "0" : decimal.stripTrailingZeros().toPlainString();
+        }
+        if ((value instanceof Double || value instanceof Float) && isImmutableNumber(value)) {
+            return scalarText(new BigDecimal(value.toString()));
+        }
+        return null;
+    }
+
     private static Object freeze(Object value, IdentityHashMap<Object, Boolean> activeContainers) {
         if (value == null || value instanceof String || value instanceof Boolean || isImmutableNumber(value)) {
             return value;
