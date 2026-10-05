@@ -186,6 +186,7 @@ test.describe('bulk workflow actions', () => {
     await bulkActions.getByRole('button', { name: 'Delete selected workflows' }).click();
     await expect(page.getByText('Delete selected workflows?', { exact: true })).toBeVisible();
 
+    await page.getByRole('alertdialog').getByRole('textbox').fill('delete 2');
     await page.getByRole('button', { name: 'Delete workflows', exact: true }).click();
     await expect(bulkActions).toHaveCount(0);
     await page.reload();
