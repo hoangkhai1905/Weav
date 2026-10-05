@@ -41,6 +41,8 @@ import {
   X,
   Copy,
   Plus,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
@@ -270,6 +272,17 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectorTab, setInspectorTab] = useState<'config' | 'input' | 'output' | 'logs'>('config');
 
+  // Undo/redo history (client-side only): bounded snapshots of nodes and edges.
+  const HISTORY_LIMIT = 50;
+  type Snapshot = { nodes: Node[]; edges: Edge[]; sig: string };
+  const historyRef = useRef<{ past: Snapshot[]; future: Snapshot[]; current: Snapshot | null }>({ past: [], future: [], current: null });
+  const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draggingRef = useRef(false);
+  const handledEpochRef = useRef(-1);
+  const [loadEpoch, setLoadEpoch] = useState(0);
+  const [dragTick, setDragTick] = useState(0);
+  const [historyInfo, setHistoryInfo] = useState({ undo: 0, redo: 0 });
+
   // Workflow Metadata & Status
   const [workflow, setWorkflow] = useState<WorkflowDefinition | null>(null);
   const [workflowTitle, setWorkflowTitle] = useState('');
@@ -401,6 +414,7 @@ export const WorkflowBuilderPage: React.FC = () => {
         setNodes(flow.nodes);
         setEdges(flow.edges);
         setIsSaved(true);
+        setLoadEpoch((epoch) => epoch + 1);
       })
       .catch((error: unknown) => {
         if (disposed) return;
@@ -619,6 +633,109 @@ export const WorkflowBuilderPage: React.FC = () => {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [paletteOpen, inspectorOpen, closeInspector]);
+
+  const takeSnapshot = useCallback((): Snapshot => {
+    const sig = JSON.stringify([
+      nodes.map((n) => [n.id, n.type, Math.round(n.position.x), Math.round(n.position.y), n.data?.name, n.data?.nodeType, n.data?.config]),
+      edges.map((e) => [e.id, e.source, e.target, e.sourceHandle ?? null]),
+    ]);
+    return {
+      sig,
+      nodes: JSON.parse(JSON.stringify(nodes.map((n) => ({ ...n, selected: false, data: { ...n.data, selected: false } })))) as Node[],
+      edges: JSON.parse(JSON.stringify(edges.map((e) => ({ ...e, selected: false })))) as Edge[],
+    };
+  }, [nodes, edges]);
+
+  const syncHistoryInfo = () => setHistoryInfo({ undo: historyRef.current.past.length, redo: historyRef.current.future.length });
+
+  const flushHistory = useCallback(() => {
+    if (historyTimerRef.current) {
+      clearTimeout(historyTimerRef.current);
+      historyTimerRef.current = null;
+    }
+    const history = historyRef.current;
+    const snap = takeSnapshot();
+    if (history.current && snap.sig !== history.current.sig) {
+      history.past.push(history.current);
+      if (history.past.length > HISTORY_LIMIT) history.past.shift();
+      history.future = [];
+      history.current = snap;
+      setHistoryInfo({ undo: history.past.length, redo: 0 });
+    }
+  }, [takeSnapshot]);
+
+  // Baseline on load (not an edit); afterwards record user edits, debounced, and skip drag frames.
+  useEffect(() => {
+    const history = historyRef.current;
+    if (handledEpochRef.current !== loadEpoch) {
+      if (loadEpoch === 0 || isLoadingWorkflow) return;
+      handledEpochRef.current = loadEpoch;
+      history.past = [];
+      history.future = [];
+      history.current = takeSnapshot();
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHistoryInfo({ undo: 0, redo: 0 });
+      return;
+    }
+    if (!history.current || draggingRef.current) return;
+    if (takeSnapshot().sig === history.current.sig) return;
+    if (historyTimerRef.current) clearTimeout(historyTimerRef.current);
+    historyTimerRef.current = setTimeout(flushHistory, 350);
+    return () => {
+      if (historyTimerRef.current) {
+        clearTimeout(historyTimerRef.current);
+        historyTimerRef.current = null;
+      }
+    };
+  }, [nodes, edges, loadEpoch, dragTick, isLoadingWorkflow, takeSnapshot, flushHistory]);
+
+  const applySnapshot = useCallback((snap: Snapshot) => {
+    setNodes(JSON.parse(JSON.stringify(snap.nodes)) as Node[]);
+    setEdges(JSON.parse(JSON.stringify(snap.edges)) as Edge[]);
+    setSelectedNodeId(null);
+    setInspectorOpen(false);
+    setIsSaved(false);
+  }, [setNodes, setEdges]);
+
+  const undo = useCallback(() => {
+    flushHistory();
+    const history = historyRef.current;
+    const previous = history.past.pop();
+    if (!previous || !history.current) return;
+    history.future.push(history.current);
+    history.current = previous;
+    applySnapshot(previous);
+    syncHistoryInfo();
+  }, [flushHistory, applySnapshot]);
+
+  const redo = useCallback(() => {
+    flushHistory();
+    const history = historyRef.current;
+    const next = history.future.pop();
+    if (!next || !history.current) return;
+    history.past.push(history.current);
+    history.current = next;
+    applySnapshot(next);
+    syncHistoryInfo();
+  }, [flushHistory, applySnapshot]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      const isUndo = key === 'z' && !event.shiftKey;
+      const isRedo = (key === 'z' && event.shiftKey) || key === 'y';
+      if (!isUndo && !isRedo) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.closest('input, textarea, select') || target.isContentEditable)) return;
+      if (section !== 'editor') return;
+      event.preventDefault();
+      if (isUndo) undo();
+      else redo();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undo, redo, section]);
 
   const handleNodesChange = useCallback(
     (changes: Parameters<typeof onNodesChange>[0]) => {
@@ -1140,6 +1257,13 @@ export const WorkflowBuilderPage: React.FC = () => {
             onEdgesChange={handleEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onNodeDragStart={() => {
+              draggingRef.current = true;
+            }}
+            onNodeDragStop={() => {
+              draggingRef.current = false;
+              setDragTick((tick) => tick + 1);
+            }}
             onPaneClick={closeInspector}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
@@ -1203,6 +1327,29 @@ export const WorkflowBuilderPage: React.FC = () => {
               <Plus size={13} strokeWidth={2} aria-hidden="true" />
               {t('builder.add_step')}
               <kbd className="ml-1 rounded border border-primary-foreground/30 px-1 font-mono text-[10px] leading-4">⌘K</kbd>
+            </button>
+            <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-border" />
+            <button
+              type="button"
+              data-testid="workflow-undo"
+              onClick={undo}
+              disabled={historyInfo.undo === 0}
+              title={`${t('builder.undo')} (Ctrl+Z)`}
+              aria-label={t('builder.undo')}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <Undo2 size={14} />
+            </button>
+            <button
+              type="button"
+              data-testid="workflow-redo"
+              onClick={redo}
+              disabled={historyInfo.redo === 0}
+              title={`${t('builder.redo')} (Ctrl+Shift+Z)`}
+              aria-label={t('builder.redo')}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <Redo2 size={14} />
             </button>
             <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-border" />
             <button

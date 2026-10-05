@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { addNode } from './support/builder.js';
 
 const workspaceId = '00000000-0000-4000-8000-000000000001';
 const workflowId = '00000000-0000-4000-8000-000000000002';
@@ -122,5 +123,53 @@ test.describe('editor controls', () => {
     await expect.poll(() => state.puts.length).toBe(1);
     expect(state.puts[0]).toMatchObject({ name: 'Renamed workflow', description: 'New description' });
     await expect(page.getByTestId('workflow-settings-save')).toBeDisabled();
+  });
+
+  test('undo and redo restore an added node, with buttons and keyboard shortcuts', async ({ page }) => {
+    await setup(page, 'DRAFT');
+    await page.goto(`/workflows/${workflowId}/builder`);
+    const nodes = page.getByTestId('workflow-node');
+    await expect(nodes).toHaveCount(2);
+    await expect(page.getByTestId('workflow-undo')).toBeDisabled();
+
+    await addNode(page, 'ai.summarize');
+    await expect(nodes).toHaveCount(3);
+    await expect(page.getByTestId('workflow-undo')).toBeEnabled();
+
+    await page.getByTestId('workflow-undo').click();
+    await expect(nodes).toHaveCount(2);
+    await expect(page.getByTestId('workflow-redo')).toBeEnabled();
+
+    await page.getByTestId('workflow-redo').click();
+    await expect(nodes).toHaveCount(3);
+
+    await page.locator('[data-testid="workflow-canvas"] .react-flow__pane').click({ position: { x: 600, y: 500 } });
+    await page.keyboard.press('Control+z');
+    await expect(nodes).toHaveCount(2);
+    await page.keyboard.press('Control+Shift+z');
+    await expect(nodes).toHaveCount(3);
+    await page.keyboard.press('Control+z');
+    await page.keyboard.press('Control+y');
+    await expect(nodes).toHaveCount(3);
+  });
+
+  test('undo and redo restore a deleted node and loading is not an edit', async ({ page }) => {
+    await setup(page, 'DRAFT');
+    await page.goto(`/workflows/${workflowId}/builder`);
+    const nodes = page.getByTestId('workflow-node');
+    await expect(nodes).toHaveCount(2);
+    await expect(page.getByTestId('workflow-undo')).toBeDisabled();
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+
+    await nodes.filter({ hasText: 'Fetch data' }).click();
+    await page.keyboard.press('Backspace');
+    await expect(nodes).toHaveCount(1);
+    await expect(page.getByTestId('workflow-undo')).toBeEnabled();
+
+    await page.getByTestId('workflow-undo').click();
+    await expect(nodes).toHaveCount(2);
+    await expect(nodes.filter({ hasText: 'Fetch data' })).toBeVisible();
+    await page.getByTestId('workflow-redo').click();
+    await expect(nodes).toHaveCount(1);
   });
 });
