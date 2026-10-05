@@ -398,13 +398,6 @@ if (-not $SkipVerify) {
     Write-Ok "API Gateway builds."
 
     Invoke-Checked `
-    "pnpm" `
-    @("--dir", "services/bot-service", "build") `
-    "Bot Service build failed."
-
-    Write-Ok "Bot Service builds."
-
-    Invoke-Checked `
         "pnpm" `
         @("--dir", "services/notification-service", "build") `
         "Notification Service build failed."

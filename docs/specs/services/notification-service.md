@@ -146,4 +146,4 @@ Internal API (service-to-service): none. Operational: `GET /health` (liveness) a
 - Contracts: [notifications-v2.md](../../../packages/contracts/http/notifications-v2.md), [events/notification](../../../packages/contracts/events/notification/README.md)
 - Compose and env: [compose.dev.yml](../../../compose.dev.yml) (`notification-service`), [.env.example](../../../.env.example) (`NOTIFICATION_*`)
 - Producers: Workflow, Workspace, Identity outbox publishers (linked above)
-- Related: [bot-service.md](bot-service.md), [../README.md](../README.md), [../../rulebook.md](../../rulebook.md)
+- Related: [../README.md](../README.md), [../../rulebook.md](../../rulebook.md)

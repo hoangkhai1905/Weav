@@ -232,7 +232,7 @@ class WorkflowPublicationHttpTest {
         Map<String, Object> telegram = new LinkedHashMap<>();
         telegram.put("id", "telegram");
         telegram.put("type", "trigger.telegram");
-        telegram.put("config", Map.of());
+        telegram.put("config", Map.of("connectionId", UUID.randomUUID().toString()));
         Map<String, Object> definition = new LinkedHashMap<>();
         definition.put("schemaVersion", "1.0");
         definition.put("nodes", List.of(manual, telegram));

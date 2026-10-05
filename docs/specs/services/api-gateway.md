@@ -23,7 +23,7 @@ The Gateway only carries these use cases; the owning service implements them.
 | UC017 | Delete workflow | Planned | No Gateway route; check Workflow contract before adding |
 | UC020 | Result notifications | Implemented | `api/v1`, `api/v2`, `api/notifications` routes |
 | UC021 | Trigger via webhook | Implemented (gateway level) | Public `POST /api/v1/webhooks/{endpointKey}` in `WebhookProxyController` |
-| UC022-UC024 | Telegram trigger, link, bot | Planned | No Bot routes (`BOT_SERVICE_URL` is validated but unused by any controller) |
+| UC022-UC024 | Telegram trigger, connect a bot, use the bot | Implemented (gateway level) | Public `POST /api/v1/webhooks/telegram/{endpointKey}` in `TelegramWebhookProxyController`; the bot itself is a workspace connection and `telegram.send_message` runs in Workflow. There is no Bot service or Bot route |
 | UC025-UC028 | Admin: users, lock, all workspaces, all executions | Implemented (gateway level) | `api/admin/users` list, detail, status (edge ADMIN check); depends on the Identity admin endpoints |
 | n/a | OCR extraction (used by workflow OCR nodes/UI) | Implemented | [ocr.controller.ts](../../../services/api-gateway/src/ocr/ocr.controller.ts) |
 
@@ -33,7 +33,7 @@ The Gateway only carries these use cases; the owning service implements them.
 | --- | --- |
 | BR01 | Global `AccessTokenGuard` defaults every route to `required`; only routes tagged `public`/`optional` skip it ([access-token.guard.ts](../../../services/api-gateway/src/auth/access-token.guard.ts)). Scope checks stay downstream. |
 | BR02-BR05 | Not enforced here. The Gateway validates shape (UUIDs, strict bodies, pagination) and forwards the user JWT; Workspace/Workflow decide membership, Owner and publish rights. |
-| BR09 | Webhook ingress forwards the validated `X-Webhook-Secret` to Workflow, which enforces it; no Telegram ingress yet. |
+| BR09 | Webhook ingress forwards the validated `X-Webhook-Secret` to Workflow, which enforces it. Telegram ingress forwards only `X-Telegram-Bot-Api-Secret-Token` (checked against `^[A-Za-z0-9_-]{1,256}$`), never Authorization, and has the same endpoint-key pattern, body cap and per-key rate limit as the webhook route. |
 
 Component rules from code:
 - Unknown paths, internal service paths and unsupported methods are not forwarded (no wildcard proxy).
@@ -145,7 +145,7 @@ Names and defaults from [gateway.config.ts](../../../services/api-gateway/src/co
 | `WORKFLOW_SERVICE_URL` | `http://workflow-service:8080` | Upstream |
 | `NOTIFICATION_SERVICE_URL` | `http://notification-service:3000` | Upstream |
 | `OCR_SERVICE_URL` | `http://ocr-service:8000` | Upstream |
-| `AI_SERVICE_URL`, `BOT_SERVICE_URL` | `http://ai-service:3000`, `http://bot-service:3000` | Validated, unused |
+| `AI_SERVICE_URL` | `http://ai-service:3000` | Validated, unused |
 | `CORS_ALLOWED_ORIGINS` | localhost/127.0.0.1 on 5173 and 8081; required in production | Comma list of origins |
 | `OCR_ALLOW_UNAUTHENTICATED_DEV` | `false` | Dev-only OCR bypass with no Authorization header |
 | `GATEWAY_GENERAL_RATE_LIMIT` | `120` | Requests per window per socket IP |
@@ -199,7 +199,7 @@ Last full result (2026-10-01, `refactor/optimize-backend`): 92/92 unit, 80/80 e2
 
 1. Gateway README says Workflow public routes are deferred, but Workflow routes exist in code (`WorkflowModule`). Suggested: partner updates the README; treat code as truth.
 2. `compose.yml` passes `VALKEY_URL` and comments "rate limiting / cache", but the limiter is in-memory. Suggested: drop the variable or plan Valkey-backed throttling before multi-replica.
-3. Notion's diagram routes the Gateway to AI/OCR/Bot directly; the AI spec keeps AI private and code has no AI/Bot routes. Suggested: only OCR (already routed) and Bot (Telegram webhook, TBD) are public; AI stays private.
+3. Notion's diagram routes the Gateway to AI/OCR/Bot directly; the AI spec keeps AI private and code has no AI/Bot routes. Suggested: only OCR (already routed) and the Telegram webhook (routed to Workflow, no Bot service) are public; AI stays private.
 4. Resolved: webhook ingress is a Gateway route (no JWT, JSON only, own rate-limit bucket per endpoint key).
 5. Error envelope: README says Gateway errors include `status`; [gateway-exception.filter.ts](../../../services/api-gateway/src/common/gateway-exception.filter.ts) omits it (only proxy-generated errors add it). Suggested: pick one shape and document it in the OpenAPI `GatewayErrorResponse`.
 6. Resolved: generate has a per-route 80 s deadline and 32 KiB cap.

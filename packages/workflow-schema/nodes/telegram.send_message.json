@@ -11,6 +11,15 @@
   },
   "type": "object",
   "properties": {
+    "connectionId": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Telegram bot connection",
+      "description": "Telegram bot connection (token from @BotFather) used to send the message.",
+      "x-weav-connection": {
+        "provider": "TELEGRAM"
+      }
+    },
     "chatId": {
       "type": "string",
       "title": "Chat ID",
@@ -27,6 +36,7 @@
     }
   },
   "required": [
+    "connectionId",
     "chatId",
     "text"
   ],

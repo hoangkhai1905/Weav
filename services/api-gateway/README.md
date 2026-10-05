@@ -42,7 +42,6 @@ IDENTITY_SERVICE_URL
 WORKSPACE_SERVICE_URL
 WORKFLOW_SERVICE_URL
 AI_SERVICE_URL
-BOT_SERVICE_URL
 NOTIFICATION_SERVICE_URL
 OCR_SERVICE_URL
 CORS_ALLOWED_ORIGINS
@@ -104,6 +103,7 @@ and unsupported methods are not forwarded.
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential`        | `PUT`, `DELETE`                 | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/workflows/generate`                           | `POST`                          | Required bearer (32 KiB body, 80 s deadline)                           | Workflow                            |
 | `/api/v1/webhooks/{endpointKey}`                                                 | `POST`                          | Public (JSON only, per-endpoint `webhook` throttler)                   | Workflow `/webhooks/{endpointKey}`  |
+| `/api/v1/webhooks/telegram/{endpointKey}`                                        | `POST`                          | Public (JSON only, per-endpoint `webhook` throttler; only `X-Telegram-Bot-Api-Secret-Token` is forwarded, never Authorization) | Workflow `/webhooks/telegram/{endpointKey}` |
 | `/api/v1/workspaces/{workspaceId}/members`                                       | `GET`, `POST`                   | Required bearer                                                        | `/workspaces/{workspaceId}/members` |
 | `/api/v1/workspaces/{workspaceId}/members/{userId}/permissions`                  | `PATCH`                         | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/members/{userId}`                              | `DELETE`                        | Required bearer                                                        | Matching Workspace suffix           |

@@ -23,7 +23,6 @@ function loadGatewayConfiguration(): Record<string, unknown> {
     WORKSPACE_SERVICE_URL: gateway.upstreams.workspace,
     WORKFLOW_SERVICE_URL: gateway.upstreams.workflow,
     AI_SERVICE_URL: gateway.upstreams.ai,
-    BOT_SERVICE_URL: gateway.upstreams.bot,
     NOTIFICATION_SERVICE_URL: gateway.upstreams.notification,
     OCR_SERVICE_URL: gateway.upstreams.ocr,
     JWT_ISSUER: gateway.jwt.issuer,

@@ -59,6 +59,9 @@ public class PinnedHttpTransport {
     private static final String GOOGLE_API_HOST = "www.googleapis.com";
     private static final Pattern GOOGLE_CALENDAR_EVENTS_PATH = Pattern.compile("^/calendar/v3/calendars/[^/]+/events$");
     private static final String GMAIL_SEND_PATH = "/gmail/v1/users/me/messages/send";
+    private static final String TELEGRAM_HOST = "api.telegram.org";
+    private static final Set<String> TELEGRAM_METHODS = Set.of("sendMessage", "setWebhook", "deleteWebhook");
+    private static final Pattern TELEGRAM_PATH = Pattern.compile("/bot[0-9]{1,20}:[A-Za-z0-9_-]{1,128}/[A-Za-z]{1,32}");
     private static final Set<String> FORBIDDEN_HEADERS = Set.of(
             "host", "content-length", "transfer-encoding", "connection", "proxy-connection",
             "keep-alive", "te", "trailer", "upgrade", "authorization", "proxy-authorization",
@@ -183,6 +186,18 @@ public class PinnedHttpTransport {
     }
 
     /**
+     * Calls one Telegram Bot API method. The endpoint is fixed to api.telegram.org over HTTPS; the bot
+     * token is part of the Bot API path (there is no auth header), so the URI is never logged or echoed
+     * in a failure. DNS is approved and pinned here immediately before the request is sent.
+     */
+    public HttpResponse executeTelegramBotApi(URI uri, Object body, Duration timeout) {
+        validateTelegramUri(uri);
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "POST", Map.of(), Map.of(), null, body,
+                timeout == null ? callTimeout : timeout);
+    }
+
+    /**
      * Executes a Google Calendar or Drive API call with Workspace-owned OAuth credentials. The host is fixed to
      * {@code www.googleapis.com} and the path to the Calendar events and Drive files endpoints. {@code body} is
      * JSON-serialized unless it is a {@link RawBody}.
@@ -221,6 +236,17 @@ public class PinnedHttpTransport {
             Map<String, String> authenticationHeaders,
             Object query,
             Object body) {
+        return executeWithAuthentication(target, method, headers, authenticationHeaders, query, body, callTimeout);
+    }
+
+    private HttpResponse executeWithAuthentication(
+            OutboundTargetPolicy.ApprovedTarget target,
+            String method,
+            Map<String, String> headers,
+            Map<String, String> authenticationHeaders,
+            Object query,
+            Object body,
+            Duration callTimeout) {
         Objects.requireNonNull(target, "target must not be null");
         String normalizedMethod = normalizeMethod(method);
         Map<String, String> safeHeaders = validateHeaders(headers);
@@ -581,6 +607,25 @@ public class PinnedHttpTransport {
                 || !GMAIL_SEND_PATH.equals(uri.getRawPath())) {
             throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
                     "The Gmail destination is invalid.", false);
+        }
+    }
+
+    private void validateTelegramUri(URI uri) {
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(TELEGRAM_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || uri.getRawPath() == null
+                || !TELEGRAM_PATH.matcher(uri.getRawPath()).matches()
+                || !TELEGRAM_METHODS.contains(uri.getRawPath().substring(uri.getRawPath().lastIndexOf('/') + 1))) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Telegram destination is invalid.", false);
         }
     }
 

@@ -91,10 +91,12 @@ public class WorkflowTrigger {
     }
 
     public void provisionWebhook(String endpointKey, String secretHash) {
-        if (type != TriggerType.WEBHOOK || this.endpointKey != null || this.secretHash != null
+        if (type != TriggerType.WEBHOOK && type != TriggerType.TELEGRAM
+                || this.endpointKey != null || this.secretHash != null
                 || endpointKey == null || endpointKey.isBlank()
                 || secretHash == null || secretHash.isBlank()) {
-            throw new IllegalStateException("Webhook credentials can only be provisioned once for a webhook trigger");
+            throw new IllegalStateException(
+                    "Webhook credentials can only be provisioned once for a webhook or Telegram trigger");
         }
         this.endpointKey = endpointKey;
         this.secretHash = secretHash;

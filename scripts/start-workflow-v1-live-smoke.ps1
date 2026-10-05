@@ -238,7 +238,7 @@ function Assert-ResolvedSmokeConfig([object]$Config) {
             $Config.volumes.PSObject.Properties['rabbitmq_smoke_data'].Value.external)) { throw 'compose-config-volume-isolation' }
 
     $serviceNames = @($Config.services.PSObject.Properties | ForEach-Object { $_.Name })
-    foreach ($unrelated in @('ai-service', 'bot-service', 'notification-service', 'ocr-service')) {
+    foreach ($unrelated in @('ai-service', 'notification-service', 'ocr-service')) {
         $script:validationCheck = 'service-scope'
         if ($serviceNames -contains $unrelated) { throw 'compose-config-unrelated-service' }
     }

@@ -71,7 +71,7 @@ These database fields and warning events are diagnostic sources, not production 
 | `http.request` | Implemented with URL policy, socket validation, bounded request/response bytes, and timeouts; real external effects require controlled allowlisted targets |
 | `google.sheets` | Implemented; requires an authorized Workspace connection and provider credential |
 | OCR | Adapter is present but disabled by default. Keep all OCR flags false until the private verifier, URL-source controls, and artifact resolver are proven together |
-| `email.send`, `telegram.send_message`, Telegram triggers, and AI nodes without configured adapters | Fail closed or publish disabled with `DEPENDENCY_NOT_CONFIGURED`; do not treat editor visibility as service readiness |
+| `email.send`, Telegram triggers (no `WORKFLOW_PUBLIC_BASE_URL`), and AI nodes without configured adapters | Fail closed or publish disabled with `DEPENDENCY_NOT_CONFIGURED`; do not treat editor visibility as service readiness |
 
 Readiness reports PostgreSQL and RabbitMQ only; it does not claim that external provider credentials or the Workspace service are reachable. Check those integrations using controlled service-level acceptance and the corresponding dependency status before enabling them.
 

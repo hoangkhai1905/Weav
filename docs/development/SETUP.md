@@ -426,7 +426,6 @@ cd ..\..
 pnpm --dir apps/web build
 pnpm --dir services/ai-service build
 pnpm --dir services/api-gateway build
-pnpm --dir services/bot-service build
 pnpm --dir services/notification-service build
 ```
 
@@ -440,7 +439,7 @@ value vào file này hoặc vào shell history:
 APP_ENV, PORT
 JWT_ACCESS_SECRET, JWT_ISSUER, JWT_AUDIENCE, JWT_CLOCK_SKEW
 IDENTITY_SERVICE_URL, WORKSPACE_SERVICE_URL, WORKFLOW_SERVICE_URL
-AI_SERVICE_URL, BOT_SERVICE_URL, NOTIFICATION_SERVICE_URL, OCR_SERVICE_URL
+AI_SERVICE_URL, NOTIFICATION_SERVICE_URL, OCR_SERVICE_URL
 CORS_ALLOWED_ORIGINS, OCR_ALLOW_UNAUTHENTICATED_DEV
 GATEWAY_GENERAL_RATE_LIMIT, GATEWAY_AUTH_RATE_LIMIT, GATEWAY_OCR_RATE_LIMIT
 GATEWAY_RATE_LIMIT_WINDOW_MS
@@ -612,7 +611,6 @@ services/workflow-service/Dockerfile.dev
 
 services/ai-service/Dockerfile.dev
 services/api-gateway/Dockerfile.dev
-services/bot-service/Dockerfile.dev
 services/notification-service/Dockerfile.dev
 
 services/ocr-service/Dockerfile.dev

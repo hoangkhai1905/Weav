@@ -53,6 +53,7 @@ import java.util.UUID;
 public class SecurityConfig {
 
     private static final String WEBHOOK_PATH = "/webhooks/*";
+    private static final String TELEGRAM_WEBHOOK_PATH = "/webhooks/telegram/*";
     private static final String INTERNAL_USAGE_PATH = "/internal/workspaces/*/connections/*/usage";
 
     @Bean
@@ -69,7 +70,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/prometheus").permitAll()
                         .requestMatchers(HttpMethod.HEAD, INTERNAL_USAGE_PATH).denyAll()
                         .requestMatchers(HttpMethod.GET, INTERNAL_USAGE_PATH).permitAll()
-                        .requestMatchers(HttpMethod.POST, WEBHOOK_PATH).permitAll()
+                        .requestMatchers(HttpMethod.POST, WEBHOOK_PATH, TELEGRAM_WEBHOOK_PATH).permitAll()
                         .anyRequest().authenticated())
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .oauth2ResourceServer(oauth2 -> oauth2

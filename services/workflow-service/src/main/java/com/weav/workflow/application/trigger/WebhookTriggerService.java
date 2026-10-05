@@ -4,6 +4,7 @@ import com.weav.workflow.application.port.out.ExecutionAdmissionPort;
 import com.weav.workflow.application.port.out.WebhookSecretPort;
 import com.weav.workflow.application.port.out.WorkflowTriggerPort;
 import com.weav.workflow.application.service.ExecutionAdmissionService;
+import com.weav.workflow.domain.exception.IdempotencyKeyReusedException;
 import com.weav.workflow.domain.exception.WebhookNotFoundException;
 import com.weav.workflow.domain.model.aggregate.workflow.Workflow;
 import com.weav.workflow.domain.model.aggregate.workflow.WorkflowTrigger;
@@ -54,14 +55,50 @@ public class WebhookTriggerService {
         Optional<WorkflowTrigger> candidate = endpointKey == null
                 ? Optional.empty()
                 : triggers.findWebhookByEndpoint(endpointKey);
+        WorkflowTrigger identity = authenticate(candidate, suppliedSecret);
+        return admit(identity, TriggerType.WEBHOOK, endpointKey, suppliedSecret, input,
+                correlationId, traceparent, idempotencyKey);
+    }
+
+    /**
+     * Telegram ingress: same authentication and admission as a webhook, but only for TELEGRAM triggers, with the
+     * secret taken from X-Telegram-Bot-Api-Secret-Token and {@code telegram:<update_id>} as idempotency key.
+     * Empty means the caller is authentic but there is nothing to run (no text message, or a redelivery).
+     */
+    @Transactional
+    public Optional<ExecutionAdmissionPort.Admission> acceptTelegram(
+            String endpointKey, String suppliedSecret, Object update, String correlationId, String traceparent) {
+        Optional<WorkflowTrigger> candidate = endpointKey == null
+                ? Optional.empty()
+                : triggers.findTelegramByEndpoint(endpointKey);
+        WorkflowTrigger identity = authenticate(candidate, suppliedSecret);
+        Optional<TelegramUpdate> parsed = TelegramUpdate.from(update);
+        if (parsed.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(admit(identity, TriggerType.TELEGRAM, endpointKey, suppliedSecret,
+                    parsed.get().input(), correlationId, traceparent, parsed.get().idempotencyKey()));
+        } catch (IdempotencyKeyReusedException duplicate) {
+            return Optional.empty();
+        }
+    }
+
+    /** Always runs the constant-time comparison, against a dummy hash for unknown keys. */
+    private WorkflowTrigger authenticate(Optional<WorkflowTrigger> candidate, String suppliedSecret) {
         String storedHash = candidate.map(WorkflowTrigger::getSecretHash)
                 .orElse(WebhookSecretPort.UNKNOWN_HASH);
         boolean credentialMatches = secrets.matches(suppliedSecret, storedHash);
         if (candidate.isEmpty() || !credentialMatches) {
             throw new WebhookNotFoundException();
         }
+        return candidate.get();
+    }
 
-        WorkflowTrigger identity = candidate.get();
+    private ExecutionAdmissionPort.Admission admit(WorkflowTrigger identity, TriggerType expectedType,
+                                                    String endpointKey, String suppliedSecret, Object input,
+                                                    String correlationId, String traceparent,
+                                                    String idempotencyKey) {
         // Budgets are spent only by authenticated callers: unknown keys and bad secrets cannot starve tenants.
         if (!endpointLimiter.tryAcquire(identity.getId()) || !rateLimiter.tryAcquire()) {
             throw new com.weav.workflow.domain.exception.WebhookRateLimitExceededException();
@@ -77,7 +114,7 @@ public class WebhookTriggerService {
             if (workflow.getDeletedAt() != null || workflow.getStatus() != WorkflowStatus.PUBLISHED
                     || workflow.getCurrentVersionId() == null
                     || !workflow.getCurrentVersionId().equals(registration.getWorkflowVersionId())
-                    || registration.getType() != TriggerType.WEBHOOK
+                    || registration.getType() != expectedType
                     || registration.getStatus() != TriggerStatus.ACTIVE
                     || !endpointKey.equals(registration.getEndpointKey())
                     || !secrets.matches(suppliedSecret, registration.getSecretHash())) {
