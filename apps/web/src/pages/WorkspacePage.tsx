@@ -33,6 +33,7 @@ import { captureNotificationSession, isCurrentNotificationSession } from '../lib
 import { showSuccessToast } from '../lib/feedback/toast';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 import { appLocale } from '../lib/i18n/tr';
+import { useLocation } from 'react-router-dom';
 import { WorkspaceHeader, WorkspaceTabs } from '../components/workspace/WorkspaceTabs';
 
 function getWorkspaceErrorMessage(error: unknown, t: (key: string) => string): string {
@@ -185,6 +186,8 @@ export function WorkspacePage() {
   const listMotion = prefersReducedMotion ? reducedMotionVariants : staggerContainer;
   const itemMotion = prefersReducedMotion ? reducedMotionVariants : staggerItem;
   const membersLoading = Boolean(activeWorkspaceId && (membersQuery.isPending || membersQuery.isFetching));
+  const location = useLocation();
+  const tab: 'overview' | 'members' | 'settings' = location.pathname.startsWith('/workspace/members') ? 'members' : location.pathname.startsWith('/workspace/settings') ? 'settings' : 'overview';
   const members = !membersLoading && !membersQuery.isError ? membersQuery.data?.items ?? [] : [];
   const currentMember = userId ? members.find((member) => member.id === userId) ?? null : null;
   const canManageMembers = currentMember?.role === 'OWNER';
@@ -502,6 +505,7 @@ export function WorkspacePage() {
           </div>
         )}
 
+        {tab === 'overview' && (
         <form
           data-testid="workspace-create-form"
           onSubmit={handleCreate}
@@ -535,17 +539,20 @@ export function WorkspacePage() {
             {isCreating ? t('workspace.creating') : t('workspace.create')}
           </button>
         </form>
+        )}
 
-        {workspaceAccessError && (
-          <div data-testid="workspace-members-error" className="mt-3 flex items-start gap-2 text-xs text-err" role="alert">
+      </motion.section>
+
+      {workspaceAccessError && (
+          <div data-testid="workspace-members-error" className="flex items-start gap-2 text-xs text-err" role="alert">
             <AlertCircle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
             <span>{workspaceAccessError} {t('workspace.select_another')}</span>
           </div>
-        )}
-      </motion.section>
+      )}
 
       {activeWorkspace && (
         <>
+          {tab === 'overview' && (
           <motion.section variants={itemMotion} className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label={t('workspace.summary')}>
             {[
               { label: t('workspace.members'), value: members.length, icon: Users, tone: 'text-run bg-run-bg' },
@@ -561,8 +568,10 @@ export function WorkspacePage() {
               </motion.div>
             ))}
           </motion.section>
+          )}
 
-          <motion.section variants={itemMotion} className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 md:flex-row md:items-center md:justify-between">
+          {tab === 'overview' && (
+          <motion.section variants={itemMotion} className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5">
             <div>
               <div className="flex items-center gap-2">
                 <h2 data-testid="workspace-selected-heading" className="text-base font-bold text-foreground">{activeWorkspace.name}</h2>
@@ -576,6 +585,16 @@ export function WorkspacePage() {
               >
                 {t('workspace.connections_link')}
               </Link>
+            </div>
+            <p data-testid="workspace-members-summary" className="text-xs text-text-2">
+              {members.length} {t('workspace.total')} · <Link to="/workspace/members" className="text-run underline">{t('workspace.tab.members')}</Link>
+            </p>
+          </motion.section>
+          )}
+          {tab === 'settings' && (
+          <motion.section variants={itemMotion} className="rounded-2xl border border-border bg-card p-5">
+            <h2 className="text-sm font-bold text-foreground">{t('workspace.settings_title')}</h2>
+            <p data-testid="workspace-selected-heading" className="mt-1 text-base font-bold text-foreground">{activeWorkspace.name}</p>
               <WorkspaceRenameForm
                 key={`${activeWorkspace.id}:${activeWorkspace.name}`}
                 workspace={activeWorkspace}
@@ -583,8 +602,11 @@ export function WorkspacePage() {
                 error={renameError}
                 onSubmit={(name) => void handleRename(name)}
               />
-            </div>
-
+          </motion.section>
+          )}
+          {tab === 'members' && (
+          <motion.section variants={itemMotion} className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 md:flex-row md:items-center md:justify-between">
+            <h2 data-testid="workspace-selected-heading" className="truncate text-base font-bold text-foreground">{activeWorkspace.name}</h2>
             <form onSubmit={handleAddMember} className="flex w-full flex-col gap-2 sm:flex-row md:w-auto" aria-label={t('workspace.add_member_form')}>
               <label className="sr-only" htmlFor="workspace-member-email">{t('workspace.identity_email')}</label>
               <input
@@ -616,7 +638,9 @@ export function WorkspacePage() {
               </motion.button>
             </form>
           </motion.section>
+          )}
 
+          {tab === 'members' && (<>
           {!membersLoading && !canManageMembers && (
             <p data-testid="workspace-unsupported-members" className="text-xs text-warn" role="status">
               {currentMember?.role === 'MEMBER'
@@ -750,6 +774,7 @@ export function WorkspacePage() {
               </div>
             )}
           </motion.section>
+          </>)}
         </>
       )}
     </motion.div>

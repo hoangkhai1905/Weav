@@ -157,4 +157,25 @@ test.describe('navigation structure', () => {
     await expect.poll(async () => (await main.boundingBox())?.x ?? 0).toBeGreaterThan(railX + 100);
     await expect(page.getByTestId('sidebar-toggle')).toHaveAttribute('aria-label', 'Unpin');
   });
+
+  test('each Workspace tab shows only its own section', async ({ page }) => {
+    await setup(page);
+    await page.goto('/workspace');
+    await expect(page.getByTestId('workspace-selected-heading')).toHaveText('Nav Workspace');
+    await expect(page.getByTestId('workspace-members-summary')).toBeVisible();
+    await expect(page.getByTestId('workspace-create-form')).toBeVisible();
+    await expect(page.getByTestId('workspace-member-email')).toHaveCount(0);
+    await expect(page.getByTestId('workspace-rename-form')).toHaveCount(0);
+
+    await page.getByTestId('workspace-tab-members').click();
+    await expect(page).toHaveURL(/\/workspace\/members$/);
+    await expect(page.getByTestId('workspace-member-email')).toBeVisible();
+    await expect(page.getByTestId('workspace-create-form')).toHaveCount(0);
+    await expect(page.getByTestId('workspace-rename-form')).toHaveCount(0);
+
+    await page.getByTestId('workspace-tab-settings').click();
+    await expect(page).toHaveURL(/\/workspace\/settings$/);
+    await expect(page.getByTestId('workspace-rename-form')).toBeVisible();
+    await expect(page.getByTestId('workspace-member-email')).toHaveCount(0);
+  });
 });

@@ -122,7 +122,7 @@ test.describe('workspace read and switch foundation', () => {
       await route.fallback();
     });
 
-    await gotoAuthenticated(page, '/workspace');
+    await gotoAuthenticated(page, '/workspace/members');
 
     const selector = page.getByTestId('workspace-selector');
     await expect(selector).toBeVisible();
@@ -149,7 +149,7 @@ test.describe('workspace read and switch foundation', () => {
       await route.fallback();
     });
 
-    await gotoAuthenticated(page, '/workspace');
+    await gotoAuthenticated(page, '/workspace/members');
     await expect(page.getByTestId('workspace-empty')).toBeVisible();
     await expect(page.getByTestId('workspace-selector')).toHaveCount(0);
     await expect(page.getByTestId('workspace-member-row')).toHaveCount(0);
@@ -173,7 +173,7 @@ test.describe('workspace read and switch foundation', () => {
       await route.fallback();
     });
 
-    await gotoAuthenticated(page, '/workspace');
+    await gotoAuthenticated(page, '/workspace/members');
     await expect(page.getByTestId('workspace-members-error')).toContainText('Workspace access denied.');
     await expect(page.getByTestId('workspace-member-row')).toHaveCount(0);
   });
@@ -212,7 +212,7 @@ test.describe('workspace read and switch foundation', () => {
       await route.fallback();
     });
 
-    await gotoAuthenticated(page, '/workspace');
+    await gotoAuthenticated(page, '/workspace/members');
     await expect(page.getByTestId('workspace-member-row')).toContainText('Member A');
 
     await page.getByRole('button', { name: 'Logout' }).click();
@@ -222,7 +222,7 @@ test.describe('workspace read and switch foundation', () => {
     await page.getByRole('button', { name: 'Sign In' }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
 
-    await page.goto('/workspace');
+    await page.goto('/workspace/members');
     await expect(page.getByTestId('workspace-member-row')).toContainText('Member B');
     await expect(page.getByTestId('workspace-member-row')).not.toContainText('Member A');
     await expect(page.getByTestId('workspace-selected-name')).toContainText('User B Workspace');
@@ -494,7 +494,7 @@ test.describe('workspace create and rename mutations', () => {
       await route.fallback();
     });
 
-    await gotoAuthenticated(page, '/workspace');
+    await gotoAuthenticated(page, '/workspace/settings');
     await expect(page.getByTestId('workspace-rename-name')).toHaveValue('Alpha Workspace');
     await page.getByTestId('workspace-rename-name').fill('Renamed Workspace');
     await page.getByTestId('workspace-rename-submit').click();
@@ -526,7 +526,7 @@ test.describe('workspace create and rename mutations', () => {
       await route.fallback();
     });
 
-    await gotoAuthenticated(page, '/workspace');
+    await gotoAuthenticated(page, '/workspace/settings');
     await page.getByTestId('workspace-rename-name').fill('Forbidden Rename');
     await page.getByTestId('workspace-rename-submit').click();
     await expect(page.getByTestId('workspace-rename-error')).toContainText('owner');
@@ -561,7 +561,7 @@ test.describe('workspace create and rename mutations', () => {
       await route.fallback();
     });
 
-    await gotoAuthenticated(page, '/workspace');
+    await gotoAuthenticated(page, '/workspace/settings');
     await page.getByTestId('workspace-rename-name').fill('Lost Workspace');
     await page.getByTestId('workspace-rename-submit').click();
     await expect(page.getByTestId('workspace-empty')).toBeVisible();
