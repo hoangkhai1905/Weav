@@ -18,76 +18,93 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* WEAV Industrial Light Palette */
-  --background: #f3f5f7;
-  --foreground: #172033;
+  /* WEAV Light Palette: cool neutrals with an indigo-blue brand */
+  --background: #f5f7fb;
+  --foreground: #0f172a;
 
   --card: #ffffff;
-  --card-foreground: #172033;
+  --card-foreground: #0f172a;
 
   --popover: #ffffff;
-  --popover-foreground: #172033;
+  --popover-foreground: #0f172a;
 
-  --primary: #3b82f6;
+  --primary: #3b5cf6;
   --primary-foreground: #ffffff;
 
-  --secondary: #e9edf2;
-  --secondary-foreground: #172033;
+  --secondary: #eef1f7;
+  --secondary-foreground: #0f172a;
 
-  --muted: #e9edf2;
-  --muted-foreground: #556276;
+  --muted: #eef1f7;
+  --muted-foreground: #5b6579;
 
-  --accent: #eef4fb;
-  --accent-foreground: #172033;
+  --accent: #eef2ff;
+  --accent-foreground: #1e2a5a;
 
-  --destructive: #ef4444;
+  --destructive: #e5484d;
 
-  --border: #d9e0e8;
-  --input: #d9e0e8;
-  --ring: #2563eb;
+  --border: #e3e7ef;
+  --input: #dde2ec;
+  --ring: #3b5cf6;
 
-  --sidebar: #eef3f8;
-  --sidebar-foreground: #172033;
-  --sidebar-muted: #64748b;
-  --sidebar-active: #dbeafe;
+  --sidebar: #fbfcfe;
+  --sidebar-foreground: #0f172a;
+  --sidebar-muted: #667085;
+  --sidebar-active: #eef2ff;
+
+  /* Brand gradient (logo, AI surfaces, primary highlights) */
+  --brand-from: #3b5cf6;
+  --brand-to: #8b5cf6;
+  --canvas-dot: rgba(100, 116, 139, 0.22);
+
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-lift: 0 8px 24px -8px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.05);
+  --shadow-brand: 0 6px 20px -6px rgba(59, 92, 246, 0.55);
 
   --radius: 0.75rem;
 }
 
 .dark {
   color-scheme: dark;
-  /* WEAV Refined Industrial Dark Palette (Graphite & Blue-Gray) */
-  --background: #101826;
-  --foreground: #e7eef8;
+  /* WEAV Dark Palette: ink surfaces layered by elevation */
+  --background: #0a0d14;
+  --foreground: #e8ecf4;
 
-  --card: #182438;
-  --card-foreground: #e7eef8;
+  --card: #11151f;
+  --card-foreground: #e8ecf4;
 
-  --popover: #182438;
-  --popover-foreground: #e7eef8;
+  --popover: #151a26;
+  --popover-foreground: #e8ecf4;
 
-  --primary: #4f8cff;
-  --primary-foreground: #0b1320;
+  --primary: #5b7bfa;
+  --primary-foreground: #ffffff;
 
-  --secondary: #1e2d46;
-  --secondary-foreground: #e7eef8;
+  --secondary: #1a2030;
+  --secondary-foreground: #e8ecf4;
 
-  --muted: #1e2d46;
-  --muted-foreground: #9aacbf;
+  --muted: #181d2a;
+  --muted-foreground: #95a0b5;
 
-  --accent: #223350;
-  --accent-foreground: #e7eef8;
+  --accent: #1b2240;
+  --accent-foreground: #e8ecf4;
 
-  --destructive: #f87171;
+  --destructive: #f2555a;
 
-  --border: #2f4158;
-  --input: #2f4158;
-  --ring: #4f8cff;
+  --border: #222939;
+  --input: #2a3245;
+  --ring: #6d8afc;
 
-  --sidebar: #121c2d;
-  --sidebar-foreground: #e7eef8;
-  --sidebar-muted: #9aacbf;
-  --sidebar-active: #1e2d46;
+  --sidebar: #0d1118;
+  --sidebar-foreground: #e8ecf4;
+  --sidebar-muted: #8b96ab;
+  --sidebar-active: #1a2036;
+
+  --brand-from: #5b7bfa;
+  --brand-to: #a78bfa;
+  --canvas-dot: rgba(148, 163, 184, 0.14);
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lift: 0 12px 32px -12px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-brand: 0 6px 24px -6px rgba(91, 123, 250, 0.55);
 }
 
 #root {
@@ -101,6 +118,44 @@
   box-sizing: border-box;
 }
 
+/* Brand helpers shared by the shell and workflow surfaces */
+.bg-brand-gradient {
+  background-image: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+}
+
+.text-brand-gradient {
+  background-image: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.shadow-soft {
+  box-shadow: var(--shadow-soft);
+}
+
+.shadow-lift {
+  box-shadow: var(--shadow-lift);
+}
+
+.shadow-brand {
+  box-shadow: var(--shadow-brand);
+}
+
+/* Dotted canvas used by the workflow builder */
+.bg-canvas-dots {
+  background-color: var(--background);
+  background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* Soft brand glow at the top of page headers */
+.page-hero-glow {
+  background-image:
+    radial-gradient(60% 120% at 0% 0%, color-mix(in srgb, var(--brand-from) 10%, transparent), transparent 70%),
+    radial-gradient(50% 120% at 100% 0%, color-mix(in srgb, var(--brand-to) 9%, transparent), transparent 70%);
+}
+
 .animate-shimmer {
   animation: shimmer 2.5s infinite linear;
 }
@@ -112,6 +167,24 @@
 
 .dark .react-flow__minimap.workflow-minimap {
   background-color: rgba(15, 23, 42, 0.9) !important;
+}
+
+/* React Flow zoom controls follow the WEAV surface tokens */
+.workflow-controls .react-flow__controls-button {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  width: 30px;
+  height: 30px;
+}
+
+.workflow-controls .react-flow__controls-button:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.workflow-controls .react-flow__controls-button svg {
+  fill: currentColor;
 }
 
 .workflow-minimap .react-flow__minimap-mask path {
@@ -164,7 +237,7 @@ body {
 
 ::selection {
   color: #ffffff;
-  background: #2563eb;
+  background: var(--primary);
 }
 
 @theme inline {

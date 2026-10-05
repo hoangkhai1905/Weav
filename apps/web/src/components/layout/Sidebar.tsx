@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   Activity,
@@ -8,6 +8,7 @@ import {
   Link2,
   LogOut,
   Settings,
+  Sparkles,
   Users,
   X,
 } from 'lucide-react';
@@ -59,10 +60,10 @@ export function Sidebar() {
           to={item.path}
           onClick={() => isMobile && setMobileSidebarOpen(false)}
           className={({ isActive }) =>
-            `group relative flex min-h-10 items-center gap-3 overflow-hidden rounded-lg px-3 text-sm font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar ${
+            `group relative flex min-h-9 items-center gap-3 overflow-hidden rounded-lg px-3 text-sm font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar ${
               isActive
-                ? 'bg-sidebar-active text-sidebar-foreground'
-                : 'text-sidebar-foreground/80 hover:bg-blue-100/70 hover:text-sidebar-foreground dark:hover:bg-blue-950/40'
+                ? 'bg-sidebar-active text-primary shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary)_14%,transparent)]'
+                : 'text-sidebar-foreground/75 hover:bg-muted hover:text-sidebar-foreground'
             }`
           }
         >
@@ -72,7 +73,7 @@ export function Sidebar() {
                 <motion.span
                   layoutId="sidebar-active-indicator"
                   data-testid="active-nav-indicator"
-                  className="absolute inset-y-2 left-0 w-px rounded-full bg-primary"
+                  className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-brand-gradient"
                   transition={activeTransition}
                 />
               )}
@@ -82,10 +83,10 @@ export function Sidebar() {
                 className={
                   isActive
                     ? 'shrink-0 text-primary'
-                    : 'shrink-0 text-sidebar-muted transition-colors group-hover:text-primary'
+                    : 'shrink-0 text-sidebar-muted transition-colors group-hover:text-sidebar-foreground'
                 }
               />
-              <span className="truncate">{t(item.translationKey)}</span>
+              <span className={`truncate ${isActive ? 'font-semibold' : ''}`}>{t(item.translationKey)}</span>
             </>
           )}
         </NavLink>
@@ -95,17 +96,19 @@ export function Sidebar() {
   const renderContent = (isMobile = false) => (
     <div
       data-testid="app-sidebar"
-      className="flex h-full select-none flex-col border-r border-slate-200 bg-sidebar text-sidebar-foreground"
+      className="flex h-full select-none flex-col border-r border-border bg-sidebar text-sidebar-foreground"
     >
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-4">
-        <div className="flex items-center gap-3">
-          <img
-            src="/weav-logo-v2.png"
-            alt="WEAV app logo"
-            className="h-8 w-8 shrink-0 object-contain drop-shadow-sm"
-          />
+      <div className="flex h-14 shrink-0 items-center justify-between px-4">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card shadow-soft">
+            <img
+              src="/weav-logo-v2.png"
+              alt="WEAV app logo"
+              className="h-6 w-6 object-contain"
+            />
+          </div>
           <div className="flex flex-col">
-            <span className="text-sm font-bold leading-none tracking-tight text-sidebar-foreground">WEAV</span>
+            <span className="text-[15px] font-bold leading-none tracking-tight text-sidebar-foreground">WEAV</span>
             <span className="mt-1 text-[11px] font-medium leading-tight text-sidebar-muted">
               {t('nav.brand_subtitle')}
             </span>
@@ -115,7 +118,7 @@ export function Sidebar() {
         {isMobile && (
           <button
             onClick={() => setMobileSidebarOpen(false)}
-            className="rounded-md p-1.5 text-sidebar-muted transition-colors hover:bg-blue-100 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="rounded-md p-1.5 text-sidebar-muted transition-colors hover:bg-muted hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             aria-label={t('nav.close_navigation')}
           >
             <X size={18} />
@@ -123,19 +126,35 @@ export function Sidebar() {
         )}
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5" aria-label={t('nav.primary')}>
-        <div className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-muted">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4" aria-label={t('nav.primary')}>
+        <div className="px-3 pb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-sidebar-muted/80">
           {t('nav.platform')}
         </div>
         {renderNavItems(MAIN_NAV_ITEMS, isMobile)}
+
+        <Link
+          to="/ai/workflow-generator"
+          onClick={() => isMobile && setMobileSidebarOpen(false)}
+          data-testid="sidebar-ai-promo"
+          className="group relative mt-5 block overflow-hidden rounded-xl border border-primary/15 bg-accent/60 p-3 outline-none transition-colors hover:border-primary/30 focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <span aria-hidden="true" className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-brand-gradient opacity-20 blur-2xl transition-opacity group-hover:opacity-35" />
+          <span className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-gradient text-white shadow-brand">
+              <Sparkles size={14} />
+            </span>
+            <span className="text-[13px] font-semibold text-foreground">{t('nav.ai_promo_title')}</span>
+          </span>
+          <span className="mt-2 block text-[11.5px] leading-snug text-muted-foreground">{t('nav.ai_promo_desc')}</span>
+        </Link>
       </nav>
 
-      <div data-testid="sidebar-footer" className="shrink-0 space-y-1 border-t border-slate-200/80 bg-slate-100/70 p-3 dark:border-slate-800 dark:bg-slate-900/45">
+      <div data-testid="sidebar-footer" className="shrink-0 space-y-0.5 border-t border-border bg-sidebar p-3 dark:bg-slate-900/45">
         <nav aria-label={t('nav.support')}>{renderNavItems(BOTTOM_NAV_ITEMS, isMobile)}</nav>
 
-        <div className="mt-3 flex items-center justify-between border-t border-slate-200 px-2 pt-3 pb-1">
+        <div className="mt-2 flex items-center justify-between rounded-xl border border-border bg-card px-2 py-2 shadow-soft">
           <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-200 text-xs font-bold text-sidebar-foreground ring-1 ring-slate-300/70 dark:bg-slate-800 dark:ring-slate-700">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-xs font-bold text-white">
               {profileInitials || 'A'}
             </div>
             <div className="flex min-w-0 flex-col">
@@ -144,7 +163,7 @@ export function Sidebar() {
               </span>
               <div className="mt-1 flex items-center gap-1.5">
                 <span className="truncate text-[11px] leading-none text-sidebar-muted">{t('nav.workspace')}</span>
-                <span className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-blue-700">
+                <span className="inline-flex items-center rounded bg-primary/12 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary">
                   Pro
                 </span>
               </div>
@@ -153,7 +172,7 @@ export function Sidebar() {
 
           <button
             onClick={logout}
-            className="rounded-md p-2 text-sidebar-muted transition-colors hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="rounded-md p-2 text-sidebar-muted transition-colors hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:hover:bg-rose-950/40"
             title={t('nav.logout')}
             aria-label={t('nav.logout')}
           >
@@ -166,7 +185,7 @@ export function Sidebar() {
 
   return (
     <>
-      <aside className="z-30 hidden h-full w-[240px] shrink-0 flex-col md:flex">
+      <aside className="z-30 hidden h-full w-[248px] shrink-0 flex-col md:flex">
         {renderContent(false)}
       </aside>
 

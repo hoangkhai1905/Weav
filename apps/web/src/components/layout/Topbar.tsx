@@ -40,7 +40,7 @@ export function Topbar() {
     .join('');
 
   return (
-    <header className="z-20 flex h-14 shrink-0 select-none items-center justify-between border-b border-border bg-card px-4 text-foreground transition-colors duration-200">
+    <header className="z-20 flex h-14 shrink-0 select-none items-center justify-between gap-3 border-b border-border bg-card/80 px-4 text-foreground backdrop-blur-md transition-colors duration-200 sm:px-6">
       <div className="flex items-center gap-3">
         <button
           onClick={toggleMobileSidebar}
@@ -50,25 +50,25 @@ export function Topbar() {
           <Menu size={18} />
         </button>
 
-        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
           <span>{t('topbar.home')}</span>
-          <span className="text-border">/</span>
+          <span aria-hidden="true" className="text-muted-foreground/50">/</span>
           <span data-testid="topbar-breadcrumb-current" className="font-semibold text-foreground">
             {t(currentPageKey)}
           </span>
         </div>
       </div>
 
-      <div className="relative hidden w-64 items-center sm:flex md:w-80">
-        <Search size={14} className="pointer-events-none absolute left-3 text-muted-foreground" />
+      <div className="relative hidden w-64 items-center sm:flex md:w-96">
+        <Search size={15} className="pointer-events-none absolute left-3 text-muted-foreground" />
         <input
           type="text"
           placeholder={t('topbar.search_placeholder')}
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
-          className="w-full rounded-lg border border-border bg-background py-1.5 pl-8 pr-12 text-sm text-foreground placeholder:text-muted-foreground transition-colors focus:bg-card focus:outline-none focus:ring-2 focus:ring-ring/30"
+          className="h-9 w-full rounded-xl border border-border bg-muted/60 pl-9 pr-14 text-sm text-foreground placeholder:text-muted-foreground transition-colors hover:bg-muted focus:border-primary/40 focus:bg-card focus:outline-none focus:ring-4 focus:ring-primary/10"
         />
-        <div className="absolute right-2.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+        <div className="absolute right-2.5 rounded-md border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
           ⌘ K
         </div>
       </div>
@@ -90,7 +90,7 @@ export function Topbar() {
               aria-busy={workspacesQuery.isFetching}
               value={activeWorkspaceId ?? ''}
               onChange={(event) => selectWorkspace(event.target.value || null)}
-              className="max-w-28 rounded-lg border border-border bg-background px-2 py-1 text-xs font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring sm:max-w-40 lg:max-w-56"
+              className="h-8 max-w-28 cursor-pointer rounded-lg border border-border bg-card px-2.5 text-xs font-medium text-foreground shadow-soft outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring sm:max-w-40 lg:max-w-56"
             >
               {workspaces.map((workspace) => (
                 <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
@@ -128,7 +128,7 @@ export function Topbar() {
 
         <button
           onClick={toggleLanguage}
-          className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex h-8 min-w-8 items-center justify-center rounded-lg border border-border bg-card px-2 text-[11px] font-semibold text-foreground shadow-soft transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           title={language === 'VI' ? t('topbar.switch_to_english') : t('topbar.switch_to_vietnamese')}
           aria-label={language === 'VI' ? t('topbar.switch_to_english') : t('topbar.switch_to_vietnamese')}
         >
@@ -137,7 +137,7 @@ export function Topbar() {
 
         <button
           onClick={toggleTheme}
-          className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer overflow-hidden"
+          className="flex h-8 w-8 cursor-pointer items-center justify-center overflow-hidden rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           title={t('topbar.toggle_theme')}
           aria-label={t('topbar.toggle_theme')}
         >
@@ -156,19 +156,19 @@ export function Topbar() {
 
         <Link
           to="/notifications"
-          className="relative rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           title={unreadError ? t('notif.count_error') : t('nav.notifications')}
           aria-label={`${t('nav.notifications')}${unreadCount > 0 ? `: ${unreadCount} ${t('notif.unread')}` : ''}`}
         >
           <Bell size={17} />
           {unreadCount > 0 && (
-            <span aria-hidden="true" className="absolute -right-2 -top-1 min-w-4 rounded-full bg-primary px-1 text-center text-[9px] font-bold leading-4 text-primary-foreground ring-2 ring-card">
+            <span aria-hidden="true" className="absolute -right-1 -top-1 min-w-4 rounded-full bg-primary px-1 text-center text-[9px] font-bold leading-4 text-primary-foreground ring-2 ring-card">
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}
         </Link>
 
-        <div data-testid="topbar-user-avatar" title={profileName} className="ml-1 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground shadow-sm">
+        <div data-testid="topbar-user-avatar" title={profileName} className="ml-1 flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-brand-gradient text-xs font-bold text-white shadow-brand ring-2 ring-card">
           {profileInitials || 'A'}
         </div>
       </div>
