@@ -45,6 +45,8 @@ export function Topbar() {
           <Menu size={18} />
         </button>
 
+        <img src="/weav-logo-v2.png" alt="WEAV app logo" className="h-5 w-5 shrink-0 object-contain" />
+
         <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
           <span>{t('topbar.home')}</span>
           <span aria-hidden="true" className="text-muted-foreground/50">/</span>
