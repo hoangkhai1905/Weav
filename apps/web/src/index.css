@@ -2,109 +2,154 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --sans: 'Geist Variable', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: 'Geist Variable', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'Geist Mono Variable', ui-monospace, Consolas, monospace;
 
   color-scheme: light;
-  font: 16px/150% var(--sans);
-  letter-spacing: -0.01em;
+  font: 16px/1.45 var(--sans);
+  letter-spacing: 0;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* WEAV Light Palette: cool neutrals with an indigo-blue brand */
-  --background: #f5f7fb;
-  --foreground: #0f172a;
+  /* Weav light tokens (docs: Tokens.dc.html) */
+  --background: #fafaf9;
+  --foreground: #1c1917;
 
   --card: #ffffff;
-  --card-foreground: #0f172a;
+  --card-foreground: #1c1917;
 
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
+  --popover-foreground: #1c1917;
 
-  --primary: #3b5cf6;
+  --primary: #2b5fd9;
+  --primary-hover: #234fb8;
   --primary-foreground: #ffffff;
+  --accent-ink: #2b5fd9;
 
-  --secondary: #eef1f7;
-  --secondary-foreground: #0f172a;
+  --secondary: #f5f5f4;
+  --secondary-foreground: #1c1917;
 
-  --muted: #eef1f7;
-  --muted-foreground: #5b6579;
+  --subtle: #f5f5f4;
+  --muted: #efeeec;
+  --muted-foreground: #6f6862;
+  --text-2: #57534e;
 
-  --accent: #eef2ff;
-  --accent-foreground: #1e2a5a;
+  --accent: #eef3fd;
+  --accent-foreground: #234fb8;
 
-  --destructive: #e5484d;
+  --destructive: #b91c1c;
 
-  --border: #e3e7ef;
-  --input: #dde2ec;
-  --ring: #3b5cf6;
+  --border: #e7e5e4;
+  --border-strong: #d6d3d1;
+  --input: #d6d3d1;
+  --ring: #2b5fd9;
 
-  --sidebar: #fbfcfe;
-  --sidebar-foreground: #0f172a;
-  --sidebar-muted: #667085;
-  --sidebar-active: #eef2ff;
+  --sidebar: #f5f5f4;
+  --sidebar-foreground: #1c1917;
+  --sidebar-muted: #6f6862;
+  --sidebar-active: #efeeec;
 
-  /* Brand gradient (logo, AI surfaces, primary highlights) */
-  --brand-from: #3b5cf6;
-  --brand-to: #8b5cf6;
-  --canvas-dot: rgba(100, 116, 139, 0.22);
+  /* Status */
+  --ok: #15803d;
+  --ok-bg: #edf7f0;
+  --run: #2b5fd9;
+  --run-bg: #eef3fd;
+  --warn: #b45309;
+  --warn-bg: #fdf4e7;
+  --err: #b91c1c;
+  --err-bg: #fdeeee;
+  --err-border: #f0c4c4;
+  --pause: #6f6862;
+  --pause-bg: #f1f0ee;
 
-  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
-  --shadow-lift: 0 8px 24px -8px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.05);
-  --shadow-brand: 0 6px 20px -6px rgba(59, 92, 246, 0.55);
+  /* Step type stripes */
+  --t-trigger: #57534e;
+  --t-action: #3f5e8c;
+  --t-logic: #0f766e;
+  --t-ai: #86198f;
 
-  --radius: 0.75rem;
+  /* Legacy brand helpers are flat accent now (no gradients) */
+  --brand-from: #2b5fd9;
+  --brand-to: #2b5fd9;
+  --canvas-dot: rgba(28, 25, 23, 0.12);
+
+  --pop: 0 8px 24px -6px rgba(28, 25, 23, 0.18), 0 2px 6px rgba(28, 25, 23, 0.08);
+  --shadow-soft: none;
+  --shadow-lift: var(--pop);
+  --shadow-brand: none;
+
+  --radius: 0.5rem;
 }
 
 .dark {
   color-scheme: dark;
-  /* WEAV Dark Palette: ink surfaces layered by elevation */
-  --background: #0a0d14;
-  --foreground: #e8ecf4;
+  --background: #121110;
+  --foreground: #edebe9;
 
-  --card: #11151f;
-  --card-foreground: #e8ecf4;
+  --card: #1a1918;
+  --card-foreground: #edebe9;
 
-  --popover: #151a26;
-  --popover-foreground: #e8ecf4;
+  --popover: #1a1918;
+  --popover-foreground: #edebe9;
 
-  --primary: #5b7bfa;
+  --primary: #3768d6;
+  --primary-hover: #4677e0;
   --primary-foreground: #ffffff;
+  --accent-ink: #8fb0f5;
 
-  --secondary: #1a2030;
-  --secondary-foreground: #e8ecf4;
+  --secondary: #211f1e;
+  --secondary-foreground: #edebe9;
 
-  --muted: #181d2a;
-  --muted-foreground: #95a0b5;
+  --subtle: #211f1e;
+  --muted: #292725;
+  --muted-foreground: #958f89;
+  --text-2: #b5b0ab;
 
-  --accent: #1b2240;
-  --accent-foreground: #e8ecf4;
+  --accent: #1c2436;
+  --accent-foreground: #8fb0f5;
 
-  --destructive: #f2555a;
+  --destructive: #f08a80;
 
-  --border: #222939;
-  --input: #2a3245;
-  --ring: #6d8afc;
+  --border: #2e2c2a;
+  --border-strong: #3d3a37;
+  --input: #3d3a37;
+  --ring: #8fb0f5;
 
-  --sidebar: #0d1118;
-  --sidebar-foreground: #e8ecf4;
-  --sidebar-muted: #8b96ab;
-  --sidebar-active: #1a2036;
+  --sidebar: #1a1918;
+  --sidebar-foreground: #edebe9;
+  --sidebar-muted: #958f89;
+  --sidebar-active: #292725;
 
-  --brand-from: #5b7bfa;
-  --brand-to: #a78bfa;
-  --canvas-dot: rgba(148, 163, 184, 0.14);
+  --ok: #5bc98a;
+  --ok-bg: #16241b;
+  --run: #8fb0f5;
+  --run-bg: #1c2436;
+  --warn: #e8a657;
+  --warn-bg: #2a2116;
+  --err: #f08a80;
+  --err-bg: #2c1a19;
+  --err-border: #5c2b28;
+  --pause: #a8a29e;
+  --pause-bg: #262422;
 
-  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-lift: 0 12px 32px -12px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.3);
-  --shadow-brand: 0 6px 24px -6px rgba(91, 123, 250, 0.55);
+  --t-trigger: #a8a29e;
+  --t-action: #7d9bc9;
+  --t-logic: #3fb8a8;
+  --t-ai: #cf7ad6;
+
+  --brand-from: #3768d6;
+  --brand-to: #3768d6;
+  --canvas-dot: rgba(237, 235, 233, 0.09);
+
+  --pop: 0 8px 24px -6px rgba(0, 0, 0, 0.6), 0 0 0 1px #3d3a37;
 }
 
 #root {
@@ -120,14 +165,13 @@
 
 /* Brand helpers shared by the shell and workflow surfaces */
 .bg-brand-gradient {
-  background-image: linear-gradient(135deg, var(--brand-from), var(--brand-to));
+  background-image: none;
+  background-color: var(--primary);
 }
 
 .text-brand-gradient {
-  background-image: linear-gradient(135deg, var(--brand-from), var(--brand-to));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  background-image: none;
+  color: var(--accent-ink);
 }
 
 .shadow-soft {
@@ -149,11 +193,9 @@
   background-size: 18px 18px;
 }
 
-/* Soft brand glow at the top of page headers */
+/* Flat: the former brand glow is intentionally neutral now */
 .page-hero-glow {
-  background-image:
-    radial-gradient(60% 120% at 0% 0%, color-mix(in srgb, var(--brand-from) 10%, transparent), transparent 70%),
-    radial-gradient(50% 120% at 100% 0%, color-mix(in srgb, var(--brand-to) 9%, transparent), transparent 70%);
+  background-image: none;
 }
 
 .animate-shimmer {
@@ -162,11 +204,11 @@
 
 /* Keep the React Flow camera window legible without making it look like a blank card. */
 .react-flow__minimap.workflow-minimap {
-  background-color: rgba(226, 232, 240, 0.9) !important;
+  background-color: var(--card) !important;
 }
 
 .dark .react-flow__minimap.workflow-minimap {
-  background-color: rgba(15, 23, 42, 0.9) !important;
+  background-color: var(--card) !important;
 }
 
 /* React Flow zoom controls follow the WEAV surface tokens */
@@ -192,14 +234,14 @@
 }
 
 .workflow-minimap .react-flow__minimap-mask {
-  fill: rgba(71, 85, 105, 0.42);
-  stroke: #64748b;
+  fill: rgba(28, 25, 23, 0.1);
+  stroke: var(--border-strong);
   stroke-width: 1.5;
 }
 
 .dark .workflow-minimap .react-flow__minimap-mask {
-  fill: rgba(15, 23, 42, 0.62);
-  stroke: #94a3b8;
+  fill: rgba(0, 0, 0, 0.45);
+  stroke: var(--border-strong);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -222,27 +264,29 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.25);
+  background: var(--border-strong);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.45);
+  background: var(--muted-foreground);
 }
 
 body {
+  font-size: 14px;
   margin: 0;
   background-color: var(--background);
   color: var(--foreground);
 }
 
 ::selection {
-  color: #ffffff;
+  color: var(--primary-foreground);
   background: var(--primary);
 }
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: 'Geist Variable', sans-serif;
+  --font-sans: 'Geist Variable', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -265,12 +309,33 @@ body {
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-muted: var(--sidebar-muted);
   --color-sidebar-active: var(--sidebar-active);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
+  --color-subtle: var(--subtle);
+  --color-border-strong: var(--border-strong);
+  --color-text-2: var(--text-2);
+  --color-accent-ink: var(--accent-ink);
+  --color-primary-hover: var(--primary-hover);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-run: var(--run);
+  --color-run-bg: var(--run-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-err: var(--err);
+  --color-err-bg: var(--err-bg);
+  --color-err-border: var(--err-border);
+  --color-pause: var(--pause);
+  --color-pause-bg: var(--pause-bg);
+  --color-t-trigger: var(--t-trigger);
+  --color-t-action: var(--t-action);
+  --color-t-logic: var(--t-logic);
+  --color-t-ai: var(--t-ai);
+  --shadow-pop: var(--pop);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+  --radius-2xl: 8px;
+  --radius-3xl: 8px;
 }
 
 @layer base {
