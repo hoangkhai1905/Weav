@@ -108,6 +108,15 @@ class NodeConfigSchemasTest {
     }
 
     @Test
+    void telegramChatIdAcceptsStringOrIntegerButBlankStringViolatesMinimum() {
+        Field chatId = field("telegram.send_message", "chatId");
+        assertTrue(chatId.matchesShape("@channel") && chatId.matchesShape(-1001234567890L) && chatId.matchesShape(7));
+        assertFalse(chatId.matchesShape(true) || chatId.matchesShape(1.5d));
+        assertTrue(chatId.violatesMinimumContent("  "));
+        assertFalse(chatId.violatesMinimumContent(-1001234567890L));
+    }
+
+    @Test
     void blankContentIsDetectedForPublish() {
         Field to = field("email.send", "to");
         assertTrue(to.violatesMinimumContent(List.of()));

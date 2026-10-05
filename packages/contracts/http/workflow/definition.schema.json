@@ -423,7 +423,14 @@
                     "$ref": "#/$defs/connectionId"
                   },
                   "chatId": {
-                    "type": "string"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
                   },
                   "text": {
                     "type": "string"

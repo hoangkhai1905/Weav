@@ -152,6 +152,32 @@ class ExecutionRunnerTest {
     }
 
     @Test
+    void numericTelegramChatIdMappedFromTriggerInputPassesConfigurationRevalidation() {
+        AtomicReference<Map<String, Object>> resolvedConfig = new AtomicReference<>();
+        NodeExecutor send = executor("telegram.send_message", (context, config) -> {
+            resolvedConfig.set(config);
+            return new NodeExecutor.Result(Map.of("sent", true), null);
+        });
+        WorkflowDefinition definition = definition(
+                List.of(node("send", "telegram.send_message", Map.of(
+                        "connectionId", UUID.randomUUID().toString(),
+                        "chatId", "{{ trigger.input.message.chat.id }}",
+                        "text", "Echo: {{ trigger.input.message.text }}"))),
+                List.of(edge("root-send", "root", "send", null)));
+        Map<String, Object> update = Map.of("message", Map.of(
+                "chat", Map.of("id", -1001234567890L), "text", "hi"));
+
+        try (Harness harness = harness(definition, update, List.of(send), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.runner.run(harness.lease);
+
+            assertEquals(ExecutionStatus.SUCCESS, harness.state.snapshot().status(), harness.state::summary);
+            assertEquals(-1001234567890L, resolvedConfig.get().get("chatId"));
+            assertEquals("Echo: hi", resolvedConfig.get().get("text"));
+        }
+    }
+
+    @Test
     void failsClosedForMissingAdaptersAndStoresOnlySanitizedTerminalErrors() {
         WorkflowDefinition definition = definition(
                 List.of(node("action", "http.request", Map.of())),

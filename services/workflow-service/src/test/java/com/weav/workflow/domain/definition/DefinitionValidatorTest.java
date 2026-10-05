@@ -187,6 +187,41 @@ class DefinitionValidatorTest {
         assertThrows(UnsupportedOperationException.class, () -> definition.variables().put("new", true));
     }
 
+    private static Map<String, Object> telegramSend(Object chatId) {
+        return Map.of("connectionId", UUID.randomUUID().toString(), "chatId", chatId, "text", "Done");
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {-1001234567890L, 123456789L})
+    void telegramSendAcceptsLiteralIntegerChatIdInDraftAndPublish(long chatId) {
+        WorkflowDefinition graph = manualThen("send", "telegram.send_message", telegramSend(chatId));
+        assertEquals(List.of(), validator.validateDraft(graph));
+        assertEquals(List.of(), validator.validatePublish(graph));
+    }
+
+    @Test
+    void telegramSendBlankChatIdIsMissingAtPublishButOkAsDraft() {
+        WorkflowDefinition graph = manualThen("send", "telegram.send_message", telegramSend("  "));
+        assertEquals(List.of(), validator.validateDraft(graph));
+        assertTrue(validator.validatePublish(graph).stream()
+                .anyMatch(issue -> issue.field().equals("config.chatId")
+                        && issue.code().equals("REQUIRED_FIELD_MISSING")));
+    }
+
+    @ParameterizedTest
+    @MethodSource("nonChatIdValues")
+    void telegramSendRejectsBooleanAndDecimalChatId(Object chatId) {
+        WorkflowDefinition graph = manualThen("send", "telegram.send_message", telegramSend(chatId));
+        for (List<ValidationIssue> issues : List.of(validator.validateDraft(graph), validator.validatePublish(graph))) {
+            assertTrue(issues.stream().anyMatch(issue -> issue.field().equals("config.chatId")
+                    && issue.code().equals("INVALID_FIELD_TYPE")), issues::toString);
+        }
+    }
+
+    static Stream<Object> nonChatIdValues() {
+        return Stream.of(true, 1.5d);
+    }
+
     @Test
     void validatesCompleteConfigurationForSupportedNonScheduleTypes() {
         UUID connectionId = UUID.randomUUID();
