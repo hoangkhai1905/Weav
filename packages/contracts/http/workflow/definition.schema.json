@@ -64,7 +64,8 @@
             "ai.extract",
             "ai.classify",
             "ai.summarize",
-            "ocr.extract"
+            "ocr.extract",
+            "ai.generate"
           ]
         },
         "config": {
@@ -604,6 +605,38 @@
                     "artifactId",
                     "fileUrl"
                   ]
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ai.generate"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  },
+                  "maxLength": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
                 },
                 "additionalProperties": false
               }

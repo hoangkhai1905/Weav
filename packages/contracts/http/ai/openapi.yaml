@@ -65,6 +65,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessWrapper'
+  /v1/prompt:
+    post:
+      operationId: prompt
+      summary: Complete a free-form prompt as plain text within a code-point limit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptEnvelope'
+      responses:
+        '200':
+          description: Generated text with truncation flag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessWrapper'
   /v1/generate:
     post:
       operationId: generate
@@ -200,6 +217,28 @@ components:
               type: integer
               minimum: 1
               maximum: 5000
+    PromptEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/BaseEnvelope'
+        - type: object
+          required: [operation, prompt]
+          properties:
+            operation:
+              const: prompt
+            prompt:
+              type: string
+              minLength: 1
+              maxLength: 50000
+              description: Must not be blank.
+            instructions:
+              type: string
+              minLength: 1
+              maxLength: 2000
+            maxLength:
+              type: integer
+              minimum: 1
+              maximum: 5000
+              default: 1000
     GenerateEnvelope:
       allOf:
         - $ref: '#/components/schemas/BaseEnvelope'

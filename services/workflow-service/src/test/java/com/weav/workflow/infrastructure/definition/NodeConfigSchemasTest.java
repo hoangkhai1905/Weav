@@ -34,7 +34,7 @@ class NodeConfigSchemasTest {
     private static final Set<String> TYPES = Set.of(
             "trigger.manual", "trigger.schedule", "trigger.webhook", "trigger.telegram", "http.request",
             "email.send", "google.sheets", "telegram.send_message", "logic.condition", "ai.extract",
-            "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive");
+            "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive", "ai.generate");
 
     /** The publish-required fields the validator hard-coded before schemas drove it. */
     private static final Map<String, List<String>> REQUIRED = Map.ofEntries(
@@ -49,7 +49,8 @@ class NodeConfigSchemasTest {
             Map.entry("ai.classify", List.of("content")),
             Map.entry("ai.summarize", List.of("inputText")),
             Map.entry("google.calendar", List.of("connectionId", "summary", "start", "end")),
-            Map.entry("google.drive", List.of("connectionId", "operation")));
+            Map.entry("google.drive", List.of("connectionId", "operation")),
+            Map.entry("ai.generate", List.of("prompt")));
 
     @Test
     void registryLoadsAllThirteenNodeTypes() {
@@ -75,7 +76,7 @@ class NodeConfigSchemasTest {
             "ai.extract.text", "ai.classify.content", "ai.summarize.inputText",
             "ocr.extract.artifactId", "ocr.extract.fileUrl", "google.calendar.connectionId",
             "google.calendar.summary", "google.calendar.start", "google.calendar.end",
-            "google.drive.connectionId", "google.drive.operation");
+            "google.drive.connectionId", "google.drive.operation", "ai.generate.prompt");
 
     private static Field field(String type, String name) {
         return NodeCatalog.schema(type).properties().get(name);

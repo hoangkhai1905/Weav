@@ -13,6 +13,7 @@ import type { AiDeps } from '../../ai-deps';
 import { classify } from '../../application/classify';
 import { extract } from '../../application/extract';
 import { generate } from '../../application/generate';
+import { prompt } from '../../application/prompt';
 import { summarize } from '../../application/summarize';
 import { AiError } from '../../domain/errors';
 import { Admission } from '../../infrastructure/admission';
@@ -80,7 +81,9 @@ export class AiController {
               ? await classify(provider, body, signal)
               : body.operation === 'summarize'
                 ? await summarize(provider, body, signal)
-                : await generate(provider, body, signal);
+                : body.operation === 'prompt'
+                  ? await prompt(provider, body, signal)
+                  : await generate(provider, body, signal);
         if (
           Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_OUTPUT_BYTES
         )

@@ -52,6 +52,57 @@ class AiNodeExecutorTest {
     }
 
     @Test
+    void generateMapsToThePromptOperation() {
+        StubClient client = new StubClient();
+        new AiNodeExecutor("ai.generate", client).execute(CONTEXT, Map.of("prompt", "p"));
+        assertEquals("prompt", client.operation);
+        assertEquals(Map.of("prompt", "p", "maxLength", 1000), client.payload);
+
+        new AiNodeExecutor("ai.generate", client).execute(CONTEXT,
+                Map.of("prompt", "p", "instructions", "short", "maxLength", 50));
+        assertEquals(Map.of("prompt", "p", "instructions", "short", "maxLength", 50), client.payload);
+
+        new AiNodeExecutor("ai.generate", client).execute(CONTEXT,
+                Map.of("prompt", "p", "instructions", "  ", "maxLength", 5000));
+        assertEquals(Map.of("prompt", "p", "maxLength", 5000), client.payload);
+    }
+
+    @Test
+    void generateRejectsBlankPromptAndOutOfRangeMaxLength() {
+        for (Map<String, Object> config : java.util.List.<Map<String, Object>>of(
+                Map.of(), Map.of("prompt", "  "), Map.of("prompt", 5),
+                Map.of("prompt", "p", "maxLength", 0), Map.of("prompt", "p", "maxLength", 5001),
+                Map.of("prompt", "p", "maxLength", 1.5), Map.of("prompt", "p", "maxLength", "10"))) {
+            NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                    () -> executor("ai.generate").execute(CONTEXT, config), config.toString());
+            assertEquals("CONFIGURATION_ERROR", failure.code());
+            assertFalse(failure.retryable());
+        }
+    }
+
+    @Test
+    void generateRejectsOversizedOrNonTextInputBeforeCallingAi() {
+        String atLimit = "𝒳".repeat(50_000); // 50,000 code points, 100,000 chars
+        StubClient accepted = new StubClient();
+        new AiNodeExecutor("ai.generate", accepted).execute(CONTEXT,
+                Map.of("prompt", atLimit, "instructions", "x".repeat(2_000)));
+        assertEquals("prompt", accepted.operation);
+
+        for (Map<String, Object> config : java.util.List.<Map<String, Object>>of(
+                Map.of("prompt", atLimit + "x"),
+                Map.of("prompt", "p", "instructions", "x".repeat(2_001)),
+                Map.of("prompt", "p", "instructions", 5),
+                Map.of("prompt", "p", "instructions", java.util.List.of("a")))) {
+            StubClient client = new StubClient();
+            NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                    () -> new AiNodeExecutor("ai.generate", client).execute(CONTEXT, config));
+            assertEquals("CONFIGURATION_ERROR", failure.code());
+            assertFalse(failure.retryable());
+            assertEquals(null, client.operation, "quota must not be spent");
+        }
+    }
+
+    @Test
     void outputBecomesNodeOutput() {
         StubClient client = new StubClient();
         NodeExecutor.Result result = new AiNodeExecutor("ai.summarize", client)
