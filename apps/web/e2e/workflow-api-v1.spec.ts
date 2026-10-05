@@ -210,7 +210,8 @@ test('execution detail renders service node results and logs, without falling ba
   }));
 
   await page.goto(`/executions/${executionId}?workflowId=${workflowId}`);
-  await expect(page.getByText('API fixture failure log', { exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Logs' }).click();
+  await expect(page.getByText(/API fixture failure log/)).toBeVisible();
   await expect(page.getByRole('main').nth(1)).toContainText('fixture failure');
   await expect(page.getByText('Order processing & notification', { exact: true })).toHaveCount(0);
 });
