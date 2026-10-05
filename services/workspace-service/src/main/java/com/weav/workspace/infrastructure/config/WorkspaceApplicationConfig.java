@@ -192,6 +192,26 @@ public class WorkspaceApplicationConfig {
                 scopePolicy);
     }
 
+    @Bean("googleCalendarConnectionProvider")
+    public GoogleConnectionProvider googleCalendarConnectionProvider(
+            GoogleOAuthPort googleOAuthPort,
+            GoogleOAuthScopePolicy scopePolicy) {
+        return new GoogleConnectionProvider(
+                com.weav.workspace.domain.valueobject.ConnectionProvider.GOOGLE_CALENDAR,
+                googleOAuthPort,
+                scopePolicy);
+    }
+
+    @Bean("googleDriveConnectionProvider")
+    public GoogleConnectionProvider googleDriveConnectionProvider(
+            GoogleOAuthPort googleOAuthPort,
+            GoogleOAuthScopePolicy scopePolicy) {
+        return new GoogleConnectionProvider(
+                com.weav.workspace.domain.valueobject.ConnectionProvider.GOOGLE_DRIVE,
+                googleOAuthPort,
+                scopePolicy);
+    }
+
     @Bean
     public ConnectionUsageProtection connectionUsageProtection(
             com.weav.workspace.domain.port.out.ConnectionRepository connectionRepository,
@@ -255,12 +275,16 @@ public class WorkspaceApplicationConfig {
             TelegramConnectionProvider telegramConnectionProvider,
             HttpConnectionProvider httpConnectionProvider,
             @Qualifier("gmailConnectionProvider") GoogleConnectionProvider gmailConnectionProvider,
-            @Qualifier("googleSheetsConnectionProvider") GoogleConnectionProvider googleSheetsConnectionProvider) {
+            @Qualifier("googleSheetsConnectionProvider") GoogleConnectionProvider googleSheetsConnectionProvider,
+            @Qualifier("googleCalendarConnectionProvider") GoogleConnectionProvider googleCalendarConnectionProvider,
+            @Qualifier("googleDriveConnectionProvider") GoogleConnectionProvider googleDriveConnectionProvider) {
         return new ConnectionProviderRegistry(
                 telegramConnectionProvider,
                 httpConnectionProvider,
                 gmailConnectionProvider,
-                googleSheetsConnectionProvider);
+                googleSheetsConnectionProvider,
+                googleCalendarConnectionProvider,
+                googleDriveConnectionProvider);
     }
 
     @Bean

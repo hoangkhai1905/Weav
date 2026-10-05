@@ -805,8 +805,11 @@ class WorkspaceConnectionHttpIntegrationTest {
                 FixtureTelegramProvider telegramProvider,
                 HttpConnectionProvider httpProvider,
                 @Qualifier("gmailConnectionProvider") GoogleConnectionProvider gmailProvider,
-                @Qualifier("googleSheetsConnectionProvider") GoogleConnectionProvider sheetsProvider) {
-            return new ConnectionProviderRegistry(telegramProvider, httpProvider, gmailProvider, sheetsProvider);
+                @Qualifier("googleSheetsConnectionProvider") GoogleConnectionProvider sheetsProvider,
+                @Qualifier("googleCalendarConnectionProvider") GoogleConnectionProvider calendarProvider,
+                @Qualifier("googleDriveConnectionProvider") GoogleConnectionProvider driveProvider) {
+            return new ConnectionProviderRegistry(
+                    telegramProvider, httpProvider, gmailProvider, sheetsProvider, calendarProvider, driveProvider);
         }
 
         @Bean

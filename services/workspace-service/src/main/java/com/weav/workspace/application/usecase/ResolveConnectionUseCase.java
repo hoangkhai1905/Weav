@@ -345,8 +345,7 @@ public final class ResolveConnectionUseCase {
 
     private boolean isGoogleOAuth(Connection connection) {
         return connection.getAuthType() == ConnectionAuthType.OAUTH2
-                && (connection.getProvider() == ConnectionProvider.GMAIL
-                || connection.getProvider() == ConnectionProvider.GOOGLE_SHEETS);
+                && connection.getProvider().isGoogleOAuth();
     }
 
     private String textValue(Map<String, Object> payload, String field) {

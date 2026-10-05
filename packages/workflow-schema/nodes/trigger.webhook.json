@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/trigger.webhook",
+  "title": "Webhook",
+  "description": "Starts the workflow when an HTTP request reaches its webhook URL. Has no settings.",
+  "x-weav-node": {
+    "type": "trigger.webhook",
+    "category": "trigger",
+    "label": "Webhook",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {},
+  "required": [],
+  "additionalProperties": false
+}

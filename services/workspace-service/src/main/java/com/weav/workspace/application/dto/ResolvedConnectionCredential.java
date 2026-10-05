@@ -39,7 +39,7 @@ public record ResolvedConnectionCredential(
         boolean validProvider = switch (authType) {
             case NONE, API_KEY, BASIC -> provider == ConnectionProvider.HTTP;
             case TOKEN -> provider == ConnectionProvider.HTTP || provider == ConnectionProvider.TELEGRAM;
-            case OAUTH2 -> provider == ConnectionProvider.GMAIL || provider == ConnectionProvider.GOOGLE_SHEETS;
+            case OAUTH2 -> provider.isGoogleOAuth();
         };
         if (!auth.keySet().equals(expectedAuthKeys) || !validProvider) {
             throw new IllegalArgumentException("Resolved credential shape is invalid");

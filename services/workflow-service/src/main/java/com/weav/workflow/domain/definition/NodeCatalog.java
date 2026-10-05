@@ -3,57 +3,34 @@ package com.weav.workflow.domain.definition;
 import java.util.Map;
 import java.util.Set;
 
-/** The explicitly supported Workflow Service V1 node catalog. */
+/** The supported node catalog, derived from the node config schemas in {@code packages/workflow-schema}. */
 public final class NodeCatalog {
-    private static final Set<String> SUPPORTED_TYPES = Set.of(
-            "trigger.manual",
-            "trigger.schedule",
-            "trigger.webhook",
-            "trigger.telegram",
-            "http.request",
-            "email.send",
-            "google.sheets",
-            "telegram.send_message",
-            "logic.condition",
-            "ai.extract",
-            "ai.classify",
-            "ai.summarize",
-            "ocr.extract");
-
-    private static final Map<String, Set<String>> CONFIG_FIELDS = Map.ofEntries(
-            Map.entry("trigger.manual", Set.of("buttonLabel")),
-            Map.entry("trigger.schedule", Set.of("cron", "timezone")),
-            Map.entry("trigger.webhook", Set.of()),
-            Map.entry("trigger.telegram", Set.of()),
-            Map.entry("http.request", Set.of("method", "url", "headers", "query", "body", "connectionId")),
-            Map.entry("email.send", Set.of("connectionId", "to", "subject", "body")),
-            Map.entry("google.sheets", Set.of(
-                    "connectionId", "operation", "spreadsheetId", "range", "values")),
-            Map.entry("telegram.send_message", Set.of("chatId", "text")),
-            Map.entry("logic.condition", Set.of("left", "operator", "right")),
-            Map.entry("ai.extract", Set.of("text", "outputSchema", "instructions", "schemaDescription")),
-            Map.entry("ai.classify", Set.of("content", "categories")),
-            Map.entry("ai.summarize", Set.of("inputText", "maxLength")),
-            Map.entry("ocr.extract", Set.of("artifactId", "fileUrl", "language", "detectTables")));
-    private static final Map<String, Set<String>> STATIC_FIELDS = Map.of("ai.extract", Set.of("outputSchema"));
+    private static final Map<String, NodeConfigSchema> SCHEMAS = NodeConfigSchemas.all();
 
     private NodeCatalog() {
     }
 
     public static Set<String> supportedTypes() {
-        return SUPPORTED_TYPES;
+        return SCHEMAS.keySet();
     }
 
     public static boolean supports(String type) {
-        return type != null && SUPPORTED_TYPES.contains(type);
+        return type != null && SCHEMAS.containsKey(type);
     }
 
     public static Set<String> configFields(String type) {
-        return type == null ? Set.of() : CONFIG_FIELDS.getOrDefault(type, Set.of());
+        NodeConfigSchema schema = schema(type);
+        return schema == null ? Set.of() : schema.fieldNames();
     }
 
     /** Config fields that are literal metadata: never mapping-resolved and never credential-key scanned. */
     public static Set<String> staticFields(String type) {
-        return type == null ? Set.of() : STATIC_FIELDS.getOrDefault(type, Set.of());
+        NodeConfigSchema schema = schema(type);
+        return schema == null ? Set.of() : schema.staticFields();
+    }
+
+    /** The config schema for a node type, or null when the type is unsupported. */
+    public static NodeConfigSchema schema(String type) {
+        return type == null ? null : SCHEMAS.get(type);
     }
 }

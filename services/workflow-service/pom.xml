@@ -178,6 +178,19 @@
 	</dependencies>
 
 	<build>
+		<resources>
+			<resource>
+				<directory>src/main/resources</directory>
+			</resource>
+			<!-- Node config schemas shared with the frontend (packages/workflow-schema). -->
+			<resource>
+				<directory>../../packages/workflow-schema/nodes</directory>
+				<targetPath>workflow-schema/nodes</targetPath>
+				<includes>
+					<include>*.json</include>
+				</includes>
+			</resource>
+		</resources>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
