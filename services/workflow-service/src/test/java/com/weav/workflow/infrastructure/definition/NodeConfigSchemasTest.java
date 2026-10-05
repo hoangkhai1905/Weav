@@ -34,7 +34,8 @@ class NodeConfigSchemasTest {
     private static final Set<String> TYPES = Set.of(
             "trigger.manual", "trigger.schedule", "trigger.webhook", "trigger.telegram", "http.request",
             "email.send", "google.sheets", "telegram.send_message", "logic.condition", "ai.extract",
-            "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive");
+            "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive", "logic.switch",
+            "data.set");
 
     /** The publish-required fields the validator hard-coded before schemas drove it. */
     private static final Map<String, List<String>> REQUIRED = Map.ofEntries(
@@ -49,7 +50,9 @@ class NodeConfigSchemasTest {
             Map.entry("ai.classify", List.of("content")),
             Map.entry("ai.summarize", List.of("inputText")),
             Map.entry("google.calendar", List.of("connectionId", "summary", "start", "end")),
-            Map.entry("google.drive", List.of("connectionId", "operation")));
+            Map.entry("google.drive", List.of("connectionId", "operation")),
+            Map.entry("logic.switch", List.of("value", "cases")),
+            Map.entry("data.set", List.of("fields")));
 
     @Test
     void registryLoadsAllThirteenNodeTypes() {
@@ -167,6 +170,45 @@ class NodeConfigSchemasTest {
                 }
             });
         }
+    }
+
+    @Test
+    void coreLogicNodesAreSideEffectFreeLogicNodes() {
+        for (String type : List.of("logic.switch", "data.set")) {
+            assertEquals("logic", NodeCatalog.schema(type).category(), type);
+            assertFalse(NodeCatalog.schema(type).sideEffect(), type);
+            assertFalse(NodeSideEffects.isSideEffecting(type, Map.of()), type);
+        }
+        assertEquals("array", field("logic.switch", "cases").type());
+        assertFalse(field("logic.switch", "cases").template());
+        assertTrue(field("logic.switch", "value").template());
+        assertEquals("object", field("data.set", "fields").type());
+        assertTrue(field("data.set", "fields").template());
+    }
+
+    @Test
+    void stringOnlyFieldsAreTemplateFieldsOfPlainStringType() {
+        assertEquals(Set.of("subject", "body"), NodeCatalog.schema("email.send").stringOnlyFields());
+        assertEquals(Set.of("text"), NodeCatalog.schema("telegram.send_message").stringOnlyFields());
+        assertEquals(Set.of(), NodeCatalog.schema("logic.switch").stringOnlyFields());
+        assertEquals(Set.of(), NodeCatalog.schema("data.set").stringOnlyFields());
+        assertEquals(Set.of("method", "url"), NodeCatalog.schema("http.request").stringOnlyFields());
+    }
+
+    @Test
+    void scalarTextHasNoDecimalPointOrExponentForIntegralNumbers() {
+        assertEquals("12", com.weav.workflow.domain.definition.JsonValues.scalarText(12.0));
+        assertEquals("12", com.weav.workflow.domain.definition.JsonValues.scalarText(new BigDecimal("12.000")));
+        assertEquals("100000000000000000000", com.weav.workflow.domain.definition.JsonValues.scalarText(1e20));
+        assertEquals("0", com.weav.workflow.domain.definition.JsonValues.scalarText(new BigDecimal("0.00")));
+        assertEquals("2.5", com.weav.workflow.domain.definition.JsonValues.scalarText(2.5));
+        assertEquals("-1001234567890", com.weav.workflow.domain.definition.JsonValues.scalarText(-1001234567890L));
+        assertEquals("true", com.weav.workflow.domain.definition.JsonValues.scalarText(true));
+        assertEquals("a", com.weav.workflow.domain.definition.JsonValues.scalarText("a"));
+        assertEquals(null, com.weav.workflow.domain.definition.JsonValues.scalarText(null));
+        assertEquals(null, com.weav.workflow.domain.definition.JsonValues.scalarText(Map.of()));
+        assertEquals(null, com.weav.workflow.domain.definition.JsonValues.scalarText(List.of()));
+        assertEquals(null, com.weav.workflow.domain.definition.JsonValues.scalarText(Double.NaN));
     }
 
     @Test
