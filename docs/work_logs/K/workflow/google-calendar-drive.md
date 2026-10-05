@@ -92,3 +92,7 @@ Not verified: real Google (see checklist), the web and mobile connection screens
 Fixed: exact method-plus-path allow-list with traversal and `%2f` rules, `withQuery` raw path preservation (test sends a real request to a local server and asserts the raw path `/calendar/v3/calendars/a%2Fb%40x.test/events` plus `sendUpdates=none`), opt-in `sendInvitations`, `google.drive.operation` no longer a template field, and the `folderId` description and 404 message now mention the drive.file visibility limit.
 
 Round 2 verify: workflow-service `./mvnw verify` 523 tests, 0 failures, 2 errors (the two known `HttpTransportIntegrationTest` TLS certificate errors; the notification bridge test passed this time). workspace-service was not touched in round 2.
+
+## Live test
+
+Run `scripts/live-test-nodes.ps1` (see `scripts/README.md`) for an end-to-end live check through the gateway; it replaces the UI until the web app supports these nodes.
