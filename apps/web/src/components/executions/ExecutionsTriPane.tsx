@@ -266,6 +266,12 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
           <span aria-current="page" className="inline-flex items-center border-b-2 border-foreground px-0.5 text-[13px] font-medium text-foreground">
             {t('runs.tab_runs')}
           </span>
+          <Link
+            to={`/workflows/${encodeURIComponent(workflowId)}/builder?tab=settings`}
+            className="inline-flex items-center border-b-2 border-transparent px-0.5 text-[13px] font-medium text-text-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {t('builder.section_settings')}
+          </Link>
         </nav>
         <button type="button" onClick={() => void loadRuns()} className={`${ctl} ml-auto`}>
           <RefreshCw size={14} aria-hidden="true" />

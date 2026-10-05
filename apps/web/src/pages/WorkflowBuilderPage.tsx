@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ReactFlow,
@@ -50,6 +50,7 @@ import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
 import { useWorkspaceContext } from '../hooks/useWorkspace';
+import { WorkflowSettingsPanel } from '../components/builder/WorkflowSettingsPanel';
 import { useConnections } from '../hooks/useConnections';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
@@ -223,7 +224,9 @@ export const WorkflowBuilderPage: React.FC = () => {
   const { theme } = useUIStore();
   const { language, t } = useI18nStore();
   const ariaLabelConfig = useMemo(() => createReactFlowAriaLabelConfig(t, language), [language, t]);
-  const { activeWorkspaceId, userId } = useWorkspaceContext();
+  const { activeWorkspace, activeWorkspaceId, userId } = useWorkspaceContext();
+  const [searchParams] = useSearchParams();
+  const [section, setSection] = useState<'editor' | 'settings'>(searchParams.get('tab') === 'settings' ? 'settings' : 'editor');
   const prefersReducedMotion = useReducedMotion();
   const nodeSequenceRef = useRef(INITIAL_NODES.length);
   const logSequenceRef = useRef(0);
@@ -270,6 +273,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   // Workflow Metadata & Status
   const [workflow, setWorkflow] = useState<WorkflowDefinition | null>(null);
   const [workflowTitle, setWorkflowTitle] = useState('');
+  const [workflowDescription, setWorkflowDescription] = useState('');
   const [isSaved, setIsSaved] = useState(true);
   const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(true);
   const [isSavingWorkflow, setIsSavingWorkflow] = useState(false);
@@ -393,6 +397,7 @@ export const WorkflowBuilderPage: React.FC = () => {
           : workflowToReactFlow(loaded);
         setWorkflow(loaded);
         setWorkflowTitle(loaded.name);
+        setWorkflowDescription(loaded.description ?? '');
         setNodes(flow.nodes);
         setEdges(flow.edges);
         setIsSaved(true);
@@ -411,13 +416,14 @@ export const WorkflowBuilderPage: React.FC = () => {
 
   const saveDraft = useCallback(async () => {
     if (!workflow) throw new Error(tr('msg.workflow_is_not_loaded'));
-    const draft = reactFlowToWorkflow(nodes, edges, { ...workflow, name: workflowTitle });
+    const draft = reactFlowToWorkflow(nodes, edges, { ...workflow, name: workflowTitle, description: workflowDescription });
     const saved = await workflowApi.updateWorkflow(workflow.id, draft);
     setWorkflow(saved);
     setWorkflowTitle(saved.name);
+    setWorkflowDescription(saved.description ?? '');
     setIsSaved(true);
     return saved;
-  }, [edges, nodes, setWorkflow, setWorkflowTitle, setIsSaved, workflow, workflowTitle]);
+  }, [edges, nodes, setWorkflow, setWorkflowTitle, setIsSaved, workflow, workflowTitle, workflowDescription]);
 
   const handleSaveDraft = async () => {
     setWorkflowError(null);
@@ -617,7 +623,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   const handleNodesChange = useCallback(
     (changes: Parameters<typeof onNodesChange>[0]) => {
       onNodesChange(changes);
-      if (changes.some((change) => change.type !== 'select')) setIsSaved(false);
+      if (changes.some((change) => change.type !== 'select' && change.type !== 'dimensions')) setIsSaved(false);
       if (selectedNodeId && changes.some((change) => change.type === 'remove' && change.id === selectedNodeId)) {
         setSelectedNodeId(null);
         setInspectorOpen(false);
@@ -948,9 +954,15 @@ export const WorkflowBuilderPage: React.FC = () => {
 
         {/* Editor / Executions tabs */}
         <nav aria-label={t('builder.workflow_sections')} className="hidden h-12 shrink-0 items-stretch gap-5 whitespace-nowrap md:flex">
-          <span aria-current="page" className="inline-flex items-center whitespace-nowrap border-b-2 border-foreground px-0.5 text-[13px] font-medium text-foreground">
+          <button
+            type="button"
+            data-testid="workflow-tab-editor"
+            aria-current={section === 'editor' ? 'page' : undefined}
+            onClick={() => setSection('editor')}
+            className={`inline-flex items-center whitespace-nowrap border-b-2 px-0.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${section === 'editor' ? 'border-foreground text-foreground' : 'border-transparent text-text-2 hover:text-foreground'}`}
+          >
             {t('builder.section_editor')}
-          </span>
+          </button>
           {workflow && (
             <Link
               to={`/workflows/${encodeURIComponent(workflow.id)}/executions`}
@@ -959,6 +971,16 @@ export const WorkflowBuilderPage: React.FC = () => {
               {t('runs.tab_runs')}
             </Link>
           )}
+          <button
+            type="button"
+            data-testid="workflow-tab-settings"
+            aria-current={section === 'settings' ? 'page' : undefined}
+            onClick={() => setSection('settings')}
+            disabled={!workflow}
+            className={`inline-flex items-center whitespace-nowrap border-b-2 px-0.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${section === 'settings' ? 'border-foreground text-foreground' : 'border-transparent text-text-2 hover:text-foreground'}`}
+          >
+            {t('builder.section_settings')}
+          </button>
         </nav>
         <span className="md:hidden" />
 
@@ -1086,7 +1108,28 @@ export const WorkflowBuilderPage: React.FC = () => {
       )}
 
       {/* CENTER WORKSPACE LAYOUT */}
-      <div className="flex-1 flex min-h-0 relative">
+      {section === 'settings' && workflow && (
+        <div className="min-h-0 flex-1 overflow-y-auto bg-background">
+          <WorkflowSettingsPanel
+            workflow={workflow}
+            name={workflowTitle}
+            description={workflowDescription}
+            dirty={!isSaved || workflowTitle !== workflow.name || workflowDescription !== (workflow.description ?? '')}
+            saving={isSavingWorkflow}
+            workspaceName={activeWorkspace?.name ?? ''}
+            onNameChange={(value) => {
+              setWorkflowTitle(value);
+              setIsSaved(false);
+            }}
+            onDescriptionChange={(value) => {
+              setWorkflowDescription(value);
+              setIsSaved(false);
+            }}
+            onSave={() => void handleSaveDraft()}
+          />
+        </div>
+      )}
+      <div className={`flex-1 flex min-h-0 relative ${section === 'settings' ? 'hidden' : ''}`}>
         {/* WORKFLOW CANVAS (CENTER) */}
         <main ref={canvasRef} data-testid="workflow-canvas" className="relative h-full flex-1 overflow-hidden bg-background">
           <ReactFlow

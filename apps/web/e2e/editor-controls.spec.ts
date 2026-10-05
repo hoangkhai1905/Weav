@@ -107,4 +107,20 @@ test.describe('editor controls', () => {
     await expect(page.getByTestId('workflow-publish')).toBeVisible();
     await expect(page.getByTestId('workflow-active-switch')).toHaveCount(0);
   });
+
+  test('settings tab saves name and description through the draft PUT and shows read-only info', async ({ page }) => {
+    const state = await setup(page, 'PUBLISHED');
+    await page.goto(`/workflows/${workflowId}/builder`);
+    await page.getByTestId('workflow-tab-settings').click();
+    await expect(page.getByTestId('workflow-settings-id')).toHaveText(workflowId);
+    await expect(page.getByTestId('workflow-settings')).toContainText('Real Workspace');
+    await expect(page.getByTestId('workflow-settings-save')).toBeDisabled();
+
+    await page.getByTestId('workflow-settings-name').fill('Renamed workflow');
+    await page.getByTestId('workflow-settings-description').fill('New description');
+    await page.getByTestId('workflow-settings-save').click();
+    await expect.poll(() => state.puts.length).toBe(1);
+    expect(state.puts[0]).toMatchObject({ name: 'Renamed workflow', description: 'New description' });
+    await expect(page.getByTestId('workflow-settings-save')).toBeDisabled();
+  });
 });
