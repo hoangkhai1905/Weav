@@ -76,6 +76,9 @@ public class WorkflowTriggerJpaEntity {
     @Column(name = "poll_cursor")
     private Instant pollCursor;
 
+    @Column(name = "poll_cursor_message_id")
+    private String pollCursorMessageId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -144,6 +147,7 @@ public class WorkflowTriggerJpaEntity {
     public Instant getLastTriggeredAt() { return lastTriggeredAt; }
     public JsonNode getLastError() { return lastError; }
     public Instant getPollCursor() { return pollCursor; }
+    public String getPollCursorMessageId() { return pollCursorMessageId; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 
@@ -154,4 +158,5 @@ public class WorkflowTriggerJpaEntity {
     public void setLastTriggeredAt(Instant lastTriggeredAt) { this.lastTriggeredAt = lastTriggeredAt; }
     public void setLastError(JsonNode lastError) { this.lastError = lastError; }
     public void setPollCursor(Instant pollCursor) { this.pollCursor = pollCursor; }
+    public void setPollCursorMessageId(String id) { this.pollCursorMessageId = id; }
 }

@@ -15,10 +15,11 @@ public interface GmailTriggerPort {
 
     /**
      * Own short transaction, no external call inside. Moves the cursor forward only (null or an older value
-     * leaves it), stamps {@code lastTriggeredAt} when it moved, and sets {@code lastErrorCode} (null clears
-     * the last error). Does nothing once the registration is no longer ACTIVE.
+     * leaves it), stamps {@code lastTriggeredAt} when it moved, stores {@code lastMessageId} (the last message
+     * handled, admitted or skipped, null leaves it) and sets {@code lastErrorCode} (null clears the last error).
+     * Does nothing once the registration is no longer ACTIVE.
      */
-    void recordGmailPoll(UUID triggerId, Instant newCursor, String lastErrorCode);
+    void recordGmailPoll(UUID triggerId, Instant newCursor, String lastMessageId, String lastErrorCode);
 
     record Candidate(UUID workflowId, UUID triggerId) {
     }

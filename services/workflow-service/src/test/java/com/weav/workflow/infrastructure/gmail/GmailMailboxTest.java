@@ -45,40 +45,88 @@ class GmailMailboxTest {
                         Base64.getUrlEncoder().withoutPadding().encodeToString(text.getBytes(StandardCharsets.UTF_8)))));
     }
 
-    /** n messages m1..mn, one every 10 s from BASE, served like Gmail: newest first, filtered by after:. */
-    private static FakeTransport mailboxOf(int n) {
-        return new FakeTransport((uri, query) -> {
-            if (uri.getPath().endsWith("/messages")) {
-                long after = Long.parseLong(((String) query.get("q")).replaceAll(".*after:", "")) * 1000;
-                List<Map<String, Object>> ids = new ArrayList<>();
-                for (int i = n; i >= 1; i--) {
-                    if (BASE + i * 10_000L >= after) {
-                        ids.add(Map.of("id", id(i)));
+    /** Fake Gmail that honours after: (second granularity, inclusive), lists newest first (ties by id desc). */
+    private static final class Gmail {
+        final Map<String, Long> internalDates = new LinkedHashMap<>();
+        final Set<String> unreadable = new LinkedHashSet<>();
+
+        Gmail add(String id, long internalDate) {
+            internalDates.put(id, internalDate);
+            return this;
+        }
+
+        FakeTransport transport() {
+            return new FakeTransport((uri, query) -> {
+                if (uri.getPath().endsWith("/messages")) {
+                    long afterSec = Long.parseLong(((String) query.get("q")).replaceAll(".*after:", ""));
+                    List<String> ids = new ArrayList<>(internalDates.keySet().stream()
+                            .filter(id -> internalDates.get(id) / 1000 >= afterSec).toList());
+                    ids.sort((x, y) -> {
+                        int byDate = Long.compare(internalDates.get(y), internalDates.get(x));
+                        return byDate != 0 ? byDate : y.compareTo(x);
+                    });
+                    int limit = Math.min(ids.size(), (Integer) query.get("maxResults"));
+                    Map<String, Object> body = new LinkedHashMap<>();
+                    body.put("messages", ids.subList(0, limit).stream().map(id -> Map.of("id", id)).toList());
+                    if (limit < ids.size()) {
+                        body.put("nextPageToken", "next-" + limit);
                     }
+                    return json(200, body);
                 }
-                int limit = Math.min(ids.size(), (Integer) query.get("maxResults"));
-                Map<String, Object> body = new LinkedHashMap<>();
-                body.put("messages", ids.subList(0, limit));
-                if (limit < ids.size()) {
-                    body.put("nextPageToken", "next-" + limit);
+                String id = uri.getPath().substring(uri.getPath().lastIndexOf('/') + 1);
+                return unreadable.contains(id) ? json(404, Map.of("error", "gone"))
+                        : json(200, message(id, internalDates.get(id), "body " + id));
+            });
+        }
+    }
+
+    /** What the trigger stores plus the loop of GmailTriggerProcessor, against a fake mailbox. */
+    private static final class Trigger {
+        final GmailMailbox mailbox;
+        Instant cursor;
+        String lastId;
+        final List<String> admitted = new ArrayList<>();
+        String lastNotice;
+
+        Trigger(FakeTransport transport, Instant cursor) {
+            this.mailbox = new GmailMailbox(new GmailClient(transport));
+            this.cursor = cursor;
+        }
+
+        void poll() {
+            GmailMailboxPort.FetchResult result = mailbox.fetchNew(connection(), null, cursor, lastId, 10);
+            lastNotice = result.notice();
+            for (GmailMailboxPort.Message message : result.messages()) {
+                if (!message.isSkipMarker()) {
+                    // the idempotency key makes a repeat harmless; count each id once like admission does
+                    if (!admitted.contains(message.id())) {
+                        admitted.add(message.id());
+                    }
+                    cursor = message.internalDate().isAfter(cursor) ? message.internalDate() : cursor;
                 }
-                return json(200, body);
+                lastId = message.id();
             }
-            int i = Integer.parseInt(uri.getPath().substring(uri.getPath().lastIndexOf('/') + 5), 16);
-            return json(200, message(id(i), BASE + i * 10_000L, "body " + i));
-        });
+        }
+    }
+
+    private static List<String> ids(int from, int to) {
+        List<String> ids = new ArrayList<>();
+        for (int i = from; i <= to; i++) {
+            ids.add(id(i));
+        }
+        return ids;
     }
 
     @Test
     void listsWithTheSearchAndCursorThenReadsEachMessageAndReturnsThemOldestFirst() {
-        FakeTransport transport = mailboxOf(3);
-        GmailMailbox mailbox = new GmailMailbox(new GmailClient(transport));
+        Gmail gmail = new Gmail().add(id(1), BASE + 10_000).add(id(2), BASE + 20_000).add(id(3), BASE + 30_000);
+        FakeTransport transport = gmail.transport();
 
-        GmailMailboxPort.FetchResult result = mailbox.fetchNew(
-                connection(), "from:billing@example.test", Instant.ofEpochMilli(BASE), 10);
+        GmailMailboxPort.FetchResult result = new GmailMailbox(new GmailClient(transport)).fetchNew(
+                connection(), "from:billing@example.test", Instant.ofEpochMilli(BASE), null, 10);
 
-        assertEquals(List.of(id(1), id(2), id(3)), result.messages().stream().map(GmailMailboxPort.Message::id).toList());
-        assertEquals("body 1", result.messages().getFirst().input().get("body"));
+        assertEquals(ids(1, 3), result.messages().stream().map(GmailMailboxPort.Message::id).toList());
+        assertEquals("body " + id(1), result.messages().getFirst().input().get("body"));
         assertEquals(null, result.notice());
         FakeTransport.Call list = transport.calls.getFirst();
         assertEquals("https://gmail.googleapis.com/gmail/v1/users/me/messages", list.uri().toString());
@@ -90,10 +138,10 @@ class GmailMailboxTest {
 
     @Test
     void withoutAQueryOnlyTheCursorFilterIsSentAndNothingIsRead() {
-        FakeTransport transport = new FakeTransport((uri, query) -> json(200, Map.of("resultSizeEstimate", 0)));
+        FakeTransport transport = new Gmail().transport();
 
         GmailMailboxPort.FetchResult result = new GmailMailbox(new GmailClient(transport))
-                .fetchNew(connection(), null, Instant.ofEpochSecond(42), 10);
+                .fetchNew(connection(), null, Instant.ofEpochSecond(42), null, 10);
 
         assertTrue(result.messages().isEmpty());
         assertEquals("after:41", transport.calls.getFirst().query().get("q"));
@@ -101,60 +149,101 @@ class GmailMailboxTest {
     }
 
     @Test
-    void mailFromBeforeTheCursorIsDroppedAndMailAtOrAfterItIsKept() {
-        // publish at BASE+25 s: m1 (10 s) and m2 (20 s) predate it, m3 (30 s) is newer.
-        Instant cursor = Instant.ofEpochMilli(BASE + 25_000);
+    void mailFromBeforeTheCursorBecomesASkipMarkerAndMailAtOrAfterItIsKept() {
+        Gmail gmail = new Gmail().add(id(1), BASE + 10_000).add(id(2), BASE + 20_000).add(id(3), BASE + 30_000);
+        Trigger trigger = new Trigger(gmail.transport(), Instant.ofEpochMilli(BASE + 25_000));
 
-        GmailMailboxPort.FetchResult result = new GmailMailbox(new GmailClient(mailboxOf(3)))
-                .fetchNew(connection(), null, cursor, 10);
+        trigger.poll();
 
-        assertEquals(List.of(id(3)), result.messages().stream().map(GmailMailboxPort.Message::id).toList());
-
-        // The newest admitted email (equal timestamp) is listed again and kept; the idempotency key dedupes it.
-        GmailMailboxPort.FetchResult again = new GmailMailbox(new GmailClient(mailboxOf(3)))
-                .fetchNew(connection(), null, Instant.ofEpochMilli(BASE + 30_000), 10);
-        assertEquals(List.of(id(3)), again.messages().stream().map(GmailMailboxPort.Message::id).toList());
+        assertEquals(List.of(id(3)), trigger.admitted);
+        assertEquals(id(3), trigger.lastId, "the position moved past the skipped mails too");
+        trigger.poll();
+        assertEquals(List.of(id(3)), trigger.admitted, "nothing new appears on the next poll");
     }
 
     @Test
-    void twentyFiveMailsOverThreePollsAreAllAdmittedExactlyOnceInOrder() {
-        GmailMailbox mailbox = new GmailMailbox(new GmailClient(mailboxOf(25)));
-        Instant cursor = Instant.ofEpochMilli(BASE);
-        Set<String> seen = new LinkedHashSet<>();
-        List<String> order = new ArrayList<>();
+    void fifteenMailsInOneSecondAreAllAdmittedOverTwoPolls() {
+        Gmail gmail = new Gmail();
+        for (int i = 1; i <= 15; i++) {
+            gmail.add(id(i), BASE + 500 + i);
+        }
+        Trigger trigger = new Trigger(gmail.transport(), Instant.ofEpochMilli(BASE));
 
-        for (int poll = 0; poll < 3; poll++) {
-            GmailMailboxPort.FetchResult result = mailbox.fetchNew(connection(), null, cursor, 10);
-            assertTrue(result.messages().size() <= 10);
-            for (GmailMailboxPort.Message message : result.messages()) {
-                if (seen.add(message.id())) {
-                    order.add(message.id());
-                }
-                cursor = message.internalDate().isAfter(cursor) ? message.internalDate() : cursor;
+        trigger.poll();
+        assertEquals(ids(1, 10), trigger.admitted);
+        trigger.poll();
+
+        assertEquals(ids(1, 15), trigger.admitted);
+    }
+
+    @Test
+    void twentyFiveMailsInOneSecondAreAllAdmittedOverThreePollsExactlyOnceInOrder() {
+        Gmail gmail = new Gmail();
+        for (int i = 1; i <= 25; i++) {
+            gmail.add(id(i), BASE + 100 + i);
+        }
+        Trigger trigger = new Trigger(gmail.transport(), Instant.ofEpochMilli(BASE));
+
+        trigger.poll();
+        trigger.poll();
+        trigger.poll();
+
+        assertEquals(ids(1, 25), trigger.admitted);
+        trigger.poll();
+        assertEquals(25, trigger.admitted.size());
+        assertEquals(null, trigger.lastNotice);
+    }
+
+    @Test
+    void tenUnreadableMailsDoNotBlockTheFiveReadableOnesInTheSameSecond() {
+        Gmail gmail = new Gmail();
+        for (int i = 1; i <= 15; i++) {
+            gmail.add(id(i), BASE + 100 + i);
+            if (i <= 10) {
+                gmail.unreadable.add(id(i));
             }
         }
+        Trigger trigger = new Trigger(gmail.transport(), Instant.ofEpochMilli(BASE));
 
-        assertEquals(25, order.size());
-        List<String> expected = new ArrayList<>();
-        for (int i = 1; i <= 25; i++) {
-            expected.add(id(i));
+        trigger.poll();
+        assertTrue(trigger.admitted.isEmpty());
+        assertEquals("GMAIL_MESSAGE_SKIPPED", trigger.lastNotice);
+        assertEquals(id(10), trigger.lastId, "the unreadable mails were stepped over");
+        trigger.poll();
+
+        assertEquals(ids(11, 15), trigger.admitted);
+        assertEquals(null, trigger.lastNotice, "a skipped mail is not skipped again, so the notice clears");
+    }
+
+    @Test
+    void aResumeCursorInTheMiddleOfABurstAdmitsOnlyTheMailFromTheCursorOn() {
+        Gmail gmail = new Gmail();
+        for (int i = 1; i <= 15; i++) {
+            gmail.add(id(i), BASE + 100 + i);
         }
-        assertEquals(expected, order);
+        // resumed exactly at the timestamp of mail 7: mails 1..6 are older, 7 (equal) and later are kept
+        Trigger trigger = new Trigger(gmail.transport(), Instant.ofEpochMilli(BASE + 107));
+
+        trigger.poll();
+        trigger.poll();
+
+        assertEquals(ids(7, 15), trigger.admitted);
     }
 
     @Test
     void moreThanOneHundredMatchesTakesTheNewestHundredAndRecordsTheTruncation() {
-        FakeTransport transport = mailboxOf(130);
+        Gmail gmail = new Gmail();
+        for (int i = 1; i <= 130; i++) {
+            gmail.add(id(i), BASE + i * 10_000L);
+        }
+        FakeTransport transport = gmail.transport();
 
         GmailMailboxPort.FetchResult result = new GmailMailbox(new GmailClient(transport))
-                .fetchNew(connection(), null, Instant.ofEpochMilli(BASE), 10);
+                .fetchNew(connection(), null, Instant.ofEpochMilli(BASE), null, 10);
 
         assertEquals("GMAIL_BACKLOG_TRUNCATED", result.notice());
-        assertEquals(10, result.messages().size());
-        // newest 100 are m31..m130; the oldest 10 of those are admitted first
-        assertEquals(id(31), result.messages().getFirst().id());
-        assertEquals(id(40), result.messages().getLast().id());
-        assertEquals(1 + 10, transport.calls.size());
+        assertEquals(ids(31, 40), result.messages().stream().map(GmailMailboxPort.Message::id).toList());
+        assertEquals(1 + 10, transport.calls.size(), "bounded Gmail calls per poll");
     }
 
     @Test
@@ -171,7 +260,7 @@ class GmailMailboxTest {
         });
 
         GmailMailboxPort.FetchResult result = new GmailMailbox(new GmailClient(transport))
-                .fetchNew(connection(), null, Instant.ofEpochMilli(BASE), 10);
+                .fetchNew(connection(), null, Instant.ofEpochMilli(BASE), null, 10);
 
         Map<String, Object> input = result.messages().getFirst().input();
         assertEquals(true, input.get("bodyOmitted"));
@@ -194,9 +283,10 @@ class GmailMailboxTest {
         });
 
         GmailMailboxPort.FetchResult result = new GmailMailbox(new GmailClient(transport))
-                .fetchNew(connection(), null, Instant.ofEpochMilli(BASE), 10);
+                .fetchNew(connection(), null, Instant.ofEpochMilli(BASE), null, 10);
 
-        assertEquals(List.of(id(1)), result.messages().stream().map(GmailMailboxPort.Message::id).toList());
+        assertEquals(2, result.messages().size());
+        assertTrue(result.messages().getFirst().isSkipMarker() || result.messages().getLast().isSkipMarker());
         assertEquals("GMAIL_MESSAGE_SKIPPED", result.notice());
     }
 
@@ -219,7 +309,7 @@ class GmailMailboxTest {
                     new FakeTransport((uri, query) -> json(c.status(), c.body()))));
 
             NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
-                    () -> mailbox.fetchNew(connection(), null, Instant.ofEpochSecond(1), 10));
+                    () -> mailbox.fetchNew(connection(), null, Instant.ofEpochSecond(1), null, 10));
 
             assertEquals(c.code(), failure.code(), "status " + c.status() + " " + c.body());
             assertEquals(c.retryable(), failure.retryable(), "status " + c.status());
@@ -235,7 +325,7 @@ class GmailMailboxTest {
 
         NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
                 () -> new GmailMailbox(new GmailClient(transport))
-                        .fetchNew(connection(), null, Instant.ofEpochSecond(1), 10));
+                        .fetchNew(connection(), null, Instant.ofEpochSecond(1), null, 10));
 
         assertEquals("AUTHENTICATION_REJECTED", failure.code());
     }

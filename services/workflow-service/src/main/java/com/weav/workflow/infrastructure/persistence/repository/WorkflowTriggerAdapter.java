@@ -259,7 +259,7 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort, GmailTrigger
 
     @Override
     @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
-    public void recordGmailPoll(UUID triggerId, Instant newCursor, String lastErrorCode) {
+    public void recordGmailPoll(UUID triggerId, Instant newCursor, String lastMessageId, String lastErrorCode) {
         Objects.requireNonNull(triggerId, "triggerId must not be null");
         // Column-targeted statements: a full entity flush could overwrite next_run_at written by the next claim.
         if (newCursor != null) {
@@ -268,6 +268,12 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort, GmailTrigger
                             + "where id = :id and type = 'GMAIL' and status = 'ACTIVE' "
                             + "and (poll_cursor is null or poll_cursor < :cursor)")
                     .setParameter("cursor", newCursor).setParameter("now", clock.instant())
+                    .setParameter("id", triggerId).executeUpdate();
+        }
+        if (lastMessageId != null) {
+            entityManager.createNativeQuery("update " + triggerTable + " set poll_cursor_message_id = :messageId, "
+                            + "updated_at = :now where id = :id and type = 'GMAIL' and status = 'ACTIVE'")
+                    .setParameter("messageId", lastMessageId).setParameter("now", clock.instant())
                     .setParameter("id", triggerId).executeUpdate();
         }
         String error = lastErrorCode == null ? null : mapper.toJsonNode(Map.of("code", lastErrorCode)).toString();
@@ -376,6 +382,7 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort, GmailTrigger
                 // Like schedules, mail that arrives while paused is not replayed: polling restarts at "now".
                 trigger.setNextRunAt(activate ? enabledAt : null);
                 trigger.setPollCursor(activate ? enabledAt : null);
+                trigger.setPollCursorMessageId(null);
                 if (activate) {
                     trigger.setLastError(null);
                 }

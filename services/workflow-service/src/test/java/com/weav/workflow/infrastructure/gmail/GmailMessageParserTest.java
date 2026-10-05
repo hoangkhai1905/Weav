@@ -100,6 +100,38 @@ class GmailMessageParserTest {
     }
 
     @Test
+    void controlCharactersNulAndLoneSurrogatesNeverReachTheInput() {
+        String nul = String.valueOf((char) 0);
+        Map<String, Object> payload = headers(part("text/plain", "a" + nul + "b\u0001c\u007fd\te\nf\rg"),
+                "Subject", "Hi" + nul + "there", "From", "x\uD800y");
+        Map<String, Object> message = new java.util.LinkedHashMap<>(message(payload));
+        message.put("snippet", "snip" + nul + "pet");
+        message.put("labelIds", List.of("IN" + nul + "BOX"));
+
+        var input = GmailMessageParser.parse(message).orElseThrow().input();
+
+        assertEquals("abcd\te\nf\rg", input.get("body"));
+        assertEquals("Hithere", input.get("subject"));
+        assertEquals("xy", input.get("from"));
+        assertEquals("snippet", input.get("snippet"));
+        assertEquals(List.of("INBOX"), input.get("labelIds"));
+
+        var html = GmailMessageParser.body(Map.of("mimeType", "text/html", "filename", "",
+                "body", Map.of("data", b64("<p>a&#0;b&#x0;c&#1;d&#xD800;e&#233;</p>", StandardCharsets.UTF_8))));
+        assertEquals("abcde\u00e9", html.text());
+    }
+
+    @Test
+    void theHtmlCutNeverSplitsASurrogatePair() {
+        String html = "x".repeat(GmailMessageParser.MAX_HTML_CHARS - 1) + "\uD83D\uDE00 tail";
+
+        String text = GmailMessageParser.stripHtml(html);
+
+        assertEquals(GmailMessageParser.MAX_HTML_CHARS - 1, text.length());
+        assertFalse(Character.isHighSurrogate(text.charAt(text.length() - 1)));
+    }
+
+    @Test
     void metadataOnlyReadsAreMarkedBodyOmitted() {
         var parsed = GmailMessageParser.parse(message(headers(Map.of("mimeType", "multipart/mixed"), "Subject", "Big")), true)
                 .orElseThrow();

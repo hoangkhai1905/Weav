@@ -22,6 +22,7 @@ public class WorkflowTrigger {
     private Instant lastTriggeredAt;
     private Map<String, Object> lastError;
     private Instant pollCursor;
+    private String pollCursorMessageId;
     private final Instant createdAt;
     private Instant updatedAt;
 
@@ -126,6 +127,9 @@ public class WorkflowTrigger {
     public Map<String, Object> getLastError() { return lastError; }
     /** Newest Gmail internalDate already admitted (GMAIL triggers only); null for other types. */
     public Instant getPollCursor() { return pollCursor; }
+    /** Id of the last Gmail message handled at the cursor, or null. */
+    public String getPollCursorMessageId() { return pollCursorMessageId; }
+    public WorkflowTrigger withPollCursorMessageId(String id) { this.pollCursorMessageId = id; return this; }
     public void startPolling(Instant cursor) {
         if (type != TriggerType.GMAIL || cursor == null) {
             throw new IllegalArgumentException("Only a Gmail registration has a poll cursor");

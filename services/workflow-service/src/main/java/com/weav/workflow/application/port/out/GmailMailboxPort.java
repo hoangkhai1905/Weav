@@ -8,14 +8,23 @@ import java.util.Map;
 public interface GmailMailboxPort {
 
     /**
-     * Matching mail from the cursor on: at most {@code max} messages, the OLDEST of the newest 100 matches, returned
-     * oldest first, none older than {@code after}. The newest already-seen email is listed again; callers dedupe
-     * by message id. The next poll continues with the rest.
+     * The next at most {@code max} matching messages after the position {@code (after, afterMessageId)}, oldest
+     * first, in Gmail's list order. The position is the cursor time plus the id of the last message handled there,
+     * so a burst of emails inside one second is walked in slices without stalling or repeating. Entries that must
+     * not start a run (unreadable, or older than {@code after}) are returned as {@link Message#skipped} markers so
+     * the caller moves the position past them.
      */
-    FetchResult fetchNew(ResolvedConnection connection, String query, Instant after, int max);
+    FetchResult fetchNew(ResolvedConnection connection, String query, Instant after, String afterMessageId, int max);
 
-    /** {@code input} is the trigger input of the run this message starts. */
+    /** {@code input} is the trigger input of the run this message starts; null for a skip marker. */
     record Message(String id, Instant internalDate, Map<String, Object> input) {
+        public static Message skipped(String id) {
+            return new Message(id, null, null);
+        }
+
+        public boolean isSkipMarker() {
+            return input == null;
+        }
     }
 
     /** {@code notice} is null, GMAIL_MESSAGE_SKIPPED or GMAIL_BACKLOG_TRUNCATED: shown on the trigger, poll goes on. */

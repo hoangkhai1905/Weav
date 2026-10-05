@@ -294,8 +294,9 @@ public class GmailClient {
             throw new NodeExecutor.Failure("HTTP_RATE_LIMITED",
                     "The Gmail provider rate limited the request.", true, true);
         }
+        // Assumption: Google rejects a quota-exceeded send before processing it (same precedent as the 429 above),
+        // so a retry cannot duplicate the email.
         if (status == 403 && isRateLimit(response.data())) {
-            // Quota refusal happens before sending, so a retry cannot duplicate the email.
             throw new NodeExecutor.Failure("HTTP_RATE_LIMITED",
                     "The Gmail provider rate limited the request.", true, true);
         }

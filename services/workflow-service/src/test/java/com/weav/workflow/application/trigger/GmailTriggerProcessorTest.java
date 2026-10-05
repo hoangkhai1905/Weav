@@ -92,14 +92,16 @@ class GmailTriggerProcessorTest {
     private String mailboxNotice;
     private RuntimeException mailboxFailure;
     private Instant mailboxAfter;
+    private String mailboxAfterId;
     private int mailboxMax;
     private boolean transactionOpenDuringMailbox;
     private boolean transactionOpenDuringResolve;
 
-    private final GmailMailboxPort mailbox = (connection, query, after, max) -> {
+    private final GmailMailboxPort mailbox = (connection, query, after, afterId, max) -> {
         transactionOpenDuringMailbox = inTransaction.get();
         mailboxCalls.add(query == null ? "<none>" : query);
         mailboxAfter = after;
+        mailboxAfterId = afterId;
         mailboxMax = max;
         if (mailboxFailure != null) {
             throw mailboxFailure;
@@ -143,7 +145,7 @@ class GmailTriggerProcessorTest {
         order.verify(triggers).lockCurrent(WORKFLOW_ID, TRIGGER_ID);
         order.verify(gmailTriggers).advanceGmailPoll(TRIGGER_ID, NOW.plus(Duration.ofMinutes(7)));
         order.verify(connections).resolve(WORKSPACE_ID, CONNECTION_ID);
-        order.verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, null);
+        order.verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, null, null);
         assertEquals(List.of("in:inbox"), mailboxCalls);
         assertEquals(CURSOR, mailboxAfter);
         assertEquals(10, mailboxMax);
@@ -171,7 +173,7 @@ class GmailTriggerProcessorTest {
                 "gmail:" + TRIGGER_ID + ":m1");
         order.verify(admissions).automatic(TRIGGER_ID, Map.of("messageId", "m2"), null, null, null,
                 "gmail:" + TRIGGER_ID + ":m2");
-        order.verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:59:10Z"), null);
+        order.verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:59:10Z"), "m2", null);
     }
 
     @Test
@@ -182,7 +184,7 @@ class GmailTriggerProcessorTest {
 
         assertEquals(1, processor.poll(CANDIDATE, NOW));
 
-        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:59:10Z"), null);
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:59:10Z"), "m2", null);
     }
 
     @Test
@@ -194,7 +196,7 @@ class GmailTriggerProcessorTest {
 
         assertEquals(1, processor.poll(CANDIDATE, NOW));
 
-        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:58:30Z"), "GMAIL_POLL_FAILED");
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:58:30Z"), "m1", "GMAIL_POLL_FAILED");
         verify(admissions, never()).automatic(any(), any(), any(), any(), any(), eq("gmail:" + TRIGGER_ID + ":m3"));
     }
 
@@ -206,7 +208,7 @@ class GmailTriggerProcessorTest {
 
         assertEquals(0, processor.poll(CANDIDATE, NOW));
 
-        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, null);
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, null, null);
     }
 
     @Test
@@ -216,7 +218,7 @@ class GmailTriggerProcessorTest {
 
         assertEquals(1, processor.poll(CANDIDATE, NOW));
 
-        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:58:30Z"),
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:58:30Z"), "m1",
                 "GMAIL_BACKLOG_TRUNCATED");
     }
 
@@ -232,7 +234,29 @@ class GmailTriggerProcessorTest {
         assertEquals(1, processor.poll(CANDIDATE, NOW));
 
         verify(admissions, never()).automatic(any(), any(), any(), any(), any(), eq("gmail:" + TRIGGER_ID + ":m1"));
-        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:59:10Z"), null);
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:59:10Z"), "m2", null);
+    }
+
+    @Test
+    void skipMarkersMoveThePositionWithoutStartingARunAndTheClaimPassesTheStoredPosition() {
+        trigger.withPollCursorMessageId("m0");
+        mailboxResult = List.of(GmailMailboxPort.Message.skipped("s1"), message("m2", "2026-10-05T09:59:10Z"),
+                GmailMailboxPort.Message.skipped("s3"));
+
+        assertEquals(1, processor.poll(CANDIDATE, NOW));
+
+        assertEquals("m0", mailboxAfterId);
+        verify(admissions, never()).automatic(any(), any(), any(), any(), any(), eq("gmail:" + TRIGGER_ID + ":s1"));
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:59:10Z"), "s3", null);
+    }
+
+    @Test
+    void onlySkipMarkersStillAdvanceTheStoredPosition() {
+        mailboxResult = List.of(GmailMailboxPort.Message.skipped("s1"), GmailMailboxPort.Message.skipped("s2"));
+
+        assertEquals(0, processor.poll(CANDIDATE, NOW));
+
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, "s2", null);
     }
 
     @Test
@@ -262,7 +286,7 @@ class GmailTriggerProcessorTest {
 
         assertEquals(0, processor.poll(CANDIDATE, NOW));
 
-        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, "CONNECTION_RECONNECT_REQUIRED");
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, null, "CONNECTION_RECONNECT_REQUIRED");
         assertTrue(mailboxCalls.isEmpty());
         verifyNoInteractions(admissions);
     }
@@ -271,11 +295,11 @@ class GmailTriggerProcessorTest {
     void workspaceDenialAndOutageAreRecordedAsConnectionCodes() {
         doThrow(new ForbiddenException()).when(connections).resolve(WORKSPACE_ID, CONNECTION_ID);
         processor.poll(CANDIDATE, NOW);
-        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, "CONNECTION_FORBIDDEN");
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, null, "CONNECTION_FORBIDDEN");
 
         doThrow(new WorkspaceDependencyUnavailableException()).when(connections).resolve(WORKSPACE_ID, CONNECTION_ID);
         processor.poll(CANDIDATE, NOW);
-        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, "CONNECTION_UNAVAILABLE");
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, null, "CONNECTION_UNAVAILABLE");
     }
 
     @Test
@@ -285,7 +309,7 @@ class GmailTriggerProcessorTest {
         assertEquals(0, processor.poll(CANDIDATE, NOW));
 
         verify(connections).reportAuthenticationRejected(eq(WORKSPACE_ID), eq(CONNECTION_ID), any());
-        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, "AUTHENTICATION_REJECTED");
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, null, "AUTHENTICATION_REJECTED");
     }
 
     @Test
@@ -294,7 +318,7 @@ class GmailTriggerProcessorTest {
 
         assertEquals(0, processor.poll(CANDIDATE, NOW));
 
-        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, "GMAIL_POLL_FAILED");
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, null, null, "GMAIL_POLL_FAILED");
         verify(connections, never()).reportAuthenticationRejected(any(), any(), any());
         // The claim already pushed the next poll out, so a failure keeps the normal cadence.
         verify(gmailTriggers).advanceGmailPoll(TRIGGER_ID, NOW.plus(Duration.ofMinutes(7)));
@@ -320,6 +344,6 @@ class GmailTriggerProcessorTest {
                 .automatic(any(), any(), any(), any(), any(), anyString());
 
         assertEquals(0, processor.poll(CANDIDATE, NOW));
-        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:58:30Z"), null);
+        verify(gmailTriggers).recordGmailPoll(TRIGGER_ID, Instant.parse("2026-10-05T09:58:30Z"), "m1", null);
     }
 }

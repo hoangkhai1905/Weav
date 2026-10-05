@@ -14,7 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Turns a Gmail {@code messages.get?format=full} JSON object into the trigger input of one run. */
-final class GmailMessageParser {
+public final class GmailMessageParser {
 
     static final int MAX_BODY_BYTES = 32 * 1024;
     static final int MAX_HTML_CHARS = 256 * 1024;
@@ -29,16 +29,16 @@ final class GmailMessageParser {
     private GmailMessageParser() {
     }
 
-    record Parsed(String id, Instant internalDate, Map<String, Object> input) {
+    public record Parsed(String id, Instant internalDate, Map<String, Object> input) {
     }
 
     /** Empty when the message has no usable id or internalDate (it is skipped, never half-admitted). */
-    static Optional<Parsed> parse(Map<?, ?> message) {
+    public static Optional<Parsed> parse(Map<?, ?> message) {
         return parse(message, false);
     }
 
     /** {@code bodyOmitted}: the full message was too large, so only headers and snippet were read. */
-    static Optional<Parsed> parse(Map<?, ?> message, boolean bodyOmitted) {
+    public static Optional<Parsed> parse(Map<?, ?> message, boolean bodyOmitted) {
         if (!(message.get("id") instanceof String id) || id.isBlank()
                 || !(message.get("internalDate") instanceof String internal)) {
             return Optional.empty();
@@ -55,13 +55,13 @@ final class GmailMessageParser {
 
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("messageId", id);
-        input.put("threadId", message.get("threadId") instanceof String thread ? thread : "");
+        input.put("threadId", message.get("threadId") instanceof String thread ? clean(thread) : "");
         input.put("from", header(headers, "from"));
         input.put("to", header(headers, "to"));
         input.put("cc", header(headers, "cc"));
         input.put("subject", header(headers, "subject"));
         input.put("date", internalDate.toString());
-        input.put("snippet", message.get("snippet") instanceof String snippet ? snippet : "");
+        input.put("snippet", message.get("snippet") instanceof String snippet ? clean(snippet) : "");
         input.put("body", body.text());
         input.put("bodyTruncated", body.truncated());
         input.put("bodyOmitted", bodyOmitted);
@@ -74,7 +74,7 @@ final class GmailMessageParser {
         if (value instanceof List<?> list) {
             for (Object item : list) {
                 if (item instanceof String label) {
-                    labels.add(label);
+                    labels.add(clean(label));
                 }
             }
         }
@@ -101,7 +101,7 @@ final class GmailMessageParser {
         }
         String bounded = value.length() > 4 * MAX_HEADER_CHARS ? value.substring(0, 4 * MAX_HEADER_CHARS) : value;
         String decoded = decodeEncodedWords(bounded.replace('\r', ' ').replace('\n', ' ').strip());
-        return decoded.length() > MAX_HEADER_CHARS ? decoded.substring(0, MAX_HEADER_CHARS) : decoded;
+        return clean(decoded.length() > MAX_HEADER_CHARS ? decoded.substring(0, MAX_HEADER_CHARS) : decoded);
     }
 
     /** RFC 2047 encoded words (=?charset?B|Q?text?=); whitespace between adjacent words is dropped. */
@@ -166,7 +166,28 @@ final class GmailMessageParser {
             String html = findText(payload, "text/html", 0);
             text = html == null ? "" : stripHtml(html);
         }
-        return cap(text);
+        return cap(clean(text));
+    }
+
+    /**
+     * Removes what Postgres JSONB (or JSON itself) cannot store: C0 controls except tab, CR and LF, DEL, and
+     * unpaired surrogates. A NUL in one email must never block admission of everything newer.
+     */
+    static String clean(String text) {
+        StringBuilder out = null;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            boolean bad = c < 0x20 && c != '\t' && c != '\n' && c != '\r' || c == 0x7f
+                    || Character.isHighSurrogate(c) && !(i + 1 < text.length() && Character.isLowSurrogate(text.charAt(i + 1)))
+                    || Character.isLowSurrogate(c) && !(i > 0 && Character.isHighSurrogate(text.charAt(i - 1)));
+            if (bad && out == null) {
+                out = new StringBuilder(text.length()).append(text, 0, i);
+            }
+            if (!bad && out != null) {
+                out.append(c);
+            }
+        }
+        return out == null ? text : out.toString();
     }
 
     private static String findText(Map<?, ?> part, String mimeType, int depth) {
@@ -233,7 +254,11 @@ final class GmailMessageParser {
      * HTML-to-text, not an HTML parser; the result is plain text input for later nodes, never rendered.
      */
     static String stripHtml(String html) {
-        String input = html.length() > MAX_HTML_CHARS ? html.substring(0, MAX_HTML_CHARS) : html;
+        int limit = MAX_HTML_CHARS;
+        if (html.length() > limit && Character.isHighSurrogate(html.charAt(limit - 1))) {
+            limit--; // never cut a surrogate pair in half
+        }
+        String input = html.length() > limit ? html.substring(0, limit) : html;
         int n = input.length();
         StringBuilder out = new StringBuilder(Math.min(n, 4096));
         int i = 0;
@@ -333,7 +358,8 @@ final class GmailMessageParser {
         try {
             int codePoint = entity.length() > 1 && (entity.charAt(1) == 'x' || entity.charAt(1) == 'X')
                     ? Integer.parseInt(entity.substring(2), 16) : Integer.parseInt(entity.substring(1));
-            return Character.isValidCodePoint(codePoint) ? new String(Character.toChars(codePoint)) : null;
+            // Control characters and surrogates decode to nothing (they cannot be stored); invalid code points stay as text.
+            return Character.isValidCodePoint(codePoint) ? clean(new String(Character.toChars(codePoint))) : null;
         } catch (NumberFormatException exception) {
             return null;
         }

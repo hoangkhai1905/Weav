@@ -44,7 +44,7 @@ public class GmailTriggerProcessor {
 
     static final int DEFAULT_INTERVAL_MINUTES = 5;
     // ponytail: each poll reads at most the newest 100 matches (messages.list) and admits the oldest 10 of them, so
-    // the cursor never skips mail; a backlog above 100 within one interval loses its oldest part (recorded as
+    // the cursor never skips mail; a backlog above 100 within one interval LOSES its oldest part (recorded as
     // GMAIL_BACKLOG_TRUNCATED). Upgrade: users.history.list from a stored historyId, which lists every change.
     static final int MAX_MESSAGES_PER_POLL = 10;
     /** Stable codes shown to the user on the trigger; anything else collapses to GMAIL_POLL_FAILED. */
@@ -86,7 +86,8 @@ public class GmailTriggerProcessor {
         GmailMailboxPort.FetchResult fetched;
         try (ResolvedConnection connection = connections.resolve(claim.workspaceId(), claim.connectionId())) {
             try {
-                fetched = mailbox.fetchNew(connection, claim.query(), claim.cursor(), MAX_MESSAGES_PER_POLL);
+                fetched = mailbox.fetchNew(connection, claim.query(), claim.cursor(), claim.cursorMessageId(),
+                        MAX_MESSAGES_PER_POLL);
             } catch (NodeExecutor.Failure failure) {
                 if ("AUTHENTICATION_REJECTED".equals(failure.code())) {
                     reportRejected(claim, connection);
@@ -103,8 +104,13 @@ public class GmailTriggerProcessor {
 
         int admitted = 0;
         Instant cursor = null;
+        String lastId = null;
         String error = null;
         for (GmailMailboxPort.Message message : fetched.messages()) {
+            if (message.isSkipMarker()) {
+                lastId = message.id(); // unreadable or from before the cursor: move the position past it
+                continue;
+            }
             try {
                 Outcome outcome = admit(claim, message);
                 if (outcome == Outcome.GONE) {
@@ -121,12 +127,17 @@ public class GmailTriggerProcessor {
             } catch (BadRequestException rejected) {
                 logger.warn("event=gmail_message_skipped triggerId={} reason=admission_rejected", claim.triggerId());
             } catch (RuntimeException failure) {
+                // Unexpected (for example a database error): stop here, keep the position before this email so the
+                // next poll retries it. Never skipped silently.
+                logger.warn("event=gmail_admission_failed triggerId={} messageId={} errorType={}", claim.triggerId(),
+                        message.id(), failure.getClass().getSimpleName());
                 error = GENERIC_FAILURE;
                 break;
             }
+            lastId = message.id();
             cursor = cursor == null || message.internalDate().isAfter(cursor) ? message.internalDate() : cursor;
         }
-        gmailTriggers.recordGmailPoll(claim.triggerId(), cursor, error != null ? error : fetched.notice());
+        gmailTriggers.recordGmailPoll(claim.triggerId(), cursor, lastId, error != null ? error : fetched.notice());
         if (error != null) {
             logger.warn("event=gmail_poll_failed triggerId={} code={}", claim.triggerId(), error);
         } else if (fetched.notice() != null) {
@@ -194,7 +205,7 @@ public class GmailTriggerProcessor {
         Object query = trigger.getConfig().get("query");
         return new Claim(workflow.getId(), trigger.getId(), workflow.getWorkspaceId(), connectionId,
                 query instanceof String text && !text.isBlank() ? text.strip() : null,
-                trigger.getPollCursor() == null ? scanTime : trigger.getPollCursor());
+                trigger.getPollCursor() == null ? scanTime : trigger.getPollCursor(), trigger.getPollCursorMessageId());
     }
 
     private static Duration interval(WorkflowTrigger trigger) {
@@ -207,7 +218,7 @@ public class GmailTriggerProcessor {
         String visible = VISIBLE_CODES.contains(code) ? code : GENERIC_FAILURE;
         logger.warn("event=gmail_poll_failed triggerId={} code={}", claim.triggerId(), visible);
         try {
-            gmailTriggers.recordGmailPoll(claim.triggerId(), null, visible);
+            gmailTriggers.recordGmailPoll(claim.triggerId(), null, null, visible);
         } catch (RuntimeException recordingFailure) {
             logger.warn("event=gmail_poll_error_not_recorded triggerId={}", claim.triggerId());
         }
@@ -222,6 +233,7 @@ public class GmailTriggerProcessor {
         }
     }
 
-    private record Claim(UUID workflowId, UUID triggerId, UUID workspaceId, UUID connectionId, String query, Instant cursor) {
+    private record Claim(UUID workflowId, UUID triggerId, UUID workspaceId, UUID connectionId, String query, Instant cursor,
+                         String cursorMessageId) {
     }
 }

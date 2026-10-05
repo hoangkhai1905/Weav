@@ -147,7 +147,7 @@ class GmailTriggerIntegrationTest {
                         new GmailMailboxPort.Message("m2", t2, Map.of("messageId", "m2", "labelIds", List.of()))));
         int[] call = {0};
         boolean[] txOpen = {false};
-        GmailMailboxPort mailbox = (conn, query, after, max) -> {
+        GmailMailboxPort mailbox = (conn, query, after, afterId, max) -> {
             txOpen[0] = org.springframework.transaction.support.TransactionSynchronizationManager
                     .isActualTransactionActive();
             return GmailMailboxPort.FetchResult.of(pages.get(call[0]++));
@@ -181,11 +181,12 @@ class GmailTriggerIntegrationTest {
         assertEquals(t2, ((java.sql.Timestamp) row(workflow.getId()).get("poll_cursor")).toInstant());
 
         // An older value never moves the cursor back; an error is recorded and later cleared.
-        gmailTriggers.recordGmailPoll(triggerId, t1, "GMAIL_POLL_FAILED");
+        gmailTriggers.recordGmailPoll(triggerId, t1, "m1", "GMAIL_POLL_FAILED");
         Map<String, Object> failed = row(workflow.getId());
         assertEquals(t2, ((java.sql.Timestamp) failed.get("poll_cursor")).toInstant());
         assertTrue(((String) failed.get("last_error")).contains("GMAIL_POLL_FAILED"));
-        gmailTriggers.recordGmailPoll(triggerId, null, null);
+        assertEquals("m1", jdbc.queryForObject("select poll_cursor_message_id from workflow.workflow_triggers where id = ?", String.class, triggerId));
+        gmailTriggers.recordGmailPoll(triggerId, null, null, null);
         assertNull(row(workflow.getId()).get("last_error"));
     }
 }
