@@ -119,13 +119,13 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
     const readinessClass = readiness.state === 'unsupported'
       ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20'
       : readiness.state === 'ready' || readiness.state === 'draft'
-        ? 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700/60'
+        ? 'text-muted-foreground bg-muted border-border'
         : 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20';
     return (
       <span
         data-testid="workflow-node-readiness"
         data-readiness={readiness.state}
-        className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${readinessClass}`}
+        className={`shrink-0 rounded-md border px-1.5 py-0.5 font-mono text-[10px] ${readinessClass}`}
       >
         {readiness.label}
       </span>
@@ -133,9 +133,9 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
   };
 
   // Node container styling based on selection and status
-  let borderStyle = 'border-slate-200 dark:border-slate-800';
+  let borderStyle = 'border-border';
   if (isNodeSelected) {
-    borderStyle = 'border-primary ring-1 ring-primary/35 shadow-sm';
+    borderStyle = 'border-primary ring-4 ring-primary/15 shadow-lift';
   } else if (status === 'processing') {
     borderStyle = 'border-amber-500 ring-1 ring-amber-500/30';
   } else if (status === 'error') {
@@ -148,10 +148,20 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
   const iconBgClass = isTrigger
     ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
     : isAI
-    ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/45 dark:text-blue-300 dark:border-blue-900/70'
+    ? 'bg-violet-500/10 text-violet-600 border-violet-500/20 dark:text-violet-300'
     : isLogic
     ? 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20'
-    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+    : 'bg-blue-500/10 text-blue-600 border-blue-500/20 dark:text-blue-300';
+
+  // Category accent along the top edge so node roles read at a glance
+  const accentClass = isTrigger
+    ? 'from-amber-400 to-orange-500'
+    : isAI
+    ? 'from-[var(--brand-from)] to-[var(--brand-to)]'
+    : isLogic
+    ? 'from-sky-400 to-cyan-500'
+    : 'from-blue-400 to-blue-600';
+  const handleClass = '!h-3 !w-3 !rounded-full !border-2 !border-card !bg-primary shadow-soft cursor-crosshair transition-transform hover:!scale-125';
 
   const iconMotion = prefersReducedMotion
     ? { scale: 1 }
@@ -173,20 +183,21 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
       initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.985, y: 4 }}
       animate={prefersReducedMotion ? { opacity: 1, scale: 1 } : { opacity: 1, scale: 1, y: isNodeSelected ? -1 : 0 }}
       transition={{ duration: prefersReducedMotion ? 0.01 : 0.18, ease: [0.16, 1, 0.3, 1] }}
-      className={`relative w-64 select-none rounded-lg border bg-card p-3 shadow-sm transition-[border-color,box-shadow] duration-200 hover:shadow-md ${borderStyle}`}
+      className={`relative w-64 select-none rounded-xl border bg-card p-3 pt-3.5 shadow-soft transition-[border-color,box-shadow] duration-200 hover:shadow-lift ${borderStyle}`}
     >
+      <span aria-hidden="true" className={`pointer-events-none absolute inset-x-3 top-0 h-[3px] rounded-b-full bg-gradient-to-r ${accentClass}`} />
       {/* Target Handle (Left) */}
       {!isTrigger && (
         <Handle
           type="target"
           position={Position.Left}
-          className="w-2.5 h-2.5 !bg-blue-500 !border-2 !border-white dark:!border-slate-900 !rounded-full !-left-1.5 cursor-crosshair"
+          className={`${handleClass} !-left-1.5`}
         />
       )}
 
       {/* Selected Indicator Pill */}
       {isNodeSelected && (
-        <div className="absolute -top-2.5 left-3 rounded bg-blue-600 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-white shadow-sm">
+        <div className="absolute -top-2.5 right-3 rounded-full bg-brand-gradient px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white shadow-brand">
           {t('builder.status.inspecting')}
         </div>
       )}
@@ -197,21 +208,21 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
           data-testid="workflow-node-icon"
           animate={iconMotion}
           transition={iconTransition}
-          className={`p-2 rounded-md border flex items-center justify-center shrink-0 ${iconBgClass}`}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${iconBgClass}`}
         >
           <Icon size={16} aria-hidden="true" />
         </motion.div>
 
         <div className="flex flex-col min-w-0 flex-1">
           <div className="flex items-center justify-between gap-1">
-            <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">{name}</span>
+            <span className="truncate text-[13px] font-semibold text-foreground">{name}</span>
             {isTrigger && (
               <span className="flex items-center gap-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400 uppercase">
                 <Zap size={9} /> {t('builder.status.trigger')}
               </span>
             )}
           </div>
-          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">{nodeType}</span>
+          <span className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{nodeType}</span>
         </div>
       </div>
 
@@ -226,8 +237,8 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
       )}
 
       {/* Footer Info */}
-      <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[10px]">
-        <span className="text-slate-500 dark:text-slate-400 font-mono">
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-2 text-[10px]">
+        <span className="truncate font-mono text-muted-foreground">
           {data.id ? String(data.id) : 'step_1'}
         </span>
         {renderStatusBadge()}
@@ -242,7 +253,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
               type="source"
               position={Position.Right}
               style={{ top: `${42 + index * 24}%` }}
-              className="w-2.5 h-2.5 !bg-blue-500 !border-2 !border-white dark:!border-slate-900 !rounded-full !-right-1.5 cursor-crosshair"
+              className={`${handleClass} !-right-1.5`}
             />
             <span
               aria-hidden="true"
@@ -257,7 +268,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
         <Handle
           type="source"
           position={Position.Right}
-          className="w-2.5 h-2.5 !bg-blue-500 !border-2 !border-white dark:!border-slate-900 !rounded-full !-right-1.5 cursor-crosshair"
+          className={`${handleClass} !-right-1.5`}
         />
       )}
     </motion.div>
