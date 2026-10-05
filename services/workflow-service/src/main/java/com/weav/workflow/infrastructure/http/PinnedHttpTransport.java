@@ -59,6 +59,8 @@ public class PinnedHttpTransport {
     private static final String GOOGLE_API_HOST = "www.googleapis.com";
     private static final Pattern GOOGLE_CALENDAR_EVENTS_PATH = Pattern.compile("^/calendar/v3/calendars/[^/]+/events$");
     private static final String GMAIL_SEND_PATH = "/gmail/v1/users/me/messages/send";
+    private static final String GMAIL_MESSAGES_PATH = "/gmail/v1/users/me/messages";
+    private static final Pattern GMAIL_MESSAGE_PATH = Pattern.compile("^/gmail/v1/users/me/messages/[0-9A-Fa-f]{1,32}$");
     private static final String TELEGRAM_HOST = "api.telegram.org";
     private static final Set<String> TELEGRAM_METHODS = Set.of("sendMessage", "setWebhook", "deleteWebhook");
     private static final Pattern TELEGRAM_PATH = Pattern.compile("/bot[0-9]{1,20}:[A-Za-z0-9_-]{1,128}/[A-Za-z]{1,32}");
@@ -183,6 +185,22 @@ public class PinnedHttpTransport {
         OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
         return executeWithAuthentication(target, "POST", Map.of(),
                 Map.of("Authorization", "Bearer " + accessToken), null, body);
+    }
+
+    /**
+     * Reads Gmail messages for the polling trigger: GET on the messages list or on one message id (a single hex
+     * segment). The query goes in {@code query}, never in the URI; DNS is approved and pinned here.
+     */
+    public HttpResponse executeGmailGetWithBearerToken(URI uri, Object query, String accessToken) {
+        validateGmailReadUri(uri);
+        if (accessToken == null || accessToken.isBlank() || accessToken.length() > 16 * 1024
+                || accessToken.codePoints().anyMatch(Character::isISOControl)) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Gmail authentication configuration is invalid.", false);
+        }
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "GET", Map.of(),
+                Map.of("Authorization", "Bearer " + accessToken), query, null);
     }
 
     /**
@@ -605,6 +623,25 @@ public class PinnedHttpTransport {
                 || uri.getRawQuery() != null
                 || uri.getRawFragment() != null
                 || !GMAIL_SEND_PATH.equals(uri.getRawPath())) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Gmail destination is invalid.", false);
+        }
+    }
+
+    void validateGmailReadUri(URI uri) {
+        String path = uri == null ? null : uri.getRawPath();
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(GMAIL_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || path == null
+                || !(GMAIL_MESSAGES_PATH.equals(path) || GMAIL_MESSAGE_PATH.matcher(path).matches())) {
             throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
                     "The Gmail destination is invalid.", false);
         }

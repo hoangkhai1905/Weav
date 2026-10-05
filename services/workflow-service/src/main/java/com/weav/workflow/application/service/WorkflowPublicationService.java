@@ -445,7 +445,7 @@ public class WorkflowPublicationService {
             Instant nextRunAt = enabled && type == TriggerType.SCHEDULE
                     ? schedules.next(stringConfig(node.config(), "cron"),
                             stringConfig(node.config(), "timezone"), publishedAt)
-                    : null;
+                    : enabled && type == TriggerType.GMAIL ? publishedAt : null; // first poll is due at once
             Map<String, Object> lastError = readiness.configured()
                     ? null
                     : Map.of("code", readiness.reasonCode());
@@ -454,6 +454,9 @@ public class WorkflowPublicationService {
                             ? com.weav.workflow.domain.valueobject.TriggerStatus.ACTIVE
                             : com.weav.workflow.domain.valueobject.TriggerStatus.DISABLED,
                     nextRunAt, lastError, publishedAt);
+            if (enabled && type == TriggerType.GMAIL) {
+                trigger.startPolling(publishedAt); // mail that arrived before publishing never starts a run
+            }
             if (type == TriggerType.WEBHOOK) {
                 WebhookSecretPort.IssuedKey issued = webhookSecrets.provision();
                 trigger.provisionWebhook(issued.endpointKey(), issued.secretHash());
@@ -673,6 +676,7 @@ public class WorkflowPublicationService {
             case "trigger.schedule" -> TriggerType.SCHEDULE;
             case "trigger.webhook" -> TriggerType.WEBHOOK;
             case "trigger.telegram" -> TriggerType.TELEGRAM;
+            case "trigger.gmail" -> TriggerType.GMAIL;
             default -> null;
         };
     }

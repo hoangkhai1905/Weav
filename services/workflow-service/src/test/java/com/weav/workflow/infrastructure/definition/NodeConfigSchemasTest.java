@@ -21,6 +21,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -34,7 +35,7 @@ class NodeConfigSchemasTest {
     private static final Set<String> TYPES = Set.of(
             "trigger.manual", "trigger.schedule", "trigger.webhook", "trigger.telegram", "http.request",
             "email.send", "google.sheets", "telegram.send_message", "logic.condition", "ai.extract",
-            "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive");
+            "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive", "trigger.gmail");
 
     /** The publish-required fields the validator hard-coded before schemas drove it. */
     private static final Map<String, List<String>> REQUIRED = Map.ofEntries(
@@ -49,7 +50,8 @@ class NodeConfigSchemasTest {
             Map.entry("ai.classify", List.of("content")),
             Map.entry("ai.summarize", List.of("inputText")),
             Map.entry("google.calendar", List.of("connectionId", "summary", "start", "end")),
-            Map.entry("google.drive", List.of("connectionId", "operation")));
+            Map.entry("google.drive", List.of("connectionId", "operation")),
+            Map.entry("trigger.gmail", List.of("connectionId")));
 
     @Test
     void registryLoadsAllThirteenNodeTypes() {
@@ -75,7 +77,7 @@ class NodeConfigSchemasTest {
             "ai.extract.text", "ai.classify.content", "ai.summarize.inputText",
             "ocr.extract.artifactId", "ocr.extract.fileUrl", "google.calendar.connectionId",
             "google.calendar.summary", "google.calendar.start", "google.calendar.end",
-            "google.drive.connectionId", "google.drive.operation");
+            "google.drive.connectionId", "google.drive.operation", "trigger.gmail.connectionId");
 
     private static Field field(String type, String name) {
         return NodeCatalog.schema(type).properties().get(name);
@@ -151,6 +153,8 @@ class NodeConfigSchemasTest {
         assertEquals("GOOGLE_SHEETS",
                 NodeCatalog.schema("google.sheets").properties().get("connectionId").connectionProvider());
         assertEquals("HTTP", NodeCatalog.schema("http.request").properties().get("connectionId").connectionProvider());
+        assertEquals("GMAIL",
+                NodeCatalog.schema("trigger.gmail").properties().get("connectionId").connectionProvider());
         assertEquals("TELEGRAM",
                 NodeCatalog.schema("trigger.telegram").properties().get("connectionId").connectionProvider());
         assertEquals("TELEGRAM",
@@ -167,6 +171,33 @@ class NodeConfigSchemasTest {
                 }
             });
         }
+    }
+
+    @Test
+    void gmailTriggerQueryAndIntervalAreLiteralAndBounded() {
+        assertFalse(field("trigger.gmail", "query").template() || field("trigger.gmail", "pollIntervalMinutes").template());
+        assertFalse(NodeCatalog.schema("trigger.gmail").sideEffect());
+        Field interval = field("trigger.gmail", "pollIntervalMinutes");
+        assertTrue(interval.matchesShape(5) && interval.matchesShape(1440));
+        assertFalse(interval.matchesShape(1.5d) || interval.matchesShape("5"));
+        WorkflowDefinition ok = gmailDefinition(Map.of("connectionId", UUID.randomUUID().toString(),
+                "query", "is:unread", "pollIntervalMinutes", 5));
+        assertEquals(List.of(), new DefinitionValidator().validatePublish(ok).stream().map(ValidationIssue::code).toList());
+        for (Map<String, Object> bad : List.of(
+                Map.<String, Object>of("connectionId", UUID.randomUUID().toString(), "pollIntervalMinutes", 0),
+                Map.<String, Object>of("connectionId", UUID.randomUUID().toString(), "pollIntervalMinutes", 1441),
+                Map.<String, Object>of("connectionId", UUID.randomUUID().toString(), "query", "x".repeat(501)),
+                Map.<String, Object>of("connectionId", " "),
+                Map.<String, Object>of("query", "is:unread"))) {
+            assertFalse(new DefinitionValidator().validatePublish(gmailDefinition(bad)).isEmpty(), bad.toString());
+        }
+    }
+
+    private static WorkflowDefinition gmailDefinition(Map<String, Object> config) {
+        return new WorkflowDefinition("1.0",
+                List.of(new WorkflowDefinition.Node("manual", "trigger.manual", Map.of()),
+                        new WorkflowDefinition.Node("mail", "trigger.gmail", config)),
+                List.of(), Map.of());
     }
 
     @Test

@@ -11,6 +11,7 @@ import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.service.CredentialPayloadCodec;
 import com.weav.workspace.application.service.GoogleOAuthScopePolicy;
 import com.weav.workspace.domain.exception.AuthenticationRejectedException;
+import com.weav.workspace.domain.exception.ConnectionReconnectRequiredException;
 import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.domain.exception.InvalidStateException;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
@@ -91,7 +92,7 @@ public final class ResolveConnectionUseCase {
         if (isGoogleOAuth(connection)) {
             List<String> grantedScopes = stringList(payload.get("grantedScopes"));
             if (grantedScopes == null || !scopePolicy.containsRequiredScopes(connection.getProvider(), grantedScopes)) {
-                throw new InvalidStateException("Google connection authorization is invalid");
+                throw new ConnectionReconnectRequiredException("Google connection authorization is invalid");
             }
             Instant expiresAt = credential.getExpiresAt();
             if (expiresAt == null) {
@@ -162,7 +163,7 @@ public final class ResolveConnectionUseCase {
             refresh = googleOAuthPort.refreshAccessToken(originalRefreshToken);
         } catch (AuthenticationRejectedException exception) {
             markInvalidIfCurrent(connection, originalCredential, originalRefreshToken, null);
-            throw new InvalidStateException("Google connection authorization was rejected");
+            throw new ConnectionReconnectRequiredException("Google connection authorization was rejected");
         } catch (DependencyUnavailableException exception) {
             throw exception;
         } catch (RuntimeException exception) {
@@ -174,7 +175,7 @@ public final class ResolveConnectionUseCase {
         }
         if (!scopePolicy.containsRequiredScopes(connection.getProvider(), refresh.grantedScopes())) {
             markInvalidIfCurrent(connection, originalCredential, originalRefreshToken, refresh.refreshToken());
-            throw new InvalidStateException("Google connection authorization no longer grants required access");
+            throw new ConnectionReconnectRequiredException("Google connection authorization no longer grants required access");
         }
 
         String nextRefreshToken = refresh.refreshToken() == null
@@ -289,6 +290,9 @@ public final class ResolveConnectionUseCase {
     }
 
     private void requireActive(Connection connection) {
+        if (connection.getStatus() == ConnectionStatus.INVALID) {
+            throw new ConnectionReconnectRequiredException("Connection is not active");
+        }
         if (connection.getStatus() != ConnectionStatus.ACTIVE) {
             throw new InvalidStateException("Connection is not active");
         }

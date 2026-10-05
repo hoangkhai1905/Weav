@@ -64,7 +64,8 @@
             "ai.extract",
             "ai.classify",
             "ai.summarize",
-            "ocr.extract"
+            "ocr.extract",
+            "trigger.gmail"
           ]
         },
         "config": {
@@ -604,6 +605,40 @@
                     "artifactId",
                     "fileUrl"
                   ]
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "trigger.gmail"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "query": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "pollIntervalMinutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1440
+                  }
                 },
                 "additionalProperties": false
               }

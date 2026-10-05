@@ -61,7 +61,7 @@ public final class WorkflowPersistenceMapper {
                 objectMapper.valueToTree(trigger.getConfig()), trigger.getEndpointKey(), trigger.getSecretHash(),
                 trigger.getNextRunAt(), trigger.getLastTriggeredAt(),
                 trigger.getLastError().isEmpty() ? null : objectMapper.valueToTree(trigger.getLastError()),
-                trigger.getCreatedAt(), trigger.getUpdatedAt());
+                trigger.getPollCursor(), trigger.getCreatedAt(), trigger.getUpdatedAt());
     }
 
     public Workflow toDomain(WorkflowJpaEntity entity) {
@@ -104,7 +104,8 @@ public final class WorkflowPersistenceMapper {
         return new WorkflowTrigger(entity.getId(), entity.getWorkflowId(), entity.getWorkflowVersionId(),
                 entity.getTriggerNodeId(), entity.getType(), entity.getStatus(), objectMap(entity.getConfig()),
                 entity.getEndpointKey(), entity.getSecretHash(), entity.getNextRunAt(), entity.getLastTriggeredAt(),
-                objectMap(entity.getLastError()), entity.getCreatedAt(), entity.getUpdatedAt());
+                objectMap(entity.getLastError()), entity.getPollCursor(), entity.getCreatedAt(),
+                entity.getUpdatedAt());
     }
 
     public JsonNode toJsonNode(Object value) {

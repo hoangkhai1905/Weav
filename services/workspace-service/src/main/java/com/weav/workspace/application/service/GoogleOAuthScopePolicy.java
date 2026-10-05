@@ -9,7 +9,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-/** Exact, provider-specific V1 Google OAuth scope allow-list. */
+/**
+ * Exact, provider-specific V1 Google OAuth scope allow-list. Gmail asks for gmail.readonly (superset of
+ * metadata) and never gmail.metadata: with it in the token Gmail rejects format=full and q= searches.
+ */
 public final class GoogleOAuthScopePolicy {
 
     private static final String EMAIL_SCOPE = "email";
@@ -17,7 +20,7 @@ public final class GoogleOAuthScopePolicy {
     private static final List<String> GMAIL_SCOPES = List.of(
             "openid",
             EMAIL_SCOPE,
-            "https://www.googleapis.com/auth/gmail.metadata",
+            "https://www.googleapis.com/auth/gmail.readonly",
             "https://www.googleapis.com/auth/gmail.send");
     private static final List<String> SHEETS_SCOPES = List.of(
             "openid",

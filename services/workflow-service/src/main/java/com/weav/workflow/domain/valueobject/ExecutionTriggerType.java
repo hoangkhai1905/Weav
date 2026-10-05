@@ -4,5 +4,6 @@ public enum ExecutionTriggerType {
     MANUAL,
     SCHEDULE,
     WEBHOOK,
-    TELEGRAM
+    TELEGRAM,
+    GMAIL
 }

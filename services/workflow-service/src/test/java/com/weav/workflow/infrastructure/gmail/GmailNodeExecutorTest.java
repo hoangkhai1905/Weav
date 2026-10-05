@@ -2,6 +2,7 @@ package com.weav.workflow.infrastructure.gmail;
 
 import com.weav.workflow.application.node.NodeExecutor;
 import com.weav.workflow.application.node.NodeExecutorRegistry;
+import com.weav.workflow.application.port.out.ConnectionReconnectRequiredException;
 import com.weav.workflow.application.port.out.ResolvedConnection;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
 import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableException;
@@ -19,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GmailNodeExecutorTest {
 
@@ -125,6 +127,22 @@ class GmailNodeExecutorTest {
     }
 
     @Test
+    void connectionNeedingReconnectFailsNonRetryableWithAStableCodeAndNeverSends() {
+        FakeGmailClient gmail = new FakeGmailClient();
+        FakeWorkspace workspace = new FakeWorkspace();
+        workspace.reconnect = true;
+        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, workspace);
+
+        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                () -> executor.execute(context(), config("a@example.test")));
+
+        assertEquals("CONNECTION_RECONNECT_REQUIRED", failure.code());
+        assertFalse(failure.retryable());
+        assertTrue(failure.getMessage().contains("reconnect"));
+        assertEquals(0, gmail.sendCalls);
+    }
+
+    @Test
     void mapsWorkspaceDenialAndUnavailabilityWithoutSending() {
         for (boolean forbidden : List.of(true, false)) {
             FakeGmailClient gmail = new FakeGmailClient();
@@ -208,6 +226,7 @@ class GmailNodeExecutorTest {
         private ResolvedConnection reported;
         private boolean forbidden;
         private boolean unavailable;
+        private boolean reconnect;
         private UUID connectionId;
         private int resolveCalls;
         private int reportCalls;
@@ -225,6 +244,9 @@ class GmailNodeExecutorTest {
             }
             if (unavailable) {
                 throw new WorkspaceDependencyUnavailableException();
+            }
+            if (reconnect) {
+                throw new ConnectionReconnectRequiredException();
             }
             resolved = new ResolvedConnection("GMAIL", "OAUTH2", Map.of("accessToken", ACCESS_TOKEN),
                     CREDENTIAL_ID, CREDENTIAL_VERSION);

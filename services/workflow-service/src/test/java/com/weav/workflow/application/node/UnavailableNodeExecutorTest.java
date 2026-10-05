@@ -38,6 +38,12 @@ class UnavailableNodeExecutorTest {
     }
 
     @Test
+    void gmailTriggerIsReadyLikeTheOtherGoogleNodes() {
+        assertTrue(IntegrationReadiness.forType("trigger.gmail").configured());
+        assertTrue(IntegrationReadiness.forType("email.send").configured());
+    }
+
+    @Test
     void manualTriggerRemainsReady() {
         IntegrationReadiness.Readiness readiness = IntegrationReadiness.forType("trigger.manual");
 

@@ -77,7 +77,7 @@ class GoogleOAuthUseCasesTest {
     private static final String WORKFLOW_KEY = "synthetic-workflow-usage-key";
     private static final String ACCESS_TOKEN = "synthetic-access-token";
     private static final String REFRESH_TOKEN = "synthetic-refresh-token";
-    private static final String GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.metadata";
+    private static final String GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
     private static final String GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
     private static final String SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 

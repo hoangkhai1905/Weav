@@ -1,5 +1,6 @@
 package com.weav.workflow.infrastructure.persistence.repository;
 
+import com.weav.workflow.application.port.out.GmailTriggerPort;
 import com.weav.workflow.application.port.out.WorkflowTriggerPort;
 import com.weav.workflow.domain.exception.ResourceNotFoundException;
 import com.weav.workflow.domain.model.aggregate.workflow.WorkflowTrigger;
@@ -22,7 +23,7 @@ import java.util.regex.Pattern;
 
 /** JPA adapter for current and historical workflow trigger registrations. */
 @Repository
-public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
+public class WorkflowTriggerAdapter implements WorkflowTriggerPort, GmailTriggerPort {
     private static final Pattern SQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     @PersistenceContext
@@ -228,6 +229,55 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<GmailTriggerPort.Candidate> findDueGmail(Instant now, int limit) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (limit < 1 || limit > 1_000) {
+            throw new IllegalArgumentException("Gmail poll limit must be between 1 and 1000");
+        }
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = entityManager.createNativeQuery(
+                        "select workflow_id, id from " + triggerTable + " "
+                                + "where type = 'GMAIL' and status = 'ACTIVE' "
+                                + "and next_run_at is not null and next_run_at <= :now "
+                                + "order by next_run_at, id limit :limit")
+                .setParameter("now", now)
+                .setParameter("limit", limit)
+                .getResultList();
+        return rows.stream().map(row -> new GmailTriggerPort.Candidate((UUID) row[0], (UUID) row[1])).toList();
+    }
+
+    @Override
+    @Transactional
+    public void advanceGmailPoll(UUID triggerId, Instant nextPollAt) {
+        WorkflowTriggerJpaEntity trigger = entityManager.find(WorkflowTriggerJpaEntity.class, triggerId);
+        if (trigger == null || trigger.getType() != com.weav.workflow.domain.valueobject.TriggerType.GMAIL) {
+            return;
+        }
+        trigger.setNextRunAt(Objects.requireNonNull(nextPollAt, "nextPollAt must not be null"));
+    }
+
+    @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void recordGmailPoll(UUID triggerId, Instant newCursor, String lastErrorCode) {
+        Objects.requireNonNull(triggerId, "triggerId must not be null");
+        // Column-targeted statements: a full entity flush could overwrite next_run_at written by the next claim.
+        if (newCursor != null) {
+            entityManager.createNativeQuery("update " + triggerTable + " set poll_cursor = :cursor, "
+                            + "last_triggered_at = :cursor, updated_at = :now "
+                            + "where id = :id and type = 'GMAIL' and status = 'ACTIVE' "
+                            + "and (poll_cursor is null or poll_cursor < :cursor)")
+                    .setParameter("cursor", newCursor).setParameter("now", clock.instant())
+                    .setParameter("id", triggerId).executeUpdate();
+        }
+        String error = lastErrorCode == null ? null : mapper.toJsonNode(Map.of("code", lastErrorCode)).toString();
+        entityManager.createNativeQuery("update " + triggerTable + " set last_error = cast(cast(:error as text) as jsonb), "
+                        + "updated_at = :now where id = :id and type = 'GMAIL' and status = 'ACTIVE'")
+                .setParameter("error", error).setParameter("now", clock.instant())
+                .setParameter("id", triggerId).executeUpdate();
+    }
+
+    @Override
     @Transactional
     public Optional<WorkflowTrigger> lockCurrent(UUID workflowId, UUID triggerId) {
         Objects.requireNonNull(workflowId, "workflowId must not be null");
@@ -322,6 +372,15 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
                     && "DEPENDENCY_NOT_CONFIGURED".equals(trigger.getLastError().path("code").asString());
             boolean activate = enabled && !hasReadinessError;
             trigger.setStatus(activate ? TriggerStatus.ACTIVE : TriggerStatus.DISABLED);
+            if (trigger.getType() == com.weav.workflow.domain.valueobject.TriggerType.GMAIL) {
+                // Like schedules, mail that arrives while paused is not replayed: polling restarts at "now".
+                trigger.setNextRunAt(activate ? enabledAt : null);
+                trigger.setPollCursor(activate ? enabledAt : null);
+                if (activate) {
+                    trigger.setLastError(null);
+                }
+                continue;
+            }
             if (trigger.getType() == com.weav.workflow.domain.valueobject.TriggerType.SCHEDULE) {
                 if (activate) {
                     Instant nextRunAt = nextRunAtByTrigger.get(trigger.getId());
