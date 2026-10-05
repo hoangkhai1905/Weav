@@ -28,7 +28,7 @@ public final class NodeSideEffects {
             case "email.send", "telegram.send_message", "google.calendar" -> true;
             case "google.sheets" -> !(config != null && "read".equals(config.get("operation")));
             case "google.drive" -> !(config != null && "list".equals(config.get("operation")));
-            case "logic.condition", "logic.switch", "data.set", "ai.extract", "ai.classify", "ai.summarize", "ocr.extract" -> false;
+            case "logic.condition", "logic.switch", "data.set", "ai.extract", "ai.classify", "ai.summarize", "ocr.extract", "ai.generate" -> false;
             default -> type.startsWith("trigger.") ? false : true;
         };
     }

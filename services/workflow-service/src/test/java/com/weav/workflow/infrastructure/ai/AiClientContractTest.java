@@ -65,6 +65,7 @@ class AiClientContractTest {
     private RestClient.Builder builder;
     private MockRestServiceServer server;
     private AiClient client;
+    private AiClientProperties properties;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -76,7 +77,7 @@ class AiClientContractTest {
         Path privateKey = tempDir.resolve("workflow-test-private-key.pem");
         Files.writeString(privateKey, "-----BEGIN PRIVATE KEY-----\n" + encoded
                 + "\n-----END PRIVATE KEY-----\n");
-        AiClientProperties properties = new AiClientProperties(true, true, java.net.URI.create("http://ai.internal"),
+        properties = new AiClientProperties(true, true, java.net.URI.create("http://ai.internal"),
                 "workflow-test-key", privateKey.toUri().toString(), Duration.ofSeconds(5),
                 Duration.ofSeconds(65), Duration.ofSeconds(90), 1_048_576);
         builder = RestClient.builder();
@@ -109,6 +110,47 @@ class AiClientContractTest {
                 });
         NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
                 () -> limited.execute(context(), "summarize", Map.of("text", "t", "maxLength", 10)));
+        assertEquals("AI_QUOTA_EXCEEDED", failure.code());
+        assertFalse(failure.retryable());
+        server.verify(); // no HTTP expectation was set, none was made
+    }
+
+    @Test
+    void generateNodeIsCountedByTheQuotaAndSignsTheBoundPromptScope() throws Exception {
+        java.util.List<UUID> counted = new java.util.ArrayList<>();
+        AiClient counting = new AiClient(properties,
+                new ServiceJwtSigner(new DefaultResourceLoader(), properties.keyId(),
+                        properties.privateKeyLocation(), properties.tokenLifetime()),
+                builder.build(), new ObjectMapper(),
+                Clock.fixed(Instant.parse("2026-09-23T01:02:03Z"), java.time.ZoneOffset.UTC), counted::add);
+        AtomicReference<String> token = new AtomicReference<>();
+        server.expect(requestTo("http://ai.internal/v1/prompt"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(request -> token.set(
+                        request.getHeaders().getFirst("Authorization").substring("Bearer ".length())))
+                .andRespond(request -> withSuccess("""
+                        {"requestId":"%s","result":{"text":"hi","truncated":false}}
+                        """.formatted(request.getHeaders().getFirst("X-Request-ID")), MediaType.APPLICATION_JSON)
+                        .createResponse(request));
+
+        NodeExecutor.Result result = new AiNodeExecutor("ai.generate", counting)
+                .execute(context(), Map.of("prompt", "say hi"));
+
+        assertEquals(Map.of("text", "hi", "truncated", false), result.output());
+        assertEquals(java.util.List.of(context().workspaceId()), counted);
+        assertEquals("ai:prompt", SignedJWT.parse(token.get()).getJWTClaimsSet().getStringClaim("scope"));
+        server.verify();
+    }
+
+    @Test
+    void generateNodeFailsWithQuotaExceededBeforeAnyRequest() {
+        AiClient limited = new AiClient(properties,
+                new ServiceJwtSigner(new DefaultResourceLoader(), "", "", Duration.ofSeconds(1)),
+                builder.build(), new ObjectMapper(), Clock.systemUTC(), workspaceId -> {
+                    throw new NodeExecutor.Failure(AiQuota.EXCEEDED, "quota", false);
+                });
+        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                () -> new AiNodeExecutor("ai.generate", limited).execute(context(), Map.of("prompt", "say hi")));
         assertEquals("AI_QUOTA_EXCEEDED", failure.code());
         assertFalse(failure.retryable());
         server.verify(); // no HTTP expectation was set, none was made

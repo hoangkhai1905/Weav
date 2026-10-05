@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/ai.generate",
+  "title": "Generate text with AI",
+  "description": "Completes a free-form prompt with an AI model and returns plain text.",
+  "x-weav-node": {
+    "type": "ai.generate",
+    "category": "ai",
+    "label": "Generate text with AI",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "title": "Prompt",
+      "description": "The task for the AI, for example a question or a request to write something.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "instructions": {
+      "type": "string",
+      "title": "Instructions",
+      "description": "Optional style or format guidance, for example tone or language.",
+      "x-weav-template": true
+    },
+    "maxLength": {
+      "type": "integer",
+      "minimum": 1,
+      "title": "Maximum length",
+      "description": "Upper bound on the answer length in characters, as a positive whole number (default 1000).",
+      "x-weav-template": true
+    }
+  },
+  "required": [
+    "prompt"
+  ],
+  "additionalProperties": false
+}

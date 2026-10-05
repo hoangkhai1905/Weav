@@ -66,7 +66,8 @@
             "ai.summarize",
             "ocr.extract",
             "logic.switch",
-            "data.set"
+            "data.set",
+            "ai.generate"
           ]
         },
         "config": {
@@ -664,6 +665,38 @@
                   "fields": {
                     "type": "object",
                     "maxProperties": 100
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ai.generate"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  },
+                  "maxLength": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 },
                 "additionalProperties": false
