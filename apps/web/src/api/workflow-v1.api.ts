@@ -139,7 +139,16 @@ function authToken(): string {
   return token;
 }
 
+const DETAIL_CACHE_MS = 5_000;
+const detailCache = new Map<string, { at: number; promise: Promise<WorkflowDetailV1> }>();
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  // Any write invalidates cached workflow details.
+  if (init.method && init.method !== 'GET') detailCache.clear();
+  return requestOnce<T>(path, init);
+}
+
+async function requestOnce<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Authorization', `Bearer ${authToken()}`);
   headers.set('Accept', 'application/json');
@@ -169,7 +178,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     const envelope = isRecord(payload) && isRecord(payload.error) ? payload.error : undefined;
-    const message = typeof envelope?.message === 'string'
+    const message = response.status === 429
+      ? tr('msg.rate_limited')
+      : typeof envelope?.message === 'string'
       ? envelope.message
       : response.status === 401
         ? tr('msg.your_session_has_expired_sign_in_again')
@@ -182,7 +193,26 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return payload as T;
 }
 
-async function loadWorkspaces(): Promise<WorkspaceSummary[]> {
+const WORKSPACE_CACHE_MS = 10_000;
+let workspaceCache: { at: number; promise: Promise<WorkspaceSummary[]> } | null = null;
+
+/** Workspace list shared by every workflow call within a short window (dedupes bursts, avoids 429). */
+function loadWorkspaces(): Promise<WorkspaceSummary[]> {
+  const now = Date.now();
+  if (workspaceCache && now - workspaceCache.at < WORKSPACE_CACHE_MS) return workspaceCache.promise;
+  const promise = fetchWorkspaces();
+  workspaceCache = { at: now, promise };
+  promise.catch(() => {
+    if (workspaceCache?.promise === promise) workspaceCache = null;
+  });
+  return promise;
+}
+
+export function resetWorkflowWorkspaceCache(): void {
+  workspaceCache = null;
+}
+
+async function fetchWorkspaces(): Promise<WorkspaceSummary[]> {
   const page = await request<Page<WorkspaceSummary>>(
     `/api/v1/workspaces?page=0&size=${PAGE_SIZE}&sort=name&direction=asc`,
   );
@@ -347,10 +377,17 @@ export const workflowV1Api = {
   async getWorkflow(id: string, workspaceId?: string): Promise<WorkflowDefinition | null> {
     const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
     try {
-      const detail = await request<WorkflowDetailV1>(
-        `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}`,
-      );
-      return mapDetail(detail, activeWorkspaceId);
+      const path = `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}`;
+      const cached = detailCache.get(path);
+      let promise: Promise<WorkflowDetailV1>;
+      if (cached && Date.now() - cached.at < DETAIL_CACHE_MS) {
+        promise = cached.promise;
+      } else {
+        promise = requestOnce<WorkflowDetailV1>(path);
+        detailCache.set(path, { at: Date.now(), promise });
+        promise.catch(() => detailCache.delete(path));
+      }
+      return mapDetail(await promise, activeWorkspaceId);
     } catch (error) {
       if (error instanceof WorkflowApiError && error.status === 404) return null;
       throw error;

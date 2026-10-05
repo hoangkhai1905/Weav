@@ -5,6 +5,8 @@ import { Copy, Edit3, History, Lock, MoreHorizontal, Pause, Play, Plus, Search, 
 import type { ExecutionDetail, WorkflowDefinition } from '../types/workflow.types';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import { executionApi } from '../api/execution.api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { fetchWorkflowList, invalidateWorkflowQueries, workflowRunStatsKey } from '../lib/queries/workflows';
 import { WorkflowGlyph } from '../components/workflows/WorkflowGlyph';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { statusBadgeClass } from '../components/common/statusBadgeClass';
@@ -41,7 +43,7 @@ interface WorkflowItem {
 }
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const MAX_STATS_WORKFLOWS = 50;
+const MAX_STATS_WORKFLOWS = 10;
 
 const field =
   'h-8 rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50';
@@ -81,7 +83,6 @@ export function WorkflowsPage() {
   const locale = language === 'VI' ? 'vi-VN' : 'en-US';
 
   const [workflowsList, setWorkflowsList] = useState<WorkflowItem[]>([]);
-  const [stats, setStats] = useState<Record<string, RunStats>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
@@ -99,9 +100,11 @@ export function WorkflowsPage() {
     requestAnimationFrame(() => menuButtonRefs.current[id]?.focus());
   };
 
-  const loadWorkflows = useCallback(async () => {
+  const queryClient = useQueryClient();
+
+  const loadWorkflows = useCallback(async (force = false) => {
     try {
-      const data = await workflowApi.getWorkflows();
+      const data = await fetchWorkflowList(queryClient, { force });
       setLoadError(null);
       const mapped: WorkflowItem[] = data.map((wf: WorkflowDefinition) => ({
         id: wf.id,
@@ -117,27 +120,30 @@ export function WorkflowsPage() {
       }));
       setWorkflowsList(mapped);
       setIsLoading(false);
-
-      // Run statistics are best effort: the list stays usable when they are unavailable.
-      if (mapped.length > 0 && mapped.length <= MAX_STATS_WORKFLOWS) {
-        try {
-          setStats(computeStats(await executionApi.getExecutions()));
-        } catch {
-          setStats({});
-        }
-      } else {
-        setStats({});
-      }
     } catch (error) {
       setWorkflowsList([]);
       setLoadError(error instanceof Error ? error.message : t('workflows.load_error_fallback'));
       setIsLoading(false);
     }
-  }, [t]);
+  }, [t, queryClient]);
 
   useEffect(() => {
     void loadWorkflows();
   }, [loadWorkflows]);
+
+  // Run statistics come from a cached, bounded query (20 workflows, 3 at a time) and never block the list.
+  const statsQuery = useQuery({
+    queryKey: workflowRunStatsKey(),
+    enabled: workflowsList.some((wf) => wf.status !== 'DRAFT'),
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+    retry: false,
+    queryFn: async () => {
+      const workflows = await fetchWorkflowList(queryClient);
+      return computeStats(await executionApi.getRecentExecutions(workflows, { limit: MAX_STATS_WORKFLOWS, concurrency: 3 }));
+    },
+  });
+  const stats: Record<string, RunStats> = statsQuery.data ?? {};
 
   const handleCreate = async () => {
     setApiError(null);
@@ -145,6 +151,7 @@ export function WorkflowsPage() {
     try {
       const newWf = await workflowApi.createWorkflow({ name: 'New AI Workflow' });
       if (!isCurrentNotificationSession(mutationSession)) return;
+      void invalidateWorkflowQueries(queryClient);
       showSuccessToast('toast.workflow.created', mutationSession);
       refreshNotifications(mutationSession);
       navigate(`/workflows/${newWf.id}/builder`);
@@ -161,6 +168,7 @@ export function WorkflowsPage() {
     try {
       const accepted = await workflowApi.runWorkflow(id);
       if (!isCurrentNotificationSession(mutationSession)) return;
+      void queryClient.invalidateQueries({ queryKey: workflowRunStatsKey() });
       showSuccessToast('toast.workflow.run_accepted', mutationSession);
       navigate(`/workflows/${encodeURIComponent(id)}/executions?run=${encodeURIComponent(accepted.executionId)}`);
     } catch (error) {
@@ -180,7 +188,7 @@ export function WorkflowsPage() {
       if (!isCurrentNotificationSession(mutationSession)) return;
       showSuccessToast(workflow.status === 'PAUSED' ? 'toast.workflow.resumed' : 'toast.workflow.paused', mutationSession);
       refreshNotifications(mutationSession);
-      await loadWorkflows();
+      await loadWorkflows(true);
       setActiveMenuId(null);
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
@@ -193,6 +201,7 @@ export function WorkflowsPage() {
     setApiError(null);
     try {
       const duplicate = await workflowApi.duplicateWorkflow(id);
+      void invalidateWorkflowQueries(queryClient);
       navigate(`/workflows/${duplicate.id}/builder`);
     } catch (error) {
       setApiError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_duplicated'));
@@ -514,7 +523,7 @@ export function WorkflowsPage() {
                   type="button"
                   onClick={() => {
                     setIsLoading(true);
-                    void loadWorkflows();
+                    void loadWorkflows(true);
                   }}
                   className={btn}
                 >

@@ -8,6 +8,8 @@ import { WorkflowActivityChart } from '../components/dashboard/WorkflowActivityC
 import { LiveExecutionPanel } from '../components/dashboard/LiveExecutionPanel';
 import { useI18nStore } from '../store/useI18nStore';
 import { tr } from '../lib/i18n/tr';
+import { useQueryClient } from '@tanstack/react-query';
+import { fetchWorkflowList } from '../lib/queries/workflows';
 
 interface HttpDashboardContentProps {
   workflows: WorkflowDefinition[];
@@ -264,11 +266,12 @@ export function DashboardPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedNodes, setGeneratedNodes] = useState<string[]>([]);
 
+  const queryClient = useQueryClient();
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setApiError(null);
     try {
-      const wfList = await workflowApi.getWorkflows();
+      const wfList = await fetchWorkflowList(queryClient);
       setWorkflows(wfList);
     } catch (e) {
       setWorkflows([]);
@@ -276,7 +279,7 @@ export function DashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     queueMicrotask(() => {

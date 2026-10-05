@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { fetchWorkflowList } from '../lib/queries/workflows';
 import { ExecutionsTriPane } from '../components/executions/ExecutionsTriPane';
 import { AlertTriangle, Clock3, ExternalLink, LoaderCircle, Play, RefreshCw, Search } from 'lucide-react';
 import { executionApi } from '../api/execution.api';
@@ -45,6 +47,7 @@ function duration(execution: ExecutionDetail): string {
 }
 
 function LiveGlobalExecutionsPage() {
+  const queryClient = useQueryClient();
   const { workflowId } = useParams<{ workflowId: string }>();
   const navigate = useNavigate();
   const { t } = useI18nStore();
@@ -67,7 +70,7 @@ function LiveGlobalExecutionsPage() {
     try {
       const [items, workflowItems] = await Promise.all([
         executionApi.getExecutions(workflowId),
-        workflowApi.getWorkflows(),
+        fetchWorkflowList(queryClient),
       ]);
       setExecutions(items);
       setWorkflows(workflowItems);
@@ -77,7 +80,7 @@ function LiveGlobalExecutionsPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [workflowId]);
+  }, [workflowId, queryClient]);
 
   useEffect(() => {
     void refresh();

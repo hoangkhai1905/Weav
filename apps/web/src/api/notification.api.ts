@@ -24,6 +24,8 @@ export class NotificationApiError extends Error {
     super(
       status === 401
         ? tr('msg.please_sign_in_again')
+        : status === 429
+          ? tr('msg.rate_limited')
         : tr('msg.notifications_are_temporarily_unavailable'),
     );
     this.name = 'NotificationApiError';

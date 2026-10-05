@@ -52,6 +52,8 @@ import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
 import { useWorkspaceContext } from '../hooks/useWorkspace';
+import { useQueryClient } from '@tanstack/react-query';
+import { invalidateWorkflowQueries } from '../lib/queries/workflows';
 import { WorkflowSettingsPanel } from '../components/builder/WorkflowSettingsPanel';
 import { useConnections } from '../hooks/useConnections';
 import { useAuthStore } from '../store/useAuthStore';
@@ -223,6 +225,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   const refreshNotifications = useNotificationMilestoneRefresh();
   const { workflowId } = useParams<{ workflowId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { theme } = useUIStore();
   const { language, t } = useI18nStore();
   const ariaLabelConfig = useMemo(() => createReactFlowAriaLabelConfig(t, language), [language, t]);
@@ -433,11 +436,12 @@ export const WorkflowBuilderPage: React.FC = () => {
     const draft = reactFlowToWorkflow(nodes, edges, { ...workflow, name: workflowTitle, description: workflowDescription });
     const saved = await workflowApi.updateWorkflow(workflow.id, draft);
     setWorkflow(saved);
+    void invalidateWorkflowQueries(queryClient);
     setWorkflowTitle(saved.name);
     setWorkflowDescription(saved.description ?? '');
     setIsSaved(true);
     return saved;
-  }, [edges, nodes, setWorkflow, setWorkflowTitle, setIsSaved, workflow, workflowTitle, workflowDescription]);
+  }, [edges, nodes, setWorkflow, setWorkflowTitle, setIsSaved, workflow, workflowTitle, workflowDescription, queryClient]);
 
   const handleSaveDraft = async () => {
     setWorkflowError(null);
@@ -468,6 +472,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       const publication = await workflowApi.publishWorkflow(saved.id);
       if (!isCurrentNotificationSession(mutationSession)) return;
       setWorkflow(publication.workflow);
+      void invalidateWorkflowQueries(queryClient);
       setIsSaved(true);
       setPublishedWebhooks(publication.webhooks);
       showSuccessToast('toast.workflow.published', mutationSession);
@@ -496,6 +501,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       const updated = next ? await workflowApi.resumeWorkflow(workflow.id) : await workflowApi.pauseWorkflow(workflow.id);
       if (!isCurrentNotificationSession(mutationSession)) return;
       setWorkflow((current) => (current ? { ...current, status: updated.status } : current));
+      void invalidateWorkflowQueries(queryClient);
       showSuccessToast(next ? 'toast.workflow.resumed' : 'toast.workflow.paused', mutationSession);
       refreshNotifications(mutationSession);
     } catch (error) {
