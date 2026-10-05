@@ -34,6 +34,7 @@ import { useI18nStore } from '../store/useI18nStore';
 import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
 import { isWorkflowMockMode } from '../api/workflow.api';
 import { LiveExecutionDetailPage } from './LiveExecutionDetailPage';
+import { appLocale } from '../lib/i18n/tr';
 
 const MOCK_LOG_MESSAGE_KEYS: Record<string, string> = {
   'Webhook endpoint POST /stripe called by Stripe IP 54.187.205.1': 'execution_detail.mock_log.stripe_webhook_called',
@@ -599,7 +600,7 @@ function MockExecutionDetailPage() {
           {/* Started */}
           <div className="flex items-center gap-1 text-muted-foreground font-mono text-[11px]">
             <Clock size={13} className="text-muted-foreground" />
-            <span>{t('execution_detail.started_at')} {new Date(execution.startedAt).toLocaleTimeString()}</span>
+            <span>{t('execution_detail.started_at')} {new Date(execution.startedAt).toLocaleTimeString(appLocale())}</span>
           </div>
 
           <div className="h-4 w-px bg-muted"></div>

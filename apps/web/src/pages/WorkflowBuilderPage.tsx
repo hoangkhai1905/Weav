@@ -63,6 +63,7 @@ import type { WorkflowDefinition } from '../types/workflow.types';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
 import { showSuccessToast } from '../lib/feedback/toast';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
+import { tr } from '../lib/i18n/tr';
 
 const SUPPORTED_NODE_TYPES = new Set(NODE_CATALOG.map((item) => item.type));
 
@@ -73,11 +74,11 @@ const PALETTE_PRESENTATION: Record<
   'trigger.manual': { nameKey: 'builder.node.manual', descKey: 'builder.node.manual_desc', icon: Play },
   'trigger.schedule': { nameKey: 'builder.node.schedule', descKey: 'builder.node.schedule_desc', icon: Clock },
   'trigger.webhook': { nameKey: 'builder.node.webhook', descKey: 'builder.node.webhook_desc', icon: Webhook },
-  'trigger.telegram': { icon: Send },
+  'trigger.telegram': { nameKey: 'builder.node.telegram_trigger', descKey: 'builder.node.telegram_trigger_desc', icon: Send },
   'http.request': { nameKey: 'builder.node.http', descKey: 'builder.node.http_desc', icon: Globe },
   'email.send': { nameKey: 'builder.node.email', descKey: 'builder.node.email_desc', icon: Mail },
   'google.sheets': { nameKey: 'builder.node.google_sheets', descKey: 'builder.node.google_sheets_desc', icon: FileSpreadsheet },
-  'telegram.send_message': { icon: Send },
+  'telegram.send_message': { nameKey: 'builder.node.telegram_send', descKey: 'builder.node.telegram_send_desc', icon: Send },
   'logic.condition': { nameKey: 'builder.node.condition', descKey: 'builder.node.condition_desc', icon: GitBranch },
   'ai.extract': { nameKey: 'builder.node.ai_extract', descKey: 'builder.node.ai_extract_desc', icon: Sparkles },
   'ai.classify': { nameKey: 'builder.node.ai_classify', descKey: 'builder.node.ai_classify_desc', icon: Tags },
@@ -177,30 +178,30 @@ const getPublishBlockers = (nodes: Node[], t: (key: string) => string): string[]
     const type = String(node.data?.nodeType ?? '');
     const config = (node.data?.config ?? {}) as Record<string, unknown>;
     if (!SUPPORTED_NODE_TYPES.has(type)) {
-      blockers.add(`Unsupported node type ${type || '(missing type)'}`);
+      blockers.add(t('builder.blocker.unsupported_type').replace('{type}', type || t('builder.blocker.missing_type')));
       continue;
     }
     if (type === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
-      blockers.add('Condition nodes require both left and right values');
+      blockers.add(t('builder.blocker.condition'));
     }
     if (type === 'trigger.schedule') {
       const fields = String(config.cron ?? '').trim().split(/\s+/);
       if (fields.length !== 6 || !String(config.timezone ?? '').trim()) {
-        blockers.add('Schedule nodes require six-field cron and an IANA timezone');
+        blockers.add(t('builder.blocker.schedule'));
       }
     }
     if (type === 'http.request' && !String(config.url ?? '').trim()) {
-      blockers.add('HTTP request nodes require a URL');
+      blockers.add(t('builder.blocker.http'));
     }
     if (type === 'google.sheets' && !String(config.connectionId ?? '').trim()) {
-      blockers.add('Google Sheets requires an authorized Workspace connection');
+      blockers.add(t('builder.blocker.sheets'));
     }
     if (type === 'email.send') {
       const message = getNodeReadinessMessage(type, config, t);
       if (message) blockers.add(message);
     }
     if (type === 'trigger.telegram' || type === 'telegram.send_message' || type === 'ocr.extract') {
-      blockers.add(getNodeReadinessMessage(type, config, t) ?? `${type} is not configured`);
+      blockers.add(getNodeReadinessMessage(type, config, t) ?? t('builder.blocker.not_configured').replace('{type}', type));
     }
     if (type === 'ocr.extract') {
       const hasArtifactId = Boolean(String(config.artifactId ?? '').trim());
@@ -370,7 +371,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     setIsLoadingWorkflow(true);
     setWorkflowError(null);
     if (!workflowId) {
-      setWorkflowError('Workflow ID is missing.');
+      setWorkflowError(tr('msg.workflow_id_is_missing'));
       setIsLoadingWorkflow(false);
       return;
     }
@@ -380,7 +381,7 @@ export const WorkflowBuilderPage: React.FC = () => {
         if (disposed) return;
         if (!loaded) {
           setWorkflow(null);
-          setWorkflowError('Workflow not found in the active workspace.');
+          setWorkflowError(tr('msg.workflow_not_found_in_the_active_workspace'));
           return;
         }
         const flow = isWorkflowMockMode
@@ -398,7 +399,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       .catch((error: unknown) => {
         if (disposed) return;
         setWorkflow(null);
-        setWorkflowError(error instanceof Error ? error.message : 'Workflow could not be loaded.');
+        setWorkflowError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_loaded'));
       })
       .finally(() => {
         if (!disposed) setIsLoadingWorkflow(false);
@@ -408,7 +409,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   }, [workflowId, setNodes, setEdges]);
 
   const saveDraft = useCallback(async () => {
-    if (!workflow) throw new Error('Workflow is not loaded.');
+    if (!workflow) throw new Error(tr('msg.workflow_is_not_loaded'));
     const draft = reactFlowToWorkflow(nodes, edges, { ...workflow, name: workflowTitle });
     const saved = await workflowApi.updateWorkflow(workflow.id, draft);
     setWorkflow(saved);
@@ -428,7 +429,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       }
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
-        setWorkflowError(error instanceof Error ? error.message : 'Draft could not be saved.');
+        setWorkflowError(error instanceof Error ? error.message : tr('msg.draft_could_not_be_saved'));
       }
     } finally {
       setIsSavingWorkflow(false);
@@ -442,7 +443,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     setIsSavingWorkflow(true);
     try {
       const saved = isSaved ? workflow : await saveDraft();
-      if (!saved) throw new Error('Workflow is not loaded.');
+      if (!saved) throw new Error(tr('msg.workflow_is_not_loaded'));
       const publication = await workflowApi.publishWorkflow(saved.id);
       if (!isCurrentNotificationSession(mutationSession)) return;
       setWorkflow(publication.workflow);
@@ -452,7 +453,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       refreshNotifications(mutationSession);
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
-        setWorkflowError(error instanceof Error ? error.message : 'Workflow could not be published.');
+        setWorkflowError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_published'));
       }
     } finally {
       setIsSavingWorkflow(false);
@@ -470,7 +471,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       navigate(`/workflows/${encodeURIComponent(workflow.id)}/executions?run=${encodeURIComponent(accepted.executionId)}`);
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
-        setWorkflowError(error instanceof Error ? error.message : 'Workflow execution could not be queued.');
+        setWorkflowError(error instanceof Error ? error.message : tr('msg.workflow_execution_could_not_be_queued'));
       }
     }
   };
@@ -493,13 +494,14 @@ export const WorkflowBuilderPage: React.FC = () => {
       edges.map((edge) => ({
         ...edge,
         type: 'execution',
+        ariaLabel: t('builder.a11y.edge_label').replace('{source}', edge.source).replace('{target}', edge.target),
         data: {
           ...edge.data,
           active: edge.id === activeEdgeId,
           reducedMotion: Boolean(prefersReducedMotion),
         },
       })),
-    [activeEdgeId, edges, prefersReducedMotion]
+    [activeEdgeId, edges, prefersReducedMotion, t]
   );
 
   const onConnect = useCallback(
@@ -816,7 +818,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   const handleGenerateReady = (result: Extract<GenerationResponse, { status: 'ready' }>) => {
     const hasBeyondTrigger = nodes.length > 1
       || (nodes.length === 1 && String(nodes[0].data?.nodeType ?? '') !== 'trigger.manual');
-    if (hasBeyondTrigger && !window.confirm('Replace the current canvas?')) return;
+    if (hasBeyondTrigger && !window.confirm(tr('msg.replace_the_current_canvas'))) return;
     const canvas = definitionToCanvas(result.definition, result.layout);
     const flow = workflowToReactFlow({
       id: workflow?.id ?? 'generated',

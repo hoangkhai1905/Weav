@@ -18,11 +18,13 @@ import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { Toaster } from 'sonner';
+import { useI18nStore } from './store/useI18nStore';
 
 export function App() {
+  const t = useI18nStore((state) => state.t);
   return (
     <>
-      <Toaster position="top-right" richColors closeButton />
+      <Toaster position="top-right" richColors closeButton containerAriaLabel={t('toast.region')} />
       <Routes>
       {/* Auth Routes */}
       <Route path="/login" element={<LoginPage />} />

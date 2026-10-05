@@ -7,11 +7,12 @@ import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
 import type { ExecutionDetail, WorkflowDefinition } from '../types/workflow.types';
 import { useI18nStore } from '../store/useI18nStore';
 import { statusBadgeClass, type StatusTone } from '../components/common/statusBadgeClass';
+import { appLocale, tr } from '../lib/i18n/tr';
 
 type StatusFilter = 'ALL' | ExecutionDetail['status'];
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Workflow service is temporarily unavailable.';
+  return error instanceof Error ? error.message : tr('msg.workflow_service_is_temporarily_unavailable');
 }
 
 function statusLabel(status: ExecutionDetail['status'], isVietnamese: boolean): string {
@@ -30,7 +31,7 @@ function statusTone(status: ExecutionDetail['status']): StatusTone {
 
 function formatDate(value: string): string {
   const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : value;
+  return Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString(appLocale()) : value;
 }
 
 function duration(execution: ExecutionDetail): string {
@@ -102,7 +103,7 @@ function LiveGlobalExecutionsPage() {
     try {
       const workflow = await workflowApi.getWorkflow(execution.workflowId);
       if (!workflow || workflow.status !== 'PUBLISHED') {
-        setNotice(isVietnamese ? 'Chỉ có thể chạy lại workflow đang Published.' : 'Only published workflows can be run again.');
+        setNotice(isVietnamese ? 'Chỉ có thể chạy lại workflow đang Published.' : tr('msg.only_published_workflows_can_be_run_again'));
         return;
       }
       const receipt = await workflowApi.runWorkflow(execution.workflowId);
@@ -173,13 +174,13 @@ function LiveGlobalExecutionsPage() {
           <span className="ml-auto text-xs text-muted-foreground">
             {isVietnamese
               ? 'Tối đa 100 lượt mới nhất cho mỗi workflow.'
-              : 'Up to the 100 latest runs per workflow.'}
+              : tr('msg.up_to_the_100_latest_runs_per')}
           </span>
         )}
         {workflowId && (
           <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
             <Clock3 size={13} aria-hidden="true" />
-            {isVietnamese ? 'Tự làm mới mỗi 5 giây.' : 'Auto-refreshes every 5 seconds.'}
+            {isVietnamese ? 'Tự làm mới mỗi 5 giây.' : tr('msg.auto_refreshes_every_5_seconds')}
           </span>
         )}
       </div>
@@ -203,7 +204,7 @@ function LiveGlobalExecutionsPage() {
                 <td className={td}><span className={statusBadgeClass(statusTone(execution.status))}>{statusLabel(execution.status, isVietnamese)}</span></td>
                 <td className={`${td} font-mono text-xs text-text-2`}>{execution.id}</td>
                 <td className={`${td} max-w-[280px] overflow-hidden text-ellipsis font-medium text-foreground`} title={execution.workflowName}>{execution.workflowName}</td>
-                <td className={`${td} text-text-2`}>{execution.triggerType}</td>
+                <td className={`${td} text-text-2`}>{t(`runs.trigger_type.${execution.triggerType.toLowerCase()}`)}</td>
                 <td className={`${td} tabular-nums text-text-2`}>{formatDate(execution.startedAt)}</td>
                 <td className={`${td} text-right font-mono text-xs tabular-nums text-text-2`}>{duration(execution)}</td>
                 <td className={`${td} text-right`}>
@@ -219,7 +220,7 @@ function LiveGlobalExecutionsPage() {
               </tr>
             ))}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-12 text-center text-[13px] text-text-2">{isVietnamese ? 'Không có lượt chạy phù hợp.' : 'No matching executions.'}</td></tr>
+              <tr><td colSpan={7} className="px-3 py-12 text-center text-[13px] text-text-2">{isVietnamese ? 'Không có lượt chạy phù hợp.' : tr('msg.no_matching_executions')}</td></tr>
             )}
           </tbody>
         </table>

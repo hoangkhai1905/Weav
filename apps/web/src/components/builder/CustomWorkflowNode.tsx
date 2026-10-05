@@ -109,7 +109,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
       return badge('bg-ok-bg text-ok', (
         <>
           <CheckCircle2 size={10} aria-hidden="true" />
-          {`${nodeType === 'ocr.extract' ? 'OCR test passed' : 'Test passed'}${executionTime ? ` · ${executionTime}` : ''}`}
+          {`${nodeType === 'ocr.extract' ? t('builder.status.ocr_test_passed') : t('builder.status.test_passed')}${executionTime ? ` · ${executionTime}` : ''}`}
         </>
       ));
     }
@@ -209,7 +209,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
           role="note"
           className="mt-1.5 rounded bg-err-bg px-2 py-0.5 text-[10px] font-medium text-err"
         >
-          Unsupported in Workflow V1 · preserved from draft
+          {t('builder.node.unsupported_note')}
         </div>
       )}
 

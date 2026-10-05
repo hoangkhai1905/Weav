@@ -4,6 +4,7 @@ import { workflowApi } from '../../api/workflow.api';
 import { WorkflowApiError, type GenerationResponse } from '../../api/workflow-v1.api';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+import { tr } from '../../lib/i18n/tr';
 
 type ReadyResult = Extract<GenerationResponse, { status: 'ready' }>;
 
@@ -78,12 +79,12 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
       setResult(generated);
     } catch (unknown) {
       if (unknown instanceof WorkflowApiError) {
-        if (unknown.status === 429) setError('Too many requests. Wait a minute.');
-        else if (unknown.status === 503) setError('AI is unavailable right now.');
-        else if (unknown.status === 504) setError('AI took too long. Try a shorter request.');
+        if (unknown.status === 429) setError(tr('msg.too_many_requests_wait_a_minute'));
+        else if (unknown.status === 503) setError(tr('msg.ai_is_unavailable_right_now'));
+        else if (unknown.status === 504) setError(tr('msg.ai_took_too_long_try_a_shorter'));
         else setError(unknown.message);
       } else {
-        setError(unknown instanceof Error ? unknown.message : 'The workflow request could not be completed.');
+        setError(unknown instanceof Error ? unknown.message : tr('msg.the_workflow_request_could_not_be_completed'));
       }
     } finally {
       setIsPending(false);

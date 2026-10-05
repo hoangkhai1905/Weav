@@ -353,7 +353,7 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
                 <dl className="mt-2.5 flex flex-wrap gap-x-7 gap-y-2 text-xs">
                   <div><dt className="text-muted-foreground">{t('runs.started')}</dt><dd className="mt-0.5 font-mono tabular-nums">{exact(detail.startedAt)}</dd></div>
                   <div><dt className="text-muted-foreground">{t('runs.duration')}</dt><dd className="mt-0.5 font-mono tabular-nums">{formatDuration(detail.durationMs)}</dd></div>
-                  <div><dt className="text-muted-foreground">{t('runs.trigger')}</dt><dd className="mt-0.5">{detail.triggerType}</dd></div>
+                  <div><dt className="text-muted-foreground">{t('runs.trigger')}</dt><dd className="mt-0.5">{t(`runs.trigger_type.${detail.triggerType.toLowerCase()}`)}</dd></div>
                   <div className="min-w-0"><dt className="text-muted-foreground">{t('runs.id')}</dt><dd className="mt-0.5 truncate font-mono">{detail.id}</dd></div>
                 </dl>
                 {failedStep && (

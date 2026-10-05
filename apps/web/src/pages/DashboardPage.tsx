@@ -7,6 +7,7 @@ import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
 import { WorkflowActivityChart } from '../components/dashboard/WorkflowActivityChart';
 import { LiveExecutionPanel } from '../components/dashboard/LiveExecutionPanel';
 import { useI18nStore } from '../store/useI18nStore';
+import { tr } from '../lib/i18n/tr';
 
 interface HttpDashboardContentProps {
   workflows: WorkflowDefinition[];
@@ -271,7 +272,7 @@ export function DashboardPage() {
       setWorkflows(wfList);
     } catch (e) {
       setWorkflows([]);
-      setApiError(e instanceof Error ? e.message : 'Workflow data could not be loaded.');
+      setApiError(e instanceof Error ? e.message : tr('msg.workflow_data_could_not_be_loaded'));
     } finally {
       setIsLoading(false);
     }
@@ -289,7 +290,7 @@ export function DashboardPage() {
       await workflowApi.runWorkflow(id);
       await loadData();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : 'Workflow could not be started.');
+      setActionError(e instanceof Error ? e.message : tr('msg.workflow_could_not_be_started'));
     }
   };
 
