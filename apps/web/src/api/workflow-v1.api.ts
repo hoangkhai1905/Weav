@@ -1,4 +1,5 @@
 import type { WorkflowDefinition, WorkflowEdge, WorkflowNode, WorkflowStatus } from '../types/workflow.types';
+import { tr } from '../lib/i18n/tr';
 
 const ACTIVE_WORKSPACE_KEY = 'weav_active_workspace_id';
 const PAGE_SIZE = 100;
@@ -134,7 +135,7 @@ function apiBaseUrl(): string {
 
 function authToken(): string {
   const token = typeof localStorage === 'undefined' ? null : localStorage.getItem('weav_token');
-  if (!token) throw new WorkflowApiError(401, 'Sign in to access workflows.');
+  if (!token) throw new WorkflowApiError(401, tr('msg.sign_in_to_access_workflows'));
   return token;
 }
 
@@ -154,7 +155,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       cache: 'no-store',
     });
   } catch {
-    throw new WorkflowApiError(0, 'Workflow service is temporarily unavailable.');
+    throw new WorkflowApiError(0, tr('msg.workflow_service_is_temporarily_unavailable'));
   }
 
   if (response.status === 204) return undefined as T;
@@ -163,7 +164,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   try {
     payload = await response.json();
   } catch {
-    throw new WorkflowApiError(502, 'Workflow service returned an invalid response.');
+    throw new WorkflowApiError(502, tr('msg.workflow_service_returned_an_invalid_response'));
   }
 
   if (!response.ok) {
@@ -171,10 +172,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const message = typeof envelope?.message === 'string'
       ? envelope.message
       : response.status === 401
-        ? 'Your session has expired. Sign in again.'
+        ? tr('msg.your_session_has_expired_sign_in_again')
         : response.status >= 500
-          ? 'Workflow service is temporarily unavailable.'
-          : 'The workflow request could not be completed.';
+          ? tr('msg.workflow_service_is_temporarily_unavailable')
+          : tr('msg.the_workflow_request_could_not_be_completed');
     throw new WorkflowApiError(response.status, message);
   }
 
@@ -185,14 +186,14 @@ async function loadWorkspaces(): Promise<WorkspaceSummary[]> {
   const page = await request<Page<WorkspaceSummary>>(
     `/api/v1/workspaces?page=0&size=${PAGE_SIZE}&sort=name&direction=asc`,
   );
-  if (!Array.isArray(page.items)) throw new WorkflowApiError(502, 'Workspace service returned an invalid response.');
+  if (!Array.isArray(page.items)) throw new WorkflowApiError(502, tr('msg.workspace_service_returned_an_invalid_response'));
   return page.items.filter((item) => typeof item?.id === 'string' && typeof item.name === 'string');
 }
 
 export async function getActiveWorkflowWorkspaceId(): Promise<string> {
   const workspaces = await loadWorkspaces();
   if (workspaces.length === 0) {
-    throw new WorkflowApiError(409, 'Create or join a workspace before using workflows.');
+    throw new WorkflowApiError(409, tr('msg.create_or_join_a_workspace_before_using'));
   }
 
   const selectedId = typeof localStorage === 'undefined'
@@ -211,7 +212,7 @@ function safeString(value: unknown, fallback = ''): string {
 
 function safeStatus(value: unknown): WorkflowStatus {
   if (value === 'DRAFT' || value === 'PUBLISHED' || value === 'PAUSED') return value;
-  throw new WorkflowApiError(502, 'Workflow service returned an unknown workflow status.');
+  throw new WorkflowApiError(502, tr('msg.workflow_service_returned_an_unknown_workflow_status'));
 }
 
 export type GenerationResponse =
@@ -267,7 +268,7 @@ export function definitionToCanvas(
 
 function mapSummary(summary: WorkflowSummaryV1, workspaceId: string): WorkflowDefinition {
   if (!summary || typeof summary.workflowId !== 'string' || typeof summary.name !== 'string') {
-    throw new WorkflowApiError(502, 'Workflow service returned an invalid workflow.');
+    throw new WorkflowApiError(502, tr('msg.workflow_service_returned_an_invalid_workflow'));
   }
   return {
     id: summary.workflowId,
@@ -336,7 +337,7 @@ export const workflowV1Api = {
       const page = await request<Page<WorkflowSummaryV1>>(
         `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows?page=${pageNumber}&size=${PAGE_SIZE}`,
       );
-      if (!Array.isArray(page.items)) throw new WorkflowApiError(502, 'Workflow service returned an invalid list.');
+      if (!Array.isArray(page.items)) throw new WorkflowApiError(502, tr('msg.workflow_service_returned_an_invalid_list'));
       items.push(...page.items);
       if (items.length >= page.totalElements || page.items.length === 0) break;
     }
@@ -377,14 +378,14 @@ export const workflowV1Api = {
       { method: 'POST', body: JSON.stringify({ name: payload.name, ...(payload.description ? { description: payload.description } : {}) }) },
     );
     const workflow = await this.getWorkflow(created.workflowId, activeWorkspaceId);
-    if (!workflow) throw new WorkflowApiError(502, 'Created workflow could not be loaded.');
+    if (!workflow) throw new WorkflowApiError(502, tr('msg.created_workflow_could_not_be_loaded'));
     return workflow;
   },
 
   async updateWorkflow(id: string, updates: Partial<WorkflowDefinition>, workspaceId?: string): Promise<WorkflowDefinition> {
     const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
     const current = await this.getWorkflow(id, activeWorkspaceId);
-    if (!current) throw new WorkflowApiError(404, 'Workflow not found.');
+    if (!current) throw new WorkflowApiError(404, tr('msg.workflow_not_found'));
     const merged = { ...current, ...updates, id: current.id, workspaceId: activeWorkspaceId };
     const saved = await request<WorkflowDetailV1>(
       `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}/draft`,
@@ -400,7 +401,7 @@ export const workflowV1Api = {
       { method: 'POST' },
     );
     const workflow = await this.getWorkflow(id, activeWorkspaceId);
-    if (!workflow) throw new WorkflowApiError(404, 'Published workflow could not be loaded.');
+    if (!workflow) throw new WorkflowApiError(404, tr('msg.published_workflow_could_not_be_loaded'));
     return { workflow, webhooks: Array.isArray(publication.webhooks) ? publication.webhooks : [] };
   },
 
@@ -408,7 +409,7 @@ export const workflowV1Api = {
     const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
     await request<unknown>(`/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}/pause`, { method: 'POST' });
     const workflow = await this.getWorkflow(id, activeWorkspaceId);
-    if (!workflow) throw new WorkflowApiError(404, 'Workflow not found.');
+    if (!workflow) throw new WorkflowApiError(404, tr('msg.workflow_not_found'));
     return workflow;
   },
 
@@ -416,7 +417,7 @@ export const workflowV1Api = {
     const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
     await request<unknown>(`/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}/resume`, { method: 'POST' });
     const workflow = await this.getWorkflow(id, activeWorkspaceId);
-    if (!workflow) throw new WorkflowApiError(404, 'Workflow not found.');
+    if (!workflow) throw new WorkflowApiError(404, tr('msg.workflow_not_found'));
     return workflow;
   },
 
@@ -439,12 +440,12 @@ export const workflowV1Api = {
   async duplicateWorkflow(id: string, workspaceId?: string): Promise<WorkflowDefinition> {
     const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
     const source = await this.getWorkflow(id, activeWorkspaceId);
-    if (!source) throw new WorkflowApiError(404, 'Workflow not found.');
+    if (!source) throw new WorkflowApiError(404, tr('msg.workflow_not_found'));
     const created = await this.createWorkflow({ name: `${source.name} (Copy)`, description: source.description }, activeWorkspaceId);
     return this.updateWorkflow(created.id, { ...source, id: created.id, name: `${source.name} (Copy)`, status: 'DRAFT' }, activeWorkspaceId);
   },
 
   async deleteWorkflow(): Promise<void> {
-    throw new WorkflowApiError(405, 'Workflow Service V1 does not provide a delete endpoint.');
+    throw new WorkflowApiError(405, tr('msg.workflow_service_v1_does_not_provide_a'));
   },
 };

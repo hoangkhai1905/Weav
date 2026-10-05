@@ -1,5 +1,6 @@
 import axios, { type AxiosRequestConfig } from "axios";
 import { getStoredAuthToken } from "./ocr.api";
+import { tr } from '../lib/i18n/tr';
 
 export type ConnectionProvider =
   "TELEGRAM" | "HTTP" | "GMAIL" | "GOOGLE_SHEETS";
@@ -94,38 +95,38 @@ function responseErrorMessage(status: number): {
   if (status === 400)
     return {
       code: "INVALID_REQUEST",
-      message: "Please check the connection details and try again.",
+      message: tr('msg.please_check_the_connection_details_and_try'),
     };
   if (status === 401)
-    return { code: "UNAUTHENTICATED", message: "Please sign in again." };
+    return { code: "UNAUTHENTICATED", message: tr('msg.please_sign_in_again') };
   if (status === 403)
     return {
       code: "FORBIDDEN",
-      message: "You do not have access to this workspace connection.",
+      message: tr('msg.you_do_not_have_access_to_this'),
     };
   if (status === 404)
     return {
       code: "NOT_FOUND",
-      message: "This connection was not found in the selected workspace.",
+      message: tr('msg.this_connection_was_not_found_in_the'),
     };
   if (status === 409)
     return {
       code: "CONFLICT",
-      message: "This connection cannot be changed while it is in use.",
+      message: tr('msg.this_connection_cannot_be_changed_while_it'),
     };
   if (status === 422)
     return {
       code: "INVALID_STATE",
-      message: "This connection cannot be used in its current state.",
+      message: tr('msg.this_connection_cannot_be_used_in_its'),
     };
   if (status === 429)
     return {
       code: "RATE_LIMITED",
-      message: "The connection service is busy. Please try again shortly.",
+      message: tr('msg.the_connection_service_is_busy_please_try'),
     };
   return {
     code: "CONNECTION_UNAVAILABLE",
-    message: "The connection service is temporarily unavailable.",
+    message: tr('msg.the_connection_service_is_temporarily_unavailable'),
   };
 }
 
@@ -163,7 +164,7 @@ function invalidResponse(message: string): never {
 function parseConnection(value: unknown): ConnectionResponse {
   if (!isRecord(value))
     return invalidResponse(
-      "Workspace returned an invalid connection response.",
+      tr('msg.workspace_returned_an_invalid_connection_response'),
     );
 
   const providers = ["TELEGRAM", "HTTP", "GMAIL", "GOOGLE_SHEETS"] as const;
@@ -190,7 +191,7 @@ function parseConnection(value: unknown): ConnectionResponse {
     typeof value.updatedAt !== "string"
   ) {
     return invalidResponse(
-      "Workspace returned an invalid connection response.",
+      tr('msg.workspace_returned_an_invalid_connection_response'),
     );
   }
 
@@ -203,7 +204,7 @@ function parseConnectionTest(value: unknown): ConnectionTestResponse {
     !isOneOf(value.outcome, ["VERIFIED", "AUTH_INVALID"] as const)
   ) {
     return invalidResponse(
-      "Workspace returned an invalid connection test response.",
+      tr('msg.workspace_returned_an_invalid_connection_test_response'),
     );
   }
   return { outcome: value.outcome };
@@ -220,7 +221,7 @@ function parseOAuthStart(value: unknown): OAuthStartResponse {
     }
   }
   return invalidResponse(
-    "Workspace returned an invalid authorization response.",
+    tr('msg.workspace_returned_an_invalid_authorization_response'),
   );
 }
 
@@ -229,7 +230,7 @@ function pathSegment(value: string): string {
     throw new ConnectionApiError(
       400,
       "INVALID_REQUEST",
-      "A workspace and connection ID are required.",
+      tr('msg.a_workspace_and_connection_id_are_required'),
     );
   return encodeURIComponent(value);
 }
@@ -240,7 +241,7 @@ async function request<T>(config: AxiosRequestConfig): Promise<T> {
     throw new ConnectionApiError(
       401,
       "UNAUTHENTICATED",
-      "Please sign in again.",
+      tr('msg.please_sign_in_again'),
     );
   }
 
@@ -270,7 +271,7 @@ function normalizedName(name: string): string {
     throw new ConnectionApiError(
       400,
       "INVALID_REQUEST",
-      "Connection name must be between 1 and 120 characters.",
+      tr('msg.connection_name_must_be_between_1_and'),
     );
   }
   return normalized;
@@ -287,7 +288,7 @@ export const connectionApi = {
       signal,
     });
     if (!Array.isArray(value))
-      return invalidResponse("Workspace returned an invalid connection list.");
+      return invalidResponse(tr('msg.workspace_returned_an_invalid_connection_list'));
     return value.map(parseConnection);
   },
 

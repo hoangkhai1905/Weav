@@ -445,12 +445,12 @@ export const CreateWorkflowPage: React.FC = () => {
                   <span className={chip}>{t(TEMPLATE_CATEGORY_KEYS[tpl.id])}</span>
                   <span className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
                     <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                    {tpl.triggerType}
+                    {t(`create.trigger.${tpl.triggerType.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}`)}
                   </span>
                 </div>
 
                 <h4 className="pt-1 text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
-                  {tpl.title}
+                  {t(`create.template.${tpl.id}.title`)}
                 </h4>
                 <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                   {t(`create.template.${tpl.id}.description`)}
@@ -462,7 +462,7 @@ export const CreateWorkflowPage: React.FC = () => {
                     <React.Fragment key={i}>
                       <div className="flex min-w-0 items-center gap-1 rounded-md border border-border bg-card px-1.5 py-1 shadow-soft">
                         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${flowDot[node.type] ?? 'bg-emerald-500'}`} />
-                        <span className="max-w-[64px] truncate">{node.name}</span>
+                        <span className="max-w-[64px] truncate">{t(`create.flow.${node.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`)}</span>
                       </div>
                       {i < tpl.flow.length - 1 && <span aria-hidden="true" className="h-px min-w-2 flex-1 bg-border" />}
                     </React.Fragment>

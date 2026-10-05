@@ -33,6 +33,7 @@ import { buttonPress, pageVariants, reducedMotionVariants, staggerContainer, sta
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
 import { showSuccessToast } from '../lib/feedback/toast';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
+import { appLocale } from '../lib/i18n/tr';
 
 function getWorkspaceErrorMessage(error: unknown, t: (key: string) => string): string {
   if (error instanceof WorkspaceApiError) {
@@ -727,7 +728,7 @@ export function WorkspacePage() {
                               <span>{member.canManageWorkflowState ? t('workspace.allowed') : t('workspace.restricted')}</span>
                             </button>
                           </td>
-                          <td className="px-5 py-4 text-[11px] text-slate-500 dark:text-slate-400">{new Date(member.joinedAt).toLocaleDateString()}</td>
+                          <td className="px-5 py-4 text-[11px] text-slate-500 dark:text-slate-400">{new Date(member.joinedAt).toLocaleDateString(appLocale())}</td>
                           <td className="px-5 py-4 text-right">
                             {member.role !== 'OWNER' && (
                               <ConfirmButton

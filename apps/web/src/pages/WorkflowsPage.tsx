@@ -14,6 +14,7 @@ import { useI18nStore } from '../store/useI18nStore';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
 import { showSuccessToast } from '../lib/feedback/toast';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
+import { tr } from '../lib/i18n/tr';
 
 type WorkflowStatus = 'PUBLISHED' | 'PAUSED' | 'DRAFT';
 type StatusTab = 'ALL' | 'ACTIVE' | 'ERROR' | 'PAUSED' | 'DRAFT';
@@ -149,7 +150,7 @@ export function WorkflowsPage() {
       navigate(`/workflows/${newWf.id}/builder`);
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
-        setApiError(error instanceof Error ? error.message : 'Workflow could not be created.');
+        setApiError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_created'));
       }
     }
   };
@@ -164,7 +165,7 @@ export function WorkflowsPage() {
       navigate(`/workflows/${encodeURIComponent(id)}/executions?run=${encodeURIComponent(accepted.executionId)}`);
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
-        setApiError(error instanceof Error ? error.message : 'Workflow could not be started.');
+        setApiError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_started'));
       }
     }
   };
@@ -175,7 +176,7 @@ export function WorkflowsPage() {
     try {
       if (workflow.status === 'PAUSED') await workflowApi.resumeWorkflow(workflow.id);
       else if (workflow.status === 'PUBLISHED') await workflowApi.pauseWorkflow(workflow.id);
-      else throw new Error('Only published workflows can be paused.');
+      else throw new Error(tr('msg.only_published_workflows_can_be_paused'));
       if (!isCurrentNotificationSession(mutationSession)) return;
       showSuccessToast(workflow.status === 'PAUSED' ? 'toast.workflow.resumed' : 'toast.workflow.paused', mutationSession);
       refreshNotifications(mutationSession);
@@ -183,7 +184,7 @@ export function WorkflowsPage() {
       setActiveMenuId(null);
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
-        setApiError(error instanceof Error ? error.message : 'Workflow status could not be changed.');
+        setApiError(error instanceof Error ? error.message : tr('msg.workflow_status_could_not_be_changed'));
       }
     }
   };
@@ -194,7 +195,7 @@ export function WorkflowsPage() {
       const duplicate = await workflowApi.duplicateWorkflow(id);
       navigate(`/workflows/${duplicate.id}/builder`);
     } catch (error) {
-      setApiError(error instanceof Error ? error.message : 'Workflow could not be duplicated.');
+      setApiError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_duplicated'));
     }
   };
 
@@ -214,7 +215,7 @@ export function WorkflowsPage() {
       setDeleteIds(null);
     } catch (error) {
       setDeleteIds(null);
-      setApiError(error instanceof Error ? error.message : 'Workflow could not be deleted.');
+      setApiError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_deleted'));
     } finally {
       setDeleteLoading(false);
     }

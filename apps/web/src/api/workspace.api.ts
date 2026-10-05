@@ -3,6 +3,7 @@ import { delay, getStorage, setStorage, STORAGE_KEYS } from './client';
 import { getStoredAuthToken } from './ocr.api';
 import { useAuthStore } from '../store/useAuthStore';
 import type { WorkspaceMember } from '../types/workflow.types';
+import { tr } from '../lib/i18n/tr';
 
 export const isWorkspaceMockMode = import.meta.env.VITE_API_MODE === 'mock';
 
@@ -142,35 +143,35 @@ let mockWorkspaces: WorkspaceSummary[] = [
 function statusMessage(status: number): { code: string; message: string; retryable: boolean } {
   switch (status) {
     case 400:
-      return { code: 'INVALID_REQUEST', message: 'Please check the workspace details and try again.', retryable: false };
+      return { code: 'INVALID_REQUEST', message: tr('msg.please_check_the_workspace_details_and_try'), retryable: false };
     case 401:
-      return { code: 'UNAUTHENTICATED', message: 'Please sign in again.', retryable: false };
+      return { code: 'UNAUTHENTICATED', message: tr('msg.please_sign_in_again'), retryable: false };
     case 403:
-      return { code: 'FORBIDDEN', message: 'Workspace access denied.', retryable: false };
+      return { code: 'FORBIDDEN', message: tr('msg.workspace_access_denied'), retryable: false };
     case 404:
-      return { code: 'WORKSPACE_NOT_FOUND', message: 'This workspace no longer exists or you no longer have access to it.', retryable: false };
+      return { code: 'WORKSPACE_NOT_FOUND', message: tr('msg.this_workspace_no_longer_exists_or_you'), retryable: false };
     case 409:
-      return { code: 'CONFLICT', message: 'A workspace with these details already exists.', retryable: false };
+      return { code: 'CONFLICT', message: tr('msg.a_workspace_with_these_details_already_exists'), retryable: false };
     case 422:
-      return { code: 'VALIDATION_FAILED', message: 'Please check the workspace details and try again.', retryable: false };
+      return { code: 'VALIDATION_FAILED', message: tr('msg.please_check_the_workspace_details_and_try'), retryable: false };
     case 429:
-      return { code: 'RATE_LIMITED', message: 'Workspace service is rate limited. Please try again shortly.', retryable: true };
+      return { code: 'RATE_LIMITED', message: tr('msg.workspace_service_is_rate_limited_please_try'), retryable: true };
     default:
-      return { code: 'WORKSPACE_UNAVAILABLE', message: 'Workspace service is temporarily unavailable.', retryable: status >= 500 || status === 0 };
+      return { code: 'WORKSPACE_UNAVAILABLE', message: tr('msg.workspace_service_is_temporarily_unavailable'), retryable: status >= 500 || status === 0 };
   }
 }
 
 export function validateWorkspaceName(name: string, required: boolean): string | null {
   const normalized = name.trim();
-  if (required && !normalized) return 'Workspace name is required.';
-  if (normalized.length > 255) return 'Workspace name must be 255 characters or fewer.';
+  if (required && !normalized) return tr('msg.workspace_name_is_required');
+  if (normalized.length > 255) return tr('msg.workspace_name_must_be_255_characters_or');
   return null;
 }
 
 export function validateWorkspaceMemberEmail(email: string): string | null {
   const normalized = email.trim();
-  if (!normalized) return 'An existing Identity user email is required.';
-  if (normalized.length > 320) return 'Email must be 320 characters or fewer.';
+  if (!normalized) return tr('msg.an_existing_identity_user_email_is_required');
+  if (normalized.length > 320) return tr('msg.email_must_be_320_characters_or_fewer');
   return null;
 }
 
@@ -224,7 +225,7 @@ function parsePageResult<T>(value: unknown, mapItem: (item: unknown) => T): Page
     typeof value.totalElements !== 'number' ||
     typeof value.totalPages !== 'number'
   ) {
-    throw new WorkspaceApiError(502, 'INVALID_RESPONSE', 'Workspace service returned an invalid page response.');
+    throw new WorkspaceApiError(502, 'INVALID_RESPONSE', tr('msg.workspace_service_returned_an_invalid_page_response'));
   }
 
   return {
@@ -245,7 +246,7 @@ function mapWorkspace(value: unknown): WorkspaceSummary {
     typeof value.createdAt !== 'string' ||
     typeof value.updatedAt !== 'string'
   ) {
-    throw new WorkspaceApiError(502, 'INVALID_RESPONSE', 'Workspace service returned an invalid workspace.');
+    throw new WorkspaceApiError(502, 'INVALID_RESPONSE', tr('msg.workspace_service_returned_an_invalid_workspace'));
   }
 
   return {
@@ -270,7 +271,7 @@ function mapMember(value: unknown): WorkspaceMember {
     typeof value.joinedAt !== 'string' ||
     typeof value.updatedAt !== 'string'
   ) {
-    throw new WorkspaceApiError(502, 'INVALID_RESPONSE', 'Workspace service returned an invalid member.');
+    throw new WorkspaceApiError(502, 'INVALID_RESPONSE', tr('msg.workspace_service_returned_an_invalid_member'));
   }
 
   return {
@@ -334,7 +335,7 @@ export const workspaceApi = {
 
     await delay(100);
     const workspace = mockWorkspaces.find((item) => item.id === workspaceId);
-    if (!workspace) throw new WorkspaceApiError(404, 'WORKSPACE_NOT_FOUND', 'Workspace not found.');
+    if (!workspace) throw new WorkspaceApiError(404, 'WORKSPACE_NOT_FOUND', tr('msg.workspace_not_found'));
     return workspace;
   },
 
@@ -382,7 +383,7 @@ export const workspaceApi = {
 
     await delay(150);
     const index = mockWorkspaces.findIndex((item) => item.id === workspaceId);
-    if (index === -1) throw new WorkspaceApiError(404, 'WORKSPACE_NOT_FOUND', 'Workspace not found.');
+    if (index === -1) throw new WorkspaceApiError(404, 'WORKSPACE_NOT_FOUND', tr('msg.workspace_not_found'));
     const workspace = {
       ...mockWorkspaces[index],
       name: input.name.trim(),
@@ -464,7 +465,7 @@ export const workspaceApi = {
     await delay(250);
     const members = getStorage<WorkspaceMember[]>(STORAGE_KEYS.MEMBERS, []);
     const idx = members.findIndex((member) => member.id === memberId);
-    if (idx === -1) throw new WorkspaceApiError(404, 'MEMBER_NOT_FOUND', 'Member not found.');
+    if (idx === -1) throw new WorkspaceApiError(404, 'MEMBER_NOT_FOUND', tr('msg.member_not_found'));
     members[idx] = { ...members[idx], ...input };
     setStorage(STORAGE_KEYS.MEMBERS, members);
     return members[idx];
@@ -495,7 +496,7 @@ export const workspaceApi = {
 
     await delay(200);
     const currentUserId = useAuthStore.getState().user?.id;
-    if (!currentUserId) throw new WorkspaceApiError(401, 'UNAUTHENTICATED', 'Please sign in again.');
+    if (!currentUserId) throw new WorkspaceApiError(401, 'UNAUTHENTICATED', tr('msg.please_sign_in_again'));
     const members = getStorage<WorkspaceMember[]>(STORAGE_KEYS.MEMBERS, []);
     setStorage(STORAGE_KEYS.MEMBERS, members.filter((member) => member.id !== currentUserId));
   },

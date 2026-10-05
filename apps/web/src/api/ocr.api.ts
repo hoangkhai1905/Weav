@@ -1,3 +1,4 @@
+import { tr } from '../lib/i18n/tr';
 /**
  * OCR API Client
  *
@@ -174,7 +175,7 @@ export function validateOcrFile(file: File): void {
     throw new OcrApiError(
       {
         code: 'INVALID_REQUEST',
-        message: 'No file provided. Please select a document to extract.',
+        message: tr('msg.no_file_provided_please_select_a_document'),
         retryable: false,
       },
       400
@@ -190,7 +191,7 @@ export function validateOcrFile(file: File): void {
     throw new OcrApiError(
       {
         code: 'UNSUPPORTED_MEDIA_TYPE',
-        message: 'Unsupported file media type. Upload a PNG, JPEG, WEBP, or PDF document.',
+        message: tr('msg.unsupported_file_media_type_upload_a_png'),
         retryable: false,
         details: { fileName: file.name, fileType: file.type },
       },
@@ -202,7 +203,7 @@ export function validateOcrFile(file: File): void {
     throw new OcrApiError(
       {
         code: 'FILE_TOO_LARGE',
-        message: 'The uploaded document exceeds the maximum allowable size of 10 MiB.',
+        message: tr('msg.the_uploaded_document_exceeds_the_maximum_allowable'),
         retryable: false,
         details: { limitBytes: OCR_MAX_FILE_SIZE_BYTES, receivedBytes: file.size },
       },
@@ -214,29 +215,29 @@ export function validateOcrFile(file: File): void {
 export function mapStatusToErrorMessage(status: number): { code: string; message: string; retryable: boolean } {
   switch (status) {
     case 400:
-      return { code: 'INVALID_REQUEST', message: 'Invalid request syntax or malformed multipart body.', retryable: false };
+      return { code: 'INVALID_REQUEST', message: tr('msg.invalid_request_syntax_or_malformed_multipart_body'), retryable: false };
     case 401:
-      return { code: 'UNAUTHENTICATED', message: 'Authentication required or session expired. Please sign in again.', retryable: false };
+      return { code: 'UNAUTHENTICATED', message: tr('msg.authentication_required_or_session_expired_please_sign'), retryable: false };
     case 403:
-      return { code: 'FORBIDDEN', message: 'Access denied. You lack extraction permissions in this workspace.', retryable: false };
+      return { code: 'FORBIDDEN', message: tr('msg.access_denied_you_lack_extraction_permissions_in'), retryable: false };
     case 404:
-      return { code: 'ARTIFACT_NOT_FOUND', message: 'Workspace or target resource not found.', retryable: false };
+      return { code: 'ARTIFACT_NOT_FOUND', message: tr('msg.workspace_or_target_resource_not_found'), retryable: false };
     case 413:
-      return { code: 'FILE_TOO_LARGE', message: 'File size exceeds 10 MiB or page count exceeds 10 pages.', retryable: false };
+      return { code: 'FILE_TOO_LARGE', message: tr('msg.file_size_exceeds_10_mib_or_page'), retryable: false };
     case 415:
-      return { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Unsupported file media type. Must be PNG, JPEG, WEBP, or PDF.', retryable: false };
+      return { code: 'UNSUPPORTED_MEDIA_TYPE', message: tr('msg.unsupported_file_media_type_must_be_png'), retryable: false };
     case 422:
-      return { code: 'CORRUPT_FILE', message: 'Unprocessable document. The file may be corrupt, password-protected, or animated.', retryable: false };
+      return { code: 'CORRUPT_FILE', message: tr('msg.unprocessable_document_the_file_may_be_corrupt'), retryable: false };
     case 429:
-      return { code: 'RATE_LIMITED', message: 'Rate limit exceeded. Please wait a moment before retrying.', retryable: true };
+      return { code: 'RATE_LIMITED', message: tr('msg.rate_limit_exceeded_please_wait_a_moment'), retryable: true };
     case 502:
-      return { code: 'SOURCE_FETCH_FAILED', message: 'OCR upstream communication failed.', retryable: true };
+      return { code: 'SOURCE_FETCH_FAILED', message: tr('msg.ocr_upstream_communication_failed'), retryable: true };
     case 503:
-      return { code: 'OCR_BUSY', message: 'OCR engine is currently busy or models are not yet ready.', retryable: true };
+      return { code: 'OCR_BUSY', message: tr('msg.ocr_engine_is_currently_busy_or_models'), retryable: true };
     case 504:
-      return { code: 'OCR_TIMEOUT', message: 'OCR processing deadline exceeded.', retryable: true };
+      return { code: 'OCR_TIMEOUT', message: tr('msg.ocr_processing_deadline_exceeded'), retryable: true };
     default:
-      return { code: 'INTERNAL_ERROR', message: 'Internal OCR processing failure.', retryable: status >= 500 };
+      return { code: 'INTERNAL_ERROR', message: tr('msg.internal_ocr_processing_failure'), retryable: status >= 500 };
   }
 }
 
@@ -260,7 +261,7 @@ export const ocrApi = {
       throw new OcrApiError(
         {
           code: 'WORKSPACE_REQUIRED',
-          message: 'Select a workspace before uploading a document.',
+          message: tr('msg.select_a_workspace_before_uploading_a_document'),
           retryable: false,
         },
         400
@@ -303,7 +304,7 @@ export const ocrApi = {
         throw new OcrApiError(
           {
             code: 'REQUEST_TIMEOUT',
-            message: 'OCR extraction request timed out or was aborted.',
+            message: tr('msg.ocr_extraction_request_timed_out_or_was'),
             retryable: true,
           },
           504,
@@ -313,7 +314,7 @@ export const ocrApi = {
       throw new OcrApiError(
         {
           code: 'OCR_BUSY',
-          message: 'Unable to connect to API Gateway. Ensure services are running.',
+          message: tr('msg.unable_to_connect_to_api_gateway_ensure'),
           retryable: true,
         },
         503,

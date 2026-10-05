@@ -4,6 +4,7 @@ import { ArrowLeft, LoaderCircle, Mail, ShieldCheck } from 'lucide-react';
 import { authApi, getAuthApiErrorStatus } from '../api/auth.api';
 import { useI18nStore } from '../store/useI18nStore';
 import { showSuccessToast } from '../lib/feedback/toast';
+import { tr } from '../lib/i18n/tr';
 
 type RecoveryStep = 'request' | 'verify';
 type RecoveryPhase = 'request' | 'verify' | 'reset';
@@ -16,7 +17,7 @@ interface OtpReceipt {
 
 class RecoveryProtocolError extends Error {
   constructor() {
-    super('The recovery service returned an invalid response.');
+    super(tr('msg.the_recovery_service_returned_an_invalid_response'));
   }
 }
 
