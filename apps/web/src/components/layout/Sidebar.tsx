@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
@@ -75,6 +75,31 @@ export function Sidebar() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [toggleSidebar]);
 
+  // Hover/focus expands the collapsed rail as an overlay (no layout shift); the toggle pins it open.
+  const [hovered, setHovered] = useState(false);
+  const asideRef = useRef<HTMLElement | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearTimer = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+  };
+  const scheduleHover = useCallback((next: boolean, delay: number) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      // Keep it open while a workspace dropdown (native select) inside the sidebar has focus.
+      const active = document.activeElement;
+      if (!next && active instanceof HTMLSelectElement && asideRef.current?.contains(active)) return;
+      setHovered(next);
+    }, delay);
+  }, []);
+  useEffect(() => () => clearTimer(), []);
+  useEffect(() => {
+    if (!sidebarCollapsed) setHovered(false);
+  }, [sidebarCollapsed]);
+  const isCoarsePointer = () => typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
+  const overlayOpen = sidebarCollapsed && hovered;
+
   const fade = prefersReducedMotion ? "" : "transition-opacity duration-150";
 
   const renderNavItems = (items: NavItem[], rail: boolean, isMobile: boolean) =>
@@ -117,16 +142,22 @@ export function Sidebar() {
       );
     });
 
-  const toggleLabel = sidebarCollapsed ? t("nav.expand_sidebar") : t("nav.collapse_sidebar");
+  const toggleLabel = sidebarCollapsed ? t("nav.pin_sidebar") : t("nav.unpin_sidebar");
   const ToggleIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
 
   const renderContent = (isMobile = false) => {
-    const rail = sidebarCollapsed && !isMobile;
+    const rail = sidebarCollapsed && !hovered && !isMobile;
+    const floating = sidebarCollapsed && !isMobile;
     return (
       <div
         data-testid="app-sidebar"
         data-collapsed={rail ? "true" : "false"}
-        className="flex h-full select-none flex-col gap-3 overflow-hidden border-r border-border bg-sidebar p-2 text-sidebar-foreground"
+        data-pinned={sidebarCollapsed ? "false" : "true"}
+        className={`flex select-none flex-col gap-3 overflow-hidden border-r border-border bg-sidebar p-2 text-sidebar-foreground ${
+          floating
+            ? `absolute inset-y-0 left-0 z-40 ${prefersReducedMotion ? "" : "transition-[width,box-shadow] duration-150 ease-out"} ${overlayOpen ? "w-[220px] shadow-pop" : "w-14"}`
+            : "h-full"
+        }`}
       >
         <div className={`flex items-center gap-1 ${rail ? "flex-col" : ""}`}>
           <div className={rail ? "w-full" : "min-w-0 flex-1"}>
@@ -196,7 +227,25 @@ export function Sidebar() {
   return (
     <>
       <aside
-        className={`z-30 hidden h-full shrink-0 flex-col md:flex ${
+        ref={asideRef}
+        data-testid="app-sidebar-region"
+        onPointerEnter={(event) => {
+          if (!sidebarCollapsed || event.pointerType === "touch" || isCoarsePointer()) return;
+          scheduleHover(true, 150);
+        }}
+        onPointerLeave={() => {
+          if (!sidebarCollapsed) return;
+          scheduleHover(false, 200);
+        }}
+        onFocus={(event) => {
+          if (!sidebarCollapsed || isCoarsePointer()) return;
+          if (event.target.matches(":focus-visible")) scheduleHover(true, 0);
+        }}
+        onBlur={(event) => {
+          if (!sidebarCollapsed) return;
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) scheduleHover(false, 200);
+        }}
+        className={`relative z-30 hidden h-full shrink-0 flex-col md:flex ${
           prefersReducedMotion ? "" : "transition-[width] duration-150 ease-out"
         } ${sidebarCollapsed ? "w-14" : "w-[220px]"}`}
       >

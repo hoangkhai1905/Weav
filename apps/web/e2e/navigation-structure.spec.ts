@@ -112,4 +112,49 @@ test.describe('navigation structure', () => {
     await page.goto('/workspace/settings');
     await expect(page.getByTestId('workspace-tab-settings')).toHaveAttribute('aria-current', 'page');
   });
+
+  test('collapsed sidebar expands as an overlay on hover and focus without shifting the page', async ({ page }) => {
+    await setup(page);
+    await page.goto('/dashboard');
+    const sidebar = page.getByTestId('app-sidebar');
+    const main = page.locator('main').first();
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
+    const before = await main.boundingBox();
+    const railWidth = (await sidebar.boundingBox())?.width;
+    expect(railWidth).toBe(56);
+
+    await sidebar.hover();
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'false');
+    await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(220);
+    await expect(sidebar).toHaveAttribute('data-pinned', 'false');
+    expect((await main.boundingBox())?.x).toBe(before?.x);
+
+    await page.mouse.move(800, 400);
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
+    await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(56);
+    expect((await main.boundingBox())?.x).toBe(before?.x);
+
+    // keyboard focus expands it too, and blur collapses it
+    await page.keyboard.press('Tab');
+    await sidebar.getByRole('link', { name: 'Dashboard', exact: true }).focus();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'false');
+    await page.locator('main a, main button').first().focus();
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
+  });
+
+  test('pinning keeps the sidebar expanded and pushes the content', async ({ page }) => {
+    await setup(page);
+    await page.goto('/dashboard');
+    const main = page.locator('main').first();
+    const railX = (await main.boundingBox())?.x ?? 0;
+    await page.getByTestId('sidebar-toggle').click();
+    await page.mouse.move(800, 400);
+    const sidebar = page.getByTestId('app-sidebar');
+    await expect(sidebar).toHaveAttribute('data-pinned', 'true');
+    await expect(sidebar).toHaveAttribute('data-collapsed', 'false');
+    await expect.poll(async () => (await main.boundingBox())?.x ?? 0).toBeGreaterThan(railX + 100);
+    await expect(page.getByTestId('sidebar-toggle')).toHaveAttribute('aria-label', 'Unpin');
+  });
 });
