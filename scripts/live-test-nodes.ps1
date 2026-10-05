@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Live test for Weav's Telegram and Google Calendar/Drive workflow nodes, driven through the API Gateway.
+    Live test for Weav's workflow nodes (Telegram, Google, logic.switch/data.set, ai.generate, trigger.gmail), driven through the API Gateway.
 
 .DESCRIPTION
     Replaces the UI for a manual live test. Logs in through the gateway, creates the connections and
@@ -14,8 +14,9 @@
 [CmdletBinding()]
 param(
     [string]$GatewayUrl = 'http://localhost:3000',
-    [ValidateSet('telegram', 'google', 'all')][string]$Flow = 'all',
+    [ValidateSet('telegram', 'google', 'logic', 'ai', 'gmail', 'all')][string]$Flow = 'all',
     [string]$WorkspaceId,
+    [ValidateScript({ [string]::IsNullOrEmpty($_) -or ($_ -as [guid]) })][string]$GmailConnectionId,
     [switch]$Cleanup
 )
 
@@ -296,10 +297,11 @@ Preconditions (all must be true before you continue):
 
 # ---------- Google flow ----------
 
-function Connect-GoogleProvider([string]$Provider, [string]$Name) {
+function Connect-GoogleProvider([string]$Provider, [string]$Name, [string]$ExistingConnectionId = '') {
     Write-Host ''
     Write-Host ("-- {0} --" -f $Provider) -ForegroundColor Cyan
-    $connId = New-Connection $Provider 'OAUTH2' $Name
+    # An existing id means reconnect: the same authorize/complete flow replaces the stored grant and keeps the id.
+    $connId = if ($ExistingConnectionId) { $ExistingConnectionId } else { New-Connection $Provider 'OAUTH2' $Name }
     $base = "/api/v1/workspaces/$script:Ws/connections/$connId"
     $r = Invoke-Api 'start oauth' 'POST' "$base/oauth/authorize"
     Confirm-Api $r 'start Google OAuth'
@@ -417,6 +419,239 @@ http://localhost:8082/oauth/google/callback, and your Google account is a test u
     Add-Result 'google execution SUCCESS' ($detail.status -eq 'SUCCESS') ('status ' + $detail.status)
 }
 
+# Runs a published workflow manually and waits (up to 2 minutes) for a terminal state. Returns the execution detail.
+function Invoke-ManualRun([string]$WorkflowId, [hashtable]$InputData, [string]$Label) {
+    $base = "/api/v1/workspaces/$script:Ws/workflows/$WorkflowId"
+    $r = Invoke-Api 'run manually' 'POST' "$base/executions" @{ input = $InputData }
+    Confirm-Api $r "start $Label"
+    $execId = [string]$r.Data.executionId
+    $deadline = (Get-Date).AddMinutes(2)
+    $detail = $null
+    do {
+        Start-Sleep -Seconds 2
+        $d = Invoke-Api 'execution detail' 'GET' "$base/executions/$execId"
+        if ($d.Ok) { $detail = $d.Data }
+    } while ((Get-Date) -lt $deadline -and ($null -eq $detail -or @('SUCCESS', 'FAILED', 'CANCELLED') -notcontains $detail.status))
+    if ($null -eq $detail) { Add-Result "$Label execution detail" $false 'never readable'; throw 'No execution detail.' }
+    Show-Execution $detail
+    return $detail
+}
+
+# ---------- logic flow (logic.switch, data.set) ----------
+
+function Invoke-LogicFlow {
+    Write-Host ''
+    Write-Host '== Logic flow (data.set + logic.switch) ==' -ForegroundColor Cyan
+    Write-Host 'Preconditions: dev stack up. No external service, connection or AI is used.'
+    [void](Read-Host 'Press Enter when ready')
+
+    $definition = @{
+        schemaVersion = '1.0'
+        nodes = @(
+            @{ id = 'manual'; type = 'trigger.manual'; config = @{} },
+            @{ id = 'shape'; type = 'data.set'; config = @{ fields = @{
+                        name = '{{ trigger.input.user.first }}'
+                        n = '{{ trigger.input.count }}'
+                        plan = '{{ trigger.input.plan }}' } } },
+            @{ id = 'route'; type = 'logic.switch'; config = @{ value = '{{ nodes.shape.output.plan }}'; cases = @('1', '2') } },
+            @{ id = 'branch-one'; type = 'data.set'; config = @{ fields = @{ branch = 'one' } } },
+            @{ id = 'branch-two'; type = 'data.set'; config = @{ fields = @{ branch = 'two' } } },
+            @{ id = 'branch-default'; type = 'data.set'; config = @{ fields = @{ branch = 'default' } } }
+        )
+        edges = @(
+            @{ id = 'e1'; source = 'manual'; target = 'shape' },
+            @{ id = 'e2'; source = 'shape'; target = 'route' },
+            @{ id = 'e3'; source = 'route'; target = 'branch-one'; sourcePort = '1' },
+            @{ id = 'e4'; source = 'route'; target = 'branch-two'; sourcePort = '2' },
+            @{ id = 'e5'; source = 'route'; target = 'branch-default'; sourcePort = 'default' }
+        )
+    }
+    $wf = New-PublishedWorkflow ('Live test logic ' + $script:Stamp) $definition
+
+    $branches = @('branch-one', 'branch-two', 'branch-default')
+    $runs = @(
+        @{ Label = 'case 1'; Input = @{ plan = 1; count = 7; user = @{ first = 'Ada' } }; Expect = 'branch-one'; Port = '1' },
+        @{ Label = 'case 2'; Input = @{ plan = 2; count = 7; user = @{ first = 'Ada' } }; Expect = 'branch-two'; Port = '2' },
+        @{ Label = 'no match'; Input = @{ plan = 'gold'; count = 7; user = @{ first = 'Ada' } }; Expect = 'branch-default'; Port = 'default' }
+    )
+    foreach ($run in $runs) {
+        $label = 'logic ' + $run.Label
+        Write-Host ("  -- run: {0} (plan={1})" -f $run.Label, $run.Input.plan)
+        $detail = Invoke-ManualRun $wf $run.Input $label
+        Add-Result "$label execution SUCCESS" ($detail.status -eq 'SUCCESS') ('status ' + $detail.status)
+
+        $shape = Get-Prop (Find-Node $detail 'shape') 'output'
+        $renamed = ([string](Get-Prop $shape 'name') -eq 'Ada') -and ([string](Get-Prop $shape 'plan') -eq [string]$run.Input.plan)
+        $numOk = ($null -ne (Get-Prop $shape 'n')) -and ([string](Get-Prop $shape 'n') -eq '7')
+        Add-Result "$label data.set renamed field and number" ($renamed -and $numOk) ('output ' + (Short (ConvertTo-Json -InputObject $shape -Compress -Depth 5) 100))
+
+        $route = Get-Prop (Find-Node $detail 'route') 'output'
+        Add-Result "$label switch port" ([string](Get-Prop $route 'port') -eq $run.Port) ('port ' + (Get-Prop $route 'port'))
+
+        foreach ($b in $branches) {
+            $n = Find-Node $detail $b
+            $status = if ($null -ne $n) { [string]$n.status } else { 'missing' }
+            $want = if ($b -eq $run.Expect) { 'SUCCESS' } else { 'SKIPPED' }
+            Add-Result "$label $b is $want" ($status -eq $want) ('status ' + $status)
+        }
+    }
+    Write-Host '  Text coercion (a mapped number into a string-only field) is not re-checked here: no side-effect-free node has such a field. The telegram flow (numeric chat id) and unit tests cover it.' -ForegroundColor DarkGray
+}
+
+# ---------- AI flow (ai.generate) ----------
+
+function Invoke-AiFlow {
+    Write-Host ''
+    Write-Host '== AI flow (ai.generate) ==' -ForegroundColor Cyan
+    Write-Host @'
+Preconditions: the AI service is enabled (node scripts/ai-dev-keys.mjs; DEEPSEEK_API_KEY and DEEPSEEK_MODEL in .env;
+WORKFLOW_AI_ENABLED=true and WORKFLOW_AI_GENERATION_ENABLED=true; stack started WITHOUT compose.ai-local.yml;
+curl http://localhost:3001/health/ready is OK).
+COST: one run; up to 3 real DeepSeek calls if it times out (retries). Each call uses 1 of the daily AI quota.
+'@
+    $answer = Read-Host 'Type yes to run it'
+    if ($answer -ne 'yes') { Write-Host '  AI flow skipped.' -ForegroundColor Yellow; return }
+
+    $definition = @{
+        schemaVersion = '1.0'
+        nodes = @(
+            @{ id = 'manual'; type = 'trigger.manual'; config = @{} },
+            @{ id = 'gen'; type = 'ai.generate'; config = @{
+                    prompt = 'Write one short greeting about: {{ trigger.input.topic }}'
+                    instructions = 'Answer in one sentence.'
+                    maxLength = 200 } }
+        )
+        edges = @( @{ id = 'e1'; source = 'manual'; target = 'gen' } )
+    }
+    $wf = New-PublishedWorkflow ('Live test AI ' + $script:Stamp) $definition
+    $detail = Invoke-ManualRun $wf @{ topic = 'coffee' } 'ai'
+    $gen = Find-Node $detail 'gen'
+    $code = Get-Prop (Get-Prop $gen 'error') 'code'
+    if ($code -in @('DEPENDENCY_NOT_CONFIGURED')) {
+        Write-Host '  Hint: AI is disabled. Follow the preconditions above (keys, WORKFLOW_AI_ENABLED, no compose.ai-local.yml), then restart workflow-service and ai-service.' -ForegroundColor Yellow
+    } elseif ($code -eq 'AI_QUOTA_EXCEEDED') {
+        Write-Host '  Hint: the daily AI quota is used up.' -ForegroundColor Yellow
+    }
+    Add-Result 'ai execution SUCCESS' ($detail.status -eq 'SUCCESS') ('status ' + $detail.status + $(if ($code) { ' error ' + $code } else { '' }))
+    $text = [string](Get-Prop (Get-Prop $gen 'output') 'text')
+    Add-Result 'ai.generate text non-empty' (-not [string]::IsNullOrWhiteSpace($text)) ('length ' + $text.Length)
+    if ($text) {
+        Write-Host ('  generated: ' + (Short $text 120))
+        Add-Result 'ai.generate text within maxLength 200' ($text.Length -le 200) ('length ' + $text.Length)
+    }
+}
+
+# ---------- Gmail trigger flow (trigger.gmail) ----------
+
+function Invoke-GmailFlow {
+    Write-Host ''
+    Write-Host '== Gmail trigger flow (trigger.gmail) ==' -ForegroundColor Cyan
+    Write-Host @'
+Preconditions: GOOGLE_OAUTH_CLIENT_ID/SECRET set; gmail.readonly is added to the Google Cloud consent screen scopes
+and the Gmail API is enabled; your Google account is a test user. A Gmail connection made before gmail.readonly was
+added must be reconnected (pass -GmailConnectionId <id> to reconnect it instead of creating a new one).
+You will need to send one email yourself while the script waits (a few minutes).
+'@
+    $answer = Read-Host 'Press Enter when ready (type skip to skip this flow)'
+    if ($answer -eq 'skip') { Write-Host '  Gmail flow skipped.' -ForegroundColor Yellow; return }
+
+    $connId = Connect-GoogleProvider 'GMAIL' ('Weav live test gmail ' + $script:Stamp) $GmailConnectionId
+    $subject = 'Weav live test ' + $script:Stamp
+    $definition = @{
+        schemaVersion = '1.0'
+        nodes = @(
+            @{ id = 'manual'; type = 'trigger.manual'; config = @{} },
+            @{ id = 'mail'; type = 'trigger.gmail'; config = @{
+                    connectionId = $connId; query = ('in:inbox subject:"' + $subject + '"'); pollIntervalMinutes = 1 } },
+            @{ id = 'copy'; type = 'data.set'; config = @{ fields = @{
+                        from = '{{ trigger.input.from }}'
+                        subject = '{{ trigger.input.subject }}'
+                        snippet = '{{ trigger.input.snippet }}'
+                        bodyTruncated = '{{ trigger.input.bodyTruncated }}'
+                        bodyOmitted = '{{ trigger.input.bodyOmitted }}' } } }
+        )
+        edges = @( @{ id = 'e1'; source = 'mail'; target = 'copy' } )
+    }
+    $wf = New-PublishedWorkflow ('Live test Gmail ' + $script:Stamp) $definition
+    $base = "/api/v1/workspaces/$script:Ws/workflows/$wf"
+
+    $r = Invoke-Api 'get workflow' 'GET' $base
+    Confirm-Api $r 'read workflow triggers'
+    $trigger = @(Get-Prop $r.Data 'triggers') | Where-Object { $_.type -eq 'GMAIL' } | Select-Object -First 1
+    if ($null -eq $trigger) { Add-Result 'gmail trigger registered' $false 'no GMAIL trigger in workflow'; throw 'No Gmail trigger registration found.' }
+    Write-Host ("  trigger status={0} reasonCode={1}" -f $trigger.status, (Get-Prop $trigger 'reasonCode'))
+    Add-Result 'gmail trigger ACTIVE' ($trigger.status -eq 'ACTIVE') ('status ' + $trigger.status)
+
+    Write-Host ''
+    Write-Host 'Send an email to the connected Gmail account now with this EXACT subject (any body):' -ForegroundColor Yellow
+    Write-Host ('  ' + $subject) -ForegroundColor White
+    Write-Host 'Polling the executions list every 10 s for up to 3 minutes...' -ForegroundColor Yellow
+    $items = @()
+    $deadline = (Get-Date).AddMinutes(3)
+    while ((Get-Date) -lt $deadline -and $items.Count -eq 0) {
+        Start-Sleep -Seconds 10
+        $page = Invoke-Api 'list executions' 'GET' "$base/executions?page=0&size=20"
+        if ($page.Ok) { $items = @(@(Get-Prop $page.Data 'items') | Where-Object { $_.triggerType -eq 'GMAIL' }) }
+    }
+    if ($items.Count -eq 0) {
+        Add-Result 'gmail execution observed' $false 'no GMAIL run within 3 minutes'
+        $r = Invoke-Api 'get workflow' 'GET' $base
+        $trigger = @(Get-Prop $r.Data 'triggers') | Where-Object { $_.type -eq 'GMAIL' } | Select-Object -First 1
+        $reason = Get-Prop $trigger 'reasonCode'
+        Write-Host ("  trigger status={0} reasonCode={1}" -f (Get-Prop $trigger 'status'), $reason)
+        $hints = @{
+            CONNECTION_RECONNECT_REQUIRED = 'the connection lacks gmail.readonly, or its refresh token expired (Testing mode: 7 days). Re-run with -Flow gmail -GmailConnectionId <id> to reconnect it.'
+            AUTHENTICATION_REJECTED = 'Google rejected the stored credential; reconnect the connection (-GmailConnectionId <id>).'
+            CONNECTION_FORBIDDEN = 'the connection is not allowed for this workspace or Google denied access; check the connection and the test-user list.'
+            CONNECTION_UNAVAILABLE = 'workspace-service could not resolve the connection; check the stack and retry.'
+            GMAIL_POLL_FAILED = 'the Gmail poll failed (rate limit or outage); it retries every interval, check workflow-service logs.'
+            GMAIL_MESSAGE_SKIPPED = 'a matching message was skipped (unreadable or vanished); send another email.'
+            GMAIL_BACKLOG_TRUNCATED = 'more than 10 new matching emails arrived in one poll; only the newest were admitted.'
+        }
+        if ($reason -and $hints.ContainsKey([string]$reason)) {
+            Write-Host ('  Hint: ' + $hints[[string]$reason]) -ForegroundColor Yellow
+        } elseif ($reason) {
+            Write-Host '  Hint: the poller recorded this reason; fix it and wait one more interval.' -ForegroundColor Yellow
+        } else {
+            Write-Host '  Hint: check the subject matches exactly, the mail is in the inbox, and the poller is enabled (weav.workflow.gmail.poller.enabled).' -ForegroundColor Yellow
+        }
+        return
+    }
+    Add-Result 'gmail exactly one run for the email' ($items.Count -eq 1) ('GMAIL runs ' + $items.Count)
+
+    $detail = $null
+    $execId = [string]$items[0].executionId
+    $deadline = (Get-Date).AddMinutes(1)
+    do {
+        $d = Invoke-Api 'execution detail' 'GET' "$base/executions/$execId"
+        if ($d.Ok) { $detail = $d.Data }
+        $done = ($null -ne $detail -and @('SUCCESS', 'FAILED', 'CANCELLED') -contains $detail.status)
+        if (-not $done) { Start-Sleep -Seconds 2 }
+    } while ((Get-Date) -lt $deadline -and -not $done)
+    if ($null -eq $detail) { Add-Result 'gmail execution detail' $false 'never readable'; throw 'No execution detail.' }
+    Show-Execution $detail
+    Add-Result 'gmail execution SUCCESS' ($detail.status -eq 'SUCCESS') ('status ' + $detail.status)
+    Add-Result 'gmail trigger type GMAIL' ($detail.triggerType -eq 'GMAIL')
+
+    # The body is never printed; its length is only known if the trigger node exposes its input as output.
+    $in = Get-Prop (Find-Node $detail 'mail') 'output'
+    $copy = Get-Prop (Find-Node $detail 'copy') 'output'
+    $body = Get-Prop $in 'body'
+    $bodyLen = if ($null -ne $body) { ([string]$body).Length } else { 'n/a' }
+    Write-Host ("  from={0}" -f (Short (Get-Prop $copy 'from') 80))
+    Write-Host ("  subject={0}" -f (Short (Get-Prop $copy 'subject') 80))
+    Write-Host ("  snippet length={0}" -f ([string](Get-Prop $copy 'snippet')).Length)
+    Write-Host ("  body length={0} bodyTruncated={1} bodyOmitted={2}" -f $bodyLen, (Get-Prop $copy 'bodyTruncated'), (Get-Prop $copy 'bodyOmitted'))
+    Add-Result 'gmail subject copied by data.set' ([string](Get-Prop $copy 'subject') -like ('*' + $subject + '*')) (Short (Get-Prop $copy 'subject') 60)
+
+    Write-Host '  Waiting two poll intervals (130 s) to check the same email does not start a duplicate run...' -ForegroundColor Yellow
+    Start-Sleep -Seconds 130
+    $page = Invoke-Api 'list executions' 'GET' "$base/executions?page=0&size=20"
+    Confirm-Api $page 'list executions again'
+    $count = @(@(Get-Prop $page.Data 'items') | Where-Object { $_.triggerType -eq 'GMAIL' }).Count
+    Add-Result 'gmail no duplicate run after another poll' ($count -eq 1) ("GMAIL runs $count, expected 1")
+}
+
 # ---------- main ----------
 
 try {
@@ -426,6 +661,15 @@ try {
     }
     if ($Flow -in @('google', 'all')) {
         try { Invoke-GoogleFlow } catch { Write-Host ('  Google flow stopped: ' + $_.Exception.Message) -ForegroundColor Red }
+    }
+    if ($Flow -in @('logic', 'all')) {
+        try { Invoke-LogicFlow } catch { Write-Host ('  Logic flow stopped: ' + $_.Exception.Message) -ForegroundColor Red }
+    }
+    if ($Flow -in @('ai', 'all')) {
+        try { Invoke-AiFlow } catch { Write-Host ('  AI flow stopped: ' + $_.Exception.Message) -ForegroundColor Red }
+    }
+    if ($Flow -in @('gmail', 'all')) {
+        try { Invoke-GmailFlow } catch { Write-Host ('  Gmail flow stopped: ' + $_.Exception.Message) -ForegroundColor Red }
     }
     if ($Cleanup -and $script:Workflows.Count -gt 0) {
         Write-Host ''
@@ -450,6 +694,7 @@ Write-Host 'Verify by eye:' -ForegroundColor Cyan
 Write-Host '  [ ] Telegram: the bot echoed "Echo: <your text>" back to you'
 Write-Host '  [ ] Google Calendar: event "Weav live test" exists at the expected local time (about 1 h from the run, 30 min long)'
 Write-Host '  [ ] Google Drive: file weav-live-test-<timestamp>.txt exists'
+Write-Host '  [ ] Gmail: the consent screen listed gmail.readonly and gmail.send; the email you sent started exactly one run'
 Write-Host '  [ ] Consent screens listed only calendar.events (Calendar) / drive.file (Drive) plus openid and email'
 
 $failed = @($script:Results | Where-Object { $_.Result -eq 'FAIL' }).Count
