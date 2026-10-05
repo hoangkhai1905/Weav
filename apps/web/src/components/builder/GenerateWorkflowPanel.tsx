@@ -91,8 +91,8 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-label={t('ai.generate_with_ai')} className="fixed inset-0 z-50 flex items-center justify-center bg-subtle p-4">
-      <div className="w-full max-w-lg rounded-lg border border-border bg-white p-4 shadow-xl">
+    <div role="dialog" aria-modal="true" aria-label={t('ai.generate_with_ai')} className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 p-4">
+      <div className="w-full max-w-lg rounded-lg border border-border bg-card p-4 shadow-pop">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">{t('ai.generate_with_ai')}</h2>
           <button type="button" onClick={onClose} aria-label={t('ai.close')} className="rounded p-1 text-muted-foreground hover:bg-subtle hover:text-foreground">
@@ -165,7 +165,7 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md border border-border bg-white px-3 py-1.5 text-xs font-medium text-text-2 hover:bg-subtle"
+              className="rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-text-2 hover:bg-subtle"
             >
               {t('ai.cancel')}
             </button>

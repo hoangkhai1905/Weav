@@ -380,7 +380,7 @@ function MockExecutionsPage() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="fixed top-16 right-8 z-50 bg-slate-900 text-white text-xs px-4 py-2.5 rounded-xl shadow-xl border border-slate-800 flex items-center gap-2"
+            className="fixed top-16 right-8 z-50 bg-subtle text-white text-xs px-4 py-2.5 rounded-xl shadow-xl border border-border flex items-center gap-2"
           >
             <Activity size={14} className="text-[#2563EB] animate-pulse" />
             <span>{toastMessage}</span>
@@ -392,12 +392,12 @@ function MockExecutionsPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2.5">
-            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">{t('executions.title')}</h1>
-            <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-blue-950/60 text-[#2563EB] dark:text-blue-300 font-mono text-[11px] font-semibold border border-indigo-100 dark:border-blue-900/50">
+            <h1 className="text-xl font-bold text-foreground tracking-tight">{t('executions.title')}</h1>
+            <span className="px-2 py-0.5 rounded-full bg-run-bg text-[#2563EB] font-mono text-[11px] font-semibold border border-run/30">
               v2.4-stream
             </span>
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-muted-foreground">
             {t('executions.subtitle')}
           </p>
         </div>
@@ -408,18 +408,18 @@ function MockExecutionsPage() {
             onClick={() => setAutoRefresh(!autoRefresh)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
               autoRefresh
-                ? 'bg-indigo-50/60 dark:bg-blue-950/40 text-[#2563EB] dark:text-blue-300 border-indigo-200 dark:border-blue-800'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+                ? 'bg-run-bg text-[#2563EB] border-run/30'
+                : 'bg-card text-text-2 border-border hover:bg-subtle'
             }`}
           >
             <span className="relative flex h-2 w-2">
               {autoRefresh && (
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-75"></span>
               )}
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${autoRefresh ? 'bg-[#2563EB]' : 'bg-slate-400'}`}></span>
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${autoRefresh ? 'bg-[#2563EB]' : 'bg-muted-foreground'}`}></span>
             </span>
             <span>{t('executions.auto_refresh')} ({autoRefresh ? '5s' : 'Off'})</span>
-            <RefreshCw size={13} className={autoRefresh ? 'animate-spin text-[#2563EB]' : 'text-slate-400'} />
+            <RefreshCw size={13} className={autoRefresh ? 'animate-spin text-[#2563EB]' : 'text-muted-foreground'} />
           </button>
 
           {/* Re-run Last Failed */}
@@ -429,27 +429,27 @@ function MockExecutionsPage() {
               if (failed) handleReRun(failed);
               else triggerToast(t('executions.no_failed'));
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs font-medium shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card text-text-2 border border-border hover:bg-subtle transition-colors text-xs font-medium shadow-sm"
           >
-            <RotateCcw size={13} className="text-slate-400" />
+            <RotateCcw size={13} className="text-muted-foreground" />
             <span>{t('executions.rerun_failed')}</span>
           </button>
 
           {/* Export CSV */}
           <button
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-xs font-medium shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card text-text-2 border border-border hover:bg-subtle transition-colors text-xs font-medium shadow-sm"
           >
-            <Download size={13} className="text-slate-400" />
+            <Download size={13} className="text-muted-foreground" />
             <span>{t('executions.export_csv')}</span>
           </button>
 
           {/* Environment Pill */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-xs text-[11px]">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-subtle text-text-2 font-xs text-[11px]">
             <Cloud size={13} className="text-[#2563EB]" />
             <span className="font-mono font-medium">us-east-1</span>
-            <span className="text-slate-400">/</span>
-            <span className="font-semibold text-slate-900 dark:text-slate-100">{t('connections.environment.production')}</span>
+            <span className="text-muted-foreground">/</span>
+            <span className="font-semibold text-foreground">{t('connections.environment.production')}</span>
           </div>
         </div>
       </div>
@@ -457,29 +457,29 @@ function MockExecutionsPage() {
       {/* Operational Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Card 1: Total Runs */}
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between relative overflow-hidden">
+        <div className="bg-card p-4 rounded-xl border border-border shadow-sm flex flex-col justify-between relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t('executions.metric_total')}
             </span>
-            <Clock size={16} className="text-slate-400" />
+            <Clock size={16} className="text-muted-foreground" />
           </div>
           <div className="flex items-baseline justify-between mt-2">
-            <span className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100 tracking-tight">1,482</span>
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold">
+            <span className="text-2xl font-bold font-mono text-foreground tracking-tight">1,482</span>
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-ok-bg text-ok text-[11px] font-semibold">
               <TrendingUp size={12} />
               <span>+12.4%</span>
             </div>
           </div>
-          <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
+          <div className="w-full bg-subtle h-1.5 rounded-full mt-3 overflow-hidden">
             <div className="bg-[#2563EB] h-full rounded-full" style={{ width: '78%' }}></div>
           </div>
         </div>
 
         {/* Card 2: Active Executions */}
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between relative overflow-hidden">
+        <div className="bg-card p-4 rounded-xl border border-border shadow-sm flex flex-col justify-between relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t('executions.metric_active')}
             </span>
             <span className="relative flex h-2.5 w-2.5">
@@ -489,96 +489,96 @@ function MockExecutionsPage() {
           </div>
           <div className="flex items-baseline justify-between mt-2">
             <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100 tracking-tight">
+              <span className="text-2xl font-bold font-mono text-foreground tracking-tight">
                 {counts.RUNNING}
               </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">{t('executions.running_now')}</span>
+              <span className="text-xs text-muted-foreground">{t('executions.running_now')}</span>
             </div>
-            <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-blue-950/60 text-[#2563EB] dark:text-blue-300 text-[11px] font-semibold">
+            <span className="px-2 py-0.5 rounded-full bg-run-bg text-[#2563EB] text-[11px] font-semibold">
               12 {t('executions.queued')}
             </span>
           </div>
-          <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
+          <div className="w-full bg-subtle h-1.5 rounded-full mt-3 overflow-hidden">
             <div className="bg-[#2563EB] h-full rounded-full animate-pulse" style={{ width: '25%' }}></div>
           </div>
         </div>
 
         {/* Card 3: Success Rate */}
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between relative overflow-hidden">
+        <div className="bg-card p-4 rounded-xl border border-border shadow-sm flex flex-col justify-between relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t('executions.metric_success')}
             </span>
-            <CheckCircle2 size={16} className="text-emerald-500" />
+            <CheckCircle2 size={16} className="text-ok" />
           </div>
           <div className="flex items-baseline justify-between mt-2">
-            <span className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100 tracking-tight">98.6%</span>
-            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">38 {t('executions.failed_count')} (2.4%)</span>
+            <span className="text-2xl font-bold font-mono text-foreground tracking-tight">98.6%</span>
+            <span className="text-[11px] font-mono text-muted-foreground">38 {t('executions.failed_count')} (2.4%)</span>
           </div>
-          <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden flex">
-            <div className="bg-emerald-500 h-full" style={{ width: '98.6%' }}></div>
-            <div className="bg-rose-500 h-full" style={{ width: '1.4%' }}></div>
+          <div className="w-full bg-subtle h-1.5 rounded-full mt-3 overflow-hidden flex">
+            <div className="bg-ok h-full" style={{ width: '98.6%' }}></div>
+            <div className="bg-err h-full" style={{ width: '1.4%' }}></div>
           </div>
         </div>
 
         {/* Card 4: Avg Execution Time */}
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between relative overflow-hidden">
+        <div className="bg-card p-4 rounded-xl border border-border shadow-sm flex flex-col justify-between relative overflow-hidden">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {t('executions.metric_avg_time')}
             </span>
-            <Zap size={16} className="text-amber-500" />
+            <Zap size={16} className="text-warn" />
           </div>
           <div className="flex items-baseline justify-between mt-2">
-            <span className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100 tracking-tight">420ms</span>
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold">
+            <span className="text-2xl font-bold font-mono text-foreground tracking-tight">420ms</span>
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-ok-bg text-ok text-[11px] font-semibold">
               <TrendingDown size={12} />
               <span>-18ms</span>
             </div>
           </div>
-          <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
-            <div className="bg-amber-500 h-full rounded-full" style={{ width: '62%' }}></div>
+          <div className="w-full bg-subtle h-1.5 rounded-full mt-3 overflow-hidden">
+            <div className="bg-warn h-full rounded-full" style={{ width: '62%' }}></div>
           </div>
         </div>
       </div>
 
       {/* Live Run in Progress Panel */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-3">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 pb-1 border-b border-slate-100 dark:border-slate-800">
+      <div className="bg-card rounded-xl p-4 border border-border shadow-sm flex flex-col gap-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 pb-1 border-b border-border">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2563EB]"></span>
             </span>
             <span className="text-xs font-bold uppercase tracking-wider text-[#2563EB]">{t('executions.live_run')}</span>
-            <span className="text-slate-300 dark:text-slate-700">•</span>
-            <span className="font-mono text-xs font-bold text-slate-900 dark:text-slate-100">{activeRunning.id}</span>
-            <span className="text-slate-300 dark:text-slate-700">—</span>
-            <span className="text-xs font-medium text-slate-800 dark:text-slate-200">{activeRunning.workflowName}</span>
-            <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono text-[10px]">
+            <span className="text-muted-foreground">•</span>
+            <span className="font-mono text-xs font-bold text-foreground">{activeRunning.id}</span>
+            <span className="text-muted-foreground">—</span>
+            <span className="text-xs font-medium text-foreground">{activeRunning.workflowName}</span>
+            <span className="px-1.5 py-0.5 rounded bg-subtle text-text-2 font-mono text-[10px]">
               {activeRunning.version}
             </span>
           </div>
 
           <div className="flex items-center gap-3 text-xs">
-            <div className="flex items-center gap-1.5 font-mono text-slate-500 dark:text-slate-400">
-              <Clock size={13} className="text-slate-400" />
+            <div className="flex items-center gap-1.5 font-mono text-muted-foreground">
+              <Clock size={13} className="text-muted-foreground" />
               <span>
                 {t('executions.started_at')} {activeRunning.startedTime} (
                 <span className="text-[#2563EB] font-medium">{formatStartedRelative(activeRunning.startedRelative)}</span>)
               </span>
             </div>
-            <span className="text-slate-200 dark:text-slate-800">|</span>
+            <span className="text-foreground">|</span>
             <button
               onClick={() => navigate(`/executions/${activeRunning.id.replace('#', '')}`)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-50 dark:bg-blue-950/60 text-[#2563EB] dark:text-blue-300 text-[11px] font-semibold hover:bg-[#2563EB] hover:text-white transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-run-bg text-[#2563EB] text-[11px] font-semibold hover:bg-[#2563EB] hover:text-white transition-colors"
             >
               <Activity size={13} />
               <span>{t('executions.view_trace')}</span>
             </button>
             <button
               onClick={() => handleStopExecution(activeRunning.id)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 text-[11px] font-medium hover:bg-rose-600 hover:text-white transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1 rounded bg-err-bg text-err text-[11px] font-medium hover:bg-err hover:text-background transition-colors"
             >
               <StopCircle size={13} />
               <span>{t('executions.cancel')}</span>
@@ -587,69 +587,69 @@ function MockExecutionsPage() {
         </div>
 
         {/* Step Diagram Pipeline */}
-        <div className="bg-slate-50 dark:bg-slate-950/60 rounded-lg p-3 flex flex-col md:flex-row items-center justify-between gap-4 overflow-x-auto">
+        <div className="bg-subtle rounded-lg p-3 flex flex-col md:flex-row items-center justify-between gap-4 overflow-x-auto">
           <div className="flex items-center gap-2 w-full min-w-[620px]">
             {/* Step 1 */}
-            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-lg border border-slate-200/80 dark:border-slate-800 shadow-sm shrink-0">
-              <CheckCircle2 size={16} className="text-emerald-500" />
+            <div className="flex items-center gap-2 bg-card px-3 py-2 rounded-lg border border-border shadow-sm shrink-0">
+              <CheckCircle2 size={16} className="text-ok" />
               <div className="flex flex-col">
-                <span className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">1. Webhook</span>
-                <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">120ms • HTTP 200</span>
+                <span className="text-[11px] font-semibold text-foreground">1. Webhook</span>
+                <span className="font-mono text-[10px] text-ok">120ms • HTTP 200</span>
               </div>
             </div>
 
             <div className="flex-1 flex items-center justify-center relative min-w-[30px]">
-              <div className="w-full border-t-2 border-dashed border-emerald-500/40"></div>
-              <ChevronRight size={12} className="text-emerald-500 absolute right-0" />
+              <div className="w-full border-t-2 border-dashed border-ok/30"></div>
+              <ChevronRight size={12} className="text-ok absolute right-0" />
             </div>
 
             {/* Step 2 */}
-            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-lg border border-slate-200/80 dark:border-slate-800 shadow-sm shrink-0">
-              <CheckCircle2 size={16} className="text-emerald-500" />
+            <div className="flex items-center gap-2 bg-card px-3 py-2 rounded-lg border border-border shadow-sm shrink-0">
+              <CheckCircle2 size={16} className="text-ok" />
               <div className="flex flex-col">
-                <span className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">2. PostgreSQL</span>
-                <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400">45ms • {t('executions.rows_parsed')}</span>
+                <span className="text-[11px] font-semibold text-foreground">2. PostgreSQL</span>
+                <span className="font-mono text-[10px] text-ok">45ms • {t('executions.rows_parsed')}</span>
               </div>
             </div>
 
             <div className="flex-1 flex items-center justify-center relative min-w-[30px]">
-              <div className="w-full border-t-2 border-indigo-400 dark:border-blue-600"></div>
+              <div className="w-full border-t-2 border-run/30"></div>
               <ChevronRight size={12} className="text-[#2563EB] absolute right-0" />
             </div>
 
             {/* Step 3 */}
-            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-lg border border-[#2563EB]/40 shadow-sm shrink-0">
+            <div className="flex items-center gap-2 bg-card px-3 py-2 rounded-lg border border-[#2563EB]/40 shadow-sm shrink-0">
               <span className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#2563EB]"></span>
               </span>
               <div className="flex flex-col">
                 <span className="text-[11px] font-semibold text-[#2563EB]">3. AI Extract</span>
-                <span className="font-mono text-[10px] text-slate-500 animate-pulse">{t('executions.processing_chunk')} 2...</span>
+                <span className="font-mono text-[10px] text-muted-foreground animate-pulse">{t('executions.processing_chunk')} 2...</span>
               </div>
             </div>
 
             <div className="flex-1 flex items-center justify-center relative min-w-[30px]">
-              <div className="w-full border-t-2 border-dashed border-slate-300 dark:border-slate-700"></div>
-              <ChevronRight size={12} className="text-slate-400 absolute right-0" />
+              <div className="w-full border-t-2 border-dashed border-border-strong"></div>
+              <ChevronRight size={12} className="text-muted-foreground absolute right-0" />
             </div>
 
             {/* Step 4 */}
-            <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/50 px-3 py-2 rounded-lg opacity-70 shrink-0">
-              <div className="w-3.5 h-3.5 rounded-full border border-slate-400"></div>
+            <div className="flex items-center gap-2 bg-subtle px-3 py-2 rounded-lg opacity-70 shrink-0">
+              <div className="w-3.5 h-3.5 rounded-full border border-border-strong"></div>
               <div className="flex flex-col">
-                <span className="text-[11px] font-medium text-slate-600 dark:text-slate-400">4. Slack Notify</span>
-                <span className="font-mono text-[10px] text-slate-400">{t('executions.pending_input')}</span>
+                <span className="text-[11px] font-medium text-text-2">4. Slack Notify</span>
+                <span className="font-mono text-[10px] text-muted-foreground">{t('executions.pending_input')}</span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 pl-4 shrink-0 border-l border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-3 pl-4 shrink-0 border-l border-border">
             <div className="flex flex-col items-end">
-              <span className="text-[11px] font-semibold text-slate-900 dark:text-slate-100">3 / 4 {t('executions.completed_steps')}</span>
-              <span className="font-mono text-[10px] text-slate-400">75% {t('executions.elapsed')}</span>
+              <span className="text-[11px] font-semibold text-foreground">3 / 4 {t('executions.completed_steps')}</span>
+              <span className="font-mono text-[10px] text-muted-foreground">75% {t('executions.elapsed')}</span>
             </div>
-            <div className="w-16 bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+            <div className="w-16 bg-muted h-2 rounded-full overflow-hidden">
               <div className="bg-[#2563EB] h-full rounded-full" style={{ width: '75%' }}></div>
             </div>
           </div>
@@ -658,23 +658,23 @@ function MockExecutionsPage() {
 
       {/* Filter & Search Toolbar */}
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-card p-3 rounded-xl border border-border shadow-sm">
           {/* Search Bar */}
-          <div className="flex items-center flex-1 max-w-lg bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-1.5 border border-slate-200/80 dark:border-slate-700/60">
-            <Search size={15} className="text-slate-400 mr-2 shrink-0" />
+          <div className="flex items-center flex-1 max-w-lg bg-subtle rounded-lg px-3 py-1.5 border border-border">
+            <Search size={15} className="text-muted-foreground mr-2 shrink-0" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t('executions.search')}
-              className="w-full bg-transparent text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none"
+              className="w-full bg-transparent text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
             {searchQuery ? (
-              <button onClick={() => setSearchQuery('')} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setSearchQuery('')} className="text-muted-foreground hover:text-text-2">
                 <X size={14} />
               </button>
             ) : (
-              <kbd className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
+              <kbd className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-muted text-text-2 shrink-0">
                 ⌘ K
               </kbd>
             )}
@@ -682,7 +682,7 @@ function MockExecutionsPage() {
 
           <div className="flex items-center flex-wrap gap-2">
             {/* Status Tabs */}
-            <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+            <div className="flex items-center bg-subtle p-1 rounded-lg">
               {(['ALL', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED'] as const).map((tab) => {
                 const isActive = statusFilter === tab;
                 const label =
@@ -702,8 +702,8 @@ function MockExecutionsPage() {
                     onClick={() => setStatusFilter(tab)}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-all ${
                       isActive
-                        ? 'bg-white dark:bg-slate-900 text-[#2563EB] dark:text-blue-300 shadow-sm font-semibold'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                        ? 'bg-card text-[#2563EB] shadow-sm font-semibold'
+                        : 'text-text-2 hover:text-foreground'
                     }`}
                   >
                     {label}
@@ -718,7 +718,7 @@ function MockExecutionsPage() {
               <select
                 value={workflowFilter}
                 onChange={(e) => setWorkflowFilter(e.target.value)}
-                className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer max-w-[160px] truncate"
+                className="bg-subtle text-text-2 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-border focus:outline-none cursor-pointer max-w-[160px] truncate"
               >
                 <option value="ALL">{t('executions.all_workflows')}</option>
                 {workflowNames.map((name) => (
@@ -732,7 +732,7 @@ function MockExecutionsPage() {
               <select
                 value={triggerFilter}
                 onChange={(e) => setTriggerFilter(e.target.value)}
-                className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer"
+                className="bg-subtle text-text-2 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-border focus:outline-none cursor-pointer"
               >
                 <option value="ALL">{t('executions.all_triggers')}</option>
                 <option value="Webhook">{t('executions.trigger.webhook')}</option>
@@ -745,7 +745,7 @@ function MockExecutionsPage() {
               <select
                 value={timeRangeFilter}
                 onChange={(e) => setTimeRangeFilter(e.target.value)}
-                className="bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer"
+                className="bg-subtle text-text-2 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-border focus:outline-none cursor-pointer"
               >
                 <option value="24h">{t('executions.range.24h')}</option>
                 <option value="1h">{t('executions.range.1h')}</option>
@@ -762,7 +762,7 @@ function MockExecutionsPage() {
                     setTriggerFilter('ALL');
                     setSearchQuery('');
                   }}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  className="p-1 rounded-lg text-muted-foreground hover:text-text-2 hover:bg-subtle transition-colors"
                   title={t('executions.clear_filters')}
                 >
                   <X size={15} />
@@ -773,17 +773,17 @@ function MockExecutionsPage() {
         </div>
 
         {/* Execution Table */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 text-[10px] uppercase font-semibold tracking-wider border-b border-slate-200 dark:border-slate-800">
+                <tr className="bg-subtle text-muted-foreground text-[10px] uppercase font-semibold tracking-wider border-b border-border">
                   <th className="py-2.5 px-3 w-10 text-center">
                     <input
                       type="checkbox"
                       checked={isAllSelected}
                       onChange={toggleSelectAll}
-                      className="w-3.5 h-3.5 rounded border-slate-300 text-[#2563EB] focus:ring-0 cursor-pointer"
+                      className="w-3.5 h-3.5 rounded border-border-strong text-[#2563EB] focus:ring-0 cursor-pointer"
                     />
                   </th>
                   <th className="py-2.5 px-3 font-semibold">{t('executions.col_id')}</th>
@@ -796,12 +796,12 @@ function MockExecutionsPage() {
                   <th className="py-2.5 px-3 text-right font-semibold">{t('executions.col_actions')}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs text-slate-800 dark:text-slate-200">
+              <tbody className="divide-y divide-border text-xs text-foreground">
                 {filteredExecutions.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="py-12 text-center text-slate-500 dark:text-slate-400">
+                    <td colSpan={9} className="py-12 text-center text-muted-foreground">
                       <div className="flex flex-col items-center justify-center gap-2">
-                        <Terminal size={24} className="text-slate-300 dark:text-slate-600" />
+                        <Terminal size={24} className="text-muted-foreground" />
                         <p className="font-medium text-xs">{t('executions.no_matches')}</p>
                         <button
                           onClick={() => {
@@ -824,8 +824,8 @@ function MockExecutionsPage() {
                     return (
                       <tr
                         key={exec.id}
-                        className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${
-                          isSelected ? 'bg-indigo-50/30 dark:bg-blue-950/20' : ''
+                        className={`hover:bg-subtle transition-colors ${
+                          isSelected ? 'bg-run-bg' : ''
                         }`}
                       >
                         {/* Checkbox */}
@@ -834,14 +834,14 @@ function MockExecutionsPage() {
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggleSelect(exec.id)}
-                            className="w-3.5 h-3.5 rounded border-slate-300 text-[#2563EB] focus:ring-0 cursor-pointer"
+                            className="w-3.5 h-3.5 rounded border-border-strong text-[#2563EB] focus:ring-0 cursor-pointer"
                           />
                         </td>
 
                         {/* Execution ID */}
                         <td
                           onClick={() => navigate(`/executions/${exec.id.replace('#', '')}`)}
-                          className="py-2.5 px-3 font-mono text-xs font-bold text-[#2563EB] dark:text-blue-400 hover:underline cursor-pointer"
+                          className="py-2.5 px-3 font-mono text-xs font-bold text-[#2563EB] hover:underline cursor-pointer"
                         >
                           {exec.id}
                         </td>
@@ -849,8 +849,8 @@ function MockExecutionsPage() {
                         {/* Workflow Name */}
                         <td className="py-2.5 px-3">
                           <div className="flex items-center gap-2">
-                            <span className="font-medium text-slate-900 dark:text-slate-100">{exec.workflowName}</span>
-                            <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono text-[10px]">
+                            <span className="font-medium text-foreground">{exec.workflowName}</span>
+                            <span className="px-1.5 py-0.5 rounded bg-subtle text-text-2 font-mono text-[10px]">
                               {exec.version}
                             </span>
                           </div>
@@ -859,25 +859,25 @@ function MockExecutionsPage() {
                         {/* Status */}
                         <td className="py-2.5 px-3">
                           {exec.status === 'RUNNING' && (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-blue-950/80 text-[#2563EB] dark:text-blue-300 font-semibold text-[11px]">
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-run-bg text-[#2563EB] font-semibold text-[11px]">
                               <span className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-ping"></span>
                               {t('status.running')}
                             </span>
                           )}
                           {exec.status === 'SUCCESS' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-semibold text-[11px]">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-ok-bg text-ok font-semibold text-[11px]">
                               <CheckCircle2 size={12} />
                               {t('status.success')}
                             </span>
                           )}
                           {exec.status === 'FAILED' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-semibold text-[11px]">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-err-bg text-err font-semibold text-[11px]">
                               <AlertTriangle size={12} />
                               {t('status.failed')}
                             </span>
                           )}
                           {exec.status === 'CANCELLED' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium text-[11px]">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-subtle text-text-2 font-medium text-[11px]">
                               <XCircle size={12} />
                               {t('executions.status_cancelled')}
                             </span>
@@ -887,13 +887,13 @@ function MockExecutionsPage() {
                         {/* Started */}
                         <td className="py-2.5 px-3">
                           <div className="flex flex-col">
-                            <span className="font-mono text-[11px] text-slate-900 dark:text-slate-100">{exec.startedTime}</span>
-                            <span className="text-[10px] text-slate-400">{formatStartedRelative(exec.startedRelative)}</span>
+                            <span className="font-mono text-[11px] text-foreground">{exec.startedTime}</span>
+                            <span className="text-[10px] text-muted-foreground">{formatStartedRelative(exec.startedRelative)}</span>
                           </div>
                         </td>
 
                         {/* Duration */}
-                        <td className="py-2.5 px-3 font-mono text-[11px] font-medium text-slate-700 dark:text-slate-300">
+                        <td className="py-2.5 px-3 font-mono text-[11px] font-medium text-text-2">
                           {formatDuration(exec.durationMs)}
                         </td>
 
@@ -902,44 +902,44 @@ function MockExecutionsPage() {
                           {exec.status === 'FAILED' ? (
                             <div className="flex flex-col gap-0.5 min-w-[140px]">
                               <div className="flex items-center gap-2">
-                                <div className="w-16 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                <div className="w-16 bg-subtle h-1.5 rounded-full overflow-hidden">
                                   <div
-                                    className="bg-rose-500 h-full rounded-full"
+                                    className="bg-err h-full rounded-full"
                                     style={{ width: `${(exec.stepsCompleted / exec.stepsTotal) * 100}%` }}
                                   ></div>
                                 </div>
-                                <span className="font-mono text-[11px] text-rose-600 font-semibold">
+                                <span className="font-mono text-[11px] text-err font-semibold">
                                   {exec.stepsCompleted} / {exec.stepsTotal}
                                 </span>
                               </div>
-                              <span className="font-mono text-[10px] text-rose-500 truncate max-w-[180px]">{exec.error}</span>
+                              <span className="font-mono text-[10px] text-err truncate max-w-[180px]">{exec.error}</span>
                             </div>
                           ) : exec.status === 'CANCELLED' ? (
                             <div className="flex flex-col gap-0.5 min-w-[140px]">
                               <div className="flex items-center gap-2">
-                                <div className="w-16 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                <div className="w-16 bg-subtle h-1.5 rounded-full overflow-hidden">
                                   <div
-                                    className="bg-slate-400 h-full rounded-full"
+                                    className="bg-muted-foreground h-full rounded-full"
                                     style={{ width: `${(exec.stepsCompleted / exec.stepsTotal) * 100}%` }}
                                   ></div>
                                 </div>
-                                <span className="font-mono text-[11px] text-slate-400">
+                                <span className="font-mono text-[11px] text-muted-foreground">
                                   {exec.stepsCompleted} / {exec.stepsTotal}
                                 </span>
                               </div>
-                              <span className="font-mono text-[10px] text-slate-400 truncate max-w-[180px]">
+                              <span className="font-mono text-[10px] text-muted-foreground truncate max-w-[180px]">
                                 {exec.error || t('executions.user_cancelled')}
                               </span>
                             </div>
                           ) : (
                             <div className="flex items-center gap-2 min-w-[140px]">
-                              <div className="w-16 bg-slate-100 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                              <div className="w-16 bg-subtle h-1.5 rounded-full overflow-hidden">
                                 <div
-                                  className={`${exec.status === 'RUNNING' ? 'bg-[#2563EB]' : 'bg-emerald-500'} h-full rounded-full`}
+                                  className={`${exec.status === 'RUNNING' ? 'bg-[#2563EB]' : 'bg-ok'} h-full rounded-full`}
                                   style={{ width: `${(exec.stepsCompleted / exec.stepsTotal) * 100}%` }}
                                 ></div>
                               </div>
-                              <span className="font-mono text-[11px] text-slate-600 dark:text-slate-400">
+                              <span className="font-mono text-[11px] text-text-2">
                                 {exec.stepsCompleted} / {exec.stepsTotal} (
                                 {Math.round((exec.stepsCompleted / exec.stepsTotal) * 100)}%)
                               </span>
@@ -949,11 +949,11 @@ function MockExecutionsPage() {
 
                         {/* Triggered By */}
                         <td className="py-2.5 px-3">
-                          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px]">
+                          <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-subtle text-text-2 text-[11px]">
                             {exec.triggerType === 'Webhook' && <Zap size={12} className="text-[#2563EB]" />}
-                            {exec.triggerType === 'Schedule' && <Clock size={12} className="text-amber-500" />}
-                            {exec.triggerType === 'Manual' && <Play size={12} className="text-emerald-500" />}
-                            {exec.triggerType === 'Event' && <Activity size={12} className="text-blue-500" />}
+                            {exec.triggerType === 'Schedule' && <Clock size={12} className="text-warn" />}
+                            {exec.triggerType === 'Manual' && <Play size={12} className="text-ok" />}
+                            {exec.triggerType === 'Event' && <Activity size={12} className="text-run" />}
                             <span className="truncate max-w-[140px]">
                               {EXECUTION_TRIGGER_DETAIL_KEYS[exec.triggerDetail]
                                 ? t(EXECUTION_TRIGGER_DETAIL_KEYS[exec.triggerDetail])
@@ -967,7 +967,7 @@ function MockExecutionsPage() {
                           <div className="inline-flex items-center gap-1.5">
                             <button
                               onClick={() => navigate(`/executions/${exec.id.replace('#', '')}`)}
-                              className="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-[11px] font-medium transition-colors"
+                              className="px-2.5 py-1 rounded bg-subtle hover:bg-muted text-foreground text-[11px] font-medium transition-colors"
                             >
                               {t('executions.view_trace')}
                             </button>
@@ -975,7 +975,7 @@ function MockExecutionsPage() {
                             {exec.status === 'RUNNING' && (
                               <button
                                 onClick={() => handleStopExecution(exec.id)}
-                                className="px-2.5 py-1 rounded bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-600 hover:text-white text-rose-600 dark:text-rose-400 text-[11px] font-medium transition-colors"
+                                className="px-2.5 py-1 rounded bg-err-bg hover:bg-err hover:text-background text-err text-[11px] font-medium transition-colors"
                               >
                                 {t('executions.stop')}
                               </button>
@@ -984,7 +984,7 @@ function MockExecutionsPage() {
                             {exec.status === 'FAILED' && (
                               <button
                                 onClick={() => setActiveLogModal(exec)}
-                                className="px-2.5 py-1 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 hover:bg-rose-600 hover:text-white text-[11px] font-semibold transition-colors"
+                                className="px-2.5 py-1 rounded bg-err-bg text-err hover:bg-err hover:text-background text-[11px] font-semibold transition-colors"
                               >
                                 {t('executions.debug_log')}
                               </button>
@@ -993,7 +993,7 @@ function MockExecutionsPage() {
                             {(exec.status === 'SUCCESS' || exec.status === 'CANCELLED') && (
                               <button
                                 onClick={() => handleReRun(exec)}
-                                className="px-2.5 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 text-[11px] transition-colors"
+                                className="px-2.5 py-1 rounded bg-subtle hover:bg-muted text-muted-foreground text-[11px] transition-colors"
                               >
                                 {t('executions.rerun')}
                               </button>
@@ -1001,7 +1001,7 @@ function MockExecutionsPage() {
 
                             <button
                               onClick={() => setActiveLogModal(exec)}
-                              className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600"
+                              className="p-1 rounded hover:bg-subtle text-muted-foreground hover:text-text-2"
                               title={t('executions.logs')}
                             >
                               <Terminal size={14} />
@@ -1017,15 +1017,15 @@ function MockExecutionsPage() {
           </div>
 
           {/* Table Footer / Pagination */}
-          <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-slate-500 dark:text-slate-400 text-xs">
+          <div className="px-4 py-3 bg-subtle border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-muted-foreground text-xs">
             <div className="flex items-center gap-4">
               <span>
-                {t('executions.showing')} <span className="font-semibold font-mono text-slate-900 dark:text-slate-100">1–{filteredExecutions.length}</span> {t('executions.of')}{' '}
-                <span className="font-semibold font-mono text-slate-900 dark:text-slate-100">1,482</span> {t('executions.count_label')}
+                {t('executions.showing')} <span className="font-semibold font-mono text-foreground">1–{filteredExecutions.length}</span> {t('executions.of')}{' '}
+                <span className="font-semibold font-mono text-foreground">1,482</span> {t('executions.count_label')}
               </span>
               <div className="flex items-center gap-1.5">
-                <span className="text-slate-400">{t('executions.rows')}</span>
-                <select className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded px-2 py-0.5 focus:outline-none cursor-pointer">
+                <span className="text-muted-foreground">{t('executions.rows')}</span>
+                <select className="bg-card border border-border text-text-2 rounded px-2 py-0.5 focus:outline-none cursor-pointer">
                   <option>25 {t('executions.per_page')}</option>
                   <option>50 {t('executions.per_page')}</option>
                   <option>100 {t('executions.per_page')}</option>
@@ -1036,22 +1036,22 @@ function MockExecutionsPage() {
             <div className="flex items-center gap-1">
               <button
                 disabled
-                className="px-2.5 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-400 text-xs disabled:opacity-50"
+                className="px-2.5 py-1 rounded bg-card border border-border text-muted-foreground text-xs disabled:opacity-50"
               >
                 {t('executions.previous')}
               </button>
               <button className="px-2.5 py-1 rounded bg-[#2563EB] text-white font-bold text-xs">1</button>
-              <button className="px-2.5 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs transition-colors">
+              <button className="px-2.5 py-1 rounded hover:bg-muted text-text-2 text-xs transition-colors">
                 2
               </button>
-              <button className="px-2.5 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs transition-colors">
+              <button className="px-2.5 py-1 rounded hover:bg-muted text-text-2 text-xs transition-colors">
                 3
               </button>
-              <span className="px-1 text-slate-400">…</span>
-              <button className="px-2.5 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs transition-colors">
+              <span className="px-1 text-muted-foreground">…</span>
+              <button className="px-2.5 py-1 rounded hover:bg-muted text-text-2 text-xs transition-colors">
                 59
               </button>
-              <button className="px-2.5 py-1 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <button className="px-2.5 py-1 rounded bg-card border border-border text-text-2 text-xs hover:bg-subtle transition-colors">
                 {t('executions.next')}
               </button>
             </div>
@@ -1062,25 +1062,25 @@ function MockExecutionsPage() {
       {/* Debug Log Modal */}
       <AnimatePresence>
         {activeLogModal && (
-          <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 bg-foreground/30 flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-slate-900 text-slate-100 rounded-xl border border-slate-800 w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col"
+              className="bg-subtle text-foreground rounded-xl border border-border w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col"
             >
               {/* Modal Header */}
-              <div className="px-4 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div className="px-4 py-3 bg-subtle border-b border-border flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Terminal size={16} className="text-[#2563EB]" />
                   <span className="font-mono font-bold text-xs text-white">{activeLogModal.id} {t('executions.telemetry_debug')}</span>
                   <span
                     className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                       activeLogModal.status === 'FAILED'
-                        ? 'bg-rose-950 text-rose-400'
+                        ? 'bg-err text-err'
                         : activeLogModal.status === 'SUCCESS'
-                        ? 'bg-emerald-950 text-emerald-400'
-                        : 'bg-indigo-950 text-blue-300'
+                        ? 'bg-ok text-ok'
+                        : 'bg-primary text-run'
                     }`}
                   >
                     {activeLogModal.status === 'RUNNING' ? t('status.running') : activeLogModal.status === 'SUCCESS' ? t('status.success') : activeLogModal.status === 'FAILED' ? t('status.failed') : t('executions.status_cancelled')}
@@ -1088,7 +1088,7 @@ function MockExecutionsPage() {
                 </div>
                 <button
                   onClick={() => setActiveLogModal(null)}
-                  className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800"
+                  className="text-muted-foreground hover:text-white p-1 rounded hover:bg-subtle"
                 >
                   <X size={16} />
                 </button>
@@ -1096,59 +1096,59 @@ function MockExecutionsPage() {
 
               {/* Modal Body */}
               <div className="p-4 space-y-3 font-mono text-xs max-h-[420px] overflow-y-auto">
-                <div className="p-3 rounded bg-slate-950 border border-slate-800 space-y-1 text-slate-300">
+                <div className="p-3 rounded bg-subtle border border-border space-y-1 text-muted-foreground">
                   <div>
-                    <span className="text-slate-500">{t('executions.workflow')}</span> {activeLogModal.workflowName} ({activeLogModal.version})
+                    <span className="text-muted-foreground">{t('executions.workflow')}</span> {activeLogModal.workflowName} ({activeLogModal.version})
                   </div>
                   <div>
-                    <span className="text-slate-500">{t('executions.trigger')}</span>{' '}
+                    <span className="text-muted-foreground">{t('executions.trigger')}</span>{' '}
                     {EXECUTION_TRIGGER_DETAIL_KEYS[activeLogModal.triggerDetail]
                       ? t(EXECUTION_TRIGGER_DETAIL_KEYS[activeLogModal.triggerDetail])
                       : activeLogModal.triggerDetail}
                   </div>
                   <div>
-                    <span className="text-slate-500">{t('executions.duration_label')}</span> {activeLogModal.durationMs}ms
+                    <span className="text-muted-foreground">{t('executions.duration_label')}</span> {activeLogModal.durationMs}ms
                   </div>
                   {activeLogModal.error && (
-                    <div className="text-rose-400 font-semibold pt-1 border-t border-slate-800/80">
+                    <div className="text-err font-semibold pt-1 border-t border-border">
                       {t('executions.error_label')} {activeLogModal.error}
                     </div>
                   )}
                 </div>
 
                 <div className="space-y-2 pt-2">
-                  <div className="text-[11px] font-sans font-semibold text-slate-400 uppercase tracking-wider">{t('executions.trace_events')}</div>
+                  <div className="text-[11px] font-sans font-semibold text-muted-foreground uppercase tracking-wider">{t('executions.trace_events')}</div>
 
                   <div className="space-y-1.5 text-[11px]">
-                    <div className="p-2 rounded bg-slate-950/80 border border-slate-800/60 flex items-start gap-2">
-                      <span className="text-slate-500 shrink-0">10:42:15.001</span>
-                      <span className="text-blue-400 font-semibold shrink-0">[INFO]</span>
-                      <span className="text-slate-200">{t('executions.trace.trigger_received')}</span>
+                    <div className="p-2 rounded bg-foreground/80 border border-border flex items-start gap-2">
+                      <span className="text-muted-foreground shrink-0">10:42:15.001</span>
+                      <span className="text-run font-semibold shrink-0">[INFO]</span>
+                      <span className="text-foreground">{t('executions.trace.trigger_received')}</span>
                     </div>
 
-                    <div className="p-2 rounded bg-slate-950/80 border border-slate-800/60 flex items-start gap-2">
-                      <span className="text-slate-500 shrink-0">10:42:15.120</span>
-                      <span className="text-emerald-400 font-semibold shrink-0">[SUCCESS]</span>
-                      <span className="text-slate-200">{t('executions.trace.webhook_completed')}</span>
+                    <div className="p-2 rounded bg-foreground/80 border border-border flex items-start gap-2">
+                      <span className="text-muted-foreground shrink-0">10:42:15.120</span>
+                      <span className="text-ok font-semibold shrink-0">[SUCCESS]</span>
+                      <span className="text-foreground">{t('executions.trace.webhook_completed')}</span>
                     </div>
 
-                    <div className="p-2 rounded bg-slate-950/80 border border-slate-800/60 flex items-start gap-2">
-                      <span className="text-slate-500 shrink-0">10:42:15.165</span>
-                      <span className="text-emerald-400 font-semibold shrink-0">[SUCCESS]</span>
-                      <span className="text-slate-200">{t('executions.trace.postgres_rows')}</span>
+                    <div className="p-2 rounded bg-foreground/80 border border-border flex items-start gap-2">
+                      <span className="text-muted-foreground shrink-0">10:42:15.165</span>
+                      <span className="text-ok font-semibold shrink-0">[SUCCESS]</span>
+                      <span className="text-foreground">{t('executions.trace.postgres_rows')}</span>
                     </div>
 
                     {activeLogModal.status === 'FAILED' ? (
-                      <div className="p-2 rounded bg-rose-950/40 border border-rose-900/60 flex items-start gap-2 text-rose-300">
-                        <span className="text-slate-500 shrink-0">10:42:18.100</span>
-                        <span className="text-rose-400 font-semibold shrink-0">[ERROR]</span>
+                      <div className="p-2 rounded bg-err-bg border border-err-border flex items-start gap-2 text-err">
+                        <span className="text-muted-foreground shrink-0">10:42:18.100</span>
+                        <span className="text-err font-semibold shrink-0">[ERROR]</span>
                         <span>{t('executions.trace.step_failed')} {activeLogModal.error}. Stack trace at S3Client.connect (node:net:312).</span>
                       </div>
                     ) : (
-                      <div className="p-2 rounded bg-slate-950/80 border border-slate-800/60 flex items-start gap-2">
-                        <span className="text-slate-500 shrink-0">10:42:16.400</span>
-                        <span className="text-emerald-400 font-semibold shrink-0">[SUCCESS]</span>
-                        <span className="text-slate-200">{t('executions.trace.ai_completed')}</span>
+                      <div className="p-2 rounded bg-foreground/80 border border-border flex items-start gap-2">
+                        <span className="text-muted-foreground shrink-0">10:42:16.400</span>
+                        <span className="text-ok font-semibold shrink-0">[SUCCESS]</span>
+                        <span className="text-foreground">{t('executions.trace.ai_completed')}</span>
                       </div>
                     )}
                   </div>
@@ -1156,20 +1156,20 @@ function MockExecutionsPage() {
               </div>
 
               {/* Modal Footer */}
-              <div className="px-4 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between">
+              <div className="px-4 py-3 bg-subtle border-t border-border flex items-center justify-between">
                 <button
                   onClick={() => {
                     setActiveLogModal(null);
                     navigate(`/executions/${activeLogModal.id.replace('#', '')}`);
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#2563EB] text-white font-sans text-xs font-semibold hover:bg-blue-600 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#2563EB] text-white font-sans text-xs font-semibold hover:bg-primary transition-colors"
                 >
                   <span>{t('executions.open_detail')}</span>
                   <ExternalLink size={13} />
                 </button>
                 <button
                   onClick={() => setActiveLogModal(null)}
-                  className="px-3 py-1.5 rounded bg-slate-800 text-slate-300 font-sans text-xs hover:bg-slate-700 transition-colors"
+                  className="px-3 py-1.5 rounded bg-subtle text-muted-foreground font-sans text-xs hover:bg-subtle transition-colors"
                 >
                   {t('executions.close')}
                 </button>

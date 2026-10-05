@@ -924,7 +924,7 @@ export const WorkflowBuilderPage: React.FC = () => {
         </div>
       </header>
 
-      {isLoadingWorkflow && <div role="status" className="border-b border-border bg-white px-3 py-2 text-xs text-text-2">Loading workflow…</div>}
+      {isLoadingWorkflow && <div role="status" className="border-b border-border bg-card px-3 py-2 text-xs text-text-2">Loading workflow…</div>}
       {workflowError && <div role="alert" data-testid="workflow-builder-error" className="border-b border-err-border bg-err-bg px-3 py-2 text-xs text-err">{workflowError}</div>}
       {publishedWebhooks.length > 0 && (
         <section aria-label="One-time webhook credentials" className="space-y-2 border-b border-warn/30 bg-warn-bg px-3 py-3 text-xs text-warn">
@@ -1408,7 +1408,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         data-testid="ocr-artifact-id"
                         value={String(selectedNodeConfig.artifactId ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value, fileUrl: '' })}
-                        className="w-full rounded border border-border bg-white px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
                     <div>
@@ -1419,7 +1419,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         value={String(selectedNodeConfig.fileUrl ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value, artifactId: '' })}
                         placeholder="https://..."
-                        className="w-full rounded border border-border bg-white px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
                     <p className="text-[10px] leading-relaxed text-muted-foreground">Leave both empty while drafting; filling one clears the other. URL execution stays disabled until its security checks are verified.</p>
@@ -1551,14 +1551,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                         </button>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-[10px]">
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-text-2">{t('ocr.pages')}: <strong>{visibleOcrResult.document.pages}</strong></span>
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-text-2">
+                        <span className="rounded bg-card/70 px-2 py-1.5 text-text-2">{t('ocr.pages')}: <strong>{visibleOcrResult.document.pages}</strong></span>
+                        <span className="rounded bg-card/70 px-2 py-1.5 text-text-2">
                           {t('ocr.confidence')}: <strong>{visibleOcrResult.confidence !== null ? `${(visibleOcrResult.confidence * 100).toFixed(1)}%` : '—'}</strong>
                         </span>
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-text-2">
+                        <span className="rounded bg-card/70 px-2 py-1.5 text-text-2">
                           {t('ocr.mime_type')}: <strong>{visibleOcrResult.document.mimeType}</strong>
                         </span>
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-text-2">
+                        <span className="rounded bg-card/70 px-2 py-1.5 text-text-2">
                           {t('ocr.tables')}: <strong>{visibleOcrResult.tables?.length ?? 0}</strong>
                         </span>
                       </div>
@@ -1588,7 +1588,7 @@ export const WorkflowBuilderPage: React.FC = () => {
 
                       <div>
                         <span className="mb-1 block text-[10px] font-medium text-text-2">{t('ocr.raw_text')}</span>
-                        <pre data-testid="ocr-raw-text" className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-border bg-white/70 p-2 font-mono text-[10px] leading-relaxed text-text-2">{visibleOcrResult.text.rawText || '(No text detected)'}</pre>
+                        <pre data-testid="ocr-raw-text" className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-border bg-card/70 p-2 font-mono text-[10px] leading-relaxed text-text-2">{visibleOcrResult.text.rawText || '(No text detected)'}</pre>
                       </div>
                     </div>
                   )}

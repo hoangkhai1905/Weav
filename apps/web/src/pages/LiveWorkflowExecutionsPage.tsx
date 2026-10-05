@@ -5,6 +5,7 @@ import { executionApi } from '../api/execution.api';
 import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
 import type { ExecutionDetail, WorkflowDefinition } from '../types/workflow.types';
 import { useI18nStore } from '../store/useI18nStore';
+import { statusBadgeClass, type StatusTone } from '../components/common/statusBadgeClass';
 
 type StatusFilter = 'ALL' | ExecutionDetail['status'];
 
@@ -19,11 +20,11 @@ function statusLabel(status: ExecutionDetail['status'], isVietnamese: boolean): 
   return labels[status];
 }
 
-function statusClass(status: ExecutionDetail['status']): string {
-  if (status === 'SUCCESS') return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300';
-  if (status === 'FAILED') return 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300';
-  if (status === 'RUNNING' || status === 'QUEUED') return 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300';
-  return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300';
+function statusTone(status: ExecutionDetail['status']): StatusTone {
+  if (status === 'SUCCESS') return 'ok';
+  if (status === 'FAILED') return 'err';
+  if (status === 'RUNNING' || status === 'QUEUED') return 'run';
+  return 'pause';
 }
 
 function formatDate(value: string): string {
@@ -117,102 +118,112 @@ export function LiveWorkflowExecutionsPage() {
     navigate(`/executions/${encodeURIComponent(execution.id)}?workflowId=${encodeURIComponent(execution.workflowId)}`);
   };
 
+  const fieldCls =
+    'h-8 rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
+  const btnCls =
+    'inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
+  const th = 'h-8 whitespace-nowrap border-b border-border bg-subtle px-3 text-left text-xs font-medium text-muted-foreground';
+  const td = 'h-10 whitespace-nowrap border-b border-border px-3';
+  const failedCount = executions.filter((execution) => execution.status === 'FAILED').length;
+
   return (
-    <main className="mx-auto max-w-[1400px] space-y-5 pb-12">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">{t('executions.title')}</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t('executions.subtitle')}</p>
-          {!workflowId && (
-            <p className="mt-1 text-xs text-slate-400">
-              {isVietnamese
-                ? 'Hiển thị tối đa 100 lượt chạy mới nhất cho mỗi workflow; API V1 chưa có danh sách execution toàn cục.'
-                : 'Showing up to 100 latest runs per workflow; API V1 has no global execution-list endpoint.'}
-            </p>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={() => void refresh(true)}
-          disabled={refreshing || loading}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-        >
-          <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
+    <main className="-m-4 flex h-[calc(100%+2rem)] min-h-0 flex-col bg-card sm:-m-5 sm:h-[calc(100%+2.5rem)]">
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-5 py-2">
+        <h1 className="text-base font-semibold text-foreground">{t('executions.title')}</h1>
+        {!loading && (
+          <span className="tabular-nums text-muted-foreground">
+            {executions.length} {isVietnamese ? 'lượt' : 'runs'}
+            {failedCount > 0 && <span className="text-err"> · {failedCount} {isVietnamese ? 'lỗi' : 'failed'}</span>}
+          </span>
+        )}
+        <button type="button" onClick={() => void refresh(true)} disabled={refreshing || loading} className={`${btnCls} ml-auto`}>
+          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} aria-hidden="true" />
           {isVietnamese ? 'Làm mới' : 'Refresh'}
         </button>
       </header>
 
-      {notice && <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">{notice}</p>}
+      {notice && <p role="status" className="shrink-0 border-b border-border bg-accent px-5 py-2 text-[13px] text-accent-foreground">{notice}</p>}
       {error && (
-        <div role="alert" className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
-          <AlertTriangle size={17} className="mt-0.5 shrink-0" />
+        <div role="alert" className="flex shrink-0 items-start gap-2 border-b border-err-border bg-err-bg px-5 py-2 text-[13px] text-err">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
           <div className="min-w-0 flex-1">{error}</div>
-          <button type="button" className="underline" onClick={() => void refresh()}>{isVietnamese ? 'Thử lại' : 'Retry'}</button>
+          <button type="button" className="font-medium underline" onClick={() => void refresh()}>{isVietnamese ? 'Thử lại' : 'Retry'}</button>
         </div>
       )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex min-w-56 flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
-            <Search size={15} className="text-slate-400" />
-            <input aria-label={t('executions.search')} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('executions.search')} className="w-full bg-transparent text-sm outline-none" />
-          </label>
-          {!workflowId && (
-            <select aria-label={t('executions.col_workflow')} value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} className="rounded-lg border border-slate-200 bg-transparent px-3 py-2 text-sm dark:border-slate-700">
-              <option value="ALL">{isVietnamese ? 'Tất cả workflow' : 'All workflows'}</option>
-              {workflows.map((workflow) => <option key={workflow.id} value={workflow.name}>{workflow.name}</option>)}
-            </select>
-          )}
-          <label className="sr-only" htmlFor="execution-status-filter">{t('executions.col_status')}</label>
-          <select id="execution-status-filter" value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)} className="rounded-lg border border-slate-200 bg-transparent px-3 py-2 text-sm dark:border-slate-700">
-            <option value="ALL">{isVietnamese ? 'Mọi trạng thái' : 'All statuses'}</option>
-            {(['QUEUED', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED'] as const).map((value) => <option key={value} value={value}>{statusLabel(value, isVietnamese)}</option>)}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-5 py-2">
+        <label className="relative flex w-full items-center sm:w-[280px]">
+          <span className="sr-only">{t('executions.search')}</span>
+          <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-2.5 text-muted-foreground" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('executions.search')} className={`${fieldCls} w-full pl-[30px]`} />
+        </label>
+        {!workflowId && (
+          <select aria-label={t('executions.col_workflow')} value={workflowName} onChange={(event) => setWorkflowName(event.target.value)} className={fieldCls}>
+            <option value="ALL">{isVietnamese ? 'Tất cả workflow' : 'All workflows'}</option>
+            {workflows.map((workflow) => <option key={workflow.id} value={workflow.name}>{workflow.name}</option>)}
           </select>
-        </div>
+        )}
+        <label className="sr-only" htmlFor="execution-status-filter">{t('executions.col_status')}</label>
+        <select id="execution-status-filter" value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)} className={fieldCls}>
+          <option value="ALL">{isVietnamese ? 'Mọi trạng thái' : 'All statuses'}</option>
+          {(['QUEUED', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED'] as const).map((value) => <option key={value} value={value}>{statusLabel(value, isVietnamese)}</option>)}
+        </select>
+        {!workflowId && (
+          <span className="ml-auto text-xs text-muted-foreground">
+            {isVietnamese
+              ? 'Tối đa 100 lượt mới nhất cho mỗi workflow.'
+              : 'Up to the 100 latest runs per workflow.'}
+          </span>
+        )}
+        {workflowId && (
+          <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Clock3 size={13} aria-hidden="true" />
+            {isVietnamese ? 'Tự làm mới mỗi 5 giây.' : 'Auto-refreshes every 5 seconds.'}
+          </span>
+        )}
+      </div>
 
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[780px] text-left text-sm">
-            <thead className="border-b border-slate-200 text-xs text-slate-500 dark:border-slate-800">
-              <tr>
-                <th className="px-3 py-2 font-medium">{t('executions.col_id')}</th>
-                <th className="px-3 py-2 font-medium">{t('executions.col_workflow')}</th>
-                <th className="px-3 py-2 font-medium">{t('executions.col_status')}</th>
-                <th className="px-3 py-2 font-medium">{t('executions.col_started')}</th>
-                <th className="px-3 py-2 font-medium">{t('executions.col_duration')}</th>
-                <th className="px-3 py-2 font-medium">{isVietnamese ? 'Kích hoạt' : 'Trigger'}</th>
-                <th className="px-3 py-2 text-right font-medium">{t('executions.col_actions')}</th>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full min-w-[820px] border-collapse text-[13px]">
+          <thead>
+            <tr>
+              <th className={th}>{t('executions.col_status')}</th>
+              <th className={th}>{t('executions.col_id')}</th>
+              <th className={th}>{t('executions.col_workflow')}</th>
+              <th className={th}>{isVietnamese ? 'Kích hoạt' : 'Trigger'}</th>
+              <th className={th}>{t('executions.col_started')}</th>
+              <th className={`${th} text-right`}>{t('executions.col_duration')}</th>
+              <th className={`${th} text-right`}>{t('executions.col_actions')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((execution) => (
+              <tr key={execution.id} className="transition-colors hover:bg-subtle">
+                <td className={td}><span className={statusBadgeClass(statusTone(execution.status))}>{statusLabel(execution.status, isVietnamese)}</span></td>
+                <td className={`${td} font-mono text-xs text-text-2`}>{execution.id}</td>
+                <td className={`${td} max-w-[280px] overflow-hidden text-ellipsis font-medium text-foreground`} title={execution.workflowName}>{execution.workflowName}</td>
+                <td className={`${td} text-text-2`}>{execution.triggerType}</td>
+                <td className={`${td} tabular-nums text-text-2`}>{formatDate(execution.startedAt)}</td>
+                <td className={`${td} text-right font-mono text-xs tabular-nums text-text-2`}>{duration(execution)}</td>
+                <td className={`${td} text-right`}>
+                  <div className="inline-flex gap-1.5">
+                    <button type="button" onClick={() => openDetail(execution)} className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-text-2 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      <ExternalLink size={13} aria-hidden="true" />{t('executions.view_trace')}
+                    </button>
+                    <button type="button" onClick={() => void rerun(execution)} disabled={execution.status === 'QUEUED' || execution.status === 'RUNNING'} title={isVietnamese ? 'Đưa một lượt chạy mới vào hàng đợi' : 'Queue a new run'} className="inline-flex h-7 items-center gap-1 rounded-md border border-border-strong px-2 text-xs font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40">
+                      <Play size={12} aria-hidden="true" />{isVietnamese ? 'Chạy lại' : 'Run again'}
+                    </button>
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filtered.map((execution) => (
-                <tr key={execution.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                  <td className="px-3 py-3 font-mono text-xs">{execution.id}</td>
-                  <td className="px-3 py-3 font-medium text-slate-800 dark:text-slate-100">{execution.workflowName}</td>
-                  <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${statusClass(execution.status)}`}>{statusLabel(execution.status, isVietnamese)}</span></td>
-                  <td className="px-3 py-3 text-xs text-slate-500">{formatDate(execution.startedAt)}</td>
-                  <td className="px-3 py-3 font-mono text-xs">{duration(execution)}</td>
-                  <td className="px-3 py-3 text-xs text-slate-500">{execution.triggerType}</td>
-                  <td className="px-3 py-3 text-right">
-                    <div className="inline-flex gap-2">
-                      <button type="button" onClick={() => openDetail(execution)} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1.5 text-xs dark:bg-slate-800">
-                        <ExternalLink size={13} />{t('executions.view_trace')}
-                      </button>
-                      <button type="button" onClick={() => void rerun(execution)} disabled={execution.status === 'QUEUED' || execution.status === 'RUNNING'} title={isVietnamese ? 'Đưa một lượt chạy mới vào hàng đợi' : 'Queue a new run'} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs disabled:opacity-40 dark:border-slate-700">
-                        <Play size={13} />{isVietnamese ? 'Chạy lại' : 'Run again'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {!loading && filtered.length === 0 && (
-                <tr><td colSpan={7} className="px-3 py-12 text-center text-sm text-slate-500">{isVietnamese ? 'Không có lượt chạy phù hợp.' : 'No matching executions.'}</td></tr>
-              )}
-            </tbody>
-          </table>
-          {loading && <div className="flex justify-center py-12"><LoaderCircle size={22} className="animate-spin text-blue-600" /></div>}
-        </div>
-        {workflowId && <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-400"><Clock3 size={13} />{isVietnamese ? 'Tự làm mới mỗi 5 giây khi lọc theo workflow.' : 'Auto-refreshes every 5 seconds for a workflow-filtered view.'}</p>}
-      </section>
+            ))}
+            {!loading && filtered.length === 0 && (
+              <tr><td colSpan={7} className="px-3 py-12 text-center text-[13px] text-text-2">{isVietnamese ? 'Không có lượt chạy phù hợp.' : 'No matching executions.'}</td></tr>
+            )}
+          </tbody>
+        </table>
+        {loading && <div role="status" className="flex justify-center py-12"><LoaderCircle size={20} className="animate-spin text-muted-foreground" aria-label={isVietnamese ? 'Đang tải' : 'Loading'} /></div>}
+      </div>
     </main>
   );
 }
