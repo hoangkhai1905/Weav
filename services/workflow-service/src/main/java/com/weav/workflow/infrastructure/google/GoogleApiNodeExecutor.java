@@ -1,6 +1,7 @@
 package com.weav.workflow.infrastructure.google;
 
 import com.weav.workflow.application.node.NodeExecutor;
+import com.weav.workflow.application.port.out.ConnectionReconnectRequiredException;
 import com.weav.workflow.application.port.out.ResolvedConnection;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
 import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableException;
@@ -136,6 +137,9 @@ abstract class GoogleApiNodeExecutor implements NodeExecutor {
         } catch (ForbiddenException exception) {
             throw new NodeExecutor.Failure("CONNECTION_FORBIDDEN",
                     "The " + service + " connection is not available to this workspace.", false);
+        } catch (ConnectionReconnectRequiredException exception) {
+            throw new NodeExecutor.Failure(ConnectionReconnectRequiredException.CODE,
+                    "The " + service + " connection must be reconnected: open Connections and reconnect it.", false);
         } catch (WorkspaceDependencyUnavailableException exception) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
                     "The connection service is unavailable.", true, true);

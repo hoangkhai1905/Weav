@@ -125,7 +125,7 @@ Delivery is at-least-once (consumers dedupe by `eventId`). Drain: one row at a t
 - Internal routes: `/internal/workspaces/**` is `permitAll` at the chain level but [InternalServiceKeyFilter](../../../services/workspace-service/src/main/java/com/weav/workspace/infrastructure/security/InternalServiceKeyFilter.java) requires `X-Internal-Service-Key` (constant-time compare; rejected if the key is unconfigured). A bearer token never authorizes them. This is a static shared key, not a Service JWT.
 - Authorization: OWNER vs MEMBER role plus flags via `WorkspaceAuthorizationPolicy`, `ConnectionAuthorizationPolicy`; PostgreSQL constraints are the final guard.
 - Secrets: credentials AES-256-GCM encrypted at rest (`CREDENTIAL_ENCRYPTION_KEY` Base64 32 bytes, version stored per row). Google tokens live only in the encrypted payload. OAuth state is one-time, TTL-bound, holds only ids; redirect URI and return URL come from server config, never the client. Logs never contain tokens, keys or raw provider bodies.
-- Google scopes: Gmail `openid`, `email`, `gmail.metadata`; Sheets `openid`, `email`, `spreadsheets` (no send, no broad Drive).
+- Google scopes: Gmail `openid`, `email`, `gmail.readonly`, `gmail.send`; Sheets `openid`, `email`, `spreadsheets` (no broad Drive).
 - Input: Jackson `fail-on-unknown-properties=true`; workspace name <=255, connection name <=120, email <=320, search <=120, page size 1-100, enum allow-lists.
 
 ## Configuration

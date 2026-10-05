@@ -2,6 +2,7 @@ package com.weav.workflow.infrastructure.workspace;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import com.weav.workflow.application.port.out.ConnectionReconnectRequiredException;
 import com.weav.workflow.application.port.out.ResolvedConnection;
 import com.weav.workflow.application.port.out.WorkspaceAccessPort;
 import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableException;
@@ -195,6 +196,21 @@ class WorkspaceClientTest {
 
         assertTrue(auth.isEmpty());
         assertThrows(IllegalStateException.class, resolved::auth);
+    }
+
+    @Test
+    void resolveMapsTheReconnectCodeToANonRetryableExceptionAndOtherUnprocessableToUnavailable() {
+        stubResponse.set(new StubResponse(422,
+                "{\"code\":\"CONNECTION_RECONNECT_REQUIRED\",\"message\":\"Google connection authorization is invalid\","
+                        + "\"requestId\":\"r1\"}", false, 0));
+
+        assertThrows(ConnectionReconnectRequiredException.class, () -> client.resolve(WORKSPACE_ID, CONNECTION_ID));
+
+        stubResponse.set(new StubResponse(422,
+                "{\"code\":\"INVALID_STATE\",\"message\":\"Connection is not active\",\"requestId\":\"r1\"}",
+                false, 0));
+
+        assertThrows(WorkspaceDependencyUnavailableException.class, () -> client.resolve(WORKSPACE_ID, CONNECTION_ID));
     }
 
     @Test

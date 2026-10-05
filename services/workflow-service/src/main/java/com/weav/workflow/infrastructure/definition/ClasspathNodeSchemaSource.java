@@ -26,8 +26,8 @@ public final class ClasspathNodeSchemaSource implements NodeSchemaSource {
     private static final Set<String> ROOT_KEYWORDS = Set.of("$schema", "$id", "title", "description", "type",
             "properties", "required", "additionalProperties", "x-weav-node", "x-weav-mutually-exclusive");
     private static final Set<String> FIELD_KEYWORDS = Set.of("type", "enum", "items", "oneOf",
-            "additionalProperties", "minLength", "minItems", "minimum", "title", "description",
-            "x-weav-template", "x-weav-connection", "x-weav-static");
+            "additionalProperties", "minLength", "minItems", "minimum", "maxLength", "maximum", "title", "description",
+            "x-weav-template", "x-weav-connection", "x-weav-static", "default");
     private static final Set<String> CATEGORIES = Set.of("trigger", "action", "logic", "ai");
 
     private final JsonMapper mapper = JsonMapper.builder().build();
@@ -117,12 +117,15 @@ public final class ClasspathNodeSchemaSource implements NodeSchemaSource {
             require(provider != null && !provider.isBlank(), where, "x-weav-connection.provider is required");
         }
         require(!node.has("minimum") || node.get("minimum").isNumber(), where, "minimum must be a number");
+        require(!node.has("maximum") || node.get("maximum").isNumber(), where, "maximum must be a number");
         return new Field(type, Set.copyOf(enumValues),
                 items == null ? null : field(items, where + ".items"), List.copyOf(oneOf),
                 additional == null ? null : field(additional, where + ".additionalProperties"),
                 intValue(node, "minLength", where), intValue(node, "minItems", where),
                 node.has("minimum") ? node.get("minimum").decimalValue() : null,
-                flag(node, "x-weav-template", where), provider, flag(node, "x-weav-static", where));
+                flag(node, "x-weav-template", where), provider, flag(node, "x-weav-static", where),
+                intValue(node, "maxLength", where),
+                node.has("maximum") ? node.get("maximum").decimalValue() : null);
     }
 
     private static Integer intValue(JsonNode node, String name, String where) {

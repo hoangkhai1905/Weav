@@ -61,7 +61,9 @@ public record NodeConfigSchema(
             BigDecimal minimum,
             boolean template,
             String connectionProvider,
-            boolean isStatic) {
+            boolean isStatic,
+            Integer maxLength,
+            BigDecimal maximum) {
 
         /** Type, items, oneOf, additionalProperties and minimum. Enums are checked by the catalog rules. */
         public boolean matchesShape(Object value) {
@@ -72,9 +74,10 @@ public record NodeConfigSchema(
                 return true;
             }
             return switch (type) {
-                case "string" -> value instanceof String;
+                case "string" -> value instanceof String text && (maxLength == null || text.codePointCount(0, text.length()) <= maxLength);
                 case "boolean" -> value instanceof Boolean;
-                case "integer" -> isInteger(value) && (minimum == null || toDecimal(value).compareTo(minimum) >= 0);
+                case "integer" -> isInteger(value) && (minimum == null || toDecimal(value).compareTo(minimum) >= 0)
+                        && (maximum == null || toDecimal(value).compareTo(maximum) <= 0);
                 case "array" -> value instanceof List<?> list
                         && (items == null || list.stream().allMatch(items::matchesShape));
                 case "object" -> value instanceof Map<?, ?> map && map.entrySet().stream().allMatch(entry ->

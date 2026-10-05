@@ -297,8 +297,11 @@ connection, user, and provider identifiers; notification-origin metadata is a
 separate Redis companion and does not change the four-field state payload.
 Google access and refresh tokens are stored only in the encrypted PostgreSQL
 credential payload. Gmail requests
-`openid`, `email`, and `gmail.metadata`; Sheets requests `openid`, `email`, and
-`spreadsheets`. The current scopes do not grant Gmail send or broad Drive access.
+`openid`, `email`, `gmail.readonly`, and `gmail.send` (`gmail.metadata` is never requested: it makes Gmail
+reject message reads and searches); Sheets requests `openid`, `email`, and
+`spreadsheets`. A stored Google connection whose granted scopes are missing a required scope (for example a
+Gmail connection made before `gmail.readonly`) fails internal resolve with `422` and code
+`CONNECTION_RECONNECT_REQUIRED`; the user reconnects through `POST .../connections/{id}/oauth/authorize`.
 
 `DATABASE_URL` is not read as a single Workspace variable; the Spring
 datasource is configured through the `DB_*` names above. The root template also

@@ -713,6 +713,7 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
                 case SCHEDULE -> "SCHEDULE";
                 case WEBHOOK -> "WEBHOOK";
                 case TELEGRAM -> "TELEGRAM";
+                case GMAIL -> "GMAIL";
             };
         } catch (IllegalArgumentException exception) {
             return null;

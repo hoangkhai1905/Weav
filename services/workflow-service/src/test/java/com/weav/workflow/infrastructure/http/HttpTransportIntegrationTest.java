@@ -115,6 +115,34 @@ class HttpTransportIntegrationTest {
     }
 
     @Test
+    void getsAGmailMessageWithTheBearerTokenAndAnEncodedSearchQuery() throws Exception {
+        AtomicReference<String> method = new AtomicReference<>();
+        AtomicReference<String> rawPath = new AtomicReference<>();
+        AtomicReference<String> rawQuery = new AtomicReference<>();
+        AtomicReference<String> authorization = new AtomicReference<>();
+        start(exchange -> {
+            method.set(exchange.getRequestMethod());
+            rawPath.set(exchange.getRequestURI().getRawPath());
+            rawQuery.set(exchange.getRequestURI().getRawQuery());
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            respond(exchange, 200, "application/json", "{\"messages\":[{\"id\":\"18c0ffee00000001\"}]}");
+        }, "/gmail");
+
+        URI uri = URI.create("http://public.example.test:" + server.getAddress().getPort()
+                + "/gmail/v1/users/me/messages");
+        PinnedHttpTransport.HttpResponse response = transport().executeWithAuthentication(approved(uri), "GET",
+                Map.of(), Map.of("Authorization", "Bearer synthetic-token"),
+                gmailQuery(), null);
+
+        assertEquals(200, response.status());
+        assertEquals(Map.of("messages", List.of(Map.of("id", "18c0ffee00000001"))), response.data());
+        assertEquals("GET", method.get());
+        assertEquals("/gmail/v1/users/me/messages", rawPath.get());
+        assertEquals("q=from%3Aa%40example.test%20is%3Aunread%20after%3A1790000000&maxResults=10", rawQuery.get());
+        assertEquals("Bearer synthetic-token", authorization.get());
+    }
+
+    @Test
     void doesNotFollowRedirectsToAnotherDestination() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         start(exchange -> {
@@ -341,6 +369,13 @@ class HttpTransportIntegrationTest {
 
         assertEquals("HTTP_TIMEOUT", failure.code());
         assertTrue(failure.retryable());
+    }
+
+    private static Map<String, Object> gmailQuery() {
+        Map<String, Object> query = new java.util.LinkedHashMap<>();
+        query.put("q", "from:a@example.test is:unread after:1790000000");
+        query.put("maxResults", 10);
+        return query;
     }
 
     private PinnedHttpTransport transport() {

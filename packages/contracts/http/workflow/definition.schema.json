@@ -67,7 +67,8 @@
             "ocr.extract",
             "logic.switch",
             "data.set",
-            "ai.generate"
+            "ai.generate",
+            "trigger.gmail"
           ]
         },
         "config": {
@@ -697,6 +698,40 @@
                   "maxLength": {
                     "type": "integer",
                     "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "trigger.gmail"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "query": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "pollIntervalMinutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1440
                   }
                 },
                 "additionalProperties": false

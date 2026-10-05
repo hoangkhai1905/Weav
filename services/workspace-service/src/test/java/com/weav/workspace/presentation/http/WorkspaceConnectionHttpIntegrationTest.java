@@ -298,7 +298,9 @@ class WorkspaceConnectionHttpIntegrationTest {
         assertEquals(ConnectionStatus.INVALID,
                 connectionRepository.findByWorkspaceIdAndId(workspace.getId(), connectionId)
                         .orElseThrow().getStatus());
-        assertEquals(422, request("POST", internalPath + "/resolve", null, INTERNAL_KEY, null).statusCode());
+        HttpResponse<String> invalidResolve = request("POST", internalPath + "/resolve", null, INTERNAL_KEY, null);
+        assertEquals(422, invalidResolve.statusCode());
+        assertTrue(invalidResolve.body().contains("CONNECTION_RECONNECT_REQUIRED"));
 
         HttpResponse<String> reauthorization = request(
                 "POST", connectionPath + "/oauth/authorize", ownerId, null, null);

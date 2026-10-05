@@ -581,11 +581,11 @@ components:
             required: [triggerId, type, status, reasonCode, nextRunAt, lastTriggeredAt]
             properties:
               triggerId: { type: string, format: uuid }
-              type: { type: string, enum: [SCHEDULE, WEBHOOK, TELEGRAM] }
+              type: { type: string, enum: [SCHEDULE, WEBHOOK, TELEGRAM, GMAIL] }
               status: { type: string, enum: [ACTIVE, DISABLED] }
               reasonCode:
                 type: string
-                enum: [DEPENDENCY_NOT_CONFIGURED, SCHEDULE_ADMISSION_FAILED]
+                enum: [DEPENDENCY_NOT_CONFIGURED, SCHEDULE_ADMISSION_FAILED, CONNECTION_RECONNECT_REQUIRED, AUTHENTICATION_REJECTED, CONNECTION_FORBIDDEN, CONNECTION_UNAVAILABLE, GMAIL_POLL_FAILED, GMAIL_MESSAGE_SKIPPED, GMAIL_BACKLOG_TRUNCATED]
                 nullable: true
               nextRunAt: { type: string, format: date-time, nullable: true }
               lastTriggeredAt: { type: string, format: date-time, nullable: true }
@@ -651,7 +651,7 @@ components:
         workflowId: { type: string, format: uuid }
         workflowVersionId: { type: string, format: uuid }
         status: { type: string, enum: [QUEUED, RUNNING, WAITING, SUCCESS, FAILED, CANCELLED] }
-        triggerType: { type: string, enum: [MANUAL, SCHEDULE, WEBHOOK, TELEGRAM] }
+        triggerType: { type: string, enum: [MANUAL, SCHEDULE, WEBHOOK, TELEGRAM, GMAIL] }
         createdAt: { type: string, format: date-time }
         startedAt: { type: string, format: date-time, nullable: true }
         finishedAt: { type: string, format: date-time, nullable: true }

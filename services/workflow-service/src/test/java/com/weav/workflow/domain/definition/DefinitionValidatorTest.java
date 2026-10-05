@@ -151,7 +151,7 @@ class DefinitionValidatorTest {
         assertEquals(Set.of("trigger.manual", "trigger.schedule", "trigger.webhook", "trigger.telegram",
                 "http.request", "email.send", "google.sheets", "telegram.send_message", "logic.condition",
                 "ai.extract", "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive",
-                "logic.switch", "data.set", "ai.generate"),
+                "logic.switch", "data.set", "ai.generate", "trigger.gmail"),
                 NodeCatalog.supportedTypes());
     }
 

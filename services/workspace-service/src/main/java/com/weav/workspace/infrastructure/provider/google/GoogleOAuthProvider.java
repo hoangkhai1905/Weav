@@ -97,7 +97,11 @@ public final class GoogleOAuthProvider implements GoogleOAuthPort {
         appendQuery(url, "code_challenge", codeChallenge);
         appendQuery(url, "code_challenge_method", "S256");
         appendQuery(url, "access_type", "offline");
-        appendQuery(url, "include_granted_scopes", "true");
+        if (provider != ConnectionProvider.GMAIL) {
+            // Not for Gmail: it would merge an earlier gmail.metadata grant into the token, and Gmail then rejects
+            // message reads and searches even with gmail.readonly also granted.
+            appendQuery(url, "include_granted_scopes", "true");
+        }
         appendQuery(url, "prompt", "consent");
         return url.substring(0, url.length() - 1);
     }

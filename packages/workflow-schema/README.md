@@ -56,5 +56,7 @@ a subject and a body (mappings allowed). Publishing needs all four.
 
 Add `nodes/<type>.json` only. The backend catalog, validation and `x-weav-node` metadata follow. Supported
 keywords are `type`, `enum`, `items`, `oneOf`, `additionalProperties` (schema), `minLength`, `minItems`,
-`minimum`, `required`, `properties`, `title`, `description` and the `x-weav-*` extensions above; the
+`minimum`, `maximum` (integers), `maxLength` (counted in code points), `required`, `properties`, `title`,
+`description`, `default` (informational only: shown to the editor, never applied by the backend, so executors
+apply their own default) and the `x-weav-*` extensions above; the
 backend refuses to start on anything else. Executing the node still needs a Java executor.

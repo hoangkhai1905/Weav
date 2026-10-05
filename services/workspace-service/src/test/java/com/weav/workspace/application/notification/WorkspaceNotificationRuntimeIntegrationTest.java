@@ -117,7 +117,7 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(properties = "weav.workspace.notification-outbox.publisher-enabled=false")
 class WorkspaceNotificationRuntimeIntegrationTest {
     private static final String EXCHANGE = "weav.events";
-    private static final String GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.metadata";
+    private static final String GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
     private static final String GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 
     @Container
