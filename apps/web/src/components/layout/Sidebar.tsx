@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
@@ -9,6 +10,8 @@ import {
   LogOut,
   Settings,
   Sparkles,
+  PanelLeftClose,
+  PanelLeftOpen,
   Users,
   X,
 } from "lucide-react";
@@ -48,19 +51,14 @@ const BOTTOM_NAV_ITEMS: NavItem[] = [
   { translationKey: "nav.help", path: "/help", icon: HelpCircle },
 ];
 
-export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
-  const { mobileSidebarOpen, setMobileSidebarOpen } = useUIStore();
+export function Sidebar() {
+  const { mobileSidebarOpen, setMobileSidebarOpen, sidebarCollapsed, toggleSidebar } = useUIStore();
   const { user, logout } = useAuthStore();
   const { t } = useI18nStore();
   const prefersReducedMotion = useReducedMotion();
-  const activeTransition = prefersReducedMotion
-    ? REDUCED_MOTION_TRANSITION
-    : MOTION_TRANSITION;
+  const activeTransition = prefersReducedMotion ? REDUCED_MOTION_TRANSITION : MOTION_TRANSITION;
   const profileName =
-    user?.displayName?.trim() ||
-    user?.name?.trim() ||
-    user?.email ||
-    t("nav.account");
+    user?.displayName?.trim() || user?.name?.trim() || user?.email || t("nav.account");
   const profileInitials = profileName
     .split(/\s+/)
     .filter(Boolean)
@@ -68,23 +66,35 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
     .map((part) => part[0]?.toUpperCase())
     .join("");
 
-  const renderNavItems = (items: NavItem[], isMobile: boolean) =>
+  // Ctrl/Cmd+B toggles the sidebar unless the user is typing.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "b") return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.closest("input, textarea, select") || target.isContentEditable)) return;
+      event.preventDefault();
+      toggleSidebar();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleSidebar]);
+
+  const fade = prefersReducedMotion ? "" : "transition-opacity duration-150";
+
+  const renderNavItems = (items: NavItem[], rail: boolean, isMobile: boolean) =>
     items.map((item) => {
       const Icon = item.icon;
-
       return (
         <NavLink
           key={item.path}
           to={item.path}
           onClick={() => isMobile && setMobileSidebarOpen(false)}
           data-testid={item.testId}
-          title={!isMobile && collapsed ? t(item.translationKey) : undefined}
+          title={rail ? t(item.translationKey) : undefined}
           aria-label={t(item.translationKey)}
           className={({ isActive }) =>
-            `group relative flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] ${isMobile || !collapsed ? "" : "justify-center"} font-medium outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring ${
-              isActive
-                ? "bg-sidebar-active text-foreground"
-                : "text-text-2 hover:bg-subtle hover:text-foreground"
+            `group relative flex h-8 items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-3 text-[13px] font-medium outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring ${
+              isActive ? "bg-sidebar-active text-foreground" : "text-text-2 hover:bg-subtle hover:text-foreground"
             }`
           }
         >
@@ -94,7 +104,7 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
                 <motion.span
                   layoutId="sidebar-active-indicator"
                   data-testid="active-nav-indicator"
-                  className="absolute inset-y-1.5 -left-2.5 w-[3px] rounded-r-sm bg-primary"
+                  className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-sm bg-primary"
                   transition={activeTransition}
                 />
               )}
@@ -102,42 +112,31 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
                 size={16}
                 strokeWidth={1.75}
                 aria-hidden="true"
-                className={
-                  isActive
-                    ? "shrink-0 text-foreground"
-                    : "shrink-0 text-muted-foreground group-hover:text-foreground"
-                }
+                className={isActive ? "shrink-0 text-foreground" : "shrink-0 text-muted-foreground group-hover:text-foreground"}
               />
-              {(isMobile || !collapsed) && (
-                <span className="truncate">{t(item.translationKey)}</span>
-              )}
+              <span className={`truncate ${fade} ${rail ? "opacity-0" : "opacity-100"}`}>{t(item.translationKey)}</span>
             </>
           )}
         </NavLink>
       );
     });
 
+  const toggleLabel = sidebarCollapsed ? t("nav.expand_sidebar") : t("nav.collapse_sidebar");
+  const ToggleIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
+
   const renderContent = (isMobile = false) => {
-    const rail = collapsed && !isMobile;
+    const rail = sidebarCollapsed && !isMobile;
     return (
       <div
         data-testid="app-sidebar"
         data-collapsed={rail ? "true" : "false"}
-        className={`flex h-full select-none flex-col gap-3 border-r border-border bg-sidebar text-sidebar-foreground ${rail ? "p-2" : "p-2.5"}`}
+        className="flex h-full select-none flex-col gap-3 overflow-hidden border-r border-border bg-sidebar p-2 text-sidebar-foreground"
       >
-        <div className="flex items-center gap-1">
-          <div className="min-w-0 flex-1">
-            {rail ? (
-              <img
-                src="/weav-logo-v2.png"
-                alt="WEAV app logo"
-                className="mx-auto h-6 w-6 object-contain"
-              />
-            ) : (
-              <WorkspaceSwitcher />
-            )}
+        <div className={`flex items-center gap-1 ${rail ? "flex-col" : ""}`}>
+          <div className={rail ? "w-full" : "min-w-0 flex-1"}>
+            <WorkspaceSwitcher compact={rail} />
           </div>
-          {isMobile && (
+          {isMobile ? (
             <button
               onClick={() => setMobileSidebarOpen(false)}
               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -145,43 +144,45 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
             >
               <X size={16} />
             </button>
+          ) : (
+            <button
+              type="button"
+              data-testid="sidebar-toggle"
+              onClick={toggleSidebar}
+              title={`${toggleLabel} (Ctrl+B)`}
+              aria-label={toggleLabel}
+              aria-expanded={!sidebarCollapsed}
+              aria-keyshortcuts="Control+B Meta+B"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ToggleIcon size={16} aria-hidden="true" />
+            </button>
           )}
         </div>
 
-        <nav
-          className="flex flex-1 flex-col gap-0.5 overflow-y-auto"
-          aria-label={t("nav.primary")}
-        >
-          {renderNavItems(MAIN_NAV_ITEMS, isMobile)}
+        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden" aria-label={t("nav.primary")}>
+          {renderNavItems(MAIN_NAV_ITEMS, rail, isMobile)}
         </nav>
 
-        <div
-          data-testid="sidebar-footer"
-          className="shrink-0 space-y-0.5 border-t border-border pt-2.5"
-        >
+        <div data-testid="sidebar-footer" className="shrink-0 space-y-0.5 border-t border-border pt-2.5">
           <nav aria-label={t("nav.support")} className="flex flex-col gap-0.5">
-            {renderNavItems(BOTTOM_NAV_ITEMS, isMobile)}
+            {renderNavItems(BOTTOM_NAV_ITEMS, rail, isMobile)}
           </nav>
 
-          <div
-            className={`flex h-9 items-center gap-2 ${rail ? "justify-center" : "px-2"}`}
-          >
-            {!rail && (
-              <>
-                <span
-                  aria-hidden="true"
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-text-2"
-                >
-                  {profileInitials || "A"}
-                </span>
-                <span
-                  data-testid="sidebar-profile-name"
-                  className="min-w-0 flex-1 truncate text-[13px] text-foreground"
-                >
-                  {profileName}
-                </span>
-              </>
-            )}
+          <div className={`flex items-center gap-2 ${rail ? "flex-col py-1" : "h-9 px-3"}`}>
+            <span
+              aria-hidden="true"
+              title={rail ? profileName : undefined}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-text-2"
+            >
+              {profileInitials || "A"}
+            </span>
+            <span
+              data-testid="sidebar-profile-name"
+              className={rail ? "sr-only" : "min-w-0 flex-1 truncate text-[13px] text-foreground"}
+            >
+              {profileName}
+            </span>
             <button
               onClick={logout}
               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-err-bg hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -199,7 +200,9 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <>
       <aside
-        className={`z-30 hidden h-full shrink-0 flex-col md:flex ${collapsed ? "w-14" : "w-[220px]"}`}
+        className={`z-30 hidden h-full shrink-0 flex-col md:flex ${
+          prefersReducedMotion ? "" : "transition-[width] duration-150 ease-out"
+        } ${sidebarCollapsed ? "w-14" : "w-[220px]"}`}
       >
         {renderContent(false)}
       </aside>
@@ -218,11 +221,7 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
               initial={prefersReducedMotion ? { opacity: 0 } : { x: "-100%" }}
               animate={prefersReducedMotion ? { opacity: 1 } : { x: 0 }}
               exit={prefersReducedMotion ? { opacity: 0 } : { x: "-100%" }}
-              transition={
-                prefersReducedMotion
-                  ? REDUCED_MOTION_TRANSITION
-                  : { type: "spring", stiffness: 350, damping: 32 }
-              }
+              transition={prefersReducedMotion ? REDUCED_MOTION_TRANSITION : { type: "spring", stiffness: 350, damping: 32 }}
               className="relative z-10 h-full w-[220px]"
             >
               {renderContent(true)}

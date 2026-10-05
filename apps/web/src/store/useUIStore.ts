@@ -3,6 +3,7 @@ import { create } from 'zustand';
 interface UIState {
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   mobileSidebarOpen: boolean;
   toggleMobileSidebar: () => void;
   setMobileSidebarOpen: (open: boolean) => void;
@@ -17,11 +18,35 @@ interface UIState {
 }
 
 const THEME_KEY = 'weav_theme_v1';
+const SIDEBAR_KEY = 'weav_sidebar_collapsed_v1';
+const readSidebarCollapsed = (): boolean => {
+  try {
+    const saved = localStorage.getItem(SIDEBAR_KEY);
+    return saved === null ? true : saved === 'true';
+  } catch {
+    return true;
+  }
+};
+const saveSidebarCollapsed = (collapsed: boolean) => {
+  try {
+    localStorage.setItem(SIDEBAR_KEY, String(collapsed));
+  } catch {
+    // Storage may be unavailable (private mode); the toggle still works for this session.
+  }
+};
 const initialTheme: 'dark' | 'light' = (localStorage.getItem(THEME_KEY) as 'dark' | 'light') || 'dark';
 
 export const useUIStore = create<UIState>((set, get) => ({
-  sidebarCollapsed: false,
-  toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+  sidebarCollapsed: readSidebarCollapsed(),
+  toggleSidebar: () =>
+    set((state) => {
+      saveSidebarCollapsed(!state.sidebarCollapsed);
+      return { sidebarCollapsed: !state.sidebarCollapsed };
+    }),
+  setSidebarCollapsed: (sidebarCollapsed) => {
+    saveSidebarCollapsed(sidebarCollapsed);
+    set({ sidebarCollapsed });
+  },
   mobileSidebarOpen: false,
   toggleMobileSidebar: () => set((state) => ({ mobileSidebarOpen: !state.mobileSidebarOpen })),
   setMobileSidebarOpen: (mobileSidebarOpen) => set({ mobileSidebarOpen }),

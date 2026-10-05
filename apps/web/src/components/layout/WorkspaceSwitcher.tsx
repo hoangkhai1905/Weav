@@ -13,7 +13,7 @@ const initialsOf = (name: string) =>
     .join('');
 
 /** Workspace picker shown at the top of the sidebar. Keeps the native select for accessibility. */
-export function WorkspaceSwitcher() {
+export function WorkspaceSwitcher({ compact = false }: { compact?: boolean }) {
   const { t } = useI18nStore();
   const { workspaces, workspacesQuery } = useWorkspaceListContext();
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
@@ -30,6 +30,31 @@ export function WorkspaceSwitcher() {
         <span className="h-[22px] w-[22px] shrink-0 animate-pulse rounded-md bg-muted" />
         <span className="truncate">{t('topbar.workspace_loading')}</span>
       </span>
+    );
+  }
+
+  if (workspaces.length > 0 && compact) {
+    return (
+      <div className="relative flex h-9 w-full items-center justify-center rounded-md transition-colors focus-within:ring-2 focus-within:ring-ring hover:bg-subtle" title={active?.name}>
+        <span aria-hidden="true" className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-foreground text-[11px] font-semibold text-background">
+          {initialsOf(active?.name ?? '') || 'W'}
+        </span>
+        <label className="sr-only" htmlFor="topbar-workspace-selector">{t('topbar.select_workspace')}</label>
+        <select
+          id="topbar-workspace-selector"
+          data-testid="topbar-workspace-selector"
+          aria-label={t('topbar.select_workspace')}
+          aria-busy={workspacesQuery.isFetching}
+          value={activeWorkspaceId ?? ''}
+          onChange={(event) => selectWorkspace(event.target.value || null)}
+          title={active?.name}
+          className="absolute inset-0 h-full w-full cursor-pointer appearance-none rounded-md bg-transparent text-transparent opacity-0 outline-none"
+        >
+          {workspaces.map((workspace) => (
+            <option key={workspace.id} value={workspace.id} className="text-foreground">{workspace.name}</option>
+          ))}
+        </select>
+      </div>
     );
   }
 

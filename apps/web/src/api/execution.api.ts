@@ -173,7 +173,7 @@ export const executionApi = {
       const group = selected.slice(index, index + 3);
       const pages = await Promise.all(group.map(async (workflow) => {
         const page = await workflowV1Api.listExecutions(workflow.id, 0, 100, workspaceId);
-        return page.items.map((summary) => summaryToExecution(summary, workflow));
+        return page.items.filter((summary) => typeof summary?.executionId === "string").map((summary) => summaryToExecution(summary, workflow));
       }));
       executions.push(...pages.flat());
     }
@@ -191,7 +191,7 @@ export const executionApi = {
       const group = selected.slice(index, index + concurrency);
       const pages = await Promise.all(group.map(async (workflow) => {
         const page = await workflowV1Api.listExecutions(workflow.id, 0, 50, workflow.workspaceId);
-        return page.items.map((summary) => summaryToExecution(summary, workflow));
+        return page.items.filter((summary) => typeof summary?.executionId === "string").map((summary) => summaryToExecution(summary, workflow));
       }));
       executions.push(...pages.flat());
     }

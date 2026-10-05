@@ -32,7 +32,7 @@ export const AppLayout: React.FC = () => {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground font-sans">
-      <Sidebar collapsed={fullBleed} />
+      <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         {!fullBleed && <Topbar />}
         <main className={`relative min-w-0 flex-1 bg-background ${fullBleed ? 'overflow-hidden' : 'overflow-x-hidden overflow-y-auto p-4 sm:p-5'}`}>
