@@ -226,15 +226,15 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
               data-testid={`condition-source-${port.id}`}
               type="source"
               position={Position.Right}
-              style={{ top: `${42 + index * 24}%` }}
+              style={{ top: `${36 + index * 32}%` }}
               className={`${handleClass} !-right-1`}
             />
             <span
-              aria-hidden="true"
-              className="pointer-events-none absolute right-2 text-[10px] font-medium text-text-2"
-              style={{ top: `calc(${42 + index * 24}% - 6px)` }}
+              data-testid={`condition-port-label-${port.id}`}
+              className="pointer-events-none absolute left-[calc(100%+10px)] z-10 -translate-y-1/2 rounded border border-border bg-card px-1.5 py-px text-[10px] font-medium leading-4 text-text-2"
+              style={{ top: `${36 + index * 32}%` }}
             >
-              {port.label}
+              {t(`builder.cfg.port_${port.id}`) === `builder.cfg.port_${port.id}` ? port.label : t(`builder.cfg.port_${port.id}`)}
             </span>
           </React.Fragment>
         ))

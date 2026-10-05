@@ -55,6 +55,12 @@
 - Settings tab và công tắc Active: bỏ qua vì chưa có endpoint tương ứng trong UI/API. Undo/redo: không có sẵn.
 - E2E: `addNode` và các test OCR/catalog mở palette trước; test logs trong `workflow-api-v1` bấm tab Logs. Kết quả 5 spec chính vẫn 35 failed / 45 passed, trùng baseline; `workspace-read-switch` + `ocr-builder` 20 failed / 7 passed, trùng baseline trước phiên này.
 
+## 5c. Sửa 3 lỗi editor
+
+- Header editor: lưới 3 cột (tên quy trình co lại trước, tab ở giữa, hành động bên phải), mọi control `whitespace-nowrap shrink-0`. Hành động: nút icon "Tạo bằng AI" và "Xem trước luồng" (tooltip), 2 nút chữ "Chạy" (khi đã Published) và "Xuất bản", 1 nút chính "Lưu". Ngữ cảnh workspace chuyển thành `sr-only` kèm title (giữ testid). Đã kiểm tra 1440, 1280 và 1024: không xuống dòng, không tràn.
+- Node điều kiện: nhãn nhánh Đúng/Sai nằm ngoài node bên phải cạnh handle (testid `condition-port-label-*`), không đè badge "Sẵn sàng".
+- Toàn bộ nhãn tiếng Anh trong form inspector (điều kiện, cron, webhook, HTTP, email, Sheets, Telegram, OCR, AI, schema, thông điệp readiness) chuyển sang key `builder.cfg.*` VI/EN; bản EN giữ nguyên chữ cũ nên selector e2e không đổi. Giá trị lưu không đổi.
+
 ## 6. Rủi ro và chưa làm
 
 - Trang chi tiết lượt chạy 3 cột (Executions.dc.html: waterfall, "Cách sửa") chưa dựng lại; mới đổi màu theo token.
