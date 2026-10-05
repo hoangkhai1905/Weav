@@ -146,10 +146,11 @@ class DefinitionValidatorTest {
     }
 
     @Test
-    void exposesExactlyTheThirteenSupportedV1NodeTypes() {
+    void exposesExactlyTheSupportedNodeTypes() {
         assertEquals(Set.of("trigger.manual", "trigger.schedule", "trigger.webhook", "trigger.telegram",
                 "http.request", "email.send", "google.sheets", "telegram.send_message", "logic.condition",
-                "ai.extract", "ai.classify", "ai.summarize", "ocr.extract"), NodeCatalog.supportedTypes());
+                "ai.extract", "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive"),
+                NodeCatalog.supportedTypes());
     }
 
     @Test

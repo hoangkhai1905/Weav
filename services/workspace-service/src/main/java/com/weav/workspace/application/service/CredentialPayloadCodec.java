@@ -146,7 +146,7 @@ public final class CredentialPayloadCodec {
                 case BASIC -> BASIC_FIELDS;
                 case NONE, OAUTH2 -> null;
             };
-            case GMAIL, GOOGLE_SHEETS -> null;
+            case GMAIL, GOOGLE_SHEETS, GOOGLE_CALENDAR, GOOGLE_DRIVE -> null;
         };
 
         if (expectedFields == null
@@ -192,7 +192,7 @@ public final class CredentialPayloadCodec {
 
     private boolean isGoogleOAuth(ConnectionProvider provider, ConnectionAuthType authType) {
         return authType == ConnectionAuthType.OAUTH2
-                && (provider == ConnectionProvider.GMAIL || provider == ConnectionProvider.GOOGLE_SHEETS);
+                && provider != null && provider.isGoogleOAuth();
     }
 
     private boolean isValidToken(Object value) {

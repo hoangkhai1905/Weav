@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/google.calendar",
+  "title": "Google Calendar",
+  "description": "Creates an event in a Google Calendar.",
+  "x-weav-node": {
+    "type": "google.calendar",
+    "category": "action",
+    "label": "Google Calendar",
+    "sideEffect": true
+  },
+  "type": "object",
+  "properties": {
+    "connectionId": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Connection",
+      "description": "Google Calendar connection used to create the event.",
+      "x-weav-connection": {
+        "provider": "GOOGLE_CALENDAR"
+      }
+    },
+    "calendarId": {
+      "type": "string",
+      "title": "Calendar ID",
+      "description": "Calendar to add the event to. Defaults to the primary calendar.",
+      "x-weav-template": true
+    },
+    "summary": {
+      "type": "string",
+      "title": "Title",
+      "description": "Event title.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "title": "Description",
+      "description": "Event description.",
+      "x-weav-template": true
+    },
+    "location": {
+      "type": "string",
+      "title": "Location",
+      "description": "Event location.",
+      "x-weav-template": true
+    },
+    "start": {
+      "type": "string",
+      "title": "Start",
+      "description": "Start as an RFC 3339 date-time (2026-10-05T09:00:00+07:00) or an all-day date (2026-10-05). A date-time without an offset needs a time zone.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "end": {
+      "type": "string",
+      "title": "End",
+      "description": "End in the same format as the start; it must be after the start. For all-day events the end date is exclusive.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "timeZone": {
+      "type": "string",
+      "title": "Time zone",
+      "description": "IANA time zone name (for example Asia/Ho_Chi_Minh). Needed when the start has no UTC offset.",
+      "x-weav-template": true
+    },
+    "attendees": {
+      "type": "array",
+      "title": "Attendees",
+      "description": "Email addresses to invite.",
+      "x-weav-template": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "sendInvitations": {
+      "type": "boolean",
+      "title": "Send invitations",
+      "description": "Email invitations to the attendees. Off by default: attendees are added to the event without an email.",
+      "x-weav-template": true
+    }
+  },
+  "required": [
+    "connectionId",
+    "summary",
+    "start",
+    "end"
+  ],
+  "additionalProperties": false
+}

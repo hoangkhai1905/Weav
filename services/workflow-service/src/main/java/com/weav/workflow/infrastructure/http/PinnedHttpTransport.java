@@ -56,6 +56,8 @@ public class PinnedHttpTransport {
     private static final Pattern HEADER_NAME = Pattern.compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$");
     private static final String GOOGLE_SHEETS_HOST = "sheets.googleapis.com";
     private static final String GMAIL_HOST = "gmail.googleapis.com";
+    private static final String GOOGLE_API_HOST = "www.googleapis.com";
+    private static final Pattern GOOGLE_CALENDAR_EVENTS_PATH = Pattern.compile("^/calendar/v3/calendars/[^/]+/events$");
     private static final String GMAIL_SEND_PATH = "/gmail/v1/users/me/messages/send";
     private static final String TELEGRAM_HOST = "api.telegram.org";
     private static final Pattern TELEGRAM_PATH = Pattern.compile("/bot[0-9]{1,20}:[A-Za-z0-9_-]{1,128}/[A-Za-z]{1,32}");
@@ -194,6 +196,32 @@ public class PinnedHttpTransport {
     }
 
     /**
+     * Executes a Google Calendar or Drive API call with Workspace-owned OAuth credentials. The host is fixed to
+     * {@code www.googleapis.com} and the path to the Calendar events and Drive files endpoints. {@code body} is
+     * JSON-serialized unless it is a {@link RawBody}.
+     */
+    public HttpResponse executeGoogleApiWithBearerToken(
+            URI uri,
+            String method,
+            Object query,
+            Object body,
+            String accessToken) {
+        validateGoogleApiUri(uri, method);
+        if (accessToken == null || accessToken.isBlank() || accessToken.length() > 16 * 1024
+                || accessToken.codePoints().anyMatch(Character::isISOControl)) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Google authentication configuration is invalid.", false);
+        }
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, method, Map.of(),
+                Map.of("Authorization", "Bearer " + accessToken), query, body);
+    }
+
+    /** A pre-encoded request body sent as is with its own content type (for example multipart/related). */
+    public record RawBody(byte[] bytes, String contentType) {
+    }
+
+    /**
      * Package-scoped authentication entry point. User supplied headers are
      * validated separately from the short-lived headers created by the node
      * executor, so credential-bearing values cannot be smuggled through node
@@ -253,7 +281,8 @@ public class PinnedHttpTransport {
         request.setHeader("Connection", "close");
         requestHeaders.forEach(request::setHeader);
         if (body != null) {
-            request.setEntity(new ByteArrayEntity(bodyBytes, ContentType.APPLICATION_JSON));
+            request.setEntity(new ByteArrayEntity(bodyBytes, body instanceof RawBody raw
+                    ? ContentType.parse(raw.contentType()) : ContentType.APPLICATION_JSON));
         }
         AtomicBoolean deadlineExpired = new AtomicBoolean();
 
@@ -405,6 +434,9 @@ public class PinnedHttpTransport {
         if (body == null) {
             return new byte[0];
         }
+        if (body instanceof RawBody raw) {
+            return raw.bytes();
+        }
         BoundedByteArrayOutputStream output = new BoundedByteArrayOutputStream(maxRequestBytes);
         try {
             objectMapper.writeValue(output, body);
@@ -435,7 +467,13 @@ public class PinnedHttpTransport {
                 }
                 addQueryValue(builder, key, entry.getValue());
             }
-            URI result = builder.build();
+            URI built = builder.build();
+            // URIBuilder re-encodes the path; keep the caller's raw path (for example %2F in an id) as is.
+            URI result = built.getRawPath() != null && built.getRawPath().equals(original.getRawPath())
+                    ? built
+                    : URI.create(original.getScheme() + "://" + original.getRawAuthority() + original.getRawPath()
+                    + (built.getRawQuery() == null ? "" : "?" + built.getRawQuery())
+                    + (built.getRawFragment() == null ? "" : "#" + built.getRawFragment()));
             if (result.toString().length() > maxRequestBytes) {
                 throw new NodeExecutor.Failure("HTTP_REQUEST_TOO_LARGE",
                         "The HTTP request exceeds the supported size.", false);
@@ -502,6 +540,44 @@ public class PinnedHttpTransport {
             throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
                     "The Sheets destination is invalid.", false);
         }
+    }
+
+    /** Only the three fixed Calendar/Drive endpoints, each with its one method; no traversal or smuggled slashes. */
+    private void validateGoogleApiUri(URI uri, String method) {
+        String path = uri == null ? null : uri.getRawPath();
+        String verb = method == null ? "" : method.toUpperCase(Locale.ROOT);
+        boolean allowedShape = path != null && (
+                "POST".equals(verb) && (GOOGLE_CALENDAR_EVENTS_PATH.matcher(path).matches()
+                        || "/upload/drive/v3/files".equals(path))
+                || "GET".equals(verb) && "/drive/v3/files".equals(path));
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(GOOGLE_API_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawFragment() != null
+                || !allowedShape
+                || hasUnsafePathSequence(path)) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Google destination is invalid.", false);
+        }
+    }
+
+    private static boolean hasUnsafePathSequence(String path) {
+        String lower = path.toLowerCase(Locale.ROOT);
+        if (path.contains("..") || path.contains("/./") || path.contains("//") || path.endsWith("/.")
+                || lower.contains("%2e") || lower.contains("%5c") || path.contains("\\")) {
+            return true;
+        }
+        // An encoded slash is only legitimate inside the calendarId segment.
+        String checked = GOOGLE_CALENDAR_EVENTS_PATH.matcher(path).matches()
+                ? path.substring("/calendar/v3/calendars/".length(), path.length() - "/events".length())
+                : null;
+        String rest = checked == null ? lower : lower.replace(checked.toLowerCase(Locale.ROOT), "");
+        return rest.contains("%2f");
     }
 
     private void validateGmailSendUri(URI uri) {

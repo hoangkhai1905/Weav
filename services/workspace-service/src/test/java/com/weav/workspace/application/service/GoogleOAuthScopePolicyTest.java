@@ -47,6 +47,22 @@ class GoogleOAuthScopePolicyTest {
     }
 
     @Test
+    void calendarAndDriveRequestOnlyIdentityAndTheirOwnNarrowScope() {
+        List<String> calendar = policy.requiredScopes(ConnectionProvider.GOOGLE_CALENDAR);
+        List<String> drive = policy.requiredScopes(ConnectionProvider.GOOGLE_DRIVE);
+
+        assertEquals(List.of("openid", "email", "https://www.googleapis.com/auth/calendar.events"), calendar);
+        assertEquals(List.of("openid", "email", "https://www.googleapis.com/auth/drive.file"), drive);
+        assertTrue(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_CALENDAR, calendar));
+        assertTrue(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_DRIVE, drive));
+        // One provider's grant never satisfies another's.
+        assertFalse(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_CALENDAR, drive));
+        assertFalse(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_DRIVE, calendar));
+        assertFalse(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_DRIVE, List.of(
+                "openid", "email", "https://www.googleapis.com/auth/drive.readonly")));
+    }
+
+    @Test
     void requiredScopeMembershipIsCaseSensitiveAndAllowsIncrementalPriorGrants() {
         List<String> granted = List.of(
                 "openid",
@@ -69,6 +85,10 @@ class GoogleOAuthScopePolicyTest {
                 "https://www.googleapis.com/auth/gmail.send")));
         assertTrue(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_SHEETS, List.of(
                 "openid", userinfoEmail, "https://www.googleapis.com/auth/spreadsheets")));
+        assertTrue(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_CALENDAR, List.of(
+                "openid", userinfoEmail, "https://www.googleapis.com/auth/calendar.events")));
+        assertTrue(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_DRIVE, List.of(
+                "openid", userinfoEmail, "https://www.googleapis.com/auth/drive.file")));
     }
 
     @Test

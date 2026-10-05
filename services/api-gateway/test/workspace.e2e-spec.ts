@@ -701,7 +701,14 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
   });
 
   it('forwards all Workspace provider and auth type values without business-rule validation', async () => {
-    const providers = ['TELEGRAM', 'HTTP', 'GMAIL', 'GOOGLE_SHEETS'] as const;
+    const providers = [
+      'TELEGRAM',
+      'HTTP',
+      'GMAIL',
+      'GOOGLE_SHEETS',
+      'GOOGLE_CALENDAR',
+      'GOOGLE_DRIVE',
+    ] as const;
     const authTypes = ['NONE', 'TOKEN', 'API_KEY', 'BASIC', 'OAUTH2'] as const;
 
     for (const provider of providers) {
@@ -799,7 +806,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
         url: `/api/v1/workspaces/${WORKSPACE_ID}/connections`,
         payload: {
           name: 'valid',
-          provider: 'GOOGLE_DRIVE',
+          provider: 'GOOGLE_DOCS',
           authType: 'OAUTH2',
         },
       },

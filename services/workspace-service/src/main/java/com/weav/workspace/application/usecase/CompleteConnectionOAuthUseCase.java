@@ -343,7 +343,7 @@ public final class CompleteConnectionOAuthUseCase {
                 || !pendingState.connectionId().equals(connection.getId())
                 || provider != connection.getProvider()
                 || connection.getAuthType() != ConnectionAuthType.OAUTH2
-                || (provider != ConnectionProvider.GMAIL && provider != ConnectionProvider.GOOGLE_SHEETS)
+                || !provider.isGoogleOAuth()
                 || (connection.getConfig() != null && !connection.getConfig().isEmpty())) {
             throw new BadRequestException("Google authorization state does not match the connection");
         }

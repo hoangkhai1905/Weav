@@ -4,5 +4,12 @@ public enum ConnectionProvider {
     GMAIL,
     GOOGLE_SHEETS,
     TELEGRAM,
-    HTTP
+    HTTP,
+    GOOGLE_CALENDAR,
+    GOOGLE_DRIVE;
+
+    /** True for providers connected through the shared Google OAuth flow. */
+    public boolean isGoogleOAuth() {
+        return this == GMAIL || this == GOOGLE_SHEETS || this == GOOGLE_CALENDAR || this == GOOGLE_DRIVE;
+    }
 }

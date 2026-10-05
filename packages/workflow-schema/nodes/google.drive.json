@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/google.drive",
+  "title": "Google Drive",
+  "description": "Uploads a text file to, or lists files in, Google Drive. Only files created or opened by Weav are visible.",
+  "x-weav-node": {
+    "type": "google.drive",
+    "category": "action",
+    "label": "Google Drive",
+    "sideEffect": true
+  },
+  "type": "object",
+  "properties": {
+    "connectionId": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Connection",
+      "description": "Google Drive connection used to access Drive.",
+      "x-weav-connection": {
+        "provider": "GOOGLE_DRIVE"
+      }
+    },
+    "operation": {
+      "type": "string",
+      "title": "Operation",
+      "description": "Upload a text file or list files.",
+      "enum": [
+        "upload",
+        "list"
+      ],
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "title": "File name",
+      "description": "Name of the new file. Required for upload.",
+      "x-weav-template": true
+    },
+    "content": {
+      "type": "string",
+      "title": "Content",
+      "description": "Text content of the new file, up to 512 KiB. Used by upload.",
+      "x-weav-template": true
+    },
+    "mimeType": {
+      "type": "string",
+      "title": "MIME type",
+      "description": "Content type of the new file. Defaults to text/plain. Used by upload.",
+      "x-weav-template": true
+    },
+    "folderId": {
+      "type": "string",
+      "title": "Folder ID",
+      "description": "Upload into, or list only, this folder. Optional. With the drive.file permission only folders created or opened by Weav are accessible.",
+      "x-weav-template": true
+    },
+    "nameContains": {
+      "type": "string",
+      "title": "Name contains",
+      "description": "Only list files whose name contains this text. Used by list.",
+      "x-weav-template": true
+    },
+    "pageSize": {
+      "type": "integer",
+      "minimum": 1,
+      "title": "Page size",
+      "description": "Maximum number of files to list (at most 100). Used by list.",
+      "x-weav-template": true
+    }
+  },
+  "required": [
+    "connectionId",
+    "operation"
+  ],
+  "additionalProperties": false
+}
