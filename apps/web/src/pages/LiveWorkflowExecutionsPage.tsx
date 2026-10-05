@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ExecutionsTriPane } from '../components/executions/ExecutionsTriPane';
 import { AlertTriangle, Clock3, ExternalLink, LoaderCircle, Play, RefreshCw, Search } from 'lucide-react';
 import { executionApi } from '../api/execution.api';
 import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
@@ -42,7 +43,7 @@ function duration(execution: ExecutionDetail): string {
   return elapsed < 1000 ? `${elapsed} ms` : `${(elapsed / 1000).toFixed(1)} s`;
 }
 
-export function LiveWorkflowExecutionsPage() {
+function LiveGlobalExecutionsPage() {
   const { workflowId } = useParams<{ workflowId: string }>();
   const navigate = useNavigate();
   const { t } = useI18nStore();
@@ -225,5 +226,19 @@ export function LiveWorkflowExecutionsPage() {
         {loading && <div role="status" className="flex justify-center py-12"><LoaderCircle size={20} className="animate-spin text-muted-foreground" aria-label={isVietnamese ? 'Đang tải' : 'Loading'} /></div>}
       </div>
     </main>
+  );
+}
+
+export function LiveWorkflowExecutionsPage() {
+  const params = useParams<{ workflowId: string }>();
+  const [search] = useSearchParams();
+  const workflowId = params.workflowId ?? search.get('workflowId');
+  if (!workflowId) return <LiveGlobalExecutionsPage />;
+  return (
+    <ExecutionsTriPane
+      key={workflowId}
+      workflowId={workflowId}
+      selectedExecutionId={search.get('run') ?? search.get('executionId')}
+    />
   );
 }
