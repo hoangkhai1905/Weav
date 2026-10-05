@@ -21,6 +21,7 @@ import {
   useTestConnection,
 } from "../hooks/useConnections";
 import { useWorkspaceListContext } from "../hooks/useWorkspace";
+import { statusBadgeClass, type StatusTone } from "../components/common/statusBadgeClass";
 import { useI18nStore } from "../store/useI18nStore";
 import { useWorkspaceStore } from "../store/useWorkspaceStore";
 import { captureNotificationSession, isCurrentNotificationSession } from "../lib/notifications/session";
@@ -90,6 +91,21 @@ const STATUS_KEYS: Record<ConnectionStatus, string> = {
   INVALID: "connections.status.invalid",
 };
 
+const STATUS_TONES: Record<ConnectionStatus, StatusTone> = {
+  DISABLED: "pause",
+  ACTIVE: "ok",
+  INVALID: "err",
+};
+
+const ctl =
+  "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
+const ctlPrimary =
+  "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:border-primary-hover hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-wait disabled:opacity-60";
+const ctlDanger =
+  "inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border border-err-border bg-card px-3 text-[13px] font-medium text-err transition-colors hover:bg-err-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
+const fieldCls =
+  "h-8 w-full rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary";
+
 function getErrorMessage(error: unknown, t: (key: string) => string): string {
   if (error instanceof ConnectionApiError) {
     const errorKeys: Record<string, string> = {
@@ -153,14 +169,14 @@ function ConnectionRow({
   return (
     <li
       data-testid={`connection-row-${connection.id}`}
-      className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+      className="flex flex-col gap-2 border-b border-border px-5 py-3 transition-colors hover:bg-subtle sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-semibold text-foreground">
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-text-2">
             {connection.provider}
           </span>
-          <h2 className="truncate text-sm font-semibold text-foreground">
+          <h2 className="truncate text-[13px] font-medium text-foreground">
             {connection.name}
           </h2>
         </div>
@@ -168,6 +184,7 @@ function ConnectionRow({
           <span
             data-testid={`connection-status-${connection.id}`}
             data-status={connection.status}
+            className={statusBadgeClass(STATUS_TONES[connection.status])}
           >
             {t(STATUS_KEYS[connection.status])}
           </span>
@@ -206,13 +223,13 @@ function ConnectionRow({
                 maxLength={120}
                 required
                 autoFocus
-                className="min-h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-8 rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
               />
               <button
                 type="submit"
                 data-testid={`connection-rename-submit-${connection.id}`}
                 disabled={isWorking}
-                className="min-h-9 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                className={ctlPrimary}
               >
                 {isWorking
                   ? t("connections.rename.pending")
@@ -222,7 +239,7 @@ function ConnectionRow({
                 type="button"
                 onClick={onCancelRename}
                 disabled={isWorking}
-                className="min-h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground disabled:opacity-50"
+                className={ctl}
               >
                 {t("connections.cancel")}
               </button>
@@ -232,7 +249,7 @@ function ConnectionRow({
               type="button"
               data-testid={`connection-rename-${connection.id}`}
               onClick={onStartRename}
-              className="min-h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-muted"
+              className={ctl}
             >
               {t("connections.rename.action")}
             </button>
@@ -242,7 +259,7 @@ function ConnectionRow({
             data-testid={`connection-test-${connection.id}`}
             onClick={onTest}
             disabled={isWorking}
-            className="min-h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+            className={ctl}
           >
             {isWorking
               ? t("connections.test.pending")
@@ -254,7 +271,7 @@ function ConnectionRow({
               data-testid={`connection-disable-${connection.id}`}
               onClick={onDisable}
               disabled={isWorking}
-              className="min-h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              className={ctl}
             >
               {t("connections.disable.action")}
             </button>
@@ -267,7 +284,7 @@ function ConnectionRow({
                 data-testid={`connection-oauth-${connection.id}`}
                 onClick={onStartOAuth}
                 disabled={isWorking}
-                className="min-h-9 rounded-lg border border-primary px-3 text-sm font-semibold text-primary hover:bg-primary/5 disabled:opacity-50"
+                className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border border-primary px-3 text-[13px] font-medium text-accent-ink transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isWorking
                   ? t("connections.oauth.starting")
@@ -279,7 +296,7 @@ function ConnectionRow({
             data-testid={`connection-delete-${connection.id}`}
             onClick={onRemove}
             disabled={isWorking}
-            className="min-h-9 rounded-lg border border-destructive/50 px-3 text-sm font-medium text-destructive hover:bg-destructive/5 disabled:opacity-50"
+            className={ctlDanger}
           >
             {t("connections.delete")}
           </button>
@@ -609,18 +626,18 @@ export function ConnectionsPage() {
   return (
     <main
       data-testid="connections-page"
-      className="mx-auto flex w-full max-w-5xl flex-col gap-5"
+      className="-m-4 flex h-[calc(100%+2rem)] min-h-0 flex-col overflow-y-auto bg-card sm:-m-5 sm:h-[calc(100%+2.5rem)]"
     >
-      <header className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-foreground">
+      <header className="flex min-h-14 shrink-0 flex-col gap-2 border-b border-border px-5 py-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          <h1 className="text-base font-semibold text-foreground">
             {t("connections.title")}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {t("connections.workspace_scope")}
           </p>
           {activeWorkspace && (
-            <p className="mt-2 text-sm font-semibold text-foreground">
+            <p className="text-[13px] font-medium text-foreground">
               {t("connections.workspace_label")}{" "}
               <span data-testid="connections-workspace-name">
                 {activeWorkspace.name}
@@ -633,7 +650,7 @@ export function ConnectionsPage() {
             type="button"
             data-testid="connections-create-open"
             onClick={() => setIsCreateOpen(true)}
-            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={ctlPrimary}
           >
             <Plus size={16} aria-hidden="true" />
             {t("connections.new_conn")}
@@ -645,7 +662,7 @@ export function ConnectionsPage() {
         <p
           data-testid="connections-oauth-notice"
           role="status"
-          className="rounded-lg border border-border bg-card p-3 text-sm text-foreground"
+          className="mx-5 mt-4 rounded-md border border-border bg-subtle px-3 py-2 text-[13px] text-foreground"
         >
           {oauthNotice}
         </p>
@@ -656,20 +673,20 @@ export function ConnectionsPage() {
           <p
             data-testid="connections-workspace-loading"
             role="status"
-            className="rounded-xl border border-border p-5 text-sm text-muted-foreground"
+            className="mx-5 mt-4 rounded-lg border border-border p-4 text-[13px] text-muted-foreground"
           >
             {t("connections.workspaces_loading")}
           </p>
         ) : workspacesQuery.isError ? (
           <div
-            className="rounded-xl border border-destructive/40 bg-destructive/5 p-5"
+            className="mx-5 mt-4 rounded-lg border border-err-border bg-err-bg p-4 text-[13px] text-err"
             role="alert"
           >
             <p>{t("connections.workspaces_error")}</p>
             <button
               type="button"
               onClick={() => void workspacesQuery.refetch()}
-              className="mt-3 rounded-md px-3 py-2 text-sm font-semibold underline"
+              className="mt-3 rounded-md px-1 py-1 text-[13px] font-medium underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {t("connections.retry")}
             </button>
@@ -677,7 +694,7 @@ export function ConnectionsPage() {
         ) : (
           <section
             data-testid="connections-no-workspace"
-            className="rounded-xl border border-border bg-card p-6"
+            className="mx-5 mt-4 rounded-lg border border-border bg-card p-5"
           >
             <h2 className="font-semibold text-foreground">
               {t("connections.no_workspace_title")}
@@ -687,7 +704,7 @@ export function ConnectionsPage() {
             </p>
             <Link
               to="/workspace"
-              className="mt-4 inline-flex min-h-10 items-center rounded-lg border border-border px-4 text-sm font-semibold text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={`${ctl} mt-4`}
             >
               {t("connections.choose_workspace")}
             </Link>
@@ -698,7 +715,7 @@ export function ConnectionsPage() {
         <p
           data-testid="connections-loading"
           role="status"
-          className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground"
+          className="mx-5 mt-4 rounded-lg border border-border bg-card p-4 text-[13px] text-muted-foreground"
         >
           <LoaderCircle
             size={16}
@@ -710,7 +727,7 @@ export function ConnectionsPage() {
       ) : connectionsQuery.isError ? (
         <section
           data-testid="connections-error-state"
-          className="rounded-xl border border-destructive/40 bg-destructive/5 p-5"
+          className="mx-5 mt-4 rounded-lg border border-err-border bg-err-bg p-4 text-[13px] text-err"
           role="alert"
         >
           <p data-testid="connections-error">
@@ -720,7 +737,7 @@ export function ConnectionsPage() {
             type="button"
             data-testid="connections-retry"
             onClick={() => void connectionsQuery.refetch()}
-            className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={`${ctl} mt-3`}
           >
             <RefreshCw size={14} aria-hidden="true" />
             {t("connections.retry")}
@@ -729,17 +746,17 @@ export function ConnectionsPage() {
       ) : connections.length === 0 ? (
         <section
           data-testid="connections-empty-state"
-          className="rounded-xl border border-dashed border-border bg-card px-5 py-10 text-center"
+          className="px-5 py-12 text-center"
         >
           <h2 className="font-semibold text-foreground">
             {t("connections.empty_title")}
           </h2>
-          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+          <p className="mx-auto mt-2 max-w-md text-[13px] text-text-2">
             {t("connections.empty_body")}
           </p>
         </section>
       ) : (
-        <ul data-testid="connection-list" className="flex flex-col gap-3">
+        <ul data-testid="connection-list" className="m-0 flex list-none flex-col p-0">
           {connections.map((connection) => {
             const isWorking =
               renameConnection.isPending ||
@@ -779,18 +796,18 @@ export function ConnectionsPage() {
       )}
 
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/30 p-4 pt-[14vh]">
           <section
             role="dialog"
             aria-modal="true"
             aria-labelledby="connection-create-title"
             data-testid="connection-create-dialog"
-            className="w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-xl"
+            className="w-full max-w-[520px] rounded-lg border border-border bg-card p-4 shadow-pop"
           >
             <div className="flex items-center justify-between gap-3">
               <h2
                 id="connection-create-title"
-                className="text-base font-bold text-foreground"
+                className="text-base font-semibold text-foreground"
               >
                 {t("connections.create.title")}
               </h2>
@@ -798,7 +815,7 @@ export function ConnectionsPage() {
                 type="button"
                 aria-label={t("connections.close")}
                 onClick={() => setIsCreateOpen(false)}
-                className="rounded-md p-2 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <X size={16} aria-hidden="true" />
               </button>
@@ -806,12 +823,12 @@ export function ConnectionsPage() {
             <form
               data-testid="connection-create-form"
               onSubmit={handleCreate}
-              className="mt-5 flex flex-col gap-4"
+              className="mt-4 flex flex-col gap-4"
             >
               <div>
                 <label
                   htmlFor="connection-create-name"
-                  className="mb-1.5 block text-sm font-medium text-foreground"
+                  className="mb-1.5 block text-xs font-medium text-text-2"
                 >
                   {t("connections.create.name")}
                 </label>
@@ -826,13 +843,13 @@ export function ConnectionsPage() {
                     setName(event.target.value);
                     setCreateError("");
                   }}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className={fieldCls}
                 />
               </div>
               <div>
                 <label
                   htmlFor="connection-create-provider"
-                  className="mb-1.5 block text-sm font-medium text-foreground"
+                  className="mb-1.5 block text-xs font-medium text-text-2"
                 >
                   {t("connections.create.provider")}
                 </label>
@@ -843,7 +860,7 @@ export function ConnectionsPage() {
                   onChange={(event) =>
                     setProvider(event.target.value as GoogleProvider)
                   }
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className={fieldCls}
                 >
                   <option value="GMAIL">Gmail</option>
                   <option value="GOOGLE_SHEETS">Google Sheets</option>
@@ -853,7 +870,7 @@ export function ConnectionsPage() {
                 <p
                   data-testid="connection-create-error"
                   role="alert"
-                  className="text-sm text-destructive"
+                  className="text-[13px] text-err"
                 >
                   {createError}
                 </p>
@@ -863,7 +880,7 @@ export function ConnectionsPage() {
                   type="button"
                   onClick={() => setIsCreateOpen(false)}
                   disabled={createConnection.isPending}
-                  className="min-h-10 rounded-lg border border-border px-4 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                  className={ctl}
                 >
                   {t("connections.cancel")}
                 </button>
@@ -871,7 +888,7 @@ export function ConnectionsPage() {
                   type="submit"
                   data-testid="connection-create-submit"
                   disabled={createConnection.isPending}
-                  className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-wait disabled:opacity-60"
+                  className={ctlPrimary}
                 >
                   {createConnection.isPending && (
                     <LoaderCircle
