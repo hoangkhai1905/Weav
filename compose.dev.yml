@@ -448,7 +448,8 @@ services:
   api-gateway:
     profiles: ["app"]
     restart: unless-stopped
-    mem_limit: 384m
+    # `nest start --watch` peaks around 650 MiB while compiling; 384m crash-looped with OOM.
+    mem_limit: 768m
 
     build:
       context: .
@@ -550,7 +551,8 @@ services:
   notification-service:
     profiles: ["app"]
     restart: unless-stopped
-    mem_limit: 512m
+    # `nest start --watch` settles around 680 MiB here; 512m crash-looped with OOM.
+    mem_limit: 1g
 
     build:
       context: .
