@@ -106,10 +106,10 @@
   - Lỗi 400 của workflow API giờ hiện thêm chi tiết đầu tiên, thay vì chỉ "Workflow definition is invalid".
   - Lịch sử chạy: bước chưa có `startedAt` gây sắp xếp sai (NaN) khi lượt đang chạy; nay xếp cuối.
 - Kiểm tra: tsc, build, `git diff --check` qua; eslint còn 1 lỗi cũ. Playwright 9 spec chuẩn: 35 failed / 70 passed (baseline + 4 test mới, tất cả lỗi nằm trong 4 spec baseline). GitNexus: MEDIUM.
-- Dữ liệu thử để lại trên Neon: quy trình `193e559c-44da-4ba9-9419-98698b014103` ("Untitled Automation Pipeline", đã xuất bản, 1 lượt chạy lỗi) trong workspace "test 1". Xóa quy trình chưa có API.
+- Chạy Sheets thật (spreadsheet của user, thao tác Đọc): với vùng `Sheet1!A1:Z100` lượt chạy lỗi `HTTP_BUSINESS_REJECTED`, vì tab của tài khoản tiếng Việt tên "Trang tính1". Đổi sang `A1:Z100` thì lượt `bd0ac9dc` thành công (bước Sheets 1.5 s). Vùng mặc định của catalog đổi thành `A1:Z100` (tab đầu tiên). Ở 800px, Lịch sử chạy chỉ hiện 2 cột; cột chi tiết bước cần màn rộng hơn.
+- Dữ liệu thử để lại trên Neon: quy trình `193e559c-44da-4ba9-9419-98698b014103` ("Untitled Automation Pipeline", đã xuất bản, 3 lượt chạy: 2 lỗi, 1 thành công) trong workspace "test 1". Xóa quy trình chưa có API.
 - Chưa làm / còn lại:
   - Thêm kết nối từ inspector rồi ủy quyền Google thật: cần user tự đăng nhập Google. Luồng đã được e2e phủ bằng route giả.
-  - Chạy Sheets thật với một spreadsheet có thật.
   - Header editor ở chiều rộng 800px: công tắc đè lên tab "Lịch sử chạy"; tab "Trình chỉnh sửa" xuống 2 dòng ở trang lượt chạy.
   - `ConfirmModal` không có `role="dialog"`.
 
