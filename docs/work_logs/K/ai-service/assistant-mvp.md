@@ -94,5 +94,6 @@ New env (all in `.env.example` with defaults; K's `.env` has the DB block):
 - **Frontend (partner):** chat UI and draft review/save are needed. Rule 1 of the spec, explicit confirmation, lives in the UI. The contract is in `packages/contracts/http/gateway/assistant.openapi.yaml`.
 - **Per-replica state:** limiters and the membership cache are in memory per replica. Daily quota is in the DB.
 - **Proxies:** must not buffer SSE (`X-Accel-Buffering: no`); check this on the demo deployment.
-- **Gateway e2e flake:** investigate (timing on a cold start).
+- **Gateway e2e flake:** hardened in `limits-health.e2e-spec.ts` (8844bc8: 3 s rate-limit window, longer timeouts, parallel-probe spread check). Not reproduced in 18 runs, so not proven fixed. If it recurs, capture the `●` block and check for a 429 that came back as 200.
+- **`production` `ai_db`:** migrated 2026-10-06, same migration as dev-k.
 - **Model quality:** tool choice with five tools is only tested with fakes; the live test is the first real check.
