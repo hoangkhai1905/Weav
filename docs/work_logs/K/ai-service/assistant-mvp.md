@@ -7,7 +7,7 @@
 | Date | 2026-10-06 (Asia/Saigon) |
 | Branches | `feat/generator-switch`, `feat/assistant-store`, `feat/assistant-tools` (phase 1), `feat/assistant-wiring`, `feat/assistant-gateway` (phase 2); all from `staging`, merged into `staging` (cd8236c, 4978ad8, bedbbfd, 6fe9e33, 1b37adf) |
 | Owner | K / Sonnet workers per lane, a different agent reviewed each lane, coordinator re-ran checks and committed |
-| Status | Done in code and tests. **Live test pending (K):** `scripts/live-test-nodes.ps1 -Flow assistant` against the real stack |
+| Status | Done. Live test `scripts/live-test-nodes.ps1 -Flow assistant -Cleanup` passed 2026-10-06 against the real stack (reported by K) |
 | Scope | Spec `docs/superpowers/specs/2026-10-04-messaging-nodes-and-ai-assistant-design.md` section 3; builds on `assistant-spike.md` |
 
 ## 2. Summary
@@ -83,6 +83,11 @@ New env (all in `.env.example` with defaults; K's `.env` has the DB block):
    - a foreign workspace giving 404;
    - cleanup.
    A FAIL on a tool-name check can be the model's choice, not a bug.
+
+**Live test result (2026-10-06): passed** (reported by K).
+- **Setup:** `ai_db` migrated on dev-k (`202610060001_assistant_store`; schema `ai` has `conversations`, `messages`, `assistant_usage`, `_prisma_migrations`). Stack started without ocr-service.
+- **Real providers:** identity RS256 JWKS (1 RSA key), real DeepSeek.
+- **Earlier failed start:** the first `compose up` failed in the ai-service image `pnpm install`. Most likely a registry timeout during parallel builds; the actual pnpm error line was not captured. Rebuilt without changes.
 
 ## 6. Risks and next steps
 
