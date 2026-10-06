@@ -103,7 +103,10 @@ and unsupported methods are not forwarded.
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/oauth/complete`    | `POST`                          | Required bearer (strict `{completion}` body)                           | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential`        | `PUT`, `DELETE`                 | Required bearer                                                        | Matching Workspace suffix           |
 | `/api/v1/workspaces/{workspaceId}/workflows/generate`                           | `POST`                          | Required bearer (32 KiB body, 80 s deadline)                           | Workflow                            |
-| `/api/v1/assistant/chat`                                                         | `POST`                          | Required bearer (256 KiB body, 75 s deadline, per-user `assistant` throttler; `text/event-stream` piped unbuffered, no compression; the caller's `Authorization` is forwarded) | AI `/v1/assistant/chat`             |
+| `/api/v1/assistant/chat`                                                        | `POST`                          | Required bearer (`{workspaceId, conversationId?, message, timezone?}` strict, 256 KiB body, 75 s deadline, per-user `assistant` throttler; `text/event-stream` piped unbuffered, no compression; the caller's `Authorization` is forwarded) | AI `/v1/assistant/chat` |
+| `/api/v1/assistant/conversations`                                               | `GET`                           | Required bearer (only `workspaceId`, `limit` 1..50, `before` ISO-8601 are forwarded; 10 s timeout, 64 KiB JSON cap) | AI `/v1/assistant/conversations` |
+| `/api/v1/assistant/conversations/{conversationId}/messages`                     | `GET`                           | Required bearer (uuid validated, 10 s timeout) | AI `/v1/assistant/conversations/{id}/messages` |
+| `/api/v1/assistant/conversations/{conversationId}`                              | `DELETE`                        | Required bearer (uuid validated, 204) | AI `/v1/assistant/conversations/{id}` |
 | `/api/v1/webhooks/{endpointKey}`                                                 | `POST`                          | Public (JSON only, per-endpoint `webhook` throttler)                   | Workflow `/webhooks/{endpointKey}`  |
 | `/api/v1/webhooks/telegram/{endpointKey}`                                        | `POST`                          | Public (JSON only, per-endpoint `webhook` throttler; only `X-Telegram-Bot-Api-Secret-Token` is forwarded, never Authorization) | Workflow `/webhooks/telegram/{endpointKey}` |
 | `/api/v1/workspaces/{workspaceId}/members`                                       | `GET`, `POST`                   | Required bearer                                                        | `/workspaces/{workspaceId}/members` |
@@ -163,7 +166,7 @@ if Valkey errors the gateway fails open (request allowed, WARN logged).
 
 - General traffic uses one socket-IP budget across routes.
 - Public authentication mutations use a separate socket-IP budget.
-- Assistant chat uses the verified JWT `principal.sub` (its own `assistant` budget, default 20 per window).
+- Assistant chat uses the verified JWT `principal.sub` (its own `assistant` budget, default 20 per window). The history routes (`GET`/`DELETE conversations...`) only get the general budget. Upstream 404 and 429 stay 404 and 429 on every assistant route; other upstream errors are mapped by status class and upstream text is never relayed.
 - OCR uses the verified JWT `principal.sub`; IP fallback exists only for the
   explicit development OCR bypass.
 - `trustProxy` is false, forwarded headers do not choose a bucket, and health
