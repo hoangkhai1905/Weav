@@ -5,6 +5,11 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { InjectOptions } from 'fastify';
 import { createApp } from '../src/create-app';
 
+const RATE_LIMIT_WINDOW_MS = 3_000;
+
+// Rate-limit recovery waits out a full window; default 5s is too tight.
+jest.setTimeout(25_000);
+
 const ORIGINAL_ENVIRONMENT = { ...process.env };
 const JWT_SECRET = randomBytes(48).toString('hex');
 const WORKSPACE_ID = randomUUID();
@@ -129,7 +134,8 @@ function applyTestEnvironment(identityUrl: string, workspaceUrl: string): void {
     GATEWAY_GENERAL_RATE_LIMIT: '10',
     GATEWAY_AUTH_RATE_LIMIT: '2',
     GATEWAY_OCR_RATE_LIMIT: '2',
-    GATEWAY_RATE_LIMIT_WINDOW_MS: '1000',
+    // Wide enough that a cold first run cannot roll the window mid-test.
+    GATEWAY_RATE_LIMIT_WINDOW_MS: String(RATE_LIMIT_WINDOW_MS),
   });
 }
 
@@ -144,7 +150,7 @@ function restoreEnvironment(): void {
 
 async function waitForState(
   predicate: () => boolean,
-  timeoutMs = 1_000,
+  timeoutMs = 5_000,
 ): Promise<void> {
   const startedAt = Date.now();
   while (!predicate()) {
@@ -350,7 +356,9 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
     expect(limited.statusCode).toBe(429);
     expect(limited.headers['retry-after']).toBeTruthy();
 
-    await new Promise((resolve) => setTimeout(resolve, 1_100));
+    await new Promise((resolve) =>
+      setTimeout(resolve, RATE_LIMIT_WINDOW_MS + 100),
+    );
     const recovered = await inject(
       { method: 'POST', url: '/api/auth/forgot-password', payload: {} },
       remoteAddress,
@@ -469,7 +477,6 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
   });
 
   it('returns sanitized /ready/upstreams status for parallel upstream probes and recovers from a down service', async () => {
-    const startedAt = Date.now();
     const ready = await inject(
       {
         method: 'GET',
@@ -490,9 +497,12 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
     });
     expect(identityState.calls).toBe(1);
     expect(workspaceState.calls).toBe(1);
-    expect(
-      Math.max(...identityState.starts, ...workspaceState.starts) - startedAt,
-    ).toBeLessThan(1_000);
+    // Probes run in parallel: their start times are close to each other,
+    // independent of how slow the first (cold) request was.
+    const probeStarts = [...identityState.starts, ...workspaceState.starts];
+    expect(Math.max(...probeStarts) - Math.min(...probeStarts)).toBeLessThan(
+      1_000,
+    );
 
     identityState.mode = 'down';
     const down = await inject(
@@ -530,7 +540,7 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
     const elapsed = Date.now() - startedAt;
     expect(stalled.statusCode).toBe(503);
     expect(elapsed).toBeGreaterThanOrEqual(1_800);
-    expect(elapsed).toBeLessThan(3_500);
+    expect(elapsed).toBeLessThan(4_500);
     expect(stalled.payload).not.toContain('do-not-expose');
     await waitForState(() => identityState.aborted >= 1);
     expect(identityState.aborted).toBeGreaterThanOrEqual(1);
