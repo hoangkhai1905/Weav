@@ -182,8 +182,17 @@ const getNodeReadinessMessage = (
   return undefined;
 };
 
-const getPublishBlockers = (nodes: Node[], t: (key: string) => string, attachableConnectionIds?: ReadonlySet<string>): string[] => {
+const getPublishBlockers = (nodes: Node[], edges: Edge[], t: (key: string) => string, attachableConnectionIds?: ReadonlySet<string>): string[] => {
   const blockers = new Set<string>();
+  // Mirrors the Workflow Service UNREACHABLE_NODE rule: every action must be reachable from a trigger.
+  const reachable = new Set(nodes.filter((node) => String(node.data?.nodeType ?? '').startsWith('trigger.')).map((node) => node.id));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const edge of edges) {
+      if (reachable.has(edge.source) && !reachable.has(edge.target)) { reachable.add(edge.target); grew = true; }
+    }
+  }
+  if (nodes.some((node) => !reachable.has(node.id))) blockers.add(t('builder.blocker.unreachable'));
   for (const node of nodes) {
     const type = String(node.data?.nodeType ?? '');
     const config = (node.data?.config ?? {}) as Record<string, unknown>;
@@ -264,7 +273,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     [nodes]
   );
   const attachableConnectionIds = useAttachableConnectionIds();
-  const publishBlockers = useMemo(() => getPublishBlockers(nodes, t, attachableConnectionIds), [nodes, t, attachableConnectionIds]);
+  const publishBlockers = useMemo(() => getPublishBlockers(nodes, edges, t, attachableConnectionIds), [nodes, edges, t, attachableConnectionIds]);
   const selectedNodeReadiness = selectedNode
     ? getNodeReadinessBadge(selectedNodeType, selectedNodeConfig, attachableConnectionIds)
     : undefined;
@@ -283,6 +292,8 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectorTab, setInspectorTab] = useState<'config' | 'input' | 'output' | 'logs'>('config');
   // The step is captured on open: clicking the dialog closes the inspector and clears the selection.
+  const [invalidValuesNodeId, setInvalidValuesNodeId] = useState<string | null>(null);
+  const sheetsValuesInvalid = invalidValuesNodeId !== null && invalidValuesNodeId === selectedNodeId;
   const [addConnectionFor, setAddConnectionFor] = useState<{ provider: GoogleProvider; nodeId: string } | null>(null);
   const startGoogleOAuth = useStartGoogleOAuth();
 
@@ -997,10 +1008,21 @@ export const WorkflowBuilderPage: React.FC = () => {
     } while (usedIds.has(newNodeId));
     nodeSequenceRef.current = sequence;
     const catalogItem = NODE_CATALOG.find((item) => item.type === type);
+    // "Add step" continues the flow: place it right of the selected (else right-most) step and link it
+    // when that step has a single output that is still free, so the new step is reachable on publish.
+    const anchor = nodes.find((node) => node.id === selectedNodeId)
+      ?? nodes.reduce<Node | undefined>((best, node) => (!best || node.position.x > best.position.x ? node : best), undefined);
+    const anchorType = String(anchor?.data?.nodeType ?? '');
+    const linkFromAnchor = Boolean(anchor)
+      && !type.startsWith('trigger.')
+      && !NODE_CATALOG.find((item) => item.type === anchorType)?.sourcePorts
+      && !edges.some((edge) => edge.source === anchor?.id);
     const newNode: Node = {
       id: newNodeId,
       type: 'customNode',
-      position: { x: 300 + (sequence % 3) * 40, y: 200 + (sequence % 2) * 60 },
+      position: anchor
+        ? { x: anchor.position.x + 340, y: anchor.position.y }
+        : { x: 80, y: 80 + (sequence % 3) * 40 },
       data: {
         id: `${type.replace('.', '_')}_v1`,
         name,
@@ -1017,6 +1039,17 @@ export const WorkflowBuilderPage: React.FC = () => {
       ...nds.map((n) => ({ ...n, data: { ...n.data, selected: false } })),
       newNode,
     ]);
+    if (linkFromAnchor && anchor) {
+      setEdges((eds) => addEdge({
+        source: anchor.id,
+        target: newNodeId,
+        sourceHandle: null,
+        targetHandle: null,
+        type: 'execution',
+        animated: false,
+        style: { stroke: '#94a3b8', strokeWidth: 1.75 },
+      }, eds));
+    }
     setSelectedNodeId(newNodeId);
     setInspectorOpen(true);
     if (type === 'ocr.extract') {
@@ -2075,60 +2108,45 @@ export const WorkflowBuilderPage: React.FC = () => {
                         />
                       </div>
 
-                      {googleOperation === 'append' ? (
-                        <>
-                          <div>
-                            <label htmlFor="google-sheet-name" className="mb-1 block text-[11px] font-medium text-text-2">
-                              {t('builder.google.sheet_name')}
-                            </label>
-                            <input
-                              id="google-sheet-name"
-                              type="text"
-                              value={String(selectedNodeConfig.sheetName ?? '')}
-                              onChange={(event) => updateSelectedNodeConfig({ sheetName: event.target.value })}
-                              className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                            />
-                          </div>
-                          <div>
-                            <label htmlFor="google-row-variable" className="mb-1 block text-[11px] font-medium text-text-2">
-                              {t('builder.google.row_variable')}
-                            </label>
-                            <input
-                              id="google-row-variable"
-                              type="text"
-                              value={String(selectedNodeConfig.rowDataVariable ?? '')}
-                              onChange={(event) => updateSelectedNodeConfig({ rowDataVariable: event.target.value })}
-                              className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                            />
-                          </div>
-                        </>
-                      ) : (
-                        <div>
-                          <label htmlFor="google-range" className="mb-1 block text-[11px] font-medium text-text-2">
-                            {t('builder.google.range')}
-                          </label>
-                          <input
-                            id="google-range"
-                            type="text"
-                            value={String(selectedNodeConfig.range ?? '')}
-                            onChange={(event) => updateSelectedNodeConfig({ range: event.target.value })}
-                            className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                          />
-                        </div>
-                      )}
+                      <div>
+                        <label htmlFor="google-range" className="mb-1 block text-[11px] font-medium text-text-2">
+                          {t('builder.google.range')}
+                        </label>
+                        <input
+                          id="google-range"
+                          type="text"
+                          value={String(selectedNodeConfig.range ?? '')}
+                          onChange={(event) => updateSelectedNodeConfig({ range: event.target.value })}
+                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
 
-                      {googleOperation === 'update' && (
+                      {googleOperation !== 'read' && (
                         <div>
-                          <label htmlFor="google-value-variable" className="mb-1 block text-[11px] font-medium text-text-2">
-                            {t('builder.google.value_variable')}
+                          <label htmlFor="google-values" className="mb-1 block text-[11px] font-medium text-text-2">
+                            {t('builder.google.values')}
                           </label>
-                          <input
-                            id="google-value-variable"
-                            type="text"
-                            value={String(selectedNodeConfig.valueVariable ?? '')}
-                            onChange={(event) => updateSelectedNodeConfig({ valueVariable: event.target.value })}
-                            className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                          {/* Uncontrolled so half-typed JSON is kept; only a valid array of rows is stored as `values`. */}
+                          <textarea
+                            key={selectedNodeId ?? ''}
+                            id="google-values"
+                            rows={3}
+                            defaultValue={Array.isArray(selectedNodeConfig.values) ? JSON.stringify(selectedNodeConfig.values) : ''}
+                            placeholder='[["{{ trigger.input.email }}"]]'
+                            aria-invalid={sheetsValuesInvalid}
+                            aria-describedby={sheetsValuesInvalid ? 'google-values-error' : undefined}
+                            onChange={(event) => {
+                              let rows: unknown;
+                              try { rows = JSON.parse(event.target.value); } catch { rows = undefined; }
+                              const valid = Array.isArray(rows) && rows.length > 0 && rows.every(Array.isArray);
+                              setInvalidValuesNodeId(valid ? null : selectedNodeId);
+                              updateSelectedNodeConfig({ values: valid ? rows : undefined });
+                            }}
+                            className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                           />
+                          {sheetsValuesInvalid && (
+                            <p id="google-values-error" className="mt-1 text-[10px] text-err">{t('builder.google.values_invalid')}</p>
+                          )}
                         </div>
                       )}
                     </>

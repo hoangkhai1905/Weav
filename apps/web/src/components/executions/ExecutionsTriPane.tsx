@@ -159,7 +159,13 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
 
   const steps = useMemo(() => {
     const list = Object.values(detail?.nodeResults ?? {});
-    return list.sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
+    // Steps that have not started yet have no startedAt (NaN) and go last instead of breaking the order.
+    const startedAt = (value: string | undefined) => Date.parse(value ?? '') || Number.POSITIVE_INFINITY;
+    return list.sort((a, b) => {
+      const left = startedAt(a.startedAt);
+      const right = startedAt(b.startedAt);
+      return left === right ? 0 : left < right ? -1 : 1;
+    });
   }, [detail]);
 
   const timeline = useMemo(() => {

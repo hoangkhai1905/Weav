@@ -46,6 +46,11 @@ export const getNodeReadinessBadge = (
   if (connectionFields) {
     const connectionId = String(config.connectionId ?? '').trim();
     if (!connectionId || connectionFields.some((field) => !String(config[field] ?? '').trim())) return NOT_CONFIGURED;
+    // Append/update write `values`, a JSON array of rows (GoogleSheetsNodeExecutor.parseValues).
+    if (nodeType === 'google.sheets' && String(config.operation ?? 'read') !== 'read'
+      && !(Array.isArray(config.values) && config.values.length > 0 && config.values.every(Array.isArray))) {
+      return NOT_CONFIGURED;
+    }
     if (attachableConnectionIds && !attachableConnectionIds.has(connectionId)) {
       return { state: 'authorization-required', label: 'Authorization required', labelKey: 'builder.readiness.authorization_required' };
     }

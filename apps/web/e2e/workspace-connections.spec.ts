@@ -1420,6 +1420,57 @@ test.describe("workflow builder connection readiness", () => {
     await expect(page.getByTestId("integration-readiness")).toContainText("spreadsheet ID");
   });
 
+  test("Sheets writes need JSON values and drafts carry only Workflow Service fields", async ({ page }) => {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, [connection(CONNECTION_SHEETS_ID, "GOOGLE_SHEETS", WORKSPACE_ID, "ACTIVE")]),
+    );
+    const drafts: unknown[] = [];
+    const state = {
+      sheets: { connectionId: CONNECTION_SHEETS_ID, operation: "read", spreadsheetId: "sheet-1", range: "Sheet1!A1:B2" } as Record<string, unknown>,
+      email: { to: "team@example.test", subject: "Weekly", body: "Hi" } as Record<string, unknown>,
+    };
+    await routeWorkflow(page, state, drafts);
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+
+    await page.locator(sheetsNode).click();
+    await page.locator("#google-operation").selectOption("append");
+    await expect(page.locator(sheetsNode)).toHaveAttribute("data-readiness", "not-configured");
+    await page.locator("#google-values").fill("[[not json");
+    await expect(page.locator("#google-values-error")).toBeVisible();
+    await page.locator("#google-values").fill('[["{{ trigger.input.email }}", 1]]');
+    await expect(page.locator("#google-values-error")).toHaveCount(0);
+    await expect(page.locator(sheetsNode)).toHaveAttribute("data-readiness", "ready");
+
+    await page.getByTestId("workflow-save-inspector").click();
+    await expect.poll(() => drafts.length).toBe(1);
+    expect(Object.keys(state.sheets).sort()).toEqual(["connectionId", "operation", "range", "spreadsheetId", "values"]);
+    expect(state.sheets.values).toEqual([["{{ trigger.input.email }}", 1]]);
+  });
+
+  test("a step added from the palette follows the selected step and is linked to it", async ({ page }) => {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) => fulfillJson(route, []));
+    await routeWorkflow(page, { sheets: { operation: "read" }, email: { to: "a@example.test", subject: "s" } });
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+    const edges = page.locator(".react-flow__edge");
+    await expect(edges).toHaveCount(2);
+
+    await page.locator(emailNode).click();
+    await page.getByTestId("workflow-add-step").click();
+    await page.locator('[data-testid="workflow-palette-item"][data-node-type="http.request"]').click();
+    await expect(edges).toHaveCount(3);
+    const x = async (selector: string) => (await page.locator(selector).boundingBox())!.x;
+    expect(await x('[data-testid="workflow-node"][data-node-type="http.request"]')).toBeGreaterThan(await x(emailNode));
+
+    // Deleting the Sheets step leaves the mail step unreachable, which blocks publication before the server does.
+    await page.locator(sheetsNode).click();
+    await page.keyboard.press("Backspace");
+    await expect(page.locator(sheetsNode)).toHaveCount(0);
+    await expect(page.getByText("A step is not connected to a trigger")).toBeVisible();
+    await expect(page.getByTestId("workflow-publish")).toBeDisabled();
+  });
+
   test("adds a Google Sheets connection from the inspector, saves the draft and returns to the step after OAuth", async ({ page }) => {
     await installAuthFixture(page);
     let created = false;

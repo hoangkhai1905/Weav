@@ -187,7 +187,11 @@ async function requestOnce<T>(path: string, init: RequestInit = {}): Promise<T> 
         : response.status >= 500
           ? tr('msg.workflow_service_is_temporarily_unavailable')
           : tr('msg.the_workflow_request_could_not_be_completed');
-    throw new WorkflowApiError(response.status, message);
+    // Validation errors carry the reason in details[]; show the first one instead of a bare "invalid".
+    const firstDetail = response.status === 400 && Array.isArray(envelope?.details) && isRecord(envelope.details[0])
+      ? envelope.details[0].message
+      : undefined;
+    throw new WorkflowApiError(response.status, typeof firstDetail === 'string' && firstDetail ? `${message}: ${firstDetail}` : message);
   }
 
   return payload as T;
