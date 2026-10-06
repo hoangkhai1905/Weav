@@ -1,5 +1,6 @@
 package com.weav.workflow.infrastructure.gmail;
 
+import com.weav.workflow.application.port.out.WorkflowFileStore;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -21,6 +22,11 @@ public final class GmailMessageParser {
     private static final java.util.Set<String> BLOCK_TAGS = java.util.Set.of("p", "div", "tr", "li", "h1", "h2", "h3", "h4", "h5", "h6");
     private static final int MAX_HEADER_CHARS = 2_000;
     private static final int MAX_PART_DEPTH = 20;
+    private static final int MAX_PARTS_VISITED = 2_000;
+    private static final int MAX_ATTACHMENT_PARTS = 50;
+    private static final int MAX_MIME_CHARS = 127;
+    private static final Pattern MIME_TYPE = Pattern.compile("[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+");
+    private static final Pattern ATTACHMENT_ID = Pattern.compile("[A-Za-z0-9_-]{1,2048}");
     private static final Pattern ENCODED_WORD = Pattern.compile("=\\?([^?\\s]+)\\?([bBqQ])\\?([^?\\s]*)\\?=");
     private static final Pattern CHARSET = Pattern.compile("charset\\s*=\\s*\"?([A-Za-z0-9_.:-]+)\"?",
             Pattern.CASE_INSENSITIVE);
@@ -29,7 +35,19 @@ public final class GmailMessageParser {
     private GmailMessageParser() {
     }
 
-    public record Parsed(String id, Instant internalDate, Map<String, Object> input) {
+    /** {@code attachments}: the attachment parts found (not downloaded); input already lists them as metadata. */
+    public record Parsed(String id, Instant internalDate, Map<String, Object> input, List<AttachmentPart> attachments) {
+    }
+
+    /** One attachment part: {@code attachmentId} (download it) or {@code inlineData} (base64url, already in the message). */
+    record AttachmentPart(String filename, String mimeType, long size, String attachmentId, String inlineData) {
+        Map<String, Object> metadata() {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("filename", filename);
+            item.put("mimeType", mimeType);
+            item.put("size", size);
+            return item;
+        }
     }
 
     /** Empty when the message has no usable id or internalDate (it is skipped, never half-admitted). */
@@ -52,6 +70,7 @@ public final class GmailMessageParser {
         Map<?, ?> payload = message.get("payload") instanceof Map<?, ?> map ? map : Map.of();
         Map<String, String> headers = headers(payload);
         Body body = body(payload);
+        List<AttachmentPart> attachments = bodyOmitted ? List.of() : attachmentParts(payload);
 
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("messageId", id);
@@ -66,7 +85,49 @@ public final class GmailMessageParser {
         input.put("bodyTruncated", body.truncated());
         input.put("bodyOmitted", bodyOmitted);
         input.put("labelIds", labels(message.get("labelIds")));
-        return Optional.of(new Parsed(id, internalDate, input));
+        input.put("attachments", attachments.stream().map(AttachmentPart::metadata).toList());
+        return Optional.of(new Parsed(id, internalDate, input, attachments));
+    }
+
+    /**
+     * Attachment parts of the payload, in message order: parts with a filename and either a {@code body.attachmentId}
+     * or inline {@code body.data}. Parts without a filename (inline images) are ignored. Bounded: depth
+     * {@link #MAX_PART_DEPTH}, {@link #MAX_PARTS_VISITED} parts looked at, {@link #MAX_ATTACHMENT_PARTS} kept.
+     */
+    static List<AttachmentPart> attachmentParts(Map<?, ?> payload) {
+        List<AttachmentPart> found = new ArrayList<>();
+        collectAttachments(payload, 0, new int[1], found);
+        return found;
+    }
+
+    private static void collectAttachments(Map<?, ?> part, int depth, int[] visited, List<AttachmentPart> found) {
+        if (depth > MAX_PART_DEPTH || ++visited[0] > MAX_PARTS_VISITED || found.size() >= MAX_ATTACHMENT_PARTS) {
+            return;
+        }
+        String rawName = part.get("filename") instanceof String name ? clean(name) : "";
+        Map<?, ?> body = part.get("body") instanceof Map<?, ?> map ? map : Map.of();
+        String attachmentId = body.get("attachmentId") instanceof String id && !id.isEmpty() ? id : null;
+        String data = body.get("data") instanceof String text && !text.isEmpty() ? text : null;
+        if (!rawName.isBlank() && (attachmentId != null || data != null)) {
+            String filename = WorkflowFileStore.safeFilename(rawName);
+            String mimeType = part.get("mimeType") instanceof String type ? clean(type).strip() : "";
+            long size = attachmentId != null
+                    ? (body.get("size") instanceof Number number && number.longValue() > 0 ? number.longValue() : 0)
+                    : data.length() * 3L / 4;
+            found.add(new AttachmentPart(filename == null ? "attachment" : filename,
+                    MIME_TYPE.matcher(mimeType).matches() && mimeType.length() <= MAX_MIME_CHARS
+                            ? mimeType : "application/octet-stream",
+                    size,
+                    attachmentId != null && ATTACHMENT_ID.matcher(attachmentId).matches() ? attachmentId : null,
+                    attachmentId == null ? data : null));
+        }
+        if (part.get("parts") instanceof List<?> children) {
+            for (Object child : children) {
+                if (child instanceof Map<?, ?> childPart) {
+                    collectAttachments(childPart, depth + 1, visited, found);
+                }
+            }
+        }
     }
 
     private static List<String> labels(Object value) {

@@ -46,6 +46,19 @@ public class GoogleApiClient {
             String path,
             Map<String, String> query,
             Object body) {
+        return call(connection, provider, service, method, path, query, body, 0);
+    }
+
+    /** Same, but a Drive upload POST may send up to {@code uploadMaxRequestBytes} (0 keeps the default cap). */
+    public Map<String, Object> call(
+            ResolvedConnection connection,
+            String provider,
+            String service,
+            String method,
+            String path,
+            Map<String, String> query,
+            Object body,
+            int uploadMaxRequestBytes) {
         String accessToken = accessToken(connection, provider, service);
         URI target;
         try {
@@ -53,8 +66,9 @@ public class GoogleApiClient {
         } catch (IllegalArgumentException exception) {
             throw configurationFailure(service);
         }
-        PinnedHttpTransport.HttpResponse response =
-                transport.executeGoogleApiWithBearerToken(target, method, query, body, accessToken);
+        PinnedHttpTransport.HttpResponse response = uploadMaxRequestBytes > 0
+                ? transport.executeGoogleApiWithBearerToken(target, method, query, body, accessToken, uploadMaxRequestBytes)
+                : transport.executeGoogleApiWithBearerToken(target, method, query, body, accessToken);
         return successfulObject(response, service);
     }
 

@@ -166,6 +166,9 @@ class GmailNodeExecutorTest {
         try (AnnotationConfigApplicationContext application = new AnnotationConfigApplicationContext()) {
             application.registerBean(WorkspaceConnectionPort.class, FakeWorkspace::new);
             application.registerBean(PinnedHttpTransport.class, PinnedHttpTransport::new);
+            application.registerBean(com.weav.workflow.application.port.out.WorkflowFileStore.class,
+                    () -> org.mockito.Mockito.mock(com.weav.workflow.application.port.out.WorkflowFileStore.class));
+            application.registerBean(com.weav.workflow.infrastructure.files.WorkflowFileProperties.class);
             application.register(NodeExecutorRegistry.class);
             application.scan("com.weav.workflow.infrastructure.gmail");
             application.refresh();

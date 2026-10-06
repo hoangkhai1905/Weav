@@ -147,7 +147,7 @@ class GmailTriggerIntegrationTest {
                         new GmailMailboxPort.Message("m2", t2, Map.of("messageId", "m2", "labelIds", List.of()))));
         int[] call = {0};
         boolean[] txOpen = {false};
-        GmailMailboxPort mailbox = (conn, query, after, afterId, max) -> {
+        GmailMailboxPort mailbox = (workspaceId, conn, query, after, afterId, max) -> {
             txOpen[0] = org.springframework.transaction.support.TransactionSynchronizationManager
                     .isActualTransactionActive();
             return GmailMailboxPort.FetchResult.of(pages.get(call[0]++));

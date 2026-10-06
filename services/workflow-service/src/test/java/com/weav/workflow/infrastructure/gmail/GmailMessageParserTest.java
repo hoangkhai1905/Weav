@@ -50,7 +50,7 @@ class GmailMessageParserTest {
         assertEquals("18c0ffee00000001", parsed.id());
         assertEquals(Instant.ofEpochMilli(1790000000123L), parsed.internalDate());
         assertEquals(List.of("messageId", "threadId", "from", "to", "cc", "subject", "date", "snippet", "body",
-                "bodyTruncated", "bodyOmitted", "labelIds"), List.copyOf(parsed.input().keySet()));
+                "bodyTruncated", "bodyOmitted", "labelIds", "attachments"), List.copyOf(parsed.input().keySet()));
         assertEquals("Ada <ada@example.test>", parsed.input().get("from"));
         assertEquals("me@example.test", parsed.input().get("to"));
         assertEquals("bob@example.test", parsed.input().get("cc"));
@@ -192,5 +192,134 @@ class GmailMessageParserTest {
                 GmailMessageParser.decodeEncodedWords("=?UTF-8?Q?caf=C3=A9_menu?="));
         assertEquals("ab", GmailMessageParser.decodeEncodedWords("=?UTF-8?Q?a?= =?UTF-8?Q?b?="));
         assertEquals("plain =?broken", GmailMessageParser.decodeEncodedWords("plain =?broken"));
+    }
+
+    // ---- attachments ----
+
+    private static Map<String, Object> file(String filename, String mime, Map<String, Object> body) {
+        return Map.of("mimeType", mime, "filename", filename, "body", body);
+    }
+
+    private static Map<String, Object> multipart(String mime, List<Object> parts) {
+        return Map.of("mimeType", mime, "filename", "", "parts", parts);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> listed(Map<String, Object> payload) {
+        return (List<Map<String, Object>>) GmailMessageParser.parse(message(payload)).orElseThrow()
+                .input().get("attachments");
+    }
+
+    @Test
+    void nestedAttachmentPartsAreCollectedInMessageOrderAndInlineImagesWithoutAFilenameAreIgnored() {
+        Map<String, Object> payload = multipart("multipart/mixed", List.of(
+                multipart("multipart/related", List.of(
+                        multipart("multipart/alternative", List.of(part("text/plain", "hi"), part("text/html", "<p>hi</p>"))),
+                        file("", "image/png", Map.of("attachmentId", "CID1", "size", 10)),
+                        file("logo.png", "image/png", Map.of("attachmentId", "ATT1", "size", 2048)))),
+                file("report.pdf", "application/pdf", Map.of("attachmentId", "ATT2", "size", 4096))));
+
+        var parsed = GmailMessageParser.parse(message(payload)).orElseThrow();
+
+        assertEquals(List.of(
+                Map.of("filename", "logo.png", "mimeType", "image/png", "size", 2048L),
+                Map.of("filename", "report.pdf", "mimeType", "application/pdf", "size", 4096L)),
+                parsed.input().get("attachments"));
+        assertEquals(List.of("ATT1", "ATT2"), parsed.attachments().stream()
+                .map(GmailMessageParser.AttachmentPart::attachmentId).toList());
+        assertEquals("hi", parsed.input().get("body"));
+    }
+
+    @Test
+    void anAttachmentIdIsDownloadedButSmallInlineDataStaysInTheMessage() {
+        Map<String, Object> payload = multipart("multipart/mixed", List.of(
+                file("a.txt", "text/plain", Map.of("attachmentId", "ATT1", "size", 5)),
+                file("b.txt", "text/plain", Map.of("data", b64("hello", StandardCharsets.UTF_8), "size", 5)),
+                file("c.txt", "text/plain", Map.of("size", 5)),
+                file("d.txt", "text/plain", Map.of("data", ""))));
+
+        var parts = GmailMessageParser.parse(message(payload)).orElseThrow().attachments();
+
+        assertEquals(2, parts.size(), "a part with neither attachmentId nor data is not an attachment");
+        assertEquals("ATT1", parts.get(0).attachmentId());
+        assertEquals(null, parts.get(0).inlineData());
+        assertEquals(null, parts.get(1).attachmentId());
+        assertEquals(b64("hello", StandardCharsets.UTF_8), parts.get(1).inlineData());
+        assertEquals(5L, parts.get(1).size());
+    }
+
+    @Test
+    void filenamesAndMimeTypesAreSanitizedAndNeverCarryControlCharacters() {
+        Map<String, Object> payload = multipart("multipart/mixed", List.of(
+                file("evil\u0000..\\..\\/name‮.pdf\u0007", "application/pdf\r\nX: y", Map.of("attachmentId", "A1", "size", 1)),
+                file("\u0000\u0001", "text/plain", Map.of("attachmentId", "A2", "size", 1)),
+                file("...", "x".repeat(500) + "/y", Map.of("attachmentId", "A3", "size", 1)),
+                file("ok.txt", "text/plain", Map.of("attachmentId", "bad id/../x", "size", 1))));
+
+        List<Map<String, Object>> list = listed(payload);
+
+        assertEquals(3, list.size(), "a filename that is only control characters is not a filename");
+        assertEquals("evil....name.pdf", list.get(0).get("filename"));
+        assertEquals("application/octet-stream", list.get(0).get("mimeType"));
+        assertEquals("attachment", list.get(1).get("filename"), "only dots falls back");
+        assertEquals("application/octet-stream", list.get(1).get("mimeType"));
+        assertEquals("ok.txt", list.get(2).get("filename"));
+        for (Map<String, Object> item : list) {
+            assertFalse(item.toString().chars().anyMatch(c -> c < 0x20 && c != ' '), item.toString());
+        }
+    }
+
+    @Test
+    void anAttachmentIdThatIsNotUrlSafeIsKeptAsAPartWithNothingToDownload() {
+        var parts = GmailMessageParser.parse(message(multipart("multipart/mixed", List.of(
+                file("ok.txt", "text/plain", Map.of("attachmentId", "bad id/../x", "size", 1)))))).orElseThrow().attachments();
+
+        assertEquals(1, parts.size());
+        assertEquals(null, parts.getFirst().attachmentId());
+        assertEquals(null, parts.getFirst().inlineData());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void hostilePartsAreBoundedAndNeverThrow() {
+        // 100 levels deep: only the first 21 levels are walked
+        Object deep = file("deep.txt", "text/plain", Map.of("attachmentId", "DEEP", "size", 1));
+        for (int i = 0; i < 100; i++) {
+            deep = multipart("multipart/mixed", List.of(deep));
+        }
+        assertEquals(List.of(), listed((Map<String, Object>) deep));
+
+        // thousands of siblings: at most 50 attachments kept
+        List<Object> many = new java.util.ArrayList<>();
+        for (int i = 0; i < 5_000; i++) {
+            many.add(file("f" + i + ".txt", "text/plain", Map.of("attachmentId", "A" + i, "size", 1)));
+        }
+        assertEquals(50, listed(multipart("multipart/mixed", many)).size());
+
+        // wrong types everywhere
+        Map<String, Object> weird = new java.util.LinkedHashMap<>();
+        weird.put("mimeType", 7);
+        weird.put("filename", List.of("x"));
+        weird.put("body", "not a map");
+        weird.put("parts", List.of("str", 1, Map.of("filename", "a.txt", "body", Map.of("attachmentId", 5, "data", 9, "size", "big")),
+                Map.of("filename", "b.txt", "mimeType", "text/plain", "body", Map.of("attachmentId", "B", "size", -3L))));
+        List<Map<String, Object>> list = listed(weird);
+        assertEquals(1, list.size());
+        assertEquals(0L, list.getFirst().get("size"));
+
+        // a huge declared size stays a number, not an overflow
+        assertEquals(Long.MAX_VALUE, listed(multipart("multipart/mixed", List.of(
+                file("big.bin", "application/zip", Map.of("attachmentId", "A", "size", Long.MAX_VALUE))))).getFirst().get("size"));
+    }
+
+    @Test
+    void aMessageReadAsMetadataOnlyHasNoAttachmentsAndAMessageWithoutAnyHasAnEmptyList() {
+        Map<String, Object> payload = multipart("multipart/mixed", List.of(
+                file("a.txt", "text/plain", Map.of("attachmentId", "A1", "size", 1))));
+
+        var omitted = GmailMessageParser.parse(message(payload), true).orElseThrow();
+        assertEquals(List.of(), omitted.input().get("attachments"));
+        assertEquals(List.of(), omitted.attachments());
+        assertEquals(List.of(), listed(part("text/plain", "plain")));
     }
 }

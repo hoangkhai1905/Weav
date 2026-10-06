@@ -86,7 +86,7 @@ public class GmailTriggerProcessor {
         GmailMailboxPort.FetchResult fetched;
         try (ResolvedConnection connection = connections.resolve(claim.workspaceId(), claim.connectionId())) {
             try {
-                fetched = mailbox.fetchNew(connection, claim.query(), claim.cursor(), claim.cursorMessageId(),
+                fetched = mailbox.fetchNew(claim.workspaceId(), connection, claim.query(), claim.cursor(), claim.cursorMessageId(),
                         MAX_MESSAGES_PER_POLL);
             } catch (NodeExecutor.Failure failure) {
                 if ("AUTHENTICATION_REJECTED".equals(failure.code())) {
@@ -146,7 +146,7 @@ public class GmailTriggerProcessor {
         }
         gmailTriggers.recordGmailPoll(claim.triggerId(), cursor, lastId, error != null ? error
                 : skippedNotice != null ? skippedNotice : fetched.notice());
-        if (!stopped && fetched.messages().size() >= MAX_MESSAGES_PER_POLL) {
+        if (!stopped && (fetched.more() || fetched.messages().size() >= MAX_MESSAGES_PER_POLL)) {
             // A full slice means more may be waiting: poll again on the next tick instead of after the interval,
             // so a backlog drains at about 10 mails per tick. The claim already moved next_run_at atomically.
             gmailTriggers.advanceGmailPoll(claim.triggerId(), scanTime);

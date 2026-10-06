@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "weav:node/trigger.gmail",
   "title": "New Gmail email",
-  "description": "Starts the workflow for each new email in the connected Gmail account, checked by polling. Needs a Gmail connection that granted read access (reconnect older connections).",
+  "description": "Starts the workflow for each new email in the connected Gmail account, checked by polling. Attachments are stored as files and listed in attachments (filename, mimeType, size, fileId, skipped). Needs a Gmail connection that granted read access (reconnect older connections).",
   "x-weav-node": {
     "type": "trigger.gmail",
     "category": "trigger",

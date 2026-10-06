@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "weav:node/google.drive",
   "title": "Google Drive",
-  "description": "Uploads a text file to, or lists files in, Google Drive. Only files created or opened by Weav are visible.",
+  "description": "Uploads a text file or a file from an earlier step (such as an email attachment) to, or lists files in, Google Drive. Only files created or opened by Weav are visible.",
   "x-weav-node": {
     "type": "google.drive",
     "category": "action",
@@ -33,14 +33,27 @@
     "name": {
       "type": "string",
       "title": "File name",
-      "description": "Name of the new file. Required for upload.",
+      "description": "Name of the new file. Required for upload with content; with file it defaults to the file's own name.",
       "x-weav-template": true
     },
     "content": {
       "type": "string",
       "title": "Content",
-      "description": "Text content of the new file, up to 512 KiB. Used by upload.",
+      "description": "Text content of the new file, up to 512 KiB. Used by upload; give either content or file.",
       "x-weav-template": true
+    },
+    "file": {
+      "title": "File",
+      "description": "A file from an earlier step (for example an email attachment: {{ trigger.attachments[0] }}), up to 5 MiB. Used by upload instead of content; the file name and type default to the file's own.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "string"
+        }
+      ]
     },
     "mimeType": {
       "type": "string",

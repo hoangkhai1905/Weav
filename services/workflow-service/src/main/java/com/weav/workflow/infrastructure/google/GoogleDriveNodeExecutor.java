@@ -1,5 +1,7 @@
 package com.weav.workflow.infrastructure.google;
 
+import com.weav.workflow.application.node.NodeExecutor;
+import com.weav.workflow.application.port.out.WorkflowFileStore;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
 import com.weav.workflow.infrastructure.http.PinnedHttpTransport;
 import org.springframework.stereotype.Component;
@@ -29,14 +31,20 @@ public final class GoogleDriveNodeExecutor extends GoogleApiNodeExecutor {
     private static final int MAX_MIME_TYPE_LENGTH = 127;
     /** Stays below the outbound request cap (1 MiB) once the multipart envelope is added. */
     static final int MAX_CONTENT_BYTES = 512 * 1024;
+    /** A stored file goes up as one multipart request (resumable upload is not supported). */
+    static final int MAX_FILE_BYTES = 5 * 1024 * 1024;
+    private static final int UPLOAD_CAP_BYTES = MAX_FILE_BYTES + 64 * 1024;
     private static final int MAX_PAGE_SIZE = 100;
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private final GoogleApiClient client;
+    private final WorkflowFileStore files;
 
-    public GoogleDriveNodeExecutor(GoogleApiClient client, WorkspaceConnectionPort workspaceConnections) {
+    public GoogleDriveNodeExecutor(GoogleApiClient client, WorkspaceConnectionPort workspaceConnections,
+                                   WorkflowFileStore files) {
         super(workspaceConnections, SERVICE);
         this.client = Objects.requireNonNull(client, "client must not be null");
+        this.files = Objects.requireNonNull(files, "files must not be null");
     }
 
     @Override
@@ -46,27 +54,45 @@ public final class GoogleDriveNodeExecutor extends GoogleApiNodeExecutor {
 
     @Override
     Call prepare(Map<String, Object> config) {
+        return prepare(null, config);
+    }
+
+    @Override
+    Call prepare(Context context, Map<String, Object> config) {
         UUID connectionId = parseConnectionId(config.get("connectionId"));
         return switch (config.get("operation") instanceof String operation ? operation : "") {
-            case "upload" -> upload(connectionId, config);
+            case "upload" -> upload(context, connectionId, config);
             case "list" -> list(connectionId, config);
             default -> throw configurationFailure();
         };
     }
 
-    private Call upload(UUID connectionId, Map<String, Object> config) {
-        String name = requiredText(config.get("name"), MAX_LINE_LENGTH);
+    private Call upload(Context context, UUID connectionId, Map<String, Object> config) {
         Object rawContent = config.get("content");
-        if (rawContent != null && !(rawContent instanceof String)) {
-            throw configurationFailure();
+        Object rawFile = config.get("file");
+        if (rawContent != null && !(rawContent instanceof String)
+                || rawFile != null && rawContent instanceof String text && !text.isBlank()) {
+            throw configurationFailure(); // content and file together; neither is the old empty upload
         }
-        byte[] content = rawContent == null ? new byte[0] : ((String) rawContent).getBytes(StandardCharsets.UTF_8);
-        if (content.length > MAX_CONTENT_BYTES) {
-            throw configurationFailure();
+        WorkflowFileStore.StoredFile stored = rawFile == null ? null : readFile(context, rawFile);
+        String name = stored == null ? requiredText(config.get("name"), MAX_LINE_LENGTH)
+                : optionalText(config.get("name"), MAX_LINE_LENGTH);
+        if (name == null && stored != null) {
+            name = stored.reference().filename();
+        }
+        byte[] content;
+        if (stored != null) {
+            content = stored.bytes();
+        } else {
+            content = rawContent == null ? new byte[0] : ((String) rawContent).getBytes(StandardCharsets.UTF_8);
+            if (content.length > MAX_CONTENT_BYTES) {
+                throw configurationFailure();
+            }
         }
         String mimeType = optionalText(config.get("mimeType"), MAX_MIME_TYPE_LENGTH);
         if (mimeType == null) {
-            mimeType = DEFAULT_MIME_TYPE;
+            mimeType = stored != null && MIME_TYPE.matcher(stored.reference().mimeType()).matches()
+                    ? stored.reference().mimeType() : stored != null ? "application/octet-stream" : DEFAULT_MIME_TYPE;
         } else if (!MIME_TYPE.matcher(mimeType).matches()) {
             throw configurationFailure();
         }
@@ -83,8 +109,23 @@ public final class GoogleDriveNodeExecutor extends GoogleApiNodeExecutor {
         Map<String, String> query = Map.of(
                 "uploadType", "multipart", "fields", "id,name,mimeType,webViewLink");
 
+        int cap = stored != null ? UPLOAD_CAP_BYTES : 0; // content uploads keep the default cap and the 5-argument call
         return new Call(connectionId, connection -> client.call(
-                connection, PROVIDER, SERVICE, "POST", "/upload/drive/v3/files", query, body));
+                connection, PROVIDER, SERVICE, "POST", "/upload/drive/v3/files", query, body, cap));
+    }
+
+    /** Reads the referenced file of this workspace; a missing or oversized file is a non-retryable failure. */
+    private WorkflowFileStore.StoredFile readFile(Context context, Object reference) {
+        if (context == null || !(reference instanceof Map<?, ?> map) || !(map.get("fileId") instanceof String fileId)
+                || fileId.isBlank() || fileId.length() > MAX_LINE_LENGTH) {
+            throw new NodeExecutor.Failure("CONFIGURATION_ERROR", "file must be a file reference object with fileId", false);
+        }
+        WorkflowFileStore.StoredFile stored = files.read(context.workspaceId(), fileId);
+        if (stored.reference().size() > MAX_FILE_BYTES || stored.bytes().length > MAX_FILE_BYTES) {
+            throw new NodeExecutor.Failure("FILE_TOO_LARGE",
+                    "The file is larger than the 5 MiB that Google Drive upload supports here.", false);
+        }
+        return stored;
     }
 
     private Call list(UUID connectionId, Map<String, Object> config) {

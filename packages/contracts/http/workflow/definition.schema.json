@@ -388,6 +388,16 @@
                   "content": {
                     "type": "string"
                   },
+                  "file": {
+                    "oneOf": [
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
                   "mimeType": {
                     "type": "string"
                   },
