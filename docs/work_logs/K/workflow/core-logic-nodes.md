@@ -75,3 +75,11 @@ Coverage: switch ports (draft/publish, invalid cases, default, unused, missing),
 
 - Run `-Flow logic` live and record the result.
 - ai-service follow-up for switch ports (section 3, generation row); frontend work (section 7).
+
+## 9. Live test finding: data.set `CONFIGURATION_ERROR` (2026-10-06, branch `fix/data-set-runtime-config`)
+
+- **Symptom:** manual run of `manual -> shape (data.set, fields from trigger.input) -> route (logic.switch) -> 3 data.set` fails at `shape` with `CONFIGURATION_ERROR` / "The node configuration is invalid." (the generic `ExecutionRunner.resolveConfig` failure). Input `{"plan":1,"user":{"first":"Ada"},"count":7}`.
+- **Reproduction attempts (status: NOT reproduced):** two new tests run the exact definition through the real path on PostgreSQL 18 with the real runner and the real `data.set`/`logic.switch` executors, and both pass on current code: `ExecutionRuntimeIntegrationTest.dataSetThenSwitchRunsWithPersistedNumericAndNestedInput` (plan 1, 2, "gold", output `{n:7,name:"Ada",plan}`, correct port, branches SUCCESS/SKIPPED) and `WorkflowV1AcceptanceTest.dataSetFeedsSwitchOverRealHttpWithNumericAndNestedManualInput` (draft save, publish, `POST /executions` over HTTP with the exact JSON bodies).
+- **Ruled out:** the dev container's source (`/app/src/main`, CRLF-normalised hashes), compiled classes (rebuilt 02:45 UTC) and `workflow-schema/nodes/*.json` are identical to this branch; Postgres version matches (18.6); no Jackson/Hibernate format-mapper overrides in `application.properties`; `jsonSize`, `hasValidFieldShape` (object schema does not look at values), credential-key scan and `JsonValues.freeze` accept Integer/Long/BigDecimal/Double values.
+- **Diagnostic added:** `ExecutionRunner.resolveConfig` now logs `Node configuration rejected (execution, node, issues [code@field])` at WARN before the generic failure (codes and field paths only, no values), so the next live failure names the exact `ValidationIssue`. Node error payload is unchanged.
+- **Next:** re-run the live flow on the restarted dev container; if it still fails, read the WARN line (the other `ConfigurationFailure` sites are "resolved config not a Map" and non-String key, which cannot occur for this definition).

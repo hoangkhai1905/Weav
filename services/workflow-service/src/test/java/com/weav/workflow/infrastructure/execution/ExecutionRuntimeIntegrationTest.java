@@ -191,6 +191,55 @@ class ExecutionRuntimeIntegrationTest {
     }
 
     @Test
+    void dataSetThenSwitchRunsWithPersistedNumericAndNestedInput() throws Exception {
+        for (Object[] row : new Object[][] {{1, "1"}, {2, "2"}, {"gold", "default"}}) {
+            Object plan = row[0];
+            String port = (String) row[1];
+            Fixture fixture = admit("data-set-switch-" + port, dataSetSwitchDefinition(),
+                    Map.of("plan", plan, "user", Map.of("first", "Ada"), "count", 7));
+
+            assertTrue(publisher.publishPending() >= 1);
+            awaitTerminal(fixture.executionId());
+
+            assertEquals(ExecutionStatus.SUCCESS.name(), status(fixture.executionId()),
+                    () -> scalar("select cast(error as text) from workflow.workflow_executions where id = ?",
+                            fixture.executionId()));
+            assertEquals("SUCCESS", nodeStatus(fixture.executionId(), "shape"));
+            assertEquals("7", scalar("select output ->> 'n' from workflow.node_executions "
+                    + "where execution_id = ? and node_id = 'shape'", fixture.executionId()));
+            assertEquals("Ada", scalar("select output ->> 'name' from workflow.node_executions "
+                    + "where execution_id = ? and node_id = 'shape'", fixture.executionId()));
+            assertEquals(String.valueOf(plan), scalar("select output ->> 'plan' from workflow.node_executions "
+                    + "where execution_id = ? and node_id = 'shape'", fixture.executionId()));
+            for (String branch : List.of("1", "2", "default")) {
+                assertEquals(branch.equals(port) ? "SUCCESS" : "SKIPPED",
+                        nodeStatus(fixture.executionId(), "branch-" + branch), "branch " + branch);
+            }
+        }
+    }
+
+    private WorkflowDefinition dataSetSwitchDefinition() {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("n", "{{ trigger.input.count }}");
+        fields.put("name", "{{ trigger.input.user.first }}");
+        fields.put("plan", "{{ trigger.input.plan }}");
+        return new WorkflowDefinition("1.0", List.of(
+                node("root", "trigger.manual", Map.of()),
+                node("shape", "data.set", Map.of("fields", fields)),
+                node("route", "logic.switch", Map.of("value", "{{ nodes.shape.output.plan }}",
+                        "cases", List.of("1", "2"))),
+                node("branch-1", "data.set", Map.of("fields", Map.of("x", "one"))),
+                node("branch-2", "data.set", Map.of("fields", Map.of("x", "two"))),
+                node("branch-default", "data.set", Map.of("fields", Map.of("x", "other")))),
+                List.of(edge("root-shape", "root", "shape", null),
+                        edge("shape-route", "shape", "route", null),
+                        edge("route-1", "route", "branch-1", "1"),
+                        edge("route-2", "route", "branch-2", "2"),
+                        edge("route-default", "route", "branch-default", "default")),
+                Map.of());
+    }
+
+    @Test
     void admittedExecutionIsPublishedConsumedAndCompletedThroughTheRealRunner() throws Exception {
         fakeExecutor.blockNodes("left", "right");
         Fixture fixture = admit("parallel-join", parallelJoinDefinition(), Map.of("allow", true));
