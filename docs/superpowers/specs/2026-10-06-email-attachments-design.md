@@ -1,4 +1,4 @@
-# Design: email node polish, attachments and the workflow file store
+# Design: node polish, email attachments and the workflow file store
 
 Status: agreed scope (2026-10-06), not implemented. Owner: K (backend). FE renders the new fields from the node JSON Schemas (the partner's side).
 
@@ -7,7 +7,8 @@ Status: agreed scope (2026-10-06), not implemented. Owner: K (backend). FE rende
 - `email.send` gets the Zapier/n8n Gmail fields: `cc`, `bcc`, `bodyType` (`text` | `html`), `senderName`, `replyTo`, `replyToMessageId` (reply in the Gmail thread of a message, e.g. from `trigger.gmail`), `attachments`.
 - Attachments come from (A) a public URL or (B) a **workflow file** stored in Cloudflare R2.
 - File store "B-lite": one producer (`trigger.gmail` attachments) and two consumers (`email.send` attachments, `google.drive` upload).
-- Deferred: Telegram documents and HTTP "download as file" as producers, and OCR as a consumer.
+- Polish of the other nodes, Zapier/n8n-style (section "Other node polish").
+- Deferred: Telegram documents and HTTP "download as file" as producers, OCR as a consumer, the `agent.task` node (thesis future work), and Drive resumable upload.
 
 ## Workflow file store (workflow-service owns it)
 
@@ -31,11 +32,25 @@ Status: agreed scope (2026-10-06), not implemented. Owner: K (backend). FE rende
   - Header fields reject CR and LF to prevent header injection, and the address rules match `to`.
 - **`google.drive` `upload`:** a new `file` (file reference) alternative to `content`, at most 5 MiB (Drive multipart; resumable upload is deferred).
 
+## Other node polish
+
+All changes are additive: each node's JSON Schema, executor and tests change, and existing configs stay valid.
+
+| Node | Change | Notes |
+| --- | --- | --- |
+| `google.sheets` | New operation `lookup`: find rows where a column equals a value, return the matching rows with their row numbers (bounded count). New `valueInputOption` (`RAW` \| `USER_ENTERED`, default as today) for `append` and `update` | Fits the existing Sheets scope |
+| `telegram.send_message` | `parseMode` (`none` \| `HTML` \| `MarkdownV2`), `disableNotification`, `replyToMessageId` | Bot API `sendMessage` parameters |
+| `google.calendar` | New operation `list`: upcoming events in a time window (bounded count, projected fields), alongside today's create | Check that the granted `calendar.events` scope allows reading; ask before adding a scope |
+| `logic.condition` | Several conditions combined with `AND` / `OR`; the single-condition form stays valid | Ports stay `true`/`false`; update the AI generator capabilities and prompt |
+
+Also: update `GENERATE_SYSTEM` (ai-service) and the assistant's product help text wherever node outputs or operations change, and add live-test steps (`live-test-nodes.ps1`).
+
 ## Lanes
 
 1. **F1 file store** (first): S3/R2 client (AWS SDK `s3`, same version as identity), migration, `WorkflowFileStore` port and adapter, retention, config, readiness.
 2. **F2 email.send** (after F1): schema fields, MIME builder, Gmail upload send, URL and file attachments, reply-in-thread.
 3. **F3 Gmail and Drive** (after F1, parallel with F2): Gmail attachment download and store, Drive `file` upload, `scripts/live-test-nodes.ps1 -Flow attachments`.
+4. **F4 node polish** (parallel with F1 from the start): split by file ownership, e.g. F4a Sheets + Calendar, F4b Telegram + condition. Shared node lists are merged as unions; workflow-service Maven runs take turns on the lock.
 
 ## Risks
 
