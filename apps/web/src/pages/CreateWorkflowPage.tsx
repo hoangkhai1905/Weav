@@ -235,12 +235,12 @@ export const CreateWorkflowPage: React.FC = () => {
           <Link to="/workspace" className="transition-colors hover:text-foreground">
             {t('create.workspace')}
           </Link>
-          <span className="text-muted-foreground/50">/</span>
+          <span aria-hidden="true" className="text-muted-foreground/50">/</span>
           <Link to="/workflows" className="flex items-center gap-1 transition-colors hover:text-foreground">
             <ArrowLeft size={12} />
             <span>{t('nav.workflows')}</span>
           </Link>
-          <span className="text-muted-foreground/50">/</span>
+          <span aria-hidden="true" className="text-muted-foreground/50">/</span>
           <span className="font-semibold text-foreground">{t('create.title')}</span>
         </div>
 
@@ -374,7 +374,7 @@ export const CreateWorkflowPage: React.FC = () => {
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-white">
                 <Sparkles size={20} />
               </div>
-              <span className="rounded-md bg-accent px-2 py-0.5 text-[10px] font-semibold text-primary">
+              <span className="rounded-md bg-accent px-2 py-0.5 text-[10px] font-semibold text-accent-ink">
                 {t('create.beta')}
               </span>
             </div>

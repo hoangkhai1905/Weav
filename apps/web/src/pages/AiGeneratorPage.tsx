@@ -358,7 +358,7 @@ export function AiGeneratorPage() {
                     <Sparkles size={14} className="fill-white" />
                     <span className="text-xs font-semibold">{t('ai_gen.diagram.node.ai_extract')}</span>
                   </div>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-card/20 text-white">
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-black/20 text-white">
                     {t('ai_gen.diagram.badge_synthesized')}
                   </span>
                 </div>

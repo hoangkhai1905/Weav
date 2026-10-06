@@ -113,6 +113,7 @@
   - Bỏ ô JSON `values`; thay bằng trình nhập một dòng theo từng cột ("Cột A/B…", lấy chữ cột theo vùng dữ liệu), có "+ Thêm cột", xóa cột, gợi ý biến `{{ trigger.input.x }}` và `{{ id-bước.output.x }}`. Các dòng khác trong `values` (nếu có) được giữ nguyên. Gợi ý "Vùng dữ liệu" đổi theo thao tác Đọc/Thêm/Cập nhật. Readiness yêu cầu ít nhất một ô không rỗng.
   - Stack thật: "Xuất bản và chạy" tạo phiên bản mới `2a485583`; lượt `a5f97fa4` thành công, Google trả `updatedRange 'Trang tính1'!A1:C1`, 1 dòng 3 ô.
   - Kiểm tra: tsc, build qua; Playwright 9 spec chuẩn 35 failed (baseline) / 73 passed; `workspace-connections` 42/42. Commit `1510cb1` từng làm build lỗi vì test dùng `document` không có kiểu DOM; đã sửa.
+- Rà tương phản dark/light (2026-10-06): đoạn script trong Browser pane tính tỉ lệ WCAG từ màu đã render (có hòa trộn alpha), quét 16 route ở cả hai theme. Có 4 vi phạm, đã sửa: dấu "/" breadcrumb ở Tạo quy trình (2.05/2.37, nay `aria-hidden` như Topbar), badge "Bản thử nghiệm" (3.04 tối) và link "Mở nội dung liên quan" ở Thông báo (3.44 tối) đổi sang `text-accent-ink`, badge "AI TẠO" (3.81 sáng) đổi lớp phủ sang `bg-black/20`. Quét lại: 0 vi phạm. Chưa quét: hộp thoại, trạng thái hover/lỗi/rỗng, mock mode.
 - Dữ liệu thử để lại trên Neon: quy trình `193e559c-44da-4ba9-9419-98698b014103` ("Untitled Automation Pipeline", đã xuất bản, 3 lượt chạy: 2 lỗi, 1 thành công) và kết nối Google Sheets "test sheet" (9b4e521a) trong workspace "test 1" trong workspace "test 1". Xóa quy trình chưa có API.
 - Chưa làm / còn lại:
   - Tab "Trình chỉnh sửa" xuống 2 dòng ở header trang lượt chạy khi rộng 800px: đã sửa (nav `shrink-0 whitespace-nowrap`, tên quy trình co lại thay; e2e với tên dài: không có bản sửa thì lỗi, có thì đạt).
@@ -129,7 +130,7 @@
 - Tab Cài đặt, công tắc bật/tắt quy trình, undo/redo, "chạy lại từ bước" và gợi ý cách sửa: chưa có API backend.
 - Chưa kiểm tra với backend thật đang chạy; ảnh chụp dùng response giả lập theo kiểu API thật.
 - `ExecutionsPage`/`ExecutionDetailPage` ở mock mode vẫn bố cục cũ, chỉ đổi token.
-- Dashboard, Workspace, Settings, AI, Telegram, Notifications, Help chưa được rà soát giao diện bằng mắt.
+- Dashboard, Workspace, Settings, AI, Telegram, Notifications, Help: đã quét tương phản tự động (5j), chưa rà bố cục bằng mắt.
 - Còn tiếng Anh có chủ đích: dữ liệu mẫu, mã kỹ thuật, tên thương hiệu, ví dụ placeholder, lỗi gốc từ backend.
 
 ## 8. Việc tiếp theo

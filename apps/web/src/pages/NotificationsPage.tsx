@@ -175,7 +175,7 @@ export function NotificationsPage() {
                         <button
                           type="button"
                           onClick={() => void openTarget(notif)}
-                          className="inline-flex items-center gap-1 text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="inline-flex items-center gap-1 text-accent-ink underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           aria-label={`${t('notif.open_target')}: ${notif.title}`}
                         >
                           <ExternalLink size={12} aria-hidden="true" />{t('notif.open_target')}
