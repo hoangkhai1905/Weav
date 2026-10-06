@@ -164,15 +164,34 @@ class WorkflowGenerationServiceTest {
         return Map.of("id", id, "type", type, "config", config);
     }
     private static Map<String, Object> edge(String from, String to) { return Map.of("from", from, "to", to); }
+    private static Map<String, Object> edge(String from, String to, String port) {
+        return Map.of("from", from, "to", to, "port", port);
+    }
 
     @FunctionalInterface private interface BooleanSupplier extends java.util.function.BooleanSupplier {}
 
-    @Test void capabilitiesWithholdSwitchButOfferDataSet() {
-        List<String> types = WorkflowGenerationService.capabilities().stream()
-                .map(capability -> (String) capability.get("type")).toList();
-        assertFalse(types.contains("logic.switch"));
+    @Test void capabilitiesOfferSwitchDataSetAndCondition() {
+        List<Map<String, Object>> capabilities = WorkflowGenerationService.capabilities();
+        List<String> types = capabilities.stream().map(capability -> (String) capability.get("type")).toList();
         assertTrue(types.contains("data.set"));
         assertTrue(types.contains("logic.condition"));
+        Map<String, Object> sw = capabilities.stream()
+                .filter(capability -> "logic.switch".equals(capability.get("type"))).findFirst().orElseThrow();
+        assertEquals(List.of("cases", "value"), sw.get("configFields"));
+    }
+
+    @Test void switchIntentWithCaseAndDefaultPortsCompilesToValidDefinition() {
+        Map<String, Object> intent = Map.of("name", "Route", "nodes", List.of(
+                node("start", "trigger.manual", Map.of()),
+                node("route", "logic.switch", Map.of("value", "{{trigger.input.kind}}", "cases", List.of("a", "b"))),
+                node("one", "http.request", Map.of("method", "GET", "url", "https://example.com/a")),
+                node("two", "http.request", Map.of("method", "GET", "url", "https://example.com/b")),
+                node("other", "http.request", Map.of("method", "GET", "url", "https://example.com/c"))),
+                "edges", List.of(edge("start", "route"), edge("route", "one", "a"),
+                        edge("route", "two", "b"), edge("route", "other", "default")));
+        Map<String, Object> result = service(new FakeAi(Map.of("status", "ready", "intent", intent)),
+                new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null, Map.of());
+        assertEquals("ready", result.get("status"));
     }
 
     private static final class FakeAi implements AiGenerationPort {

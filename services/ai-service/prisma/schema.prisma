@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+  output = "../node_modules/.prisma/ai"
+}
+datasource db {
+  provider = "postgresql"
+  schemas = ["ai"]
+}
+// Assistant history is per user: every read and delete filters by user_id.
+model Conversation {
+  id String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  title String @db.VarChar(120)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  messages Message[]
+  @@index([userId, workspaceId, updatedAt(sort: Desc)], map: "conversations_user_workspace_updated_idx")
+  @@index([updatedAt], map: "conversations_updated_at_idx")
+  @@map("conversations")
+  @@schema("ai")
+}
+// Only user text and the final assistant text; never tool results. role and length are CHECKed in SQL.
+model Message {
+  id String @id @default(uuid()) @db.Uuid
+  conversationId String @map("conversation_id") @db.Uuid
+  role String @db.VarChar(16)
+  content String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@index([conversationId, createdAt], map: "messages_conversation_created_idx")
+  @@map("messages")
+  @@schema("ai")
+}
+model AssistantUsage {
+  day DateTime @db.Date
+  workspaceId String @map("workspace_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  calls Int
+  @@id([day, workspaceId, userId])
+  @@map("assistant_usage")
+  @@schema("ai")
+}

@@ -54,6 +54,29 @@ save, publish or run anything. Reach it through
 the gateway at `POST /api/v1/assistant/chat`. Live check against DeepSeek:
 `pnpm --dir services/ai-service exec ts-node scripts/assistant-live-check.ts`.
 
+## Assistant storage
+
+Per-user chat history and daily usage counters live in Neon database `ai_db`,
+schema `ai` (Prisma, same setup as notification-service): `conversations`,
+`messages` (user text and final assistant text only, never tool results; role and
+length are CHECKed) and `assistant_usage` (`day`, `workspace_id`, `user_id`,
+`calls`). Every read and delete filters by `user_id`. The port is
+`src/application/assistant/conversation-store.ts`; the Prisma implementation and the
+retention purge (`startRetentionPurge`) are in `src/infrastructure/persistence/`.
+The store is optional: without `DB_HOST` the service runs as before.
+
+- Runtime: Compose maps root `AI_DB_*` to `DB_*` (`DB_SCHEMA=ai`). Retention:
+  `AI_ASSISTANT_RETENTION_DAYS` (conversations by last update, default 30) and
+  `AI_ASSISTANT_USAGE_RETENTION_DAYS` (usage counters, default 90).
+- Migrations: `AI_MIGRATION_URL` (direct, non-pooled, ending in `?schema=ai` or
+  `&schema=ai` so `_prisma_migrations` lands in schema `ai`) then
+  `pnpm --dir services/ai-service db:migrate`. `build` runs `prisma generate` first.
+- Tests: `test/support/in-memory-conversation-store.ts` is the fake; both it and the
+  Postgres store run `test/support/store-cases.cjs`. Integration (needs Docker, a
+  throwaway Postgres on 127.0.0.1:55433, run `pnpm build` first):
+  `docker compose -f test/compose.yml up -d --wait`, `pnpm test:integration`,
+  `docker compose -f test/compose.yml down -v`.
+
 ## Tests
 
 No test calls DeepSeek: unit tests use a fake `LlmProvider` and the

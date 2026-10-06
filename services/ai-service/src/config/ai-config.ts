@@ -57,6 +57,25 @@ const schema = z.object({
     .string()
     .regex(/^\d{1,3}s?$/)
     .default('30s'),
+  // Assistant storage (Neon ai_db, schema ai). All optional: with no DB_HOST the service runs without storage.
+  DB_HOST: z.string().min(1).optional(),
+  DB_PORT: z.coerce.number().int().min(1).max(65535).default(5432),
+  DB_NAME: z.string().min(1).optional(),
+  DB_USERNAME: z.string().min(1).optional(),
+  DB_PASSWORD: z.string().min(1).optional(),
+  DB_SSL_MODE: z.enum(['require', 'disable']).default('require'),
+  AI_ASSISTANT_RETENTION_DAYS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(3650)
+    .default(30),
+  AI_ASSISTANT_USAGE_RETENTION_DAYS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(3650)
+    .default(90),
 });
 
 export type AiConfig = z.infer<typeof schema>;
