@@ -17,7 +17,7 @@ RUN pnpm --filter ./services/api-gateway build
 
 # Production-only node_modules + built output in /out.
 RUN pnpm --filter ./services/api-gateway --prod --legacy deploy /out \
-    && cp -r services/api-gateway/dist /out/dist
+    && rm -rf /out/dist && cp -r services/api-gateway/dist /out/dist
 
 FROM node:24-alpine
 ENV NODE_ENV=production
@@ -28,6 +28,6 @@ USER node
 EXPOSE 3000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=5 \
-  CMD node -e "fetch('http://127.0.0.1:3000C:/Program Files/Git/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:3000/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 
 CMD ["node", "dist/main.js"]
