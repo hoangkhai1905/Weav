@@ -52,10 +52,32 @@ public class TelegramBotApiClient {
 
     /** Sends a text message and returns {@code messageId} and {@code chatId} from Telegram's answer. */
     public Map<String, Object> sendMessage(ResolvedConnection connection, String chatId, String text) {
+        return sendMessage(connection, chatId, text, Map.of());
+    }
+
+    /**
+     * Same, with extra Bot API fields (parse_mode, disable_notification, reply_parameters) added to the body as
+     * given. A 400 that says the text could not be parsed, while a parse_mode was sent, is a configuration
+     * failure: retrying cannot help, and the message text is never echoed.
+     */
+    public Map<String, Object> sendMessage(
+            ResolvedConnection connection, String chatId, String text, Map<String, Object> options) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("chat_id", chatId);
         body.put("text", text);
-        Map<String, Object> result = call(connection, "sendMessage", body, null);
+        body.putAll(options);
+        Map<String, Object> result;
+        try {
+            result = call(connection, "sendMessage", body, null);
+        } catch (NodeExecutor.Failure failure) {
+            if (options.containsKey("parse_mode") && "HTTP_BUSINESS_REJECTED".equals(failure.code())
+                    && failure.getMessage() != null && failure.getMessage().toLowerCase().contains("parse entities")) {
+                throw new NodeExecutor.Failure("CONFIGURATION_ERROR",
+                        "Telegram could not parse the message with the chosen parse mode. "
+                                + "Fix the formatting or set the parse mode to none.", false, true);
+            }
+            throw failure;
+        }
         Map<String, Object> output = new LinkedHashMap<>();
         if (result.get("message_id") instanceof Number messageId) {
             output.put("messageId", messageId.longValue());

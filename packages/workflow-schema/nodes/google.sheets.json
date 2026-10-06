@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "weav:node/google.sheets",
   "title": "Google Sheets",
-  "description": "Reads rows from, or writes rows to, a Google Sheets spreadsheet.",
+  "description": "Reads rows from, writes rows to, or looks up rows in a Google Sheets spreadsheet.",
   "x-weav-node": {
     "type": "google.sheets",
     "category": "action",
@@ -28,7 +28,8 @@
       "enum": [
         "read",
         "append",
-        "update"
+        "update",
+        "lookup"
       ],
       "minLength": 1
     },
@@ -50,6 +51,42 @@
       "title": "Values",
       "description": "Rows to write. Required for append and update operations.",
       "x-weav-template": true
+    },
+    "lookupColumn": {
+      "title": "Lookup column",
+      "description": "Column letter (for example B) whose cell must equal the lookup value. Used by lookup. It must lie inside the range.",
+      "type": "string",
+      "x-weav-template": true
+    },
+    "lookupValue": {
+      "title": "Lookup value",
+      "description": "Text, number or boolean to find (exact match with the cell's displayed text). Used by lookup.",
+      "x-weav-template": true
+    },
+    "limit": {
+      "title": "Limit",
+      "description": "Maximum matching rows returned by lookup: 1 to 100, default 10.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "valueInputOption": {
+      "title": "Value input option",
+      "description": "How append and update interpret values: RAW stores them as typed, USER_ENTERED parses them like typing in the sheet (formulas, dates). Default RAW.",
+      "type": "string",
+      "x-weav-template": true,
+      "enum": [
+        "RAW",
+        "USER_ENTERED"
+      ]
     }
   },
   "required": [

@@ -33,6 +33,15 @@ public final class DefinitionValidator {
     private static final int MAX_DATA_SET_FIELDS = 100;
     private static final int MAX_DATA_SET_KEY_LENGTH = 128;
     private static final Set<String> SHEETS_OPERATIONS = enumValues("google.sheets", "operation");
+    private static final Set<String> CONDITION_COMBINATORS = enumValues("logic.condition", "combinator");
+    private static final int MAX_CONDITIONS = 10;
+    private static final Set<String> CONDITION_ITEM_FIELDS = Set.of("left", "operator", "right");
+    private static final java.util.regex.Pattern SHEETS_COLUMN = java.util.regex.Pattern.compile("[A-Za-z]{1,3}");
+    /** New enum fields whose literal values are checked on draft save; mappings resolve at run time. */
+    private static final Map<String, Set<String>> LITERAL_ENUMS = Map.of(
+            "telegram.send_message.parseMode", enumValues("telegram.send_message", "parseMode"),
+            "google.sheets.valueInputOption", enumValues("google.sheets", "valueInputOption"),
+            "google.calendar.operation", enumValues("google.calendar", "operation"));
     private static final Set<String> HTTP_METHODS = Set.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
 
     private final ScheduleValidation scheduleValidation;
@@ -172,6 +181,10 @@ public final class DefinitionValidator {
             }
         }
 
+        if ("logic.condition".equals(node.type())) {
+            validateConditionForm(node, publish, issues);
+        }
+
         if ("ocr.extract".equals(node.type())
                 && config.containsKey("artifactId") && config.containsKey("fileUrl")) {
             add(issues, node.id(), "config", "OCR_SOURCE_CONFLICT", "Only one OCR source may be configured.");
@@ -194,10 +207,24 @@ public final class DefinitionValidator {
 
         if ("google.sheets".equals(node.type())) {
             Object operation = config.get("operation");
-            if (operation instanceof String op && SHEETS_OPERATIONS.contains(op)
-                    && !"read".equals(op) && !config.containsKey("values")) {
-                add(issues, node.id(), "config.values", "REQUIRED_FIELD_MISSING",
-                        "Write operations require values.");
+            if (operation instanceof String op && SHEETS_OPERATIONS.contains(op)) {
+                if ("lookup".equals(op)) {
+                    validateSheetsLookup(node, issues);
+                } else if (!"read".equals(op) && !config.containsKey("values")) {
+                    add(issues, node.id(), "config.values", "REQUIRED_FIELD_MISSING",
+                            "Write operations require values.");
+                }
+            }
+        }
+        if ("google.calendar".equals(node.type()) && isCalendarCreate(config.get("operation"))) {
+            for (String field : List.of("summary", "start", "end")) {
+                if (!config.containsKey(field)) {
+                    add(issues, node.id(), "config." + field, "REQUIRED_FIELD_MISSING",
+                            "A required configuration field is missing.");
+                } else if (schema.properties().get(field).violatesMinimumContent(config.get(field))) {
+                    add(issues, node.id(), "config." + field, "REQUIRED_FIELD_MISSING",
+                            "A required configuration field must not be empty.");
+                }
             }
         }
         if ("ocr.extract".equals(node.type())) {
@@ -248,6 +275,109 @@ public final class DefinitionValidator {
             if (operator instanceof String text && Set.of("gt", "gte", "lt", "lte").contains(text)) {
                 validateOrderingOperand(node, "left", issues);
                 validateOrderingOperand(node, "right", issues);
+            }
+        }
+    }
+
+    private static boolean isCalendarCreate(Object operation) {
+        // Absent or blank keeps the pre-"list" behaviour; a mapping resolves at run time and the executor decides.
+        return operation == null || operation instanceof String text && (text.isBlank() || "create".equals(text));
+    }
+
+    private static void validateSheetsLookup(WorkflowDefinition.Node node, List<ValidationIssue> issues) {
+        Map<String, Object> config = node.config();
+        for (String field : List.of("lookupColumn", "lookupValue")) {
+            if (config.get(field) == null) {
+                add(issues, node.id(), "config." + field, "REQUIRED_FIELD_MISSING",
+                        "Lookup requires a column and a value.");
+            }
+        }
+        if (config.get("lookupColumn") instanceof String column && !containsMappingDelimiter(column)
+                && !SHEETS_COLUMN.matcher(column).matches()) {
+            add(issues, node.id(), "config.lookupColumn", "INVALID_LOOKUP_COLUMN",
+                    "The lookup column must be a column letter such as B.");
+        }
+    }
+
+    /**
+     * Single form {left, operator, right} versus multi form {combinator, conditions}: never both. Structure
+     * and bounds are checked on draft save; completeness of each condition only on publish.
+     */
+    private static void validateConditionForm(
+            WorkflowDefinition.Node node, boolean publish, List<ValidationIssue> issues) {
+        Map<String, Object> config = node.config();
+        boolean multi = config.containsKey("conditions") || config.containsKey("combinator");
+        boolean single = config.containsKey("left") || config.containsKey("operator") || config.containsKey("right");
+        if (multi && single) {
+            add(issues, node.id(), "config", "CONDITION_FORM_CONFLICT",
+                    "Use either left/operator/right or combinator/conditions, not both.");
+            return;
+        }
+        if (!multi) {
+            if (publish) {
+                for (String field : List.of("left", "operator", "right")) {
+                    if (!config.containsKey(field)) {
+                        add(issues, node.id(), "config." + field, "REQUIRED_FIELD_MISSING",
+                                "A required configuration field is missing.");
+                    }
+                }
+            }
+            return;
+        }
+        if (config.get("combinator") instanceof String combinator && !CONDITION_COMBINATORS.contains(combinator)) {
+            add(issues, node.id(), "config.combinator", "INVALID_CONDITION_COMBINATOR",
+                    "The combinator must be and or or.");
+        }
+        if (publish && !config.containsKey("combinator")) {
+            add(issues, node.id(), "config.combinator", "REQUIRED_FIELD_MISSING",
+                    "A required configuration field is missing.");
+        }
+        if (!(config.get("conditions") instanceof List<?> conditions)) {
+            if (publish) {
+                add(issues, node.id(), "config.conditions", "REQUIRED_FIELD_MISSING",
+                        "A required configuration field is missing.");
+            }
+            return;
+        }
+        if (conditions.size() > MAX_CONDITIONS || publish && conditions.isEmpty()) {
+            add(issues, node.id(), "config.conditions", "INVALID_CONDITIONS",
+                    "A condition node needs 1 to 10 conditions.");
+        }
+        for (int index = 0; index < conditions.size(); index++) {
+            String path = "config.conditions[" + index + "]";
+            if (!(conditions.get(index) instanceof Map<?, ?> item)
+                    || !item.keySet().stream().allMatch(CONDITION_ITEM_FIELDS::contains)) {
+                add(issues, node.id(), path, "INVALID_CONDITIONS",
+                        "Each condition is an object with left, operator and right.");
+                continue;
+            }
+            Object operator = item.get("operator");
+            if (operator != null && !(operator instanceof String)) {
+                add(issues, node.id(), path + ".operator", "INVALID_FIELD_TYPE",
+                        "The configuration field has an invalid shape.");
+            } else if (operator instanceof String text && !containsMappingDelimiter(text)
+                    && !CONDITION_OPERATORS.contains(text)) {
+                add(issues, node.id(), path + ".operator", "INVALID_CONDITION_OPERATOR",
+                        "The condition operator is not supported.");
+            }
+            if (!publish) {
+                continue;
+            }
+            for (String field : CONDITION_ITEM_FIELDS) {
+                if (!item.containsKey(field)) {
+                    add(issues, node.id(), path + "." + field, "REQUIRED_FIELD_MISSING",
+                            "A required configuration field is missing.");
+                }
+            }
+            if (operator instanceof String text && Set.of("gt", "gte", "lt", "lte").contains(text)) {
+                for (String field : List.of("left", "right")) {
+                    Object value = item.get(field);
+                    boolean mapped = value instanceof String string && containsMappingDelimiter(string);
+                    if (item.containsKey(field) && !mapped && !(value instanceof Number)) {
+                        add(issues, node.id(), path + "." + field, "NUMERIC_OPERAND_REQUIRED",
+                                "Ordering conditions require numeric operands.");
+                    }
+                }
             }
         }
     }
@@ -308,6 +438,34 @@ public final class DefinitionValidator {
                 && !CONDITION_OPERATORS.contains(text)) {
             add(issues, node.id(), "config.operator", "INVALID_CONDITION_OPERATOR",
                     "The condition operator is not supported.");
+        } else if (LITERAL_ENUMS.containsKey(node.type() + "." + field) && !text.isBlank()
+                && !LITERAL_ENUMS.get(node.type() + "." + field).contains(text)) {
+            add(issues, node.id(), "config." + field, "INVALID_ENUM_VALUE", "The value is not supported.");
+        } else if (!text.isBlank() && !validLiteralString(node.type() + "." + field, text)) {
+            add(issues, node.id(), "config." + field, "INVALID_FIELD_TYPE",
+                    "The configuration field has an invalid shape.");
+        }
+    }
+
+    /** Upper bounds of the numeric fields that also accept text (null: no upper bound). */
+    private static final Map<String, Integer> TEXT_NUMBER_MAX = Map.of(
+            "google.sheets.limit", 100, "google.calendar.maxResults", 50, "telegram.send_message.replyToMessageId", 0);
+
+    /** Literal (non-mapping) text in a numeric or boolean field must say a valid number or true/false. */
+    private static boolean validLiteralString(String key, String text) {
+        if ("telegram.send_message.disableNotification".equals(key)) {
+            return text.equals("true") || text.equals("false");
+        }
+        if (!TEXT_NUMBER_MAX.containsKey(key)) {
+            return true;
+        }
+        int max = TEXT_NUMBER_MAX.get(key);
+        try {
+            java.math.BigDecimal number = new java.math.BigDecimal(text.trim());
+            return number.stripTrailingZeros().scale() <= 0 && number.signum() > 0
+                    && (max == 0 || number.compareTo(java.math.BigDecimal.valueOf(max)) <= 0);
+        } catch (NumberFormatException exception) {
+            return false;
         }
     }
 
