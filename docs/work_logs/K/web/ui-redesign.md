@@ -90,8 +90,28 @@
 - `returnTo` chỉ nhận dạng `/workflows/<id>?step=<node>` (regex trong `lib/oauthPending.ts`), nên không mở được redirect ra ngoài.
 - Bước được ghi nhớ ngay lúc mở hộp thoại, vì bấm vào hộp thoại sẽ đóng inspector và xóa lựa chọn.
 - Kiểm tra: tsc qua; eslint chỉ còn 2 lỗi cũ của builder; build qua; `git diff --check` sạch. Playwright http, 9 spec chuẩn: 35 failed / 68 passed, đúng 35 lỗi baseline cộng 2 test mới đạt. `workspace-connections` 37/37. GitNexus detect-changes: HIGH (đụng saveDraft/publish/ConnectionsPage), đã có e2e phủ. Impact trước khi sửa: CLI báo `ambiguous/UNKNOWN`, đã xác nhận callers bằng grep.
-- Backend thật: stack Docker đang chạy, Vite 5173 phục vụ checkout này. Chưa đăng nhập được vì không có tài khoản test được ghi lại, và bước đồng ý của Google phải do người dùng tự làm. Đang chờ user.
-- Xóa trắng mô tả: theo code thì builder gửi `''`, `serializeWorkflowDraft` bỏ trường này, và `Workflow.updateDraft` gán `description = null`, tức là đã xóa được. Cần xác nhận trên stack thật trước khi sửa gì.
+## 5j. Kiểm tra với stack thật (d2639ee)
+
+- Môi trường: Compose dev đang chạy, Vite 5173 với `VITE_API_MODE=http`, user tự đăng nhập trong Browser pane, workspace "test 1" có sẵn kết nối Gmail và Sheets ACTIVE.
+- Đã đạt:
+  - bước Sheets với kết nối ACTIVE và đủ trường hiển thị "Sẵn sàng" ở nhãn và inspector, cảnh báo biến mất;
+  - lưu nháp 200; xuất bản 200;
+  - tắt (có hộp xác nhận) và bật lại: pause/resume 200;
+  - "Chạy" chuyển sang Lịch sử chạy; lượt chạy lỗi đúng như dự đoán với ID bảng tính placeholder ("The Google Sheets provider rejected the request.");
+  - mô tả xóa trắng lưu được (lưu "" rồi tải lại vẫn ""), tức mục tồn này không còn lỗi;
+  - 20 lần chuyển trang trong 24 giây: 47 request API, không có 429 hay lỗi 4xx/5xx.
+- Lỗi tìm thấy và đã sửa:
+  - Bước Sheets thêm từ bảng "Thêm bước" không bao giờ lưu được: catalog đặt sẵn `sheetName/rowDataVariable/valueVariable`, backend trả 400 `UNKNOWN_CONFIG_FIELD`. Nay chỉ còn `connectionId/operation/spreadsheetId/range`; append/update nhập `values` (mảng JSON các hàng, báo lỗi khi JSON sai), readiness yêu cầu có `values`. Đã bỏ 3 khóa dịch cũ.
+  - "Thêm bước" đặt bước mới chồng lên trigger và không nối, nên xuất bản lỗi `UNREACHABLE_NODE`. Nay bước mới đặt bên phải bước đang chọn (hoặc bước ngoài cùng bên phải) và tự nối nếu bước đó có một cổng ra còn trống. Thêm điều kiện chặn xuất bản phía web với cùng quy tắc.
+  - Lỗi 400 của workflow API giờ hiện thêm chi tiết đầu tiên, thay vì chỉ "Workflow definition is invalid".
+  - Lịch sử chạy: bước chưa có `startedAt` gây sắp xếp sai (NaN) khi lượt đang chạy; nay xếp cuối.
+- Kiểm tra: tsc, build, `git diff --check` qua; eslint còn 1 lỗi cũ. Playwright 9 spec chuẩn: 35 failed / 70 passed (baseline + 4 test mới, tất cả lỗi nằm trong 4 spec baseline). GitNexus: MEDIUM.
+- Dữ liệu thử để lại trên Neon: quy trình `193e559c-44da-4ba9-9419-98698b014103` ("Untitled Automation Pipeline", đã xuất bản, 1 lượt chạy lỗi) trong workspace "test 1". Xóa quy trình chưa có API.
+- Chưa làm / còn lại:
+  - Thêm kết nối từ inspector rồi ủy quyền Google thật: cần user tự đăng nhập Google. Luồng đã được e2e phủ bằng route giả.
+  - Chạy Sheets thật với một spreadsheet có thật.
+  - Header editor ở chiều rộng 800px: công tắc đè lên tab "Lịch sử chạy"; tab "Trình chỉnh sửa" xuống 2 dòng ở trang lượt chạy.
+  - `ConfirmModal` không có `role="dialog"`.
 
 ## 6. Khôi phục sau merge và đổi chữ "workflow" (aa8e7b9)
 
