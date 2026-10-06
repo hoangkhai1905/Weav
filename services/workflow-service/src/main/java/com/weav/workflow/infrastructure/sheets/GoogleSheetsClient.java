@@ -19,6 +19,7 @@ import java.util.Set;
 public class GoogleSheetsClient {
 
     private static final String BASE_URL = "https://sheets.googleapis.com/v4/spreadsheets/";
+    private static final String DEFAULT_VALUE_INPUT = "RAW";
     private static final int MAX_PATH_PARAMETER_LENGTH = 8 * 1024;
     private static final int MAX_TARGET_URI_LENGTH = 8 * 1024;
     private static final int MAX_ACCESS_TOKEN_LENGTH = 16 * 1024;
@@ -44,11 +45,21 @@ public class GoogleSheetsClient {
             String range,
             List<List<Object>> values,
             ResolvedConnection connection) {
+        return append(spreadsheetId, range, values, DEFAULT_VALUE_INPUT, connection);
+    }
+
+    /** @param valueInputOption {@code RAW} or {@code USER_ENTERED} */
+    public Map<String, Object> append(
+            String spreadsheetId,
+            String range,
+            List<List<Object>> values,
+            String valueInputOption,
+            ResolvedConnection connection) {
         URI target = valuesUri(spreadsheetId, range, ":append");
         Map<String, Object> body = valueRange(range, values);
         String accessToken = accessToken(connection);
         PinnedHttpTransport.HttpResponse response = transport.executeGoogleSheetsWithBearerToken(
-                target, "POST", Map.of("valueInputOption", "RAW"), body, accessToken);
+                target, "POST", Map.of("valueInputOption", inputOption(valueInputOption)), body, accessToken);
         return successfulObject(response);
     }
 
@@ -57,12 +68,29 @@ public class GoogleSheetsClient {
             String range,
             List<List<Object>> values,
             ResolvedConnection connection) {
+        return update(spreadsheetId, range, values, DEFAULT_VALUE_INPUT, connection);
+    }
+
+    /** @param valueInputOption {@code RAW} or {@code USER_ENTERED} */
+    public Map<String, Object> update(
+            String spreadsheetId,
+            String range,
+            List<List<Object>> values,
+            String valueInputOption,
+            ResolvedConnection connection) {
         URI target = valuesUri(spreadsheetId, range, "");
         Map<String, Object> body = valueRange(range, values);
         String accessToken = accessToken(connection);
         PinnedHttpTransport.HttpResponse response = transport.executeGoogleSheetsWithBearerToken(
-                target, "PUT", Map.of("valueInputOption", "RAW"), body, accessToken);
+                target, "PUT", Map.of("valueInputOption", inputOption(valueInputOption)), body, accessToken);
         return successfulObject(response);
+    }
+
+    private String inputOption(String valueInputOption) {
+        if (!DEFAULT_VALUE_INPUT.equals(valueInputOption) && !"USER_ENTERED".equals(valueInputOption)) {
+            throw configurationFailure();
+        }
+        return valueInputOption;
     }
 
     private Map<String, Object> valueRange(String range, List<List<Object>> values) {

@@ -5,6 +5,7 @@ import com.weav.workflow.application.port.out.ConnectionReconnectRequiredExcepti
 import com.weav.workflow.application.port.out.ResolvedConnection;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
 import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableException;
+import com.weav.workflow.domain.definition.JsonValues;
 import com.weav.workflow.domain.exception.ForbiddenException;
 import com.weav.workflow.infrastructure.http.OutputSanitizer;
 import org.springframework.stereotype.Component;
@@ -17,6 +18,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Executes V1 Google Sheets values operations using Workspace-owned OAuth credentials. */
 @Component
@@ -24,6 +27,10 @@ public final class GoogleSheetsNodeExecutor implements NodeExecutor {
 
     private static final String TYPE = "google.sheets";
     private static final int MAX_TEXT_LENGTH = 8 * 1024;
+    private static final int DEFAULT_LOOKUP_LIMIT = 10;
+    private static final int MAX_LOOKUP_LIMIT = 100;
+    /** First cell of an A1 range: optional column letters and optional row number. */
+    private static final Pattern RANGE_START = Pattern.compile("\\$?([A-Za-z]{1,3})?\\$?(\\d+)?");
 
     private final GoogleSheetsClient sheetsClient;
     private final WorkspaceConnectionPort workspaceConnections;
@@ -56,10 +63,16 @@ public final class GoogleSheetsNodeExecutor implements NodeExecutor {
             try {
                 providerOutput = switch (request.operation()) {
                     case "read" -> sheetsClient.read(request.spreadsheetId(), request.range(), connection);
-                    case "append" -> sheetsClient.append(
-                            request.spreadsheetId(), request.range(), request.values(), connection);
-                    case "update" -> sheetsClient.update(
-                            request.spreadsheetId(), request.range(), request.values(), connection);
+                    case "lookup" -> lookup(request,
+                            sheetsClient.read(request.spreadsheetId(), request.range(), connection));
+                    case "append" -> request.valueInputOption() == null
+                            ? sheetsClient.append(request.spreadsheetId(), request.range(), request.values(), connection)
+                            : sheetsClient.append(request.spreadsheetId(), request.range(), request.values(),
+                                    request.valueInputOption(), connection);
+                    case "update" -> request.valueInputOption() == null
+                            ? sheetsClient.update(request.spreadsheetId(), request.range(), request.values(), connection)
+                            : sheetsClient.update(request.spreadsheetId(), request.range(), request.values(),
+                                    request.valueInputOption(), connection);
                     default -> throw configurationFailure();
                 };
             } catch (NodeExecutor.Failure failure) {
@@ -94,17 +107,129 @@ public final class GoogleSheetsNodeExecutor implements NodeExecutor {
             throw configurationFailure();
         }
         String operation = requiredText(config.get("operation"));
-        if (!Set.of("read", "append", "update").contains(operation)) {
+        if (!Set.of("read", "append", "update", "lookup").contains(operation)) {
             throw configurationFailure();
         }
         UUID connectionId = parseConnectionId(config.get("connectionId"));
         String spreadsheetId = requiredText(config.get("spreadsheetId"));
         String range = requiredText(config.get("range"));
-        List<List<Object>> values = null;
-        if (!"read".equals(operation)) {
-            values = parseValues(config.get("values"));
+        boolean write = "append".equals(operation) || "update".equals(operation);
+        List<List<Object>> values = write ? parseValues(config.get("values")) : null;
+        String valueInputOption = write ? valueInputOption(config.get("valueInputOption")) : null;
+        int lookupColumn = -1;
+        String lookupValue = null;
+        int limit = DEFAULT_LOOKUP_LIMIT;
+        if ("lookup".equals(operation)) {
+            lookupColumn = columnIndex(config.get("lookupColumn"));
+            lookupValue = lookupValue(config.get("lookupValue"));
+            limit = limit(config.get("limit"));
         }
-        return new Request(operation, spreadsheetId, range, values, connectionId);
+        return new Request(operation, spreadsheetId, range, values, connectionId, valueInputOption,
+                lookupColumn, lookupValue, limit);
+    }
+
+    /** Absent or blank keeps today's RAW (the client default); anything but the two documented values fails. */
+    private String valueInputOption(Object value) {
+        if (value == null || value instanceof String text && text.isBlank()) {
+            return null;
+        }
+        if (value instanceof String text && (text.equals("RAW") || text.equals("USER_ENTERED"))) {
+            return text;
+        }
+        throw configurationFailure();
+    }
+
+    /** Column letters (A, b, AA) to a zero-based sheet column index. */
+    private int columnIndex(Object value) {
+        if (!(value instanceof String text) || !text.strip().matches("[A-Za-z]{1,3}")) {
+            throw configurationFailure();
+        }
+        return columnNumber(text.strip());
+    }
+
+    private static int columnNumber(String letters) {
+        int index = 0;
+        for (char letter : letters.toUpperCase(java.util.Locale.ROOT).toCharArray()) {
+            index = index * 26 + (letter - 'A' + 1);
+        }
+        return index - 1;
+    }
+
+    /** Exact text match; booleans ignore case because checkbox cells display as TRUE/FALSE. */
+    private static boolean matches(String wanted, String cell) {
+        return "true".equalsIgnoreCase(wanted) || "false".equalsIgnoreCase(wanted)
+                ? wanted.equalsIgnoreCase(cell) : wanted.equals(cell);
+    }
+
+    private String lookupValue(Object value) {
+        String text = value instanceof String || value instanceof Boolean || value instanceof Number
+                ? JsonValues.scalarText(value) : null;
+        if (text == null || text.isBlank() || text.length() > MAX_TEXT_LENGTH) {
+            throw configurationFailure();
+        }
+        return text;
+    }
+
+    private int limit(Object value) {
+        if (value == null || value instanceof String text && text.isBlank()) {
+            return DEFAULT_LOOKUP_LIMIT;
+        }
+        java.math.BigDecimal number;
+        try {
+            number = value instanceof Number n ? new java.math.BigDecimal(n.toString())
+                    : value instanceof String text ? new java.math.BigDecimal(text.trim()) : null;
+        } catch (NumberFormatException exception) {
+            throw configurationFailure();
+        }
+        if (number == null || number.stripTrailingZeros().scale() > 0
+                || number.signum() <= 0 || number.compareTo(java.math.BigDecimal.valueOf(MAX_LOOKUP_LIMIT)) > 0) {
+            throw configurationFailure();
+        }
+        return number.intValueExact();
+    }
+
+    /**
+     * Filters the rows of a normal values read by exact text match in one column. Row numbers come from the
+     * range Sheets reports back, so a bare sheet name or an open range still yields true 1-based sheet rows.
+     */
+    private Map<String, Object> lookup(Request request, Map<String, Object> read) {
+        String reported = read.get("range") instanceof String text ? text : request.range();
+        Matcher start = RANGE_START.matcher(reported.substring(reported.lastIndexOf('!') + 1));
+        int firstColumn = 0;
+        int firstRow = 1;
+        if (start.lookingAt()) {
+            firstColumn = start.group(1) == null ? 0 : columnNumber(start.group(1));
+            firstRow = start.group(2) == null ? 1 : Integer.parseInt(start.group(2));
+        }
+        int offset = request.lookupColumn() - firstColumn;
+        if (offset < 0) {
+            throw configurationFailure();
+        }
+        List<Object> matches = new ArrayList<>();
+        boolean truncated = false;
+        if (read.get("values") instanceof List<?> rows) {
+            for (int index = 0; index < rows.size(); index++) {
+                if (!(rows.get(index) instanceof List<?> cells) || offset >= cells.size()
+                        || cells.get(offset) == null
+                        || !matches(request.lookupValue(), JsonValues.scalarText(cells.get(offset)))) {
+                    continue;
+                }
+                if (matches.size() == request.limit()) {
+                    truncated = true;
+                    break;
+                }
+                Map<String, Object> match = new LinkedHashMap<>();
+                match.put("row", firstRow + index);
+                match.put("values", cells);
+                matches.add(match);
+            }
+        }
+        Map<String, Object> output = new LinkedHashMap<>();
+        output.put("range", reported);
+        output.put("rows", matches);
+        output.put("count", matches.size());
+        output.put("truncated", truncated);
+        return output;
     }
 
     private List<List<Object>> parseValues(Object value) {
@@ -210,6 +335,10 @@ public final class GoogleSheetsNodeExecutor implements NodeExecutor {
             String spreadsheetId,
             String range,
             List<List<Object>> values,
-            UUID connectionId) {
+            UUID connectionId,
+            String valueInputOption,
+            int lookupColumn,
+            String lookupValue,
+            int limit) {
     }
 }
