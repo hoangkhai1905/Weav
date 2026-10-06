@@ -1,12 +1,25 @@
-import { DynamicModule, Module } from '@nestjs/common';
-import { AiDeps, AI_DEPS } from './ai-deps';
+import {
+  DynamicModule,
+  Inject,
+  Module,
+  OnApplicationShutdown,
+} from '@nestjs/common';
+import { AI_DEPS } from './ai-deps';
+import type { AiDeps } from './ai-deps';
 import { Admission } from './infrastructure/admission';
 import { AiController } from './presentation/http/ai.controller';
+import { AssistantHistoryController } from './presentation/http/assistant-history.controller';
 import { AssistantController } from './presentation/http/assistant.controller';
 import { HealthController } from './presentation/http/health.controller';
 
 @Module({})
-export class AiModule {
+export class AiModule implements OnApplicationShutdown {
+  constructor(@Inject(AI_DEPS) private readonly deps: AiDeps) {}
+
+  async onApplicationShutdown() {
+    await this.deps.assistant?.onShutdown?.();
+  }
+
   static register(deps: AiDeps): DynamicModule {
     return {
       module: AiModule,
@@ -14,7 +27,9 @@ export class AiModule {
       controllers: [
         AiController,
         HealthController,
-        ...(deps.config.AI_ASSISTANT_ENABLED ? [AssistantController] : []),
+        ...(deps.config.AI_ASSISTANT_ENABLED
+          ? [AssistantController, AssistantHistoryController]
+          : []),
       ],
       providers: [
         { provide: AI_DEPS, useValue: deps },

@@ -1,5 +1,9 @@
 import { createPublicKey, KeyObject, verify } from 'node:crypto';
-import { AiError, isPlainObject } from '../../domain/errors';
+import {
+  AiError,
+  isPlainObject,
+  USER_AUTH_REQUIRED,
+} from '../../domain/errors';
 
 export interface UserPrincipal {
   userId: string;
@@ -10,11 +14,14 @@ export interface UserJwtConfig {
   issuer: string;
   audience: string;
   clockSkewSeconds: number;
+  /** Cached keys may verify this long past their TTL when the JWKS cannot be refreshed (default 1 h). */
+  maxStaleMs?: number;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN = /^Bearer ([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/;
 const JWKS_TTL_MS = 10 * 60_000;
+const DEFAULT_MAX_STALE_MS = 3_600_000;
 const REFETCH_COOLDOWN_MS = 30_000;
 const JWKS_TIMEOUT_MS = 3_000;
 const MAX_JWKS_BYTES = 64 * 1024;
@@ -40,11 +47,11 @@ export class UserJwtVerifier {
       typeof authorization === 'string' && authorization.length <= 8192
         ? TOKEN.exec(authorization)
         : null;
-    if (!match) throw new AiError('UNAUTHENTICATED');
+    if (!match) throw new AiError('UNAUTHENTICATED', USER_AUTH_REQUIRED);
     const header = decode(match[1]);
     const claims = decode(match[2]);
     if (!header || !claims || header.alg !== 'RS256')
-      throw new AiError('UNAUTHENTICATED');
+      throw new AiError('UNAUTHENTICATED', USER_AUTH_REQUIRED);
     const key =
       typeof header.kid === 'string' ? await this.keyFor(header.kid) : null;
     if (
@@ -56,7 +63,7 @@ export class UserJwtVerifier {
         Buffer.from(match[3], 'base64url'),
       )
     ) {
-      throw new AiError('UNAUTHENTICATED');
+      throw new AiError('UNAUTHENTICATED', USER_AUTH_REQUIRED);
     }
     const now = this.now() / 1000;
     const skew = this.config.clockSkewSeconds;
@@ -85,9 +92,9 @@ export class UserJwtVerifier {
       (claims.system_role !== 'USER' && claims.system_role !== 'ADMIN') ||
       claims.user_status !== 'ACTIVE'
     ) {
-      throw new AiError('UNAUTHENTICATED');
+      throw new AiError('UNAUTHENTICATED', USER_AUTH_REQUIRED);
     }
-    return { userId: sub };
+    return { userId: sub.toLowerCase() };
   }
 
   /** Startup probe: true when the JWKS is reachable and holds at least one RSA key. */
@@ -101,6 +108,9 @@ export class UserJwtVerifier {
     const mayRefetch = this.now() - this.lastAttemptAt > REFETCH_COOLDOWN_MS;
     // An unknown kid triggers at most one refetch per cooldown (key rotation without a DoS path).
     if ((stale || !this.keys.has(kid)) && mayRefetch) await this.refresh();
+    // Identity unreachable for too long: stop trusting the cache (fail closed).
+    const maxStale = this.config.maxStaleMs ?? DEFAULT_MAX_STALE_MS;
+    if (this.now() - this.fetchedAt > JWKS_TTL_MS + maxStale) return null;
     return this.keys.get(kid) ?? null;
   }
 

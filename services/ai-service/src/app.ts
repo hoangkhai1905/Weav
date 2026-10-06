@@ -36,10 +36,8 @@ export async function createAiApp(
     reply.raw.on('close', () => {
       if (!reply.raw.writableFinished) disconnect.abort();
     });
-    request.aiSignal = AbortSignal.any([
-      AbortSignal.timeout(deps.config.AI_REQUEST_TIMEOUT_MS),
-      disconnect.signal,
-    ]);
+    request.aiDeadline = AbortSignal.timeout(deps.config.AI_REQUEST_TIMEOUT_MS);
+    request.aiSignal = AbortSignal.any([request.aiDeadline, disconnect.signal]);
   });
 
   fastify.removeAllContentTypeParsers();

@@ -135,4 +135,66 @@ describe('UserJwtVerifier', () => {
       ServiceJwtVerifier.fromJwks(keys.jwks).verify(bearer(claims())),
     ).toThrow();
   });
+  describe('stale keys', () => {
+    const HOUR = 3_600_000;
+    function staleVerifier(maxStaleMs?: number) {
+      let t = Date.now();
+      let up = true;
+      const fetchImpl = (async () => {
+        if (!up) throw new Error('identity down');
+        return new Response(keys.jwks);
+      }) as unknown as typeof fetch;
+      const v = new UserJwtVerifier(
+        { ...config, maxStaleMs },
+        fetchImpl,
+        () => t,
+      );
+      return {
+        v,
+        advance: (ms: number) => (t += ms),
+        down: () => (up = false),
+        up: () => (up = true),
+      };
+    }
+    const longLived = () => bearer(claims({ exp: nowS + 10 * 24 * 3600 }));
+
+    it('keeps verifying with cached keys past the TTL while identity is down, within the stale window', async () => {
+      const { v, advance, down } = staleVerifier();
+      await v.verify(longLived());
+      down();
+      advance(10 * 60_000 + 31_000 + HOUR / 2);
+      await expect(v.verify(longLived())).resolves.toEqual({ userId });
+    });
+
+    it('fails closed once the stale window is over, and recovers when identity returns', async () => {
+      const { v, advance, down, up } = staleVerifier(HOUR);
+      await v.verify(longLived());
+      down();
+      advance(10 * 60_000 + HOUR + 60_000);
+      await expect(v.verify(longLived())).rejects.toMatchObject({
+        code: 'UNAUTHENTICATED',
+        message: 'Authentication is required.',
+      });
+      up();
+      // Past the 30 s refetch cooldown the JWKS is fetched again and verification works.
+      advance(31_000);
+      await expect(v.verify(longLived())).resolves.toEqual({ userId });
+    });
+
+    it('maxStaleMs 0 stops trusting the cache right after the TTL', async () => {
+      const { v, advance, down } = staleVerifier(0);
+      await v.verify(longLived());
+      down();
+      advance(10 * 60_000 + 31_000);
+      await expect(v.verify(longLived())).rejects.toMatchObject({
+        code: 'UNAUTHENTICATED',
+      });
+    });
+  });
+
+  it('uses the user-facing message for UNAUTHENTICATED', async () => {
+    await expect(verifier().v.verify('garbage')).rejects.toMatchObject({
+      message: 'Authentication is required.',
+    });
+  });
 });

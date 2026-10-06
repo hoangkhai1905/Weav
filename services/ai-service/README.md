@@ -54,6 +54,33 @@ save, publish or run anything. Reach it through
 the gateway at `POST /api/v1/assistant/chat`. Live check against DeepSeek:
 `pnpm --dir services/ai-service exec ts-node scripts/assistant-live-check.ts`.
 
+## Assistant API (history, limits)
+
+All routes need a user access token (`Authorization: Bearer ...`); a conversation is
+visible only to its creator, and a missing, foreign or malformed id is always 404 `NOT_FOUND`.
+
+- `POST /v1/assistant/chat` body `{workspaceId, conversationId?, message (1..4000), timezone?}`
+  (strict). No `conversationId` creates a conversation (title from the message); with one it
+  must belong to the caller and the workspace. SSE: `conversation` first, then `delta`,
+  `tool_call`, `tool_result`, `draft`, and exactly one `done` or `error` (`AI_TIMEOUT` when the
+  request deadline hits during a tool call). The assistant text is stored only after `done`.
+- `GET /v1/assistant/conversations?workspaceId&limit&before`, `GET .../{id}/messages`
+  (latest 100), `DELETE .../{id}` (204). History routes have their own per-user limit
+  (`AI_ASSISTANT_HISTORY_RATE_LIMIT_PER_MINUTE`, 120, 429 `AI_BUSY`). Ids are matched
+  case-insensitively (lowercased).
+- Pre-stream order: user token, provider and store configured, body, per-user rate limit
+  (`AI_ASSISTANT_RATE_LIMIT_PER_MINUTE`), concurrency, workspace membership (GET
+  `AI_WORKSPACE_API_URL/workspaces/{id}` with the caller's token, cached 60 s; 403/404 -> 404,
+  upstream failure -> 503 `AI_UNAVAILABLE`), per-workspace rate limit
+  (`AI_ASSISTANT_WORKSPACE_RATE_LIMIT_PER_MINUTE`, 429 `AI_BUSY`), conversation ownership,
+  daily quota (`AI_ASSISTANT_DAILY_USER_LIMIT`, `AI_ASSISTANT_DAILY_WORKSPACE_LIMIT`, per UTC
+  day, 429 `AI_QUOTA_EXCEEDED`).
+- Each turn sends the model the last `AI_ASSISTANT_HISTORY_MESSAGES` messages within
+  `AI_ASSISTANT_HISTORY_CHARS` characters. With `AI_ASSISTANT_ENABLED=true` the service
+  refuses to start unless `DB_HOST`, `DB_NAME`, `DB_USERNAME` and `DB_PASSWORD` are set.
+- Cached identity keys keep verifying at most `AI_JWKS_MAX_STALE_MS` (1 h) past their TTL when
+  the JWKS cannot be refreshed, then user tokens are rejected.
+
 ## Assistant storage
 
 Per-user chat history and daily usage counters live in Neon database `ai_db`,
@@ -63,7 +90,7 @@ length are CHECKed) and `assistant_usage` (`day`, `workspace_id`, `user_id`,
 `calls`). Every read and delete filters by `user_id`. The port is
 `src/application/assistant/conversation-store.ts`; the Prisma implementation and the
 retention purge (`startRetentionPurge`) are in `src/infrastructure/persistence/`.
-The store is optional: without `DB_HOST` the service runs as before.
+The store is required only when `AI_ASSISTANT_ENABLED=true`; with the flag off the service needs no database.
 
 - Runtime: Compose maps root `AI_DB_*` to `DB_*` (`DB_SCHEMA=ai`). Retention:
   `AI_ASSISTANT_RETENTION_DAYS` (conversations by last update, default 30) and
