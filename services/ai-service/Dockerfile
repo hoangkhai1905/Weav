@@ -18,6 +18,8 @@ RUN pnpm --filter ./services/ai-service build
 # Production-only node_modules + built output in /out.
 RUN pnpm --filter ./services/ai-service --prod --legacy deploy /out \
     && rm -rf /out/dist && cp -r services/ai-service/dist /out/dist
+# Prisma client is generated into the service node_modules (schema output path); carry it over.
+RUN cp -r services/ai-service/node_modules/.prisma /out/node_modules/.prisma
 
 FROM node:24-alpine
 ENV NODE_ENV=production
