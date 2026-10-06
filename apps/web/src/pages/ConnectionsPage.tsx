@@ -27,17 +27,15 @@ import { useWorkspaceStore } from "../store/useWorkspaceStore";
 import { captureNotificationSession, isCurrentNotificationSession } from "../lib/notifications/session";
 import { showSuccessToast } from "../lib/feedback/toast";
 import { useNotificationMilestoneRefresh } from "../hooks/useNotificationMilestoneRefresh";
+import {
+  OAUTH_PENDING_CONTEXT_KEY,
+  OAUTH_PENDING_CONTEXT_MAX_AGE_MS,
+  parseOAuthPendingContext,
+  storeOAuthPendingContext,
+  type OAuthPendingContext,
+} from "../lib/oauthPending";
 
-const OAUTH_PENDING_CONTEXT_KEY = "weav.workspaceConnectionOAuth.pending";
-const OAUTH_PENDING_CONTEXT_MAX_AGE_MS = 10 * 60 * 1000;
 const OAUTH_COMPLETION_ID_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
-
-interface OAuthPendingContext {
-  userId: string;
-  workspaceId: string;
-  connectionId: string;
-  createdAt: number;
-}
 
 const OAUTH_FAILURE_KEYS: Record<string, string> = {
   state_invalid: "connections.oauth.state_invalid",
@@ -46,31 +44,6 @@ const OAUTH_FAILURE_KEYS: Record<string, string> = {
   token_exchange_failed: "connections.oauth.token_exchange_failed",
   verification_failed: "connections.oauth.verification_failed",
 };
-
-function parseOAuthPendingContext(
-  value: string | null,
-): OAuthPendingContext | null {
-  if (!value) return null;
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      typeof (parsed as OAuthPendingContext).userId === "string" &&
-      typeof (parsed as OAuthPendingContext).workspaceId === "string" &&
-      typeof (parsed as OAuthPendingContext).connectionId === "string" &&
-      typeof (parsed as OAuthPendingContext).createdAt === "number" &&
-      Number.isFinite((parsed as OAuthPendingContext).createdAt)
-    ) {
-      const { userId, workspaceId, connectionId, createdAt } =
-        parsed as OAuthPendingContext;
-      return { userId, workspaceId, connectionId, createdAt };
-    }
-  } catch {
-    // Invalid session data is ignored and removed by the callback handler.
-  }
-  return null;
-}
 
 function getOAuthNoticeKey(state: unknown): string | null {
   if (typeof state !== "object" || state === null) return null;
@@ -401,6 +374,171 @@ function ConnectionRow({
   );
 }
 
+/** "New connection" dialog, shared by the Connections page and the builder inspector. */
+export function CreateConnectionDialog({
+  workspaceId,
+  initialProvider = "GMAIL",
+  submitLabel,
+  pendingLabel,
+  onClose,
+  onCreated,
+}: {
+  workspaceId: string;
+  initialProvider?: GoogleProvider;
+  submitLabel?: string;
+  pendingLabel?: string;
+  onClose: () => void;
+  /** Runs after the connection exists; a rejection is shown in the dialog. */
+  onCreated: (connection: ConnectionResponse) => void | Promise<void>;
+}) {
+  const { t } = useI18nStore();
+  const createConnection = useCreateConnection();
+  const [name, setName] = useState("");
+  const [provider, setProvider] = useState<GoogleProvider>(initialProvider);
+  const [createError, setCreateError] = useState("");
+  const [isFinishing, setIsFinishing] = useState(false);
+  const busy = createConnection.isPending || isFinishing;
+
+  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalizedName = name.trim();
+    if (!normalizedName || normalizedName.length > 120) {
+      setCreateError(t("connections.create.validation"));
+      return;
+    }
+    if (busy) return;
+
+    const mutationSession = captureNotificationSession();
+    setCreateError("");
+    try {
+      const connection = await createConnection.mutateAsync({
+        workspaceId,
+        input: { name: normalizedName, provider, authType: "OAUTH2" },
+      });
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast("toast.connection.created", mutationSession);
+      setIsFinishing(true);
+      await onCreated(connection);
+    } catch (error) {
+      if (isCurrentNotificationSession(mutationSession)) setCreateError(getErrorMessage(error, t));
+    } finally {
+      setIsFinishing(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/30 p-4 pt-[14vh]">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="connection-create-title"
+        data-testid="connection-create-dialog"
+        className="w-full max-w-[520px] rounded-lg border border-border bg-card p-4 shadow-pop"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h2
+            id="connection-create-title"
+            className="text-base font-semibold text-foreground"
+          >
+            {t("connections.create.title")}
+          </h2>
+          <button
+            type="button"
+            aria-label={t("connections.close")}
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+        <form
+          data-testid="connection-create-form"
+          onSubmit={handleCreate}
+          className="mt-4 flex flex-col gap-4"
+        >
+          <div>
+            <label
+              htmlFor="connection-create-name"
+              className="mb-1.5 block text-xs font-medium text-text-2"
+            >
+              {t("connections.create.name")}
+            </label>
+            <input
+              id="connection-create-name"
+              data-testid="connection-create-name"
+              autoFocus
+              required
+              maxLength={120}
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                setCreateError("");
+              }}
+              className={fieldCls}
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="connection-create-provider"
+              className="mb-1.5 block text-xs font-medium text-text-2"
+            >
+              {t("connections.create.provider")}
+            </label>
+            <select
+              id="connection-create-provider"
+              data-testid="connection-create-provider"
+              value={provider}
+              onChange={(event) =>
+                setProvider(event.target.value as GoogleProvider)
+              }
+              className={fieldCls}
+            >
+              <option value="GMAIL">Gmail</option>
+              <option value="GOOGLE_SHEETS">Google Sheets</option>
+            </select>
+          </div>
+          {createError && (
+            <p
+              data-testid="connection-create-error"
+              role="alert"
+              className="text-[13px] text-err"
+            >
+              {createError}
+            </p>
+          )}
+          <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={busy}
+              className={ctl}
+            >
+              {t("connections.cancel")}
+            </button>
+            <button
+              type="submit"
+              data-testid="connection-create-submit"
+              disabled={busy}
+              className={ctlPrimary}
+            >
+              {busy && (
+                <LoaderCircle
+                  size={15}
+                  className="animate-spin"
+                  aria-hidden="true"
+                />
+              )}
+              {busy
+                ? (pendingLabel ?? t("connections.create.pending"))
+                : (submitLabel ?? t("connections.create.submit"))}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
 export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const refreshNotifications = useNotificationMilestoneRefresh();
   const { t } = useI18nStore();
@@ -418,16 +556,12 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
   const oauthNoticeKey = getOAuthNoticeKey(location.state);
   const oauthNotice = oauthNoticeKey ? t(oauthNoticeKey) : "";
   const connectionsQuery = useConnections();
-  const createConnection = useCreateConnection();
   const renameConnection = useRenameConnection();
   const testConnection = useTestConnection();
   const disableConnection = useDisableConnection();
   const removeConnection = useRemoveConnection();
   const startGoogleOAuth = useStartGoogleOAuth();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [provider, setProvider] = useState<GoogleProvider>("GMAIL");
-  const [createError, setCreateError] = useState("");
   const [renamingConnectionId, setRenamingConnectionId] = useState<
     string | null
   >(null);
@@ -513,7 +647,7 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
         });
         return;
       }
-      const { workspaceId, connectionId } = pending;
+      const { workspaceId, connectionId, returnTo } = pending;
       navigate("/workspace/connections", {
         replace: true,
         state: { oauthNoticeKey: "connections.oauth.completing" },
@@ -539,6 +673,10 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
             queryKey: connectionKeys.detail(userId, workspaceId, connectionId),
             exact: true,
           });
+          if (finalKey === "connections.oauth.returned" && returnTo) {
+            navigate(returnTo, { replace: true });
+            return;
+          }
           navigate("/workspace/connections", {
             replace: true,
             state: { oauthNoticeKey: finalKey },
@@ -547,6 +685,10 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
       return;
     }
 
+    if (outcome === "success" && pendingIsValid && pending?.returnTo) {
+      navigate(pending.returnTo, { replace: true });
+      return;
+    }
     const noticeKey =
       outcome === "success"
         ? pendingIsValid
@@ -665,45 +807,15 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
         connectionId: connection.id,
       });
       if (!isCurrentNotificationSession(mutationSession)) return;
-      const pendingContext: OAuthPendingContext = {
+      storeOAuthPendingContext({
         userId,
         workspaceId: connection.workspaceId,
         connectionId: connection.id,
         createdAt,
-      };
-      sessionStorage.setItem(
-        OAUTH_PENDING_CONTEXT_KEY,
-        JSON.stringify(pendingContext),
-      );
+      });
       window.location.assign(result.authorizationUrl);
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) setActionMessage(connection.id, getErrorMessage(error, t));
-    }
-  };
-
-  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const normalizedName = name.trim();
-    if (!normalizedName || normalizedName.length > 120) {
-      setCreateError(t("connections.create.validation"));
-      return;
-    }
-    if (!activeWorkspaceId || createConnection.isPending) return;
-
-    const mutationSession = captureNotificationSession();
-    setCreateError("");
-    try {
-      await createConnection.mutateAsync({
-        workspaceId: activeWorkspaceId,
-        input: { name: normalizedName, provider, authType: "OAUTH2" },
-      });
-      if (!isCurrentNotificationSession(mutationSession)) return;
-      setName("");
-      setProvider("GMAIL");
-      setIsCreateOpen(false);
-      showSuccessToast("toast.connection.created", mutationSession);
-    } catch (error) {
-      if (isCurrentNotificationSession(mutationSession)) setCreateError(getErrorMessage(error, t));
     }
   };
 
@@ -881,116 +993,12 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
         </ul>
       )}
 
-      {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/30 p-4 pt-[14vh]">
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="connection-create-title"
-            data-testid="connection-create-dialog"
-            className="w-full max-w-[520px] rounded-lg border border-border bg-card p-4 shadow-pop"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <h2
-                id="connection-create-title"
-                className="text-base font-semibold text-foreground"
-              >
-                {t("connections.create.title")}
-              </h2>
-              <button
-                type="button"
-                aria-label={t("connections.close")}
-                onClick={() => setIsCreateOpen(false)}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
-            <form
-              data-testid="connection-create-form"
-              onSubmit={handleCreate}
-              className="mt-4 flex flex-col gap-4"
-            >
-              <div>
-                <label
-                  htmlFor="connection-create-name"
-                  className="mb-1.5 block text-xs font-medium text-text-2"
-                >
-                  {t("connections.create.name")}
-                </label>
-                <input
-                  id="connection-create-name"
-                  data-testid="connection-create-name"
-                  autoFocus
-                  required
-                  maxLength={120}
-                  value={name}
-                  onChange={(event) => {
-                    setName(event.target.value);
-                    setCreateError("");
-                  }}
-                  className={fieldCls}
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="connection-create-provider"
-                  className="mb-1.5 block text-xs font-medium text-text-2"
-                >
-                  {t("connections.create.provider")}
-                </label>
-                <select
-                  id="connection-create-provider"
-                  data-testid="connection-create-provider"
-                  value={provider}
-                  onChange={(event) =>
-                    setProvider(event.target.value as GoogleProvider)
-                  }
-                  className={fieldCls}
-                >
-                  <option value="GMAIL">Gmail</option>
-                  <option value="GOOGLE_SHEETS">Google Sheets</option>
-                </select>
-              </div>
-              {createError && (
-                <p
-                  data-testid="connection-create-error"
-                  role="alert"
-                  className="text-[13px] text-err"
-                >
-                  {createError}
-                </p>
-              )}
-              <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateOpen(false)}
-                  disabled={createConnection.isPending}
-                  className={ctl}
-                >
-                  {t("connections.cancel")}
-                </button>
-                <button
-                  type="submit"
-                  data-testid="connection-create-submit"
-                  disabled={createConnection.isPending}
-                  className={ctlPrimary}
-                >
-                  {createConnection.isPending && (
-                    <LoaderCircle
-                      size={15}
-                      className="animate-spin"
-                      aria-hidden="true"
-                    />
-                  )}
-                  {createConnection.isPending
-                    ? t("connections.create.pending")
-                    : t("connections.create.submit")}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
+      {isCreateOpen && activeWorkspaceId && (
+        <CreateConnectionDialog
+          workspaceId={activeWorkspaceId}
+          onClose={() => setIsCreateOpen(false)}
+          onCreated={() => setIsCreateOpen(false)}
+        />
       )}
     </main>
   );

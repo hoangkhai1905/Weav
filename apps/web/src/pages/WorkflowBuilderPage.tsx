@@ -55,7 +55,10 @@ import { useWorkspaceContext } from '../hooks/useWorkspace';
 import { useQueryClient } from '@tanstack/react-query';
 import { invalidateWorkflowQueries } from '../lib/queries/workflows';
 import { WorkflowSettingsPanel } from '../components/builder/WorkflowSettingsPanel';
-import { useConnections } from '../hooks/useConnections';
+import { useAttachableConnectionIds, useConnections, useStartGoogleOAuth } from '../hooks/useConnections';
+import type { ConnectionResponse, GoogleProvider } from '../api/connection.api';
+import { CreateConnectionDialog } from './ConnectionsPage';
+import { storeOAuthPendingContext } from '../lib/oauthPending';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG } from '../lib/constants/nodeCatalog';
@@ -132,6 +135,7 @@ const INITIAL_EDGES: Edge[] = [
 ];
 
 const INSPECTOR_WIDTH = 400;
+const addConnectionButtonCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 const PORT_LABEL_ROOM = 80;
 
 const CONDITION_OPERATORS = [
@@ -143,25 +147,25 @@ const CONDITION_OPERATORS = [
   { value: 'lte', labelKey: 'builder.cfg.op_lte' },
 ] as const;
 
-const getNodeReadinessMessage = (type: string, config: Record<string, unknown>, t: (key: string) => string): string | undefined => {
+const getNodeReadinessMessage = (
+  type: string,
+  config: Record<string, unknown>,
+  t: (key: string) => string,
+  attachableConnectionIds?: ReadonlySet<string>,
+): string | undefined => {
   if (!SUPPORTED_NODE_TYPES.has(type)) return t('builder.cfg.msg_unsupported').replace('{type}', type);
   if (type === 'trigger.webhook') return t('builder.cfg.msg_webhook');
-  if (type === 'google.sheets') {
-    return String(config.connectionId ?? '').trim()
-      ? t('builder.cfg.msg_sheets_auth')
-      : t('builder.cfg.msg_sheets_select');
+  if (type === 'google.sheets' || type === 'email.send') {
+    // Same verdict as the step badge, so badge, inspector warning and publish blocker never disagree.
+    const state = getNodeReadinessBadge(type, config, attachableConnectionIds).state;
+    const sheets = type === 'google.sheets';
+    if (state === 'ready') return undefined;
+    if (state === 'authorization-required') return t(sheets ? 'builder.cfg.msg_sheets_auth' : 'builder.cfg.msg_gmail_auth');
+    if (!String(config.connectionId ?? '').trim()) return t(sheets ? 'builder.cfg.msg_sheets_select' : 'builder.cfg.msg_gmail_select');
+    return t(sheets ? 'builder.cfg.msg_sheets_fields' : 'builder.cfg.msg_email_fields');
   }
   if (type === 'trigger.telegram') return t('builder.cfg.msg_tg_trigger');
   if (type === 'telegram.send_message') return t('builder.cfg.msg_tg_send');
-  if (type === 'email.send') {
-    if (!String(config.connectionId ?? '').trim()) {
-      return t('builder.cfg.msg_gmail_select');
-    }
-    if (!String(config.to ?? '').trim() || !String(config.subject ?? '').trim()) {
-      return t('builder.cfg.msg_email_fields');
-    }
-    return undefined;
-  }
   if (type === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
     return t('builder.cfg.msg_condition');
   }
@@ -178,7 +182,7 @@ const getNodeReadinessMessage = (type: string, config: Record<string, unknown>, 
   return undefined;
 };
 
-const getPublishBlockers = (nodes: Node[], t: (key: string) => string): string[] => {
+const getPublishBlockers = (nodes: Node[], t: (key: string) => string, attachableConnectionIds?: ReadonlySet<string>): string[] => {
   const blockers = new Set<string>();
   for (const node of nodes) {
     const type = String(node.data?.nodeType ?? '');
@@ -199,11 +203,8 @@ const getPublishBlockers = (nodes: Node[], t: (key: string) => string): string[]
     if (type === 'http.request' && !String(config.url ?? '').trim()) {
       blockers.add(t('builder.blocker.http'));
     }
-    if (type === 'google.sheets' && !String(config.connectionId ?? '').trim()) {
-      blockers.add(t('builder.blocker.sheets'));
-    }
-    if (type === 'email.send') {
-      const message = getNodeReadinessMessage(type, config, t);
+    if (type === 'google.sheets' || type === 'email.send') {
+      const message = getNodeReadinessMessage(type, config, t, attachableConnectionIds);
       if (message) blockers.add(message);
     }
     if (type === 'trigger.telegram' || type === 'telegram.send_message' || type === 'ocr.extract') {
@@ -262,12 +263,13 @@ export const WorkflowBuilderPage: React.FC = () => {
     () => [...new Set(nodes.map((node) => String(node.data?.nodeType ?? '')).filter((type) => !SUPPORTED_NODE_TYPES.has(type)))],
     [nodes]
   );
-  const publishBlockers = useMemo(() => getPublishBlockers(nodes, t), [nodes, t]);
+  const attachableConnectionIds = useAttachableConnectionIds();
+  const publishBlockers = useMemo(() => getPublishBlockers(nodes, t, attachableConnectionIds), [nodes, t, attachableConnectionIds]);
   const selectedNodeReadiness = selectedNode
-    ? getNodeReadinessBadge(selectedNodeType, selectedNodeConfig)
+    ? getNodeReadinessBadge(selectedNodeType, selectedNodeConfig, attachableConnectionIds)
     : undefined;
   const selectedNodeReadinessMessage = selectedNode
-    ? getNodeReadinessMessage(selectedNodeType, selectedNodeConfig, t)
+    ? getNodeReadinessMessage(selectedNodeType, selectedNodeConfig, t, attachableConnectionIds)
     : undefined;
   const isUnsupportedNode = Boolean(selectedNodeType) && !SUPPORTED_NODE_TYPES.has(selectedNodeType);
   const isGoogleSheetsNode = selectedNodeType === 'google.sheets';
@@ -280,6 +282,9 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [showMinimap, setShowMinimap] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectorTab, setInspectorTab] = useState<'config' | 'input' | 'output' | 'logs'>('config');
+  // The step is captured on open: clicking the dialog closes the inspector and clears the selection.
+  const [addConnectionFor, setAddConnectionFor] = useState<{ provider: GoogleProvider; nodeId: string } | null>(null);
+  const startGoogleOAuth = useStartGoogleOAuth();
 
   // Undo/redo history (client-side only): bounded snapshots of nodes and edges.
   const HISTORY_LIMIT = 50;
@@ -437,9 +442,10 @@ export const WorkflowBuilderPage: React.FC = () => {
     return () => { disposed = true; };
   }, [workflowId, setNodes, setEdges]);
 
-  const saveDraft = useCallback(async () => {
+  // `nodesOverride`: nodes just passed to setNodes, which this render's closure has not seen yet.
+  const saveDraft = useCallback(async (nodesOverride?: Node[]) => {
     if (!workflow) throw new Error(tr('msg.workflow_is_not_loaded'));
-    const draft = reactFlowToWorkflow(nodes, edges, { ...workflow, name: workflowTitle, description: workflowDescription });
+    const draft = reactFlowToWorkflow(nodesOverride ?? nodes, edges,{ ...workflow, name: workflowTitle, description: workflowDescription });
     const saved = await workflowApi.updateWorkflow(workflow.id, draft);
     setWorkflow(saved);
     void invalidateWorkflowQueries(queryClient);
@@ -808,6 +814,50 @@ export const WorkflowBuilderPage: React.FC = () => {
     },
     [selectedNodeId, setNodes]
   );
+
+  // New connection from the inspector: attach it to the step, save the draft, then authorize with
+  // Google. The OAuth callback (Connections page) returns to `?step=` once the connection is verified.
+  const handleInspectorConnectionCreated = async (connection: ConnectionResponse) => {
+    const nodeId = addConnectionFor?.nodeId;
+    try {
+      if (!nodeId || !workflow || !userId) throw new Error(tr('msg.workflow_is_not_loaded'));
+      const nextNodes = nodes.map((node) =>
+        node.id === nodeId
+          ? { ...node, data: { ...node.data, config: { ...(node.data.config as Record<string, unknown>), connectionId: connection.id } } }
+          : node
+      );
+      setNodes(nextNodes);
+      setIsSaved(false);
+      await saveDraft(nextNodes);
+      const { authorizationUrl } = await startGoogleOAuth.mutateAsync({ workspaceId: connection.workspaceId, connectionId: connection.id });
+      storeOAuthPendingContext({
+        userId,
+        workspaceId: connection.workspaceId,
+        connectionId: connection.id,
+        createdAt: Date.now(),
+        returnTo: `/workflows/${workflow.id}?step=${encodeURIComponent(nodeId)}`,
+      });
+      window.location.assign(authorizationUrl);
+    } catch (error) {
+      // The connection exists already; close the dialog so a retry cannot create a duplicate.
+      setAddConnectionFor(null);
+      setWorkflowError(error instanceof Error ? error.message : tr('msg.draft_could_not_be_saved'));
+    }
+  };
+
+  // Reopen the step named by `?step=` (return from Google authorization).
+  const stepParam = searchParams.get('step');
+  const handledStepEpochRef = useRef(-1);
+  useEffect(() => {
+    if (!stepParam || loadEpoch === 0 || handledStepEpochRef.current === loadEpoch) return;
+    if (!nodes.some((node) => node.id === stepParam)) return;
+    handledStepEpochRef.current = loadEpoch;
+    /* eslint-disable react-hooks/set-state-in-effect -- one-shot selection after load */
+    setSelectedNodeId(stepParam);
+    setInspectorOpen(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, selected: n.id === stepParam } })));
+  }, [stepParam, loadEpoch, nodes, setNodes]);
 
   const handleOcrFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -1680,6 +1730,11 @@ export const WorkflowBuilderPage: React.FC = () => {
                         {t('builder.cfg.no_gmail')} <Link to="/workspace/connections" className="text-run underline">{t('builder.cfg.connect_gmail')}</Link> {t('builder.cfg.connect_first')}
                       </p>
                     )}
+                    {activeWorkspaceId && workflow && (
+                      <button type="button" data-testid="add-connection-GMAIL" onClick={() => selectedNodeId && setAddConnectionFor({ provider: 'GMAIL', nodeId: selectedNodeId })} className={addConnectionButtonCls}>
+                        <Plus size={12} aria-hidden="true" />{t('builder.cfg.add_gmail_connection')}
+                      </button>
+                    )}
                   </div>
                   <div>
                     <label htmlFor="email-to" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.recipient')}</label>
@@ -1972,6 +2027,11 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <Link to="/workspace/connections" className="text-run underline">{t('builder.cfg.sheets_link')}</Link>.
                       </p>
                     )}
+                    {activeWorkspaceId && workflow && (
+                      <button type="button" data-testid="add-connection-GOOGLE_SHEETS" onClick={() => selectedNodeId && setAddConnectionFor({ provider: 'GOOGLE_SHEETS', nodeId: selectedNodeId })} className={addConnectionButtonCls}>
+                        <Plus size={12} aria-hidden="true" />{t('builder.cfg.add_sheets_connection')}
+                      </button>
+                    )}
                   </div>
 
                   <div>
@@ -2260,6 +2320,16 @@ export const WorkflowBuilderPage: React.FC = () => {
         onClose={() => setIsGeneratePanelOpen(false)}
         onReady={handleGenerateReady}
       />
+      {addConnectionFor && activeWorkspaceId && (
+        <CreateConnectionDialog
+          workspaceId={activeWorkspaceId}
+          initialProvider={addConnectionFor.provider}
+          submitLabel={t('builder.cfg.add_connection_submit')}
+          pendingLabel={t('builder.cfg.add_connection_redirecting')}
+          onClose={() => setAddConnectionFor(null)}
+          onCreated={handleInspectorConnectionCreated}
+        />
+      )}
     </div>
   );
 };

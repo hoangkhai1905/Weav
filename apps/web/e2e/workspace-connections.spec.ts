@@ -1335,3 +1335,138 @@ test.describe("workflow builder Gmail connection picker", () => {
     await expect(trigger).toBeFocused();
   });
 });
+
+test.describe("workflow builder connection readiness", () => {
+  const WORKFLOW_ID = "30000000-0000-4000-8000-000000000002";
+  const NEW_SHEETS_ID = "20000000-0000-4000-8000-0000000000aa";
+  const INVALID_GMAIL_ID = "20000000-0000-4000-8000-0000000000e8";
+  const sheetsNode = '[data-testid="workflow-node"][data-node-type="google.sheets"]';
+  const emailNode = '[data-testid="workflow-node"][data-node-type="email.send"]';
+
+  const detail = (sheetsConfig: Record<string, unknown>, emailConfig: Record<string, unknown>) => ({
+    workflowId: WORKFLOW_ID,
+    name: "Sheet to mail",
+    status: "DRAFT",
+    schemaVersion: "1.0",
+    currentVersionId: null,
+    createdAt: "2026-08-01T00:00:00Z",
+    updatedAt: "2026-08-01T00:00:00Z",
+    definition: {
+      schemaVersion: "1.0",
+      nodes: [
+        { id: "manual", type: "trigger.manual", config: {} },
+        { id: "sheets", type: "google.sheets", config: sheetsConfig },
+        { id: "email", type: "email.send", config: emailConfig },
+      ],
+      edges: [
+        { id: "manual-sheets", source: "manual", target: "sheets" },
+        { id: "sheets-email", source: "sheets", target: "email" },
+      ],
+      variables: {},
+    },
+    editorState: {
+      nodes: {
+        manual: { name: "Start", position: { x: 0, y: 0 } },
+        sheets: { name: "Read sheet", position: { x: 320, y: 0 } },
+        email: { name: "Mail it", position: { x: 640, y: 0 } },
+      },
+    },
+  });
+
+  async function routeWorkflow(page: Page, state: { sheets: Record<string, unknown>; email: Record<string, unknown> }, drafts: unknown[] = []) {
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/draft") && route.request().method() === "PUT") {
+        const body = route.request().postDataJSON() as { definition: { nodes: Array<{ id: string; config: Record<string, unknown> }> } };
+        drafts.push(body);
+        state.sheets = body.definition.nodes.find((node) => node.id === "sheets")?.config ?? {};
+        state.email = body.definition.nodes.find((node) => node.id === "email")?.config ?? {};
+        return fulfillJson(route, detail(state.sheets, state.email));
+      }
+      if (url.pathname.endsWith(`/workflows/${WORKFLOW_ID}`)) return fulfillJson(route, detail(state.sheets, state.email));
+      return fulfillJson(route, pageResult([]));
+    });
+  }
+
+  test("badge, inspector warning and publish blocker share one verdict", async ({ page }) => {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, [
+        connection(CONNECTION_SHEETS_ID, "GOOGLE_SHEETS", WORKSPACE_ID, "ACTIVE"),
+        connection(INVALID_GMAIL_ID, "GMAIL", WORKSPACE_ID, "INVALID"),
+      ]),
+    );
+    const state = {
+      sheets: { connectionId: CONNECTION_SHEETS_ID, operation: "read", spreadsheetId: "sheet-1", range: "Sheet1!A1:B2" },
+      email: { connectionId: INVALID_GMAIL_ID, to: "team@example.test", subject: "Weekly", body: "Hi" },
+    };
+    await routeWorkflow(page, state);
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+
+    // An ACTIVE, attachable connection plus the required fields is ready (it used to say "Authorization required").
+    await expect(page.locator(sheetsNode)).toHaveAttribute("data-readiness", "ready");
+    await page.locator(sheetsNode).click();
+    await expect(page.getByTestId("integration-readiness")).toHaveCount(0);
+
+    await page.locator(emailNode).click();
+    await expect(page.locator(emailNode)).toHaveAttribute("data-readiness", "authorization-required");
+    await expect(page.getByTestId("integration-readiness")).toContainText("must authorize this Gmail connection");
+    await expect(page.getByTestId("workflow-publish")).toBeDisabled();
+
+    // Missing required fields means not configured, even with a valid connection.
+    await page.locator(sheetsNode).click();
+    await page.locator("#google-spreadsheet-id").fill("");
+    await expect(page.locator(sheetsNode)).toHaveAttribute("data-readiness", "not-configured");
+    await expect(page.getByTestId("integration-readiness")).toContainText("spreadsheet ID");
+  });
+
+  test("adds a Google Sheets connection from the inspector, saves the draft and returns to the step after OAuth", async ({ page }) => {
+    await installAuthFixture(page);
+    let created = false;
+    let authorized = false;
+    let createdProvider = "";
+    await page.route("**/api/v1/workspaces/*/connections", async (route) => {
+      if (route.request().method() === "POST") {
+        createdProvider = String((route.request().postDataJSON() as { provider?: unknown }).provider);
+        created = true;
+        return fulfillJson(route, connection(NEW_SHEETS_ID, "GOOGLE_SHEETS", WORKSPACE_ID, "DISABLED"), 201);
+      }
+      return fulfillJson(
+        route,
+        created ? [connection(NEW_SHEETS_ID, "GOOGLE_SHEETS", WORKSPACE_ID, authorized ? "ACTIVE" : "DISABLED")] : [],
+      );
+    });
+    await page.route(`**/api/v1/workspaces/*/connections/${NEW_SHEETS_ID}/oauth/authorize`, (route) =>
+      fulfillJson(route, { authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth?client_id=fixture&state=s" }),
+    );
+    await page.route("https://accounts.google.com/**", (route) =>
+      route.fulfill({ status: 200, contentType: "text/html", body: "Google consent fixture" }),
+    );
+    const drafts: unknown[] = [];
+    const state = {
+      sheets: { operation: "read", spreadsheetId: "sheet-1", range: "Sheet1!A1:B2" } as Record<string, unknown>,
+      email: { to: "team@example.test", subject: "Weekly", body: "Hi" } as Record<string, unknown>,
+    };
+    await routeWorkflow(page, state, drafts);
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+
+    await page.locator(sheetsNode).click();
+    await page.getByTestId("add-connection-GOOGLE_SHEETS").click();
+    const dialog = page.getByTestId("connection-create-dialog");
+    await expect(dialog.getByTestId("connection-create-provider")).toHaveValue("GOOGLE_SHEETS");
+    await dialog.getByTestId("connection-create-name").fill("Finance Sheets");
+    await dialog.getByTestId("connection-create-submit").click();
+
+    await expect(page).toHaveURL(/https:\/\/accounts\.google\.com\//);
+    expect(createdProvider).toBe("GOOGLE_SHEETS");
+    expect(drafts).toHaveLength(1);
+    expect(state.sheets).toMatchObject({ connectionId: NEW_SHEETS_ID, spreadsheetId: "sheet-1" });
+
+    // Google sends the user back to the Connections callback; a verified connection returns to the step.
+    authorized = true;
+    await gotoAuthenticatedPath(page, `/connections?oauth=success&connectionId=${NEW_SHEETS_ID}`);
+    await expect(page).toHaveURL(new RegExp(`/workflows/${WORKFLOW_ID}[?]step=sheets$`));
+    await expect(page.getByTestId("google-connection")).toHaveValue(NEW_SHEETS_ID);
+    await expect(page.locator(sheetsNode)).toHaveAttribute("data-readiness", "ready");
+  });
+});
