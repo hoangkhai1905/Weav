@@ -136,10 +136,13 @@ public final class MappingResolver {
         };
 
         for (String segment : expression.path()) {
-            if (!(current instanceof Map<?, ?> object) || !object.containsKey(segment)) {
+            if (current instanceof Map<?, ?> object && object.containsKey(segment)) {
+                current = object.get(segment);
+            } else if (current instanceof List<?> array && listIndex(segment) >= 0 && listIndex(segment) < array.size()) {
+                current = array.get(listIndex(segment));
+            } else {
                 throw error(destinationNodeId, destinationField, "The referenced property is unavailable.");
             }
-            current = object.get(segment);
         }
         return current;
     }
@@ -271,12 +274,38 @@ public final class MappingResolver {
         String[] segments = path.split("\\.", -1);
         List<String> result = new ArrayList<>(segments.length);
         for (String segment : segments) {
-            if (!isPropertySegment(segment)) {
+            // "name[0][1]" is shorthand for "name.0.1"; only plain list positions are allowed inside brackets.
+            int bracket = segment.indexOf('[');
+            String name = bracket < 0 ? segment : segment.substring(0, bracket);
+            if (!isPropertySegment(name)) {
                 throw new MappingException("The mapping expression is invalid.");
             }
-            result.add(segment);
+            result.add(name);
+            int cursor = bracket;
+            while (bracket >= 0 && cursor < segment.length()) {
+                int close = segment.charAt(cursor) == '[' ? segment.indexOf(']', cursor) : -1;
+                String index = close < 0 ? "" : segment.substring(cursor + 1, close);
+                if (close < 0 || listIndex(index) < 0) {
+                    throw new MappingException("The mapping expression is invalid.");
+                }
+                result.add(index);
+                cursor = close + 1;
+            }
         }
         return List.copyOf(result);
+    }
+
+    /** A list position: ASCII digits, no leading zero, at most 9999; -1 when the segment is not one. */
+    private int listIndex(String segment) {
+        if (segment.isEmpty() || segment.length() > 4 || segment.length() > 1 && segment.charAt(0) == '0') {
+            return -1;
+        }
+        for (int i = 0; i < segment.length(); i++) {
+            if (segment.charAt(i) < '0' || segment.charAt(i) > '9') {
+                return -1;
+            }
+        }
+        return Integer.parseInt(segment);
     }
 
     private boolean isPropertySegment(String value) {
