@@ -247,7 +247,7 @@ Preconditions (all must be true before you continue):
                     text = '<b>Weav</b> live test: HTML, silent, reply'
                     parseMode = 'HTML'
                     disableNotification = $true
-                    replyToMessageId = '{{ trigger.input.message.message_id }}'
+                    replyToMessageId = '{{ trigger.input.message.messageId }}'
                 } }
         )
         edges = @(
