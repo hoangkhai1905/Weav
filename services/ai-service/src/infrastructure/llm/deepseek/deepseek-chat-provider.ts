@@ -18,23 +18,45 @@ const MAX_ARGUMENT_CHARS = 8000;
 
 /**
  * Assembles OpenAI-style streamed `delta.tool_calls` fragments (index, id, function.name,
- * function.arguments pieces) into whole calls. Fragments of one call share an index.
+ * function.arguments pieces) into whole calls. Fragments of one call share an index; when a
+ * provider omits `index`, the call id picks the slot (new id = new slot), and a fragment with
+ * neither continues the last slot.
  */
 export class ToolCallAccumulator {
-  private readonly calls = new Map<
-    number,
-    { id: string; name: string; args: string }
-  >();
+  private readonly calls: { id: string; name: string; args: string }[] = [];
+  private readonly byIndex = new Map<number, number>();
 
   add(fragments: unknown): void {
     if (!Array.isArray(fragments)) return;
     for (const fragment of fragments) {
       if (!isPlainObject(fragment)) continue;
-      const index = typeof fragment.index === 'number' ? fragment.index : 0;
-      if (index < 0 || index >= MAX_TOOL_CALLS)
-        throw new AiError('AI_OUTPUT_INVALID');
-      const call = this.calls.get(index) ?? { id: '', name: '', args: '' };
-      if (typeof fragment.id === 'string') call.id = fragment.id;
+      const id = typeof fragment.id === 'string' ? fragment.id : '';
+      let slot: number | undefined;
+      if (typeof fragment.index === 'number') {
+        if (fragment.index < 0 || fragment.index >= MAX_TOOL_CALLS)
+          throw new AiError('AI_OUTPUT_INVALID');
+        slot = this.byIndex.get(fragment.index);
+        // A different non-empty id under the same index is a new call.
+        if (
+          slot !== undefined &&
+          id &&
+          this.calls[slot].id &&
+          this.calls[slot].id !== id
+        )
+          slot = undefined;
+        if (slot === undefined) {
+          slot = this.calls.length;
+          this.byIndex.set(fragment.index, slot);
+        }
+      } else if (id) {
+        slot = this.calls.findIndex((c) => c.id === id);
+        if (slot < 0) slot = this.calls.length;
+      } else {
+        slot = Math.max(this.calls.length - 1, 0);
+      }
+      if (slot >= MAX_TOOL_CALLS) throw new AiError('AI_OUTPUT_INVALID');
+      const call = (this.calls[slot] ??= { id: '', name: '', args: '' });
+      if (id) call.id = id;
       const fn = fragment.function;
       if (isPlainObject(fn)) {
         if (typeof fn.name === 'string') call.name += fn.name;
@@ -42,18 +64,15 @@ export class ToolCallAccumulator {
       }
       if (call.args.length > MAX_ARGUMENT_CHARS)
         throw new AiError('AI_OUTPUT_INVALID');
-      this.calls.set(index, call);
     }
   }
 
   result(): ToolCall[] {
-    return [...this.calls.entries()]
-      .sort(([a], [b]) => a - b)
-      .map(([index, call]) => ({
-        id: call.id || `call_${index}`,
-        name: call.name,
-        arguments: call.args,
-      }));
+    return this.calls.map((call, index) => ({
+      id: call.id || `call_${index}`,
+      name: call.name,
+      arguments: call.args,
+    }));
   }
 }
 

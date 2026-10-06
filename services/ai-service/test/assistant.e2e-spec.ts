@@ -39,6 +39,9 @@ const userToken = (extra: Record<string, unknown> = {}) =>
 
 let workflowApi: Server;
 let workflowUrl: string;
+let workspaceApi: Server;
+let workspaceUrl: string;
+let workspaceRequests: { url: string; headers: IncomingHttpHeaders }[];
 let workflowRequests: { url: string; headers: IncomingHttpHeaders }[];
 let app: NestFastifyApplication;
 let baseUrl: string;
@@ -48,7 +51,16 @@ beforeAll(async () => {
   workflowApi = createServer((request, response) => {
     workflowRequests.push({ url: request.url ?? '', headers: request.headers });
     response.setHeader('content-type', 'application/json');
-    if (request.url?.includes('/executions/'))
+    if (request.url?.endsWith('/workflows/generate'))
+      response.end(
+        JSON.stringify({
+          status: 'ready',
+          name: 'Digest',
+          definition: { nodes: [{ id: 'n1', type: 'trigger.manual' }] },
+          layout: { n1: { x: 0, y: 0 } },
+        }),
+      );
+    else if (request.url?.includes('/executions/'))
       response.end(
         JSON.stringify({
           status: 'FAILED',
@@ -80,18 +92,49 @@ beforeAll(async () => {
     workflowApi.listen(0, '127.0.0.1', resolve),
   );
   workflowUrl = `http://127.0.0.1:${(workflowApi.address() as AddressInfo).port}`;
+  workspaceApi = createServer((request, response) => {
+    workspaceRequests.push({
+      url: request.url ?? '',
+      headers: request.headers,
+    });
+    response.setHeader('content-type', 'application/json');
+    response.end(
+      JSON.stringify({
+        items: [
+          {
+            userId: randomUUID(),
+            email: 'secret.person@example.test',
+            displayName: 'Dana',
+            role: 'OWNER',
+            canPublishWorkflow: true,
+            canManageWorkflowState: true,
+            joinedAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-02T00:00:00Z',
+            active: true,
+          },
+        ],
+      }),
+    );
+  });
+  await new Promise<void>((resolve) =>
+    workspaceApi.listen(0, '127.0.0.1', resolve),
+  );
+  workspaceUrl = `http://127.0.0.1:${(workspaceApi.address() as AddressInfo).port}`;
 });
-afterAll(
-  () => new Promise<void>((resolve) => workflowApi.close(() => resolve())),
-);
+afterAll(async () => {
+  await new Promise<void>((resolve) => workflowApi.close(() => resolve()));
+  await new Promise<void>((resolve) => workspaceApi.close(() => resolve()));
+});
 
 async function start(rounds: Round[], env: Record<string, string> = {}) {
   workflowRequests = [];
+  workspaceRequests = [];
   provider = new ScriptedChatProvider(rounds);
   app = await createAiApp({
     config: loadAiConfig({
       AI_ASSISTANT_ENABLED: 'true',
       AI_WORKFLOW_API_URL: workflowUrl,
+      AI_WORKSPACE_API_URL: workspaceUrl,
       DEEPSEEK_API_KEY: 'k',
       DEEPSEEK_MODEL: 'm',
       AI_REQUEST_TIMEOUT_MS: '5000',
@@ -197,6 +240,57 @@ describe('POST /v1/assistant/chat', () => {
         (r) => r.headers.authorization === `Bearer ${token}`,
       ),
     ).toBe(true);
+  });
+
+  it('build_workflow: emits a draft event with the full draft, then done; nothing is saved', async () => {
+    await start([
+      [end(call('c1', 'build_workflow', { prompt: 'make a digest' }))],
+      [text('Review the draft.'), end()],
+    ]);
+    const events = parseSse(await (await chat()).text());
+    expect(events.map((e) => e.event)).toEqual([
+      'tool_call',
+      'tool_result',
+      'draft',
+      'delta',
+      'done',
+    ]);
+    expect(events[2].data).toEqual({
+      name: 'Digest',
+      definition: { nodes: [{ id: 'n1', type: 'trigger.manual' }] },
+      layout: { n1: { x: 0, y: 0 } },
+    });
+    // The model only saw the summary, not the definition.
+    expect(JSON.stringify(provider.requests[1].messages)).not.toContain(
+      'layout',
+    );
+    expect(workflowRequests.map((r) => r.url)).toEqual([
+      `/workspaces/${WS}/workflows/generate`,
+    ]);
+  });
+
+  it('list_members: no email appears in any SSE event or model message', async () => {
+    await start([
+      [end(call('c1', 'list_members', {}))],
+      [text('Dana is the owner.'), end()],
+    ]);
+    const token = userToken();
+    const raw = await (await chat(body(), token)).text();
+    expect(raw).not.toContain('secret.person');
+    expect(parseSse(raw).map((e) => e.event)).toEqual([
+      'tool_call',
+      'tool_result',
+      'delta',
+      'done',
+    ]);
+    expect(JSON.stringify(provider.requests[1].messages)).toContain('Dana');
+    expect(JSON.stringify(provider.requests[1].messages)).not.toContain(
+      'secret.person',
+    );
+    expect(workspaceRequests.map((r) => r.url)).toEqual([
+      `/workspaces/${WS}/members?page=0&size=50`,
+    ]);
+    expect(workspaceRequests[0].headers.authorization).toBe(`Bearer ${token}`);
   });
 
   it('reports provider failures as a stable error event, no internals', async () => {
