@@ -22,4 +22,6 @@ COPY services/ai-service ./services/ai-service
 
 WORKDIR /workspace/services/ai-service
 
+RUN pnpm db:generate
+
 CMD ["pnpm", "start:dev"]
