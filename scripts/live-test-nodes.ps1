@@ -691,6 +691,7 @@ You will need to send one email yourself while the script waits (a few minutes).
 
     # The body is never printed; its length is only known if the trigger node exposes its input as output.
     $in = Get-Prop (Find-Node $detail 'mail') 'output'
+    if ($null -ne (Get-Prop $in 'input')) { $in = Get-Prop $in 'input' }
     $copy = Get-Prop (Find-Node $detail 'copy') 'output'
     $body = Get-Prop $in 'body'
     $bodyLen = if ($null -ne $body) { ([string]$body).Length } else { 'n/a' }
@@ -841,7 +842,9 @@ Attachment source: https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf
     Write-AttachmentHints $detail
     Add-Result 'attachments gmail execution SUCCESS' ($detail.status -eq 'SUCCESS') ('status ' + $detail.status)
 
+    # The trigger node's output wraps the run input: {input: {..., attachments}}.
     $in = Get-Prop (Find-Node $detail 'mail') 'output'
+    if ($null -ne (Get-Prop $in 'input')) { $in = Get-Prop $in 'input' }
     $atts = @(Get-Prop $in 'attachments')
     $first = if ($atts.Count -gt 0) { $atts[0] } else { $null }
     if ($null -eq $in) {
