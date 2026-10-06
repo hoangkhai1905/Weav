@@ -40,6 +40,44 @@
       "description": "Message text to send.",
       "x-weav-template": true,
       "minLength": 1
+    },
+    "parseMode": {
+      "title": "Parse mode",
+      "description": "Formatting of the message text: none (default), HTML or MarkdownV2.",
+      "type": "string",
+      "x-weav-template": true,
+      "enum": [
+        "none",
+        "HTML",
+        "MarkdownV2"
+      ]
+    },
+    "disableNotification": {
+      "title": "Silent message",
+      "description": "Send without a notification sound (true or false). Default false.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "replyToMessageId": {
+      "title": "Reply to message ID",
+      "description": "Id of a message in the same chat to reply to. A missing original does not fail the send.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "string"
+        }
+      ]
     }
   },
   "required": [

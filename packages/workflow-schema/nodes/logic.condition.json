@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "weav:node/logic.condition",
   "title": "Condition",
-  "description": "Compares two values and continues along the true or false branch.",
+  "description": "Compares two values (or several conditions combined with and/or) and continues along the true or false branch.",
   "x-weav-node": {
     "type": "logic.condition",
     "category": "logic",
@@ -34,12 +34,40 @@
       "title": "Right value",
       "description": "Second value to compare.",
       "x-weav-template": true
+    },
+    "combinator": {
+      "title": "Combinator",
+      "description": "Multi-condition form: and (all must hold) or or (any may hold). Use with conditions instead of left/operator/right.",
+      "type": "string",
+      "enum": [
+        "and",
+        "or"
+      ]
+    },
+    "conditions": {
+      "title": "Conditions",
+      "description": "Multi-condition form: 1 to 10 objects {left, operator, right}, combined with the combinator. Exclusive with left/operator/right.",
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "minItems": 1
     }
   },
-  "required": [
-    "left",
-    "operator",
-    "right"
-  ],
-  "additionalProperties": false
+  "required": [],
+  "additionalProperties": false,
+  "x-weav-mutually-exclusive": [
+    [
+      "left",
+      "conditions"
+    ],
+    [
+      "operator",
+      "conditions"
+    ],
+    [
+      "right",
+      "conditions"
+    ]
+  ]
 }
