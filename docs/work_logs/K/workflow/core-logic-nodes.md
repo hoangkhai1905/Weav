@@ -7,7 +7,7 @@
 | Date | 2026-10-05 (Asia/Saigon) |
 | Branch | `feat/core-logic-nodes` (from `staging`), merged into `staging` (a6f4164) |
 | Owner | K / Sonnet worker, coordinator reviews and commits |
-| Status | Done, committed and merged into `staging`. Live-test flow exists in `scripts/live-test-nodes.ps1 -Flow logic` (fefb1fc); a live run result is not recorded here |
+| Status | Done, committed and merged into `staging`. Live test passed 2026-10-06 (`scripts/live-test-nodes.ps1 -Flow logic`, all steps PASS; see section 9) |
 | Scope | `logic.switch`, `data.set`, named edge ports, number/boolean to text coercion in `ExecutionRunner.resolveConfig` (workflow-service, `packages/workflow-schema`, `packages/contracts`) |
 
 ## 2. Summary
@@ -76,10 +76,12 @@ Coverage: switch ports (draft/publish, invalid cases, default, unused, missing),
 - Run `-Flow logic` live and record the result.
 - ai-service follow-up for switch ports (section 3, generation row); frontend work (section 7).
 
-## 9. Live test finding: data.set `CONFIGURATION_ERROR` (2026-10-06, branch `fix/data-set-runtime-config`)
+## 9. Live test result and finding: data.set `CONFIGURATION_ERROR` (2026-10-06): done
 
-- **Symptom:** manual run of `manual -> shape (data.set, fields from trigger.input) -> route (logic.switch) -> 3 data.set` fails at `shape` with `CONFIGURATION_ERROR` / "The node configuration is invalid." (the generic `ExecutionRunner.resolveConfig` failure). Input `{"plan":1,"user":{"first":"Ada"},"count":7}`.
-- **Reproduction attempts (status: NOT reproduced):** two new tests run the exact definition through the real path on PostgreSQL 18 with the real runner and the real `data.set`/`logic.switch` executors, and both pass on current code: `ExecutionRuntimeIntegrationTest.dataSetThenSwitchRunsWithPersistedNumericAndNestedInput` (plan 1, 2, "gold", output `{n:7,name:"Ada",plan}`, correct port, branches SUCCESS/SKIPPED) and `WorkflowV1AcceptanceTest.dataSetFeedsSwitchOverRealHttpWithNumericAndNestedManualInput` (draft save, publish, `POST /executions` over HTTP with the exact JSON bodies).
+- **Result:** `-Flow logic -Cleanup` passed all steps (cases 1, 2 and "gold": `shape` output `{n:7,name:"Ada",plan}`, correct switch port, matching branch SUCCESS, others SKIPPED), reported by K, once the partner's stack was stopped.
+- **Symptom (earlier runs):** manual run of `manual -> shape (data.set, fields from trigger.input) -> route (logic.switch) -> 3 data.set` failed at `shape` with `CONFIGURATION_ERROR` / "The node configuration is invalid." (the generic `ExecutionRunner.resolveConfig` failure); first all three runs, after a rebuild only 1 of 3. Input `{"plan":1,"user":{"first":"Ada"},"count":7}`.
+- **Root cause (environment, not code):** the partner's dev stack ran an older workflow-service (no `data.set`) against the same Neon `workflow_db` and picked up some of K's executions; its catalog did not know the node type. Evidence: the failing run left no diagnostic WARN in K's container, and `pg_stat_activity` showed `workflow_db` connections older than K's container. Proposed follow-up: one Neon branch per developer instead of the shared `production` branch (pending decision).
+- **Reproduction attempts (not reproducible on one instance, as expected):** two new tests run the exact definition through the real path on PostgreSQL 18 with the real runner and the real `data.set`/`logic.switch` executors, and both pass on current code: `ExecutionRuntimeIntegrationTest.dataSetThenSwitchRunsWithPersistedNumericAndNestedInput` (plan 1, 2, "gold", output `{n:7,name:"Ada",plan}`, correct port, branches SUCCESS/SKIPPED) and `WorkflowV1AcceptanceTest.dataSetFeedsSwitchOverRealHttpWithNumericAndNestedManualInput` (draft save, publish, `POST /executions` over HTTP with the exact JSON bodies).
 - **Ruled out:** the dev container's source (`/app/src/main`, CRLF-normalised hashes), compiled classes (rebuilt 02:45 UTC) and `workflow-schema/nodes/*.json` are identical to this branch; Postgres version matches (18.6); no Jackson/Hibernate format-mapper overrides in `application.properties`; `jsonSize`, `hasValidFieldShape` (object schema does not look at values), credential-key scan and `JsonValues.freeze` accept Integer/Long/BigDecimal/Double values.
 - **Diagnostic added:** `ExecutionRunner.resolveConfig` now logs `Node configuration rejected (execution, node, issues [code@field])` at WARN before the generic failure (codes and field paths only, no values), so the next live failure names the exact `ValidationIssue`. Node error payload is unchanged.
-- **Next:** re-run the live flow on the restarted dev container; if it still fails, read the WARN line (the other `ConfigurationFailure` sites are "resolved config not a Map" and non-String key, which cannot occur for this definition).
+- **Diagnostics kept:** the WARN now also logs node type and catalog size, and the other `ConfigurationFailure` sites ("resolved config is not an object", "config key is not a string", node missing from the definition) log too. A generic configuration failure without such a WARN in the local container means another workflow-service instance ran the node.
