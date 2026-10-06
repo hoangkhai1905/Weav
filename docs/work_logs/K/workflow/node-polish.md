@@ -7,7 +7,7 @@
 | Date | 2026-10-06 (Asia/Saigon) |
 | Branch | `feat/wk4-f4-node-polish` (from `staging`), merged into `staging` after F1 |
 | Owner | K / Sonnet worker, coordinator reviews and commits |
-| Status | Done, reviewed (1 round), merged. Live test pending (lane F5 adds the flows to `scripts/live-test-nodes.ps1`) |
+| Status | Done, reviewed (1 round), merged. Live tests PASSED 2026-10-06 on dev-k: `-Flow google` (calendar list count/truncated), `-Flow telegram` (parseMode HTML, silent, reply via `{{ trigger.input.message.messageId }}`), `-Flow logic` (AND/OR conditions). Sheets lookup not live-tested (the Google flow has no Sheets connection; unit tests cover it) |
 | Scope | `google.sheets`, `google.calendar`, `telegram.send_message`, `logic.condition` (workflow-service, `packages/workflow-schema`, `packages/contracts`). Spec: `docs/superpowers/specs/2026-10-06-email-attachments-design.md`, "Other node polish" |
 
 ## 2. Config contracts (all additive; every old config is valid and behaves as before)
