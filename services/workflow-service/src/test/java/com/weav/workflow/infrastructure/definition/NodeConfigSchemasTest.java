@@ -220,7 +220,8 @@ class NodeConfigSchemasTest {
 
     @Test
     void stringOnlyFieldsAreTemplateFieldsOfPlainStringType() {
-        assertEquals(Set.of("subject", "body"), NodeCatalog.schema("email.send").stringOnlyFields());
+        assertEquals(Set.of("subject", "body", "senderName", "replyToMessageId"),
+                NodeCatalog.schema("email.send").stringOnlyFields());
         assertEquals(Set.of("text", "parseMode"), NodeCatalog.schema("telegram.send_message").stringOnlyFields());
         assertEquals(Set.of(), NodeCatalog.schema("logic.switch").stringOnlyFields());
         assertEquals(Set.of(), NodeCatalog.schema("data.set").stringOnlyFields());

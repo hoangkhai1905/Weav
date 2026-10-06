@@ -5,9 +5,9 @@
 | Field | Value |
 | --- | --- |
 | Date | 2026-10-06 (Asia/Saigon) |
-| Branches | `feat/wk4-f1-file-store` (from `staging`); F2/F3 follow |
+| Branches | `feat/wk4-f1-file-store`, `feat/wk4-f2-email-send` (from `staging`, merged); F3 follows |
 | Owner | K / Sonnet workers, coordinator reviews and commits |
-| Status | F1 done and reviewed (1 round); F2 email.send and F3 Gmail trigger + Drive not started; live test pending |
+| Status | F1 and F2 done, reviewed (1 round each) and merged; F3 Gmail trigger + Drive in progress; live test pending |
 | Scope | Workflow file store on R2, retention, transport changes for attachments (workflow-service). Spec: `docs/superpowers/specs/2026-10-06-email-attachments-design.md` |
 
 ## 2. Summary (F1)
@@ -45,6 +45,17 @@ New env vars (`.env.example`, `compose.dev.yml` workflow-service, `application.p
 | `git diff --check` | Clean |
 
 Not tested yet: real R2 (live test after F2/F3).
+
+## 5b. F2 `email.send` (merged)
+
+- Config (new fields optional): `cc`, `bcc`, `replyTo` (string or list, same rules as `to`; to+cc+bcc combined capped at the existing maximum), `bodyType` `text|html`, `senderName` (max 100), `replyToMessageId` (Gmail hex id), `attachments`: list of `{url, filename?}` or `{fileId, filename?}`, or a template such as `{{ trigger.attachments }}` (items without `fileId`/`url` are skipped and counted).
+- Output `{messageId, threadId?, status: "SENT"}` plus `attachmentCount` (when attachments are configured) and `skippedAttachments` (> 0).
+- Old configs (no new field, no resolved attachment) take the old `GmailClient.send` path unchanged (test asserts the legacy MIME). Everything else: `MimeMessageBuilder` (multipart/mixed, RFC 2047 headers, RFC 2231 filenames, base64 streamed at 76 chars, `weav_<uuid>` boundaries, every header rejects control characters) sent by `GmailClient.sendMessage` via upload `media`, or `multipart` with `threadId` when replying.
+- `senderName` reads `users/me/profile` (new strict `PinnedHttpTransport` GET) for the From address; replies read message metadata for `threadId`, `Message-ID`, `References` (printable-ASCII ids only, else dropped; chain trimmed to 900 chars; `Re: <original>` only when the subject is blank). Both need `gmail.readonly`, which GMAIL connections already have.
+- Attachments (`EmailAttachmentResolver`): resolved after the connection check; URL via `downloadPublicFile` with cap min(per-file, remaining total); files via `WorkflowFileStore.read(context.workspaceId(), ...)`; 5 usable / 100 listed items, 10 MiB each, 20 MiB total; names through `safeFilename`.
+- New failure codes (non-retryable): `ATTACHMENT_LIMIT_EXCEEDED`, `ATTACHMENT_TOO_LARGE`, `REPLY_MESSAGE_NOT_FOUND`. Retryable send errors stay "unknown outcome" (no duplicate sends).
+- Checks: `mvnw verify` 736 tests, only the known notification-dist error (lane worktree); after merging staging re-run by the coordinator (see commit). Review (java-reviewer): no HIGH/CRITICAL; fixed memory copies, ASCII-only Message-IDs, surrogate-safe subject trim, connection before downloads, total-budget download cap, combined recipient cap.
+- Live test must confirm: Gmail returns metadata `Subject` decoded; `Bcc` honoured on raw upload send.
 
 ## 6. Risks and follow-ups
 
