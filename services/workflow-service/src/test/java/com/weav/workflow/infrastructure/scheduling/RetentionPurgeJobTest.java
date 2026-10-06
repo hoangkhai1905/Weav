@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import com.weav.workflow.application.port.out.WorkflowFileStore;
 import com.weav.workflow.application.port.out.WorkflowNotificationOutboxStore;
 import com.weav.workflow.domain.port.out.OutboxEventRepository;
 
@@ -16,6 +17,12 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /** WF-12: outbox and execution-history retention against real PostgreSQL. */
 @SpringBootTest(properties = {
@@ -157,6 +164,34 @@ class RetentionPurgeJobTest {
         jdbc.update("insert into workflow.execution_logs (id, execution_id, node_execution_id, level, event_type) "
                 + "values (?, ?, ?, 'INFO', 'TEST')", UUID.randomUUID(), id, node);
         return id;
+    }
+
+    /** Expired workflow files are purged in bounded batches; an unconfigured store is left alone. */
+    @Test
+    void purgesExpiredWorkflowFilesInBatchesOnlyWhenTheStoreIsConfigured() {
+        WorkflowFileStore store = mock(WorkflowFileStore.class);
+        when(store.configured()).thenReturn(true);
+        when(store.purgeExpired(anyInt())).thenReturn(100, 100, 40);
+
+        new RetentionPurgeJob(jdbc, transactions, "workflow", 7, 14, 0, store).purgeNow();
+        verify(store, times(3)).purgeExpired(100);
+
+        WorkflowFileStore unconfigured = mock(WorkflowFileStore.class);
+        when(unconfigured.configured()).thenReturn(false);
+        new RetentionPurgeJob(jdbc, transactions, "workflow", 7, 14, 0, unconfigured).purgeNow();
+        verify(unconfigured, never()).purgeExpired(anyInt());
+    }
+
+    @Test
+    void aFailingFileStoreDoesNotStopTheOtherPurges() {
+        WorkflowFileStore store = mock(WorkflowFileStore.class);
+        when(store.configured()).thenReturn(true);
+        when(store.purgeExpired(anyInt())).thenThrow(new IllegalStateException("db down"));
+        UUID oldPublished = outbox(UUID.randomUUID(), "PUBLISHED", 10);
+
+        new RetentionPurgeJob(jdbc, transactions, "workflow", 7, 14, 0, store).purgeNow();
+
+        assertEquals(0, count("outbox_events", oldPublished));
     }
 
     private int count(String table, UUID id) {
