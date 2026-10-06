@@ -36,6 +36,11 @@ abstract class GoogleApiNodeExecutor implements NodeExecutor {
     /** Validates the whole config without any I/O; throws CONFIGURATION_ERROR when it is invalid. */
     abstract Call prepare(Map<String, Object> config);
 
+    /** Same, for executors whose validation needs the workspace (for example to read a stored file). */
+    Call prepare(Context context, Map<String, Object> config) {
+        return prepare(config);
+    }
+
     /** A validated invocation: the connection to resolve and the provider call to run with it. */
     record Call(UUID connectionId, Function<ResolvedConnection, Map<String, Object>> run) {
     }
@@ -46,7 +51,7 @@ abstract class GoogleApiNodeExecutor implements NodeExecutor {
         if (resolvedConfig == null) {
             throw configurationFailure();
         }
-        Call call = prepare(resolvedConfig);
+        Call call = prepare(context, resolvedConfig);
         ResolvedConnection connection = resolveConnection(context, call.connectionId());
         if (connection == null) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",

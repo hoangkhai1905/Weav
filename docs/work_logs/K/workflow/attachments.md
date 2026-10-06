@@ -5,9 +5,9 @@
 | Field | Value |
 | --- | --- |
 | Date | 2026-10-06 (Asia/Saigon) |
-| Branches | `feat/wk4-f1-file-store`, `feat/wk4-f2-email-send` (from `staging`, merged); F3 follows |
+| Branches | `feat/wk4-f1-file-store`, `feat/wk4-f2-email-send`, `feat/wk4-f3-gmail-drive` (from `staging`, all merged) |
 | Owner | K / Sonnet workers, coordinator reviews and commits |
-| Status | F1 and F2 done, reviewed (1 round each) and merged; F3 Gmail trigger + Drive in progress; live test pending |
+| Status | F1, F2, F3 done, reviewed and merged into `staging`; live test pending (lane F5 adds `-Flow attachments`) |
 | Scope | Workflow file store on R2, retention, transport changes for attachments (workflow-service). Spec: `docs/superpowers/specs/2026-10-06-email-attachments-design.md` |
 
 ## 2. Summary (F1)
@@ -57,9 +57,18 @@ Not tested yet: real R2 (live test after F2/F3).
 - Checks: `mvnw verify` 736 tests, only the known notification-dist error (lane worktree); after merging staging re-run by the coordinator (see commit). Review (java-reviewer): no HIGH/CRITICAL; fixed memory copies, ASCII-only Message-IDs, surrogate-safe subject trim, connection before downloads, total-budget download cap, combined recipient cap.
 - Live test must confirm: Gmail returns metadata `Subject` decoded; `Bcc` honoured on raw upload send.
 
+## 5c. F3 `trigger.gmail` attachments and Drive `file` upload (merged)
+
+- `trigger.gmail` output always has `attachments: [{filename, mimeType, size, fileId?, skipped?}]`; `skipped` is `limit` | `too_large` | `not_stored` (store not configured) | `error` (permanently unreadable, or degraded, see below); no `fileId` when skipped. Only messages that start a run download anything (skip markers and old mail do not). Files are stored under the trigger's workspace with `executionId` null; the trigger input holds reference fields only.
+- `GmailMailboxPort.fetchNew` takes the workspace id first; `FetchResult` gained `more` (slice cut early; the processor polls again on the next tick like a full slice). New `GmailAttachmentReader` validates ids before building the URI; download cap `maxBytes/3*4 + 4 KiB`.
+- Parser bounds: depth 20, 2000 parts visited, 50 attachment parts kept; filenames cleaned (NUL, controls, lone surrogates) then `safeFilename`; inline `body.data` with a filename is stored without a download; parts without a filename ignored.
+- Polling never stalls on one message (review round 1 HIGH): a retryable attachment failure on a later message cuts the slice after the earlier ones (retried next poll); on the first message it fails the poll only while the mail's date is within [now - 1 h, now + 5 min], otherwise the attachment becomes `skipped: "error"` and the message is admitted; credential failures (`AUTHENTICATION_REJECTED`, `CONNECTION_RECONNECT_REQUIRED`) still fail the poll; a per-poll budget of 2 x max email bytes (40 MiB) of declared attachment size cuts the slice (never empty). Duplicate admission stays blocked by the `gmail:<trigger>:<id>` idempotency key; files of a retried or losing overlapping poll become orphans purged by retention.
+- `google.drive` `upload`: `file` (file reference `{fileId, ...}` or a template resolving to one) instead of `content`; at most 5 MiB (`FILE_TOO_LARGE`), name and mimeType default to the stored ones. Neither `content` nor `file` still uploads an empty file (review round 1 HIGH: backward compatibility); `file` with non-blank `content` is a `CONFIGURATION_ERROR`. Additive overloads in `GoogleApiNodeExecutor.prepare(Context, Map)` and `GoogleApiClient.call(..., uploadMaxRequestBytes)` (0 = old path).
+- Checks: lane `mvnw verify` 736 tests, only the known notification-dist error; coordinator re-ran it after merging staging (see the merge commit). Review (java-reviewer, 2 rounds): round 1 found 2 HIGH (Drive break, polling stall), fixed; round 2 no HIGH/CRITICAL, MEDIUMs fixed (future-dated mail, cut-slice throughput).
+
 ## 6. Risks and follow-ups
 
 - Memory: up to ~30 MiB per large call (email upload, attachment GET); bounded by worker concurrency.
 - Orphan objects if the JVM dies between put and row insert: add an R2 lifecycle rule on `workflow-files/` (about 8 days) at deployment.
 - The reused R2 key can also read avatars (accepted in the spec).
-- Next: F2 `email.send` (MIME, upload send, URL/file attachments, reply-in-thread), F3 `trigger.gmail` attachments + Drive `file` upload, then F5 live-test flow `-Flow attachments`.
+- Next: lane F5 (live-test flow `-Flow attachments`, AI prompt, FE handover), then the live test on real Gmail, Drive and R2.

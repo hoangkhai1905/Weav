@@ -395,7 +395,8 @@ class GoogleApiNodeExecutorsTest {
         }
 
         private GoogleDriveNodeExecutor drive() {
-            return new GoogleDriveNodeExecutor(new GoogleApiClient(transport), workspace);
+            return new GoogleDriveNodeExecutor(new GoogleApiClient(transport), workspace,
+                    org.mockito.Mockito.mock(com.weav.workflow.application.port.out.WorkflowFileStore.class));
         }
 
         private NodeExecutor.Context context() {

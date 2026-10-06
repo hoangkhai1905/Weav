@@ -90,23 +90,26 @@ class GmailTriggerProcessorTest {
     private final List<String> mailboxCalls = new ArrayList<>();
     private List<GmailMailboxPort.Message> mailboxResult = List.of();
     private String mailboxNotice;
+    private boolean mailboxMore;
     private RuntimeException mailboxFailure;
     private Instant mailboxAfter;
     private String mailboxAfterId;
     private int mailboxMax;
+    private UUID mailboxWorkspaceId;
     private boolean transactionOpenDuringMailbox;
     private boolean transactionOpenDuringResolve;
 
-    private final GmailMailboxPort mailbox = (connection, query, after, afterId, max) -> {
+    private final GmailMailboxPort mailbox = (workspaceId, connection, query, after, afterId, max) -> {
         transactionOpenDuringMailbox = inTransaction.get();
         mailboxCalls.add(query == null ? "<none>" : query);
         mailboxAfter = after;
         mailboxAfterId = afterId;
         mailboxMax = max;
+        mailboxWorkspaceId = workspaceId;
         if (mailboxFailure != null) {
             throw mailboxFailure;
         }
-        return new GmailMailboxPort.FetchResult(mailboxResult, mailboxNotice);
+        return new GmailMailboxPort.FetchResult(mailboxResult, mailboxNotice, mailboxMore);
     };
 
     private GmailTriggerProcessor processor;
@@ -149,6 +152,7 @@ class GmailTriggerProcessorTest {
         assertEquals(List.of("in:inbox"), mailboxCalls);
         assertEquals(CURSOR, mailboxAfter);
         assertEquals(10, mailboxMax);
+        assertEquals(WORKSPACE_ID, mailboxWorkspaceId);
     }
 
     @Test
@@ -287,6 +291,16 @@ class GmailTriggerProcessorTest {
         // claim pushes next_run_at by the interval each time (3x); only the two full slices pull it back to now
         verify(gmailTriggers, org.mockito.Mockito.times(3)).advanceGmailPoll(TRIGGER_ID, NOW.plus(Duration.ofMinutes(7)));
         verify(gmailTriggers, org.mockito.Mockito.times(2)).advanceGmailPoll(TRIGGER_ID, NOW);
+    }
+
+    @Test
+    void aSliceCutEarlyPollsAgainOnTheNextTickLikeAFullSlice() {
+        mailboxResult = List.of(message("m1", "2026-10-05T09:59:00Z"));
+        mailboxMore = true;
+
+        assertEquals(1, processor.poll(CANDIDATE, NOW));
+
+        verify(gmailTriggers).advanceGmailPoll(TRIGGER_ID, NOW);
     }
 
     @Test
