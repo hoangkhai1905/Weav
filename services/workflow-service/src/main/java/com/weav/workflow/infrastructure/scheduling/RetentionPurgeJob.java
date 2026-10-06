@@ -1,7 +1,9 @@
 package com.weav.workflow.infrastructure.scheduling;
 
+import com.weav.workflow.application.port.out.WorkflowFileStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -21,6 +23,8 @@ public class RetentionPurgeJob {
     private static final Pattern SQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private static final long ADVISORY_LOCK_ID = 0x5745415652455450L; // "WEAVRETP"
     private static final int BATCH_SIZE = 1_000;
+    private static final int FILE_BATCH_SIZE = 100;
+    private static final int MAX_FILE_BATCHES = 20;
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transaction;
@@ -36,18 +40,22 @@ public class RetentionPurgeJob {
     private final String outbox;
     private final String notificationOutbox;
     private final String aiUsage;
+    private final WorkflowFileStore fileStore;
 
+    @Autowired
     public RetentionPurgeJob(JdbcTemplate jdbc, PlatformTransactionManager transactionManager,
                              @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema,
                              @Value("${weav.workflow.retention.outbox-days:7}") int outboxDays,
                              @Value("${weav.workflow.retention.notification-outbox-days:14}") int notificationOutboxDays,
-                             @Value("${weav.workflow.retention.execution-days:0}") int executionDays) {
+                             @Value("${weav.workflow.retention.execution-days:0}") int executionDays,
+                             WorkflowFileStore fileStore) {
         if (schema == null || !SQL_IDENTIFIER.matcher(schema).matches()) {
             throw new IllegalArgumentException("The configured workflow schema name is invalid");
         }
         if (outboxDays < 1 || notificationOutboxDays < 1 || executionDays < 0) {
             throw new IllegalArgumentException("Retention days must be positive (execution days may be zero to keep all)");
         }
+        this.fileStore = fileStore;
         this.jdbc = jdbc;
         this.transaction = new TransactionTemplate(transactionManager);
         this.outboxDays = outboxDays;
@@ -65,6 +73,12 @@ public class RetentionPurgeJob {
         aiUsage = q + "ai_usage";
     }
 
+    /** Without a file store (tests): file purging is skipped. */
+    public RetentionPurgeJob(JdbcTemplate jdbc, PlatformTransactionManager transactionManager, String schema,
+                             int outboxDays, int notificationOutboxDays, int executionDays) {
+        this(jdbc, transactionManager, schema, outboxDays, notificationOutboxDays, executionDays, null);
+    }
+
     @Scheduled(fixedDelayString = "${weav.workflow.retention.purge-interval:PT1H}",
             initialDelayString = "${weav.workflow.retention.initial-delay:PT5M}")
     public void purgeOnSchedule() {
@@ -73,6 +87,7 @@ public class RetentionPurgeJob {
 
     /** Runs every purge; stops quietly if another node holds the lock. */
     public void purgeNow() {
+        purgeFiles();
         boolean held = inBatches("outbox_events", () -> jdbc.update("""
                 DELETE FROM %1$s WHERE id IN (
                     SELECT id FROM %1$s
@@ -89,6 +104,32 @@ public class RetentionPurgeJob {
                 "DELETE FROM %s WHERE usage_date < (now() AT TIME ZONE 'UTC')::date - 30".formatted(aiUsage)));
         if (held && executionDays > 0) {
             inBatches("workflow_executions", this::purgeExecutionBatch);
+        }
+    }
+
+    /**
+     * Expired workflow files: the store deletes each object and then its row, and keeps the row when the object
+     * delete fails so the next run retries. Bounded per run; a batch that removes fewer rows than it fetched ends the run.
+     */
+    // No advisory lock: object and row deletes are idempotent, so two nodes purging at once only repeat work.
+    void purgeFiles() {
+        if (fileStore == null || !fileStore.configured()) {
+            return;
+        }
+        int total = 0;
+        try {
+            for (int batch = 0; batch < MAX_FILE_BATCHES; batch++) {
+                int removed = fileStore.purgeExpired(FILE_BATCH_SIZE);
+                total += removed;
+                if (removed < FILE_BATCH_SIZE) {
+                    break;
+                }
+            }
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Workflow file purge failed: {}", exception.getClass().getSimpleName());
+        }
+        if (total > 0) {
+            LOGGER.info("Retention purge removed {} expired workflow files", total);
         }
     }
 
