@@ -1471,6 +1471,27 @@ test.describe("workflow builder connection readiness", () => {
     await expect(page.getByTestId("workflow-publish")).toBeDisabled();
   });
 
+  test("editor header sections do not overlap at a narrow desktop width", async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 720 });
+    await installAuthFixture(page);
+    // Vietnamese labels are the longest ("Trình chỉnh sửa", "Lịch sử chạy").
+    await page.addInitScript(() => localStorage.setItem("weav_lang_v1", "VI"));
+    await page.route("**/api/v1/workspaces/*/connections", (route) => fulfillJson(route, []));
+    await routeWorkflow(page, { sheets: { operation: "read" }, email: { to: "a@example.test", subject: "s" } });
+    // Published: the header also shows the on/off switch and Run, its widest state.
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}`, (route) =>
+      fulfillJson(route, { ...detail({ operation: "read" }, { to: "a@example.test", subject: "s" }), status: "PUBLISHED", currentVersionId: "40000000-0000-4000-8000-000000000001" }),
+    );
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+    await expect(page.getByTestId("workflow-active-switch")).toBeVisible();
+    const nav = page.getByRole("navigation", { name: /sections|Các phần/i });
+    await expect(nav).toBeVisible();
+    const navBox = (await nav.boundingBox())!;
+    // The actions are right-aligned, so on overflow their leftmost control slides over the tabs.
+    const firstAction = (await page.getByTestId("workflow-publish").locator("xpath=../*[1]").boundingBox())!;
+    expect(navBox.x + navBox.width).toBeLessThanOrEqual(firstAction.x);
+  });
+
   test("adds a Google Sheets connection from the inspector, saves the draft and returns to the step after OAuth", async ({ page }) => {
     await installAuthFixture(page);
     let created = false;

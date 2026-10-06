@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useId } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Info, X, RefreshCw } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
@@ -27,6 +27,8 @@ export function ConfirmModal({
   loading = false,
 }: ConfirmModalProps) {
   const { t } = useI18nStore();
+  const titleId = useId();
+  const descriptionId = useId();
   const getVariantStyles = () => {
     switch (variant) {
       case 'danger':
@@ -78,14 +80,21 @@ export function ConfirmModal({
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.92, opacity: 0, y: 15 }}
             transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            aria-describedby={descriptionId}
+            onKeyDown={(event) => { if (event.key === 'Escape' && !loading) onClose(); }}
             className="w-full max-w-md bg-card border border-border rounded-lg p-6 shadow-pop relative z-10 space-y-5"
           >
             {/* Close Button */}
             <button
+              type="button"
               onClick={onClose}
+              aria-label={t('common.close')}
               className="absolute top-4 right-4 p-1.5 rounded-md text-muted-foreground hover:text-text-2 hover:bg-subtle transition-colors cursor-pointer"
             >
-              <X size={16} />
+              <X size={16} aria-hidden="true" />
             </button>
 
             {/* Header with Icon */}
@@ -94,10 +103,10 @@ export function ConfirmModal({
                 {styles.icon}
               </div>
               <div className="space-y-1 pr-6">
-                <h3 className="text-base font-extrabold text-foreground leading-snug">
+                <h3 id={titleId} className="text-base font-extrabold text-foreground leading-snug">
                   {title}
                 </h3>
-                <div className="text-xs text-muted-foreground leading-relaxed">
+                <div id={descriptionId} className="text-xs text-muted-foreground leading-relaxed">
                   {description}
                 </div>
               </div>
@@ -109,6 +118,7 @@ export function ConfirmModal({
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.96 }}
                 type="button"
+                autoFocus
                 onClick={onClose}
                 disabled={loading}
                 className="px-4 py-2 bg-subtle hover:bg-muted text-text-2 border border-border rounded-md text-xs font-bold transition-all cursor-pointer shadow-sm"

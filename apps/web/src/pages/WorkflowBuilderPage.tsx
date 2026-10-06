@@ -1124,7 +1124,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       className="flex h-full w-full flex-col overflow-hidden bg-background font-sans text-foreground"
     >
       {/* TOP EDITOR HEADER (48px): breadcrumb + name | tabs | actions */}
-      <header className="z-20 grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-border bg-card px-3 sm:px-4">
+      <header className="z-20 grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-3 border-b border-border bg-card px-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2">
           <Link
             to="/workflows"
