@@ -107,9 +107,9 @@
   - Lịch sử chạy: bước chưa có `startedAt` gây sắp xếp sai (NaN) khi lượt đang chạy; nay xếp cuối.
 - Kiểm tra: tsc, build, `git diff --check` qua; eslint còn 1 lỗi cũ. Playwright 9 spec chuẩn: 35 failed / 70 passed (baseline + 4 test mới, tất cả lỗi nằm trong 4 spec baseline). GitNexus: MEDIUM.
 - Chạy Sheets thật (spreadsheet của user, thao tác Đọc): với vùng `Sheet1!A1:Z100` lượt chạy lỗi `HTTP_BUSINESS_REJECTED`, vì tab của tài khoản tiếng Việt tên "Trang tính1". Đổi sang `A1:Z100` thì lượt `bd0ac9dc` thành công (bước Sheets 1.5 s). Vùng mặc định của catalog đổi thành `A1:Z100` (tab đầu tiên). Ở 800px, Lịch sử chạy chỉ hiện 2 cột; cột chi tiết bước cần màn rộng hơn.
-- Dữ liệu thử để lại trên Neon: quy trình `193e559c-44da-4ba9-9419-98698b014103` ("Untitled Automation Pipeline", đã xuất bản, 3 lượt chạy: 2 lỗi, 1 thành công) trong workspace "test 1". Xóa quy trình chưa có API.
+- Thêm kết nối từ inspector với Google thật (2026-10-06): bấm "+ Thêm kết nối Google Sheets" ở bước Sheets, tạo kết nối "test sheet", nháp được lưu, chuyển sang Google, user tự đồng ý. App quay về `/workflows/193e559c…?step=node-6`, bước đã chọn sẵn kết nối mới (ACTIVE), nhãn "Sẵn sàng", không còn cảnh báo.
+- Dữ liệu thử để lại trên Neon: quy trình `193e559c-44da-4ba9-9419-98698b014103` ("Untitled Automation Pipeline", đã xuất bản, 3 lượt chạy: 2 lỗi, 1 thành công) và kết nối Google Sheets "test sheet" (9b4e521a) trong workspace "test 1" trong workspace "test 1". Xóa quy trình chưa có API.
 - Chưa làm / còn lại:
-  - Thêm kết nối từ inspector rồi ủy quyền Google thật: cần user tự đăng nhập Google. Luồng đã được e2e phủ bằng route giả.
   - Tab "Trình chỉnh sửa" xuống 2 dòng ở header trang lượt chạy khi rộng 800px: đã sửa (nav `shrink-0 whitespace-nowrap`, tên quy trình co lại thay; e2e với tên dài: không có bản sửa thì lỗi, có thì đạt).
 - Đã sửa sau đó: header editor dưới `lg` dùng cột `minmax(0,1fr)_auto_auto` để tên quy trình co lại thay vì các nút tràn đè lên tab (e2e ở 800px, tiếng Việt, quy trình đã xuất bản: không có bản sửa thì lỗi, có bản sửa thì đạt). `ConfirmModal` có `role="alertdialog"`, `aria-modal`, liên kết tiêu đề và mô tả, nhãn nút đóng, tự focus nút Hủy, Esc để đóng.
 
