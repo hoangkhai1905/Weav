@@ -815,7 +815,8 @@ Attachment source: https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf
     $r = Invoke-Api 'pause trigger workflow' 'POST' "$trigBase/pause"
     if ($r.Ok) {
         # Already paused: keep -Cleanup from pausing it a second time.
-        foreach ($w in @($script:Workflows)) { if ($w.Id -eq $trigWf) { [void]$script:Workflows.Remove($w) } }
+        # RemoveAt by index: List[object].Remove(<pscustomobject>) fails in Windows PowerShell 5.1 ("Argument types do not match").
+        for ($i = $script:Workflows.Count - 1; $i -ge 0; $i--) { if ($script:Workflows[$i].Id -eq $trigWf) { $script:Workflows.RemoveAt($i) } }
     } else {
         Write-Host '  WARNING: could not pause the trigger workflow; pause it manually or it will keep replying to its own replies.' -ForegroundColor Red
     }
