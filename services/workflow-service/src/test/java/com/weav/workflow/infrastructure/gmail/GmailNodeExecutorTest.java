@@ -4,9 +4,11 @@ import com.weav.workflow.application.node.NodeExecutor;
 import com.weav.workflow.application.node.NodeExecutorRegistry;
 import com.weav.workflow.application.port.out.ConnectionReconnectRequiredException;
 import com.weav.workflow.application.port.out.ResolvedConnection;
+import com.weav.workflow.application.port.out.WorkflowFileStore;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
 import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableException;
 import com.weav.workflow.domain.exception.ForbiddenException;
+import com.weav.workflow.infrastructure.files.WorkflowFileProperties;
 import com.weav.workflow.infrastructure.http.PinnedHttpTransport;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -35,7 +37,7 @@ class GmailNodeExecutorTest {
         FakeGmailClient gmail = new FakeGmailClient();
         gmail.result = Map.of("messageId", "msg-1", "status", "SENT", "debug", ACCESS_TOKEN);
         FakeWorkspace workspace = new FakeWorkspace();
-        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, workspace);
+        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, workspace, resolver());
 
         NodeExecutor.Result result = executor.execute(context(), config(" a@example.test , b@example.test"));
 
@@ -53,7 +55,7 @@ class GmailNodeExecutorTest {
     @Test
     void acceptsRecipientListFromMappings() {
         FakeGmailClient gmail = new FakeGmailClient();
-        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, new FakeWorkspace());
+        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, new FakeWorkspace(), resolver());
 
         Map<String, Object> config = config("unused");
         config.put("to", List.of("a@example.test", "b@example.test"));
@@ -66,7 +68,7 @@ class GmailNodeExecutorTest {
     void rejectsInvalidConfigurationBeforeResolvingCredentials() {
         FakeGmailClient gmail = new FakeGmailClient();
         FakeWorkspace workspace = new FakeWorkspace();
-        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, workspace);
+        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, workspace, resolver());
 
         Map<String, Object> missingConnection = config("a@example.test");
         missingConnection.remove("connectionId");
@@ -100,7 +102,7 @@ class GmailNodeExecutorTest {
         FakeGmailClient gmail = new FakeGmailClient();
         gmail.failure = new NodeExecutor.Failure("AUTHENTICATION_REJECTED", "Rejected.", false);
         FakeWorkspace workspace = new FakeWorkspace();
-        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, workspace);
+        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, workspace, resolver());
 
         NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
                 () -> executor.execute(context(), config("a@example.test")));
@@ -117,7 +119,7 @@ class GmailNodeExecutorTest {
     void unexpectedClientErrorsAreTerminalBecauseTheEmailMayHaveBeenSent() {
         FakeGmailClient gmail = new FakeGmailClient();
         gmail.unexpected = new IllegalStateException("boom");
-        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, new FakeWorkspace());
+        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, new FakeWorkspace(), resolver());
 
         NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
                 () -> executor.execute(context(), config("a@example.test")));
@@ -131,7 +133,7 @@ class GmailNodeExecutorTest {
         FakeGmailClient gmail = new FakeGmailClient();
         FakeWorkspace workspace = new FakeWorkspace();
         workspace.reconnect = true;
-        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, workspace);
+        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, workspace, resolver());
 
         NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
                 () -> executor.execute(context(), config("a@example.test")));
@@ -149,7 +151,7 @@ class GmailNodeExecutorTest {
             FakeWorkspace workspace = new FakeWorkspace();
             workspace.forbidden = forbidden;
             workspace.unavailable = !forbidden;
-            GmailNodeExecutor executor = new GmailNodeExecutor(gmail, workspace);
+            GmailNodeExecutor executor = new GmailNodeExecutor(gmail, workspace, resolver());
 
             NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
                     () -> executor.execute(context(), config("a@example.test")));
@@ -166,9 +168,8 @@ class GmailNodeExecutorTest {
         try (AnnotationConfigApplicationContext application = new AnnotationConfigApplicationContext()) {
             application.registerBean(WorkspaceConnectionPort.class, FakeWorkspace::new);
             application.registerBean(PinnedHttpTransport.class, PinnedHttpTransport::new);
-            application.registerBean(com.weav.workflow.application.port.out.WorkflowFileStore.class,
-                    () -> org.mockito.Mockito.mock(com.weav.workflow.application.port.out.WorkflowFileStore.class));
-            application.registerBean(com.weav.workflow.infrastructure.files.WorkflowFileProperties.class);
+            application.registerBean(WorkflowFileStore.class, FakeFileStore::new);
+            application.registerBean(WorkflowFileProperties.class, WorkflowFileProperties::new);
             application.register(NodeExecutorRegistry.class);
             application.scan("com.weav.workflow.infrastructure.gmail");
             application.refresh();
@@ -176,6 +177,10 @@ class GmailNodeExecutorTest {
             assertSame(application.getBean(GmailNodeExecutor.class),
                     application.getBean(NodeExecutorRegistry.class).require("email.send"));
         }
+    }
+
+    private static EmailAttachmentResolver resolver() {
+        return new EmailAttachmentResolver(new FakeFileStore(), new PinnedHttpTransport(), new WorkflowFileProperties());
     }
 
     private static Map<String, Object> config(String to) {

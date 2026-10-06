@@ -75,6 +75,21 @@ public final class NodeExecutorRegistry {
             if (resolvedConfig == null) {
                 throw new Failure("CONFIGURATION_ERROR", "Condition configuration is missing.", false);
             }
+            if (resolvedConfig.containsKey("conditions")) {
+                // Multi form {combinator, conditions}; mixing with left/operator/right is a configuration error.
+                if (resolvedConfig.containsKey("left") || resolvedConfig.containsKey("operator")
+                        || resolvedConfig.containsKey("right")
+                        || !(resolvedConfig.get("combinator") instanceof String combinator)
+                        || !(resolvedConfig.get("conditions") instanceof List<?> conditions)) {
+                    throw new Failure("CONFIGURATION_ERROR", "Condition configuration is invalid.", false);
+                }
+                try {
+                    boolean selected = evaluator.evaluateAll(combinator, conditions);
+                    return new Result(Map.of("value", selected), selected ? "true" : "false");
+                } catch (IllegalArgumentException exception) {
+                    throw new Failure("CONFIGURATION_ERROR", "Condition configuration is invalid.", false);
+                }
+            }
             Object operator = resolvedConfig.get("operator");
             if (!(operator instanceof String operation) || operation.isBlank()
                     || !resolvedConfig.containsKey("left") || !resolvedConfig.containsKey("right")) {

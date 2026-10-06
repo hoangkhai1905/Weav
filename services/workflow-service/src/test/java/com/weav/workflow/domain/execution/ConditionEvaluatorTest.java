@@ -58,4 +58,58 @@ class ConditionEvaluatorTest {
         assertThrows(IllegalArgumentException.class, () -> evaluator.evaluate(true, "contains", false));
         assertThrows(IllegalArgumentException.class, () -> evaluator.evaluate(1, null, 1));
     }
+
+    private static Map<String, Object> cond(Object left, String operator, Object right) {
+        Map<String, Object> condition = new LinkedHashMap<>();
+        condition.put("left", left);
+        condition.put("operator", operator);
+        condition.put("right", right);
+        return condition;
+    }
+
+    @Test
+    void andNeedsEveryConditionAndOrNeedsOne() {
+        List<Object> mixed = List.of(cond(1, "eq", 1), cond(2, "gt", 5));
+        assertFalse(evaluator.evaluateAll("and", mixed));
+        assertTrue(evaluator.evaluateAll("or", mixed));
+        assertTrue(evaluator.evaluateAll("and", List.of(cond("a", "eq", "a"), cond(3, "gte", 3))));
+        assertFalse(evaluator.evaluateAll("or", List.of(cond(1, "eq", 2), cond(1, "ne", 1))));
+        assertTrue(evaluator.evaluateAll("and", List.of(cond(1, "eq", 1))));
+    }
+
+    @Test
+    void evaluationStopsAtTheConditionThatDecidesTheResult() {
+        List<Object> badSecond = List.of(cond(1, "eq", 2), cond("text", "gt", 1));
+        assertFalse(evaluator.evaluateAll("and", badSecond), "a false first condition decides and");
+        List<Object> orBad = List.of(cond(1, "eq", 1), cond("text", "gt", 1));
+        assertTrue(evaluator.evaluateAll("or", orBad), "a true first condition decides or");
+        // An evaluated invalid comparison still fails like the single form.
+        assertThrows(IllegalArgumentException.class,
+                () -> evaluator.evaluateAll("and", List.of(cond(1, "eq", 1), cond("text", "gt", 1))));
+        assertThrows(IllegalArgumentException.class,
+                () -> evaluator.evaluateAll("or", List.of(cond(1, "eq", 2), cond("text", "gt", 1))));
+    }
+
+    @Test
+    void multiFormRejectsBadCombinatorSizeAndShape() {
+        assertThrows(IllegalArgumentException.class, () -> evaluator.evaluateAll("xor", List.of(cond(1, "eq", 1))));
+        assertThrows(IllegalArgumentException.class, () -> evaluator.evaluateAll(null, List.of(cond(1, "eq", 1))));
+        assertThrows(IllegalArgumentException.class, () -> evaluator.evaluateAll("and", List.of()));
+        List<Object> eleven = java.util.Collections.nCopies(11, cond(1, "eq", 1));
+        assertThrows(IllegalArgumentException.class, () -> evaluator.evaluateAll("and", eleven));
+        assertTrue(evaluator.evaluateAll("and", java.util.Collections.nCopies(10, cond(1, "eq", 1))));
+        assertThrows(IllegalArgumentException.class, () -> evaluator.evaluateAll("and", List.of("text")));
+        Map<String, Object> noRight = cond(1, "eq", 1);
+        noRight.remove("right");
+        assertThrows(IllegalArgumentException.class, () -> evaluator.evaluateAll("or", List.of(noRight)));
+        assertThrows(IllegalArgumentException.class,
+                () -> evaluator.evaluateAll("and", List.of(cond(1, "run-code", 1))));
+    }
+
+    @Test
+    void singleFormStaysExactlyAsBefore() {
+        assertTrue(evaluator.evaluate(1, "eq", 1));
+        assertFalse(evaluator.evaluate(1, "gt", 1));
+        assertThrows(IllegalArgumentException.class, () -> evaluator.evaluate("a", "gt", 1));
+    }
 }

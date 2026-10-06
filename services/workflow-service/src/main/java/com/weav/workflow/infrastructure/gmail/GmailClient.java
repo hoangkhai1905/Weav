@@ -20,6 +20,18 @@ public class GmailClient {
 
     static final URI SEND_URI = URI.create("https://gmail.googleapis.com/gmail/v1/users/me/messages/send");
     static final URI MESSAGES_URI = URI.create("https://gmail.googleapis.com/gmail/v1/users/me/messages");
+    static final URI PROFILE_URI = URI.create("https://gmail.googleapis.com/gmail/v1/users/me/profile");
+    static final URI UPLOAD_SEND_MEDIA_URI = URI.create(
+            "https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media");
+    static final URI UPLOAD_SEND_MULTIPART_URI = URI.create(
+            "https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart");
+    /** Headroom over the RFC 822 size for the multipart/related wrapper. */
+    private static final int UPLOAD_OVERHEAD_BYTES = 4096;
+    private static final java.util.regex.Pattern PROFILE_ADDRESS =
+            java.util.regex.Pattern.compile("[^@\\s,;<>\"()\\[\\]\\p{Cntrl}]+@[^@\\s,;<>\"()\\[\\]\\p{Cntrl}]+");
+    private static final java.util.regex.Pattern MESSAGE_ID = java.util.regex.Pattern.compile("<[\\x21-\\x7e&&[^<>]]{1,255}>");
+    private static final java.util.regex.Pattern MESSAGE_ID_LIST =
+            java.util.regex.Pattern.compile("(<[\\x21-\\x7e&&[^<>]]{1,255}>\\s*)+");
     private static final int MAX_ACCESS_TOKEN_LENGTH = 16 * 1024;
     // RFC 2047: an encoded word is at most 75 chars; 45 raw bytes -> 60 base64 chars + 12 framing.
     private static final int MAX_ENCODED_WORD_BYTES = 45;
@@ -57,6 +69,119 @@ public class GmailClient {
             throw failure;
         }
         return sentMessage(response);
+    }
+
+    /**
+     * A message with the optional features (cc/bcc, HTML, reply-to, sender name, reply in thread, attachments),
+     * already validated by the executor. {@code subject} may be blank only with {@code replyToMessageId}.
+     */
+    record Outgoing(List<String> to, List<String> cc, List<String> bcc, List<String> replyTo, String senderName,
+                    String subject, String body, boolean html, String replyToMessageId,
+                    List<MimeMessageBuilder.Attachment> attachments) {
+    }
+
+    private record ReplyContext(String threadId, String messageId, String references, String subject) {
+    }
+
+    /**
+     * Sends {@link Outgoing} as a raw RFC 822 upload (multipart upload with the threadId when replying). Reads
+     * (profile, replied-to message) happen before anything is sent, so their failures keep their own retryability;
+     * once the send request may have reached Google, failures are non-retryable like {@link #send}.
+     */
+    public Map<String, Object> sendMessage(Outgoing message, ResolvedConnection connection) {
+        String accessToken = accessToken(connection);
+        String fromAddress = message.senderName() == null ? null : profileAddress(accessToken);
+        ReplyContext reply = message.replyToMessageId() == null ? null
+                : replyContext(message.replyToMessageId(), accessToken);
+        String subject = message.subject();
+        if (subject.isBlank() && reply != null) {
+            String original = reply.subject();
+            subject = original.isBlank() ? "Re:"
+                    : original.regionMatches(true, 0, "re:", 0, 3) ? original : "Re: " + original;
+        }
+        String references = reply == null ? null : reply.references();
+        byte[] rfc822 = MimeMessageBuilder.build(new MimeMessageBuilder.Spec(
+                message.senderName(), fromAddress, message.to(), message.cc(), message.bcc(), message.replyTo(),
+                subject, message.body(), message.html(), reply == null ? null : reply.messageId(), references,
+                message.attachments()));
+        if (rfc822.length > PinnedHttpTransport.MAX_CALL_BYTES - UPLOAD_OVERHEAD_BYTES) {
+            throw new NodeExecutor.Failure("ATTACHMENT_LIMIT_EXCEEDED",
+                    "The email with its attachments is too large to send.", false);
+        }
+        int cap = rfc822.length + UPLOAD_OVERHEAD_BYTES;
+        boolean threaded = reply != null && reply.threadId() != null;
+        PinnedHttpTransport.HttpResponse response;
+        try {
+            response = threaded
+                    ? transport.executeGmailUploadSendWithBearerToken(UPLOAD_SEND_MULTIPART_URI,
+                    PinnedHttpTransport.gmailMultipartRelated(reply.threadId(), rfc822), accessToken, cap)
+                    : transport.executeGmailUploadSendWithBearerToken(UPLOAD_SEND_MEDIA_URI,
+                    new PinnedHttpTransport.RawBody(rfc822, "message/rfc822"), accessToken, cap);
+        } catch (NodeExecutor.Failure failure) {
+            if (failure.retryable()) {
+                throw unknownOutcome();
+            }
+            throw failure;
+        }
+        return sentMessage(response);
+    }
+
+    /** Address of the authenticated account; needed to put a display name in From. */
+    private String profileAddress(String accessToken) {
+        PinnedHttpTransport.HttpResponse response =
+                transport.executeGmailProfileGetWithBearerToken(PROFILE_URI, accessToken);
+        requireSuccess(response, false);
+        if (response.data() instanceof Map<?, ?> map && map.get("emailAddress") instanceof String address
+                && address.length() <= 254 && PROFILE_ADDRESS.matcher(address).matches()) {
+            return address;
+        }
+        throw new NodeExecutor.Failure("HTTP_INVALID_RESPONSE", "The Gmail provider returned an invalid response.", false);
+    }
+
+    private ReplyContext replyContext(String id, String accessToken) {
+        PinnedHttpTransport.HttpResponse response = transport.executeGmailGetWithBearerToken(
+                URI.create(MESSAGES_URI + "/" + id), Map.of("format", "metadata"), accessToken);
+        if (response != null && response.status() == 404) {
+            throw new NodeExecutor.Failure("REPLY_MESSAGE_NOT_FOUND",
+                    "The message to reply to was not found in the Gmail account.", false);
+        }
+        requireSuccess(response, false);
+        if (!(response.data() instanceof Map<?, ?> map)) {
+            throw new NodeExecutor.Failure("HTTP_INVALID_RESPONSE",
+                    "The Gmail provider returned an invalid response.", false);
+        }
+        String threadId = map.get("threadId") instanceof String text && !text.isBlank() ? text : null;
+        String messageId = null;
+        String references = null;
+        String subject = "";
+        if (map.get("payload") instanceof Map<?, ?> payload && payload.get("headers") instanceof List<?> headers) {
+            for (Object item : headers) {
+                if (item instanceof Map<?, ?> header && header.get("name") instanceof String name
+                        && header.get("value") instanceof String value) {
+                    if (name.equalsIgnoreCase("Message-ID")) {
+                        messageId = value.strip();
+                    } else if (name.equalsIgnoreCase("References")) {
+                        references = value.strip().replaceAll("\\s+", " ");
+                    } else if (name.equalsIgnoreCase("Subject")) {
+                        subject = value.codePoints().filter(c -> !Character.isISOControl(c))
+                                .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+                                .toString().strip();
+                        if (subject.length() > 900) {
+                            subject = subject.substring(0, Character.isHighSurrogate(subject.charAt(899)) ? 899 : 900);
+                        }
+                    }
+                }
+            }
+        }
+        if (messageId == null || !MESSAGE_ID.matcher(messageId).matches()) {
+            return new ReplyContext(threadId, null, null, subject);
+        }
+        String chain = references != null && MESSAGE_ID_LIST.matcher(references).matches()
+                ? references + " " + messageId : messageId;
+        while (chain.length() > 900 && chain.indexOf(' ') > 0) {
+            chain = chain.substring(chain.indexOf(' ') + 1);
+        }
+        return new ReplyContext(threadId, messageId, chain, subject);
     }
 
     /** Newest-first ids; {@code truncated} when more than {@link #LIST_BOUND} messages matched. */

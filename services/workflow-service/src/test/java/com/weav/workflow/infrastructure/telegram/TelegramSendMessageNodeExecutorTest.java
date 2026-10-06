@@ -57,6 +57,78 @@ class TelegramSendMessageNodeExecutorTest {
     }
 
     @Test
+    void newOptionsAreSentOnlyWhenSetAndAnOldConfigKeepsItsExactPayload() {
+        FakeTelegram plain = new FakeTelegram(200, Map.of("ok", true, "result", Map.of("message_id", 1)));
+        Map<String, Object> explicitDefaults = config();
+        explicitDefaults.put("parseMode", "none");
+        explicitDefaults.put("disableNotification", false);
+        explicitDefaults.put("replyToMessageId", "");
+        executor(plain, new FakeWorkspace()).execute(context(), explicitDefaults);
+        assertEquals(Map.of("chat_id", "555", "text", "hello"), plain.body);
+
+        FakeTelegram full = new FakeTelegram(200, Map.of("ok", true, "result", Map.of("message_id", 1)));
+        Map<String, Object> config = config();
+        config.put("parseMode", "MarkdownV2");
+        config.put("disableNotification", true);
+        config.put("replyToMessageId", 42);
+        executor(full, new FakeWorkspace()).execute(context(), config);
+        Map<String, Object> expected = new LinkedHashMap<>();
+        expected.put("chat_id", "555");
+        expected.put("text", "hello");
+        expected.put("parse_mode", "MarkdownV2");
+        expected.put("disable_notification", true);
+        expected.put("reply_parameters", Map.of("message_id", 42L, "allow_sending_without_reply", true));
+        assertEquals(expected, full.body);
+    }
+
+    @Test
+    void optionsAcceptMappedValuesAsTextAndRejectBadOnesBeforeAnyCall() {
+        FakeTelegram telegram = new FakeTelegram(200, Map.of("ok", true, "result", Map.of("message_id", 1)));
+        Map<String, Object> mapped = config();
+        mapped.put("parseMode", "HTML");
+        mapped.put("disableNotification", "true");
+        mapped.put("replyToMessageId", " 7 ");
+        executor(telegram, new FakeWorkspace()).execute(context(), mapped);
+        Map<?, ?> body = (Map<?, ?>) telegram.body;
+        assertEquals("HTML", body.get("parse_mode"));
+        assertEquals(true, body.get("disable_notification"));
+        assertEquals(7L, ((Map<?, ?>) body.get("reply_parameters")).get("message_id"));
+
+        FakeTelegram refused = new FakeTelegram(200, Map.of("ok", true, "result", Map.of("message_id", 1)));
+        for (Map<String, Object> broken : List.of(
+                with("parseMode", "Markdown"), with("parseMode", 3), with("disableNotification", "yes"),
+                with("disableNotification", 1), with("replyToMessageId", 0), with("replyToMessageId", -3),
+                with("replyToMessageId", 1.5d), with("replyToMessageId", "abc"), with("replyToMessageId", true))) {
+            NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                    () -> executor(refused, new FakeWorkspace()).execute(context(), broken), broken.toString());
+            assertEquals("CONFIGURATION_ERROR", failure.code());
+            assertFalse(failure.retryable());
+        }
+        assertFalse(refused.called);
+    }
+
+    @Test
+    void unparsableTextWithAParseModeIsANonRetryableConfigurationFailureWithoutEchoingTheText() {
+        FakeTelegram telegram = new FakeTelegram(400, Map.of("ok", false, "error_code", 400, "description",
+                "Bad Request: can't parse entities: Character '.' is reserved and must be escaped"));
+        Map<String, Object> config = with("text", "secret-body 1.5");
+        config.put("parseMode", "MarkdownV2");
+
+        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                () -> executor(telegram, new FakeWorkspace()).execute(context(), config));
+
+        assertEquals("CONFIGURATION_ERROR", failure.code());
+        assertFalse(failure.retryable());
+        assertFalse(failure.getMessage().contains("secret-body"));
+        assertTrue(failure.getMessage().contains("parse mode"));
+
+        // Without a parse mode the same 400 keeps today's classification.
+        NodeExecutor.Failure plain = assertThrows(NodeExecutor.Failure.class,
+                () -> executor(telegram, new FakeWorkspace()).execute(context(), config()));
+        assertEquals("HTTP_BUSINESS_REJECTED", plain.code());
+    }
+
+    @Test
     void rejectedTokenIsNonRetryableAndReportedToWorkspaceWithoutLeakingTheToken() {
         FakeTelegram telegram = new FakeTelegram(401, Map.of("ok", false, "error_code", 401,
                 "description", "Unauthorized"));

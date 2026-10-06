@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** Creates one Google Calendar event with Workspace-owned OAuth credentials. */
+/** Creates one Google Calendar event, or lists upcoming ones, with Workspace-owned OAuth credentials. */
 @Component
 public final class GoogleCalendarNodeExecutor extends GoogleApiNodeExecutor {
 
@@ -28,6 +28,8 @@ public final class GoogleCalendarNodeExecutor extends GoogleApiNodeExecutor {
     private static final int MAX_LINE_LENGTH = 1024;
     private static final int MAX_ATTENDEES = 100;
     private static final int MAX_EMAIL_LENGTH = 320;
+    private static final int DEFAULT_MAX_RESULTS = 10;
+    private static final int MAX_RESULTS_LIMIT = 50;
 
     private final GoogleApiClient client;
 
@@ -48,6 +50,124 @@ public final class GoogleCalendarNodeExecutor extends GoogleApiNodeExecutor {
         String path = "/calendar/v3/calendars/"
                 + GoogleApiClient.encodePathSegment(calendarId == null ? DEFAULT_CALENDAR : calendarId, SERVICE)
                 + "/events";
+        // No operation (every config saved before "list" existed) means create.
+        Object requested = config.get("operation");
+        String operation = requested == null || requested instanceof String text && text.isBlank() ? "create"
+                : requested instanceof String text ? text : null;
+        return switch (operation == null ? "" : operation) {
+            case "create" -> create(connectionId, path, config);
+            case "list" -> list(connectionId, path, config);
+            default -> throw configurationFailure();
+        };
+    }
+
+    private Call list(java.util.UUID connectionId, String path, Map<String, Object> config) {
+        Instant timeMin = optionalInstant(config.get("timeMin"));
+        timeMin = timeMin == null ? Instant.now() : timeMin;
+        Instant timeMax = optionalInstant(config.get("timeMax"));
+        if (timeMax != null && !timeMax.isAfter(timeMin)) {
+            throw configurationFailure();
+        }
+        int maxResults = maxResults(config.get("maxResults"));
+        String text = optionalText(config.get("query"), MAX_LINE_LENGTH);
+
+        Map<String, String> query = new LinkedHashMap<>();
+        query.put("singleEvents", "true");
+        query.put("orderBy", "startTime");
+        query.put("timeMin", timeMin.toString());
+        if (timeMax != null) {
+            query.put("timeMax", timeMax.toString());
+        }
+        if (text != null) {
+            query.put("q", text);
+        }
+        // One extra event tells "exactly maxResults" from "more exist".
+        query.put("maxResults", Integer.toString(maxResults + 1));
+
+        return new Call(connectionId, connection -> {
+            Map<String, Object> response = client.call(connection, PROVIDER, SERVICE, "GET", path, query, null);
+            List<Object> events = new ArrayList<>();
+            boolean truncated = false;
+            if (response.get("items") instanceof List<?> items) {
+                for (Object item : items) {
+                    if (!(item instanceof Map<?, ?> event)) {
+                        continue;
+                    }
+                    if (events.size() == maxResults) {
+                        truncated = true;
+                        break;
+                    }
+                    events.add(projectEvent(event));
+                }
+            }
+            Map<String, Object> output = new LinkedHashMap<>();
+            output.put("events", events);
+            output.put("count", events.size());
+            output.put("truncated", truncated);
+            return output;
+        });
+    }
+
+    /** Only the fields a workflow needs: no attendee emails, no description. */
+    private static Map<String, Object> projectEvent(Map<?, ?> event) {
+        Map<String, Object> projected = new LinkedHashMap<>();
+        for (String key : List.of("id", "summary")) {
+            projected.put(key, event.get(key) instanceof String value ? value : null);
+        }
+        projected.put("start", projectTime(event.get("start")));
+        projected.put("end", projectTime(event.get("end")));
+        for (String key : List.of("location", "htmlLink", "status")) {
+            projected.put(key, event.get(key) instanceof String value ? value : null);
+        }
+        return projected;
+    }
+
+    private static Map<String, Object> projectTime(Object time) {
+        Map<String, Object> projected = new LinkedHashMap<>();
+        if (time instanceof Map<?, ?> source) {
+            for (String key : List.of("dateTime", "date", "timeZone")) {
+                if (source.get(key) instanceof String value) {
+                    projected.put(key, value);
+                }
+            }
+        }
+        return projected;
+    }
+
+    /** An RFC 3339 date-time with offset, or a date (midnight UTC); absent or blank means not set. */
+    private Instant optionalInstant(Object value) {
+        String text = optionalText(value, 64);
+        if (text == null) {
+            return null;
+        }
+        try {
+            return text.length() == 10
+                    ? LocalDate.parse(text.trim()).atStartOfDay(ZoneId.of("UTC")).toInstant()
+                    : OffsetDateTime.parse(text.trim()).toInstant();
+        } catch (DateTimeException exception) {
+            throw configurationFailure();
+        }
+    }
+
+    private int maxResults(Object value) {
+        if (value == null || value instanceof String text && text.isBlank()) {
+            return DEFAULT_MAX_RESULTS;
+        }
+        java.math.BigDecimal number;
+        try {
+            number = value instanceof Number n ? new java.math.BigDecimal(n.toString())
+                    : value instanceof String text ? new java.math.BigDecimal(text.trim()) : null;
+        } catch (NumberFormatException exception) {
+            throw configurationFailure();
+        }
+        if (number == null || number.stripTrailingZeros().scale() > 0
+                || number.signum() <= 0 || number.compareTo(java.math.BigDecimal.valueOf(MAX_RESULTS_LIMIT)) > 0) {
+            throw configurationFailure();
+        }
+        return number.intValueExact();
+    }
+
+    private Call create(java.util.UUID connectionId, String path, Map<String, Object> config) {
         String timeZone = optionalText(config.get("timeZone"), 64);
         if (timeZone != null && !ZoneId.getAvailableZoneIds().contains(timeZone)) {
             throw configurationFailure();

@@ -46,11 +46,11 @@ class NodeConfigSchemasTest {
             Map.entry("google.sheets", List.of("connectionId", "operation", "spreadsheetId", "range")),
             Map.entry("trigger.telegram", List.of("connectionId")),
             Map.entry("telegram.send_message", List.of("connectionId", "chatId", "text")),
-            Map.entry("logic.condition", List.of("left", "operator", "right")),
+            Map.entry("logic.condition", List.of()), // single or multi form: the validator requires the fields
             Map.entry("ai.extract", List.of("text")),
             Map.entry("ai.classify", List.of("content")),
             Map.entry("ai.summarize", List.of("inputText")),
-            Map.entry("google.calendar", List.of("connectionId", "summary", "start", "end")),
+            Map.entry("google.calendar", List.of("connectionId")), // summary/start/end: required for create only
             Map.entry("google.drive", List.of("connectionId", "operation")),
             Map.entry("logic.switch", List.of("value", "cases")),
             Map.entry("data.set", List.of("fields")),
@@ -220,8 +220,9 @@ class NodeConfigSchemasTest {
 
     @Test
     void stringOnlyFieldsAreTemplateFieldsOfPlainStringType() {
-        assertEquals(Set.of("subject", "body"), NodeCatalog.schema("email.send").stringOnlyFields());
-        assertEquals(Set.of("text"), NodeCatalog.schema("telegram.send_message").stringOnlyFields());
+        assertEquals(Set.of("subject", "body", "senderName", "replyToMessageId"),
+                NodeCatalog.schema("email.send").stringOnlyFields());
+        assertEquals(Set.of("text", "parseMode"), NodeCatalog.schema("telegram.send_message").stringOnlyFields());
         assertEquals(Set.of(), NodeCatalog.schema("logic.switch").stringOnlyFields());
         assertEquals(Set.of(), NodeCatalog.schema("data.set").stringOnlyFields());
         assertEquals(Set.of("method", "url"), NodeCatalog.schema("http.request").stringOnlyFields());
@@ -260,6 +261,37 @@ class NodeConfigSchemasTest {
         assertFalse(field("google.drive", "operation").template());
         assertEquals("boolean", field("google.calendar", "sendInvitations").type());
         assertEquals(0, BigDecimal.ONE.compareTo(field("google.drive", "pageSize").minimum()));
+    }
+
+    @Test
+    void sheetsLookupAndCalendarListAreReadOnlyEverythingElseStillWrites() {
+        assertFalse(NodeSideEffects.isSideEffecting("google.sheets", Map.of("operation", "read")));
+        assertFalse(NodeSideEffects.isSideEffecting("google.sheets", Map.of("operation", "lookup")));
+        assertTrue(NodeSideEffects.isSideEffecting("google.sheets", Map.of("operation", "append")));
+        assertTrue(NodeSideEffects.isSideEffecting("google.sheets", Map.of("operation", "{{ trigger.op }}")));
+        assertFalse(NodeSideEffects.isSideEffecting("google.calendar", Map.of("operation", "list")));
+        assertTrue(NodeSideEffects.isSideEffecting("google.calendar", Map.of("operation", "create")));
+        assertTrue(NodeSideEffects.isSideEffecting("google.calendar", Map.of("operation", "{{ trigger.op }}")));
+        assertTrue(NodeSideEffects.isSideEffecting("google.calendar", Map.of()));
+    }
+
+    @Test
+    void polishedNodeFieldsKeepOldFieldsAndBoundTheNewOnes() {
+        assertEquals(Set.of("read", "append", "update", "lookup"), field("google.sheets", "operation").enumValues());
+        assertEquals(Set.of("RAW", "USER_ENTERED"), field("google.sheets", "valueInputOption").enumValues());
+        Field limit = field("google.sheets", "limit");
+        assertTrue(limit.matchesShape(1) && limit.matchesShape(100) && limit.matchesShape("{{ trigger.n }}"));
+        assertFalse(limit.matchesShape(0) || limit.matchesShape(101) || limit.matchesShape(1.5d));
+        Field maxResults = field("google.calendar", "maxResults");
+        assertTrue(maxResults.matchesShape(50) && !maxResults.matchesShape(51) && !maxResults.matchesShape(0));
+        assertEquals(Set.of("create", "list"), field("google.calendar", "operation").enumValues());
+        assertEquals(Set.of("none", "HTML", "MarkdownV2"), field("telegram.send_message", "parseMode").enumValues());
+        assertTrue(field("telegram.send_message", "disableNotification").matchesShape(true));
+        assertTrue(field("telegram.send_message", "disableNotification").matchesShape("true"));
+        Field reply = field("telegram.send_message", "replyToMessageId");
+        assertTrue(reply.matchesShape(1) && !reply.matchesShape(0) && !reply.matchesShape(-5));
+        assertEquals(Set.of("and", "or"), field("logic.condition", "combinator").enumValues());
+        assertEquals("array", field("logic.condition", "conditions").type());
     }
 
     @Test

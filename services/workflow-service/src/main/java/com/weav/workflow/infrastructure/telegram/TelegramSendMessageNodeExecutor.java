@@ -8,6 +8,7 @@ import com.weav.workflow.domain.exception.ForbiddenException;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -44,10 +45,11 @@ public final class TelegramSendMessageNodeExecutor implements NodeExecutor {
         UUID connectionId = connectionId(resolvedConfig.get("connectionId"));
         String chatId = chatId(resolvedConfig.get("chatId"));
         String text = text(resolvedConfig.get("text"));
+        Map<String, Object> options = options(resolvedConfig);
         ResolvedConnection connection = resolveConnection(context, connectionId);
         try {
             try {
-                return new Result(telegram.sendMessage(connection, chatId, text), null);
+                return new Result(telegram.sendMessage(connection, chatId, text, options), null);
             } catch (NodeExecutor.Failure failure) {
                 if ("AUTHENTICATION_REJECTED".equals(failure.code())) {
                     reportAuthenticationRejected(context.workspaceId(), connectionId, connection);
@@ -130,6 +132,59 @@ public final class TelegramSendMessageNodeExecutor implements NodeExecutor {
             throw configurationFailure();
         }
         return text;
+    }
+
+    /** Optional Bot API fields; each is added only when set, so an old config sends exactly what it sent before. */
+    private Map<String, Object> options(Map<String, Object> config) {
+        Map<String, Object> options = new LinkedHashMap<>();
+        Object parseMode = config.get("parseMode");
+        if (parseMode instanceof String mode && !mode.isBlank() && !"none".equals(mode)) {
+            if (!"HTML".equals(mode) && !"MarkdownV2".equals(mode)) {
+                throw configurationFailure();
+            }
+            options.put("parse_mode", mode);
+        } else if (parseMode != null && !(parseMode instanceof String)) {
+            throw configurationFailure();
+        }
+        if (flag(config.get("disableNotification"))) {
+            options.put("disable_notification", true);
+        }
+        Long replyTo = messageId(config.get("replyToMessageId"));
+        if (replyTo != null) {
+            // allow_sending_without_reply: a deleted original must not fail the send.
+            options.put("reply_parameters", Map.of("message_id", replyTo, "allow_sending_without_reply", true));
+        }
+        return options;
+    }
+
+    private boolean flag(Object value) {
+        if (value == null || value instanceof String text && text.isBlank()) {
+            return false;
+        }
+        if (value instanceof Boolean flag) {
+            return flag;
+        }
+        if (value instanceof String text && (text.equals("true") || text.equals("false"))) {
+            return Boolean.parseBoolean(text);
+        }
+        throw configurationFailure();
+    }
+
+    /** A positive whole number, literal or mapped; a numeric string is accepted. */
+    private Long messageId(Object value) {
+        if (value == null || value instanceof String text && text.isBlank()) {
+            return null;
+        }
+        String text = value instanceof String s ? s.strip() : value instanceof Number number ? number.toString() : null;
+        try {
+            long id = new BigDecimal(text).toBigIntegerExact().longValueExact();
+            if (id > 0) {
+                return id;
+            }
+        } catch (ArithmeticException | NumberFormatException | NullPointerException exception) {
+            // fall through to the configuration failure
+        }
+        throw configurationFailure();
     }
 
     private static boolean isIntegral(Number number) {

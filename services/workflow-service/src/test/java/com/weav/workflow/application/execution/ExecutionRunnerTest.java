@@ -151,6 +151,59 @@ class ExecutionRunnerTest {
         }
     }
 
+    private static Map<String, Object> multiCondition(Object operatorMapping) {
+        Map<String, Object> first = new java.util.LinkedHashMap<>();
+        first.put("left", "{{ trigger.input.a }}");
+        first.put("operator", operatorMapping);
+        first.put("right", 3);
+        Map<String, Object> second = new java.util.LinkedHashMap<>();
+        second.put("left", "x");
+        second.put("operator", "eq");
+        second.put("right", "x");
+        return Map.of("combinator", "and", "conditions", List.of(first, second));
+    }
+
+    @Test
+    void multiConditionWithMappedLeftAndOperatorResolvesAndSelectsThePort() {
+        for (Map.Entry<Object, String> expected : Map.<Object, String>of(5, "true", 1, "false").entrySet()) {
+            WorkflowDefinition definition = definition(
+                    List.of(node("condition", "logic.condition", multiCondition("{{ trigger.input.op }}")),
+                            node("yes", "http.request", Map.of()), node("no", "http.request", Map.of())),
+                    List.of(edge("root-condition", "root", "condition", null),
+                            edge("c-yes", "condition", "yes", "true"), edge("c-no", "condition", "no", "false")));
+            try (Harness harness = harness(definition, Map.of("a", expected.getKey(), "op", "gt"),
+                    List.of(executor("http.request", (context, config) -> new NodeExecutor.Result(Map.of(), null))), 1,
+                    eligibleAt -> CompletableFuture.completedFuture(null))) {
+                harness.runner.run(harness.lease);
+
+                assertEquals(ExecutionStatus.SUCCESS, harness.state.snapshot().status(), harness.state::summary);
+                assertEquals(Map.of("value", expected.getValue().equals("true")),
+                        harness.state.snapshot().nodes().get("condition").getOutput());
+                String chosen = expected.getValue().equals("true") ? "yes" : "no";
+                String other = chosen.equals("yes") ? "no" : "yes";
+                assertEquals(NodeExecutionStatus.SUCCESS, harness.state.snapshot().nodes().get(chosen).getStatus());
+                assertEquals(NodeExecutionStatus.SKIPPED, harness.state.snapshot().nodes().get(other).getStatus());
+            }
+        }
+    }
+
+    @Test
+    void aResolvedBadConditionOperatorIsAConfigurationErrorInBothForms() {
+        Map<String, Object> single = Map.of("left", 1, "operator", "{{ trigger.input.op }}", "right", 1);
+        for (Map<String, Object> config : List.of(single, multiCondition("{{ trigger.input.op }}"))) {
+            WorkflowDefinition definition = definition(List.of(node("condition", "logic.condition", config)),
+                    List.of(edge("root-condition", "root", "condition", null)));
+            try (Harness harness = harness(definition, Map.of("a", 5, "op", "bad"), List.of(), 1,
+                    eligibleAt -> CompletableFuture.completedFuture(null))) {
+                harness.runner.run(harness.lease);
+
+                assertEquals(ExecutionStatus.FAILED, harness.state.snapshot().status(), harness.state::summary);
+                assertEquals("CONFIGURATION_ERROR",
+                        harness.state.snapshot().nodes().get("condition").getError().get("code"));
+            }
+        }
+    }
+
     @Test
     void numericTelegramChatIdMappedFromTriggerInputPassesConfigurationRevalidation() {
         AtomicReference<Map<String, Object>> resolvedConfig = new AtomicReference<>();

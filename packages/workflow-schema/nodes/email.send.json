@@ -46,11 +46,97 @@
       "x-weav-template": true,
       "minLength": 1
     },
+    "cc": {
+      "title": "Cc",
+      "description": "Optional carbon-copy recipient address or list of addresses.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "bcc": {
+      "title": "Bcc",
+      "description": "Optional blind carbon-copy recipient address or list of addresses.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "replyTo": {
+      "title": "Reply-To",
+      "description": "Optional address (or list) that replies should go to.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
     "body": {
       "type": "string",
       "title": "Body",
       "description": "Email body text.",
       "x-weav-template": true
+    },
+    "bodyType": {
+      "type": "string",
+      "title": "Body type",
+      "description": "text (default) or html.",
+      "enum": [
+        "text",
+        "html"
+      ]
+    },
+    "senderName": {
+      "type": "string",
+      "title": "Sender name",
+      "description": "Display name shown in From; the address stays the connected Gmail account.",
+      "x-weav-template": true,
+      "maxLength": 100
+    },
+    "replyToMessageId": {
+      "type": "string",
+      "title": "Reply to message",
+      "description": "Gmail message id to reply to; the email joins that thread. A blank subject becomes \"Re: <original subject>\".",
+      "x-weav-template": true
+    },
+    "attachments": {
+      "title": "Attachments",
+      "description": "Up to 5 items, each {url, filename?} (public file) or {fileId, filename?} (file reference, for example from trigger.gmail attachments). May be a mapping that resolves to such a list.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      ]
     }
   },
   "required": [
