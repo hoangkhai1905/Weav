@@ -54,7 +54,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'email.send',
     title: 'Send Email (Gmail)',
-    description: 'Send a plain-text email from an authorized Gmail connection.',
+    description: 'Send an email (text or HTML, cc/bcc, attachments) from an authorized Gmail connection.',
     category: 'action',
     iconName: 'Mail',
     defaultConfig: { to: '', subject: '', body: '' },
@@ -64,7 +64,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'google.sheets',
     title: 'Google Sheets',
-    description: 'Read or write spreadsheet data using an authorized Workspace connection.',
+    description: 'Read, write or look up spreadsheet rows using an authorized Workspace connection.',
     category: 'action',
     iconName: 'FileSpreadsheet',
     defaultConfig: {
@@ -80,7 +80,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'telegram.send_message',
     title: 'Telegram Send Message',
-    description: 'Telegram sending is unavailable until the Bot/provider contract is implemented.',
+    description: "Send a message through the workspace's Telegram bot.",
     category: 'action',
     iconName: 'Send',
     defaultConfig: { chatId: '', text: '' },
@@ -90,7 +90,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'logic.condition',
     title: 'If / Condition',
-    description: 'Evaluate a declarative JSON predicate and route through true or false.',
+    description: 'Compare values (one condition or several combined with AND/OR) and route through true or false.',
     category: 'logic',
     iconName: 'GitBranch',
     defaultConfig: { left: '', operator: 'eq', right: '' },

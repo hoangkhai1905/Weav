@@ -4,10 +4,10 @@
 
 | Trường | Giá trị |
 | --- | --- |
-| Ngày | `2026-10-06`, Asia/Saigon |
+| Ngày | `2026-10-06` → `2026-10-07`, Asia/Saigon |
 | Nhánh | `feat/week4-fe-integration`, tạo từ `staging` (`c366fbe`), đã gộp `dev` (`991aa12`) |
 | Người thực hiện | K + AI agent |
-| Trạng thái | Đang tiếp tục: đã gộp và kiểm tra; chưa làm phần FE |
+| Trạng thái | Đang tiếp tục: phần (a) xong code + e2e; (b) 6 node mới và (c) trợ lý AI chưa làm |
 | Phạm vi | Đưa các node và trợ lý AI Week 1–4 của backend (`staging`) lên giao diện web |
 
 ## 2. Bối cảnh
@@ -41,7 +41,9 @@ Cấu trúc FE hiện tại: form inspector viết tay cho từng node trong `ap
 
 ## 5. Quyết định đang chờ user
 
-Cách dựng form inspector (đã hỏi, chưa trả lời):
+**Đã chốt (2026-10-06): cách 3, kết hợp.**
+
+Cách dựng form inspector:
 1. Viết tay tiếp từng node trong `WorkflowBuilderPage.tsx`.
 2. Sinh form từ JSON Schema của `packages/workflow-schema/nodes/*.json` (bộ render chung; trường đặc biệt như chọn kết nối, cột Sheets, điều kiện vẫn viết tay).
 3. Kết hợp (agent đề xuất): bộ render theo schema cho 6 node mới và trường mới; giữ form viết tay đang chạy của node cũ, chuyển dần sau.
@@ -51,7 +53,33 @@ Thứ tự đề xuất: (a) trường mới của node đã có → (b) 6 node 
 ## 6. Kiểm tra workflow-service trên cây đã gộp
 
 - Chạy `mvnw clean verify` trong container `eclipse-temurin:25-jdk` (máy chỉ có JDK 21), mount repo + `/var/run/docker.sock`, `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal`, `JAVA_TOOL_OPTIONS=-Duser.timezone=UTC`, cache Maven ở volume `weav-m2-tmp`; chép `mvnw` + `.mvn` ra `/tmp/w` và bỏ CRLF trước khi chạy.
-- Kết quả: PENDING (đang chạy khi ghi log; agent cập nhật dòng này).
+- Kết quả: **qua** (chỉ còn lỗi môi trường đã biết).
+  - Lần 1 (2026-10-06 23:55): Docker Desktop chết giữa lần chạy (mọi API trả 500; ổ C còn 23 GB; khoảng 39 cặp postgres/rabbitmq Testcontainers bị bỏ lại, nhiều khả năng làm cạn RAM). Có báo cáo 103/106 class: 819 test, 0 failure, 3 error, đều là lỗi môi trường (`HttpTransportIntegrationTest` x2, `WorkflowNotificationLifecyclePersistenceIntegrationTest` x1).
+  - Lần 2 (2026-10-07 00:07, sau khi user restart Docker và agent xóa 39 container Testcontainers còn sót): `mvnw test -Dtest=WorkflowJsonbRoundTripTest,WorkflowPersistenceIntegrationTest,WorkflowPersistenceTest`: `WorkflowJsonbRoundTripTest` 1/1 qua, `WorkflowPersistenceTest` 2/2 qua; `WorkflowPersistenceIntegrationTest.java` là file rỗng 0 byte từ commit scaffold `05ecdf4`, không có test.
+  - Ghi chú: hook chặn lệnh docker làm thay đổi trạng thái trong Bash; chạy qua PowerShell sau khi user đồng ý. `weav-rabbitmq` của stack dev đang Exited sau restart, cần `up` lại trước khi kiểm stack thật.
+
+## 6a. Phần (a): trường mới của node đã có (2026-10-07)
+
+Cách làm (chốt cách 3): bộ render theo schema cho trường đơn giản, viết tay cho phần đặc thù.
+
+- `apps/web/src/lib/nodeSchemas.ts`: nạp `packages/workflow-schema/nodes/*.json` bằng `import.meta.glob` (Vite; không cần package mới). Dùng lại được cho phần (b).
+- `components/builder/SchemaField.tsx`: một field theo schema property (enum → select có "Mặc định", boolean → checkbox, integer → ô chữ lưu số khi là số nguyên, còn lại là text; `x-weav-connection` → select kết nối). Để trống = xóa key. Nhãn lấy từ `builder.field.<type>.<name>`, gợi ý từ `..._hint`; thiếu key thì dùng `title` của schema.
+- `components/builder/ConditionEditor.tsx` (viết tay): chuyển giữa dạng một điều kiện và nhiều điều kiện AND/OR (1–10), khi chuyển thì xóa key của dạng kia (tránh `CONDITION_FORM_CONFLICT`). **Sửa lỗi cũ**: với `gt/gte/lt/lte`, toán hạng là số được lưu dạng số (trước đây lưu `"500"` nên publish bị `NUMERIC_OPERAND_REQUIRED`).
+- `components/builder/AttachmentsEditor.tsx` (viết tay): `email.send.attachments` dạng danh sách (tối đa 5, mỗi mục URL hoặc file ID + tên tệp) hoặc một biểu thức mapping.
+- `WorkflowBuilderPage.tsx`: email thêm `bodyType`, `cc`, `bcc`, đính kèm, mục "Tùy chọn nâng cao" (`senderName`, `replyTo`, `replyToMessageId`); Sheets thêm thao tác `lookup` (`lookupColumn`, `lookupValue`, `limit`) và `valueInputOption` khi ghi; Telegram send **bật lại** (trước bị đánh dấu "Chưa khả dụng" và chặn publish): chọn kết nối TELEGRAM, `parseMode`, `disableNotification`, `replyToMessageId`. Thông báo readiness của node có kết nối gom vào `CONNECTION_STEP_MESSAGES`.
+- `lib/nodeReadiness.ts`: lookup cần cột + giá trị; `values` chỉ bắt buộc khi append/update; điều kiện dùng `isConditionComplete` (cả hai dạng); Telegram send cần kết nối + `chatId` + `text`.
+- i18n: thêm 62 key vi + en, sửa 4 key, xóa `builder.cfg.msg_tg_send` (không còn dùng). Mô tả catalog của 4 node cập nhật.
+- Chưa làm trong (a): `trigger.telegram` vẫn "Chưa khả dụng" (cần kết nối + webhook công khai); `google.calendar` là node mới, sang (b).
+
+Kiểm tra:
+- `pnpm --dir apps/web exec tsc --noEmit -p tsconfig.app.json`: qua. `pnpm --dir apps/web build`: qua.
+- eslint các file đã đổi: chỉ còn lỗi `react-hooks/set-state-in-effect` có sẵn ở HEAD (`WorkflowBuilderPage.tsx`, effect tải workflow), không do thay đổi này.
+- Playwright (`VITE_API_MODE=http`, chromium), 4 test mới trong `workspace-connections.spec.ts` ("workflow builder Week 4 node fields"): lookup, email (cc/html/đính kèm/mapping/giới hạn 5), điều kiện AND/OR + số, Telegram: qua; cùng 12 test builder cũ: 16/16 qua.
+- Chạy đủ `localization`, `workflow-catalog-v1`, `workspace-connections`: 54 qua, 11 fail; chạy cùng 3 spec trên HEAD (tạm trả 5 file về HEAD rồi khôi phục): đúng 11 test đó cũng fail (lỗi có sẵn: chuỗi localization, palette catalog-v1, 401 adapter). Không có regression.
+- Stack thật (2026-10-07 00:50): `docker compose -f compose.yml -f compose.dev.yml --profile app up -d --build` (code đã gộp, bật lại `weav-rabbitmq`); Vite 5173 (của phiên khác, cùng thư mục). Tạo workflow thử `bf546b65-c350-48a4-b310-441ba10aa9c2` qua UI, thêm điều kiện AND/OR (`gt 500` + `eq paid`), Sheets lookup (bảng tính thử, cột A, `limit` 5), email (html, cc 2 địa chỉ, 1 đính kèm URL, `senderName`), Telegram (HTML, im lặng, reply 42; workspace chưa có kết nối TELEGRAM nên form hiện gợi ý + link). `PUT .../draft` → 200 cả hai lần, server trả lại đúng config (`right: 500` là số, `limit: 5`, `replyToMessageId: 42`, `disableNotification: true`). Badge: điều kiện/Sheets/email "Sẵn sàng", Telegram "Chưa cấu hình" (thiếu kết nối). Console: chỉ có `ERR_EMPTY_RESPONSE`/503 từ lần tải đầu khi stack vừa khởi động; document hiện tại không có request lỗi.
+- Lỗi tìm thấy khi kiểm stack thật và đã sửa: hàng đính kèm, `select` nguồn có cả `w-full` và `w-28` nên ô URL chỉ còn 21px (tràn panel). Tách class; đo lại ô URL 200px. Thêm assertion độ rộng > 150px vào e2e email; 4/4 qua.
+- Chưa làm: chạy thật (publish + run) workflow với Sheets lookup/email gửi thật; publish, gửi Telegram cần kết nối bot.
+- Workflow thử `bf546b65…` còn trong workspace (chưa xóa, chờ user đồng ý).
 
 ## 7. Hướng dẫn cho agent tiếp theo
 

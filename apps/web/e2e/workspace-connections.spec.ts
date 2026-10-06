@@ -1648,3 +1648,199 @@ test.describe("workflow builder connection readiness", () => {
     await expect(page.locator(sheetsNode)).toHaveAttribute("data-readiness", "ready");
   });
 });
+
+test.describe("workflow builder Week 4 node fields", () => {
+  const WORKFLOW_ID = "30000000-0000-4000-8000-000000000004";
+  const node = (type: string) => `[data-testid="workflow-node"][data-node-type="${type}"]`;
+  type Configs = Record<string, Record<string, unknown>>;
+  const TYPES: Record<string, string> = {
+    sheets: "google.sheets",
+    email: "email.send",
+    condition: "logic.condition",
+    telegram: "telegram.send_message",
+  };
+
+  const detail = (configs: Configs) => ({
+    workflowId: WORKFLOW_ID,
+    name: "Week 4 fields",
+    status: "DRAFT",
+    schemaVersion: "1.0",
+    currentVersionId: null,
+    createdAt: "2026-08-01T00:00:00Z",
+    updatedAt: "2026-08-01T00:00:00Z",
+    definition: {
+      schemaVersion: "1.0",
+      nodes: [
+        { id: "manual", type: "trigger.manual", config: {} },
+        ...Object.entries(TYPES).map(([id, type]) => ({ id, type, config: configs[id] })),
+      ],
+      edges: Object.keys(TYPES).map((id) => ({ id: `manual-${id}`, source: "manual", target: id })),
+      variables: {},
+    },
+    editorState: {
+      nodes: Object.fromEntries(
+        ["manual", ...Object.keys(TYPES)].map((id, index) => [id, { name: id, position: { x: index === 0 ? 0 : 320, y: index * 140 } }]),
+      ),
+    },
+  });
+
+  async function openBuilder(page: Page, configs: Configs) {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, [
+        connection(CONNECTION_SHEETS_ID, "GOOGLE_SHEETS", WORKSPACE_ID, "ACTIVE"),
+        connection(CONNECTION_GMAIL_ID, "GMAIL", WORKSPACE_ID, "ACTIVE"),
+        connection(CONNECTION_TELEGRAM_ID, "TELEGRAM", WORKSPACE_ID, "ACTIVE"),
+      ]),
+    );
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/draft") && route.request().method() === "PUT") {
+        const body = route.request().postDataJSON() as { definition: { nodes: Array<{ id: string; config: Record<string, unknown> }> } };
+        for (const item of body.definition.nodes) configs[item.id] = item.config;
+        return fulfillJson(route, detail(configs));
+      }
+      if (url.pathname.endsWith(`/workflows/${WORKFLOW_ID}`)) return fulfillJson(route, detail(configs));
+      return fulfillJson(route, pageResult([]));
+    });
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+  }
+
+  const baseConfigs = (): Configs => ({
+    sheets: { connectionId: CONNECTION_SHEETS_ID, operation: "read", spreadsheetId: "sheet-1", range: "A1:D50" },
+    email: { connectionId: CONNECTION_GMAIL_ID, to: "team@example.test", subject: "Weekly", body: "Hi" },
+    condition: { left: "{{ trigger.input.total }}", operator: "eq", right: "1" },
+    telegram: { chatId: "", text: "" },
+  });
+
+  async function saveDraft(page: Page) {
+    const saved = page.waitForResponse((response) => response.request().method() === "PUT" && response.url().endsWith("/draft"));
+    await page.getByTestId("workflow-save-inspector").click();
+    await saved;
+  }
+
+  test("Sheets lookup needs a column and a value and saves only lookup fields", async ({ page }) => {
+    const configs = baseConfigs();
+    await openBuilder(page, configs);
+
+    await page.locator(node("google.sheets")).click();
+    await page.locator("#google-operation").selectOption("lookup");
+    await expect(page.locator(node("google.sheets"))).toHaveAttribute("data-readiness", "not-configured");
+    await expect(page.getByTestId("google-row-editor")).toHaveCount(0);
+    await page.getByLabel("Lookup column").fill("B");
+    await page.getByLabel("Value to find").fill("{{ trigger.input.email }}");
+    await page.getByLabel("Maximum rows").fill("5");
+    await expect(page.locator(node("google.sheets"))).toHaveAttribute("data-readiness", "ready");
+
+    await saveDraft(page);
+    expect(configs.sheets).toEqual({
+      connectionId: CONNECTION_SHEETS_ID,
+      operation: "lookup",
+      spreadsheetId: "sheet-1",
+      range: "A1:D50",
+      lookupColumn: "B",
+      lookupValue: "{{ trigger.input.email }}",
+      limit: 5,
+    });
+  });
+
+  test("email cc, HTML body, sender name and attachments are saved in the Workflow Service shape", async ({ page }) => {
+    const configs = baseConfigs();
+    await openBuilder(page, configs);
+
+    await page.locator(node("email.send")).click();
+    await page.getByLabel("Body format").selectOption("html");
+    await page.getByLabel("Cc", { exact: true }).fill("a@example.test, b@example.test");
+    await page.getByTestId("attachment-add").click();
+    // The source select is narrow so the URL input keeps usable width inside the 400px inspector.
+    expect((await page.getByTestId("attachment-source").boundingBox())!.width).toBeGreaterThan(150);
+    await page.getByTestId("attachment-source").fill("https://files.example.test/report.pdf");
+    await page.getByTestId("attachment-filename").fill("report.pdf");
+    await page.getByTestId("attachment-add").click();
+    await page.getByLabel("Source of file 2").selectOption("fileId");
+    await page.getByTestId("attachment-source").nth(1).fill("{{ trigger.input.attachments[0].fileId }}");
+    await page.getByTestId("email-advanced").locator("summary").click();
+    await page.getByLabel("Sender name").fill("Weav bot");
+    await expect(page.locator(node("email.send"))).toHaveAttribute("data-readiness", "ready");
+
+    await saveDraft(page);
+    expect(configs.email).toEqual({
+      connectionId: CONNECTION_GMAIL_ID,
+      to: "team@example.test",
+      subject: "Weekly",
+      body: "Hi",
+      bodyType: "html",
+      cc: "a@example.test, b@example.test",
+      attachments: [
+        { url: "https://files.example.test/report.pdf", filename: "report.pdf" },
+        { fileId: "{{ trigger.input.attachments[0].fileId }}" },
+      ],
+      senderName: "Weav bot",
+    });
+
+    // A mapping replaces the list; at most five files can be listed.
+    await page.getByTestId("attachments-mode").selectOption("mapping");
+    await page.getByTestId("attachments-mapping").fill("{{ trigger.input.attachments }}");
+    await saveDraft(page);
+    expect(configs.email.attachments).toBe("{{ trigger.input.attachments }}");
+    await page.getByTestId("attachments-mode").selectOption("list");
+    for (let i = 0; i < 5; i += 1) await page.getByTestId("attachment-add").click();
+    await expect(page.getByTestId("attachment-add")).toBeDisabled();
+  });
+
+  test("a condition switches to AND/OR form without mixing keys and saves numeric ordering operands", async ({ page }) => {
+    const configs = baseConfigs();
+    await openBuilder(page, configs);
+
+    await page.locator(node("logic.condition")).click();
+    await page.getByTestId("condition-mode-multi").click();
+    await expect(page.getByTestId("condition-row")).toHaveCount(1);
+    await page.getByTestId("condition-combinator").selectOption("or");
+    await page.getByTestId("condition-add").click();
+    await expect(page.locator(node("logic.condition"))).toHaveAttribute("data-readiness", "not-configured");
+    await page.getByTestId("condition-left").nth(1).fill("{{ trigger.input.amount }}");
+    await page.getByTestId("condition-operator").nth(1).selectOption("gt");
+    await page.getByTestId("condition-right").nth(1).fill("500");
+    await expect(page.locator(node("logic.condition"))).toHaveAttribute("data-readiness", "ready");
+
+    await saveDraft(page);
+    expect(configs.condition).toEqual({
+      combinator: "or",
+      conditions: [
+        { left: "{{ trigger.input.total }}", operator: "eq", right: "1" },
+        { left: "{{ trigger.input.amount }}", operator: "gt", right: 500 },
+      ],
+    });
+
+    // Back to one condition keeps the first one and drops the multi keys.
+    await page.getByTestId("condition-mode-single").click();
+    await saveDraft(page);
+    expect(configs.condition).toEqual({ left: "{{ trigger.input.total }}", operator: "eq", right: "1" });
+  });
+
+  test("Telegram send picks a bot connection and saves its new options", async ({ page }) => {
+    const configs = baseConfigs();
+    await openBuilder(page, configs);
+
+    await page.locator(node("telegram.send_message")).click();
+    await expect(page.getByTestId("integration-readiness")).toContainText("select a Telegram bot connection");
+    await page.getByLabel("Telegram bot connection").selectOption(CONNECTION_TELEGRAM_ID);
+    await page.locator("#telegram-chat-id").fill("-100123");
+    await page.locator("#telegram-text").fill("<b>Hi</b>");
+    await page.getByLabel("Parse mode").selectOption("HTML");
+    await page.getByLabel("Send silently").check();
+    await page.getByLabel("Reply to message ID").fill("42");
+    await expect(page.locator(node("telegram.send_message"))).toHaveAttribute("data-readiness", "ready");
+    await expect(page.getByTestId("integration-readiness")).toHaveCount(0);
+
+    await saveDraft(page);
+    expect(configs.telegram).toEqual({
+      connectionId: CONNECTION_TELEGRAM_ID,
+      chatId: "-100123",
+      text: "<b>Hi</b>",
+      parseMode: "HTML",
+      disableNotification: true,
+      replyToMessageId: 42,
+    });
+  });
+});
