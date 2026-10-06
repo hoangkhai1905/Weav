@@ -1420,14 +1420,14 @@ test.describe("workflow builder connection readiness", () => {
     await expect(page.getByTestId("integration-readiness")).toContainText("spreadsheet ID");
   });
 
-  test("Sheets writes need JSON values and drafts carry only Workflow Service fields", async ({ page }) => {
+  test("Sheets writes are entered cell by cell and drafts carry only Workflow Service fields", async ({ page }) => {
     await installAuthFixture(page);
     await page.route("**/api/v1/workspaces/*/connections", (route) =>
       fulfillJson(route, [connection(CONNECTION_SHEETS_ID, "GOOGLE_SHEETS", WORKSPACE_ID, "ACTIVE")]),
     );
     const drafts: unknown[] = [];
     const state = {
-      sheets: { connectionId: CONNECTION_SHEETS_ID, operation: "read", spreadsheetId: "sheet-1", range: "Sheet1!A1:B2" } as Record<string, unknown>,
+      sheets: { connectionId: CONNECTION_SHEETS_ID, operation: "read", spreadsheetId: "sheet-1", range: "B1:Z100" } as Record<string, unknown>,
       email: { to: "team@example.test", subject: "Weekly", body: "Hi" } as Record<string, unknown>,
     };
     await routeWorkflow(page, state, drafts);
@@ -1436,16 +1436,20 @@ test.describe("workflow builder connection readiness", () => {
     await page.locator(sheetsNode).click();
     await page.locator("#google-operation").selectOption("append");
     await expect(page.locator(sheetsNode)).toHaveAttribute("data-readiness", "not-configured");
-    await page.locator("#google-values").fill("[[not json");
-    await expect(page.locator("#google-values-error")).toBeVisible();
-    await page.locator("#google-values").fill('[["{{ trigger.input.email }}", 1]]');
-    await expect(page.locator("#google-values-error")).toHaveCount(0);
+    const cells = page.getByTestId("google-cell");
+    await expect(cells).toHaveCount(1);
+    // Column labels follow the range start column (B).
+    await expect(page.getByTestId("google-row-editor")).toContainText("Col B");
+    await cells.first().fill("{{ trigger.input.email }}");
+    await page.getByTestId("google-add-cell").click();
+    await cells.nth(1).fill("42");
+    await expect(page.getByTestId("google-row-editor")).toContainText("Col C");
     await expect(page.locator(sheetsNode)).toHaveAttribute("data-readiness", "ready");
 
     await page.getByTestId("workflow-save-inspector").click();
     await expect.poll(() => drafts.length).toBe(1);
     expect(Object.keys(state.sheets).sort()).toEqual(["connectionId", "operation", "range", "spreadsheetId", "values"]);
-    expect(state.sheets.values).toEqual([["{{ trigger.input.email }}", 1]]);
+    expect(state.sheets.values).toEqual([["{{ trigger.input.email }}", "42"]]);
   });
 
   test("a step added from the palette follows the selected step and is linked to it", async ({ page }) => {
@@ -1506,11 +1510,52 @@ test.describe("workflow builder connection readiness", () => {
     await expect(tabs.first()).toBeVisible();
     // One client rect per text node means the label did not wrap.
     const lines = await tabs.evaluateAll((els) => els.map((el) => {
-      const range = document.createRange();
+      type RangeLike = { selectNodeContents(node: unknown): void; getClientRects(): Iterable<{ top: number }> };
+      const range = (globalThis as unknown as { document: { createRange(): RangeLike } }).document.createRange();
       range.selectNodeContents(el);
       return new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size;
     }));
     expect(lines.every((count) => count === 1)).toBe(true);
+  });
+
+  test("run publishes unpublished draft changes first", async ({ page }) => {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, [
+        connection(CONNECTION_SHEETS_ID, "GOOGLE_SHEETS", WORKSPACE_ID, "ACTIVE"),
+        connection(CONNECTION_GMAIL_ID, "GMAIL", WORKSPACE_ID, "ACTIVE"),
+      ]),
+    );
+    const calls: string[] = [];
+    const published = {
+      ...detail(
+        { connectionId: CONNECTION_SHEETS_ID, operation: "read", spreadsheetId: "sheet-1", range: "A1:Z100" },
+        { connectionId: CONNECTION_GMAIL_ID, to: "a@example.test", subject: "s", body: "b" },
+      ),
+      status: "PUBLISHED",
+      currentVersionId: "40000000-0000-4000-8000-000000000001",
+      publishedAt: "2026-08-01T00:00:00Z",
+      updatedAt: "2026-08-02T00:00:00Z",
+    };
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}**`, async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (route.request().method() === "POST") {
+        calls.push(path.split("/").pop() ?? "");
+        if (path.endsWith("/publish")) {
+          return fulfillJson(route, { workflow: { ...published, publishedAt: "2026-08-03T00:00:00Z", updatedAt: "2026-08-03T00:00:00Z" }, webhooks: [] });
+        }
+        return fulfillJson(route, { executionId: "50000000-0000-4000-8000-000000000001", status: "QUEUED" }, 202);
+      }
+      if (path.endsWith(`/workflows/${WORKFLOW_ID}`)) return fulfillJson(route, published);
+      return fulfillJson(route, pageResult([]));
+    });
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+
+    const run = page.getByTestId("workflow-run");
+    await expect(run).toHaveText("Publish and run");
+    await run.click();
+    await expect.poll(() => calls).toEqual(["publish", expect.any(String)]);
+    expect(calls[1]).not.toBe("publish");
   });
 
   test("adds a Google Sheets connection from the inspector, saves the draft and returns to the step after OAuth", async ({ page }) => {

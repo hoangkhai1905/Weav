@@ -48,7 +48,8 @@ export const getNodeReadinessBadge = (
     if (!connectionId || connectionFields.some((field) => !String(config[field] ?? '').trim())) return NOT_CONFIGURED;
     // Append/update write `values`, a JSON array of rows (GoogleSheetsNodeExecutor.parseValues).
     if (nodeType === 'google.sheets' && String(config.operation ?? 'read') !== 'read'
-      && !(Array.isArray(config.values) && config.values.length > 0 && config.values.every(Array.isArray))) {
+      && !(Array.isArray(config.values) && config.values.every(Array.isArray)
+        && (config.values[0] as unknown[] | undefined)?.some((cell) => String(cell ?? '').trim()))) {
       return NOT_CONFIGURED;
     }
     if (attachableConnectionIds && !attachableConnectionIds.has(connectionId)) {

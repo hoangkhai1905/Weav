@@ -135,6 +135,9 @@ const INITIAL_EDGES: Edge[] = [
 ];
 
 const INSPECTOR_WIDTH = 400;
+// Spreadsheet column letters: A=0 … Z=25, AA=26 …
+const columnIndex = (letters: string) => [...letters].reduce((total, char) => total * 26 + char.charCodeAt(0) - 64, 0) - 1;
+const columnLetter = (index: number): string => (index < 26 ? '' : columnLetter(Math.floor(index / 26) - 1)) + String.fromCharCode(65 + (index % 26));
 const addConnectionButtonCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 const PORT_LABEL_ROOM = 80;
 
@@ -285,6 +288,12 @@ export const WorkflowBuilderPage: React.FC = () => {
   const isGoogleDocsNode = selectedNodeType === 'google.docs';
   const isGoogleNode = isGoogleSheetsNode;
   const googleOperation = String(selectedNodeConfig.operation ?? 'read');
+  // Sheets writes edit the first row of `values` cell by cell; any further rows are kept as they are.
+  const sheetsValues = Array.isArray(selectedNodeConfig.values) ? (selectedNodeConfig.values as unknown[][]) : [];
+  const sheetsRow = Array.isArray(sheetsValues[0]) && sheetsValues[0].length > 0 ? sheetsValues[0].map((cell) => String(cell ?? '')) : [''];
+  const setSheetsRow = (row: string[]) => updateSelectedNodeConfig({ values: [row, ...sheetsValues.slice(1)] });
+  const sheetsStartColumn = /^(?:.*!)?\$?([A-Za-z]+)/.exec(String(selectedNodeConfig.range ?? ''))?.[1]?.toUpperCase() ?? 'A';
+  const sheetsColumn = (offset: number) => columnLetter(columnIndex(sheetsStartColumn) + offset);
 
   // Canvas State & Controls
   const [showGrid, setShowGrid] = useState(true);
@@ -292,8 +301,6 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectorTab, setInspectorTab] = useState<'config' | 'input' | 'output' | 'logs'>('config');
   // The step is captured on open: clicking the dialog closes the inspector and clears the selection.
-  const [invalidValuesNodeId, setInvalidValuesNodeId] = useState<string | null>(null);
-  const sheetsValuesInvalid = invalidValuesNodeId !== null && invalidValuesNodeId === selectedNodeId;
   const [addConnectionFor, setAddConnectionFor] = useState<{ provider: GoogleProvider; nodeId: string } | null>(null);
   const startGoogleOAuth = useStartGoogleOAuth();
 
@@ -500,10 +507,12 @@ export const WorkflowBuilderPage: React.FC = () => {
       setPublishedWebhooks(publication.webhooks);
       showSuccessToast('toast.workflow.published', mutationSession);
       refreshNotifications(mutationSession);
+      return true;
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
         setWorkflowError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_published'));
       }
+      return false;
     } finally {
       setIsSavingWorkflow(false);
     }
@@ -539,8 +548,14 @@ export const WorkflowBuilderPage: React.FC = () => {
     }
   };
 
+  // A run executes the published version, so unsaved or unpublished draft edits are published first.
+  const hasUnpublishedChanges = !isSaved || Boolean(
+    workflow?.publishedAt && Date.parse(workflow.updatedAt) - Date.parse(workflow.publishedAt) > 2000,
+  );
+
   const handleRunWorkflow = async () => {
     if (!workflow) return;
+    if (hasUnpublishedChanges && !(await handlePublishWorkflow())) return;
     setWorkflowError(null);
     const mutationSession = captureNotificationSession();
     try {
@@ -1243,10 +1258,12 @@ export const WorkflowBuilderPage: React.FC = () => {
             <button
               data-testid="workflow-run"
               onClick={handleRunWorkflow}
+              disabled={isSavingWorkflow || (hasUnpublishedChanges && publishBlockers.length > 0)}
+              title={hasUnpublishedChanges ? t('builder.publish_and_run_hint') : undefined}
               className="hidden h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex"
             >
               <Play size={13} aria-hidden="true" />
-              <span>{t('builder.run')}</span>
+              <span>{hasUnpublishedChanges ? t('builder.publish_and_run') : t('builder.run')}</span>
             </button>
           )}
           <button
@@ -2117,37 +2134,53 @@ export const WorkflowBuilderPage: React.FC = () => {
                           type="text"
                           value={String(selectedNodeConfig.range ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ range: event.target.value })}
+                          aria-describedby="google-range-hint"
                           className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                         />
+                        <p id="google-range-hint" className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                          {t(`builder.google.range_hint_${googleOperation === 'append' || googleOperation === 'update' ? googleOperation : 'read'}`)}
+                        </p>
                       </div>
 
                       {googleOperation !== 'read' && (
-                        <div>
-                          <label htmlFor="google-values" className="mb-1 block text-[11px] font-medium text-text-2">
-                            {t('builder.google.values')}
-                          </label>
-                          {/* Uncontrolled so half-typed JSON is kept; only a valid array of rows is stored as `values`. */}
-                          <textarea
-                            key={selectedNodeId ?? ''}
-                            id="google-values"
-                            rows={3}
-                            defaultValue={Array.isArray(selectedNodeConfig.values) ? JSON.stringify(selectedNodeConfig.values) : ''}
-                            placeholder='[["{{ trigger.input.email }}"]]'
-                            aria-invalid={sheetsValuesInvalid}
-                            aria-describedby={sheetsValuesInvalid ? 'google-values-error' : undefined}
-                            onChange={(event) => {
-                              let rows: unknown;
-                              try { rows = JSON.parse(event.target.value); } catch { rows = undefined; }
-                              const valid = Array.isArray(rows) && rows.length > 0 && rows.every(Array.isArray);
-                              setInvalidValuesNodeId(valid ? null : selectedNodeId);
-                              updateSelectedNodeConfig({ values: valid ? rows : undefined });
-                            }}
-                            className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                          />
-                          {sheetsValuesInvalid && (
-                            <p id="google-values-error" className="mt-1 text-[10px] text-err">{t('builder.google.values_invalid')}</p>
-                          )}
-                        </div>
+                        <fieldset data-testid="google-row-editor">
+                          <legend className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.google.values')}</legend>
+                          <div className="space-y-1.5">
+                            {sheetsRow.map((cell, index) => {
+                              const column = sheetsColumn(index);
+                              return (
+                                <div key={index} className="flex items-center gap-1.5">
+                                  <label htmlFor={`google-cell-${index}`} className="w-14 shrink-0 text-[11px] text-text-2">
+                                    {t('builder.google.cell').replace('{col}', column)}
+                                  </label>
+                                  <input
+                                    id={`google-cell-${index}`}
+                                    data-testid="google-cell"
+                                    type="text"
+                                    value={cell}
+                                    placeholder={index === 0 ? t('builder.google.cell_placeholder') : ''}
+                                    onChange={(event) => setSheetsRow(sheetsRow.map((value, i) => (i === index ? event.target.value : value)))}
+                                    className="min-w-0 flex-1 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setSheetsRow(sheetsRow.filter((_, i) => i !== index))}
+                                    disabled={sheetsRow.length === 1}
+                                    aria-label={t('builder.google.remove_cell').replace('{col}', column)}
+                                    title={t('builder.google.remove_cell').replace('{col}', column)}
+                                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+                                  >
+                                    <X size={13} aria-hidden="true" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <button type="button" data-testid="google-add-cell" onClick={() => setSheetsRow([...sheetsRow, ''])} className={addConnectionButtonCls}>
+                            <Plus size={12} aria-hidden="true" />{t('builder.google.add_cell')}
+                          </button>
+                          <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{t('builder.google.values_hint')}</p>
+                        </fieldset>
                       )}
                     </>
                   )}

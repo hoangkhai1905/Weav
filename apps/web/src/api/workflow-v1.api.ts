@@ -316,6 +316,7 @@ function mapSummary(summary: WorkflowSummaryV1, workspaceId: string): WorkflowDe
     edges: [],
     createdAt: safeString(summary.createdAt),
     updatedAt: safeString(summary.updatedAt, safeString(summary.createdAt)),
+    ...(typeof summary.publishedAt === 'string' ? { publishedAt: summary.publishedAt } : {}),
     ownerName: '',
   };
 }
