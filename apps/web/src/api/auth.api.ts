@@ -223,11 +223,11 @@ function readPendingGoogleOAuth(): PendingGoogleOAuth | null {
 }
 
 function saveGoogleOAuthCsrf(csrfToken: string): void {
-  sessionStorage.setItem(GOOGLE_OAUTH_CSRF_KEY, csrfToken);
+  localStorage.setItem(GOOGLE_OAUTH_CSRF_KEY, csrfToken);
 }
 
 function readGoogleOAuthCsrf(): string | null {
-  return sessionStorage.getItem(GOOGLE_OAUTH_CSRF_KEY);
+  return localStorage.getItem(GOOGLE_OAUTH_CSRF_KEY);
 }
 
 async function ensureGoogleOAuthCsrf(): Promise<string> {
@@ -256,7 +256,7 @@ function markWebSession(): void {
 
 function clearGoogleOAuthState(): void {
   sessionStorage.removeItem(GOOGLE_OAUTH_PENDING_KEY);
-  sessionStorage.removeItem(GOOGLE_OAUTH_CSRF_KEY);
+  localStorage.removeItem(GOOGLE_OAUTH_CSRF_KEY);
   localStorage.removeItem(GOOGLE_OAUTH_SESSION_KEY);
 }
 
@@ -266,12 +266,34 @@ async function withFreshCsrfOn403<T>(send: (csrfToken: string) => Promise<T>): P
     return await send(await ensureGoogleOAuthCsrf());
   } catch (error) {
     if (!(error instanceof AuthApiError) || error.status !== 403) throw error;
-    sessionStorage.removeItem(GOOGLE_OAUTH_CSRF_KEY);
+    localStorage.removeItem(GOOGLE_OAUTH_CSRF_KEY);
     return send(await ensureGoogleOAuthCsrf());
   }
 }
 
 let refreshInFlight: Promise<{ user: UserProfile; accessToken: string }> | null = null;
+
+function withRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+  // ponytail: without Web Locks (very old browsers) tabs are not serialized; the backend's 10 s retry window covers most overlaps.
+  if (typeof navigator === 'undefined' || !navigator.locks) return task();
+  return navigator.locks.request('weav-auth-refresh', task);
+}
+
+/** Epoch ms when the access token expires, read from its JWT payload; null when it is not a JWT. */
+export function accessTokenExpiresAt(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when the token expires within two minutes (or cannot be read). */
+export function accessTokenExpiresSoon(token: string): boolean {
+  const expiresAt = accessTokenExpiresAt(token);
+  return expiresAt === null || expiresAt - Date.now() <= 2 * 60 * 1000;
+}
 
 function storeWebLogin(session: GoogleOAuthExchangeResponse | undefined): { user: UserProfile; accessToken: string } {
   if (
@@ -447,18 +469,31 @@ export const authApi = {
   },
 
   /**
-   * Gets a new access token from whichever refresh credential this tab has. Concurrent callers share one
-   * request so a burst of 401s cannot race cookie rotation.
+   * Gets a new access token from whichever refresh credential this tab has. Callers in this tab share one
+   * request, and a Web Lock serializes tabs: they all rotate the same refresh cookie, and two concurrent
+   * rotations make the loser's cookie invalid (401) and log every tab out.
    */
   refreshAccessToken(): Promise<{ user: UserProfile; accessToken: string }> {
     if (isAuthMockMode) return Promise.reject(new AuthApiError(401));
-    refreshInFlight ??= (
-      hasWebSession()
-        ? authApi.refreshGoogleSession()
-        : sessionRefreshToken
-          ? authApi.refreshSession()
-          : Promise.reject(new AuthApiError(401))
-    ).finally(() => {
+    const staleToken = getStoredAuthToken();
+    refreshInFlight ??= withRefreshLock(async () => {
+      // Another tab may have renewed while this one waited for the lock; reuse its token.
+      const current = getStoredAuthToken();
+      if (current && current !== staleToken && !accessTokenExpiresSoon(current)) {
+        try {
+          const user = mapIdentityUser(await authRequest<IdentityUser>({
+            url: '/api/auth/me',
+            headers: { Authorization: `Bearer ${current}` },
+          }));
+          return { user, accessToken: current };
+        } catch {
+          // Fall through to a real refresh.
+        }
+      }
+      if (hasWebSession()) return authApi.refreshGoogleSession();
+      if (sessionRefreshToken) return authApi.refreshSession();
+      throw new AuthApiError(401);
+    }).finally(() => {
       refreshInFlight = null;
     });
     return refreshInFlight;

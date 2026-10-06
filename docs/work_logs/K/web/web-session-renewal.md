@@ -52,6 +52,13 @@ Bản làm dở trước đó cho cùng việc nằm trong `stash@{0}` (GitHub D
 - Đăng xuất trên trình duyệt thật (logic không đổi: có cờ phiên → `/auth/web/logout` xóa cookie).
 - Nhiều tab cùng làm mới đúng lúc: dựa vào cửa sổ ân hạn 10 giây của refresh ở backend, không có khóa giữa các tab.
 
+## 5b. Sửa lỗi sau khi user báo vẫn bị out (2026-10-06 23:20)
+
+- Hiện tượng: Browser pane quay về `/login`. Network: 3 `POST /auth/web/refresh` cùng lúc → 403, rồi 200, 200, 401, 401, rồi `/auth/web/logout`.
+- Nguyên nhân: mỗi lần Vite HMR nạp lại module auth lại thêm một `setInterval` mới (cái cũ không bị xóa), và `refreshInFlight` chỉ có tác dụng trong một bản module. Nhiều bản cùng xoay một cookie refresh, bản thua nhận 401 và logout thu hồi phiên. Lỗi tương tự xảy ra thật khi mở nhiều tab (các tab dùng chung cookie). CSRF ở sessionStorage riêng từng tab còn gây 403 khi các tab thay nhau lấy CSRF mới.
+- Sửa: `refreshAccessToken` chạy trong Web Lock `weav-auth-refresh` (giữa các tab và các bản module); vào khóa nếu token đã được tab khác làm mới và còn hạn thì dùng lại (kiểm bằng `/api/auth/me`), không xoay cookie nữa. CSRF chuyển sang localStorage (dùng chung giữa tab). Hẹn giờ và listener gắn vào `window.__weavAuthRenewal`, bản module mới thay thế bản cũ thay vì chồng thêm.
+- Kiểm tra: 3 tab, token hỏng, cùng gọi `handleUnauthorized` vào một thời điểm (2 vòng): cả 3 tab vẫn đăng nhập, mọi refresh 200 và chạy lần lượt, không 401/403. Playwright `session-management`, `change-password`, `profile-integration` 29/29. tsc, eslint sạch.
+
 ## 6. Bàn giao
 
 - Phiên cũ (trước bản này) cần đăng nhập lại một lần.
