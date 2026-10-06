@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Copy, Edit3, History, Lock, MoreHorizontal, Pause, Play, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
+import { Copy, Edit3, History, MoreHorizontal, Pause, Play, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
 import type { ExecutionDetail, WorkflowDefinition } from '../types/workflow.types';
-import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
+import { workflowApi } from '../api/workflow.api';
 import { executionApi } from '../api/execution.api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchWorkflowList, invalidateWorkflowQueries, workflowRunStatsKey } from '../lib/queries/workflows';
@@ -209,12 +209,13 @@ export function WorkflowsPage() {
   };
 
   const handleConfirmDelete = async () => {
-    if (!isWorkflowMockMode || !deleteIds) return;
+    if (!deleteIds) return;
     setDeleteLoading(true);
     try {
       for (const id of deleteIds) {
         await workflowApi.deleteWorkflow(id);
       }
+      void invalidateWorkflowQueries(queryClient);
       setWorkflowsList((current) => current.filter((workflow) => !deleteIds.includes(workflow.id)));
       setSelectedIds((current) => {
         const next = new Set(current);
@@ -491,22 +492,18 @@ export function WorkflowsPage() {
             >
               {t('workflows.bulk_clear')}
             </button>
-            {isWorkflowMockMode && (
-              <>
+            <>
             <span aria-hidden="true" className="mx-1 h-[18px] w-px bg-border-strong" />
             <button
               type="button"
               aria-label={t('workflows.bulk_delete')}
               onClick={() => setDeleteIds(Array.from(selectedIds))}
-              disabled={!isWorkflowMockMode}
-              title={isWorkflowMockMode ? undefined : t('workflows.delete_unavailable')}
               className="inline-flex h-7 items-center gap-1 rounded-md border border-err-border bg-card px-2.5 text-[13px] font-medium text-err transition-colors hover:bg-err-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Trash2 size={13} aria-hidden="true" />
               {t('workflows.btn_delete')}…
             </button>
               </>
-            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -695,7 +692,8 @@ export function WorkflowsPage() {
                       {rowStats ? rowStats.runs7d.toLocaleString(locale) : '—'}
                     </td>
                     {showOwner && <td className={`${td} text-text-2`}>{wf.ownerName || '—'}</td>}
-                    <td className={`${td} relative`}>
+                    {/* No overflow-hidden here: it would clip the row menu below. */}
+                    <td className="relative h-10 whitespace-nowrap border-b border-border px-3">
                       <div className="flex items-center justify-end gap-0.5">
                         <button
                           type="button"
@@ -781,8 +779,7 @@ export function WorkflowsPage() {
                                 </>
                               )}
                             </button>
-                            {isWorkflowMockMode && (
-                              <>
+                            <>
                             <div className="my-1 h-px bg-border" />
                             <button
                               type="button"
@@ -791,15 +788,12 @@ export function WorkflowsPage() {
                                 closeMenu(wf.id);
                                 setDeleteIds([wf.id]);
                               }}
-                              disabled={!isWorkflowMockMode}
-                              title={isWorkflowMockMode ? undefined : t('workflows.delete_unavailable')}
                               className="flex h-8 items-center gap-2 rounded-md px-2 text-left font-medium text-err hover:bg-err-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                              {isWorkflowMockMode ? <Trash2 size={14} /> : <Lock size={14} />}
+                              <Trash2 size={14} />
                               <span>{t('workflows.btn_delete')}…</span>
                             </button>
                               </>
-                            )}
                           </motion.div>
                         )}
                       </AnimatePresence>

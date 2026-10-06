@@ -487,7 +487,11 @@ export const workflowV1Api = {
     return this.updateWorkflow(created.id, { ...source, id: created.id, name: `${source.name} (Copy)`, status: 'DRAFT' }, activeWorkspaceId);
   },
 
-  async deleteWorkflow(): Promise<void> {
-    throw new WorkflowApiError(405, tr('msg.workflow_service_v1_does_not_provide_a'));
+  async deleteWorkflow(id: string, workspaceId?: string): Promise<void> {
+    const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
+    await request<void>(
+      `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+    );
   },
 };

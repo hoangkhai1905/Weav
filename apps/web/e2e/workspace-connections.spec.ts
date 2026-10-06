@@ -1558,6 +1558,46 @@ test.describe("workflow builder connection readiness", () => {
     expect(calls[1]).not.toBe("publish");
   });
 
+  test("workflow list deletes through the Workflow Service in HTTP mode", async ({ page }) => {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) => fulfillJson(route, []));
+    const deleted: string[] = [];
+    const summary = { workflowId: WORKFLOW_ID, name: "Sheet to mail", status: "DRAFT", schemaVersion: "1.0", currentVersionId: null, createdAt: "2026-08-01T00:00:00Z", updatedAt: "2026-08-01T00:00:00Z" };
+    await page.route("**/api/v1/workspaces/*/workflows**", async (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().method() === "DELETE") {
+        deleted.push(url.pathname);
+        return route.fulfill({ status: 204, body: "" });
+      }
+      if (url.pathname.endsWith("/workflows")) return fulfillJson(route, pageResult(deleted.length ? [] : [summary]));
+      return fulfillJson(route, pageResult([]));
+    });
+    await gotoAuthenticatedPath(page, "/workflows");
+
+    const row = page.getByTestId("workflow-row").filter({ hasText: "Sheet to mail" });
+    await expect(row).toBeVisible();
+    await row.getByRole("button", { name: "More workflow actions" }).click();
+    const deleteItem = page.getByRole("menuitem", { name: /Delete/ });
+    // The table cell must not clip the menu: its item has to be the element under its own center.
+    const unclipped = await deleteItem.evaluate((item) => {
+      const el = item as unknown as {
+        getBoundingClientRect: () => { x: number; y: number; width: number; height: number };
+        contains: (other: unknown) => boolean;
+        ownerDocument: { elementFromPoint: (x: number, y: number) => unknown };
+      };
+      const box = el.getBoundingClientRect();
+      return el.contains(el.ownerDocument.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+    });
+    expect(unclipped).toBe(true);
+    await deleteItem.click();
+    const dialog = page.getByRole("alertdialog");
+    await dialog.getByRole("textbox").fill("delete 1");
+    await dialog.getByRole("button", { name: "Delete workflows" }).click();
+
+    await expect.poll(() => deleted).toEqual([`/api/v1/workspaces/${WORKSPACE_ID}/workflows/${WORKFLOW_ID}`]);
+    await expect(page.getByTestId("workflow-row").filter({ hasText: "Sheet to mail" })).toHaveCount(0);
+  });
+
   test("adds a Google Sheets connection from the inspector, saves the draft and returns to the step after OAuth", async ({ page }) => {
     await installAuthFixture(page);
     let created = false;

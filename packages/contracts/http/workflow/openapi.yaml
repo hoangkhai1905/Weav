@@ -80,6 +80,26 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Workflows]
+      operationId: deleteWorkflow
+      summary: Delete a workflow
+      description: >-
+        Soft-deletes the workflow and disables its current triggers, so schedules and webhooks stop admitting
+        work. Runs already admitted finish. The workflow, its versions, and its run history are no longer
+        readable. Its draft stops counting as connection usage; its published versions still count.
+        Requires WORKFLOW_MANAGE_STATE.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+      responses:
+        '204':
+          description: Workflow deleted.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
 
   /workspaces/{workspaceId}/workflows/generate:
     post:
