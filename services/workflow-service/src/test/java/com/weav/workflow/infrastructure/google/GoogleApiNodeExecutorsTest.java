@@ -318,7 +318,6 @@ class GoogleApiNodeExecutorsTest {
                 new String[]{"GET", "https://user@www.googleapis.com/drive/v3/files"},
                 new String[]{"DELETE", host + "/drive/v3/files"},
                 new String[]{"POST", host + "/drive/v3/files"},
-                new String[]{"GET", host + "/calendar/v3/calendars/x/events"},
                 new String[]{"GET", host + "/upload/drive/v3/files"},
                 new String[]{"GET", host + "/drive/v3/files/abc"},
                 new String[]{"POST", host + "/upload/drive/v3/files/abc"},

@@ -243,7 +243,7 @@ public class GmailClient {
                 .append("?=");
     }
 
-    private String accessToken(ResolvedConnection connection) {
+    String accessToken(ResolvedConnection connection) {
         try {
             if (connection == null
                     || !"GMAIL".equals(connection.provider())
