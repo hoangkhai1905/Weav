@@ -22,8 +22,9 @@ Node outputs: http.request -> {status, data} (data is the response body); ai.sum
 trigger.schedule.cron has exactly 6 space-separated fields: second minute hour day-of-month month day-of-week (08:00 daily is "0 0 8 * * *").
 Every workflow has exactly one trigger.manual node; a trigger.schedule or trigger.webhook is added alongside it, and every trigger has an edge to the first step.
 Only set optional config fields (such as http.request headers) that the request asks for.
+Edge ports: a logic.condition edge needs "port":"true" or "false". logic.switch config is {"value":template,"cases":[strings]} with 1-20 unique literal cases (non-blank, at most 64 characters, not "default", no "{{"); give it one outgoing edge per case with "port":"<case>" (exactly a listed case) and optionally one "port":"default" edge. Edges from any other node have no port.
 Return exactly one of:
-{"status":"ready","intent":{"name":string,"nodes":[{"id":"^[a-z][a-z0-9_]{0,31}$","type":string,"config":object}],"edges":[{"from":id,"to":id,"port"?:"true"|"false"}]}}
+{"status":"ready","intent":{"name":string,"nodes":[{"id":"^[a-z][a-z0-9_]{0,31}$","type":string,"config":object}],"edges":[{"from":id,"to":id,"port"?:string}]}}
 {"status":"needs_input","questions":[{"code":"URL"|"SCHEDULE"|"TIMEZONE"|"VALUE","field":"<nodeId>.config.<field>"}]}
 {"status":"unsupported","reasons":[{"code":"CAPABILITY_UNAVAILABLE"|"OUT_OF_SCOPE"|"AMBIGUOUS_REQUEST"}]}
 Ask (needs_input) instead of guessing any URL, schedule, timezone, or required value. If "timezone" is absent and a schedule is needed, ask for TIMEZONE.`;
