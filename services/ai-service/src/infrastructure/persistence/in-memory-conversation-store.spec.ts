@@ -65,4 +65,28 @@ describe('startRetentionPurge', () => {
     await jest.advanceTimersByTimeAsync(5000);
     expect(purge).toHaveBeenCalledTimes(2);
   });
+
+  it('runs once shortly after startup and logs only the error class, never the message', async () => {
+    jest.useFakeTimers();
+    const purge = jest
+      .fn()
+      .mockRejectedValue(new TypeError('postgres://u:pw@h'));
+    const logger = { log: jest.fn(), error: jest.fn() };
+    const stop = startRetentionPurge(
+      { purge } as unknown as InMemoryConversationStore,
+      {
+        intervalMs: 3_600_000,
+        conversationRetentionDays: 30,
+        usageRetentionDays: 90,
+      },
+      logger,
+    );
+    await jest.advanceTimersByTimeAsync(10_000);
+    expect(purge).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('TypeError'),
+    );
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain('postgres');
+    stop();
+  });
 });

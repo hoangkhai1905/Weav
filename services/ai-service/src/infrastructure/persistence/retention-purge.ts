@@ -4,7 +4,9 @@ import type {
   PurgeOptions,
 } from '../../application/assistant/conversation-store';
 
-/** Runs `store.purge` every `intervalMs`; failures are logged, never thrown. Returns a stop function. */
+const STARTUP_DELAY_MS = 10_000;
+
+/** Runs `store.purge` 10 s after start and then every `intervalMs`; failures are logged, never thrown. Returns a stop function. */
 export function startRetentionPurge(
   store: ConversationStore,
   opts: PurgeOptions & { intervalMs: number },
@@ -19,11 +21,17 @@ export function startRetentionPurge(
         );
     } catch (err) {
       logger.error(
-        `Assistant retention purge failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+        `Assistant retention purge failed: ${err instanceof Error ? err.constructor.name : 'unknown error'}`,
       );
     }
   };
+  // One run shortly after startup, so a restart loop cannot postpone the purge forever.
+  const first = setTimeout(() => void run(), STARTUP_DELAY_MS);
   const timer = setInterval(() => void run(), opts.intervalMs);
+  first.unref();
   timer.unref();
-  return () => clearInterval(timer);
+  return () => {
+    clearTimeout(first);
+    clearInterval(timer);
+  };
 }
