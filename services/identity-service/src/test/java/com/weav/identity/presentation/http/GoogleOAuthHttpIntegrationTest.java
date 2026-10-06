@@ -140,6 +140,7 @@ class GoogleOAuthHttpIntegrationTest {
                         "/auth/oauth/google/callback",
                         "/auth/oauth/exchange",
                         "/auth/web/csrf",
+                        "/auth/web/login",
                         "/auth/web/refresh",
                         "/auth/web/logout",
                         "/users/me/oauth/google/link",
@@ -196,6 +197,45 @@ class GoogleOAuthHttpIntegrationTest {
         assertTrue(refreshHeader.contains("Secure"));
         assertTrue(refreshHeader.contains("SameSite=Lax"));
         assertFalse(refreshCookie.isBlank());
+    }
+
+    @Test
+    void webPasswordLoginSetsTheRefreshCookieThatWebRefreshRotates() throws Exception {
+        String email = "web-password@example.com";
+        register(email);
+        OAuthFlow csrf = bootstrapCsrf();
+        Map<String, String> credentials = Map.of("email", email, "password", PASSWORD);
+
+        HttpResponse<String> noCsrf = post("/auth/web/login", credentials, Map.of("Origin", ORIGIN));
+        assertEquals(403, noCsrf.statusCode());
+        assertEquals(0, count("identity.user_sessions"));
+
+        Map<String, String> headers = Map.of(
+                "Origin", ORIGIN,
+                "Cookie", csrf.csrfCookie(),
+                OAuthWebProtection.CSRF_HEADER, csrf.csrfToken());
+        HttpResponse<String> wrongPassword = post(
+                "/auth/web/login", Map.of("email", email, "password", "Wrong-password-9!"), headers);
+        assertEquals(401, wrongPassword.statusCode());
+        assertNull(cookieValue(wrongPassword, OAuthWebProtection.REFRESH_COOKIE));
+
+        HttpResponse<String> login = post("/auth/web/login", credentials, headers);
+        assertEquals(200, login.statusCode());
+        assertEquals("no-store", login.headers().firstValue("Cache-Control").orElseThrow());
+        JsonNode body = objectMapper.readTree(login.body());
+        assertEquals("LOGIN", body.get("outcome").asText());
+        assertEquals(email, body.get("user").get("email").asText());
+        assertFalse(body.has("refreshToken"), "refresh material stays cookie-only");
+        String refresh = cookieValue(login, OAuthWebProtection.REFRESH_COOKIE);
+        assertNotNull(refresh);
+        assertFalse(login.body().contains(refresh));
+        assertWebRefreshCookie(setCookie(login, OAuthWebProtection.REFRESH_COOKIE), 604800);
+        assertEquals(1, count("identity.user_sessions"));
+
+        HttpResponse<String> refreshed = webRefresh(refresh, csrf.csrfCookie(), csrf.csrfToken());
+        assertEquals(200, refreshed.statusCode());
+        assertEquals(200, get("/users/me",
+                objectMapper.readTree(refreshed.body()).get("accessToken").asText(), Map.of()).statusCode());
     }
 
     @Test

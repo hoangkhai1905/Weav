@@ -175,7 +175,7 @@ export function validateWorkspaceMemberEmail(email: string): string | null {
   return null;
 }
 
-async function requestWorkspace<T>(config: AxiosRequestConfig): Promise<T> {
+async function requestWorkspace<T>(config: AxiosRequestConfig, retried = false): Promise<T> {
   const token = getStoredAuthToken();
   if (!token) {
     const fallback = statusMessage(401);
@@ -198,8 +198,10 @@ async function requestWorkspace<T>(config: AxiosRequestConfig): Promise<T> {
       : undefined;
     const fallback = statusMessage(status);
 
-    if (status === 401 && getStoredAuthToken() === token) {
-      useAuthStore.getState().logout();
+    // Another call may already have renewed the token; otherwise renew it once, then retry.
+    if (status === 401 && !retried
+      && (getStoredAuthToken() !== token || await useAuthStore.getState().handleUnauthorized())) {
+      return requestWorkspace<T>(config, true);
     }
 
     throw new WorkspaceApiError(

@@ -244,10 +244,47 @@ async function ensureGoogleOAuthCsrf(): Promise<string> {
   return response.csrfToken;
 }
 
+// The refresh token itself is an HttpOnly cookie; this flag only says one exists. It lives in localStorage so
+// the session survives reloads and new tabs for the backend's refresh lifetime.
+function hasWebSession(): boolean {
+  return localStorage.getItem(GOOGLE_OAUTH_SESSION_KEY) === '1';
+}
+
+function markWebSession(): void {
+  localStorage.setItem(GOOGLE_OAUTH_SESSION_KEY, '1');
+}
+
 function clearGoogleOAuthState(): void {
   sessionStorage.removeItem(GOOGLE_OAUTH_PENDING_KEY);
   sessionStorage.removeItem(GOOGLE_OAUTH_CSRF_KEY);
-  sessionStorage.removeItem(GOOGLE_OAUTH_SESSION_KEY);
+  localStorage.removeItem(GOOGLE_OAUTH_SESSION_KEY);
+}
+
+// A stored CSRF value can outlive its cookie; on 403 fetch a fresh pair and retry once.
+async function withFreshCsrfOn403<T>(send: (csrfToken: string) => Promise<T>): Promise<T> {
+  try {
+    return await send(await ensureGoogleOAuthCsrf());
+  } catch (error) {
+    if (!(error instanceof AuthApiError) || error.status !== 403) throw error;
+    sessionStorage.removeItem(GOOGLE_OAUTH_CSRF_KEY);
+    return send(await ensureGoogleOAuthCsrf());
+  }
+}
+
+let refreshInFlight: Promise<{ user: UserProfile; accessToken: string }> | null = null;
+
+function storeWebLogin(session: GoogleOAuthExchangeResponse | undefined): { user: UserProfile; accessToken: string } {
+  if (
+    session?.outcome !== 'LOGIN' ||
+    typeof session.accessToken !== 'string' ||
+    typeof session.user !== 'object'
+  ) {
+    throw new AuthApiError(502);
+  }
+  const user = mapIdentityUser(session.user);
+  localStorage.setItem('weav_token', session.accessToken);
+  markWebSession();
+  return { user, accessToken: session.accessToken };
 }
 
 function mapIdentityUser(user: IdentityUser): UserProfile {
@@ -355,7 +392,7 @@ export const authApi = {
 
     const user = mapIdentityUser(session.user);
     localStorage.setItem('weav_token', session.accessToken);
-    sessionStorage.setItem(GOOGLE_OAUTH_SESSION_KEY, '1');
+    markWebSession();
     saveGoogleOAuthCsrf(pending.csrfToken);
     sessionStorage.removeItem(GOOGLE_OAUTH_PENDING_KEY);
     sessionRefreshToken = null;
@@ -399,23 +436,37 @@ export const authApi = {
   },
 
   async refreshGoogleSession(): Promise<{ user: UserProfile; accessToken: string }> {
-    const csrfToken = await ensureGoogleOAuthCsrf();
-    const session = await oauthRequest<GoogleOAuthExchangeResponse>({
-      method: 'POST',
-      url: '/auth/web/refresh',
-      headers: { 'X-XSRF-TOKEN': csrfToken },
+    const session = await withFreshCsrfOn403((csrfToken) =>
+      oauthRequest<GoogleOAuthExchangeResponse>({
+        method: 'POST',
+        url: '/auth/web/refresh',
+        headers: { 'X-XSRF-TOKEN': csrfToken },
+      }),
+    );
+    return storeWebLogin(session);
+  },
+
+  /**
+   * Gets a new access token from whichever refresh credential this tab has. Concurrent callers share one
+   * request so a burst of 401s cannot race cookie rotation.
+   */
+  refreshAccessToken(): Promise<{ user: UserProfile; accessToken: string }> {
+    if (isAuthMockMode) return Promise.reject(new AuthApiError(401));
+    refreshInFlight ??= (
+      hasWebSession()
+        ? authApi.refreshGoogleSession()
+        : sessionRefreshToken
+          ? authApi.refreshSession()
+          : Promise.reject(new AuthApiError(401))
+    ).finally(() => {
+      refreshInFlight = null;
     });
-    if (
-      session?.outcome !== 'LOGIN' ||
-      typeof session.accessToken !== 'string' ||
-      typeof session.user !== 'object'
-    ) {
-      throw new AuthApiError(502);
-    }
-    const user = mapIdentityUser(session.user);
-    localStorage.setItem('weav_token', session.accessToken);
-    sessionStorage.setItem(GOOGLE_OAUTH_SESSION_KEY, '1');
-    return { user, accessToken: session.accessToken };
+    return refreshInFlight;
+  },
+
+  /** True when this tab can renew its access token without asking for the password again. */
+  canRefresh(): boolean {
+    return !isAuthMockMode && (hasWebSession() || sessionRefreshToken !== null);
   },
 
   async refreshSession(): Promise<{ user: UserProfile; accessToken: string }> {
@@ -532,6 +583,22 @@ export const authApi = {
     _password?: string,
   ): Promise<{ user: UserProfile; accessToken: string }> {
     if (!isAuthMockMode) {
+      try {
+        const webSession = await withFreshCsrfOn403((csrfToken) =>
+          oauthRequest<GoogleOAuthExchangeResponse>({
+            method: 'POST',
+            url: '/auth/web/login',
+            headers: { 'X-XSRF-TOKEN': csrfToken },
+            data: { email: _email, password: _password },
+          }),
+        );
+        sessionRefreshToken = null;
+        return storeWebLogin(webSession);
+      } catch (error) {
+        // Web cookie transport unavailable (404: disabled; 0: identity unreachable or origin not allowed):
+        // fall back to the Gateway login with a tab-only session. Credential errors still surface.
+        if (!(error instanceof AuthApiError) || (error.status !== 404 && error.status !== 0)) throw error;
+      }
       const session = await authRequest<IdentitySession>({
         method: 'POST',
         url: '/api/auth/login',
@@ -545,7 +612,7 @@ export const authApi = {
       const user = mapIdentityUser(session.user);
       localStorage.setItem('weav_token', session.accessToken);
       sessionRefreshToken = session.refreshToken;
-      sessionStorage.removeItem(GOOGLE_OAUTH_SESSION_KEY);
+      localStorage.removeItem(GOOGLE_OAUTH_SESSION_KEY);
       return { user, accessToken: session.accessToken };
     }
     void _email;
@@ -597,8 +664,8 @@ export const authApi = {
   async getCurrentUser(): Promise<UserProfile | null> {
     if (!isAuthMockMode) {
       const token = getStoredAuthToken();
-      if (!token) return null;
       try {
+        if (!token) throw new AuthApiError(401);
         return mapIdentityUser(
           await authRequest<IdentityUser>({
             url: '/api/auth/me',
@@ -606,30 +673,18 @@ export const authApi = {
           }),
         );
       } catch (error) {
-        if (
-          error instanceof AuthApiError &&
-          error.status === 401 &&
-          sessionStorage.getItem(GOOGLE_OAUTH_SESSION_KEY) === '1'
-        ) {
-          try {
-            return (await authApi.refreshGoogleSession()).user;
-          } catch {
-            clearGoogleOAuthState();
-            localStorage.removeItem('weav_token');
-            return null;
-          }
+        if (!(error instanceof AuthApiError) || error.status !== 401) throw error;
+        if (!authApi.canRefresh()) return null;
+        try {
+          return (await authApi.refreshAccessToken()).user;
+        } catch (refreshError) {
+          // Only a rejected credential ends the session; a network blip must not log the user out.
+          if (!(refreshError instanceof AuthApiError) || refreshError.status !== 401) throw refreshError;
+          clearGoogleOAuthState();
+          localStorage.removeItem('weav_token');
+          sessionRefreshToken = null;
+          return null;
         }
-        if (error instanceof AuthApiError && error.status === 401 && sessionRefreshToken) {
-          try {
-            return (await authApi.refreshSession()).user;
-          } catch {
-            localStorage.removeItem('weav_token');
-            sessionRefreshToken = null;
-            return null;
-          }
-        }
-        if (error instanceof AuthApiError && error.status === 401) return null;
-        throw error;
       }
     }
     await delay(100);
@@ -642,7 +697,7 @@ export const authApi = {
     const refreshToken = sessionRefreshToken;
     sessionRefreshToken = null;
     localStorage.removeItem('weav_token');
-    if (!isAuthMockMode && sessionStorage.getItem(GOOGLE_OAUTH_SESSION_KEY) === '1') {
+    if (!isAuthMockMode && hasWebSession()) {
       try {
         const csrfToken = await ensureGoogleOAuthCsrf();
         await oauthRequest({
