@@ -4,9 +4,8 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Copy, Edit3, History, MoreHorizontal, Pause, Play, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
 import type { ExecutionDetail, WorkflowDefinition } from '../types/workflow.types';
 import { workflowApi } from '../api/workflow.api';
-import { executionApi } from '../api/execution.api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchWorkflowList, invalidateWorkflowQueries, workflowRunStatsKey } from '../lib/queries/workflows';
+import { fetchRecentExecutions, fetchWorkflowList, invalidateWorkflowQueries, workflowRunStatsKey } from '../lib/queries/workflows';
 import { WorkflowGlyph } from '../components/workflows/WorkflowGlyph';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { statusBadgeClass } from '../components/common/statusBadgeClass';
@@ -17,6 +16,7 @@ import { captureNotificationSession, isCurrentNotificationSession } from '../lib
 import { showSuccessToast } from '../lib/feedback/toast';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 import { tr } from '../lib/i18n/tr';
+import { formatRelativeTime } from '../lib/relativeTime';
 
 type WorkflowStatus = 'PUBLISHED' | 'PAUSED' | 'DRAFT';
 type StatusTab = 'ALL' | 'ACTIVE' | 'ERROR' | 'PAUSED' | 'DRAFT';
@@ -43,7 +43,6 @@ interface WorkflowItem {
 }
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const MAX_STATS_WORKFLOWS = 10;
 
 const field =
   'h-8 rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50';
@@ -138,10 +137,8 @@ export function WorkflowsPage() {
     staleTime: 60_000,
     gcTime: 5 * 60_000,
     retry: false,
-    queryFn: async () => {
-      const workflows = await fetchWorkflowList(queryClient);
-      return computeStats(await executionApi.getRecentExecutions(workflows, { limit: MAX_STATS_WORKFLOWS, concurrency: 3 }));
-    },
+    queryFn: () => fetchRecentExecutions(queryClient),
+    select: computeStats,
   });
   const stats: Record<string, RunStats> = statsQuery.data ?? {};
 
@@ -312,18 +309,7 @@ export function WorkflowsPage() {
   };
 
   const relativeTime = useCallback(
-    (iso?: string) => {
-      if (!iso) return t('relative.never');
-      const ms = Date.parse(iso);
-      if (!Number.isFinite(ms)) return '—';
-      const diffSec = Math.round((ms - Date.now()) / 1000);
-      const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
-      const abs = Math.abs(diffSec);
-      if (abs < 60) return rtf.format(diffSec, 'second');
-      if (abs < 3600) return rtf.format(Math.round(diffSec / 60), 'minute');
-      if (abs < 86400) return rtf.format(Math.round(diffSec / 3600), 'hour');
-      return rtf.format(Math.round(diffSec / 86400), 'day');
-    },
+    (iso?: string) => (iso ? formatRelativeTime(iso, locale) : t('relative.never')),
     [locale, t],
   );
   const exactTime = (iso?: string) => (iso && Number.isFinite(Date.parse(iso)) ? new Date(iso).toLocaleString(locale) : undefined);

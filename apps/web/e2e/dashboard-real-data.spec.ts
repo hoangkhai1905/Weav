@@ -59,6 +59,28 @@ test('renders complete workflow data and only runs a published workflow by its r
   }));
 
   await page.route(`**/api/v1/workspaces/${workspaceId}/workflows/${publishedWorkflowId}/executions**`, async (route) => {
+    if (route.request().method() === 'GET') {
+      const startedAt = new Date(Date.now() - 5 * 60_000).toISOString();
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [{
+            executionId: '00000000-0000-4000-8000-000000000106',
+            workflowId: publishedWorkflowId,
+            workflowVersionId: '00000000-0000-4000-8000-000000000105',
+            status: 'SUCCESS',
+            triggerType: 'MANUAL',
+            createdAt: startedAt,
+            startedAt,
+            finishedAt: startedAt,
+          }],
+          page: 0,
+          size: 50,
+          totalElements: 1,
+        }),
+      });
+    }
     if (route.request().method() !== 'POST') return route.fallback();
     await route.fulfill({
       status: 202,
@@ -91,8 +113,14 @@ test('renders complete workflow data and only runs a published workflow by its r
   const request = await runRequest;
   expect(new URL(request.url()).pathname).toBe(`/api/v1/workspaces/${workspaceId}/workflows/${publishedWorkflowId}/executions`);
 
-  await expect(dashboard).toContainText('Execution data is not available yet');
-  await expect(dashboard).toContainText('Workflow activity is not available yet');
+  // Run numbers come from the real executions API, not placeholders or demo data.
+  await expect(page.getByTestId('dashboard-runs-7d')).toHaveText('1');
+  await expect(page.getByTestId('dashboard-failure-rate-7d')).toHaveText('0%');
+  const recentRuns = page.getByTestId('dashboard-recent-runs');
+  await expect(recentRuns.getByRole('link', { name: 'View run: Customer sync' })).toHaveAttribute(
+    'href',
+    `/workflows/${publishedWorkflowId}/executions?run=00000000-0000-4000-8000-000000000106`,
+  );
   await expect(dashboard).not.toContainText('#EX-8492');
   await expect(dashboard).not.toContainText('wf-prod-8492');
   await expect(dashboard).not.toContainText('128');
