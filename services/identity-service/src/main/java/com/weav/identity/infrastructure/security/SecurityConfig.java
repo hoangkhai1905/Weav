@@ -42,6 +42,7 @@ public class SecurityConfig {
                                 "/auth/login",
                                 "/auth/refresh",
                                 "/auth/logout",
+                                "/auth/web/login",
                                 "/auth/web/refresh",
                                 "/auth/web/logout",
                                 "/auth/otp/request",

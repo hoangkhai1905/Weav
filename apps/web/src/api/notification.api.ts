@@ -149,7 +149,8 @@ async function requestNotification<T>(config: AxiosRequestConfig): Promise<T> {
       ? (error.response?.status ?? 0)
       : error instanceof NotificationApiError ? error.status : 0;
     if (status === 401 && isCurrentNotificationSession(session)) {
-      useAuthStore.getState().logout();
+      // The next poll uses the renewed token; logout happens only if renewal is refused.
+      await useAuthStore.getState().handleUnauthorized();
     }
     throw new NotificationApiError(status);
   }

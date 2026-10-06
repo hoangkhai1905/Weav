@@ -1,6 +1,7 @@
 import axios, { type AxiosRequestConfig } from "axios";
 import { getStoredAuthToken } from "./ocr.api";
 import { tr } from '../lib/i18n/tr';
+import { useAuthStore } from '../store/useAuthStore';
 
 export type ConnectionProvider =
   "TELEGRAM" | "HTTP" | "GMAIL" | "GOOGLE_SHEETS";
@@ -235,7 +236,7 @@ function pathSegment(value: string): string {
   return encodeURIComponent(value);
 }
 
-async function request<T>(config: AxiosRequestConfig): Promise<T> {
+async function request<T>(config: AxiosRequestConfig, retried = false): Promise<T> {
   const token = getStoredAuthToken();
   if (!token) {
     throw new ConnectionApiError(
@@ -253,7 +254,13 @@ async function request<T>(config: AxiosRequestConfig): Promise<T> {
     return response.data as T;
   } catch (error) {
     if (axios.isCancel(error)) throw error;
-    throw toConnectionApiError(error);
+    const failure = toConnectionApiError(error);
+    // Another call may already have renewed the token; otherwise renew it once, then retry.
+    if (failure.status === 401 && !retried
+      && (getStoredAuthToken() !== token || await useAuthStore.getState().handleUnauthorized())) {
+      return request<T>(config, true);
+    }
+    throw failure;
   }
 }
 

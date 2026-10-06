@@ -1,5 +1,6 @@
 import type { WorkflowDefinition, WorkflowEdge, WorkflowNode, WorkflowStatus } from '../types/workflow.types';
 import { tr } from '../lib/i18n/tr';
+import { useAuthStore } from '../store/useAuthStore';
 
 const ACTIVE_WORKSPACE_KEY = 'weav_active_workspace_id';
 const PAGE_SIZE = 100;
@@ -145,7 +146,16 @@ const detailCache = new Map<string, { at: number; promise: Promise<WorkflowDetai
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   // Any write invalidates cached workflow details.
   if (init.method && init.method !== 'GET') detailCache.clear();
-  return requestOnce<T>(path, init);
+  const token = localStorage.getItem('weav_token');
+  try {
+    return await requestOnce<T>(path, init);
+  } catch (error) {
+    if (!(error instanceof WorkflowApiError) || error.status !== 401) throw error;
+    // Another call may already have renewed the token; otherwise renew it once, then retry.
+    if (localStorage.getItem('weav_token') === token
+      && !(await useAuthStore.getState().handleUnauthorized())) throw error;
+    return requestOnce<T>(path, init);
+  }
 }
 
 async function requestOnce<T>(path: string, init: RequestInit = {}): Promise<T> {

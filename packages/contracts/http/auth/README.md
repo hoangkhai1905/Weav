@@ -24,6 +24,7 @@ This directory publishes the Identity-local contract for core authentication, th
 | `GET /auth/oauth/google/callback` | Provider redirect plus state/correlation binding | `303` only to the registered return target with an opaque handoff, or a fixed cancellation/provider error |
 | `POST /auth/oauth/exchange` | Exact Origin/XSRF; anonymous LOGIN or matching bearer LINK | `200` access-only LOGIN JSON plus HttpOnly refresh cookie, or LINK metadata without a new session/cookie |
 | `GET /auth/web/csrf` | Exact registered Origin | `200` with a signed non-secret CSRF value and matching cookie |
+| `POST /auth/web/login` | Exact Origin/XSRF; email + password, same limits as `/auth/login` | `200` access-only LOGIN JSON plus HttpOnly refresh cookie |
 | `POST /auth/web/refresh` | Exact Origin/XSRF; refresh cookie only | `200` access-only LOGIN JSON plus one rotated HttpOnly refresh cookie; omit `Authorization` |
 | `POST /auth/web/logout` | Exact Origin/XSRF; well-formed refresh cookie only | `204` after idempotent revocation and clearing the same HttpOnly cookie attributes |
 | `POST /users/me/oauth/google/link` | Active bearer, current password, exact Origin/XSRF | `200` with the registered Google authorization URL and no account mutation yet |

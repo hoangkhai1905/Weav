@@ -979,7 +979,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       if (!isCurrentOcrRequest(requestId, requestUserId, requestWorkspaceId)) return;
       if (controller.signal.aborted) return;
       if (error instanceof OcrApiError && error.statusCode === 401) {
-        useAuthStore.getState().logout();
+        void useAuthStore.getState().handleUnauthorized();
         return;
       }
       if (error instanceof OcrApiError) {
