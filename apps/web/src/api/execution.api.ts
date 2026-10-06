@@ -5,9 +5,10 @@ import { getActiveWorkflowWorkspaceId, workflowV1Api, type WorkflowExecutionDeta
 const isWorkflowMockMode = import.meta.env.VITE_API_MODE === 'mock';
 
 const mockExecutionApi = {
-  async getExecutions(): Promise<ExecutionDetail[]> {
+  async getExecutions(workflowId?: string): Promise<ExecutionDetail[]> {
     await delay(200);
-    return getStorage<ExecutionDetail[]>(STORAGE_KEYS.EXECUTIONS, []);
+    const executions = getStorage<ExecutionDetail[]>(STORAGE_KEYS.EXECUTIONS, []);
+    return workflowId ? executions.filter((execution) => execution.workflowId === workflowId) : executions;
   },
 
   async getExecution(id: string): Promise<ExecutionDetail | null> {
@@ -162,7 +163,7 @@ async function findWorkflowForExecution(executionId: string, workspaceId: string
 
 export const executionApi = {
   async getExecutions(workflowId?: string): Promise<ExecutionDetail[]> {
-    if (isWorkflowMockMode) return mockExecutionApi.getExecutions();
+    if (isWorkflowMockMode) return mockExecutionApi.getExecutions(workflowId);
 
     const workspaceId = await getActiveWorkflowWorkspaceId();
     const selected = workflowId

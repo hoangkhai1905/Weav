@@ -9,8 +9,8 @@ import { WorkflowsPage } from './pages/WorkflowsPage';
 import { CreateWorkflowPage } from './pages/CreateWorkflowPage';
 import { WorkflowBuilderPage } from './pages/WorkflowBuilderPage';
 import { AiGeneratorPage } from './pages/AiGeneratorPage';
-import { ExecutionsPage } from './pages/ExecutionsPage';
-import { ExecutionDetailPage } from './pages/ExecutionDetailPage';
+import { LiveWorkflowExecutionsPage } from './pages/LiveWorkflowExecutionsPage';
+import { LiveExecutionDetailPage } from './pages/LiveExecutionDetailPage';
 import { ConnectionsPage } from './pages/ConnectionsPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 import { TelegramPage } from './pages/TelegramPage';
@@ -65,11 +65,11 @@ export function App() {
         <Route path="/workflows/new" element={<CreateWorkflowPage />} />
         <Route path="/workflows/:workflowId" element={<WorkflowBuilderPage />} />
         <Route path="/workflows/:workflowId/builder" element={<WorkflowBuilderPage />} />
-        <Route path="/workflows/:workflowId/executions" element={<ExecutionsPage />} />
+        <Route path="/workflows/:workflowId/executions" element={<LiveWorkflowExecutionsPage />} />
 
         {/* Executions */}
         <Route path="/executions" element={<Navigate to="/workflows" replace />} />
-        <Route path="/executions/:executionId" element={<ExecutionDetailPage />} />
+        <Route path="/executions/:executionId" element={<LiveExecutionDetailPage />} />
 
         {/* Connections */}
         <Route path="/connections" element={<RedirectKeepQuery to="/workspace/connections" />} />
