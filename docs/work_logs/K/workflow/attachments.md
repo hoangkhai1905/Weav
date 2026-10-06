@@ -71,4 +71,5 @@ Not tested yet: real R2 (live test after F2/F3).
 - Memory: up to ~30 MiB per large call (email upload, attachment GET); bounded by worker concurrency.
 - Orphan objects if the JVM dies between put and row insert: add an R2 lifecycle rule on `workflow-files/` (about 8 days) at deployment.
 - The reused R2 key can also read avatars (accepted in the spec).
-- Next: lane F5 (live-test flow `-Flow attachments`, AI prompt, FE handover), then the live test on real Gmail, Drive and R2.
+- Lane F5 done: `-Flow attachments` (email with an HTML body, sender name, cc and a URL attachment to the own Gmail address; a `trigger.gmail` workflow on the unique subject stores the attachment, uploads it to Drive via `{{trigger.input.attachments[0]}}` and replies in the thread with the attachments), list indexing in templates, AI prompt, FE handover `docs/api/week4-node-contracts.md`.
+- Next: K runs the live tests on real Gmail, Drive and R2 (`.scriptslive-test-nodes.ps1 -Flow attachments -Cleanup`), then the deployment discussion.

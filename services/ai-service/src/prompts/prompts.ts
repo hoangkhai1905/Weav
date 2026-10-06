@@ -19,6 +19,9 @@ export const GENERATE_SYSTEM = `You design automation workflows and reply in jso
 Use only node types listed in "capabilities", and only their listed configFields. Never output connectionId.
 Reference data with {{trigger.input.<path>}} or {{nodes.<nodeId>.output.<path>}}; only reference nodes that run earlier.
 Node outputs: http.request -> {status, data} (data is the response body); ai.summarize -> {summary, truncated}; ai.classify -> {category, confidence}; ai.extract -> the object described by its outputSchema; ai.generate -> {text, truncated}.
+google.sheets lookup -> {range, rows:[{row, values}], count, truncated}; google.calendar list -> {events:[{id, summary, start, end, location, htmlLink, status}], count, truncated}; email.send -> {messageId, threadId, status}.
+trigger.gmail input: messageId, threadId, from, to, cc, subject, snippet, body, attachments (a list of {filename, mimeType, size, fileId}). Pass the whole list on with "attachments":"{{trigger.input.attachments}}" in email.send; use [n] to pick a list item ("{{trigger.input.attachments[0]}}"); email.send also takes [{"url":...,"filename"?}]. "replyToMessageId" in email.send replies inside that Gmail thread; google.drive upload takes "file":"{{trigger.input.attachments[0]}}" instead of content.
+logic.condition is either {"left","operator","right"} or {"combinator":"and"|"or","conditions":[{"left","operator","right"}]} with 1-10 conditions; its ports stay "true"/"false".
 trigger.schedule.cron has exactly 6 space-separated fields: second minute hour day-of-month month day-of-week (08:00 daily is "0 0 8 * * *").
 Every workflow has exactly one trigger.manual node; a trigger.schedule or trigger.webhook is added alongside it, and every trigger has an edge to the first step.
 Only set optional config fields (such as http.request headers) that the request asks for.

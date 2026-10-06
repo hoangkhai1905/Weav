@@ -439,6 +439,22 @@ class DefinitionValidatorTest {
     }
 
     @Test
+    void strayBracketInAMappingIsAMappingIssueNotAnException() {
+        for (String typo : List.of("{{ trigger.input.items[0]] }}", "{{ trigger.input.items[0][ }}", "{{ trigger.input.items] }}")) {
+            WorkflowDefinition draft = definition(List.of(
+                    manual("manual"),
+                    node("request", "http.request", Map.of(
+                            "method", "POST",
+                            "url", "https://example.test/resource",
+                            "body", Map.of("message", typo)))),
+                    List.of(edge("start", "manual", "request")));
+
+            assertTrue(validator.validatePublish(draft).stream().anyMatch(issue -> issue.nodeId().equals("request")
+                    && issue.code().equals("MAPPING_ERROR")), typo);
+        }
+    }
+
+    @Test
     void draftsKeepIncompleteMappingsEditableWhilePublishRejectsMalformedMappings() {
         WorkflowDefinition draft = definition(List.of(
                 manual("manual"),

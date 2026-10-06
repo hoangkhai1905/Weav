@@ -120,7 +120,20 @@ class MappingResolverTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            "{{ trigger.input.items[0] }}",
+            "{{ trigger.input.items[ }}",
+            "{{ trigger.input.items[0]] }}",
+            "{{ trigger.input.items[0][ }}",
+            "{{ trigger.input.items[[0] }}",
+            "{{ trigger.input.items] }}",
+            "{{ trigger.input.items[] }}",
+            "{{ trigger.input.items[-1] }}",
+            "{{ trigger.input.items[01] }}",
+            "{{ trigger.input.items[a] }}",
+            "{{ trigger.input.items[0 }}",
+            "{{ trigger.input.items[0]x }}",
+            "{{ trigger.input.items[0].[1] }}",
+            "{{ trigger.input.[0] }}",
+            "{{ trigger.input.items[10000] }}",
             "{{ trigger.input.toString() }}",
             "{{ trigger.input.count + 1 }}",
             "{{ variables.region | upper }}",
@@ -169,6 +182,61 @@ class MappingResolverTest {
     void rejectsAmbiguousDottedIdentifiersWhenMultipleDefinitionIdsMatch() {
         assertMappingError(() -> resolver.references(
                 "{{ nodes.source.output.output.value }}", Set.of("source", "source.output")));
+    }
+
+    private static MappingContext listContext() {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("attachments", List.of(
+                Map.of("fileId", "f0", "size", 5), Map.of("fileId", "f1", "size", 6)));
+        input.put("grid", List.of(List.of("a", "b"), List.of("c", "d")));
+        input.put("map", Map.of("0", "zero"));
+        input.put("items", List.of("x"));
+        return new MappingContext(input, Map.of("rows", Map.of("rows", List.of(Map.of("values", List.of("v"))))), Map.of());
+    }
+
+    @Test
+    void indexesListsWithDotAndBracketSyntaxKeepingTheNativeType() {
+        MappingContext context = listContext();
+
+        assertEquals(Map.of("fileId", "f0", "size", 5), resolver.resolve("{{ trigger.input.attachments[0] }}", context));
+        assertEquals(Map.of("fileId", "f1", "size", 6), resolver.resolve("{{ trigger.input.attachments.1 }}", context));
+        assertEquals("f1", resolver.resolve("{{ trigger.input.attachments[1].fileId }}", context));
+        assertEquals("d", resolver.resolve("{{ trigger.input.grid[1][1] }}", context));
+        assertEquals("c", resolver.resolve("{{ trigger.input.grid[1].0 }}", context));
+        assertEquals("v", resolver.resolve("{{ nodes.rows.output.rows[0].values[0] }}", context));
+        assertEquals("zero", resolver.resolve("{{ trigger.input.map.0 }}", context));
+        assertEquals("zero", resolver.resolve("{{ trigger.input.map[0] }}", context));
+        assertEquals("file f0 (5 bytes)",
+                resolver.resolve("file {{ trigger.input.attachments[0].fileId }} ({{ trigger.input.attachments[0].size }} bytes)", context));
+    }
+
+    @Test
+    void rejectsOutOfRangeAndLeadingZeroIndexesAtRunTime() {
+        MappingContext context = listContext();
+
+        assertMappingError(() -> resolver.resolve("{{ trigger.input.attachments[2] }}", context));
+        assertMappingError(() -> resolver.resolve("{{ trigger.input.attachments.01 }}", context));
+        assertMappingError(() -> resolver.resolve("{{ trigger.input.attachments.-1 }}", context));
+        assertMappingError(() -> resolver.resolve("{{ trigger.input.attachments.x }}", context));
+        assertMappingError(() -> resolver.resolve("{{ trigger.input.items[0].name }}", context));
+    }
+
+    @Test
+    void referencesParsesBracketsAfterTheOutputMarker() {
+        assertEquals(Set.of("rows"), resolver.references("{{ nodes.rows.output.rows[0].values[1] }}"));
+        assertEquals(Set.of("a.b"), resolver.references("{{ nodes.a.b.output.rows[0] }}", Set.of("a.b")));
+    }
+
+    @Test
+    void existingExpressionsResolveIdentically() {
+        MappingContext context = new MappingContext(Map.of("a", Map.of("b", 1), "n", 2),
+                Map.of("api.v1", Map.of("data", Map.of("x", "y"))), Map.of("v", "w"));
+
+        assertEquals(1, resolver.resolve("{{ trigger.input.a.b }}", context));
+        assertEquals("y", resolver.resolve("{{nodes.api.v1.output.data.x}}", context));
+        assertEquals("w!", resolver.resolve("{{ variables.v }}!", context));
+        assertEquals(Map.of("b", 1), resolver.resolve("{{ trigger.input.a }}", context));
+        assertMappingError(() -> resolver.resolve("{{ trigger.input.n.b }}", context));
     }
 
     private static void assertMappingError(org.junit.jupiter.api.function.Executable action) {

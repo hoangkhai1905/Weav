@@ -16,6 +16,7 @@ Status: agreed scope (2026-10-06), Week 4 lanes started 2026-10-06. Owner: K (ba
 - **Metadata table** (workflow_db, schema `workflow`, new Flyway migration): `workflow_files` with columns `id`, `workspace_id`, `execution_id` (nullable), `object_key`, `filename`, `mime_type`, `size_bytes`, `created_at` and `expires_at`.
 - **Retention:** 7 days (`WORKFLOW_FILES_RETENTION`). `RetentionPurgeJob` deletes the R2 object, then the row.
 - **File reference in node data** (plain JSON, so templates and `data.set` pass it through): `{"fileId": "<uuid>", "filename": "...", "mimeType": "...", "size": 123}`. Only `fileId` matters when reading. On read, the store checks the row's `workspace_id` equals the running execution's workspace and that it has not expired; otherwise the call fails with `FILE_NOT_FOUND`. A file id copied from another workspace is therefore useless.
+- **Picking one file** (added 2026-10-06 in lane F5): templates gained list indexing, `[n]` or `.n` (0..9999, no leading zero), so `{{trigger.input.attachments[0]}}` passes one reference (for example to `google.drive` `file`); without an index the whole list passes through (for example to `email.send` `attachments`).
 - **Limits** (configurable): 10 MiB per file, 5 attachments per email or message, 20 MiB per email (Gmail allows 25). Large transfers use their own byte caps, while the generic 1 MiB outbound cap stays for everything else.
 
 ## Nodes

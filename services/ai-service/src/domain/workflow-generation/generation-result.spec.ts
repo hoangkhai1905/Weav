@@ -117,3 +117,71 @@ describe('generationResultSchema edge ports', () => {
     expect(switchGraph('false').success).toBe(false);
   });
 });
+
+describe('generationResultSchema nested configs', () => {
+  const rich = generationResultSchema([
+    { type: 'trigger.manual', configFields: [] },
+    {
+      type: 'logic.condition',
+      configFields: ['left', 'operator', 'right', 'combinator', 'conditions'],
+    },
+    {
+      type: 'email.send',
+      configFields: [
+        'to',
+        'subject',
+        'body',
+        'attachments',
+        'replyToMessageId',
+      ],
+    },
+  ]);
+  const multi = {
+    id: 'check',
+    type: 'logic.condition',
+    config: {
+      combinator: 'or',
+      conditions: [
+        { left: '{{trigger.input.a}}', operator: 'gt', right: 1 },
+        { left: '{{trigger.input.b}}', operator: 'eq', right: 'x' },
+      ],
+    },
+  };
+  const mail = (attachments: unknown) => ({
+    id: 'mail',
+    type: 'email.send',
+    config: {
+      to: 'a@example.com',
+      subject: 's',
+      body: 'b',
+      replyToMessageId: '{{trigger.input.messageId}}',
+      attachments,
+    },
+  });
+  const graph = (attachments: unknown) =>
+    rich.safeParse({
+      status: 'ready',
+      intent: {
+        name: 'W',
+        nodes: [start, multi, mail(attachments)],
+        edges: [
+          { from: 'start', to: 'check' },
+          { from: 'check', to: 'mail', port: 'true' },
+        ],
+      },
+    });
+
+  it('accepts the multi-condition form and a template attachments list', () => {
+    expect(graph('{{trigger.input.attachments}}').success).toBe(true);
+  });
+
+  it('accepts attachments given as objects with a public url', () => {
+    expect(
+      graph([{ url: 'https://example.com/a.pdf', filename: 'a.pdf' }]).success,
+    ).toBe(true);
+  });
+
+  it('still rejects an internal attachment url', () => {
+    expect(graph([{ url: 'http://localhost/a.pdf' }]).success).toBe(false);
+  });
+});

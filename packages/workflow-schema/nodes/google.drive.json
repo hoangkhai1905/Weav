@@ -44,7 +44,7 @@
     },
     "file": {
       "title": "File",
-      "description": "A file from an earlier step (for example an email attachment: {{ trigger.attachments[0] }}), up to 5 MiB. Used by upload instead of content; the file name and type default to the file's own.",
+      "description": "A file from an earlier step (for example an email attachment: {{ trigger.input.attachments[0] }}), up to 5 MiB. Used by upload instead of content; the file name and type default to the file's own.",
       "x-weav-template": true,
       "oneOf": [
         {

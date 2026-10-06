@@ -42,5 +42,5 @@ Not tested yet: live calls (Sheets lookup, Calendar list, Telegram parse mode/re
 
 ## 5. Follow-ups
 
-- Lane F5: `GENERATE_SYSTEM` and assistant help text (multi-condition form, new operations), live-test flows, FE handover of these contracts.
+- Lane F5 (done 2026-10-06): `GENERATE_SYSTEM` and assistant help text, live-test steps (logic AND/OR, calendar list, Telegram HTML/silent/reply; Sheets lookup WARN because the Google flow has no Sheets connection), FE handover `docs/api/week4-node-contracts.md`, and list indexing in `MappingResolver` (`[n]`/`.n`, strictly additive: maps first, stray-bracket typos are normal `MAPPING_ERROR` issues). Review: no HIGH/CRITICAL; one MEDIUM (parser crash on `]]`) fixed. Checks: workflow-service `mvnw verify` 822 tests (only the known notification-dist error), ai-service 202 unit + 75 e2e, build, lint clean.
 - Accepted LOWs: lookup reads the sheet before checking the column against the range start; a date-only `timeMin` is UTC midnight.

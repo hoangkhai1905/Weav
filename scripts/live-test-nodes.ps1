@@ -18,7 +18,7 @@
 [CmdletBinding()]
 param(
     [string]$GatewayUrl = 'http://localhost:3000',
-    [ValidateSet('telegram', 'google', 'logic', 'ai', 'gmail', 'assistant', 'all')][string]$Flow = 'all',
+    [ValidateSet('telegram', 'google', 'logic', 'ai', 'gmail', 'attachments', 'assistant', 'all')][string]$Flow = 'all',
     [string]$WorkspaceId,
     [ValidateScript({ [string]::IsNullOrEmpty($_) -or ($_ -as [guid]) })][string]$GmailConnectionId,
     [switch]$Cleanup
@@ -240,10 +240,19 @@ Preconditions (all must be true before you continue):
                     connectionId = $connId
                     chatId = '{{ trigger.input.message.chat.id }}'
                     text = 'Echo: {{ trigger.input.message.text }}'
+                } },
+            @{ id = 'echo-html'; type = 'telegram.send_message'; config = @{
+                    connectionId = $connId
+                    chatId = '{{ trigger.input.message.chat.id }}'
+                    text = '<b>Weav</b> live test: HTML, silent, reply'
+                    parseMode = 'HTML'
+                    disableNotification = $true
+                    replyToMessageId = '{{ trigger.input.message.message_id }}'
                 } }
         )
         edges = @(
-            @{ id = 'e1'; source = 'telegram-trigger'; target = 'echo' }
+            @{ id = 'e1'; source = 'telegram-trigger'; target = 'echo' },
+            @{ id = 'e2'; source = 'echo'; target = 'echo-html' }
         )
     }
     $wf = New-PublishedWorkflow ('Live test Telegram echo ' + $script:Stamp) $definition
@@ -272,6 +281,7 @@ Preconditions (all must be true before you continue):
     $deadline = (Get-Date).AddSeconds(120)
     $anySuccess = $false
     $anyTerminal = $false
+    $doneDetail = $null
     while ((Get-Date) -lt $deadline -and -not $anyTerminal) {
         $page = Invoke-Api 'list executions' 'GET' "/api/v1/workspaces/$script:Ws/workflows/$wf/executions?page=0&size=20"
         if ($page.Ok) {
@@ -282,6 +292,7 @@ Preconditions (all must be true before you continue):
                 if ($d.Ok) { Show-Execution $d.Data }
                 if ($terminal -contains $item.status) {
                     $anyTerminal = $true
+                    if ($d.Ok) { $doneDetail = $d.Data }
                     if ($item.status -eq 'SUCCESS') { $anySuccess = $true }
                 }
             }
@@ -293,8 +304,12 @@ Preconditions (all must be true before you continue):
         Write-Host '  Hint: check the tunnel is reachable, getWebhookInfo shows the tunnel URL with no last_error_message, and you messaged the right bot with plain text.' -ForegroundColor Yellow
     } else {
         Add-Result 'telegram execution SUCCESS' $anySuccess
+        if ($null -ne $doneDetail) {
+            $n = Find-Node $doneDetail 'echo-html'
+            Add-Result 'telegram send with parseMode HTML, silent, reply' ($null -ne $n -and $n.status -eq 'SUCCESS') $(if ($null -ne $n) { [string]$n.status } else { 'missing' })
+        }
     }
-    Write-Host '  Check Telegram: the bot should have replied "Echo: <your text>".' -ForegroundColor Yellow
+    Write-Host '  Check Telegram: the bot should have replied "Echo: <your text>", then a bold "Weav" message as a silent reply to your message.' -ForegroundColor Yellow
     if ($Cleanup) {
         Write-Host '  After cleanup (pause) getWebhookInfo should show an empty url.' -ForegroundColor Yellow
     }
@@ -382,12 +397,15 @@ http://localhost:8082/oauth/google/callback, and your Google account is a test u
                     connectionId = $driveId; operation = 'upload'; name = $fileName
                     content = ('Weav live test ' + $script:Stamp); mimeType = 'text/plain' } },
             @{ id = 'drive-list'; type = 'google.drive'; config = @{
-                    connectionId = $driveId; operation = 'list'; nameContains = 'weav-live-test'; pageSize = 10 } }
+                    connectionId = $driveId; operation = 'list'; nameContains = 'weav-live-test'; pageSize = 10 } },
+            @{ id = 'calendar-list'; type = 'google.calendar'; config = @{
+                    connectionId = $calId; operation = 'list'; maxResults = 5 } }
         )
         edges = @(
             @{ id = 'e1'; source = 'manual'; target = 'calendar' },
             @{ id = 'e2'; source = 'calendar'; target = 'drive-upload' },
-            @{ id = 'e3'; source = 'drive-upload'; target = 'drive-list' }
+            @{ id = 'e3'; source = 'drive-upload'; target = 'drive-list' },
+            @{ id = 'e4'; source = 'drive-list'; target = 'calendar-list' }
         )
     }
     $wf = New-PublishedWorkflow ('Live test Google ' + $script:Stamp) $definition
@@ -407,7 +425,7 @@ http://localhost:8082/oauth/google/callback, and your Google account is a test u
     if ($null -eq $detail) { Add-Result 'google execution detail' $false 'never readable'; throw 'No execution detail.' }
     Show-Execution $detail
 
-    foreach ($id in @('calendar', 'drive-upload', 'drive-list')) {
+    foreach ($id in @('calendar', 'drive-upload', 'drive-list', 'calendar-list')) {
         $n = Find-Node $detail $id
         $ok = ($null -ne $n -and $n.status -eq 'SUCCESS')
         Add-Result ("google node $id") $ok $(if ($null -ne $n) { [string]$n.status } else { 'missing' })
@@ -421,6 +439,11 @@ http://localhost:8082/oauth/google/callback, and your Google account is a test u
         $names = @(Get-Prop $out 'files') | ForEach-Object { Get-Prop $_ 'name' }
         Write-Host ("  listed files: {0}" -f ($names -join ', '))
     }
+    $out = Get-Prop (Find-Node $detail 'calendar-list') 'output'
+    $listCount = Get-Prop $out 'count'
+    $listOk = ($null -ne $listCount) -and ([int]$listCount -le 5) -and ($null -ne (Get-Prop $out 'truncated'))
+    Add-Result 'calendar list returns count (max 5) and truncated' $listOk ('count ' + $listCount + ' truncated ' + (Get-Prop $out 'truncated'))
+    Add-Warn 'sheets lookup not run' 'this flow has no Sheets connection; add one and a google.sheets lookup step to cover it'
     Add-Result 'google execution SUCCESS' ($detail.status -eq 'SUCCESS') ('status ' + $detail.status)
 }
 
@@ -461,14 +484,30 @@ function Invoke-LogicFlow {
             @{ id = 'route'; type = 'logic.switch'; config = @{ value = '{{ nodes.shape.output.plan }}'; cases = @('1', '2') } },
             @{ id = 'branch-one'; type = 'data.set'; config = @{ fields = @{ branch = 'one' } } },
             @{ id = 'branch-two'; type = 'data.set'; config = @{ fields = @{ branch = 'two' } } },
-            @{ id = 'branch-default'; type = 'data.set'; config = @{ fields = @{ branch = 'default' } } }
+            @{ id = 'branch-default'; type = 'data.set'; config = @{ fields = @{ branch = 'default' } } },
+            @{ id = 'all-of'; type = 'logic.condition'; config = @{ combinator = 'and'; conditions = @(
+                        @{ left = '{{ nodes.shape.output.n }}'; operator = 'gt'; right = 5 },
+                        @{ left = '{{ nodes.shape.output.plan }}'; operator = 'ne'; right = 'gold' }) } },
+            @{ id = 'any-of'; type = 'logic.condition'; config = @{ combinator = 'or'; conditions = @(
+                        @{ left = '{{ nodes.shape.output.n }}'; operator = 'gt'; right = 100 },
+                        @{ left = '{{ nodes.shape.output.plan }}'; operator = 'eq'; right = 'gold' }) } },
+            @{ id = 'all-yes'; type = 'data.set'; config = @{ fields = @{ branch = 'all-yes' } } },
+            @{ id = 'all-no'; type = 'data.set'; config = @{ fields = @{ branch = 'all-no' } } },
+            @{ id = 'any-yes'; type = 'data.set'; config = @{ fields = @{ branch = 'any-yes' } } },
+            @{ id = 'any-no'; type = 'data.set'; config = @{ fields = @{ branch = 'any-no' } } }
         )
         edges = @(
             @{ id = 'e1'; source = 'manual'; target = 'shape' },
             @{ id = 'e2'; source = 'shape'; target = 'route' },
             @{ id = 'e3'; source = 'route'; target = 'branch-one'; sourcePort = '1' },
             @{ id = 'e4'; source = 'route'; target = 'branch-two'; sourcePort = '2' },
-            @{ id = 'e5'; source = 'route'; target = 'branch-default'; sourcePort = 'default' }
+            @{ id = 'e5'; source = 'route'; target = 'branch-default'; sourcePort = 'default' },
+            @{ id = 'e6'; source = 'shape'; target = 'all-of' },
+            @{ id = 'e7'; source = 'shape'; target = 'any-of' },
+            @{ id = 'e8'; source = 'all-of'; target = 'all-yes'; sourcePort = 'true' },
+            @{ id = 'e9'; source = 'all-of'; target = 'all-no'; sourcePort = 'false' },
+            @{ id = 'e10'; source = 'any-of'; target = 'any-yes'; sourcePort = 'true' },
+            @{ id = 'e11'; source = 'any-of'; target = 'any-no'; sourcePort = 'false' }
         )
     }
     $wf = New-PublishedWorkflow ('Live test logic ' + $script:Stamp) $definition
@@ -498,6 +537,18 @@ function Invoke-LogicFlow {
             $status = if ($null -ne $n) { [string]$n.status } else { 'missing' }
             $want = if ($b -eq $run.Expect) { 'SUCCESS' } else { 'SKIPPED' }
             Add-Result "$label $b is $want" ($status -eq $want) ('status ' + $status)
+        }
+
+        # Multi-condition form: all-of = (n > 5 AND plan != gold), any-of = (n > 100 OR plan == gold). n is always 7 here.
+        $isGold = ([string]$run.Input.plan -eq 'gold')
+        $want = @{
+            'all-yes' = $(if ($isGold) { 'SKIPPED' } else { 'SUCCESS' }); 'all-no' = $(if ($isGold) { 'SUCCESS' } else { 'SKIPPED' })
+            'any-yes' = $(if ($isGold) { 'SUCCESS' } else { 'SKIPPED' }); 'any-no' = $(if ($isGold) { 'SKIPPED' } else { 'SUCCESS' })
+        }
+        foreach ($b in @('all-yes', 'all-no', 'any-yes', 'any-no')) {
+            $n = Find-Node $detail $b
+            $status = if ($null -ne $n) { [string]$n.status } else { 'missing' }
+            Add-Result "$label condition $b is $($want[$b])" ($status -eq $want[$b]) ('status ' + $status)
         }
     }
     Write-Host '  Text coercion (a mapped number into a string-only field) is not re-checked here: no side-effect-free node has such a field. The telegram flow (numeric chat id) and unit tests cover it.' -ForegroundColor DarkGray
@@ -657,6 +708,161 @@ You will need to send one email yourself while the script waits (a few minutes).
     Add-Result 'gmail no duplicate run after another poll' ($count -eq 1) ("GMAIL runs $count, expected 1")
 }
 
+# ---------- email attachments flow (email.send attachments/reply, trigger.gmail attachments) ----------
+
+# Prints a hint for the failure codes this flow is most likely to hit; looks at every failed node of an execution.
+function Write-AttachmentHints($Detail) {
+    foreach ($n in @(Get-Prop $Detail 'nodes')) {
+        $code = Get-Prop (Get-Prop $n 'error') 'code'
+        if (-not $code) { continue }
+        switch ([string]$code) {
+            'DEPENDENCY_NOT_CONFIGURED' { Write-Host ("  Hint ({0}): the file store is not configured. Set WORKFLOW_FILES_S3_ENDPOINT, _BUCKET, _ACCESS_KEY_ID and _SECRET_ACCESS_KEY in .env and restart workflow-service." -f $n.nodeId) -ForegroundColor Yellow }
+            'CONNECTION_RECONNECT_REQUIRED' { Write-Host ("  Hint ({0}): reconnect the Gmail connection (re-run with -GmailConnectionId <id>); it needs gmail.send and gmail.readonly." -f $n.nodeId) -ForegroundColor Yellow }
+            'ATTACHMENT_LIMIT_EXCEEDED' { Write-Host ("  Hint ({0}): more than 5 attachments or over 20 MiB in total." -f $n.nodeId) -ForegroundColor Yellow }
+            'ATTACHMENT_TOO_LARGE' { Write-Host ("  Hint ({0}): an attachment is over 10 MiB, or the URL host refused or redirected the download (redirects are not followed)." -f $n.nodeId) -ForegroundColor Yellow }
+            'REPLY_MESSAGE_NOT_FOUND' { Write-Host ("  Hint ({0}): replyToMessageId is not a message of the connected mailbox." -f $n.nodeId) -ForegroundColor Yellow }
+            'FILE_NOT_FOUND' { Write-Host ("  Hint ({0}): the stored file is unknown, expired (7 days) or belongs to another workspace." -f $n.nodeId) -ForegroundColor Yellow }
+            'FILE_STORE_UNAVAILABLE' { Write-Host ("  Hint ({0}): the file store (R2 or the database) failed; check the WORKFLOW_FILES_S3_* values and workflow-service logs." -f $n.nodeId) -ForegroundColor Yellow }
+            default { Write-Host ("  Node {0} failed with {1}." -f $n.nodeId, $code) -ForegroundColor Yellow }
+        }
+    }
+}
+
+function Invoke-AttachmentsFlow {
+    Write-Host ''
+    Write-Host '== Email attachments flow (email.send + trigger.gmail attachments) ==' -ForegroundColor Cyan
+    Write-Host @'
+Preconditions: as for the gmail flow (Google OAuth client, gmail.readonly and gmail.send scopes, test user), AND the
+workflow file store is configured: WORKFLOW_FILES_S3_ENDPOINT/_BUCKET/_ACCESS_KEY_ID/_SECRET_ACCESS_KEY in .env, workflow-service
+restarted. The script emails YOUR OWN Gmail address (one email with a small PDF attached, plus one threaded reply), so you do
+not need to send anything. A Gmail connection made earlier must be reconnected (-GmailConnectionId <id>).
+Attachment source: https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf (W3C test PDF, about 13 KB).
+'@
+    $answer = Read-Host 'Press Enter when ready (type skip to skip this flow)'
+    if ($answer -eq 'skip') { Write-Host '  Attachments flow skipped.' -ForegroundColor Yellow; return }
+    $addr = (Read-Host 'Gmail address of the account you are about to connect').Trim()
+    if ($addr -notmatch '^[^@\s,;<>]+@[^@\s,;<>]+$') { throw 'That is not a single email address.' }
+
+    $connId = Connect-GoogleProvider 'GMAIL' ('Weav live test attachments ' + $script:Stamp) $GmailConnectionId
+    $driveAnswer = Read-Host 'Also upload the received attachment to Google Drive (needs a second Google sign-in, GOOGLE_DRIVE)? yes/no'
+    $driveId = if ($driveAnswer -eq 'yes') { Connect-GoogleProvider 'GOOGLE_DRIVE' ('Weav live test attachments drive ' + $script:Stamp) } else { $null }
+    $token = 'weav-att-' + $script:Stamp
+    $subject = 'Weav attachments live test ' + $token
+    $pdfUrl = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+
+    # (b) first, so its poller is already watching when the email in (a) arrives.
+    $triggerNodes = @(
+        @{ id = 'manual'; type = 'trigger.manual'; config = @{} },
+        @{ id = 'mail'; type = 'trigger.gmail'; config = @{
+                connectionId = $connId; query = ('in:inbox subject:"' + $token + '"'); pollIntervalMinutes = 1 } },
+        @{ id = 'reply'; type = 'email.send'; config = @{
+                connectionId = $connId; to = $addr
+                subject = '{{ trigger.input.subject }}'
+                body = 'Reply with the same attachments (Weav live test).'
+                replyToMessageId = '{{ trigger.input.messageId }}'
+                attachments = '{{ trigger.input.attachments }}' } }
+    )
+    $triggerEdges = @( @{ id = 'e1'; source = 'mail'; target = 'reply' } )
+    if ($null -ne $driveId) {
+        $triggerNodes += @{ id = 'drive'; type = 'google.drive'; config = @{
+                connectionId = $driveId; operation = 'upload'; file = '{{ trigger.input.attachments[0] }}' } }
+        $triggerEdges += @{ id = 'e2'; source = 'mail'; target = 'drive' }
+    }
+    $triggerDef = @{ schemaVersion = '1.0'; nodes = $triggerNodes; edges = $triggerEdges }
+    $trigWf = New-PublishedWorkflow ('Live test attachments trigger ' + $script:Stamp) $triggerDef
+    $trigBase = "/api/v1/workspaces/$script:Ws/workflows/$trigWf"
+
+    Write-Host ''
+    Write-Host '-- (a) email.send: html body, sender name, cc, one URL attachment --' -ForegroundColor Cyan
+    $sendDef = @{
+        schemaVersion = '1.0'
+        nodes = @(
+            @{ id = 'manual'; type = 'trigger.manual'; config = @{} },
+            @{ id = 'send'; type = 'email.send'; config = @{
+                    connectionId = $connId; to = $addr; cc = $addr; subject = $subject
+                    bodyType = 'html'; senderName = 'Weav live test'
+                    body = '<p>Weav <b>attachments</b> live test <i>' + $token + '</i></p>'
+                    attachments = @( @{ url = $pdfUrl; filename = 'weav-live-test.pdf' } ) } }
+        )
+        edges = @( @{ id = 'e1'; source = 'manual'; target = 'send' } )
+    }
+    $sendWf = New-PublishedWorkflow ('Live test email attachments ' + $script:Stamp) $sendDef
+    $detail = Invoke-ManualRun $sendWf @{} 'email.send'
+    $send = Find-Node $detail 'send'
+    $out = Get-Prop $send 'output'
+    Add-Result 'email.send execution SUCCESS' ($detail.status -eq 'SUCCESS') ('status ' + $detail.status)
+    Add-Result 'email.send status SENT' ([string](Get-Prop $out 'status') -eq 'SENT') ('status ' + (Get-Prop $out 'status'))
+    Add-Result 'email.send attachmentCount 1' ([string](Get-Prop $out 'attachmentCount') -eq '1') ('attachmentCount ' + (Get-Prop $out 'attachmentCount'))
+    $origThread = [string](Get-Prop $out 'threadId')
+    if ($detail.status -ne 'SUCCESS') {
+        Write-AttachmentHints $detail
+        Write-Host '  Part (b) needs the email; stopping.' -ForegroundColor Yellow
+        return
+    }
+    Write-Host '  Check your inbox: from "Weav live test", cc to yourself, bold text, weav-live-test.pdf attached.' -ForegroundColor Yellow
+
+    Write-Host ''
+    Write-Host '-- (b) trigger.gmail attachments -> threaded reply with the same attachments --' -ForegroundColor Cyan
+    Write-Host 'Polling the trigger workflow every 10 s for up to 4 minutes (it fires on the email just sent)...' -ForegroundColor Yellow
+    $items = @()
+    $deadline = (Get-Date).AddMinutes(4)
+    while ((Get-Date) -lt $deadline -and $items.Count -eq 0) {
+        Start-Sleep -Seconds 10
+        $page = Invoke-Api 'list executions' 'GET' "$trigBase/executions?page=0&size=20"
+        if ($page.Ok) { $items = @(@(Get-Prop $page.Data 'items') | Where-Object { $_.triggerType -eq 'GMAIL' }) }
+    }
+    # The reply carries the token in its subject too, so stop the trigger before it can see its own reply.
+    $r = Invoke-Api 'pause trigger workflow' 'POST' "$trigBase/pause"
+    if ($r.Ok) {
+        # Already paused: keep -Cleanup from pausing it a second time.
+        foreach ($w in @($script:Workflows)) { if ($w.Id -eq $trigWf) { [void]$script:Workflows.Remove($w) } }
+    } else {
+        Write-Host '  WARNING: could not pause the trigger workflow; pause it manually or it will keep replying to its own replies.' -ForegroundColor Red
+    }
+    if ($items.Count -eq 0) {
+        Add-Result 'attachments gmail run observed' $false 'no GMAIL run within 4 minutes'
+        Write-Host '  Hint: CONNECTION_RECONNECT_REQUIRED means the connection lacks gmail.readonly (reconnect with -GmailConnectionId); also check the poller is enabled.' -ForegroundColor Yellow
+        return
+    }
+    $execId = [string]$items[0].executionId
+    $detail = $null
+    $deadline = (Get-Date).AddMinutes(1)
+    do {
+        $d = Invoke-Api 'execution detail' 'GET' "$trigBase/executions/$execId"
+        if ($d.Ok) { $detail = $d.Data }
+        $done = ($null -ne $detail -and @('SUCCESS', 'FAILED', 'CANCELLED') -contains $detail.status)
+        if (-not $done) { Start-Sleep -Seconds 2 }
+    } while ((Get-Date) -lt $deadline -and -not $done)
+    if ($null -eq $detail) { Add-Result 'attachments gmail execution detail' $false 'never readable'; throw 'No execution detail.' }
+    Show-Execution $detail
+    Write-AttachmentHints $detail
+    Add-Result 'attachments gmail execution SUCCESS' ($detail.status -eq 'SUCCESS') ('status ' + $detail.status)
+
+    $in = Get-Prop (Find-Node $detail 'mail') 'output'
+    $atts = @(Get-Prop $in 'attachments')
+    $first = if ($atts.Count -gt 0) { $atts[0] } else { $null }
+    if ($null -eq $in) {
+        Add-Warn 'trigger attachments not inspected' 'the trigger node exposes no output; the reply node result below still proves the hand-over'
+    } else {
+        Add-Result 'trigger input has an attachment with fileId' ($null -ne $first -and [bool](Get-Prop $first 'fileId')) $(if ($null -ne $first) { 'name ' + (Short (Get-Prop $first 'filename') 40) + ' size ' + (Get-Prop $first 'size') + ' skipped ' + (Get-Prop $first 'skipped') } else { 'no attachments' })
+        if ($null -ne $first -and (Get-Prop $first 'skipped') -eq 'not_stored') {
+            Write-Host '  Hint (DEPENDENCY_NOT_CONFIGURED): the file store is not configured, so the attachment was skipped. Set WORKFLOW_FILES_S3_* in .env and restart workflow-service.' -ForegroundColor Yellow
+        }
+    }
+    $reply = Get-Prop (Find-Node $detail 'reply') 'output'
+    Add-Result 'reply status SENT with the attachments' (([string](Get-Prop $reply 'status') -eq 'SENT') -and ([string](Get-Prop $reply 'attachmentCount') -eq '1')) ('status ' + (Get-Prop $reply 'status') + ' attachmentCount ' + (Get-Prop $reply 'attachmentCount'))
+    Add-Result 'reply stays in the original thread' ($origThread -ne '' -and [string](Get-Prop $reply 'threadId') -eq $origThread) 'threadId equals the thread of the first email'
+
+    if ($null -ne $driveId) {
+        $up = Find-Node $detail 'drive'
+        $upOut = Get-Prop $up 'output'
+        Add-Result 'drive upload from attachments[0] SUCCESS' ($null -ne $up -and $up.status -eq 'SUCCESS' -and [bool](Get-Prop $upOut 'id')) $(if ($null -ne $up) { 'status ' + $up.status + ' name ' + (Short (Get-Prop $upOut 'name') 40) } else { 'node missing' })
+    } else {
+        Add-Warn 'drive upload from an email attachment not run' 'answered no; re-run and answer yes to cover google.drive upload with file = attachments[0]'
+    }
+    Write-Host '  Check your inbox: one threaded reply with weav-live-test.pdf. The trigger workflow is paused.' -ForegroundColor Yellow
+}
+
 # ---------- assistant flow ----------
 
 function Add-Warn([string]$Step, [string]$Detail = '') {
@@ -803,6 +1009,9 @@ try {
     if ($Flow -in @('gmail', 'all')) {
         try { Invoke-GmailFlow } catch { Write-Host ('  Gmail flow stopped: ' + $_.Exception.Message) -ForegroundColor Red }
     }
+    if ($Flow -in @('attachments', 'all')) {
+        try { Invoke-AttachmentsFlow } catch { Write-Host ('  Attachments flow stopped: ' + $_.Exception.Message) -ForegroundColor Red }
+    }
     if ($Flow -in @('assistant', 'all')) {
         try { Invoke-AssistantFlow } catch { Write-Host ('  Assistant flow stopped: ' + $_.Exception.Message) -ForegroundColor Red }
     }
@@ -830,6 +1039,8 @@ Write-Host '  [ ] Telegram: the bot echoed "Echo: <your text>" back to you'
 Write-Host '  [ ] Google Calendar: event "Weav live test" exists at the expected local time (about 1 h from the run, 30 min long)'
 Write-Host '  [ ] Google Drive: file weav-live-test-<timestamp>.txt exists'
 Write-Host '  [ ] Gmail: the consent screen listed gmail.readonly and gmail.send; the email you sent started exactly one run'
+Write-Host '  [ ] Attachments: the inbox holds the HTML email (sender name, cc, weav-live-test.pdf) and one threaded reply with the PDF'
+Write-Host '  [ ] Telegram (HTML node): bold "Weav" text arrived silently as a reply to your message'
 Write-Host '  [ ] Assistant: any WARN above (no draft) is worth a look at the answer text'
 Write-Host '  [ ] Consent screens listed only calendar.events (Calendar) / drive.file (Drive) plus openid and email'
 
