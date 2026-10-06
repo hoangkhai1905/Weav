@@ -110,7 +110,7 @@
 - Dữ liệu thử để lại trên Neon: quy trình `193e559c-44da-4ba9-9419-98698b014103` ("Untitled Automation Pipeline", đã xuất bản, 3 lượt chạy: 2 lỗi, 1 thành công) trong workspace "test 1". Xóa quy trình chưa có API.
 - Chưa làm / còn lại:
   - Thêm kết nối từ inspector rồi ủy quyền Google thật: cần user tự đăng nhập Google. Luồng đã được e2e phủ bằng route giả.
-  - Tab "Trình chỉnh sửa" xuống 2 dòng ở header trang lượt chạy khi rộng 800px (chưa sửa).
+  - Tab "Trình chỉnh sửa" xuống 2 dòng ở header trang lượt chạy khi rộng 800px: đã sửa (nav `shrink-0 whitespace-nowrap`, tên quy trình co lại thay; e2e với tên dài: không có bản sửa thì lỗi, có thì đạt).
 - Đã sửa sau đó: header editor dưới `lg` dùng cột `minmax(0,1fr)_auto_auto` để tên quy trình co lại thay vì các nút tràn đè lên tab (e2e ở 800px, tiếng Việt, quy trình đã xuất bản: không có bản sửa thì lỗi, có bản sửa thì đạt). `ConfirmModal` có `role="alertdialog"`, `aria-modal`, liên kết tiêu đề và mô tả, nhãn nút đóng, tự focus nút Hủy, Esc để đóng.
 
 ## 6. Khôi phục sau merge và đổi chữ "workflow" (aa8e7b9)

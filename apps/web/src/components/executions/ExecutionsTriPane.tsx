@@ -262,7 +262,7 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
         </Link>
         <span aria-hidden="true" className="text-muted-foreground">/</span>
         <h1 className="min-w-0 truncate text-sm font-semibold text-foreground">{workflow?.name ?? workflowId}</h1>
-        <nav aria-label={t('builder.workflow_sections')} className="ml-4 flex h-12 items-stretch gap-5">
+        <nav aria-label={t('builder.workflow_sections')} className="ml-4 flex h-12 shrink-0 items-stretch gap-5 whitespace-nowrap">
           <Link
             to={`/workflows/${encodeURIComponent(workflowId)}/builder`}
             className="inline-flex items-center border-b-2 border-transparent px-0.5 text-[13px] font-medium text-text-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

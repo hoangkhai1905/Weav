@@ -1492,6 +1492,27 @@ test.describe("workflow builder connection readiness", () => {
     expect(navBox.x + navBox.width).toBeLessThanOrEqual(firstAction.x);
   });
 
+  test("run history section tabs stay on one line at a narrow desktop width", async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 720 });
+    await installAuthFixture(page);
+    await page.addInitScript(() => localStorage.setItem("weav_lang_v1", "VI"));
+    await page.route("**/api/v1/workspaces/*/connections", (route) => fulfillJson(route, []));
+    await routeWorkflow(page, { sheets: { operation: "read" }, email: { to: "a@example.test", subject: "s" } });
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}`, (route) =>
+      fulfillJson(route, { ...detail({ operation: "read" }, { to: "a@example.test", subject: "s" }), name: "Untitled Automation Pipeline for monthly invoices" }),
+    );
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/executions`);
+    const tabs = page.getByTestId("executions-tripane").getByRole("navigation").locator("a, span");
+    await expect(tabs.first()).toBeVisible();
+    // One client rect per text node means the label did not wrap.
+    const lines = await tabs.evaluateAll((els) => els.map((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      return new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size;
+    }));
+    expect(lines.every((count) => count === 1)).toBe(true);
+  });
+
   test("adds a Google Sheets connection from the inspector, saves the draft and returns to the step after OAuth", async ({ page }) => {
     await installAuthFixture(page);
     let created = false;
