@@ -754,10 +754,12 @@ Attachment source: https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf
     $triggerNodes = @(
         @{ id = 'manual'; type = 'trigger.manual'; config = @{} },
         @{ id = 'mail'; type = 'trigger.gmail'; config = @{
-                connectionId = $connId; query = ('in:inbox subject:"' + $token + '"'); pollIntervalMinutes = 1 } },
+                # No in:inbox: the connected account's own sent copy matches even if the typed address is another
+                # account; has:attachment and -subject:Re skip replies (ours, or an auto-reply from the recipient).
+                connectionId = $connId; query = ('subject:"' + $token + '" has:attachment -subject:Re'); pollIntervalMinutes = 1 } },
         @{ id = 'reply'; type = 'email.send'; config = @{
                 connectionId = $connId; to = $addr
-                subject = '{{ trigger.input.subject }}'
+                subject = 'Re: {{ trigger.input.subject }}'
                 body = 'Reply with the same attachments (Weav live test).'
                 replyToMessageId = '{{ trigger.input.messageId }}'
                 attachments = '{{ trigger.input.attachments }}' } }
