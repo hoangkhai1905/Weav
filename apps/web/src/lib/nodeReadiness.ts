@@ -16,7 +16,23 @@ export interface NodeReadinessBadge {
   labelKey: string;
 }
 
-export const getNodeReadinessBadge = (nodeType: string, config: Record<string, unknown>): NodeReadinessBadge => {
+const NOT_CONFIGURED: NodeReadinessBadge = { state: 'not-configured', label: 'Not configured', labelKey: 'builder.readiness.not_configured' };
+
+// Fields the Workflow Service requires before publication (DefinitionValidator), besides connectionId.
+const CONNECTION_NODE_FIELDS: Record<string, string[]> = {
+  'google.sheets': ['spreadsheetId', 'range'],
+  'email.send': ['to', 'subject'],
+};
+
+/**
+ * `attachableConnectionIds`: ids of the workspace's ACTIVE connections the user can attach.
+ * Leave it undefined while the list is loading so a step is not flagged before we know.
+ */
+export const getNodeReadinessBadge = (
+  nodeType: string,
+  config: Record<string, unknown>,
+  attachableConnectionIds?: ReadonlySet<string>,
+): NodeReadinessBadge => {
   if (!SUPPORTED_NODE_TYPES.has(nodeType)) return { state: 'unsupported', label: 'Unsupported', labelKey: 'builder.readiness.unsupported' };
   if (nodeType === 'trigger.webhook') return { state: 'draft', label: 'Not published', labelKey: 'builder.readiness.not_published' };
   if (
@@ -26,16 +42,13 @@ export const getNodeReadinessBadge = (nodeType: string, config: Record<string, u
   ) {
     return { state: 'unavailable', label: 'Unavailable', labelKey: 'builder.readiness.unavailable' };
   }
-  if (nodeType === 'google.sheets') {
-    return String(config.connectionId ?? '').trim()
-      ? { state: 'authorization-required', label: 'Authorization required', labelKey: 'builder.readiness.authorization_required' }
-      : { state: 'not-configured', label: 'Not configured', labelKey: 'builder.readiness.not_configured' };
-  }
-  if (
-    nodeType === 'email.send' &&
-    (!String(config.connectionId ?? '').trim() || !String(config.to ?? '').trim() || !String(config.subject ?? '').trim())
-  ) {
-    return { state: 'not-configured', label: 'Not configured', labelKey: 'builder.readiness.not_configured' };
+  const connectionFields = CONNECTION_NODE_FIELDS[nodeType];
+  if (connectionFields) {
+    const connectionId = String(config.connectionId ?? '').trim();
+    if (!connectionId || connectionFields.some((field) => !String(config[field] ?? '').trim())) return NOT_CONFIGURED;
+    if (attachableConnectionIds && !attachableConnectionIds.has(connectionId)) {
+      return { state: 'authorization-required', label: 'Authorization required', labelKey: 'builder.readiness.authorization_required' };
+    }
   }
   if (nodeType === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
     return { state: 'not-configured', label: 'Not configured', labelKey: 'builder.readiness.not_configured' };
