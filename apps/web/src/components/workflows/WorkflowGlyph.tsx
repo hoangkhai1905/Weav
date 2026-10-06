@@ -24,19 +24,14 @@ function renderIcon(triggerType: string, size: number) {
   return <Workflow {...props} />;
 }
 
-export function WorkflowGlyph({ triggerType, status, size = 17 }: WorkflowGlyphProps) {
-  const tone =
-    status === 'FAILED'
-      ? 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-400'
-      : status === 'RUNNING'
-        ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-400'
-        : 'border-border bg-muted/70 text-foreground';
+export function WorkflowGlyph({ triggerType, status, size = 14 }: WorkflowGlyphProps) {
+  const tone = status === 'FAILED' ? 'text-err' : status === 'RUNNING' ? 'text-run' : 'text-muted-foreground';
 
   return (
     <span
       data-testid="workflow-glyph"
       aria-hidden="true"
-      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${tone}`}
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted ${tone}`}
     >
       {renderIcon(triggerType, size)}
     </span>

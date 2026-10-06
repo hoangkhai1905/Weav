@@ -8,6 +8,7 @@ import {
 import axios, { type AxiosRequestConfig } from 'axios';
 import { getStoredAuthToken } from './ocr.api';
 import type { UserProfile } from '../types/workflow.types';
+import { tr } from '../lib/i18n/tr';
 
 export const isAuthMockMode = import.meta.env.VITE_API_MODE === 'mock';
 
@@ -118,14 +119,14 @@ class AuthApiError extends Error {
   readonly status: number;
   constructor(status: number) {
     const messages: Record<number, string> = {
-      400: 'Please check your email, password and display name.',
-      401: 'Invalid credentials or expired session.',
-      403: 'Google login was rejected by the identity service.',
-      409: 'This email is already registered. Please sign in.',
-      429: 'Too many attempts. Please try again later.',
-      503: 'Google login is not configured or temporarily unavailable.',
+      400: tr('msg.please_check_your_email_password_and_display'),
+      401: tr('msg.invalid_credentials_or_expired_session'),
+      403: tr('msg.google_login_was_rejected_by_the_identity'),
+      409: tr('msg.this_email_is_already_registered_please_sign'),
+      429: tr('msg.too_many_attempts_please_try_again_later'),
+      503: tr('msg.google_login_is_not_configured_or_temporarily'),
     };
-    super(messages[status] ?? 'Sign-in service unavailable. Please try again.');
+    super(messages[status] ?? tr('msg.sign_in_service_unavailable_please_try_again'));
     this.status = status;
   }
 }
@@ -574,7 +575,7 @@ export const authApi = {
       try {
         return await authApi.login(email, password);
       } catch {
-        throw new Error('Account created. Please sign in to continue.');
+        throw new Error(tr('msg.account_created_please_sign_in_to_continue'));
       }
     }
     await delay(300);

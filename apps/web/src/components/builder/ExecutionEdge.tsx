@@ -43,8 +43,8 @@ export function ExecutionEdge({
         markerEnd={markerEnd}
         style={{
           ...style,
-          stroke: data?.active ? '#3b82f6' : '#94a3b8',
-          strokeWidth: data?.active ? 2.25 : 1.75,
+          stroke: data?.active ? 'var(--run)' : 'var(--border-strong)',
+          strokeWidth: data?.active ? 2 : 1.5,
           strokeDasharray: data?.active ? '6 7' : undefined,
           transition: 'stroke 180ms ease, stroke-width 180ms ease',
         }}
@@ -54,11 +54,11 @@ export function ExecutionEdge({
           data-testid="execution-edge-flow"
           d={edgePath}
           fill="none"
-          stroke={isActive ? '#60a5fa' : '#2563eb'}
-          strokeWidth={isActive ? 3 : 2.25}
+          stroke={isActive ? 'var(--run)' : 'var(--muted-foreground)'}
+          strokeWidth={isActive ? 3 : 2}
           strokeLinecap="round"
           strokeDasharray={isActive ? '1 15' : '1 24'}
-          opacity={isActive ? 0.9 : 0.56}
+          opacity={isActive ? 0.9 : 0.35}
           pointerEvents="none"
         >
           {!reducedMotion && (
@@ -72,7 +72,7 @@ export function ExecutionEdge({
           )}
         </path>
         {isActive && (
-          <circle r="4.5" fill="#2563eb" stroke="#dbeafe" strokeWidth="1.5">
+          <circle r="4" fill="var(--run)" stroke="var(--card)" strokeWidth="1.5">
             <animateMotion
               path={edgePath}
               dur="0.72s"

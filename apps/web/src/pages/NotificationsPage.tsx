@@ -34,7 +34,7 @@ export function NotificationsPage() {
   const updating = markRead.isPending || markAllRead.isPending;
   const busy = inbox.isFetching || unread.isFetching;
   const buttonClass =
-    'flex items-center justify-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700/60 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+    'flex items-center justify-center gap-1.5 px-3 py-1.5 bg-subtle hover:bg-muted text-foreground border border-border rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
   const refresh = () => {
     void inbox.refetch();
@@ -61,15 +61,15 @@ export function NotificationsPage() {
     <div className="space-y-6 max-w-4xl mx-auto pb-10">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            {t('nav.notifications')} <Bell size={20} className="text-rose-500" />
+          <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
+            {t('nav.notifications')} <Bell size={20} className="text-err" />
             {unread.data !== undefined && (
-              <span className="rounded-full bg-rose-500/10 px-2 py-1 text-xs text-rose-600 dark:text-rose-400">
+              <span className="rounded-full bg-err-bg px-2 py-1 text-xs text-err">
                 {unread.data} {t('notif.unread')}
               </span>
             )}
           </h1>
-          <p className="text-xs text-slate-600 dark:text-slate-400">{t('notif.subtitle')}</p>
+          <p className="text-xs text-text-2">{t('notif.subtitle')}</p>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -123,13 +123,13 @@ export function NotificationsPage() {
       ) : (
         <>
           {(markRead.isError || markAllRead.isError) && (
-            <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-600 dark:text-rose-400">
+            <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-err-bg p-3 text-sm text-err">
               <span>{t('notif.update_error')}</span>
               <button type="button" disabled={updating} onClick={retryUpdate} className={buttonClass}>{t('notif.retry')}</button>
             </div>
           )}
           {((inbox.isError && !inbox.isFetchNextPageError) || unread.isError) && (
-            <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-600 dark:text-rose-400">
+            <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-err-bg p-3 text-sm text-err">
               <span>{t(inbox.isError ? 'notif.error' : 'notif.count_error')}</span>
               <button type="button" disabled={busy || updating} onClick={refresh} className={buttonClass}>{t('notif.retry')}</button>
             </div>
@@ -153,20 +153,20 @@ export function NotificationsPage() {
                   key={notif.id}
                   className={`p-4 rounded-2xl border transition-all flex items-start justify-between gap-4 ${
                     isRead
-                      ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 border-l-4 border-l-rose-500 text-slate-900 dark:text-slate-100 shadow-sm'
+                      ? 'bg-card border-border text-text-2'
+                      : 'bg-card border-border border-l-4 border-l-err-border text-foreground'
                   }`}
                 >
                   <div className="space-y-1 min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-bold text-xs text-slate-900 dark:text-slate-100">{notif.title}</span>
+                      <span className="font-bold text-xs text-foreground">{notif.title}</span>
                       <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{t(`notif.category.${notif.category}`)}</span>
                       {notif.severity === 'UNKNOWN' && <span className="text-[10px] text-muted-foreground">{t('notif.severity_unknown')}</span>}
-                      <time dateTime={notif.createdAt} className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                      <time dateTime={notif.createdAt} className="text-[10px] text-muted-foreground font-mono">
                         {new Date(notif.occurredAt).toLocaleString(language === 'VI' ? 'vi-VN' : 'en-US')}
                       </time>
                     </div>
-                    <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">{notif.message}</p>
+                    <p className="text-xs text-text-2 whitespace-pre-wrap break-words">{notif.message}</p>
                     <div className="flex flex-wrap items-center gap-3 pt-1 text-[10px] text-muted-foreground">
                       <span title={notif.readAt ? new Date(notif.readAt).toLocaleString(language === 'VI' ? 'vi-VN' : 'en-US') : undefined}>
                         {t(isRead ? 'notif.read' : 'notif.unread')}
@@ -175,7 +175,7 @@ export function NotificationsPage() {
                         <button
                           type="button"
                           onClick={() => void openTarget(notif)}
-                          className="inline-flex items-center gap-1 text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="inline-flex items-center gap-1 text-accent-ink underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           aria-label={`${t('notif.open_target')}: ${notif.title}`}
                         >
                           <ExternalLink size={12} aria-hidden="true" />{t('notif.open_target')}
@@ -189,7 +189,7 @@ export function NotificationsPage() {
                       type="button"
                       disabled={updating}
                       onClick={() => handleMarkRead(notif.id)}
-                      className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 transition-colors cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="p-1.5 rounded-lg bg-err-bg hover:bg-err-bg text-err transition-colors cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       title={t('notif.mark_read')}
                       aria-label={`${t('notif.mark_read')}: ${notif.title}`}
                     >
@@ -202,7 +202,7 @@ export function NotificationsPage() {
           </div>
           {inbox.hasNextPage && (
             <div className="flex flex-col items-center gap-3">
-              {inbox.isFetchNextPageError && <p role="alert" className="text-sm text-rose-600 dark:text-rose-400">{t('notif.error')}</p>}
+              {inbox.isFetchNextPageError && <p role="alert" className="text-sm text-err">{t('notif.error')}</p>}
               <button type="button" disabled={inbox.isFetching || updating} onClick={() => void inbox.fetchNextPage()} className={buttonClass}>
                 {inbox.isFetchingNextPage && <LoaderCircle size={15} className="animate-spin" aria-hidden="true" />}
                 {t(inbox.isFetchNextPageError ? 'notif.retry' : 'notif.more')}

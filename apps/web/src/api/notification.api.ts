@@ -13,6 +13,7 @@ import type {
   NotificationQuery,
   NotificationTarget,
 } from '../types/notification.types';
+import { tr } from '../lib/i18n/tr';
 
 export const isNotificationMockMode = import.meta.env.VITE_API_MODE === 'mock';
 
@@ -22,8 +23,10 @@ export class NotificationApiError extends Error {
   constructor(status: number) {
     super(
       status === 401
-        ? 'Please sign in again.'
-        : 'Notifications are temporarily unavailable.',
+        ? tr('msg.please_sign_in_again')
+        : status === 429
+          ? tr('msg.rate_limited')
+        : tr('msg.notifications_are_temporarily_unavailable'),
     );
     this.name = 'NotificationApiError';
     this.status = status;

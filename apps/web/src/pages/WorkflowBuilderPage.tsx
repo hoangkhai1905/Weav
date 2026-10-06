@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ReactFlow,
@@ -40,6 +40,9 @@ import {
   Upload,
   X,
   Copy,
+  Plus,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
@@ -49,7 +52,13 @@ import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
 import { useWorkspaceContext } from '../hooks/useWorkspace';
-import { useConnections } from '../hooks/useConnections';
+import { useQueryClient } from '@tanstack/react-query';
+import { invalidateWorkflowQueries } from '../lib/queries/workflows';
+import { WorkflowSettingsPanel } from '../components/builder/WorkflowSettingsPanel';
+import { useAttachableConnectionIds, useConnections, useStartGoogleOAuth } from '../hooks/useConnections';
+import type { ConnectionResponse, GoogleProvider } from '../api/connection.api';
+import { CreateConnectionDialog } from './ConnectionsPage';
+import { storeOAuthPendingContext } from '../lib/oauthPending';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG } from '../lib/constants/nodeCatalog';
@@ -60,8 +69,10 @@ import { definitionToCanvas, type GenerationResponse } from '../api/workflow-v1.
 import { workflowToReactFlow, reactFlowToWorkflow } from '../lib/mappers/workflowMapper';
 import type { WorkflowDefinition } from '../types/workflow.types';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
-import { showSuccessToast } from '../lib/feedback/toast';
+import { showErrorToast, showSuccessToast } from '../lib/feedback/toast';
+import { ConfirmModal } from '../components/common/ConfirmModal';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
+import { tr } from '../lib/i18n/tr';
 
 const SUPPORTED_NODE_TYPES = new Set(NODE_CATALOG.map((item) => item.type));
 
@@ -72,11 +83,11 @@ const PALETTE_PRESENTATION: Record<
   'trigger.manual': { nameKey: 'builder.node.manual', descKey: 'builder.node.manual_desc', icon: Play },
   'trigger.schedule': { nameKey: 'builder.node.schedule', descKey: 'builder.node.schedule_desc', icon: Clock },
   'trigger.webhook': { nameKey: 'builder.node.webhook', descKey: 'builder.node.webhook_desc', icon: Webhook },
-  'trigger.telegram': { icon: Send },
+  'trigger.telegram': { nameKey: 'builder.node.telegram_trigger', descKey: 'builder.node.telegram_trigger_desc', icon: Send },
   'http.request': { nameKey: 'builder.node.http', descKey: 'builder.node.http_desc', icon: Globe },
   'email.send': { nameKey: 'builder.node.email', descKey: 'builder.node.email_desc', icon: Mail },
   'google.sheets': { nameKey: 'builder.node.google_sheets', descKey: 'builder.node.google_sheets_desc', icon: FileSpreadsheet },
-  'telegram.send_message': { icon: Send },
+  'telegram.send_message': { nameKey: 'builder.node.telegram_send', descKey: 'builder.node.telegram_send_desc', icon: Send },
   'logic.condition': { nameKey: 'builder.node.condition', descKey: 'builder.node.condition_desc', icon: GitBranch },
   'ai.extract': { nameKey: 'builder.node.ai_extract', descKey: 'builder.node.ai_extract_desc', icon: Sparkles },
   'ai.classify': { nameKey: 'builder.node.ai_classify', descKey: 'builder.node.ai_classify_desc', icon: Tags },
@@ -123,80 +134,93 @@ const INITIAL_EDGES: Edge[] = [
   { id: 'edge-3-4', source: 'node-condition', sourceHandle: 'true', target: 'node-notify', type: 'execution', animated: false, style: { stroke: '#94a3b8', strokeWidth: 1.75 } },
 ];
 
+const INSPECTOR_WIDTH = 400;
+// Spreadsheet column letters: A=0 … Z=25, AA=26 …
+const columnIndex = (letters: string) => [...letters].reduce((total, char) => total * 26 + char.charCodeAt(0) - 64, 0) - 1;
+const columnLetter = (index: number): string => (index < 26 ? '' : columnLetter(Math.floor(index / 26) - 1)) + String.fromCharCode(65 + (index % 26));
+const addConnectionButtonCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+const PORT_LABEL_ROOM = 80;
+
 const CONDITION_OPERATORS = [
-  { value: 'eq', label: 'Equals' },
-  { value: 'ne', label: 'Does not equal' },
-  { value: 'gt', label: 'Greater than' },
-  { value: 'gte', label: 'Greater than or equal' },
-  { value: 'lt', label: 'Less than' },
-  { value: 'lte', label: 'Less than or equal' },
+  { value: 'eq', labelKey: 'builder.cfg.op_eq' },
+  { value: 'ne', labelKey: 'builder.cfg.op_ne' },
+  { value: 'gt', labelKey: 'builder.cfg.op_gt' },
+  { value: 'gte', labelKey: 'builder.cfg.op_gte' },
+  { value: 'lt', labelKey: 'builder.cfg.op_lt' },
+  { value: 'lte', labelKey: 'builder.cfg.op_lte' },
 ] as const;
 
-const getNodeReadinessMessage = (type: string, config: Record<string, unknown>): string | undefined => {
-  if (!SUPPORTED_NODE_TYPES.has(type)) return `Unsupported node type "${type}" is preserved from this draft.`;
-  if (type === 'trigger.webhook') return 'Draft: the system-managed webhook endpoint is provisioned after publication.';
-  if (type === 'google.sheets') {
-    return String(config.connectionId ?? '').trim()
-      ? 'Workspace must authorize this Google Sheets connection before publication.'
-      : 'Not configured: select an authorized Google Sheets connection before publication.';
+const getNodeReadinessMessage = (
+  type: string,
+  config: Record<string, unknown>,
+  t: (key: string) => string,
+  attachableConnectionIds?: ReadonlySet<string>,
+): string | undefined => {
+  if (!SUPPORTED_NODE_TYPES.has(type)) return t('builder.cfg.msg_unsupported').replace('{type}', type);
+  if (type === 'trigger.webhook') return t('builder.cfg.msg_webhook');
+  if (type === 'google.sheets' || type === 'email.send') {
+    // Same verdict as the step badge, so badge, inspector warning and publish blocker never disagree.
+    const state = getNodeReadinessBadge(type, config, attachableConnectionIds).state;
+    const sheets = type === 'google.sheets';
+    if (state === 'ready') return undefined;
+    if (state === 'authorization-required') return t(sheets ? 'builder.cfg.msg_sheets_auth' : 'builder.cfg.msg_gmail_auth');
+    if (!String(config.connectionId ?? '').trim()) return t(sheets ? 'builder.cfg.msg_sheets_select' : 'builder.cfg.msg_gmail_select');
+    return t(sheets ? 'builder.cfg.msg_sheets_fields' : 'builder.cfg.msg_email_fields');
   }
-  if (type === 'trigger.telegram') return 'Unavailable: the Bot Service trigger contract has not been approved.';
-  if (type === 'telegram.send_message') return 'Unavailable: the Telegram sender contract is not implemented.';
-  if (type === 'email.send') {
-    if (!String(config.connectionId ?? '').trim()) {
-      return 'Not configured: select an authorized Gmail connection before publication.';
-    }
-    if (!String(config.to ?? '').trim() || !String(config.subject ?? '').trim()) {
-      return 'Not configured: enter a recipient and subject.';
-    }
-    return undefined;
-  }
+  if (type === 'trigger.telegram') return t('builder.cfg.msg_tg_trigger');
+  if (type === 'telegram.send_message') return t('builder.cfg.msg_tg_send');
   if (type === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
-    return 'Not configured: set both condition values before publication.';
+    return t('builder.cfg.msg_condition');
   }
   if (type === 'trigger.schedule') {
     const fields = String(config.cron ?? '').trim().split(/\s+/);
     if (fields.length !== 6 || !String(config.timezone ?? '').trim()) {
-      return 'Not configured: use a six-field cron expression and an IANA timezone.';
+      return t('builder.cfg.msg_schedule');
     }
   }
-  if (type === 'http.request' && !String(config.url ?? '').trim()) return 'Not configured: enter a request URL.';
+  if (type === 'http.request' && !String(config.url ?? '').trim()) return t('builder.cfg.msg_http');
   if (type === 'ocr.extract') {
-    return 'Unavailable: OCR JWT verification, URL allowlist, and artifact resolution are not verified.';
+    return t('builder.cfg.msg_ocr');
   }
   return undefined;
 };
 
-const getPublishBlockers = (nodes: Node[]): string[] => {
+const getPublishBlockers = (nodes: Node[], edges: Edge[], t: (key: string) => string, attachableConnectionIds?: ReadonlySet<string>): string[] => {
   const blockers = new Set<string>();
+  // Mirrors the Workflow Service UNREACHABLE_NODE rule: every action must be reachable from a trigger.
+  const reachable = new Set(nodes.filter((node) => String(node.data?.nodeType ?? '').startsWith('trigger.')).map((node) => node.id));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const edge of edges) {
+      if (reachable.has(edge.source) && !reachable.has(edge.target)) { reachable.add(edge.target); grew = true; }
+    }
+  }
+  if (nodes.some((node) => !reachable.has(node.id))) blockers.add(t('builder.blocker.unreachable'));
   for (const node of nodes) {
     const type = String(node.data?.nodeType ?? '');
     const config = (node.data?.config ?? {}) as Record<string, unknown>;
     if (!SUPPORTED_NODE_TYPES.has(type)) {
-      blockers.add(`Unsupported node type ${type || '(missing type)'}`);
+      blockers.add(t('builder.blocker.unsupported_type').replace('{type}', type || t('builder.blocker.missing_type')));
       continue;
     }
     if (type === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
-      blockers.add('Condition nodes require both left and right values');
+      blockers.add(t('builder.blocker.condition'));
     }
     if (type === 'trigger.schedule') {
       const fields = String(config.cron ?? '').trim().split(/\s+/);
       if (fields.length !== 6 || !String(config.timezone ?? '').trim()) {
-        blockers.add('Schedule nodes require six-field cron and an IANA timezone');
+        blockers.add(t('builder.blocker.schedule'));
       }
     }
     if (type === 'http.request' && !String(config.url ?? '').trim()) {
-      blockers.add('HTTP request nodes require a URL');
+      blockers.add(t('builder.blocker.http'));
     }
-    if (type === 'google.sheets' && !String(config.connectionId ?? '').trim()) {
-      blockers.add('Google Sheets requires an authorized Workspace connection');
-    }
-    if (type === 'email.send') {
-      const message = getNodeReadinessMessage(type, config);
+    if (type === 'google.sheets' || type === 'email.send') {
+      const message = getNodeReadinessMessage(type, config, t, attachableConnectionIds);
       if (message) blockers.add(message);
     }
     if (type === 'trigger.telegram' || type === 'telegram.send_message' || type === 'ocr.extract') {
-      blockers.add(getNodeReadinessMessage(type, config) ?? `${type} is not configured`);
+      blockers.add(getNodeReadinessMessage(type, config, t) ?? t('builder.blocker.not_configured').replace('{type}', type));
     }
     if (type === 'ocr.extract') {
       const hasArtifactId = Boolean(String(config.artifactId ?? '').trim());
@@ -214,10 +238,13 @@ export const WorkflowBuilderPage: React.FC = () => {
   const refreshNotifications = useNotificationMilestoneRefresh();
   const { workflowId } = useParams<{ workflowId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { theme } = useUIStore();
   const { language, t } = useI18nStore();
   const ariaLabelConfig = useMemo(() => createReactFlowAriaLabelConfig(t, language), [language, t]);
-  const { activeWorkspaceId, userId } = useWorkspaceContext();
+  const { activeWorkspace, activeWorkspaceId, userId } = useWorkspaceContext();
+  const [searchParams] = useSearchParams();
+  const [section, setSection] = useState<'editor' | 'settings'>(searchParams.get('tab') === 'settings' ? 'settings' : 'editor');
   const prefersReducedMotion = useReducedMotion();
   const nodeSequenceRef = useRef(INITIAL_NODES.length);
   const logSequenceRef = useRef(0);
@@ -238,32 +265,60 @@ export const WorkflowBuilderPage: React.FC = () => {
     ),
     [workspaceConnections],
   );
+  const sheetsConnections = useMemo(
+    () => (workspaceConnections ?? []).filter(
+      (connection) => connection.provider === 'GOOGLE_SHEETS' && connection.status === 'ACTIVE' && connection.canAttach,
+    ),
+    [workspaceConnections],
+  );
   const unsupportedNodeTypes = useMemo(
     () => [...new Set(nodes.map((node) => String(node.data?.nodeType ?? '')).filter((type) => !SUPPORTED_NODE_TYPES.has(type)))],
     [nodes]
   );
-  const publishBlockers = useMemo(() => getPublishBlockers(nodes), [nodes]);
+  const attachableConnectionIds = useAttachableConnectionIds();
+  const publishBlockers = useMemo(() => getPublishBlockers(nodes, edges, t, attachableConnectionIds), [nodes, edges, t, attachableConnectionIds]);
   const selectedNodeReadiness = selectedNode
-    ? getNodeReadinessBadge(selectedNodeType, selectedNodeConfig)
+    ? getNodeReadinessBadge(selectedNodeType, selectedNodeConfig, attachableConnectionIds)
     : undefined;
   const selectedNodeReadinessMessage = selectedNode
-    ? getNodeReadinessMessage(selectedNodeType, selectedNodeConfig)
+    ? getNodeReadinessMessage(selectedNodeType, selectedNodeConfig, t, attachableConnectionIds)
     : undefined;
   const isUnsupportedNode = Boolean(selectedNodeType) && !SUPPORTED_NODE_TYPES.has(selectedNodeType);
   const isGoogleSheetsNode = selectedNodeType === 'google.sheets';
   const isGoogleDocsNode = selectedNodeType === 'google.docs';
   const isGoogleNode = isGoogleSheetsNode;
   const googleOperation = String(selectedNodeConfig.operation ?? 'read');
+  // Sheets writes edit the first row of `values` cell by cell; any further rows are kept as they are.
+  const sheetsValues = Array.isArray(selectedNodeConfig.values) ? (selectedNodeConfig.values as unknown[][]) : [];
+  const sheetsRow = Array.isArray(sheetsValues[0]) && sheetsValues[0].length > 0 ? sheetsValues[0].map((cell) => String(cell ?? '')) : [''];
+  const setSheetsRow = (row: string[]) => updateSelectedNodeConfig({ values: [row, ...sheetsValues.slice(1)] });
+  const sheetsStartColumn = /^(?:.*!)?\$?([A-Za-z]+)/.exec(String(selectedNodeConfig.range ?? ''))?.[1]?.toUpperCase() ?? 'A';
+  const sheetsColumn = (offset: number) => columnLetter(columnIndex(sheetsStartColumn) + offset);
 
   // Canvas State & Controls
   const [showGrid, setShowGrid] = useState(true);
   const [showMinimap, setShowMinimap] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectorTab, setInspectorTab] = useState<'config' | 'input' | 'output' | 'logs'>('config');
+  // The step is captured on open: clicking the dialog closes the inspector and clears the selection.
+  const [addConnectionFor, setAddConnectionFor] = useState<{ provider: GoogleProvider; nodeId: string } | null>(null);
+  const startGoogleOAuth = useStartGoogleOAuth();
+
+  // Undo/redo history (client-side only): bounded snapshots of nodes and edges.
+  const HISTORY_LIMIT = 50;
+  type Snapshot = { nodes: Node[]; edges: Edge[]; sig: string };
+  const historyRef = useRef<{ past: Snapshot[]; future: Snapshot[]; current: Snapshot | null }>({ past: [], future: [], current: null });
+  const historyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draggingRef = useRef(false);
+  const handledEpochRef = useRef(-1);
+  const [loadEpoch, setLoadEpoch] = useState(0);
+  const [dragTick, setDragTick] = useState(0);
+  const [historyInfo, setHistoryInfo] = useState({ undo: 0, redo: 0 });
 
   // Workflow Metadata & Status
   const [workflow, setWorkflow] = useState<WorkflowDefinition | null>(null);
   const [workflowTitle, setWorkflowTitle] = useState('');
+  const [workflowDescription, setWorkflowDescription] = useState('');
   const [isSaved, setIsSaved] = useState(true);
   const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(true);
   const [isSavingWorkflow, setIsSavingWorkflow] = useState(false);
@@ -366,7 +421,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     setIsLoadingWorkflow(true);
     setWorkflowError(null);
     if (!workflowId) {
-      setWorkflowError('Workflow ID is missing.');
+      setWorkflowError(tr('msg.workflow_id_is_missing'));
       setIsLoadingWorkflow(false);
       return;
     }
@@ -376,7 +431,7 @@ export const WorkflowBuilderPage: React.FC = () => {
         if (disposed) return;
         if (!loaded) {
           setWorkflow(null);
-          setWorkflowError('Workflow not found in the active workspace.');
+          setWorkflowError(tr('msg.workflow_not_found_in_the_active_workspace'));
           return;
         }
         const flow = isWorkflowMockMode
@@ -387,14 +442,16 @@ export const WorkflowBuilderPage: React.FC = () => {
           : workflowToReactFlow(loaded);
         setWorkflow(loaded);
         setWorkflowTitle(loaded.name);
+        setWorkflowDescription(loaded.description ?? '');
         setNodes(flow.nodes);
         setEdges(flow.edges);
         setIsSaved(true);
+        setLoadEpoch((epoch) => epoch + 1);
       })
       .catch((error: unknown) => {
         if (disposed) return;
         setWorkflow(null);
-        setWorkflowError(error instanceof Error ? error.message : 'Workflow could not be loaded.');
+        setWorkflowError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_loaded'));
       })
       .finally(() => {
         if (!disposed) setIsLoadingWorkflow(false);
@@ -403,15 +460,18 @@ export const WorkflowBuilderPage: React.FC = () => {
     return () => { disposed = true; };
   }, [workflowId, setNodes, setEdges]);
 
-  const saveDraft = useCallback(async () => {
-    if (!workflow) throw new Error('Workflow is not loaded.');
-    const draft = reactFlowToWorkflow(nodes, edges, { ...workflow, name: workflowTitle });
+  // `nodesOverride`: nodes just passed to setNodes, which this render's closure has not seen yet.
+  const saveDraft = useCallback(async (nodesOverride?: Node[]) => {
+    if (!workflow) throw new Error(tr('msg.workflow_is_not_loaded'));
+    const draft = reactFlowToWorkflow(nodesOverride ?? nodes, edges,{ ...workflow, name: workflowTitle, description: workflowDescription });
     const saved = await workflowApi.updateWorkflow(workflow.id, draft);
     setWorkflow(saved);
+    void invalidateWorkflowQueries(queryClient);
     setWorkflowTitle(saved.name);
+    setWorkflowDescription(saved.description ?? '');
     setIsSaved(true);
     return saved;
-  }, [edges, nodes, setWorkflow, setWorkflowTitle, setIsSaved, workflow, workflowTitle]);
+  }, [edges, nodes, setWorkflow, setWorkflowTitle, setIsSaved, workflow, workflowTitle, workflowDescription, queryClient]);
 
   const handleSaveDraft = async () => {
     setWorkflowError(null);
@@ -424,7 +484,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       }
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
-        setWorkflowError(error instanceof Error ? error.message : 'Draft could not be saved.');
+        setWorkflowError(error instanceof Error ? error.message : tr('msg.draft_could_not_be_saved'));
       }
     } finally {
       setIsSavingWorkflow(false);
@@ -438,41 +498,87 @@ export const WorkflowBuilderPage: React.FC = () => {
     setIsSavingWorkflow(true);
     try {
       const saved = isSaved ? workflow : await saveDraft();
-      if (!saved) throw new Error('Workflow is not loaded.');
+      if (!saved) throw new Error(tr('msg.workflow_is_not_loaded'));
       const publication = await workflowApi.publishWorkflow(saved.id);
       if (!isCurrentNotificationSession(mutationSession)) return;
       setWorkflow(publication.workflow);
+      void invalidateWorkflowQueries(queryClient);
       setIsSaved(true);
       setPublishedWebhooks(publication.webhooks);
       showSuccessToast('toast.workflow.published', mutationSession);
       refreshNotifications(mutationSession);
+      return true;
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
-        setWorkflowError(error instanceof Error ? error.message : 'Workflow could not be published.');
+        setWorkflowError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_published'));
       }
+      return false;
     } finally {
       setIsSavingWorkflow(false);
     }
   };
 
+  const [isTogglingActive, setIsTogglingActive] = useState(false);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
+
+  // Optimistic pause/resume of a published workflow; rolls back and toasts on failure.
+  const applyActive = async (next: boolean) => {
+    if (!workflow || isTogglingActive) return;
+    const previous = workflow.status;
+    const mutationSession = captureNotificationSession();
+    setWorkflowError(null);
+    setIsTogglingActive(true);
+    setWorkflow((current) => (current ? { ...current, status: next ? 'PUBLISHED' : 'PAUSED' } : current));
+    try {
+      const updated = next ? await workflowApi.resumeWorkflow(workflow.id) : await workflowApi.pauseWorkflow(workflow.id);
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      setWorkflow((current) => (current ? { ...current, status: updated.status } : current));
+      void invalidateWorkflowQueries(queryClient);
+      showSuccessToast(next ? 'toast.workflow.resumed' : 'toast.workflow.paused', mutationSession);
+      refreshNotifications(mutationSession);
+    } catch (error) {
+      setWorkflow((current) => (current ? { ...current, status: previous } : current));
+      if (isCurrentNotificationSession(mutationSession)) {
+        showErrorToast('toast.workflow.status_failed', mutationSession);
+        setWorkflowError(error instanceof Error ? error.message : tr('msg.workflow_status_could_not_be_changed'));
+      }
+    } finally {
+      setIsTogglingActive(false);
+      setConfirmDeactivate(false);
+    }
+  };
+
+  // A run executes the published version, so unsaved or unpublished draft edits are published first.
+  const hasUnpublishedChanges = !isSaved || Boolean(
+    workflow?.publishedAt && Date.parse(workflow.updatedAt) - Date.parse(workflow.publishedAt) > 2000,
+  );
+
   const handleRunWorkflow = async () => {
     if (!workflow) return;
+    if (hasUnpublishedChanges && !(await handlePublishWorkflow())) return;
     setWorkflowError(null);
     const mutationSession = captureNotificationSession();
     try {
       const accepted = await workflowApi.runWorkflow(workflow.id, {});
       if (!isCurrentNotificationSession(mutationSession)) return;
       showSuccessToast('toast.workflow.run_accepted', mutationSession);
-      navigate(`/executions?workflowId=${encodeURIComponent(workflow.id)}&executionId=${encodeURIComponent(accepted.executionId)}`);
+      navigate(`/workflows/${encodeURIComponent(workflow.id)}/executions?run=${encodeURIComponent(accepted.executionId)}`);
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
-        setWorkflowError(error instanceof Error ? error.message : 'Workflow execution could not be queued.');
+        setWorkflowError(error instanceof Error ? error.message : tr('msg.workflow_execution_could_not_be_queued'));
       }
     }
   };
 
   // Telemetry Console State
-  const [telemetryOpen, setTelemetryOpen] = useState(true);
+  const [telemetryOpen, setTelemetryOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const flowRef = useRef<{
+    getNode: (id: string) => Node | undefined;
+    getViewport: () => { x: number; y: number; zoom: number };
+    setViewport: (viewport: { x: number; y: number; zoom: number }, options?: { duration?: number }) => Promise<boolean>;
+  } | null>(null);
+  const canvasRef = useRef<HTMLElement | null>(null);
   const [logs, setLogs] = useState<Array<{ id: string; time: string; level: 'info' | 'success' | 'warn'; msg: string }>>([]);
 
   const nodeTypes = useMemo(() => ({ customNode: CustomWorkflowNode }), []);
@@ -482,13 +588,14 @@ export const WorkflowBuilderPage: React.FC = () => {
       edges.map((edge) => ({
         ...edge,
         type: 'execution',
+        ariaLabel: t('builder.a11y.edge_label').replace('{source}', edge.source).replace('{target}', edge.target),
         data: {
           ...edge.data,
           active: edge.id === activeEdgeId,
           reducedMotion: Boolean(prefersReducedMotion),
         },
       })),
-    [activeEdgeId, edges, prefersReducedMotion]
+    [activeEdgeId, edges, prefersReducedMotion, t]
   );
 
   const onConnect = useCallback(
@@ -520,10 +627,164 @@ export const WorkflowBuilderPage: React.FC = () => {
     setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, selected: false } })));
   }, [setNodes]);
 
+  // Keep the selected node (plus room for its branch labels) clear of the 400px inspector.
+  // Runs on selection change only and never changes the zoom.
+  useEffect(() => {
+    if (!inspectorOpen || !selectedNodeId) return;
+    const flow = flowRef.current;
+    const canvas = canvasRef.current;
+    if (!flow || !canvas) return;
+    const frame = window.requestAnimationFrame(() => {
+      const node = flow.getNode(selectedNodeId);
+      if (!node) return;
+      const { x, y, zoom } = flow.getViewport();
+      const bounds = canvas.getBoundingClientRect();
+      const margin = 24;
+      const visibleRight = bounds.width - INSPECTOR_WIDTH - margin;
+      const width = node.measured?.width ?? 232;
+      const height = node.measured?.height ?? 80;
+      const left = node.position.x * zoom + x;
+      const top = node.position.y * zoom + y;
+      const right = left + (width + PORT_LABEL_ROOM) * zoom;
+      const bottom = top + height * zoom;
+      let dx = 0;
+      let dy = 0;
+      if (right > visibleRight) dx = visibleRight - right;
+      if (left + dx < margin) dx = margin - left;
+      if (top < margin + 48) dy = margin + 48 - top;
+      else if (bottom > bounds.height - margin) dy = bounds.height - margin - bottom;
+      if (dx === 0 && dy === 0) return;
+      void flow.setViewport({ x: x + dx, y: y + dy, zoom }, { duration: prefersReducedMotion ? 0 : 200 });
+    });
+    return () => window.cancelAnimationFrame(frame);
+    // Only selection changes should pan; viewport/size reads are taken at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedNodeId, inspectorOpen]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setSearchQuery('');
+        setPaletteOpen((open) => !open);
+        return;
+      }
+      if (event.key === 'Escape') {
+        if (paletteOpen) setPaletteOpen(false);
+        else if (inspectorOpen) closeInspector();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [paletteOpen, inspectorOpen, closeInspector]);
+
+  const takeSnapshot = useCallback((): Snapshot => {
+    const sig = JSON.stringify([
+      nodes.map((n) => [n.id, n.type, Math.round(n.position.x), Math.round(n.position.y), n.data?.name, n.data?.nodeType, n.data?.config]),
+      edges.map((e) => [e.id, e.source, e.target, e.sourceHandle ?? null]),
+    ]);
+    return {
+      sig,
+      nodes: JSON.parse(JSON.stringify(nodes.map((n) => ({ ...n, selected: false, data: { ...n.data, selected: false } })))) as Node[],
+      edges: JSON.parse(JSON.stringify(edges.map((e) => ({ ...e, selected: false })))) as Edge[],
+    };
+  }, [nodes, edges]);
+
+  const syncHistoryInfo = () => setHistoryInfo({ undo: historyRef.current.past.length, redo: historyRef.current.future.length });
+
+  const flushHistory = useCallback(() => {
+    if (historyTimerRef.current) {
+      clearTimeout(historyTimerRef.current);
+      historyTimerRef.current = null;
+    }
+    const history = historyRef.current;
+    const snap = takeSnapshot();
+    if (history.current && snap.sig !== history.current.sig) {
+      history.past.push(history.current);
+      if (history.past.length > HISTORY_LIMIT) history.past.shift();
+      history.future = [];
+      history.current = snap;
+      setHistoryInfo({ undo: history.past.length, redo: 0 });
+    }
+  }, [takeSnapshot]);
+
+  // Baseline on load (not an edit); afterwards record user edits, debounced, and skip drag frames.
+  useEffect(() => {
+    const history = historyRef.current;
+    if (handledEpochRef.current !== loadEpoch) {
+      if (loadEpoch === 0 || isLoadingWorkflow) return;
+      handledEpochRef.current = loadEpoch;
+      history.past = [];
+      history.future = [];
+      history.current = takeSnapshot();
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHistoryInfo({ undo: 0, redo: 0 });
+      return;
+    }
+    if (!history.current || draggingRef.current) return;
+    if (takeSnapshot().sig === history.current.sig) return;
+    if (historyTimerRef.current) clearTimeout(historyTimerRef.current);
+    historyTimerRef.current = setTimeout(flushHistory, 350);
+    return () => {
+      if (historyTimerRef.current) {
+        clearTimeout(historyTimerRef.current);
+        historyTimerRef.current = null;
+      }
+    };
+  }, [nodes, edges, loadEpoch, dragTick, isLoadingWorkflow, takeSnapshot, flushHistory]);
+
+  const applySnapshot = useCallback((snap: Snapshot) => {
+    setNodes(JSON.parse(JSON.stringify(snap.nodes)) as Node[]);
+    setEdges(JSON.parse(JSON.stringify(snap.edges)) as Edge[]);
+    setSelectedNodeId(null);
+    setInspectorOpen(false);
+    setIsSaved(false);
+  }, [setNodes, setEdges]);
+
+  const undo = useCallback(() => {
+    flushHistory();
+    const history = historyRef.current;
+    const previous = history.past.pop();
+    if (!previous || !history.current) return;
+    history.future.push(history.current);
+    history.current = previous;
+    applySnapshot(previous);
+    syncHistoryInfo();
+  }, [flushHistory, applySnapshot]);
+
+  const redo = useCallback(() => {
+    flushHistory();
+    const history = historyRef.current;
+    const next = history.future.pop();
+    if (!next || !history.current) return;
+    history.past.push(history.current);
+    history.current = next;
+    applySnapshot(next);
+    syncHistoryInfo();
+  }, [flushHistory, applySnapshot]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      const isUndo = key === 'z' && !event.shiftKey;
+      const isRedo = (key === 'z' && event.shiftKey) || key === 'y';
+      if (!isUndo && !isRedo) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.closest('input, textarea, select') || target.isContentEditable)) return;
+      if (section !== 'editor') return;
+      event.preventDefault();
+      if (isUndo) undo();
+      else redo();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undo, redo, section]);
+
   const handleNodesChange = useCallback(
     (changes: Parameters<typeof onNodesChange>[0]) => {
       onNodesChange(changes);
-      if (changes.some((change) => change.type !== 'select')) setIsSaved(false);
+      if (changes.some((change) => change.type !== 'select' && change.type !== 'dimensions')) setIsSaved(false);
       if (selectedNodeId && changes.some((change) => change.type === 'remove' && change.id === selectedNodeId)) {
         setSelectedNodeId(null);
         setInspectorOpen(false);
@@ -579,6 +840,50 @@ export const WorkflowBuilderPage: React.FC = () => {
     },
     [selectedNodeId, setNodes]
   );
+
+  // New connection from the inspector: attach it to the step, save the draft, then authorize with
+  // Google. The OAuth callback (Connections page) returns to `?step=` once the connection is verified.
+  const handleInspectorConnectionCreated = async (connection: ConnectionResponse) => {
+    const nodeId = addConnectionFor?.nodeId;
+    try {
+      if (!nodeId || !workflow || !userId) throw new Error(tr('msg.workflow_is_not_loaded'));
+      const nextNodes = nodes.map((node) =>
+        node.id === nodeId
+          ? { ...node, data: { ...node.data, config: { ...(node.data.config as Record<string, unknown>), connectionId: connection.id } } }
+          : node
+      );
+      setNodes(nextNodes);
+      setIsSaved(false);
+      await saveDraft(nextNodes);
+      const { authorizationUrl } = await startGoogleOAuth.mutateAsync({ workspaceId: connection.workspaceId, connectionId: connection.id });
+      storeOAuthPendingContext({
+        userId,
+        workspaceId: connection.workspaceId,
+        connectionId: connection.id,
+        createdAt: Date.now(),
+        returnTo: `/workflows/${workflow.id}?step=${encodeURIComponent(nodeId)}`,
+      });
+      window.location.assign(authorizationUrl);
+    } catch (error) {
+      // The connection exists already; close the dialog so a retry cannot create a duplicate.
+      setAddConnectionFor(null);
+      setWorkflowError(error instanceof Error ? error.message : tr('msg.draft_could_not_be_saved'));
+    }
+  };
+
+  // Reopen the step named by `?step=` (return from Google authorization).
+  const stepParam = searchParams.get('step');
+  const handledStepEpochRef = useRef(-1);
+  useEffect(() => {
+    if (!stepParam || loadEpoch === 0 || handledStepEpochRef.current === loadEpoch) return;
+    if (!nodes.some((node) => node.id === stepParam)) return;
+    handledStepEpochRef.current = loadEpoch;
+    /* eslint-disable react-hooks/set-state-in-effect -- one-shot selection after load */
+    setSelectedNodeId(stepParam);
+    setInspectorOpen(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, selected: n.id === stepParam } })));
+  }, [stepParam, loadEpoch, nodes, setNodes]);
 
   const handleOcrFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -718,10 +1023,21 @@ export const WorkflowBuilderPage: React.FC = () => {
     } while (usedIds.has(newNodeId));
     nodeSequenceRef.current = sequence;
     const catalogItem = NODE_CATALOG.find((item) => item.type === type);
+    // "Add step" continues the flow: place it right of the selected (else right-most) step and link it
+    // when that step has a single output that is still free, so the new step is reachable on publish.
+    const anchor = nodes.find((node) => node.id === selectedNodeId)
+      ?? nodes.reduce<Node | undefined>((best, node) => (!best || node.position.x > best.position.x ? node : best), undefined);
+    const anchorType = String(anchor?.data?.nodeType ?? '');
+    const linkFromAnchor = Boolean(anchor)
+      && !type.startsWith('trigger.')
+      && !NODE_CATALOG.find((item) => item.type === anchorType)?.sourcePorts
+      && !edges.some((edge) => edge.source === anchor?.id);
     const newNode: Node = {
       id: newNodeId,
       type: 'customNode',
-      position: { x: 300 + (sequence % 3) * 40, y: 200 + (sequence % 2) * 60 },
+      position: anchor
+        ? { x: anchor.position.x + 340, y: anchor.position.y }
+        : { x: 80, y: 80 + (sequence % 3) * 40 },
       data: {
         id: `${type.replace('.', '_')}_v1`,
         name,
@@ -738,6 +1054,17 @@ export const WorkflowBuilderPage: React.FC = () => {
       ...nds.map((n) => ({ ...n, data: { ...n.data, selected: false } })),
       newNode,
     ]);
+    if (linkFromAnchor && anchor) {
+      setEdges((eds) => addEdge({
+        source: anchor.id,
+        target: newNodeId,
+        sourceHandle: null,
+        targetHandle: null,
+        type: 'execution',
+        animated: false,
+        style: { stroke: '#94a3b8', strokeWidth: 1.75 },
+      }, eds));
+    }
     setSelectedNodeId(newNodeId);
     setInspectorOpen(true);
     if (type === 'ocr.extract') {
@@ -754,7 +1081,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   const handleGenerateReady = (result: Extract<GenerationResponse, { status: 'ready' }>) => {
     const hasBeyondTrigger = nodes.length > 1
       || (nodes.length === 1 && String(nodes[0].data?.nodeType ?? '') !== 'trigger.manual');
-    if (hasBeyondTrigger && !window.confirm('Replace the current canvas?')) return;
+    if (hasBeyondTrigger && !window.confirm(tr('msg.replace_the_current_canvas'))) return;
     const canvas = definitionToCanvas(result.definition, result.layout);
     const flow = workflowToReactFlow({
       id: workflow?.id ?? 'generated',
@@ -782,6 +1109,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     clearExecutionTimers();
     setActiveEdgeId(null);
     setIsPreviewing(true);
+    setTelemetryOpen(true);
     const time = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date());
     setLogs((prev) => [
       ...prev,
@@ -789,7 +1117,7 @@ export const WorkflowBuilderPage: React.FC = () => {
         id: String(++logSequenceRef.current),
         time,
         level: 'info',
-        msg: 'Preview only; this action does not call the Workflow Service or node integrations.',
+        msg: t('builder.preview_log_notice'),
       },
     ]);
 
@@ -808,76 +1136,136 @@ export const WorkflowBuilderPage: React.FC = () => {
   return (
     <div
       onPointerDownCapture={handleWorkspacePointerDown}
-      className="flex flex-col h-[calc(100vh-48px)] -m-6 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans"
+      className="flex h-full w-full flex-col overflow-hidden bg-background font-sans text-foreground"
     >
-      {/* TOP EDITOR HEADER (~48px) */}
-      <header className="h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 flex items-center justify-between shrink-0 z-20">
-        <div className="flex items-center gap-3">
+      {/* TOP EDITOR HEADER (48px): breadcrumb + name | tabs | actions */}
+      <header className="z-20 grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-3 border-b border-border bg-card px-3 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2">
           <Link
             to="/workflows"
-            className="p-1 rounded text-slate-500 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          title={t('builder.back_to_workflows')}
+            className="flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-[13px] text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            title={t('builder.back_to_workflows')}
+            aria-label={t('builder.back_to_workflows')}
           >
-            <ArrowLeft size={16} />
+            <ArrowLeft size={14} aria-hidden="true" />
+            <span className="hidden lg:inline">{t('nav.workflows')}</span>
           </Link>
-
-          <div className="flex items-center gap-2">
-            <input
-              data-testid="workflow-title"
-              aria-label="Workflow name"
-              type="text"
-              value={workflowTitle}
-              disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
-              onChange={(e) => {
-                setWorkflowTitle(e.target.value);
-                setIsSaved(false);
-              }}
-              className="bg-transparent font-semibold text-xs text-slate-900 dark:text-slate-100 focus:outline-none border-b border-transparent hover:border-slate-300 dark:hover:border-slate-700 px-1 py-0.5"
-            />
-            <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              {isSaved ? t('builder.saved') : t('builder.edited')}
+          <span aria-hidden="true" className="hidden shrink-0 text-muted-foreground lg:inline">/</span>
+          <input
+            data-testid="workflow-title"
+            aria-label={t('builder.workflow_name')}
+            type="text"
+            value={workflowTitle}
+            disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
+            onChange={(e) => {
+              setWorkflowTitle(e.target.value);
+              setIsSaved(false);
+            }}
+            title={workflowTitle}
+            className="h-7 min-w-[72px] flex-1 truncate rounded-md border border-transparent bg-transparent px-1.5 text-sm font-semibold text-foreground transition-colors hover:border-border focus:border-primary focus:bg-card focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+          />
+          <span className={`inline-flex h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded px-1.5 text-xs font-medium before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] ${isSaved ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'}`}>
+            {isSaved ? t('builder.saved') : t('builder.edited')}
+          </span>
+          {workflow?.status !== 'PUBLISHED' && workflow?.status !== 'PAUSED' && (
+            <span className="hidden h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded bg-pause-bg px-1.5 text-xs font-medium text-pause before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] xl:inline-flex">
+              {t('workflows.tab_draft')}
             </span>
-          </div>
+          )}
+          <span
+            data-testid="builder-workspace-context"
+            title={t('builder.workspace_context').replace('{workspace}', activeWorkspaceId ?? t('builder.workspace_not_selected'))}
+            className="sr-only"
+          >
+            {t('builder.workspace_context').replace('{workspace}', activeWorkspaceId ?? t('builder.workspace_not_selected'))}
+          </span>
         </div>
 
-        {/* Header Zoom & Canvas Controls */}
-        <div className="hidden md:flex items-center gap-1 text-xs bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-md border border-slate-200 dark:border-slate-700">
-          <button className="px-2 py-0.5 hover:bg-white dark:hover:bg-slate-700 rounded text-slate-700 dark:text-slate-300">
-            -
+        {/* Editor / Executions tabs */}
+        <nav aria-label={t('builder.workflow_sections')} className="hidden h-12 shrink-0 items-stretch gap-5 whitespace-nowrap md:flex">
+          <button
+            type="button"
+            data-testid="workflow-tab-editor"
+            aria-current={section === 'editor' ? 'page' : undefined}
+            onClick={() => setSection('editor')}
+            className={`inline-flex items-center whitespace-nowrap border-b-2 px-0.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${section === 'editor' ? 'border-foreground text-foreground' : 'border-transparent text-text-2 hover:text-foreground'}`}
+          >
+            {t('builder.section_editor')}
           </button>
-          <span className="px-1.5 font-mono text-[11px] text-slate-600 dark:text-slate-400">100%</span>
-          <button className="px-2 py-0.5 hover:bg-white dark:hover:bg-slate-700 rounded text-slate-700 dark:text-slate-300">
-            +
+          {workflow && (
+            <Link
+              to={`/workflows/${encodeURIComponent(workflow.id)}/executions`}
+              className="inline-flex items-center whitespace-nowrap border-b-2 border-transparent px-0.5 text-[13px] font-medium text-text-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {t('runs.tab_runs')}
+            </Link>
+          )}
+          <button
+            type="button"
+            data-testid="workflow-tab-settings"
+            aria-current={section === 'settings' ? 'page' : undefined}
+            onClick={() => setSection('settings')}
+            disabled={!workflow}
+            className={`inline-flex items-center whitespace-nowrap border-b-2 px-0.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 ${section === 'settings' ? 'border-foreground text-foreground' : 'border-transparent text-text-2 hover:text-foreground'}`}
+          >
+            {t('builder.section_settings')}
           </button>
-          <span className="w-px h-3 bg-slate-300 dark:bg-slate-700 mx-0.5" />
-          <button className="px-2 py-0.5 hover:bg-white dark:hover:bg-slate-700 rounded text-[11px] text-slate-700 dark:text-slate-300">
-            {t('builder.fit_view')}
-          </button>
-        </div>
+        </nav>
+        <span className="md:hidden" />
 
-        {/* Top Header Action Buttons */}
-        <div className="flex items-center gap-2">
+        {/* Actions: 2 secondary text buttons, 2 icon-only, 1 primary */}
+        <div className="flex shrink-0 items-center justify-end gap-1.5 whitespace-nowrap">
           <button
             data-testid="workflow-generate-ai"
             onClick={() => setIsGeneratePanelOpen(true)}
             disabled={isLoadingWorkflow || !workflow}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            title={t('ai.generate_with_ai')}
+            aria-label={t('ai.generate_with_ai')}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Sparkles size={13} />
-            <span>{t('ai.generate_with_ai')}</span>
+            <Sparkles size={15} aria-hidden="true" />
           </button>
           <button
-            data-testid="workflow-save"
-            onClick={handleSaveDraft}
-            disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
-            aria-busy={isSavingWorkflow}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-md transition-colors disabled:cursor-wait disabled:opacity-50"
+            data-testid="workflow-preview"
+            onClick={handlePreviewFlow}
+            disabled={isPreviewing}
+            title={t('builder.preview_title')}
+            aria-label={t('builder.preview_aria')}
+            aria-busy={isPreviewing}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70"
           >
-            {isSavingWorkflow ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-            <span>{isSavingWorkflow ? 'Saving…' : t('builder.save')}</span>
+            {isPreviewing ? <Loader2 size={15} className="motion-safe:animate-spin" aria-hidden="true" /> : <Play size={15} aria-hidden="true" />}
           </button>
-
+          {(workflow?.status === 'PUBLISHED' || workflow?.status === 'PAUSED') && (
+            <button
+              type="button"
+              role="switch"
+              data-testid="workflow-active-switch"
+              aria-checked={workflow.status === 'PUBLISHED'}
+              aria-label={t('builder.active.label')}
+              title={workflow.status === 'PUBLISHED' ? t('builder.active.on') : t('builder.active.off')}
+              disabled={isTogglingActive || isLoadingWorkflow}
+              onClick={() => (workflow.status === 'PUBLISHED' ? setConfirmDeactivate(true) : void applyActive(true))}
+              className="inline-flex h-8 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-1.5 text-xs text-text-2 transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+            >
+              <span aria-hidden="true" className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full p-0.5 transition-colors ${workflow.status === 'PUBLISHED' ? 'justify-end bg-ok' : 'justify-start bg-border-strong'}`}>
+                <span className="h-3.5 w-3.5 rounded-full bg-white" />
+              </span>
+              <span className="hidden lg:inline">{workflow.status === 'PUBLISHED' ? t('builder.active.on') : t('builder.active.off')}</span>
+            </button>
+          )}
+          {workflow?.status === 'PUBLISHED' && (
+            <button
+              data-testid="workflow-run"
+              onClick={handleRunWorkflow}
+              disabled={isSavingWorkflow || (hasUnpublishedChanges && publishBlockers.length > 0)}
+              title={hasUnpublishedChanges ? t('builder.publish_and_run_hint') : undefined}
+              className="hidden h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex"
+            >
+              <Play size={13} aria-hidden="true" />
+              <span>{hasUnpublishedChanges ? t('builder.publish_and_run') : t('builder.run')}</span>
+            </button>
+          )}
           <button
             data-testid="workflow-publish"
             onClick={handlePublishWorkflow}
@@ -885,62 +1273,37 @@ export const WorkflowBuilderPage: React.FC = () => {
             title={publishBlockers.length > 0 ? publishBlockers.join('; ') : undefined}
             disabled={publishBlockers.length > 0 || isLoadingWorkflow || isSavingWorkflow || !workflow}
             aria-busy={isSavingWorkflow}
-            className="hidden sm:flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-800 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span>{t('builder.publish')}</span>
           </button>
-
-          {workflow?.status === 'PUBLISHED' && (
-            <button
-              data-testid="workflow-run"
-              onClick={handleRunWorkflow}
-              className="hidden sm:flex items-center gap-1.5 rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-emerald-700"
-            >
-              <Play size={13} />
-              <span>Run</span>
-            </button>
-          )}
-
-          <motion.button
-            data-testid="workflow-preview"
-            onClick={handlePreviewFlow}
-            disabled={isPreviewing}
-            title="Visual preview only. No Workflow Service run or node provider is called."
-            aria-label="Preview workflow (visual only)"
-            aria-busy={isPreviewing}
-            whileHover={prefersReducedMotion ? undefined : { y: -1, scale: 1.01 }}
-            whileTap={prefersReducedMotion ? undefined : { scale: 0.97 }}
-            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground shadow-sm shadow-blue-600/25 transition-colors hover:bg-primary/90 disabled:cursor-wait disabled:opacity-80"
+          <button
+            data-testid="workflow-save"
+            onClick={handleSaveDraft}
+            disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
+            aria-busy={isSavingWorkflow}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:border-primary-hover hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-wait disabled:opacity-50"
           >
-            {isPreviewing ? (
-              <>
-                <span className="relative flex size-3.5 items-center justify-center"><span className="absolute size-3.5 animate-ping rounded-full bg-white/45 motion-reduce:animate-none" /><Loader2 size={13} className="relative motion-safe:animate-spin" /></span>
-                <span>Previewing…</span>
-              </>
-            ) : (
-              <>
-                <Play size={13} className="fill-white" />
-                <span>Preview flow</span>
-              </>
-            )}
-          </motion.button>
+            {isSavingWorkflow ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Save size={13} aria-hidden="true" />}
+            <span>{isSavingWorkflow ? t('builder.saving') : t('builder.save')}</span>
+          </button>
         </div>
       </header>
 
-      {isLoadingWorkflow && <div role="status" className="border-b border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">Loading workflow…</div>}
-      {workflowError && <div role="alert" data-testid="workflow-builder-error" className="border-b border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">{workflowError}</div>}
+      {isLoadingWorkflow && <div role="status" className="shrink-0 border-b border-border bg-card px-3 py-1.5 text-xs text-text-2">{t('builder.loading')}</div>}
+      {workflowError && <div role="alert" data-testid="workflow-builder-error" className="shrink-0 border-b border-err-border bg-err-bg px-3 py-1.5 text-xs text-err">{workflowError}</div>}
       {publishedWebhooks.length > 0 && (
-        <section aria-label="One-time webhook credentials" className="space-y-2 border-b border-amber-300 bg-amber-50 px-3 py-3 text-xs text-amber-950">
+        <section aria-label={t('builder.webhook_credentials_label')} className="shrink-0 space-y-2 border-b border-warn/30 bg-warn-bg px-3 py-2 text-xs text-foreground">
           <div className="flex items-center justify-between gap-3">
-            <p className="font-semibold">Copy these webhook credentials now. The secret will not be returned again.</p>
-            <button type="button" onClick={() => setPublishedWebhooks([])} className="rounded px-2 py-1 hover:bg-amber-100">Dismiss</button>
+            <p className="font-medium">{t('builder.webhook_credentials_notice')}</p>
+            <button type="button" onClick={() => setPublishedWebhooks([])} className="rounded px-2 py-1 hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('builder.dismiss')}</button>
           </div>
           {publishedWebhooks.map((webhook) => (
             <div key={webhook.triggerId} className="flex flex-wrap items-center gap-2 font-mono">
-              <span>Endpoint key: {webhook.endpointKey}</span>
-              <span>Secret: {webhook.secret}</span>
-              <button type="button" onClick={() => void navigator.clipboard.writeText(webhook.secret)} className="inline-flex items-center gap-1 rounded border border-amber-400 px-2 py-1 hover:bg-amber-100">
-                <Copy size={12} /> Copy secret
+              <span>{t('builder.endpoint_key')}: {webhook.endpointKey}</span>
+              <span>{t('builder.secret')}: {webhook.secret}</span>
+              <button type="button" onClick={() => void navigator.clipboard.writeText(webhook.secret)} className="inline-flex items-center gap-1 rounded border border-border-strong bg-card px-2 py-1 hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <Copy size={12} /> {t('builder.copy_secret')}
               </button>
             </div>
           ))}
@@ -952,10 +1315,10 @@ export const WorkflowBuilderPage: React.FC = () => {
           id="publish-blocker-summary"
           data-testid="publish-blocker-summary"
           role="status"
-          className="border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-300"
+          className="shrink-0 border-b border-warn/30 bg-warn-bg px-3 py-1 text-xs text-warn"
         >
-          Publish unavailable: {publishBlockers[0]}
-          {publishBlockers.length > 1 ? ` (+${publishBlockers.length - 1} more)` : ''}
+          {t('builder.publish_unavailable')}: {publishBlockers[0]}
+          {publishBlockers.length > 1 ? ` (+${publishBlockers.length - 1} ${t('builder.more')})` : ''}
         </div>
       )}
 
@@ -963,124 +1326,43 @@ export const WorkflowBuilderPage: React.FC = () => {
         <div
           data-testid="unsupported-draft-warning"
           role="alert"
-          className="border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] text-rose-800 dark:border-rose-900/70 dark:bg-rose-950/25 dark:text-rose-300"
+          className="shrink-0 border-b border-err-border bg-err-bg px-3 py-1 text-xs text-err"
         >
-          Unsupported V1 nodes are preserved in this draft: {unsupportedNodeTypes.join(', ')}. Remove or replace them before publishing.
+          {t('builder.unsupported_preserved')}: {unsupportedNodeTypes.join(', ')}. {t('builder.unsupported_remove')}
         </div>
       )}
 
-      {/* COMPACT EDITOR TOOLBAR / SUB-HEADER (~40px) */}
-      <div className="h-10 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 px-3 flex items-center justify-between text-xs shrink-0 z-10">
-        <div className="flex items-center gap-3 font-mono text-[11px] text-slate-600 dark:text-slate-400">
-          <span className="flex items-center gap-1 text-slate-700 dark:text-slate-300 font-medium">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-            {workflow?.status ?? 'Draft'}
-          </span>
-          <span className="text-slate-400 dark:text-slate-600">|</span>
-          <span data-testid="workflow-preview-notice" className="text-slate-500 dark:text-slate-400">
-            Visual preview only · no workflow or provider calls
-          </span>
-          <span data-testid="builder-workspace-context" className="text-slate-500 dark:text-slate-400">
-            {t('builder.workspace_context').replace(
-              '{workspace}',
-              activeWorkspaceId ?? t('builder.workspace_not_selected'),
-            )}
-          </span>
+      {isPreviewing && (
+        <div className="shrink-0 border-b border-border bg-subtle px-3 py-1 text-xs text-text-2">
+          <span data-testid="workflow-preview-notice">{t('builder.preview_notice')}</span>
         </div>
-
-        <span className="hidden lg:flex text-[11px] font-mono text-slate-500 dark:text-slate-400">
-          No Workflow Service execution history
-        </span>
-
-        {/* Right Toolbar View Toggles */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setShowGrid(!showGrid)}
-            className={`p-1 rounded transition-colors ${
-              showGrid ? 'bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100' : 'text-slate-400'
-            }`}
-            title={t('builder.toggle_grid')}
-          >
-            <Grid size={14} />
-          </button>
-          <button
-            onClick={() => setShowMinimap(!showMinimap)}
-            className={`p-1 rounded transition-colors ${
-              showMinimap ? 'bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-slate-100' : 'text-slate-400'
-            }`}
-            title={t('builder.toggle_minimap')}
-          >
-            <Map size={14} />
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* CENTER WORKSPACE LAYOUT */}
-      <div className="flex-1 flex min-h-0 relative">
-        {/* LEFT PALETTE SIDEBAR (~240px) */}
-        <aside className="w-60 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 z-10">
-          <div className="p-3 border-b border-slate-200 dark:border-slate-800 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                {t('builder.add_step')}
-              </span>
-              <span data-testid="workflow-palette-count" className="text-[10px] text-slate-400 font-mono">{PALETTE_CATALOG.reduce((total, category) => total + category.items.length, 0)} {t('builder.available')}</span>
-            </div>
-
-            <div className="relative">
-              <Search size={13} className="absolute left-2.5 top-2 text-slate-400" />
-              <input
-                type="text"
-                placeholder={t('builder.search_actions')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded border border-slate-200 bg-slate-100 py-1 pl-7 pr-2.5 text-xs outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/60 dark:bg-slate-800/80"
-              />
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
-            {PALETTE_CATALOG.map((cat) => (
-              <div key={cat.categoryKey} className="space-y-1.5">
-                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">
-                  {t(cat.categoryKey)}
-                </span>
-                <div className="space-y-1">
-                  {cat.items
-                    .filter((item) => {
-                      const name = item.nameKey ? t(item.nameKey) : item.title;
-                      return name.toLowerCase().includes(searchQuery.toLowerCase());
-                    })
-                    .map((item) => {
-                      const ItemIcon = item.icon;
-                      return (
-                        <button
-                          key={item.type}
-                          data-testid="workflow-palette-item"
-                          data-node-type={item.type}
-                          disabled={isLoadingWorkflow || !workflow}
-                          onClick={() => handleAddCatalogItem(item.type, item.nameKey ? t(item.nameKey) : item.title, item.nameKey ?? '')}
-                          aria-label={item.nameKey ? t(item.nameKey) : item.title}
-                          className="group flex w-full cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 p-2 text-left transition-[background-color,border-color,transform] hover:-translate-y-px hover:border-blue-400/60 hover:bg-blue-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700/50 dark:bg-slate-800/40 dark:hover:bg-blue-950/25 motion-reduce:hover:translate-y-0"
-                        >
-                          <ItemIcon size={14} className="mt-0.5 shrink-0 text-slate-500 transition-colors group-hover:text-blue-600 dark:group-hover:text-blue-400" />
-                          <div className="flex flex-col min-w-0 flex-1">
-                            <span className="truncate text-xs font-medium text-slate-800 transition-colors group-hover:text-blue-700 dark:text-slate-200 dark:group-hover:text-blue-300">
-                              {item.nameKey ? t(item.nameKey) : item.title}
-                            </span>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{item.descKey ? t(item.descKey) : item.description}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </aside>
-
+      {section === 'settings' && workflow && (
+        <div className="min-h-0 flex-1 overflow-y-auto bg-background">
+          <WorkflowSettingsPanel
+            workflow={workflow}
+            name={workflowTitle}
+            description={workflowDescription}
+            dirty={!isSaved || workflowTitle !== workflow.name || workflowDescription !== (workflow.description ?? '')}
+            saving={isSavingWorkflow}
+            workspaceName={activeWorkspace?.name ?? ''}
+            onNameChange={(value) => {
+              setWorkflowTitle(value);
+              setIsSaved(false);
+            }}
+            onDescriptionChange={(value) => {
+              setWorkflowDescription(value);
+              setIsSaved(false);
+            }}
+            onSave={() => void handleSaveDraft()}
+          />
+        </div>
+      )}
+      <div className={`flex-1 flex min-h-0 relative ${section === 'settings' ? 'hidden' : ''}`}>
         {/* WORKFLOW CANVAS (CENTER) */}
-        <main data-testid="workflow-canvas" className="flex-1 h-full bg-slate-100 dark:bg-slate-950 relative overflow-hidden">
+        <main ref={canvasRef} data-testid="workflow-canvas" className="relative h-full flex-1 overflow-hidden bg-background">
           <ReactFlow
             ariaLabelConfig={ariaLabelConfig}
             nodes={nodes}
@@ -1089,10 +1371,26 @@ export const WorkflowBuilderPage: React.FC = () => {
             onEdgesChange={handleEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onNodeDragStart={() => {
+              draggingRef.current = true;
+            }}
+            onNodeDragStop={() => {
+              draggingRef.current = false;
+              setDragTick((tick) => tick + 1);
+            }}
             onPaneClick={closeInspector}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView
+            onInit={(instance) => {
+              flowRef.current = instance;
+            }}
+            fitViewOptions={{
+              padding: { top: '15%', left: '15%', bottom: '15%', right: inspectorOpen && selectedNode ? `${INSPECTOR_WIDTH + 24}px` : '15%' },
+              minZoom: 0.85,
+              maxZoom: 1.2,
+            }}
+            minZoom={0.2}
             colorMode={theme}
           >
             {showGrid && (
@@ -1100,31 +1398,169 @@ export const WorkflowBuilderPage: React.FC = () => {
                 variant={BackgroundVariant.Dots}
                 gap={20}
                 size={1}
-                color={theme === 'dark' ? '#334155' : '#cbd5e1'}
+                color={theme === 'dark' ? 'rgba(237,235,233,0.14)' : 'rgba(28,25,23,0.18)'}
               />
             )}
-            <Controls className="!bg-white dark:!bg-slate-900 !border-slate-200 dark:!border-slate-800 !text-slate-700 dark:!text-slate-300" />
+            <Controls className="workflow-controls !overflow-hidden !rounded-lg !border !border-border !bg-card !shadow-pop" />
             {showMinimap && (
               <MiniMap
                 data-testid="workflow-minimap"
                 aria-label={t('builder.workflow_minimap')}
-                className="workflow-minimap hidden sm:block !bottom-3 !right-3 !m-0 !h-28 !w-44 !rounded-md !border-slate-300 !bg-slate-200/90 !shadow-lg dark:!border-slate-700 dark:!bg-slate-950/90"
-                style={{ width: 176, height: 112, borderRadius: 6 }}
+                className="workflow-minimap hidden sm:block !bottom-3 !m-0 !h-28 !w-44 !overflow-hidden !rounded-lg !border !border-border !bg-card !shadow-pop"
+                style={{ width: 176, height: 112, borderRadius: 8, right: inspectorOpen && selectedNode ? 412 : 12 }}
                 nodeColor={(node) => {
                   const status = String(node.data?.status ?? 'idle');
-                  return status === 'success' ? '#10b981' : status === 'processing' ? '#f59e0b' : '#4f8cff';
+                  return status === 'success' ? (theme === 'dark' ? '#5bc98a' : '#15803d') : status === 'processing' ? (theme === 'dark' ? '#8fb0f5' : '#2b5fd9') : (theme === 'dark' ? '#7d8791' : '#a8a29e');
                 }}
-                nodeStrokeColor={theme === 'dark' ? '#64748b' : '#94a3b8'}
+                nodeStrokeColor={theme === 'dark' ? '#3d3a37' : '#d6d3d1'}
                 nodeStrokeWidth={1.5}
                 nodeBorderRadius={4}
-                maskColor={theme === 'dark' ? 'rgba(15, 24, 38, 0.62)' : 'rgba(71, 85, 105, 0.42)'}
-                maskStrokeColor={theme === 'dark' ? '#94a3b8' : '#64748b'}
+                maskColor={theme === 'dark' ? 'rgba(0, 0, 0, 0.45)' : 'rgba(28, 25, 23, 0.1)'}
+                maskStrokeColor={theme === 'dark' ? '#3d3a37' : '#d6d3d1'}
                 maskStrokeWidth={1.5}
                 pannable
                 zoomable
               />
             )}
           </ReactFlow>
+
+          {/* Floating canvas toolbar */}
+          <div className="absolute left-3 top-3 z-10 flex items-center gap-1 rounded-lg border border-border bg-card p-1 shadow-pop">
+            <button
+              type="button"
+              data-testid="workflow-add-step"
+              onClick={() => {
+                setSearchQuery('');
+                setPaletteOpen(true);
+              }}
+              disabled={isLoadingWorkflow || !workflow}
+              aria-haspopup="dialog"
+              aria-keyshortcuts="Control+K Meta+K"
+              className="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Plus size={13} strokeWidth={2} aria-hidden="true" />
+              {t('builder.add_step')}
+              <kbd className="ml-1 rounded border border-primary-foreground/30 px-1 font-mono text-[10px] leading-4">⌘K</kbd>
+            </button>
+            <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-border" />
+            <button
+              type="button"
+              data-testid="workflow-undo"
+              onClick={undo}
+              disabled={historyInfo.undo === 0}
+              title={`${t('builder.undo')} (Ctrl+Z)`}
+              aria-label={t('builder.undo')}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <Undo2 size={14} />
+            </button>
+            <button
+              type="button"
+              data-testid="workflow-redo"
+              onClick={redo}
+              disabled={historyInfo.redo === 0}
+              title={`${t('builder.redo')} (Ctrl+Shift+Z)`}
+              aria-label={t('builder.redo')}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              <Redo2 size={14} />
+            </button>
+            <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-border" />
+            <button
+              type="button"
+              onClick={() => setShowGrid(!showGrid)}
+              aria-pressed={showGrid}
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${showGrid ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-subtle hover:text-foreground'}`}
+              title={t('builder.toggle_grid')}
+              aria-label={t('builder.toggle_grid')}
+            >
+              <Grid size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowMinimap(!showMinimap)}
+              aria-pressed={showMinimap}
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${showMinimap ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-subtle hover:text-foreground'}`}
+              title={t('builder.toggle_minimap')}
+              aria-label={t('builder.toggle_minimap')}
+            >
+              <Map size={14} />
+            </button>
+          </div>
+
+          {/* Add-step palette (⌘K) */}
+          {paletteOpen && (
+            <div className="absolute inset-0 z-20 flex items-start justify-center pt-[12%]">
+              <button
+                type="button"
+                aria-label={t('builder.close_palette')}
+                onClick={() => setPaletteOpen(false)}
+                className="absolute inset-0 cursor-default bg-foreground/20"
+              />
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-label={t('builder.add_step')}
+                data-testid="workflow-palette"
+                className="relative flex max-h-[min(480px,70%)] w-[480px] max-w-[calc(100%-24px)] flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-pop"
+              >
+                <div className="flex items-center gap-2 border-b border-border px-3">
+                  <Search size={14} aria-hidden="true" className="text-muted-foreground" />
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder={t('builder.search_actions')}
+                    aria-label={t('builder.search_actions')}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-10 min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+                  />
+                  <span data-testid="workflow-palette-count" className="font-mono text-[11px] text-muted-foreground">
+                    {PALETTE_CATALOG.reduce((total, category) => total + category.items.length, 0)} {t('builder.available')}
+                  </span>
+                </div>
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
+                  {PALETTE_CATALOG.map((cat) => {
+                    const items = cat.items.filter((item) => {
+                      const name = item.nameKey ? t(item.nameKey) : item.title;
+                      return name.toLowerCase().includes(searchQuery.toLowerCase());
+                    });
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={cat.categoryKey}>
+                        <span className="block px-2 pb-1 text-[11px] font-medium text-muted-foreground">{t(cat.categoryKey)}</span>
+                        {items.map((item) => {
+                          const ItemIcon = item.icon;
+                          return (
+                            <button
+                              key={item.type}
+                              type="button"
+                              data-testid="workflow-palette-item"
+                              data-node-type={item.type}
+                              disabled={isLoadingWorkflow || !workflow}
+                              onClick={() => {
+                                handleAddCatalogItem(item.type, item.nameKey ? t(item.nameKey) : item.title, item.nameKey ?? '');
+                                setPaletteOpen(false);
+                              }}
+                              aria-label={item.nameKey ? t(item.nameKey) : item.title}
+                              className="group flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-md border border-transparent px-2 text-left transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border bg-subtle text-text-2">
+                                <span aria-hidden="true" className={`absolute -left-px bottom-1 top-1 w-[3px] rounded-r-sm ${item.type.startsWith('trigger') ? 'bg-t-trigger' : item.type.startsWith('ai') || item.type.startsWith('agent') ? 'bg-t-ai' : item.type.startsWith('logic') ? 'bg-t-logic' : 'bg-t-action'}`} />
+                                <ItemIcon size={14} />
+                              </span>
+                              <span className="truncate text-[13px] font-medium text-foreground">{item.nameKey ? t(item.nameKey) : item.title}</span>
+                              <span className="ml-auto hidden max-w-[45%] truncate text-xs text-muted-foreground sm:block">{item.descKey ? t(item.descKey) : item.description}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+          )}
         </main>
 
         {/* RIGHT INSPECTOR PANEL (~360px) */}
@@ -1138,24 +1574,24 @@ export const WorkflowBuilderPage: React.FC = () => {
           animate={{ opacity: 1, x: 0 }}
           exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: 16 }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.24, ease: [0.16, 1, 0.3, 1] }}
-          className="absolute inset-y-0 right-0 z-10 flex w-88 flex-col border-l border-slate-200 bg-white shadow-xl shadow-slate-900/10 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/25"
+          className="absolute inset-y-0 right-0 z-10 flex w-[400px] max-w-full flex-col border-l border-border bg-card shadow-pop"
         >
           {/* Inspector Header */}
-          <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+          <div className="flex items-center justify-between gap-2 border-b border-border p-3.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-semibold text-foreground">
                 {selectedNode.data.nameKey
                   ? t(String(selectedNode.data.nameKey))
                   : (selectedNode.data.name as string) || t('builder.step_inspector')}
               </span>
-              <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                {(selectedNode.data.id as string) || 'extract_order_v1'}
+              <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                {(selectedNode.data.id as string) || selectedNodeType}
               </span>
             </div>
             <span className={selectedNodeReadiness?.state === 'ready'
-              ? 'rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
-              : 'rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] text-amber-700 dark:text-amber-400'}>
-              ● {selectedNodeReadiness?.label ?? t('builder.ready')}
+              ? 'shrink-0 rounded bg-ok-bg px-1.5 py-0.5 text-[11px] font-medium text-ok'
+              : 'shrink-0 rounded bg-warn-bg px-1.5 py-0.5 text-[11px] font-medium text-warn'}>
+              ● {(selectedNodeReadiness ? t(selectedNodeReadiness.labelKey) : null) ?? t('builder.ready')}
             </span>
           </div>
 
@@ -1163,28 +1599,28 @@ export const WorkflowBuilderPage: React.FC = () => {
             <div
               data-testid="integration-readiness"
               role="status"
-              className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-300"
+              className="border-b border-warn/30 bg-warn-bg px-3 py-2 text-[11px] leading-relaxed text-warn"
             >
               {selectedNodeReadinessMessage}
-              {isUnsupportedNode && <span className="block">Existing configuration is preserved and read-only.</span>}
+              {isUnsupportedNode && <span className="block">{t('builder.cfg.preserved_readonly')}</span>}
             </div>
           )}
           {selectedNodeType === 'trigger.webhook' && (
-            <div data-testid="webhook-endpoint-readiness" role="status" className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
-              The endpoint key and secret are provisioned on publish. The public path is system-managed.
+            <div data-testid="webhook-endpoint-readiness" role="status" className="border-b border-border bg-subtle px-3 py-2 text-[11px] text-text-2">
+              {t('builder.cfg.webhook_provision')}
             </div>
           )}
 
           {/* Inspector Tabs */}
-          <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 text-xs">
+          <div className="flex gap-1 border-b border-border bg-card px-2 text-xs">
             {(['config', 'input', 'output', 'logs'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setInspectorTab(tab)}
-                className={`flex-1 py-2 font-medium capitalize text-center transition-colors border-b-2 ${
+                className={`-mb-px flex-1 border-b-2 py-2 text-center text-[13px] font-medium transition-colors ${
                   inspectorTab === tab
-                    ? 'border-blue-500 text-blue-700 dark:text-blue-300'
-                    : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    ? 'border-foreground text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {t(`builder.tab.${tab}`)}
@@ -1197,130 +1633,130 @@ export const WorkflowBuilderPage: React.FC = () => {
             {inspectorTab === 'config' && (
               isUnsupportedNode ? (
                 <div data-testid="unsupported-node-config" className="space-y-3">
-                  <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
-                    This node is outside Workflow V1. Its saved configuration stays intact and cannot be edited or published here.
+                  <p className="text-[11px] leading-relaxed text-text-2">
+                    {t('builder.cfg.unsupported_body')}
                   </p>
-                  <pre className="max-h-72 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 font-mono text-[10px] text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                  <pre className="max-h-72 overflow-auto rounded border border-border bg-subtle p-2 font-mono text-[10px] text-text-2">
                     {JSON.stringify(selectedNodeConfig, null, 2)}
                   </pre>
                 </div>
               ) : selectedNodeType === 'logic.condition' ? (
                 <div data-testid="condition-config" className="space-y-3">
                   <div>
-                    <label htmlFor="condition-left" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Left value</label>
+                    <label htmlFor="condition-left" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_left')}</label>
                     <input
                       id="condition-left"
                       data-testid="condition-left"
                       value={String(selectedNodeConfig.left ?? '')}
                       placeholder="{{ trigger.input.email }}"
                       onChange={(event) => updateSelectedNodeConfig({ left: event.target.value })}
-                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                   </div>
                   <div>
-                    <label htmlFor="condition-operator" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Operator</label>
+                    <label htmlFor="condition-operator" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_operator')}</label>
                     <select
                       id="condition-operator"
                       data-testid="condition-operator"
                       value={String(selectedNodeConfig.operator ?? 'eq')}
                       onChange={(event) => updateSelectedNodeConfig({ operator: event.target.value })}
-                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     >
-                      {CONDITION_OPERATORS.map((operator) => <option key={operator.value} value={operator.value}>{operator.label}</option>)}
+                      {CONDITION_OPERATORS.map((operator) => <option key={operator.value} value={operator.value}>{t(operator.labelKey)}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="condition-right" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Right value</label>
+                    <label htmlFor="condition-right" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_right')}</label>
                     <input
                       id="condition-right"
                       data-testid="condition-right"
                       value={String(selectedNodeConfig.right ?? '')}
                       placeholder="500 or {{ variables.threshold }}"
                       onChange={(event) => updateSelectedNodeConfig({ right: event.target.value })}
-                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                   </div>
-                  <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">Use JSON values or V1 mappings. Expressions, operators, and code are not accepted as values.</p>
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.cond_hint')}</p>
                 </div>
               ) : selectedNodeType === 'trigger.schedule' ? (
                 <div data-testid="schedule-config" className="space-y-3">
                   <div>
-                    <label htmlFor="schedule-cron" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Six-field cron</label>
+                    <label htmlFor="schedule-cron" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cron')}</label>
                     <input
                       id="schedule-cron"
                       data-testid="schedule-cron"
                       value={String(selectedNodeConfig.cron ?? '')}
                       placeholder="0 0 9 * * *"
                       onChange={(event) => updateSelectedNodeConfig({ cron: event.target.value })}
-                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                   </div>
                   <div>
-                    <label htmlFor="schedule-timezone" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">IANA timezone</label>
+                    <label htmlFor="schedule-timezone" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.timezone')}</label>
                     <input
                       id="schedule-timezone"
                       data-testid="schedule-timezone"
                       value={String(selectedNodeConfig.timezone ?? '')}
                       placeholder="Asia/Ho_Chi_Minh"
                       onChange={(event) => updateSelectedNodeConfig({ timezone: event.target.value })}
-                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     />
                   </div>
                 </div>
               ) : selectedNodeType === 'trigger.webhook' ? (
                 <div data-testid="webhook-config" className="space-y-3">
-                  <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">The endpoint key and secret are provisioned on publish and shown once. This draft does not choose a public path.</p>
-                  <div className="rounded border border-slate-200 bg-slate-50 px-2.5 py-2 text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-                    Method: <span className="font-mono">POST</span>
+                  <p className="text-[11px] leading-relaxed text-text-2">{t('builder.cfg.webhook_body')}</p>
+                  <div className="rounded border border-border bg-subtle px-2.5 py-2 text-[11px] text-text-2">
+                    {t('builder.cfg.method_prefix')}<span className="font-mono">POST</span>
                   </div>
                 </div>
               ) : selectedNodeType === 'trigger.manual' ? (
                 <div>
-                  <label htmlFor="manual-button-label" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Button label</label>
+                  <label htmlFor="manual-button-label" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.button_label')}</label>
                   <input
                     id="manual-button-label"
                     value={String(selectedNodeConfig.buttonLabel ?? '')}
                     onChange={(event) => updateSelectedNodeConfig({ buttonLabel: event.target.value })}
-                    className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                    className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                   />
                 </div>
               ) : selectedNodeType === 'trigger.telegram' ? (
-                <div data-testid="telegram-trigger-config" className="rounded border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/25 dark:text-amber-300">
-                  This trigger can be saved as a draft. Bot Service owns Telegram event normalization; no payload or ingress contract is available yet.
+                <div data-testid="telegram-trigger-config" className="rounded border border-warn/30 bg-warn-bg p-3 text-[11px] leading-relaxed text-warn">
+                  {t('builder.cfg.telegram_trigger_body')}
                 </div>
               ) : selectedNodeType === 'telegram.send_message' ? (
                 <div data-testid="telegram-send-config" className="space-y-3">
                   <div>
-                    <label htmlFor="telegram-chat-id" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Chat ID</label>
-                    <input id="telegram-chat-id" value={String(selectedNodeConfig.chatId ?? '')} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                    <label htmlFor="telegram-chat-id" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.chat_id')}</label>
+                    <input id="telegram-chat-id" value={String(selectedNodeConfig.chatId ?? '')} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                   <div>
-                    <label htmlFor="telegram-text" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Message</label>
-                    <textarea id="telegram-text" rows={3} value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full resize-y rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                    <label htmlFor="telegram-text" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.message')}</label>
+                    <textarea id="telegram-text" rows={3} value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                 </div>
               ) : selectedNodeType === 'http.request' ? (
                 <div data-testid="http-request-config" className="space-y-3">
                   <div>
-                    <label htmlFor="http-method" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Method</label>
-                    <select id="http-method" value={String(selectedNodeConfig.method ?? 'GET')} onChange={(event) => updateSelectedNodeConfig({ method: event.target.value })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                    <label htmlFor="http-method" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.method')}</label>
+                    <select id="http-method" value={String(selectedNodeConfig.method ?? 'GET')} onChange={(event) => updateSelectedNodeConfig({ method: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary">
                       {['GET', 'POST', 'PUT', 'DELETE'].map((method) => <option key={method}>{method}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="http-url" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">URL</label>
-                    <input id="http-url" value={String(selectedNodeConfig.url ?? '')} onChange={(event) => updateSelectedNodeConfig({ url: event.target.value })} placeholder="https://example.com/api" className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                    <label htmlFor="http-url" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.url')}</label>
+                    <input id="http-url" value={String(selectedNodeConfig.url ?? '')} onChange={(event) => updateSelectedNodeConfig({ url: event.target.value })} placeholder="https://example.com/api" className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                   <div>
-                    <label htmlFor="http-body" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Body</label>
-                    <textarea id="http-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} placeholder="JSON or mapping" className="w-full resize-y rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                    <label htmlFor="http-body" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.body')}</label>
+                    <textarea id="http-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} placeholder={t('builder.cfg.body_placeholder')} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400">Successful responses expose their body as output.data.</p>
+                  <p className="text-[10px] text-muted-foreground">{t('builder.cfg.http_hint')}</p>
                 </div>
               ) : selectedNodeType === 'email.send' ? (
                 <div data-testid="email-config" className="space-y-3">
                   <div>
-                    <label htmlFor="email-connection" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Gmail connection</label>
+                    <label htmlFor="email-connection" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.gmail_connection')}</label>
                     <select
                       id="email-connection"
                       data-testid="email-connection"
@@ -1328,34 +1764,39 @@ export const WorkflowBuilderPage: React.FC = () => {
                       // Omit the key when cleared: the Workflow Service rejects an empty connectionId even in drafts.
                       onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value || undefined })}
                       disabled={isLoadingConnections}
-                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 disabled:opacity-60 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-60"
                     >
-                      <option value="">{isLoadingConnections ? 'Loading connections…' : 'Select a Gmail connection'}</option>
+                      <option value="">{isLoadingConnections ? t('builder.cfg.loading_connections') : t('builder.cfg.select_gmail')}</option>
                       {gmailConnections.map((connection) => (
                         <option key={connection.id} value={connection.id}>{connection.name}</option>
                       ))}
                       {String(selectedNodeConfig.connectionId ?? '').trim()
                         && !gmailConnections.some((connection) => connection.id === selectedNodeConfig.connectionId) && (
-                        <option value={String(selectedNodeConfig.connectionId)}>Unavailable connection (reconnect or pick another)</option>
+                        <option value={String(selectedNodeConfig.connectionId)}>{t('builder.cfg.unavailable_connection')}</option>
                       )}
                     </select>
                     {!isLoadingConnections && gmailConnections.length === 0 && (
-                      <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-                        No active Gmail connection. <Link to="/connections" className="text-blue-600 underline dark:text-blue-400">Connect Gmail</Link> first.
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        {t('builder.cfg.no_gmail')} <Link to="/workspace/connections" className="text-run underline">{t('builder.cfg.connect_gmail')}</Link> {t('builder.cfg.connect_first')}
                       </p>
+                    )}
+                    {activeWorkspaceId && workflow && (
+                      <button type="button" data-testid="add-connection-GMAIL" onClick={() => selectedNodeId && setAddConnectionFor({ provider: 'GMAIL', nodeId: selectedNodeId })} className={addConnectionButtonCls}>
+                        <Plus size={12} aria-hidden="true" />{t('builder.cfg.add_gmail_connection')}
+                      </button>
                     )}
                   </div>
                   <div>
-                    <label htmlFor="email-to" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Recipient</label>
-                    <input id="email-to" value={String(selectedNodeConfig.to ?? '')} onChange={(event) => updateSelectedNodeConfig({ to: event.target.value })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                    <label htmlFor="email-to" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.recipient')}</label>
+                    <input id="email-to" value={String(selectedNodeConfig.to ?? '')} onChange={(event) => updateSelectedNodeConfig({ to: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                   <div>
-                    <label htmlFor="email-subject" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Subject</label>
-                    <input id="email-subject" value={String(selectedNodeConfig.subject ?? '')} onChange={(event) => updateSelectedNodeConfig({ subject: event.target.value })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                    <label htmlFor="email-subject" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.subject')}</label>
+                    <input id="email-subject" value={String(selectedNodeConfig.subject ?? '')} onChange={(event) => updateSelectedNodeConfig({ subject: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                   <div>
-                    <label htmlFor="email-body" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Body</label>
-                    <textarea id="email-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} className="w-full resize-y rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                    <label htmlFor="email-body" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.body')}</label>
+                    <textarea id="email-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                 </div>
               ) : selectedNodeType.startsWith('ai.') ? (
@@ -1368,68 +1809,68 @@ export const WorkflowBuilderPage: React.FC = () => {
                         onChange={(outputSchema) => updateSelectedNodeConfig({ outputSchema })}
                       />
                       <div>
-                        <label htmlFor="ai-input-text" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Input text</label>
-                        <input id="ai-input-text" value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                        <label htmlFor="ai-input-text" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.input_text')}</label>
+                        <input id="ai-input-text" value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                       </div>
                     </div>
                   )}
                   {selectedNodeType === 'ai.classify' && (
                     <div>
-                      <label htmlFor="ai-categories" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Categories (comma separated)</label>
-                      <input id="ai-categories" value={Array.isArray(selectedNodeConfig.categories) ? selectedNodeConfig.categories.join(', ') : ''} onChange={(event) => updateSelectedNodeConfig({ categories: event.target.value.split(',').map((value) => value.trim()).filter(Boolean) })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                      <label htmlFor="ai-categories" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.categories')}</label>
+                      <input id="ai-categories" value={Array.isArray(selectedNodeConfig.categories) ? selectedNodeConfig.categories.join(', ') : ''} onChange={(event) => updateSelectedNodeConfig({ categories: event.target.value.split(',').map((value) => value.trim()).filter(Boolean) })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                     </div>
                   )}
                   {selectedNodeType === 'ai.summarize' && (
                     <div>
-                      <label htmlFor="ai-max-length" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">Maximum length</label>
-                      <input id="ai-max-length" type="number" min="1" value={String(selectedNodeConfig.maxLength ?? 200)} onChange={(event) => updateSelectedNodeConfig({ maxLength: Number(event.target.value) })} className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100" />
+                      <label htmlFor="ai-max-length" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.max_length')}</label>
+                      <input id="ai-max-length" type="number" min="1" value={String(selectedNodeConfig.maxLength ?? 200)} onChange={(event) => updateSelectedNodeConfig({ maxLength: Number(event.target.value) })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                     </div>
                   )}
                 </div>
               ) : selectedNodeType === 'ocr.extract' ? (
                 <div className="space-y-4">
-                  <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-900/70 dark:bg-blue-950/25">
+                  <div className="rounded-lg border border-run/30 bg-run-bg p-3">
                     <div className="flex items-start gap-2">
-                      <Scan size={16} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                      <Scan size={16} className="mt-0.5 shrink-0 text-run" />
                       <div>
-                        <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">{t('ocr.title')}</p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">{t('ocr.description')}</p>
+                        <p className="text-xs font-semibold text-foreground">{t('ocr.title')}</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-text-2">{t('ocr.description')}</p>
                       </div>
                     </div>
                   </div>
 
-                  <div data-testid="ocr-workflow-source" className="space-y-2 rounded border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-800 dark:bg-slate-950/60">
-                    <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">Workflow source (choose exactly one)</p>
+                  <div data-testid="ocr-workflow-source" className="space-y-2 rounded border border-border bg-subtle p-2.5">
+                    <p className="text-[11px] font-semibold text-text-2">{t('builder.cfg.ocr_source')}</p>
                     <div>
-                      <label htmlFor="ocr-artifact-id" className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-400">Workspace artifact ID</label>
+                      <label htmlFor="ocr-artifact-id" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.artifact_id')}</label>
                       <input
                         id="ocr-artifact-id"
                         data-testid="ocr-artifact-id"
                         value={String(selectedNodeConfig.artifactId ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value, fileUrl: '' })}
-                        className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
                     <div>
-                      <label htmlFor="ocr-file-url" className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-400">File URL</label>
+                      <label htmlFor="ocr-file-url" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.file_url')}</label>
                       <input
                         id="ocr-file-url"
                         data-testid="ocr-file-url"
                         value={String(selectedNodeConfig.fileUrl ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value, artifactId: '' })}
                         placeholder="https://..."
-                        className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                        className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
-                    <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">Leave both empty while drafting; filling one clears the other. URL execution stays disabled until its security checks are verified.</p>
+                    <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.ocr_source_hint')}</p>
                   </div>
 
                   <div>
-                    <label htmlFor="ocr-file-input" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                      Try OCR now (separate from the workflow source)
+                    <label htmlFor="ocr-file-input" className="mb-1 block text-[11px] font-medium text-text-2">
+                      {t('builder.cfg.ocr_try')}
                     </label>
-                    <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed border-slate-300 bg-slate-50 px-2.5 py-2 text-xs text-slate-600 transition-colors hover:border-blue-400 hover:bg-blue-50/60 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:border-blue-500/60 dark:hover:bg-blue-950/25">
-                      <Upload size={14} className="shrink-0 text-blue-600 dark:text-blue-400" />
+                    <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed border-border-strong bg-subtle px-2.5 py-2 text-xs text-text-2 transition-colors hover:border-run/30 hover:bg-run-bg">
+                      <Upload size={14} className="shrink-0 text-run" />
                       <span className="min-w-0 flex-1 truncate">{currentUserOcrFile?.name ?? t('ocr.choose_file')}</span>
                       <input
                         id="ocr-file-input"
@@ -1441,12 +1882,12 @@ export const WorkflowBuilderPage: React.FC = () => {
                         className="sr-only"
                       />
                     </label>
-                    <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t('ocr.accepted')}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">{t('ocr.accepted')}</p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label htmlFor="ocr-language" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                      <label htmlFor="ocr-language" className="mb-1 block text-[11px] font-medium text-text-2">
                         {t('ocr.language')}
                       </label>
                       <select
@@ -1456,14 +1897,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                           setOcrLanguage(event.target.value);
                           updateSelectedNodeConfig({ language: event.target.value });
                         }}
-                        className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                        className="w-full rounded-md border border-border-strong bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       >
                         <option value="vi+en">{t('builder.language.vi_en')}</option>
                         <option value="vi">{t('settings.vietnamese')}</option>
                         <option value="en">{t('settings.english')}</option>
                       </select>
                     </div>
-                    <label className="mt-5 flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                    <label className="mt-5 flex items-center gap-2 text-[11px] text-text-2">
                       <input
                         type="checkbox"
                         checked={ocrDetectTables}
@@ -1471,7 +1912,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           setOcrDetectTables(event.target.checked);
                           updateSelectedNodeConfig({ detectTables: event.target.checked });
                         }}
-                        className="size-3.5 accent-blue-600"
+                        className="size-3.5 accent-run"
                       />
                       {t('ocr.detect_tables')}
                     </label>
@@ -1481,15 +1922,15 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <div
                       role="alert"
                       data-testid="ocr-error"
-                      className="rounded border border-rose-200 bg-rose-50 p-2.5 text-[11px] text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-300"
+                      className="rounded border border-err-border bg-err-bg p-2.5 text-[11px] text-err"
                     >
                       <div className="flex items-center justify-between gap-1.5">
-                        <span className="font-mono text-[10px] font-semibold uppercase bg-rose-200/70 dark:bg-rose-900/60 px-1 py-0.5 rounded">
+                        <span className="font-mono text-[10px] font-semibold uppercase bg-err-bg px-1 py-0.5 rounded">
                           {visibleOcrError.code}
                         </span>
                         {visibleOcrError.retryable && (
-                          <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
-                            Retryable
+                          <span className="text-[10px] text-warn font-medium">
+                            {t('builder.cfg.retryable')}
                           </span>
                         )}
                       </div>
@@ -1500,9 +1941,9 @@ export const WorkflowBuilderPage: React.FC = () => {
                           data-testid="ocr-retry"
                           onClick={handleRetryOcr}
                           disabled={isOcrRunning}
-                          className="mt-2 rounded border border-rose-300 px-2 py-1 text-[10px] font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-wait disabled:opacity-70 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                          className="mt-2 rounded border border-err-border px-2 py-1 text-[10px] font-semibold text-err transition-colors hover:bg-err-bg disabled:cursor-wait disabled:opacity-70"
                         >
-                          Retry OCR
+                          {t('builder.cfg.retry_ocr')}
                         </button>
                       )}
                     </div>
@@ -1520,22 +1961,22 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </button>
 
                   {visibleOcrResult && (
-                    <div data-testid="ocr-result" className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-800 dark:bg-slate-900/40">
+                    <div data-testid="ocr-result" className="space-y-3 rounded-lg border border-border bg-subtle p-3">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">{t('ocr.result')}</span>
+                          <span className="text-[11px] font-semibold text-foreground">{t('ocr.result')}</span>
                           {visibleOcrResult.metadata.quality === 'OK' && (
-                            <span data-testid="ocr-quality-badge" className="rounded border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                            <span data-testid="ocr-quality-badge" className="rounded border border-ok/30 bg-ok-bg px-1.5 py-0.5 font-mono text-[10px] font-medium text-ok">
                               ● OK
                             </span>
                           )}
                           {visibleOcrResult.metadata.quality === 'LOW_CONFIDENCE' && (
-                            <span data-testid="ocr-quality-badge" className="rounded border border-amber-500/20 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                              ▲ Low Confidence
+                            <span data-testid="ocr-quality-badge" className="rounded border border-warn/30 bg-warn-bg px-1.5 py-0.5 font-mono text-[10px] font-medium text-warn">
+                              ▲ {t('builder.cfg.low_confidence')}
                             </span>
                           )}
                           {visibleOcrResult.metadata.quality === 'EMPTY' && (
-                            <span data-testid="ocr-quality-badge" className="rounded border border-slate-400/20 bg-slate-400/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                            <span data-testid="ocr-quality-badge" className="rounded border border-border-strong bg-muted-foreground px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
                               ○ Empty
                             </span>
                           )}
@@ -1543,39 +1984,39 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <button
                           type="button"
                           onClick={clearOcrResult}
-                          className="rounded p-0.5 text-slate-500 transition-colors hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800"
+                          className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted"
                           aria-label={t('ocr.dismiss_result')}
                         >
                           <X size={13} />
                         </button>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-[10px]">
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">{t('ocr.pages')}: <strong>{visibleOcrResult.document.pages}</strong></span>
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+                        <span className="rounded bg-card/70 px-2 py-1.5 text-text-2">{t('ocr.pages')}: <strong>{visibleOcrResult.document.pages}</strong></span>
+                        <span className="rounded bg-card/70 px-2 py-1.5 text-text-2">
                           {t('ocr.confidence')}: <strong>{visibleOcrResult.confidence !== null ? `${(visibleOcrResult.confidence * 100).toFixed(1)}%` : '—'}</strong>
                         </span>
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+                        <span className="rounded bg-card/70 px-2 py-1.5 text-text-2">
                           {t('ocr.mime_type')}: <strong>{visibleOcrResult.document.mimeType}</strong>
                         </span>
-                        <span className="rounded bg-white/70 px-2 py-1.5 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+                        <span className="rounded bg-card/70 px-2 py-1.5 text-text-2">
                           {t('ocr.tables')}: <strong>{visibleOcrResult.tables?.length ?? 0}</strong>
                         </span>
                       </div>
 
                       {visibleOcrResult.metadata.quality === 'EMPTY' && (
-                        <div data-testid="ocr-empty-note" className="rounded border border-amber-200/60 bg-amber-50/50 p-2 text-[11px] text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-300">
+                        <div data-testid="ocr-empty-note" className="rounded border border-warn/30 bg-warn-bg p-2 text-[11px] text-warn">
                           {t('ocr.empty_text')}
                         </div>
                       )}
 
                       {visibleOcrResult.metadata.warnings && visibleOcrResult.metadata.warnings.length > 0 && (
                         <div data-testid="ocr-warnings" className="space-y-1">
-                          <span className="block text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                          <span className="block text-[10px] font-medium text-warn">
                             {t('ocr.warnings')} ({visibleOcrResult.metadata.warnings.length})
                           </span>
                           <div className="space-y-1">
                             {visibleOcrResult.metadata.warnings.map((w, idx) => (
-                              <div key={idx} className="rounded border border-amber-200/80 bg-amber-50/70 px-2 py-1 text-[10px] text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+                              <div key={idx} className="rounded border border-warn/30 bg-warn-bg px-2 py-1 text-[10px] text-warn">
                                 <span className="font-mono font-semibold">[{w.code}]</span>{' '}
                                 {w.page ? `(p.${w.page}) ` : ''}
                                 {w.message}
@@ -1586,55 +2027,72 @@ export const WorkflowBuilderPage: React.FC = () => {
                       )}
 
                       <div>
-                        <span className="mb-1 block text-[10px] font-medium text-slate-600 dark:text-slate-400">{t('ocr.raw_text')}</span>
-                        <pre data-testid="ocr-raw-text" className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-slate-200 bg-white/70 p-2 font-mono text-[10px] leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">{visibleOcrResult.text.rawText || '(No text detected)'}</pre>
+                        <span className="mb-1 block text-[10px] font-medium text-text-2">{t('ocr.raw_text')}</span>
+                        <pre data-testid="ocr-raw-text" className="max-h-24 overflow-auto whitespace-pre-wrap rounded border border-border bg-card/70 p-2 font-mono text-[10px] leading-relaxed text-text-2">{visibleOcrResult.text.rawText || '(No text detected)'}</pre>
                       </div>
                     </div>
                   )}
                 </div>
               ) : isGoogleNode ? (
                 <div className="space-y-4">
-                  <div className="rounded-lg border border-blue-200 bg-blue-50/70 p-3 dark:border-blue-900/70 dark:bg-blue-950/25">
+                  <div className="rounded-lg border border-run/30 bg-run-bg p-3">
                     <div className="flex items-start gap-2">
                       {isGoogleSheetsNode ? (
-                        <FileSpreadsheet size={16} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                        <FileSpreadsheet size={16} className="mt-0.5 shrink-0 text-run" />
                       ) : (
-                        <FileText size={16} className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" />
+                        <FileText size={16} className="mt-0.5 shrink-0 text-run" />
                       )}
                       <div>
-                        <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">{t('builder.google.title')}</p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">{t('builder.google.description')}</p>
+                        <p className="text-xs font-semibold text-foreground">{t('builder.google.title')}</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-text-2">{t('builder.google.description')}</p>
                       </div>
                     </div>
                   </div>
 
                   <div>
-                    <label htmlFor="google-connection" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                    <label htmlFor="google-connection" className="mb-1 block text-[11px] font-medium text-text-2">
                       {t('builder.google.connection')}
                     </label>
                     <select
                       id="google-connection"
                       data-testid="google-connection"
                       value={String(selectedNodeConfig.connectionId ?? '')}
-                      onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value })}
-                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                      // Omit the key when cleared: the Workflow Service rejects an empty connectionId even in drafts.
+                      onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value || undefined })}
+                      disabled={isLoadingConnections}
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-60"
                     >
-                      <option value="">Select an authorized connection</option>
-                      {String(selectedNodeConfig.connectionId ?? '').trim() && (
-                        <option value={String(selectedNodeConfig.connectionId)}>Existing connection reference</option>
+                      <option value="">{isLoadingConnections ? t('builder.cfg.loading_connections') : t('builder.cfg.select_sheets')}</option>
+                      {sheetsConnections.map((connection) => (
+                        <option key={connection.id} value={connection.id}>{connection.name}</option>
+                      ))}
+                      {String(selectedNodeConfig.connectionId ?? '').trim()
+                        && !sheetsConnections.some((connection) => connection.id === selectedNodeConfig.connectionId) && (
+                        <option value={String(selectedNodeConfig.connectionId)}>{t('builder.cfg.unavailable_connection')}</option>
                       )}
                     </select>
+                    {!isLoadingConnections && sheetsConnections.length === 0 && (
+                      <p data-testid="google-connection-empty" className="mt-1 text-[10px] text-muted-foreground">
+                        {t('builder.cfg.no_sheets')} {t('builder.cfg.sheets_create_in')}{' '}
+                        <Link to="/workspace/connections" className="text-run underline">{t('builder.cfg.sheets_link')}</Link>.
+                      </p>
+                    )}
+                    {activeWorkspaceId && workflow && (
+                      <button type="button" data-testid="add-connection-GOOGLE_SHEETS" onClick={() => selectedNodeId && setAddConnectionFor({ provider: 'GOOGLE_SHEETS', nodeId: selectedNodeId })} className={addConnectionButtonCls}>
+                        <Plus size={12} aria-hidden="true" />{t('builder.cfg.add_sheets_connection')}
+                      </button>
+                    )}
                   </div>
 
                   <div>
-                    <label htmlFor="google-operation" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                    <label htmlFor="google-operation" className="mb-1 block text-[11px] font-medium text-text-2">
                       {t('builder.google.operation')}
                     </label>
                     <select
                       id="google-operation"
                       value={googleOperation}
                       onChange={(event) => updateSelectedNodeConfig({ operation: event.target.value })}
-                      className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                     >
                       {isGoogleSheetsNode ? (
                         <>
@@ -1655,7 +2113,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                   {isGoogleSheetsNode && (
                     <>
                       <div>
-                        <label htmlFor="google-spreadsheet-id" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        <label htmlFor="google-spreadsheet-id" className="mb-1 block text-[11px] font-medium text-text-2">
                           {t('builder.google.spreadsheet_id')}
                         </label>
                         <input
@@ -1663,72 +2121,73 @@ export const WorkflowBuilderPage: React.FC = () => {
                           type="text"
                           value={String(selectedNodeConfig.spreadsheetId ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ spreadsheetId: event.target.value })}
-                          className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                         />
                       </div>
 
-                      {googleOperation === 'append' ? (
-                        <>
-                          <div>
-                            <label htmlFor="google-sheet-name" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                              {t('builder.google.sheet_name')}
-                            </label>
-                            <input
-                              id="google-sheet-name"
-                              type="text"
-                              value={String(selectedNodeConfig.sheetName ?? '')}
-                              onChange={(event) => updateSelectedNodeConfig({ sheetName: event.target.value })}
-                              className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
-                            />
-                          </div>
-                          <div>
-                            <label htmlFor="google-row-variable" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                              {t('builder.google.row_variable')}
-                            </label>
-                            <input
-                              id="google-row-variable"
-                              type="text"
-                              value={String(selectedNodeConfig.rowDataVariable ?? '')}
-                              onChange={(event) => updateSelectedNodeConfig({ rowDataVariable: event.target.value })}
-                              className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
-                            />
-                          </div>
-                        </>
-                      ) : (
-                        <div>
-                          <label htmlFor="google-range" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                            {t('builder.google.range')}
-                          </label>
-                          <input
-                            id="google-range"
-                            type="text"
-                            value={String(selectedNodeConfig.range ?? '')}
-                            onChange={(event) => updateSelectedNodeConfig({ range: event.target.value })}
-                            className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
-                          />
-                        </div>
-                      )}
+                      <div>
+                        <label htmlFor="google-range" className="mb-1 block text-[11px] font-medium text-text-2">
+                          {t('builder.google.range')}
+                        </label>
+                        <input
+                          id="google-range"
+                          type="text"
+                          value={String(selectedNodeConfig.range ?? '')}
+                          onChange={(event) => updateSelectedNodeConfig({ range: event.target.value })}
+                          aria-describedby="google-range-hint"
+                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                        <p id="google-range-hint" className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                          {t(`builder.google.range_hint_${googleOperation === 'append' || googleOperation === 'update' ? googleOperation : 'read'}`)}
+                        </p>
+                      </div>
 
-                      {googleOperation === 'update' && (
-                        <div>
-                          <label htmlFor="google-value-variable" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                            {t('builder.google.value_variable')}
-                          </label>
-                          <input
-                            id="google-value-variable"
-                            type="text"
-                            value={String(selectedNodeConfig.valueVariable ?? '')}
-                            onChange={(event) => updateSelectedNodeConfig({ valueVariable: event.target.value })}
-                            className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
-                          />
-                        </div>
+                      {googleOperation !== 'read' && (
+                        <fieldset data-testid="google-row-editor">
+                          <legend className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.google.values')}</legend>
+                          <div className="space-y-1.5">
+                            {sheetsRow.map((cell, index) => {
+                              const column = sheetsColumn(index);
+                              return (
+                                <div key={index} className="flex items-center gap-1.5">
+                                  <label htmlFor={`google-cell-${index}`} className="w-14 shrink-0 text-[11px] text-text-2">
+                                    {t('builder.google.cell').replace('{col}', column)}
+                                  </label>
+                                  <input
+                                    id={`google-cell-${index}`}
+                                    data-testid="google-cell"
+                                    type="text"
+                                    value={cell}
+                                    placeholder={index === 0 ? t('builder.google.cell_placeholder') : ''}
+                                    onChange={(event) => setSheetsRow(sheetsRow.map((value, i) => (i === index ? event.target.value : value)))}
+                                    className="min-w-0 flex-1 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setSheetsRow(sheetsRow.filter((_, i) => i !== index))}
+                                    disabled={sheetsRow.length === 1}
+                                    aria-label={t('builder.google.remove_cell').replace('{col}', column)}
+                                    title={t('builder.google.remove_cell').replace('{col}', column)}
+                                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+                                  >
+                                    <X size={13} aria-hidden="true" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <button type="button" data-testid="google-add-cell" onClick={() => setSheetsRow([...sheetsRow, ''])} className={addConnectionButtonCls}>
+                            <Plus size={12} aria-hidden="true" />{t('builder.google.add_cell')}
+                          </button>
+                          <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{t('builder.google.values_hint')}</p>
+                        </fieldset>
                       )}
                     </>
                   )}
 
                   {isGoogleDocsNode && googleOperation === 'create' && (
                     <div>
-                      <label htmlFor="google-document-title" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                      <label htmlFor="google-document-title" className="mb-1 block text-[11px] font-medium text-text-2">
                         {t('builder.google.title_field')}
                       </label>
                       <input
@@ -1736,14 +2195,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                         type="text"
                         value={String(selectedNodeConfig.title ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ title: event.target.value })}
-                        className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
                   )}
 
                   {isGoogleDocsNode && googleOperation !== 'create' && (
                     <div>
-                      <label htmlFor="google-document-id" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                      <label htmlFor="google-document-id" className="mb-1 block text-[11px] font-medium text-text-2">
                         {t('builder.google.document_id')}
                       </label>
                       <input
@@ -1751,14 +2210,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                         type="text"
                         value={String(selectedNodeConfig.documentId ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ documentId: event.target.value })}
-                        className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
                   )}
 
                   {isGoogleDocsNode && (googleOperation === 'create' || googleOperation === 'append') && (
                     <div>
-                      <label htmlFor="google-content-variable" className="mb-1 block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                      <label htmlFor="google-content-variable" className="mb-1 block text-[11px] font-medium text-text-2">
                         {t('builder.google.content_variable')}
                       </label>
                       <input
@@ -1766,49 +2225,49 @@ export const WorkflowBuilderPage: React.FC = () => {
                         type="text"
                         value={String(selectedNodeConfig.contentVariable ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ contentVariable: event.target.value })}
-                        className="w-full rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-900 outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-100"
+                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
                   )}
 
-                  <p className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">{t('builder.google.id_hint')}</p>
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.google.id_hint')}</p>
                 </div>
               ) : (
-                <div data-testid="node-config-fallback" className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-                  No editable V1 configuration is defined for this node.
+                <div data-testid="node-config-fallback" className="text-[11px] leading-relaxed text-muted-foreground">
+                  {t('builder.cfg.no_config')}
                 </div>
               )
             )}
 
             {inspectorTab === 'input' && (
-              <div data-testid="workflow-no-input" className="text-[11px] text-slate-500 dark:text-slate-400">
-                No workflow input data is available because this draft has not been executed.
+              <div data-testid="workflow-no-input" className="text-[11px] text-muted-foreground">
+                {t('builder.cfg.no_input')}
               </div>
             )}
 
             {inspectorTab === 'output' && (
-              <div data-testid="workflow-no-output" className="text-[11px] text-slate-500 dark:text-slate-400">
-                No workflow output data is available because this draft has not been executed.
+              <div data-testid="workflow-no-output" className="text-[11px] text-muted-foreground">
+                {t('builder.cfg.no_output')}
               </div>
             )}
 
             {inspectorTab === 'logs' && (
-              <div data-testid="workflow-no-node-logs" className="text-[11px] text-slate-500 dark:text-slate-400">
-                No Workflow Service node logs are available for this draft.
+              <div data-testid="workflow-no-node-logs" className="text-[11px] text-muted-foreground">
+                {t('builder.cfg.no_logs')}
               </div>
             )}
           </div>
 
           {/* Inspector Footer Actions */}
-          <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50">
+          <div className="p-3 border-t border-border flex items-center justify-between bg-subtle">
             <button
               data-testid="workflow-preview-inspector"
               onClick={handlePreviewFlow}
               disabled={isPreviewing}
-              aria-label="Preview workflow (visual only)"
-              className="px-2.5 py-1 text-xs font-medium bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded transition-colors"
+              aria-label={t('builder.preview_aria')}
+              className="px-2.5 py-1 text-xs font-medium bg-muted hover:bg-muted text-foreground rounded transition-colors"
             >
-              Preview flow
+              {t('builder.preview_flow')}
             </button>
             <button
               data-testid="workflow-save-inspector"
@@ -1826,28 +2285,37 @@ export const WorkflowBuilderPage: React.FC = () => {
       </div>
 
       {/* BOTTOM TELEMETRY CONSOLE STREAM */}
-      <div className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0 z-20">
+      <div className="z-20 shrink-0 border-t border-border bg-card">
         {/* Telemetry Bar Header */}
         <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={telemetryOpen}
           onClick={() => setTelemetryOpen(!telemetryOpen)}
-          className="h-8 px-3 flex items-center justify-between text-[11px] font-mono bg-slate-50 dark:bg-slate-900/80 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors border-b border-slate-200 dark:border-slate-800"
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              setTelemetryOpen(!telemetryOpen);
+            }
+          }}
+          className="flex h-8 cursor-pointer items-center justify-between border-b border-border bg-card px-3 font-mono text-[11px] transition-colors hover:bg-muted/60 sm:px-4"
         >
           <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 font-semibold">
-              <Terminal size={12} className="text-blue-500" />
-              Draft activity
+            <span className="flex items-center gap-1.5 font-semibold text-foreground">
+              <Terminal size={13} className="text-text-2" />
+              {t('builder.draft_activity')}
             </span>
-            <span className="text-slate-400">|</span>
-            <span className="text-slate-500">No V1 execution history</span>
+            <span aria-hidden="true" className="text-border-strong">|</span>
+            <span className="text-muted-foreground">{t('builder.no_execution_history')}</span>
           </div>
 
-          <div className="flex items-center gap-2 text-slate-400">
+          <div className="flex items-center gap-2 text-muted-foreground">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 setLogs([]);
               }}
-              className="hover:text-slate-600 dark:hover:text-slate-200 text-[10px]"
+              className="rounded px-1.5 py-0.5 text-[10px] hover:bg-muted hover:text-foreground"
             >
           {t('builder.telemetry.clear_logs')}
             </button>
@@ -1857,26 +2325,26 @@ export const WorkflowBuilderPage: React.FC = () => {
 
         {/* Console Log Content */}
         {telemetryOpen && (
-          <div className="h-28 p-2.5 font-mono text-[11px] overflow-y-auto bg-slate-950 text-slate-300">
-            <p data-testid="workflow-telemetry-preview-notice" role="note" className="mb-2 text-slate-400">
-              Visual preview only. This action does not call the Workflow Service or node integrations.
+          <div className="h-28 overflow-y-auto bg-subtle p-3 font-mono text-[11px] text-muted-foreground sm:px-4">
+            <p data-testid="workflow-telemetry-preview-notice" role="note" className="mb-2 text-muted-foreground">
+              {t('builder.preview_log_notice')}
             </p>
             <div className="space-y-1 text-[11px]">
               {logs.length === 0 && (
-                <p data-testid="workflow-telemetry-empty" className="text-slate-500">
-                  No execution telemetry is available for this draft.
+                <p data-testid="workflow-telemetry-empty" className="text-muted-foreground">
+                  {t('builder.cfg.no_telemetry')}
                 </p>
               )}
               {logs.map((log) => (
                 <div key={log.id} className="flex items-center gap-2">
-                  <span className="text-slate-500 text-[10px]">{log.time}</span>
+                  <span className="text-muted-foreground text-[10px]">{log.time}</span>
                   <span
                     className={
                       log.level === 'success'
-                        ? 'text-emerald-400'
+                        ? 'text-ok'
                         : log.level === 'warn'
-                        ? 'text-amber-400'
-                        : 'text-slate-300'
+                        ? 'text-warn'
+                        : 'text-muted-foreground'
                     }
                   >
                     {log.msg}
@@ -1887,11 +2355,32 @@ export const WorkflowBuilderPage: React.FC = () => {
           </div>
         )}
       </div>
+      <ConfirmModal
+        isOpen={confirmDeactivate}
+        onClose={() => setConfirmDeactivate(false)}
+        onConfirm={() => applyActive(false)}
+        title={t('builder.active.confirm_title')}
+        description={t('builder.active.confirm_body')}
+        confirmText={t('builder.active.confirm_ok')}
+        cancelText={t('builder.active.confirm_cancel')}
+        variant="danger"
+        loading={isTogglingActive}
+      />
       <GenerateWorkflowPanel
         open={isGeneratePanelOpen}
         onClose={() => setIsGeneratePanelOpen(false)}
         onReady={handleGenerateReady}
       />
+      {addConnectionFor && activeWorkspaceId && (
+        <CreateConnectionDialog
+          workspaceId={activeWorkspaceId}
+          initialProvider={addConnectionFor.provider}
+          submitLabel={t('builder.cfg.add_connection_submit')}
+          pendingLabel={t('builder.cfg.add_connection_redirecting')}
+          onClose={() => setAddConnectionFor(null)}
+          onCreated={handleInspectorConnectionCreated}
+        />
+      )}
     </div>
   );
 };

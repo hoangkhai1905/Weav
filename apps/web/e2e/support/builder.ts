@@ -6,5 +6,6 @@ export async function loginAndOpenBuilder(page: Page): Promise<void> {
 }
 
 export async function addNode(page: Page, nodeType: string): Promise<void> {
+  await page.getByTestId('workflow-add-step').click();
   await page.locator(`[data-testid="workflow-palette-item"][data-node-type="${nodeType}"]`).click();
 }

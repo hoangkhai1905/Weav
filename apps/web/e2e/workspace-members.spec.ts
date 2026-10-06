@@ -79,9 +79,9 @@ async function fulfill(route: Route, response: unknown, status = 200) {
 
 async function gotoWorkspace(page: Page) {
   const authResponse = page.waitForResponse((response) => response.url().includes('/api/auth/me'));
-  await page.goto('/workspace');
+  await page.goto('/workspace/members');
   await authResponse;
-  if (new URL(page.url()).pathname === '/login') await page.goto('/workspace');
+  if (new URL(page.url()).pathname === '/login') await page.goto('/workspace/members');
 }
 
 test.describe('workspace member Gateway integration', () => {

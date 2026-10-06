@@ -37,6 +37,8 @@ export interface WorkflowDefinition {
   edges: WorkflowEdge[];
   createdAt: string;
   updatedAt: string;
+  /** When the current version was published; draft edits after it are not live yet. */
+  publishedAt?: string;
   lastRunAt?: string;
   ownerName: string;
   workspaceId: string;

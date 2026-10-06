@@ -2,92 +2,154 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --sans: 'Geist Variable', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: 'Geist Variable', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'Geist Mono Variable', ui-monospace, Consolas, monospace;
 
   color-scheme: light;
-  font: 16px/150% var(--sans);
-  letter-spacing: -0.01em;
+  font: 16px/1.45 var(--sans);
+  letter-spacing: 0;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* WEAV Industrial Light Palette */
-  --background: #f3f5f7;
-  --foreground: #172033;
+  /* Weav light tokens (docs: Tokens.dc.html) */
+  --background: #fafaf9;
+  --foreground: #1c1917;
 
   --card: #ffffff;
-  --card-foreground: #172033;
+  --card-foreground: #1c1917;
 
   --popover: #ffffff;
-  --popover-foreground: #172033;
+  --popover-foreground: #1c1917;
 
-  --primary: #3b82f6;
+  --primary: #2b5fd9;
+  --primary-hover: #234fb8;
   --primary-foreground: #ffffff;
+  --accent-ink: #2b5fd9;
 
-  --secondary: #e9edf2;
-  --secondary-foreground: #172033;
+  --secondary: #f5f5f4;
+  --secondary-foreground: #1c1917;
 
-  --muted: #e9edf2;
-  --muted-foreground: #556276;
+  --subtle: #f5f5f4;
+  --muted: #efeeec;
+  --muted-foreground: #6f6862;
+  --text-2: #57534e;
 
-  --accent: #eef4fb;
-  --accent-foreground: #172033;
+  --accent: #eef3fd;
+  --accent-foreground: #234fb8;
 
-  --destructive: #ef4444;
+  --destructive: #b91c1c;
 
-  --border: #d9e0e8;
-  --input: #d9e0e8;
-  --ring: #2563eb;
+  --border: #e7e5e4;
+  --border-strong: #d6d3d1;
+  --input: #d6d3d1;
+  --ring: #2b5fd9;
 
-  --sidebar: #eef3f8;
-  --sidebar-foreground: #172033;
-  --sidebar-muted: #64748b;
-  --sidebar-active: #dbeafe;
+  --sidebar: #f5f5f4;
+  --sidebar-foreground: #1c1917;
+  --sidebar-muted: #6f6862;
+  --sidebar-active: #efeeec;
 
-  --radius: 0.75rem;
+  /* Status */
+  --ok: #15803d;
+  --ok-bg: #edf7f0;
+  --run: #2b5fd9;
+  --run-bg: #eef3fd;
+  --warn: #b45309;
+  --warn-bg: #fdf4e7;
+  --err: #b91c1c;
+  --err-bg: #fdeeee;
+  --err-border: #f0c4c4;
+  --pause: #6f6862;
+  --pause-bg: #f1f0ee;
+
+  /* Step type stripes */
+  --t-trigger: #57534e;
+  --t-action: #3f5e8c;
+  --t-logic: #0f766e;
+  --t-ai: #86198f;
+
+  /* Legacy brand helpers are flat accent now (no gradients) */
+  --brand-from: #2b5fd9;
+  --brand-to: #2b5fd9;
+  --canvas-dot: rgba(28, 25, 23, 0.12);
+
+  --pop: 0 8px 24px -6px rgba(28, 25, 23, 0.18), 0 2px 6px rgba(28, 25, 23, 0.08);
+  --shadow-soft: none;
+  --shadow-lift: var(--pop);
+  --shadow-brand: none;
+
+  --radius: 0.5rem;
 }
 
 .dark {
   color-scheme: dark;
-  /* WEAV Refined Industrial Dark Palette (Graphite & Blue-Gray) */
-  --background: #101826;
-  --foreground: #e7eef8;
+  --background: #121110;
+  --foreground: #edebe9;
 
-  --card: #182438;
-  --card-foreground: #e7eef8;
+  --card: #1a1918;
+  --card-foreground: #edebe9;
 
-  --popover: #182438;
-  --popover-foreground: #e7eef8;
+  --popover: #1a1918;
+  --popover-foreground: #edebe9;
 
-  --primary: #4f8cff;
-  --primary-foreground: #0b1320;
+  --primary: #3768d6;
+  --primary-hover: #4677e0;
+  --primary-foreground: #ffffff;
+  --accent-ink: #8fb0f5;
 
-  --secondary: #1e2d46;
-  --secondary-foreground: #e7eef8;
+  --secondary: #211f1e;
+  --secondary-foreground: #edebe9;
 
-  --muted: #1e2d46;
-  --muted-foreground: #9aacbf;
+  --subtle: #211f1e;
+  --muted: #292725;
+  --muted-foreground: #958f89;
+  --text-2: #b5b0ab;
 
-  --accent: #223350;
-  --accent-foreground: #e7eef8;
+  --accent: #1c2436;
+  --accent-foreground: #8fb0f5;
 
-  --destructive: #f87171;
+  --destructive: #f08a80;
 
-  --border: #2f4158;
-  --input: #2f4158;
-  --ring: #4f8cff;
+  --border: #2e2c2a;
+  --border-strong: #3d3a37;
+  --input: #3d3a37;
+  --ring: #8fb0f5;
 
-  --sidebar: #121c2d;
-  --sidebar-foreground: #e7eef8;
-  --sidebar-muted: #9aacbf;
-  --sidebar-active: #1e2d46;
+  --sidebar: #1a1918;
+  --sidebar-foreground: #edebe9;
+  --sidebar-muted: #958f89;
+  --sidebar-active: #292725;
+
+  --ok: #5bc98a;
+  --ok-bg: #16241b;
+  --run: #8fb0f5;
+  --run-bg: #1c2436;
+  --warn: #e8a657;
+  --warn-bg: #2a2116;
+  --err: #f08a80;
+  --err-bg: #2c1a19;
+  --err-border: #5c2b28;
+  --pause: #a8a29e;
+  --pause-bg: #262422;
+
+  --t-trigger: #a8a29e;
+  --t-action: #7d9bc9;
+  --t-logic: #3fb8a8;
+  --t-ai: #cf7ad6;
+
+  --brand-from: #3768d6;
+  --brand-to: #3768d6;
+  --canvas-dot: rgba(237, 235, 233, 0.09);
+
+  --pop: 0 8px 24px -6px rgba(0, 0, 0, 0.6), 0 0 0 1px #3d3a37;
 }
 
 #root {
@@ -101,17 +163,70 @@
   box-sizing: border-box;
 }
 
+/* Brand helpers shared by the shell and workflow surfaces */
+.bg-brand-gradient {
+  background-image: none;
+  background-color: var(--primary);
+}
+
+.text-brand-gradient {
+  background-image: none;
+  color: var(--accent-ink);
+}
+
+.shadow-soft {
+  box-shadow: var(--shadow-soft);
+}
+
+.shadow-lift {
+  box-shadow: var(--shadow-lift);
+}
+
+.shadow-brand {
+  box-shadow: var(--shadow-brand);
+}
+
+/* Dotted canvas used by the workflow builder */
+.bg-canvas-dots {
+  background-color: var(--background);
+  background-image: radial-gradient(var(--canvas-dot) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* Flat: the former brand glow is intentionally neutral now */
+.page-hero-glow {
+  background-image: none;
+}
+
 .animate-shimmer {
   animation: shimmer 2.5s infinite linear;
 }
 
 /* Keep the React Flow camera window legible without making it look like a blank card. */
 .react-flow__minimap.workflow-minimap {
-  background-color: rgba(226, 232, 240, 0.9) !important;
+  background-color: var(--card) !important;
 }
 
 .dark .react-flow__minimap.workflow-minimap {
-  background-color: rgba(15, 23, 42, 0.9) !important;
+  background-color: var(--card) !important;
+}
+
+/* React Flow zoom controls follow the WEAV surface tokens */
+.workflow-controls .react-flow__controls-button {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  width: 30px;
+  height: 30px;
+}
+
+.workflow-controls .react-flow__controls-button:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.workflow-controls .react-flow__controls-button svg {
+  fill: currentColor;
 }
 
 .workflow-minimap .react-flow__minimap-mask path {
@@ -119,14 +234,14 @@
 }
 
 .workflow-minimap .react-flow__minimap-mask {
-  fill: rgba(71, 85, 105, 0.42);
-  stroke: #64748b;
+  fill: rgba(28, 25, 23, 0.1);
+  stroke: var(--border-strong);
   stroke-width: 1.5;
 }
 
 .dark .workflow-minimap .react-flow__minimap-mask {
-  fill: rgba(15, 23, 42, 0.62);
-  stroke: #94a3b8;
+  fill: rgba(0, 0, 0, 0.45);
+  stroke: var(--border-strong);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -149,27 +264,29 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.25);
+  background: var(--border-strong);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.45);
+  background: var(--muted-foreground);
 }
 
 body {
+  font-size: 14px;
   margin: 0;
   background-color: var(--background);
   color: var(--foreground);
 }
 
 ::selection {
-  color: #ffffff;
-  background: #2563eb;
+  color: var(--primary-foreground);
+  background: var(--primary);
 }
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: 'Geist Variable', sans-serif;
+  --font-sans: 'Geist Variable', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -192,12 +309,33 @@ body {
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-muted: var(--sidebar-muted);
   --color-sidebar-active: var(--sidebar-active);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
+  --color-subtle: var(--subtle);
+  --color-border-strong: var(--border-strong);
+  --color-text-2: var(--text-2);
+  --color-accent-ink: var(--accent-ink);
+  --color-primary-hover: var(--primary-hover);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-run: var(--run);
+  --color-run-bg: var(--run-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-err: var(--err);
+  --color-err-bg: var(--err-bg);
+  --color-err-border: var(--err-border);
+  --color-pause: var(--pause);
+  --color-pause-bg: var(--pause-bg);
+  --color-t-trigger: var(--t-trigger);
+  --color-t-action: var(--t-action);
+  --color-t-logic: var(--t-logic);
+  --color-t-ai: var(--t-ai);
+  --shadow-pop: var(--pop);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+  --radius-2xl: 8px;
+  --radius-3xl: 8px;
 }
 
 @layer base {
@@ -209,5 +347,15 @@ body {
   }
   html {
     @apply font-sans;
+  }
+}
+
+@keyframes weav-node-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--run) 20%, transparent);
   }
 }

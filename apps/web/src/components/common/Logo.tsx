@@ -26,18 +26,18 @@ export function Logo({ collapsed = false, size = 'md', showSubtitle = true }: Lo
         <img
           src="/weav-logo-v2.png"
           alt={t('common.logo_alt')}
-          className={`${imgSize} rounded-xl object-cover border border-blue-500/30 shadow-md shadow-blue-600/20 group-hover:scale-105 transition-transform duration-300`}
+          className={`${imgSize} rounded-xl object-cover border border-run/30 group-hover:scale-105 transition-transform duration-300`}
         />
         <div className="absolute inset-0 rounded-xl ring-1 ring-white/20 pointer-events-none" />
       </div>
 
       {!collapsed && (
         <div className="flex flex-col">
-          <span className={`font-extrabold text-slate-900 dark:text-slate-100 ${titleSize} tracking-wider leading-none font-sans`}>
+          <span className={`font-extrabold text-foreground ${titleSize} tracking-wider leading-none font-sans`}>
             WEAV
           </span>
           {showSubtitle && (
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold tracking-tight mt-0.5">
+            <span className="text-[10px] text-muted-foreground font-semibold tracking-tight mt-0.5">
               {t('common.product_subtitle')}
             </span>
           )}

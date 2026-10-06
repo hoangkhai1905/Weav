@@ -38,7 +38,7 @@ const TEMPLATES: TemplateCard[] = [
     stepsCount: 3,
     avgDuration: '~140ms',
     triggerType: 'Webhook',
-    triggerColor: 'bg-[#2563EB]',
+    triggerColor: 'bg-primary',
     flow: [
       { name: 'Webhook', type: 'trigger' },
       { name: 'AI Extract', type: 'ai' },
@@ -54,7 +54,7 @@ const TEMPLATES: TemplateCard[] = [
     stepsCount: 4,
     avgDuration: '1.2m',
     triggerType: 'Cron (Daily)',
-    triggerColor: 'bg-[#2563EB]',
+    triggerColor: 'bg-primary',
     flow: [
       { name: 'Cron', type: 'trigger' },
       { name: 'Postgres', type: 'action' },
@@ -71,7 +71,7 @@ const TEMPLATES: TemplateCard[] = [
     stepsCount: 3,
     avgDuration: '~210ms',
     triggerType: 'Event',
-    triggerColor: 'bg-[#2563EB]',
+    triggerColor: 'bg-primary',
     flow: [
       { name: 'Webhook', type: 'trigger' },
       { name: 'Enrich AI', type: 'ai' },
@@ -87,7 +87,7 @@ const TEMPLATES: TemplateCard[] = [
     stepsCount: 3,
     avgDuration: '~580ms',
     triggerType: 'Ticket Webhook',
-    triggerColor: 'bg-[#2563EB]',
+    triggerColor: 'bg-primary',
     flow: [
       { name: 'Zendesk', type: 'trigger' },
       { name: 'Embeddings', type: 'ai' },
@@ -103,7 +103,7 @@ const TEMPLATES: TemplateCard[] = [
     stepsCount: 4,
     avgDuration: '~3.4m',
     triggerType: 'Hourly',
-    triggerColor: 'bg-[#2563EB]',
+    triggerColor: 'bg-primary',
     flow: [
       { name: 'Sched', type: 'trigger' },
       { name: 'Postgres', type: 'action' },
@@ -120,7 +120,7 @@ const TEMPLATES: TemplateCard[] = [
     stepsCount: 4,
     avgDuration: '~1.8s',
     triggerType: 'IMAP / S3',
-    triggerColor: 'bg-[#2563EB]',
+    triggerColor: 'bg-primary',
     flow: [
       { name: 'Email', type: 'trigger' },
       { name: 'OCR AI', type: 'ai' },
@@ -207,234 +207,211 @@ export const CreateWorkflowPage: React.FC = () => {
     return tpl.category === activeCategory;
   });
 
+  const chip = 'rounded-md bg-muted px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground';
+  const optionCard = (method: typeof selectedMethod) =>
+    `group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border bg-card p-5 transition-all ${
+      selectedMethod === method
+        ? 'border-primary/50 shadow-pop ring-1 ring-primary/20'
+        : 'border-border hover:-translate-y-0.5 hover:border-primary/25'
+    }`;
+  const flowDot: Record<string, string> = {
+    trigger: 'bg-t-trigger',
+    ai: 'bg-t-ai',
+    logic: 'bg-t-logic',
+    action: 'bg-t-action',
+  };
+
   return (
-    <div className="space-y-6 text-slate-900 dark:text-slate-100 font-sans">
+    <div className="mx-auto max-w-7xl space-y-6 pb-12 font-sans text-foreground">
       {createError && (
-        <div role="alert" data-testid="workflow-create-error" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-300">
+        <div role="alert" data-testid="workflow-create-error" className="rounded-xl border border-err-border bg-err-bg px-4 py-3 text-sm text-err">
           {createError}
         </div>
       )}
-      {/* Top Breadcrumb & Page Heading */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-          <Link to="/workspace" className="hover:text-slate-900 dark:hover:text-slate-100 transition-colors">
+
+      {/* Breadcrumb & heading */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Link to="/workspace" className="transition-colors hover:text-foreground">
             {t('create.workspace')}
           </Link>
-          <span>/</span>
-          <Link to="/workflows" className="hover:text-slate-900 dark:hover:text-slate-100 transition-colors flex items-center gap-1">
+          <span aria-hidden="true" className="text-muted-foreground/50">/</span>
+          <Link to="/workflows" className="flex items-center gap-1 transition-colors hover:text-foreground">
             <ArrowLeft size={12} />
             <span>{t('nav.workflows')}</span>
           </Link>
-          <span>/</span>
-          <span className="text-slate-900 dark:text-slate-100 font-semibold">{t('create.title')}</span>
+          <span aria-hidden="true" className="text-muted-foreground/50">/</span>
+          <span className="font-semibold text-foreground">{t('create.title')}</span>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pt-1">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-[26px]">
               {t('create.title')}
             </h1>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+            <p className="mt-1 text-sm text-muted-foreground">
               {t('create.subtitle')}
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-mono border border-slate-200 dark:border-slate-700">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              {t('create.production_cluster')} (us-east-1)
-            </span>
-          </div>
+          <span className="inline-flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1 font-mono text-xs text-muted-foreground sm:self-auto">
+            <span className="h-1.5 w-1.5 rounded-full bg-ok " />
+            {t('create.production_cluster')} (us-east-1)
+          </span>
         </div>
       </div>
 
-      {/* 3-Panel Creation Options Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Quick AI prompt — the fastest path, so it leads the page */}
+      <div className="rounded-lg border border-border bg-card">
+        <div className="flex flex-col items-stretch gap-3 rounded-lg p-4 sm:flex-row sm:items-center">
+          <div className="flex shrink-0 items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white">
+              <Sparkles size={17} />
+            </span>
+            <span className="text-sm font-semibold text-foreground">{t('create.quick_prompt')}</span>
+          </div>
+
+          <input
+            type="text"
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleGenerateAiCanvas();
+            }}
+            placeholder={t('create.prompt_placeholder')}
+            aria-label={t('create.quick_prompt')}
+            className="h-10 w-full flex-1 rounded-xl border border-border bg-muted/50 px-3.5 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:bg-card focus:outline-none focus:ring-4 focus:ring-primary/10"
+          />
+
+          <button
+            onClick={handleGenerateAiCanvas}
+            className="flex h-10 w-full shrink-0 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto"
+          >
+            <span>{t('create.generate_canvas')}</span>
+            <ArrowRight size={15} />
+          </button>
+        </div>
+      </div>
+
+      {/* Creation methods */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         {/* Option 1: Blank Workflow */}
-        <div
-          onClick={() => setSelectedMethod('blank')}
-          className={`cursor-pointer rounded-xl p-5 bg-white dark:bg-slate-900 border transition-all flex flex-col justify-between ${
-            selectedMethod === 'blank'
-              ? 'border-[#2563EB] ring-1 ring-[#2563EB] shadow-md shadow-[#2563EB]/10'
-              : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-          }`}
-        >
+        <div onClick={() => setSelectedMethod('blank')} className={optionCard('blank')}>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-800 dark:text-slate-200">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-subtle text-text-2">
                 <FileText size={20} />
               </div>
-              <span className="font-mono text-[10px] text-slate-400">v2.4 engine</span>
+              <span className="font-mono text-[10px] text-muted-foreground">v2.4 engine</span>
             </div>
 
-            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t('create.blank')}</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed min-h-[40px]">
+            <h3 className="text-[15px] font-semibold text-foreground">{t('create.blank')}</h3>
+            <p className="min-h-[40px] text-[13px] leading-relaxed text-muted-foreground">
               {t('create.blank_description')}
             </p>
 
             <div className="flex flex-wrap gap-1.5 pt-1">
-              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                {t('create.full_control')}
-              </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                {t('create.custom_triggers')}
-              </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                {t('create.any_payload')}
-              </span>
+              <span className={chip}>{t('create.full_control')}</span>
+              <span className={chip}>{t('create.custom_triggers')}</span>
+              <span className={chip}>{t('create.any_payload')}</span>
             </div>
           </div>
 
-          <div className="pt-5 mt-4 border-t border-slate-100 dark:border-slate-800/80">
+          <div className="mt-5">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 handleStartBlank();
               }}
               disabled={isCreating}
-              className="w-full h-8 px-3 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
             >
-              <Plus size={14} />
+              <Plus size={15} />
               <span>{isCreating ? t('create.creating') : t('create.start_blank')}</span>
             </button>
           </div>
         </div>
 
         {/* Option 2: Pre-configured Template */}
-        <div
-          onClick={() => setSelectedMethod('template')}
-          className={`cursor-pointer rounded-xl p-5 bg-white dark:bg-slate-900 border transition-all flex flex-col justify-between ${
-            selectedMethod === 'template'
-              ? 'border-[#2563EB] ring-1 ring-[#2563EB] shadow-md shadow-[#2563EB]/10'
-              : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-          }`}
-        >
+        <div onClick={() => setSelectedMethod('template')} className={optionCard('template')}>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-800 dark:text-slate-200">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-run-bg text-run">
                 <LayoutGrid size={20} />
               </div>
-              <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+              <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
                 {t('create.recipes')}
               </span>
             </div>
 
-            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t('create.from_template')}</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed min-h-[40px]">
+            <h3 className="text-[15px] font-semibold text-foreground">{t('create.from_template')}</h3>
+            <p className="min-h-[40px] text-[13px] leading-relaxed text-muted-foreground">
               {t('create.templates_description')}
             </p>
 
             <div className="flex flex-wrap gap-1.5 pt-1">
-              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                {t('create.preconfigured')}
-              </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                {t('create.schema_verified')}
-              </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                {t('create.zero_latency')}
-              </span>
+              <span className={chip}>{t('create.preconfigured')}</span>
+              <span className={chip}>{t('create.schema_verified')}</span>
+              <span className={chip}>{t('create.zero_latency')}</span>
             </div>
           </div>
 
-          <div className="pt-5 mt-4 border-t border-slate-100 dark:border-slate-800/80">
+          <div className="mt-5">
             <a
               href="#templates-list"
-              className="w-full h-8 px-3 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
+              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <LayoutGrid size={14} />
+              <LayoutGrid size={15} />
               <span>{t('create.browse_templates')}</span>
             </a>
           </div>
         </div>
 
         {/* Option 3: Create with AI */}
-        <div
-          onClick={() => setSelectedMethod('ai')}
-          className={`cursor-pointer rounded-xl p-5 bg-white dark:bg-slate-900 border transition-all flex flex-col justify-between ${
-            selectedMethod === 'ai'
-              ? 'border-[#2563EB] ring-1 ring-[#2563EB] shadow-md shadow-[#2563EB]/10'
-              : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-          }`}
-        >
-          <div className="space-y-3">
+        <div onClick={() => setSelectedMethod('ai')} className={optionCard('ai')}>
+          <div className="relative space-y-3">
             <div className="flex items-center justify-between">
-              <div className="w-10 h-10 rounded-lg bg-[#2563EB]/10 flex items-center justify-center text-[#2563EB]">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-white">
                 <Sparkles size={20} />
               </div>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-[#2563EB]/10 text-[#2563EB]">
+              <span className="rounded-md bg-accent px-2 py-0.5 text-[10px] font-semibold text-accent-ink">
                 {t('create.beta')}
               </span>
             </div>
 
-            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-              <span>{t('create.with_ai')}</span>
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed min-h-[40px]">
+            <h3 className="text-[15px] font-semibold text-foreground">{t('create.with_ai')}</h3>
+            <p className="min-h-[40px] text-[13px] leading-relaxed text-muted-foreground">
               {t('create.ai_description')}
             </p>
 
             <div className="flex flex-wrap gap-1.5 pt-1">
-              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                {t('create.prompt_to_pipeline')}
-              </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                {t('create.auto_mapping')}
-              </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                {t('create.dry_run_preview')}
-              </span>
+              <span className={chip}>{t('create.prompt_to_pipeline')}</span>
+              <span className={chip}>{t('create.auto_mapping')}</span>
+              <span className={chip}>{t('create.dry_run_preview')}</span>
             </div>
           </div>
 
-          <div className="pt-5 mt-4 border-t border-slate-100 dark:border-slate-800/80">
+          <div className="relative mt-5">
             <Link
               to="/ai/workflow-generator"
-              className="w-full h-8 px-3 rounded bg-[#2563EB] hover:bg-[#1d4ed8] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-semibold text-white transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Zap size={14} />
+              <Zap size={15} />
               <span>{t('create.synthesize')}</span>
             </Link>
           </div>
         </div>
       </div>
 
-      {/* Quick Inline AI Prompt Assistant Bar */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-center gap-3">
-        <div className="flex items-center gap-2 text-[#2563EB] shrink-0">
-          <Sparkles size={16} />
-          <span className="text-xs font-medium text-slate-900 dark:text-slate-100">{t('create.quick_prompt')}</span>
-        </div>
-
-        <div className="relative flex-1 w-full">
-          <input
-            type="text"
-            value={aiPrompt}
-            onChange={(e) => setAiPrompt(e.target.value)}
-            placeholder={t('create.prompt_placeholder')}
-            className="w-full h-9 pl-3 pr-8 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 rounded-lg placeholder:text-slate-400 focus:outline-none focus:border-[#2563EB] border border-slate-200 dark:border-slate-700"
-          />
-        </div>
-
-        <button
-          onClick={handleGenerateAiCanvas}
-          className="w-full sm:w-auto h-9 px-4 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-medium text-slate-900 dark:text-slate-100 transition-colors flex items-center justify-center gap-1.5 shrink-0"
-        >
-          <span>{t('create.generate_canvas')}</span>
-          <ArrowRight size={14} />
-        </button>
-      </div>
-
-      {/* Popular Templates Section Header & Filter Controls */}
-      <div className="pt-2 space-y-4" id="templates-list">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* Popular templates */}
+      <div className="space-y-4 pt-2" id="templates-list">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
-            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{t('create.popular_templates')}</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">{t('create.select_template')}</p>
+            <h2 className="text-lg font-semibold tracking-tight text-foreground">{t('create.popular_templates')}</h2>
+            <p className="text-sm text-muted-foreground">{t('create.select_template')}</p>
           </div>
 
-          {/* Filter Pills */}
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-lg self-start sm:self-auto overflow-x-auto">
+          <div className="flex items-center gap-1 self-start overflow-x-auto rounded-xl bg-muted p-1 sm:self-auto">
             {[
               { id: 'all', label: t('create.filter.all') },
               { id: 'data-etl', label: t('create.filter.data_etl') },
@@ -444,10 +421,11 @@ export const CreateWorkflowPage: React.FC = () => {
               <button
                 key={filter.id}
                 onClick={() => setActiveCategory(filter.id)}
-                className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                aria-pressed={activeCategory === filter.id}
+                className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                   activeCategory === filter.id
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
-                    : 'text-slate-500 hover:text-slate-900 dark:hover:text-slate-100'
+                    ? 'bg-card text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {filter.label}
@@ -456,65 +434,52 @@ export const CreateWorkflowPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Templates Grid (Dense Technical Layout) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredTemplates.map((tpl) => (
             <div
               key={tpl.id}
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-xl p-4 flex flex-col justify-between shadow-xs hover:shadow-md transition-all group"
+              className="group flex flex-col justify-between rounded-2xl border border-border bg-card p-4 transition-all hover:-translate-y-0.5 hover:border-primary/25"
             >
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                    {t(TEMPLATE_CATEGORY_KEYS[tpl.id])}
-                  </span>
-                  <span className="font-mono text-[10px] text-slate-400 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />
-                    {tpl.triggerType}
+                <div className="flex items-center justify-between gap-2">
+                  <span className={chip}>{t(TEMPLATE_CATEGORY_KEYS[tpl.id])}</span>
+                  <span className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    {t(`create.trigger.${tpl.triggerType.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}`)}
                   </span>
                 </div>
 
-                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 group-hover:text-[#2563EB] transition-colors">
-                  {tpl.title}
+                <h4 className="pt-1 text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
+                  {t(`create.template.${tpl.id}.title`)}
                 </h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                   {t(`create.template.${tpl.id}.description`)}
                 </p>
 
-                {/* Graph Flow Sequence Preview */}
-                <div className="my-3 p-2 rounded bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between font-mono text-[10px] text-slate-700 dark:text-slate-300 border border-slate-100 dark:border-slate-800">
+                {/* Flow preview */}
+                <div className="my-3 flex items-center gap-1 overflow-hidden rounded-xl border border-border bg-muted/40 p-2 font-mono text-[10px] text-foreground/80">
                   {tpl.flow.map((node, i) => (
                     <React.Fragment key={i}>
-                      <div className="flex items-center gap-1">
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            node.type === 'trigger'
-                              ? 'bg-amber-500'
-                              : node.type === 'ai'
-                              ? 'bg-[#2563EB]'
-                              : node.type === 'logic'
-                              ? 'bg-sky-500'
-                              : 'bg-emerald-500'
-                          }`}
-                        />
-                        <span className="truncate max-w-[64px]">{node.name}</span>
+                      <div className="flex min-w-0 items-center gap-1 rounded-md border border-border bg-card px-1.5 py-1">
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${flowDot[node.type] ?? 'bg-ok'}`} />
+                        <span className="max-w-[64px] truncate">{t(`create.flow.${node.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`)}</span>
                       </div>
-                      {i < tpl.flow.length - 1 && <span className="text-slate-400 font-bold">→</span>}
+                      {i < tpl.flow.length - 1 && <span aria-hidden="true" className="h-px min-w-2 flex-1 bg-border" />}
                     </React.Fragment>
                   ))}
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-                <span className="font-mono text-[10px] text-slate-400">
+              <div className="flex items-center justify-between border-t border-border pt-3">
+                <span className="font-mono text-[10px] text-muted-foreground">
                   {tpl.stepsCount} {t('create.steps')} • {tpl.avgDuration}
                 </span>
                 <button
                   onClick={() => handleUseTemplate(tpl.title)}
-                  className="h-7 px-2.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-[#2563EB] hover:text-white text-slate-800 dark:text-slate-200 text-xs font-medium transition-colors flex items-center gap-1"
+                  className="flex h-8 items-center gap-1 rounded-lg bg-muted px-3 text-xs font-medium text-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <span>{t('create.use_template')}</span>
-                  <ArrowRight size={12} />
+                  <ArrowRight size={13} />
                 </button>
               </div>
             </div>

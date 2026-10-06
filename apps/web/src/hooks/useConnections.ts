@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   connectionApi,
@@ -51,6 +51,17 @@ export function useConnections() {
   });
 
   return { ...query, userId, workspaceId };
+}
+
+/** Ids of ACTIVE connections the user may attach to a step; undefined until the list has loaded. */
+export function useAttachableConnectionIds(): ReadonlySet<string> | undefined {
+  const { data } = useConnections();
+  return useMemo(
+    () => data
+      ? new Set(data.filter((connection) => connection.status === "ACTIVE" && connection.canAttach).map((connection) => connection.id))
+      : undefined,
+    [data],
+  );
 }
 
 export function useConnection(connectionId: string | null) {

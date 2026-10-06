@@ -494,7 +494,7 @@ test.describe('web notification HTTP integration', () => {
       await fulfill(route, { error: { code: 'NOT_FOUND', message: 'Not found' } }, 404);
     });
 
-    await gotoAuthenticated(page, '/workspace');
+    await gotoAuthenticated(page, '/workspace/settings');
     const selector = page.getByTestId('topbar-workspace-selector');
     await expect(selector).toHaveValue(WORKSPACE_A);
 

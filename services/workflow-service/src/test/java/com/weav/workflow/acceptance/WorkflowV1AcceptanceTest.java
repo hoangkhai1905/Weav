@@ -355,6 +355,37 @@ class WorkflowV1AcceptanceTest {
     }
 
     @Test
+    void deleteHidesTheWorkflowAndStopsItsTriggers() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        UUID connectionId = UUID.randomUUID();
+        String token = accessToken(USER_ID);
+        URI collection = uri("/workspaces/" + workspaceId + "/workflows");
+        JsonNode created = read(request("POST", collection, token,
+                json(Map.of("name", "Delete acceptance", "description", "Disposable fixture")), Map.of()));
+        UUID workflowId = UUID.fromString(created.path("workflowId").stringValue());
+        URI workflow = uri("/workspaces/" + workspaceId + "/workflows/" + workflowId);
+        assertEquals(200, saveDraft(workflow, token, "Delete acceptance",
+                googleSheetsFixture(connectionId, UUID.randomUUID())).statusCode());
+        assertEquals(200, request("POST", child(workflow, "/publish"), token, null, Map.of()).statusCode());
+        assertTrue(usage(workspaceId, connectionId));
+
+        workspaceBoundary.setCapabilities(Set.of("WORKSPACE_VIEW", "WORKFLOW_EDIT"));
+        assertEquals(403, request("DELETE", workflow, token, null, Map.of()).statusCode(),
+                "deleting needs the same capability as pausing");
+        workspaceBoundary.setCapabilities(FULL_CAPABILITIES);
+
+        assertEquals(204, request("DELETE", workflow, token, null, Map.of()).statusCode());
+        assertEquals(404, request("GET", workflow, token, null, Map.of()).statusCode());
+        assertFalse(containsWorkflow(read(request("GET", collection, token, null, Map.of())).path("items"), workflowId));
+        assertEquals(404, request("POST", child(workflow, "/executions"), token,
+                "{\"input\":{}}", Map.of("Content-Type", "application/json")).statusCode());
+        assertEquals(0, count("select count(*) from workflow.workflow_triggers where workflow_id = ? and status = 'ACTIVE'",
+                workflowId), "a deleted workflow keeps no active trigger");
+        assertTrue(usage(workspaceId, connectionId), "published versions of a deleted workflow still hold their connections");
+        assertEquals(404, request("DELETE", workflow, token, null, Map.of()).statusCode());
+    }
+
+    @Test
     void unconfiguredDependencyFixtureFailsClosedWithOnePersistedAttempt() throws Exception {
         UUID workspaceId = UUID.randomUUID();
         String token = accessToken(USER_ID);

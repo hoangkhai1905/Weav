@@ -64,6 +64,7 @@ export function useNotificationSessionCleanup() {
   }, [currentSessionId, queryClient]);
 }
 
+// Never retry 4xx (including 429); a rate-limited request must not be repeated immediately.
 const retryNotification = (count: number, error: Error) =>
   count < 1 &&
   !(error instanceof NotificationApiError && error.status >= 400 && error.status < 500);
@@ -117,7 +118,10 @@ export function useNotificationUnreadCount() {
     queryFn: ({ signal }) => notificationApi.getUnreadCount(signal),
     retry: retryNotification,
     gcTime: 0,
-    refetchInterval: 10000,
+    // 30s normally, 60s after a 429; react-query skips polling in hidden tabs by default.
+    refetchInterval: (query) =>
+      query.state.error instanceof NotificationApiError && query.state.error.status === 429 ? 60000 : 30000,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
   });
 }

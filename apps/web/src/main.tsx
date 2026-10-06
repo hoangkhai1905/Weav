@@ -9,7 +9,11 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      retry: 1,
+      // One retry for transient failures, none for 4xx (429 especially).
+      retry: (count: number, error: unknown) => {
+        const status = (error as { status?: unknown } | null)?.status;
+        return count < 1 && !(typeof status === 'number' && status >= 400 && status < 500);
+      },
     },
   },
 });

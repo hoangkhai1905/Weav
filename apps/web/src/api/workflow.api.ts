@@ -169,6 +169,6 @@ export const workflowApi = {
   },
 
   deleteWorkflow(id: string): Promise<void> {
-    return isWorkflowMockMode ? mockWorkflowApi.deleteWorkflow(id) : workflowV1Api.deleteWorkflow();
+    return isWorkflowMockMode ? mockWorkflowApi.deleteWorkflow(id) : workflowV1Api.deleteWorkflow(id);
   },
 };
