@@ -82,6 +82,17 @@
 - Kiểm tra: tsc, build, eslint (chỉ 4 lỗi cũ); Playwright 35 failed / 66 passed đúng tập lỗi baseline; workspace-connections 35/35; workspace-members + read-switch 8 failed / 13 passed như trước (1 test read-switch flaky khi chạy song song). notification-integration "validated targets" lỗi sẵn có.
 - GitNexus: LOW; WorkspacePage impact không xác định rõ (index cũ), đã kiểm tra callers bằng grep.
 
+## 5i. Vòng 6: readiness Sheets/Gmail và thêm kết nối từ inspector (7b4d3db, 0178e90)
+
+- Lỗi có từ dev: bước `google.sheets` luôn "Cần ủy quyền" khi đã chọn kết nối. `getNodeReadinessBadge` nhận thêm danh sách id kết nối ACTIVE + canAttach (`useAttachableConnectionIds`, cùng query react-query nên không thêm request). Với Sheets và Gmail: thiếu connectionId hoặc trường bắt buộc (Sheets: spreadsheetId, range; Gmail: to, subject, theo `DefinitionValidator`) → Chưa cấu hình; kết nối không thuộc danh sách → Cần ủy quyền; còn lại → Sẵn sàng. Khi danh sách chưa tải xong thì không gắn "Cần ủy quyền".
+- Nhãn trên bước, cảnh báo inspector và điều kiện chặn xuất bản cùng lấy từ `getNodeReadinessBadge`. Thêm khóa `msg_gmail_auth`, `msg_sheets_fields`.
+- Nút "+ Thêm kết nối Google Sheets/Gmail" trong inspector mở `CreateConnectionDialog`, tách từ ConnectionsPage và chọn sẵn loại kết nối. Sau khi tạo: gắn connectionId vào bước, lưu nháp, gọi `oauth/authorize`, ghi ngữ cảnh OAuth kèm `returnTo=/workflows/<id>?step=<node>`, rồi chuyển sang Google. Callback ở trang Kết nối chỉ quay về `returnTo` khi kết nối đã được xác minh (success hoặc pending→VERIFIED); nếu thất bại thì ở lại trang Kết nối kèm thông báo. Builder đọc `?step=` để mở lại đúng bước.
+- `returnTo` chỉ nhận dạng `/workflows/<id>?step=<node>` (regex trong `lib/oauthPending.ts`), nên không mở được redirect ra ngoài.
+- Bước được ghi nhớ ngay lúc mở hộp thoại, vì bấm vào hộp thoại sẽ đóng inspector và xóa lựa chọn.
+- Kiểm tra: tsc qua; eslint chỉ còn 2 lỗi cũ của builder; build qua; `git diff --check` sạch. Playwright http, 9 spec chuẩn: 35 failed / 68 passed, đúng 35 lỗi baseline cộng 2 test mới đạt. `workspace-connections` 37/37. GitNexus detect-changes: HIGH (đụng saveDraft/publish/ConnectionsPage), đã có e2e phủ. Impact trước khi sửa: CLI báo `ambiguous/UNKNOWN`, đã xác nhận callers bằng grep.
+- Backend thật: stack Docker đang chạy, Vite 5173 phục vụ checkout này. Chưa đăng nhập được vì không có tài khoản test được ghi lại, và bước đồng ý của Google phải do người dùng tự làm. Đang chờ user.
+- Xóa trắng mô tả: theo code thì builder gửi `''`, `serializeWorkflowDraft` bỏ trường này, và `Workflow.updateDraft` gán `description = null`, tức là đã xóa được. Cần xác nhận trên stack thật trước khi sửa gì.
+
 ## 6. Khôi phục sau merge và đổi chữ "workflow" (aa8e7b9)
 
 - Merge `d4fa9f4` (sau khi viết lại tên tác giả) giữ phía chưa dịch khi gặp xung đột, làm mất key i18n trong `translations.ts`, chuỗi đã dịch trong `WorkflowBuilderPage.tsx` và mục work log của `7d79d27`. Đã khôi phục 3 file này từ `7d79d27`.
