@@ -1,6 +1,6 @@
 # Design: node polish, email attachments and the workflow file store
 
-Status: agreed scope (2026-10-06), not implemented. Owner: K (backend). FE renders the new fields from the node JSON Schemas (the partner's side).
+Status: agreed scope (2026-10-06), Week 4 lanes started 2026-10-06. Owner: K (backend). FE renders the new fields from the node JSON Schemas (the partner's side).
 
 ## Scope (agreed)
 
@@ -41,20 +41,26 @@ All changes are additive: each node's JSON Schema, executor and tests change, an
 | `google.sheets` | New operation `lookup`: find rows where a column equals a value, return the matching rows with their row numbers (bounded count). New `valueInputOption` (`RAW` \| `USER_ENTERED`, default as today) for `append` and `update` | Fits the existing Sheets scope |
 | `telegram.send_message` | `parseMode` (`none` \| `HTML` \| `MarkdownV2`), `disableNotification`, `replyToMessageId` | Bot API `sendMessage` parameters |
 | `google.calendar` | New operation `list`: upcoming events in a time window (bounded count, projected fields), alongside today's create | Check that the granted `calendar.events` scope allows reading; ask before adding a scope |
-| `logic.condition` | Several conditions combined with `AND` / `OR`; the single-condition form stays valid | Ports stay `true`/`false`; update the AI generator capabilities and prompt |
+| `logic.condition` | Several conditions combined with `AND` / `OR`: `{"combinator": "and" \| "or", "conditions": [{left, operator, right}, ...]}`, 1-10 conditions; the single `{left, operator, right}` form stays valid | Ports stay `true`/`false`; update the AI generator capabilities and prompt |
 
 Also: update `GENERATE_SYSTEM` (ai-service) and the assistant's product help text wherever node outputs or operations change, and add live-test steps (`live-test-nodes.ps1`).
 
 ## Lanes
 
-1. **F1 file store** (first): S3/R2 client (AWS SDK `s3`, same version as identity), migration, `WorkflowFileStore` port and adapter, retention, config, readiness.
-2. **F2 email.send** (after F1): schema fields, MIME builder, Gmail upload send, URL and file attachments, reply-in-thread.
-3. **F3 Gmail and Drive** (after F1, parallel with F2): Gmail attachment download and store, Drive `file` upload, `scripts/live-test-nodes.ps1 -Flow attachments`.
-4. **F4 node polish** (parallel with F1 from the start): split by file ownership, e.g. F4a Sheets + Calendar, F4b Telegram + condition. Shared node lists are merged as unions; workflow-service Maven runs take turns on the lock.
+Decided 2026-10-06 at the Week 4 kickoff (changes from the first draft: F4 is one lane, F1 owns every transport change, a closing lane F5 was added).
+
+1. **F1 file store and transport** (wave 1): S3/R2 client (AWS SDK `s3`, same version as identity), migration, `WorkflowFileStore` port and adapter, retention, config, readiness. F1 also owns every `PinnedHttpTransport` change the other lanes need (per-call byte caps; Gmail upload send and attachment GET; public-URL binary download; Drive 5 MiB upload; Calendar events GET) and makes the Gmail token check reusable, so F2 and F3 never edit the same file.
+2. **F4 node polish** (wave 1, parallel with F1, merged after it): Sheets, Calendar, Telegram and condition in one lane, because they share `DefinitionValidator` and `NodeSideEffects`.
+3. **F2 email.send** (wave 2): schema fields, MIME builder, Gmail upload send, URL and file attachments, reply-in-thread. Owns `GmailClient` and `GmailNodeExecutor`.
+4. **F3 Gmail trigger and Drive** (wave 2, parallel with F2): Gmail attachment download and store (a new reader class, not `GmailClient`), Drive `file` upload.
+5. **F5 close-out** (wave 3): ai-service `GENERATE_SYSTEM` and assistant help text, `scripts/live-test-nodes.ps1` flows for every changed node (including `-Flow attachments`), and the contract handover note for the FE owner.
+
+Shared node lists (`definition.schema.json`, `NodeConfigSchemasTest`, `DefinitionValidatorTest`, `.env.example`, `application.properties`) are merged as unions; workflow-service Maven runs take turns on the lock.
 
 ## Risks
 
 - Memory: up to 20 MiB per execution in memory, bounded by worker concurrency.
 - Gmail polling gets slower when messages carry attachments, bounded by the count and size limits.
 - A reused bucket key can also read avatars (accepted).
-- Integration tests cannot pull the pinned MinIO image (known), so the adapter is tested against a local fake S3 or a pullable image. The live test covers real R2.
+- Integration tests cannot pull the pinned MinIO image (known), so the adapter is tested against an `adobe/s3mock` Testcontainer (fallback: a stubbed `S3Client`). The live test covers real R2.
+- Byte caps per call: a 10 MiB attachment is about 14 MiB of base64 JSON from Gmail, and a 20 MiB email is about 28 MiB once MIME-encoded. Only these calls get the larger caps.
