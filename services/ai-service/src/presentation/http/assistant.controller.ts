@@ -97,6 +97,7 @@ export class AssistantController {
             workspaceId: parsed.data.workspaceId,
             authorization: request.headers.authorization as string,
             workflowApiUrl: this.deps.config.AI_WORKFLOW_API_URL,
+            workspaceApiUrl: this.deps.config.AI_WORKSPACE_API_URL,
             signal,
           },
         },

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ChatMessage, ChatProvider } from './chat-provider';
 import { ASSISTANT_SYSTEM_PROMPT } from './system-prompt';
 import { runTool, TOOL_SPECS, ToolContext } from './tools';
@@ -6,11 +7,16 @@ export type AssistantEvent =
   | { event: 'delta'; data: { text: string } }
   | { event: 'tool_call'; data: { name: string; arguments: unknown } }
   | { event: 'tool_result'; data: { name: string; ok: boolean } }
+  | {
+      event: 'draft';
+      data: { name: string; definition: unknown; layout: unknown };
+    }
   | { event: 'done'; data: Record<string, never> };
 
 export const MAX_TOOL_ROUNDS = 3;
 const MAX_CALLS_PER_ROUND = 4;
 const MAX_TOOL_RESULT_CHARS = 16_000;
+const logger = new Logger('Assistant');
 
 export interface AssistantInput {
   messages: { role: 'user' | 'assistant'; content: string }[];
@@ -75,16 +81,22 @@ export async function* runAssistant(
       const outcome = await runTool(call.name, call.arguments, input.tools);
       if (signal.aborted) return;
       yield { event: 'tool_result', data: { name: call.name, ok: outcome.ok } };
+      if (outcome.draft) yield { event: 'draft', data: outcome.draft };
       messages.push({
         role: 'tool',
         tool_call_id: call.id,
-        content: JSON.stringify({ untrusted_data: outcome.data }).slice(
-          0,
-          MAX_TOOL_RESULT_CHARS,
-        ),
+        content: toolMessage(call.name, outcome.data),
       });
     }
   }
+}
+
+/** Never truncates mid-JSON: an oversized result becomes a small valid error object. */
+function toolMessage(name: string, data: unknown): string {
+  const content = JSON.stringify({ untrusted_data: data });
+  if (content.length <= MAX_TOOL_RESULT_CHARS) return content;
+  logger.warn(`tool result too large: ${name}`);
+  return '{"untrusted_data":{"error":"result_too_large"}}';
 }
 
 function parseArguments(raw: string): unknown {

@@ -47,6 +47,8 @@ const schema = z.object({
     .default(20),
   // The assistant calls workflow-service's public API with the user's own token.
   AI_WORKFLOW_API_URL: z.url().default('http://workflow-service:8080'),
+  // workspace-service public API for the list_members tool (user's own token, no emails read).
+  AI_WORKSPACE_API_URL: z.url().default('http://workspace-service:8080'),
   // User access tokens: same names/defaults as the gateway. No JWKS URI keeps the assistant unauthenticated (401).
   JWT_JWKS_URI: z.url().optional(),
   JWT_ISSUER: z.string().min(1).default('weav-identity'),

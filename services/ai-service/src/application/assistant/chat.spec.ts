@@ -71,6 +71,9 @@ describe('runAssistant', () => {
     expect(p.requests[0].tools?.map((t) => t.name)).toEqual([
       'list_workflows',
       'explain_run_failure',
+      'list_failed_runs_today',
+      'list_members',
+      'build_workflow',
     ]);
     expect(p.requests[0].messages[0].role).toBe('system');
   });
@@ -314,5 +317,67 @@ describe('runAssistant', () => {
     abort.abort();
     expect((await iterator.next()).done).toBe(true);
     expect(q.requests).toHaveLength(1);
+  });
+
+  it('replaces an oversized tool result with valid JSON instead of cutting it', async () => {
+    const { input } = setup({
+      '/workflows?': {
+        status: 200,
+        body: {
+          items: Array.from({ length: 50 }, (_, i) => ({
+            workflowId: WF,
+            name: '"'.repeat(120),
+            status: 'PUBLISHED',
+            updatedAt: 'u'.repeat(40),
+          })),
+        },
+      },
+    });
+    const p = new ScriptedChatProvider([
+      [end(call('c1', 'list_workflows', {}))],
+      [text('ok'), end()],
+    ]);
+    await run(p, input());
+    expect(toolMessages(p, 1)).toEqual([
+      { untrusted_data: { error: 'result_too_large' } },
+    ]);
+  });
+
+  it('build_workflow: draft event goes to the client only; the model gets the summary', async () => {
+    const draft = {
+      name: 'D',
+      definition: { nodes: [{ type: 'trigger.manual' }] },
+      layout: {},
+    };
+    const { input } = setup({
+      '/workflows/generate': {
+        status: 200,
+        body: { status: 'ready', ...draft },
+      },
+    });
+    const p = new ScriptedChatProvider([
+      [end(call('c1', 'build_workflow', { prompt: 'make one' }))],
+      [text('Draft ready.'), end()],
+    ]);
+    const out = await run(p, input());
+    expect(out.map((e) => e.event)).toEqual([
+      'tool_call',
+      'tool_result',
+      'draft',
+      'delta',
+      'done',
+    ]);
+    expect(out[1]).toEqual({
+      event: 'tool_result',
+      data: { name: 'build_workflow', ok: true },
+    });
+    expect(out[2]).toEqual({ event: 'draft', data: draft });
+    const [result] = toolMessages(p, 1);
+    expect(result.untrusted_data).toMatchObject({
+      status: 'ready',
+      name: 'D',
+      nodeTypes: ['trigger.manual'],
+    });
+    expect(JSON.stringify(result)).not.toContain('layout');
   });
 });

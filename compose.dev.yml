@@ -440,6 +440,7 @@ services:
       # Assistant spike: off by default. Needs identity on RS256 (JWT_ACCESS_ALG=RS256) so its JWKS can verify user tokens.
       AI_ASSISTANT_ENABLED: ${AI_ASSISTANT_ENABLED:-false}
       AI_WORKFLOW_API_URL: ${AI_WORKFLOW_API_URL:-http://workflow-service:8080}
+      AI_WORKSPACE_API_URL: ${AI_WORKSPACE_API_URL:-http://workspace-service:8080}
       AI_ASSISTANT_MAX_TOKENS: ${AI_ASSISTANT_MAX_TOKENS:-1024}
       AI_ASSISTANT_MAX_CONCURRENT: ${AI_ASSISTANT_MAX_CONCURRENT:-4}
       AI_ASSISTANT_RATE_LIMIT_PER_MINUTE: ${AI_ASSISTANT_RATE_LIMIT_PER_MINUTE:-20}

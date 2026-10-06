@@ -40,12 +40,17 @@ only `private/`.
 ## Assistant chat (spike)
 
 `POST /v1/assistant/chat` streams an assistant turn as SSE (`delta`, `tool_call`,
-`tool_result`, `done`, `error`). It exists only when `AI_ASSISTANT_ENABLED=true`.
+`tool_result`, `draft`, `done`, `error`). It exists only when `AI_ASSISTANT_ENABLED=true`.
 It accepts **user** access tokens (identity RS256, verified against
 `JWT_JWKS_URI` with the gateway's `JWT_ISSUER` / `JWT_AUDIENCE`), never service
-JWTs; the service-JWT routes above never accept user tokens. Its two read-only
-tools (`list_workflows`, `explain_run_failure`) call workflow-service's public
-API (`AI_WORKFLOW_API_URL`) with the caller's own bearer token. Reach it through
+JWTs; the service-JWT routes above never accept user tokens. Its tools call workflow-service (`AI_WORKFLOW_API_URL`) and workspace-service
+(`AI_WORKSPACE_API_URL`) public APIs with the caller's own bearer token:
+`list_workflows`, `explain_run_failure`, `list_failed_runs_today` (fan-out, 4 in
+flight, 20 workflows x 20 runs), `list_members` (no emails) and `build_workflow`.
+`build_workflow` calls `POST .../workflows/generate`, which never persists: the
+full result goes to the client as a `draft` SSE event (never to the model) and
+the user must review and save it in the editor. The assistant cannot create,
+save, publish or run anything. Reach it through
 the gateway at `POST /api/v1/assistant/chat`. Live check against DeepSeek:
 `pnpm --dir services/ai-service exec ts-node scripts/assistant-live-check.ts`.
 

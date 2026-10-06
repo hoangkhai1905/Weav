@@ -184,6 +184,66 @@ describe('DeepSeekChatProvider', () => {
 });
 
 describe('ToolCallAccumulator', () => {
+  it('uses the call id as the slot when index is missing, keeping parallel calls apart', () => {
+    const acc = new ToolCallAccumulator();
+    acc.add([{ id: 'a', function: { name: 'list_members', arguments: '{' } }]);
+    acc.add([
+      { id: 'b', function: { name: 'list_workflows', arguments: '{}' } },
+    ]);
+    acc.add([{ id: 'a', function: { arguments: '}' } }]);
+    expect(acc.result()).toEqual([
+      { id: 'a', name: 'list_members', arguments: '{}' },
+      { id: 'b', name: 'list_workflows', arguments: '{}' },
+    ]);
+  });
+
+  it('appends fragments with neither index nor id to the last slot', () => {
+    const acc = new ToolCallAccumulator();
+    acc.add([{ id: 'a', function: { name: 'x', arguments: '{"k":' } }]);
+    acc.add([{ function: { arguments: '1}' } }]);
+    expect(acc.result()).toEqual([
+      { id: 'a', name: 'x', arguments: '{"k":1}' },
+    ]);
+  });
+
+  it('starts a new call when a different id arrives under the same index', () => {
+    const acc = new ToolCallAccumulator();
+    acc.add([{ index: 0, id: 'a', function: { name: 'x', arguments: '{}' } }]);
+    acc.add([{ index: 0, id: 'b', function: { name: 'y', arguments: '{}' } }]);
+    acc.add([{ index: 0, function: { arguments: ' ' } }]);
+    expect(acc.result()).toEqual([
+      { id: 'a', name: 'x', arguments: '{}' },
+      { id: 'b', name: 'y', arguments: '{} ' },
+    ]);
+  });
+
+  it('continues an id-only first fragment with later fragments carrying neither id nor index', () => {
+    const acc = new ToolCallAccumulator();
+    acc.add([{ id: 'a' }]);
+    acc.add([{ function: { name: 'x', arguments: '{' } }]);
+    acc.add([{ function: { arguments: '}' } }]);
+    expect(acc.result()).toEqual([{ id: 'a', name: 'x', arguments: '{}' }]);
+  });
+
+  it('attaches interleaved fragments without id or index to the last slot (documented)', () => {
+    const acc = new ToolCallAccumulator();
+    acc.add([{ id: 'a', function: { name: 'x', arguments: '{' } }]);
+    acc.add([{ id: 'b', function: { name: 'y', arguments: '{' } }]);
+    acc.add([{ function: { arguments: '}' } }]);
+    expect(acc.result().map((c) => c.arguments)).toEqual(['{', '{}']);
+  });
+
+  it('keeps index-based assembly in order of first appearance', () => {
+    const acc = new ToolCallAccumulator();
+    acc.add([{ index: 0, id: 'a', function: { name: 'x', arguments: '{' } }]);
+    acc.add([{ index: 1, id: 'b', function: { name: 'y', arguments: '{}' } }]);
+    acc.add([{ index: 0, function: { arguments: '}' } }]);
+    expect(acc.result().map((c) => [c.id, c.arguments])).toEqual([
+      ['a', '{}'],
+      ['b', '{}'],
+    ]);
+  });
+
   it('rejects absurd indexes and oversized arguments', () => {
     const acc = new ToolCallAccumulator();
     expect(() => acc.add([{ index: 99 }])).toThrow(AiError);
