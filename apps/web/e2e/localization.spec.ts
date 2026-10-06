@@ -95,7 +95,7 @@ test.describe('Vietnamese and English web localization', () => {
     });
     await page.goto('/connections');
 
-    await expect(page.getByTestId('app-sidebar').getByRole('link', { name: 'Kết nối', exact: true })).toBeVisible();
+    await expect(page.getByTestId('workspace-tab-connections')).toHaveText('Kết nối');
     await page.getByTestId('connections-create-open').click();
     const dialog = page.getByTestId('connection-create-dialog');
     await expect(dialog.getByRole('heading', { name: 'Thêm kết nối Google' })).toBeVisible();

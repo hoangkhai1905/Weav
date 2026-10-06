@@ -1,68 +1,118 @@
-import { NavLink } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { NavLink } from "react-router-dom";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  Activity,
   GitFork,
   HelpCircle,
   LayoutDashboard,
-  Link2,
   LogOut,
   Settings,
+  Sparkles,
+  PanelLeftClose,
+  PanelLeftOpen,
   Users,
   X,
-} from 'lucide-react';
-import { MOTION_TRANSITION, REDUCED_MOTION_TRANSITION } from '../../lib/motion';
-import { useAuthStore } from '../../store/useAuthStore';
-import { useI18nStore } from '../../store/useI18nStore';
-import { useUIStore } from '../../store/useUIStore';
+} from "lucide-react";
+import { MOTION_TRANSITION, REDUCED_MOTION_TRANSITION } from "../../lib/motion";
+import { useAuthStore } from "../../store/useAuthStore";
+import { useI18nStore } from "../../store/useI18nStore";
+import { useUIStore } from "../../store/useUIStore";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 interface NavItem {
+  testId?: string;
   translationKey: string;
   path: string;
   icon: React.ElementType;
 }
 
 const MAIN_NAV_ITEMS: NavItem[] = [
-  { translationKey: 'nav.dashboard', path: '/dashboard', icon: LayoutDashboard },
-  { translationKey: 'nav.workflows', path: '/workflows', icon: GitFork },
-  { translationKey: 'nav.executions', path: '/executions', icon: Activity },
-  { translationKey: 'nav.connections', path: '/connections', icon: Link2 },
-  { translationKey: 'nav.workspace', path: '/workspace', icon: Users },
+  {
+    translationKey: "nav.dashboard",
+    path: "/dashboard",
+    icon: LayoutDashboard,
+  },
+  { translationKey: "nav.workflows", path: "/workflows", icon: GitFork },
+  { translationKey: "nav.workspace", path: "/workspace", icon: Users },
+  {
+    translationKey: "nav.ai_generator",
+    path: "/ai/workflow-generator",
+    icon: Sparkles,
+    testId: "sidebar-ai-promo",
+  },
 ];
 
 const BOTTOM_NAV_ITEMS: NavItem[] = [
-  { translationKey: 'nav.settings', path: '/settings/profile', icon: Settings },
-  { translationKey: 'nav.help', path: '/help', icon: HelpCircle },
+  { translationKey: "nav.settings", path: "/settings/profile", icon: Settings },
+  { translationKey: "nav.help", path: "/help", icon: HelpCircle },
 ];
 
 export function Sidebar() {
-  const { mobileSidebarOpen, setMobileSidebarOpen } = useUIStore();
+  const { mobileSidebarOpen, setMobileSidebarOpen, sidebarCollapsed, toggleSidebar } = useUIStore();
   const { user, logout } = useAuthStore();
   const { t } = useI18nStore();
   const prefersReducedMotion = useReducedMotion();
   const activeTransition = prefersReducedMotion ? REDUCED_MOTION_TRANSITION : MOTION_TRANSITION;
-  const profileName = user?.displayName?.trim() || user?.name?.trim() || user?.email || t('nav.account');
+  const profileName =
+    user?.displayName?.trim() || user?.name?.trim() || user?.email || t("nav.account");
   const profileInitials = profileName
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
-    .join('');
+    .join("");
 
-  const renderNavItems = (items: NavItem[], isMobile: boolean) =>
+  // Ctrl/Cmd+B toggles the sidebar unless the user is typing.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== "b") return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.closest("input, textarea, select") || target.isContentEditable)) return;
+      event.preventDefault();
+      toggleSidebar();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleSidebar]);
+
+  // Hover/focus expands the collapsed rail as an overlay (no layout shift); the toggle pins it open.
+  const [hovered, setHovered] = useState(false);
+  const asideRef = useRef<HTMLElement | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearTimer = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+  };
+  const scheduleHover = useCallback((next: boolean, delay: number) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      // Keep it open while a workspace dropdown (native select) inside the sidebar has focus.
+      const active = document.activeElement;
+      if (!next && active instanceof HTMLSelectElement && asideRef.current?.contains(active)) return;
+      setHovered(next);
+    }, delay);
+  }, []);
+  useEffect(() => () => clearTimer(), []);
+  const isCoarsePointer = () => typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
+  const overlayOpen = sidebarCollapsed && hovered;
+
+  const fade = prefersReducedMotion ? "" : "transition-opacity duration-150";
+
+  const renderNavItems = (items: NavItem[], rail: boolean, isMobile: boolean) =>
     items.map((item) => {
       const Icon = item.icon;
-
       return (
         <NavLink
           key={item.path}
           to={item.path}
           onClick={() => isMobile && setMobileSidebarOpen(false)}
+          data-testid={item.testId}
+          title={rail ? t(item.translationKey) : undefined}
+          aria-label={t(item.translationKey)}
           className={({ isActive }) =>
-            `group relative flex min-h-10 items-center gap-3 overflow-hidden rounded-lg px-3 text-sm font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar ${
-              isActive
-                ? 'bg-sidebar-active text-sidebar-foreground'
-                : 'text-sidebar-foreground/80 hover:bg-blue-100/70 hover:text-sidebar-foreground dark:hover:bg-blue-950/40'
+            `group relative flex h-8 items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-3 text-[13px] font-medium outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring ${
+              isActive ? "bg-sidebar-active text-foreground" : "text-text-2 hover:bg-subtle hover:text-foreground"
             }`
           }
         >
@@ -72,101 +122,126 @@ export function Sidebar() {
                 <motion.span
                   layoutId="sidebar-active-indicator"
                   data-testid="active-nav-indicator"
-                  className="absolute inset-y-2 left-0 w-px rounded-full bg-primary"
+                  className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-sm bg-primary"
                   transition={activeTransition}
                 />
               )}
               <Icon
-                size={18}
-                strokeWidth={isActive ? 2.2 : 1.8}
-                className={
-                  isActive
-                    ? 'shrink-0 text-primary'
-                    : 'shrink-0 text-sidebar-muted transition-colors group-hover:text-primary'
-                }
+                size={16}
+                strokeWidth={1.75}
+                aria-hidden="true"
+                className={isActive ? "shrink-0 text-foreground" : "shrink-0 text-muted-foreground group-hover:text-foreground"}
               />
-              <span className="truncate">{t(item.translationKey)}</span>
+              <span className={`truncate ${fade} ${rail ? "opacity-0" : "opacity-100"}`}>{t(item.translationKey)}</span>
             </>
           )}
         </NavLink>
       );
     });
 
-  const renderContent = (isMobile = false) => (
-    <div
-      data-testid="app-sidebar"
-      className="flex h-full select-none flex-col border-r border-slate-200 bg-sidebar text-sidebar-foreground"
-    >
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 px-4">
-        <div className="flex items-center gap-3">
-          <img
-            src="/weav-logo-v2.png"
-            alt="WEAV app logo"
-            className="h-8 w-8 shrink-0 object-contain drop-shadow-sm"
-          />
-          <div className="flex flex-col">
-            <span className="text-sm font-bold leading-none tracking-tight text-sidebar-foreground">WEAV</span>
-            <span className="mt-1 text-[11px] font-medium leading-tight text-sidebar-muted">
-              {t('nav.brand_subtitle')}
+  const toggleLabel = sidebarCollapsed ? t("nav.pin_sidebar") : t("nav.unpin_sidebar");
+  const ToggleIcon = sidebarCollapsed ? PanelLeftOpen : PanelLeftClose;
+
+  const renderContent = (isMobile = false) => {
+    const rail = sidebarCollapsed && !hovered && !isMobile;
+    const floating = sidebarCollapsed && !isMobile;
+    return (
+      <div
+        data-testid="app-sidebar"
+        data-collapsed={rail ? "true" : "false"}
+        data-pinned={sidebarCollapsed ? "false" : "true"}
+        className={`flex select-none flex-col gap-3 overflow-hidden border-r border-border bg-sidebar p-2 text-sidebar-foreground ${
+          floating
+            ? `absolute inset-y-0 left-0 z-40 ${prefersReducedMotion ? "" : "transition-[width,box-shadow] duration-150 ease-out"} ${overlayOpen ? "w-[220px] shadow-pop" : "w-14"}`
+            : "h-full"
+        }`}
+      >
+        <div className={`flex items-center gap-1 ${rail ? "flex-col" : ""}`}>
+          <div className={rail ? "w-full" : "min-w-0 flex-1"}>
+            <WorkspaceSwitcher compact={rail} />
+          </div>
+          {isMobile ? (
+            <button
+              onClick={() => setMobileSidebarOpen(false)}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={t("nav.close_navigation")}
+            >
+              <X size={16} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-testid="sidebar-toggle"
+              onClick={toggleSidebar}
+              title={`${toggleLabel} (Ctrl+B)`}
+              aria-label={toggleLabel}
+              aria-expanded={!sidebarCollapsed}
+              aria-keyshortcuts="Control+B Meta+B"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <ToggleIcon size={16} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+
+        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden" aria-label={t("nav.primary")}>
+          {renderNavItems(MAIN_NAV_ITEMS, rail, isMobile)}
+        </nav>
+
+        <div data-testid="sidebar-footer" className="shrink-0 space-y-0.5 border-t border-border pt-2.5">
+          <nav aria-label={t("nav.support")} className="flex flex-col gap-0.5">
+            {renderNavItems(BOTTOM_NAV_ITEMS, rail, isMobile)}
+          </nav>
+
+          <div className={`flex items-center gap-2 ${rail ? "flex-col py-1" : "h-9 px-3"}`}>
+            <span
+              aria-hidden="true"
+              title={rail ? profileName : undefined}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-text-2"
+            >
+              {profileInitials || "A"}
             </span>
+            <span
+              data-testid="sidebar-profile-name"
+              className={rail ? "sr-only" : "min-w-0 flex-1 truncate text-[13px] text-foreground"}
+            >
+              {profileName}
+            </span>
+            <button
+              onClick={logout}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-err-bg hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={t("nav.logout")}
+              aria-label={t("nav.logout")}
+            >
+              <LogOut size={15} />
+            </button>
           </div>
         </div>
-
-        {isMobile && (
-          <button
-            onClick={() => setMobileSidebarOpen(false)}
-            className="rounded-md p-1.5 text-sidebar-muted transition-colors hover:bg-blue-100 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            aria-label={t('nav.close_navigation')}
-          >
-            <X size={18} />
-          </button>
-        )}
       </div>
-
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5" aria-label={t('nav.primary')}>
-        <div className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-muted">
-          {t('nav.platform')}
-        </div>
-        {renderNavItems(MAIN_NAV_ITEMS, isMobile)}
-      </nav>
-
-      <div data-testid="sidebar-footer" className="shrink-0 space-y-1 border-t border-slate-200/80 bg-slate-100/70 p-3 dark:border-slate-800 dark:bg-slate-900/45">
-        <nav aria-label={t('nav.support')}>{renderNavItems(BOTTOM_NAV_ITEMS, isMobile)}</nav>
-
-        <div className="mt-3 flex items-center justify-between border-t border-slate-200 px-2 pt-3 pb-1">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-200 text-xs font-bold text-sidebar-foreground ring-1 ring-slate-300/70 dark:bg-slate-800 dark:ring-slate-700">
-              {profileInitials || 'A'}
-            </div>
-            <div className="flex min-w-0 flex-col">
-              <span data-testid="sidebar-profile-name" className="truncate text-xs font-semibold leading-tight text-sidebar-foreground">
-                {profileName}
-              </span>
-              <div className="mt-1 flex items-center gap-1.5">
-                <span className="truncate text-[11px] leading-none text-sidebar-muted">{t('nav.workspace')}</span>
-                <span className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-blue-700">
-                  Pro
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={logout}
-            className="rounded-md p-2 text-sidebar-muted transition-colors hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            title={t('nav.logout')}
-            aria-label={t('nav.logout')}
-          >
-            <LogOut size={16} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <>
-      <aside className="z-30 hidden h-full w-[240px] shrink-0 flex-col md:flex">
+      <aside
+        ref={asideRef}
+        data-testid="app-sidebar-region"
+        onPointerEnter={(event) => {
+          if (!sidebarCollapsed || event.pointerType === "touch" || isCoarsePointer()) return;
+          scheduleHover(true, 150);
+        }}
+        onPointerLeave={() => scheduleHover(false, 200)}
+        onFocus={(event) => {
+          if (!sidebarCollapsed || isCoarsePointer()) return;
+          if (event.target.matches(":focus-visible")) scheduleHover(true, 0);
+        }}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) scheduleHover(false, 200);
+        }}
+        className={`relative z-30 hidden h-full shrink-0 flex-col md:flex ${
+          prefersReducedMotion ? "" : "transition-[width] duration-150 ease-out"
+        } ${sidebarCollapsed ? "w-14" : "w-[220px]"}`}
+      >
         {renderContent(false)}
       </aside>
 
@@ -178,18 +253,14 @@ export function Sidebar() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setMobileSidebarOpen(false)}
-              className="absolute inset-0 bg-slate-950/55"
+              className="absolute inset-0 bg-foreground/30"
             />
             <motion.div
-              initial={prefersReducedMotion ? { opacity: 0 } : { x: '-100%' }}
+              initial={prefersReducedMotion ? { opacity: 0 } : { x: "-100%" }}
               animate={prefersReducedMotion ? { opacity: 1 } : { x: 0 }}
-              exit={prefersReducedMotion ? { opacity: 0 } : { x: '-100%' }}
-              transition={
-                prefersReducedMotion
-                  ? REDUCED_MOTION_TRANSITION
-                  : { type: 'spring', stiffness: 350, damping: 32 }
-              }
-              className="relative z-10 h-full w-64"
+              exit={prefersReducedMotion ? { opacity: 0 } : { x: "-100%" }}
+              transition={prefersReducedMotion ? REDUCED_MOTION_TRANSITION : { type: "spring", stiffness: 350, damping: 32 }}
+              className="relative z-10 h-full w-[220px]"
             >
               {renderContent(true)}
             </motion.div>

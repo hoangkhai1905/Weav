@@ -71,10 +71,8 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
       connectionId: '',
       operation: 'read',
       spreadsheetId: '',
-      range: 'Sheet1!A1:Z100',
-      sheetName: 'Sheet1',
-      rowDataVariable: '{{ trigger.input.email }}',
-      valueVariable: '{{ trigger.input.email }}',
+      // No sheet name: Google uses the first tab, whatever its localized name ("Sheet1", "Trang tính1").
+      range: 'A1:Z100',
     },
     inputs: [{ name: 'data', type: 'any' }],
     outputs: [{ name: 'result', type: 'object' }],

@@ -71,6 +71,25 @@ describe('workflow gateway routes', () => {
     );
   });
 
+  it('forwards workflow deletion and relays 204 without a body', async () => {
+    const request = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 204 }));
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/workspaces/${workspaceId}/workflows/${workflowId}`,
+      headers: { authorization: 'Bearer opaque-token' },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.body).toBe('');
+    expect(request).toHaveBeenCalledWith(
+      `http://workflow.internal:8080/workspaces/${workspaceId}/workflows/${workflowId}`,
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
   it('forwards draft saves and preserves the upstream response', async () => {
     const body = {
       name: 'Daily report',

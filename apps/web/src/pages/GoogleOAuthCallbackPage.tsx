@@ -57,15 +57,15 @@ export function GoogleOAuthCallbackPage() {
 
   if (error) {
     return (
-      <main className="min-h-screen grid place-items-center bg-slate-50 px-6 dark:bg-slate-950">
-        <section className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl dark:border-slate-800 dark:bg-slate-900">
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+      <main className="min-h-screen grid place-items-center bg-subtle px-6">
+        <section className="w-full max-w-md rounded-3xl border border-border bg-card p-8 text-center shadow-pop">
+          <h1 className="text-xl font-bold text-foreground">
             {t('auth.google_callback_failed')}
           </h1>
-          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">{error}</p>
+          <p className="mt-3 text-sm text-muted-foreground">{error}</p>
           <Link
             to="/login"
-            className="mt-6 inline-flex rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500"
+            className="mt-6 inline-flex rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary"
           >
             {t('forgot.back_to_sign_in')}
           </Link>
@@ -75,8 +75,8 @@ export function GoogleOAuthCallbackPage() {
   }
 
   return (
-    <main className="min-h-screen grid place-items-center bg-slate-50 px-6 dark:bg-slate-950">
-      <div className="flex items-center gap-3 text-sm font-medium text-slate-600 dark:text-slate-300">
+    <main className="min-h-screen grid place-items-center bg-subtle px-6">
+      <div className="flex items-center gap-3 text-sm font-medium text-text-2">
         <LoaderCircle className="animate-spin" size={20} />
         {t('auth.google_callback_loading')}
       </div>

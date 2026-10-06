@@ -2,7 +2,7 @@ import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Plus, RefreshCw, X } from "lucide-react";
+import { LoaderCircle, MoreHorizontal, Plus, RefreshCw, X } from "lucide-react";
 import {
   ConnectionApiError,
   connectionApi,
@@ -21,22 +21,21 @@ import {
   useTestConnection,
 } from "../hooks/useConnections";
 import { useWorkspaceListContext } from "../hooks/useWorkspace";
+import { statusBadgeClass, type StatusTone } from "../components/common/statusBadgeClass";
 import { useI18nStore } from "../store/useI18nStore";
 import { useWorkspaceStore } from "../store/useWorkspaceStore";
 import { captureNotificationSession, isCurrentNotificationSession } from "../lib/notifications/session";
 import { showSuccessToast } from "../lib/feedback/toast";
 import { useNotificationMilestoneRefresh } from "../hooks/useNotificationMilestoneRefresh";
+import {
+  OAUTH_PENDING_CONTEXT_KEY,
+  OAUTH_PENDING_CONTEXT_MAX_AGE_MS,
+  parseOAuthPendingContext,
+  storeOAuthPendingContext,
+  type OAuthPendingContext,
+} from "../lib/oauthPending";
 
-const OAUTH_PENDING_CONTEXT_KEY = "weav.workspaceConnectionOAuth.pending";
-const OAUTH_PENDING_CONTEXT_MAX_AGE_MS = 10 * 60 * 1000;
 const OAUTH_COMPLETION_ID_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
-
-interface OAuthPendingContext {
-  userId: string;
-  workspaceId: string;
-  connectionId: string;
-  createdAt: number;
-}
 
 const OAUTH_FAILURE_KEYS: Record<string, string> = {
   state_invalid: "connections.oauth.state_invalid",
@@ -45,31 +44,6 @@ const OAUTH_FAILURE_KEYS: Record<string, string> = {
   token_exchange_failed: "connections.oauth.token_exchange_failed",
   verification_failed: "connections.oauth.verification_failed",
 };
-
-function parseOAuthPendingContext(
-  value: string | null,
-): OAuthPendingContext | null {
-  if (!value) return null;
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      typeof (parsed as OAuthPendingContext).userId === "string" &&
-      typeof (parsed as OAuthPendingContext).workspaceId === "string" &&
-      typeof (parsed as OAuthPendingContext).connectionId === "string" &&
-      typeof (parsed as OAuthPendingContext).createdAt === "number" &&
-      Number.isFinite((parsed as OAuthPendingContext).createdAt)
-    ) {
-      const { userId, workspaceId, connectionId, createdAt } =
-        parsed as OAuthPendingContext;
-      return { userId, workspaceId, connectionId, createdAt };
-    }
-  } catch {
-    // Invalid session data is ignored and removed by the callback handler.
-  }
-  return null;
-}
 
 function getOAuthNoticeKey(state: unknown): string | null {
   if (typeof state !== "object" || state === null) return null;
@@ -89,6 +63,19 @@ const STATUS_KEYS: Record<ConnectionStatus, string> = {
   ACTIVE: "connections.status.active",
   INVALID: "connections.status.invalid",
 };
+
+const STATUS_TONES: Record<ConnectionStatus, StatusTone> = {
+  DISABLED: "pause",
+  ACTIVE: "ok",
+  INVALID: "err",
+};
+
+const ctl =
+  "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
+const ctlPrimary =
+  "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:border-primary-hover hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-wait disabled:opacity-60";
+const fieldCls =
+  "h-8 w-full rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary";
 
 function getErrorMessage(error: unknown, t: (key: string) => string): string {
   if (error instanceof ConnectionApiError) {
@@ -117,6 +104,105 @@ function getErrorMessage(error: unknown, t: (key: string) => string): string {
     return errorKey ? t(errorKey) : error.message;
   }
   return t("connections.error.generic");
+}
+
+interface RowMenuItem {
+  key: string;
+  testId: string;
+  label: string;
+  onSelect: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}
+
+/** "…" overflow menu: aria-haspopup button, arrow-key navigation, Esc closes and returns focus. */
+function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const close = (returnFocus: boolean) => {
+    setOpen(false);
+    if (returnFocus) requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+  const focusItem = (index: number) => {
+    const nodes = menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)');
+    if (!nodes || nodes.length === 0) return;
+    nodes[(index + nodes.length) % nodes.length].focus();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    focusItem(0);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!menuRef.current?.contains(target) && !triggerRef.current?.contains(target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  const onMenuKeyDown = (event: React.KeyboardEvent) => {
+    const nodes = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []);
+    const current = nodes.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === "ArrowDown") { event.preventDefault(); focusItem(current + 1); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); focusItem(current - 1); }
+    else if (event.key === "Home") { event.preventDefault(); focusItem(0); }
+    else if (event.key === "End") { event.preventDefault(); focusItem(nodes.length - 1); }
+    else if (event.key === "Escape") { event.preventDefault(); close(true); }
+    else if (event.key === "Tab") setOpen(false);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        data-testid="connection-row-menu"
+        onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && !open) { event.preventDefault(); setOpen(true); }
+        }}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-strong bg-card text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <MoreHorizontal size={16} aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={label}
+          onKeyDown={onMenuKeyDown}
+          className="absolute right-0 top-9 z-30 flex w-48 flex-col rounded-lg border border-border bg-popover p-1 text-[13px] shadow-pop"
+        >
+          {items.map((item, index) => (
+            <div key={item.key} className="contents">
+              {item.danger && index > 0 && <div role="separator" className="my-1 h-px bg-border" />}
+              <button
+                type="button"
+                role="menuitem"
+                data-testid={item.testId}
+                disabled={item.disabled}
+                onClick={() => {
+                  close(false);
+                  item.onSelect();
+                }}
+                className={`flex h-8 items-center rounded-md px-2 text-left font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${
+                  item.danger ? "text-err hover:bg-err-bg" : "text-popover-foreground hover:bg-subtle"
+                }`}
+              >
+                {item.label}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ConnectionRow({
@@ -150,17 +236,21 @@ function ConnectionRow({
   actionMessage: string;
   isWorking: boolean;
 }) {
+  const isGoogleOAuth =
+    (connection.provider === "GMAIL" || connection.provider === "GOOGLE_SHEETS") && connection.authType === "OAUTH2";
+  // Primary contextual action: (re)authorize a Google connection that needs it, otherwise verify it.
+  const primaryIsOAuth = isGoogleOAuth && (connection.status !== "ACTIVE" || !connection.hasCredential);
   return (
     <li
       data-testid={`connection-row-${connection.id}`}
-      className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+      className="flex flex-col gap-2 border-b border-border px-5 py-3 transition-colors hover:bg-subtle sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
     >
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-md bg-muted px-2 py-1 text-[11px] font-semibold text-foreground">
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-text-2">
             {connection.provider}
           </span>
-          <h2 className="truncate text-sm font-semibold text-foreground">
+          <h2 className="truncate text-[13px] font-medium text-foreground">
             {connection.name}
           </h2>
         </div>
@@ -168,6 +258,7 @@ function ConnectionRow({
           <span
             data-testid={`connection-status-${connection.id}`}
             data-status={connection.status}
+            className={statusBadgeClass(STATUS_TONES[connection.status])}
           >
             {t(STATUS_KEYS[connection.status])}
           </span>
@@ -206,13 +297,13 @@ function ConnectionRow({
                 maxLength={120}
                 required
                 autoFocus
-                className="min-h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-8 rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
               />
               <button
                 type="submit"
                 data-testid={`connection-rename-submit-${connection.id}`}
                 disabled={isWorking}
-                className="min-h-9 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                className={ctlPrimary}
               >
                 {isWorking
                   ? t("connections.rename.pending")
@@ -222,67 +313,52 @@ function ConnectionRow({
                 type="button"
                 onClick={onCancelRename}
                 disabled={isWorking}
-                className="min-h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground disabled:opacity-50"
+                className={ctl}
               >
                 {t("connections.cancel")}
               </button>
             </form>
           ) : (
-            <button
-              type="button"
-              data-testid={`connection-rename-${connection.id}`}
-              onClick={onStartRename}
-              className="min-h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-muted"
-            >
-              {t("connections.rename.action")}
-            </button>
+            <>
+              {primaryIsOAuth ? (
+                <button
+                  type="button"
+                  data-testid={`connection-oauth-${connection.id}`}
+                  onClick={onStartOAuth}
+                  disabled={isWorking}
+                  className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border border-primary px-3 text-[13px] font-medium text-accent-ink transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isWorking ? t("connections.oauth.starting") : t("connections.oauth.start")}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  data-testid={`connection-test-${connection.id}`}
+                  onClick={onTest}
+                  disabled={isWorking}
+                  className={ctl}
+                >
+                  {isWorking ? t("connections.test.pending") : t("connections.test.action")}
+                </button>
+              )}
+              <RowMenu
+                label={t("connections.more_actions")}
+                items={[
+                  { key: "rename", testId: `connection-rename-${connection.id}`, label: t("connections.rename.action"), onSelect: onStartRename },
+                  ...(primaryIsOAuth
+                    ? [{ key: "test", testId: `connection-test-${connection.id}`, label: isWorking ? t("connections.test.pending") : t("connections.test.action"), onSelect: onTest, disabled: isWorking }]
+                    : []),
+                  ...(connection.status !== "DISABLED"
+                    ? [{ key: "disable", testId: `connection-disable-${connection.id}`, label: t("connections.disable.action"), onSelect: onDisable, disabled: isWorking }]
+                    : []),
+                  ...(isGoogleOAuth && !primaryIsOAuth
+                    ? [{ key: "oauth", testId: `connection-oauth-${connection.id}`, label: isWorking ? t("connections.oauth.starting") : t("connections.oauth.start"), onSelect: onStartOAuth, disabled: isWorking }]
+                    : []),
+                  { key: "delete", testId: `connection-delete-${connection.id}`, label: t("connections.delete"), onSelect: onRemove, disabled: isWorking, danger: true },
+                ]}
+              />
+            </>
           )}
-          <button
-            type="button"
-            data-testid={`connection-test-${connection.id}`}
-            onClick={onTest}
-            disabled={isWorking}
-            className="min-h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
-          >
-            {isWorking
-              ? t("connections.test.pending")
-              : t("connections.test.action")}
-          </button>
-          {connection.status !== "DISABLED" && (
-            <button
-              type="button"
-              data-testid={`connection-disable-${connection.id}`}
-              onClick={onDisable}
-              disabled={isWorking}
-              className="min-h-9 rounded-lg border border-border px-3 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
-            >
-              {t("connections.disable.action")}
-            </button>
-          )}
-          {(connection.provider === "GMAIL" ||
-            connection.provider === "GOOGLE_SHEETS") &&
-            connection.authType === "OAUTH2" && (
-              <button
-                type="button"
-                data-testid={`connection-oauth-${connection.id}`}
-                onClick={onStartOAuth}
-                disabled={isWorking}
-                className="min-h-9 rounded-lg border border-primary px-3 text-sm font-semibold text-primary hover:bg-primary/5 disabled:opacity-50"
-              >
-                {isWorking
-                  ? t("connections.oauth.starting")
-                  : t("connections.oauth.start")}
-              </button>
-            )}
-          <button
-            type="button"
-            data-testid={`connection-delete-${connection.id}`}
-            onClick={onRemove}
-            disabled={isWorking}
-            className="min-h-9 rounded-lg border border-destructive/50 px-3 text-sm font-medium text-destructive hover:bg-destructive/5 disabled:opacity-50"
-          >
-            {t("connections.delete")}
-          </button>
         </div>
       )}
       {actionMessage && (
@@ -298,7 +374,172 @@ function ConnectionRow({
   );
 }
 
-export function ConnectionsPage() {
+/** "New connection" dialog, shared by the Connections page and the builder inspector. */
+export function CreateConnectionDialog({
+  workspaceId,
+  initialProvider = "GMAIL",
+  submitLabel,
+  pendingLabel,
+  onClose,
+  onCreated,
+}: {
+  workspaceId: string;
+  initialProvider?: GoogleProvider;
+  submitLabel?: string;
+  pendingLabel?: string;
+  onClose: () => void;
+  /** Runs after the connection exists; a rejection is shown in the dialog. */
+  onCreated: (connection: ConnectionResponse) => void | Promise<void>;
+}) {
+  const { t } = useI18nStore();
+  const createConnection = useCreateConnection();
+  const [name, setName] = useState("");
+  const [provider, setProvider] = useState<GoogleProvider>(initialProvider);
+  const [createError, setCreateError] = useState("");
+  const [isFinishing, setIsFinishing] = useState(false);
+  const busy = createConnection.isPending || isFinishing;
+
+  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalizedName = name.trim();
+    if (!normalizedName || normalizedName.length > 120) {
+      setCreateError(t("connections.create.validation"));
+      return;
+    }
+    if (busy) return;
+
+    const mutationSession = captureNotificationSession();
+    setCreateError("");
+    try {
+      const connection = await createConnection.mutateAsync({
+        workspaceId,
+        input: { name: normalizedName, provider, authType: "OAUTH2" },
+      });
+      if (!isCurrentNotificationSession(mutationSession)) return;
+      showSuccessToast("toast.connection.created", mutationSession);
+      setIsFinishing(true);
+      await onCreated(connection);
+    } catch (error) {
+      if (isCurrentNotificationSession(mutationSession)) setCreateError(getErrorMessage(error, t));
+    } finally {
+      setIsFinishing(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/30 p-4 pt-[14vh]">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="connection-create-title"
+        data-testid="connection-create-dialog"
+        className="w-full max-w-[520px] rounded-lg border border-border bg-card p-4 shadow-pop"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h2
+            id="connection-create-title"
+            className="text-base font-semibold text-foreground"
+          >
+            {t("connections.create.title")}
+          </h2>
+          <button
+            type="button"
+            aria-label={t("connections.close")}
+            onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+        <form
+          data-testid="connection-create-form"
+          onSubmit={handleCreate}
+          className="mt-4 flex flex-col gap-4"
+        >
+          <div>
+            <label
+              htmlFor="connection-create-name"
+              className="mb-1.5 block text-xs font-medium text-text-2"
+            >
+              {t("connections.create.name")}
+            </label>
+            <input
+              id="connection-create-name"
+              data-testid="connection-create-name"
+              autoFocus
+              required
+              maxLength={120}
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                setCreateError("");
+              }}
+              className={fieldCls}
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="connection-create-provider"
+              className="mb-1.5 block text-xs font-medium text-text-2"
+            >
+              {t("connections.create.provider")}
+            </label>
+            <select
+              id="connection-create-provider"
+              data-testid="connection-create-provider"
+              value={provider}
+              onChange={(event) =>
+                setProvider(event.target.value as GoogleProvider)
+              }
+              className={fieldCls}
+            >
+              <option value="GMAIL">Gmail</option>
+              <option value="GOOGLE_SHEETS">Google Sheets</option>
+            </select>
+          </div>
+          {createError && (
+            <p
+              data-testid="connection-create-error"
+              role="alert"
+              className="text-[13px] text-err"
+            >
+              {createError}
+            </p>
+          )}
+          <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={busy}
+              className={ctl}
+            >
+              {t("connections.cancel")}
+            </button>
+            <button
+              type="submit"
+              data-testid="connection-create-submit"
+              disabled={busy}
+              className={ctlPrimary}
+            >
+              {busy && (
+                <LoaderCircle
+                  size={15}
+                  className="animate-spin"
+                  aria-hidden="true"
+                />
+              )}
+              {busy
+                ? (pendingLabel ?? t("connections.create.pending"))
+                : (submitLabel ?? t("connections.create.submit"))}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const refreshNotifications = useNotificationMilestoneRefresh();
   const { t } = useI18nStore();
   const {
@@ -315,16 +556,12 @@ export function ConnectionsPage() {
   const oauthNoticeKey = getOAuthNoticeKey(location.state);
   const oauthNotice = oauthNoticeKey ? t(oauthNoticeKey) : "";
   const connectionsQuery = useConnections();
-  const createConnection = useCreateConnection();
   const renameConnection = useRenameConnection();
   const testConnection = useTestConnection();
   const disableConnection = useDisableConnection();
   const removeConnection = useRemoveConnection();
   const startGoogleOAuth = useStartGoogleOAuth();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [provider, setProvider] = useState<GoogleProvider>("GMAIL");
-  const [createError, setCreateError] = useState("");
   const [renamingConnectionId, setRenamingConnectionId] = useState<
     string | null
   >(null);
@@ -404,14 +641,14 @@ export function ConnectionsPage() {
       // The URL carries a single-use secret: clear it now and keep it in memory only.
       const completion = params.get("completion") ?? "";
       if (!pendingIsValid || !pending || !OAUTH_COMPLETION_ID_PATTERN.test(completion)) {
-        navigate("/connections", {
+        navigate("/workspace/connections", {
           replace: true,
           state: { oauthNoticeKey: "connections.oauth.context_missing" },
         });
         return;
       }
-      const { workspaceId, connectionId } = pending;
-      navigate("/connections", {
+      const { workspaceId, connectionId, returnTo } = pending;
+      navigate("/workspace/connections", {
         replace: true,
         state: { oauthNoticeKey: "connections.oauth.completing" },
       });
@@ -436,7 +673,11 @@ export function ConnectionsPage() {
             queryKey: connectionKeys.detail(userId, workspaceId, connectionId),
             exact: true,
           });
-          navigate("/connections", {
+          if (finalKey === "connections.oauth.returned" && returnTo) {
+            navigate(returnTo, { replace: true });
+            return;
+          }
+          navigate("/workspace/connections", {
             replace: true,
             state: { oauthNoticeKey: finalKey },
           });
@@ -444,13 +685,17 @@ export function ConnectionsPage() {
       return;
     }
 
+    if (outcome === "success" && pendingIsValid && pending?.returnTo) {
+      navigate(pending.returnTo, { replace: true });
+      return;
+    }
     const noticeKey =
       outcome === "success"
         ? pendingIsValid
           ? "connections.oauth.returned"
           : "connections.oauth.context_missing"
         : (OAUTH_FAILURE_KEYS[reason] ?? "connections.oauth.failed_generic");
-    navigate("/connections", {
+    navigate("/workspace/connections", {
       replace: true,
       state: { oauthNoticeKey: noticeKey },
     });
@@ -562,45 +807,15 @@ export function ConnectionsPage() {
         connectionId: connection.id,
       });
       if (!isCurrentNotificationSession(mutationSession)) return;
-      const pendingContext: OAuthPendingContext = {
+      storeOAuthPendingContext({
         userId,
         workspaceId: connection.workspaceId,
         connectionId: connection.id,
         createdAt,
-      };
-      sessionStorage.setItem(
-        OAUTH_PENDING_CONTEXT_KEY,
-        JSON.stringify(pendingContext),
-      );
+      });
       window.location.assign(result.authorizationUrl);
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) setActionMessage(connection.id, getErrorMessage(error, t));
-    }
-  };
-
-  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const normalizedName = name.trim();
-    if (!normalizedName || normalizedName.length > 120) {
-      setCreateError(t("connections.create.validation"));
-      return;
-    }
-    if (!activeWorkspaceId || createConnection.isPending) return;
-
-    const mutationSession = captureNotificationSession();
-    setCreateError("");
-    try {
-      await createConnection.mutateAsync({
-        workspaceId: activeWorkspaceId,
-        input: { name: normalizedName, provider, authType: "OAUTH2" },
-      });
-      if (!isCurrentNotificationSession(mutationSession)) return;
-      setName("");
-      setProvider("GMAIL");
-      setIsCreateOpen(false);
-      showSuccessToast("toast.connection.created", mutationSession);
-    } catch (error) {
-      if (isCurrentNotificationSession(mutationSession)) setCreateError(getErrorMessage(error, t));
     }
   };
 
@@ -609,18 +824,18 @@ export function ConnectionsPage() {
   return (
     <main
       data-testid="connections-page"
-      className="mx-auto flex w-full max-w-5xl flex-col gap-5"
+      className={embedded ? "flex min-h-0 flex-col rounded-lg border border-border bg-card" : "-m-4 flex h-[calc(100%+2rem)] min-h-0 flex-col overflow-y-auto bg-card sm:-m-5 sm:h-[calc(100%+2.5rem)]"}
     >
-      <header className="flex flex-col gap-4 border-b border-border pb-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-foreground">
+      <header className="flex min-h-14 shrink-0 flex-col gap-2 border-b border-border px-5 py-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          <h1 className="text-base font-semibold text-foreground">
             {t("connections.title")}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             {t("connections.workspace_scope")}
           </p>
           {activeWorkspace && (
-            <p className="mt-2 text-sm font-semibold text-foreground">
+            <p className="text-[13px] font-medium text-foreground">
               {t("connections.workspace_label")}{" "}
               <span data-testid="connections-workspace-name">
                 {activeWorkspace.name}
@@ -633,7 +848,7 @@ export function ConnectionsPage() {
             type="button"
             data-testid="connections-create-open"
             onClick={() => setIsCreateOpen(true)}
-            className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={ctlPrimary}
           >
             <Plus size={16} aria-hidden="true" />
             {t("connections.new_conn")}
@@ -645,7 +860,7 @@ export function ConnectionsPage() {
         <p
           data-testid="connections-oauth-notice"
           role="status"
-          className="rounded-lg border border-border bg-card p-3 text-sm text-foreground"
+          className="mx-5 mt-4 rounded-md border border-border bg-subtle px-3 py-2 text-[13px] text-foreground"
         >
           {oauthNotice}
         </p>
@@ -656,20 +871,20 @@ export function ConnectionsPage() {
           <p
             data-testid="connections-workspace-loading"
             role="status"
-            className="rounded-xl border border-border p-5 text-sm text-muted-foreground"
+            className="mx-5 mt-4 rounded-lg border border-border p-4 text-[13px] text-muted-foreground"
           >
             {t("connections.workspaces_loading")}
           </p>
         ) : workspacesQuery.isError ? (
           <div
-            className="rounded-xl border border-destructive/40 bg-destructive/5 p-5"
+            className="mx-5 mt-4 rounded-lg border border-err-border bg-err-bg p-4 text-[13px] text-err"
             role="alert"
           >
             <p>{t("connections.workspaces_error")}</p>
             <button
               type="button"
               onClick={() => void workspacesQuery.refetch()}
-              className="mt-3 rounded-md px-3 py-2 text-sm font-semibold underline"
+              className="mt-3 rounded-md px-1 py-1 text-[13px] font-medium underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {t("connections.retry")}
             </button>
@@ -677,7 +892,7 @@ export function ConnectionsPage() {
         ) : (
           <section
             data-testid="connections-no-workspace"
-            className="rounded-xl border border-border bg-card p-6"
+            className="mx-5 mt-4 rounded-lg border border-border bg-card p-5"
           >
             <h2 className="font-semibold text-foreground">
               {t("connections.no_workspace_title")}
@@ -687,7 +902,7 @@ export function ConnectionsPage() {
             </p>
             <Link
               to="/workspace"
-              className="mt-4 inline-flex min-h-10 items-center rounded-lg border border-border px-4 text-sm font-semibold text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={`${ctl} mt-4`}
             >
               {t("connections.choose_workspace")}
             </Link>
@@ -698,7 +913,7 @@ export function ConnectionsPage() {
         <p
           data-testid="connections-loading"
           role="status"
-          className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground"
+          className="mx-5 mt-4 rounded-lg border border-border bg-card p-4 text-[13px] text-muted-foreground"
         >
           <LoaderCircle
             size={16}
@@ -710,7 +925,7 @@ export function ConnectionsPage() {
       ) : connectionsQuery.isError ? (
         <section
           data-testid="connections-error-state"
-          className="rounded-xl border border-destructive/40 bg-destructive/5 p-5"
+          className="mx-5 mt-4 rounded-lg border border-err-border bg-err-bg p-4 text-[13px] text-err"
           role="alert"
         >
           <p data-testid="connections-error">
@@ -720,7 +935,7 @@ export function ConnectionsPage() {
             type="button"
             data-testid="connections-retry"
             onClick={() => void connectionsQuery.refetch()}
-            className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg border border-border bg-card px-3 text-sm font-semibold text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={`${ctl} mt-3`}
           >
             <RefreshCw size={14} aria-hidden="true" />
             {t("connections.retry")}
@@ -729,17 +944,17 @@ export function ConnectionsPage() {
       ) : connections.length === 0 ? (
         <section
           data-testid="connections-empty-state"
-          className="rounded-xl border border-dashed border-border bg-card px-5 py-10 text-center"
+          className="px-5 py-12 text-center"
         >
           <h2 className="font-semibold text-foreground">
             {t("connections.empty_title")}
           </h2>
-          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+          <p className="mx-auto mt-2 max-w-md text-[13px] text-text-2">
             {t("connections.empty_body")}
           </p>
         </section>
       ) : (
-        <ul data-testid="connection-list" className="flex flex-col gap-3">
+        <ul data-testid="connection-list" className="m-0 flex list-none flex-col p-0">
           {connections.map((connection) => {
             const isWorking =
               renameConnection.isPending ||
@@ -778,116 +993,12 @@ export function ConnectionsPage() {
         </ul>
       )}
 
-      {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="connection-create-title"
-            data-testid="connection-create-dialog"
-            className="w-full max-w-lg rounded-xl border border-border bg-card p-5 shadow-xl"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <h2
-                id="connection-create-title"
-                className="text-base font-bold text-foreground"
-              >
-                {t("connections.create.title")}
-              </h2>
-              <button
-                type="button"
-                aria-label={t("connections.close")}
-                onClick={() => setIsCreateOpen(false)}
-                className="rounded-md p-2 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <X size={16} aria-hidden="true" />
-              </button>
-            </div>
-            <form
-              data-testid="connection-create-form"
-              onSubmit={handleCreate}
-              className="mt-5 flex flex-col gap-4"
-            >
-              <div>
-                <label
-                  htmlFor="connection-create-name"
-                  className="mb-1.5 block text-sm font-medium text-foreground"
-                >
-                  {t("connections.create.name")}
-                </label>
-                <input
-                  id="connection-create-name"
-                  data-testid="connection-create-name"
-                  autoFocus
-                  required
-                  maxLength={120}
-                  value={name}
-                  onChange={(event) => {
-                    setName(event.target.value);
-                    setCreateError("");
-                  }}
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="connection-create-provider"
-                  className="mb-1.5 block text-sm font-medium text-foreground"
-                >
-                  {t("connections.create.provider")}
-                </label>
-                <select
-                  id="connection-create-provider"
-                  data-testid="connection-create-provider"
-                  value={provider}
-                  onChange={(event) =>
-                    setProvider(event.target.value as GoogleProvider)
-                  }
-                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="GMAIL">Gmail</option>
-                  <option value="GOOGLE_SHEETS">Google Sheets</option>
-                </select>
-              </div>
-              {createError && (
-                <p
-                  data-testid="connection-create-error"
-                  role="alert"
-                  className="text-sm text-destructive"
-                >
-                  {createError}
-                </p>
-              )}
-              <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateOpen(false)}
-                  disabled={createConnection.isPending}
-                  className="min-h-10 rounded-lg border border-border px-4 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
-                >
-                  {t("connections.cancel")}
-                </button>
-                <button
-                  type="submit"
-                  data-testid="connection-create-submit"
-                  disabled={createConnection.isPending}
-                  className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:cursor-wait disabled:opacity-60"
-                >
-                  {createConnection.isPending && (
-                    <LoaderCircle
-                      size={15}
-                      className="animate-spin"
-                      aria-hidden="true"
-                    />
-                  )}
-                  {createConnection.isPending
-                    ? t("connections.create.pending")
-                    : t("connections.create.submit")}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
+      {isCreateOpen && activeWorkspaceId && (
+        <CreateConnectionDialog
+          workspaceId={activeWorkspaceId}
+          onClose={() => setIsCreateOpen(false)}
+          onCreated={() => setIsCreateOpen(false)}
+        />
       )}
     </main>
   );

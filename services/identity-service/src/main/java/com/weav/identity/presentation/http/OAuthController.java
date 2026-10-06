@@ -6,6 +6,7 @@ import com.weav.identity.application.dto.OAuthExchangeResult;
 import com.weav.identity.application.dto.OAuthStartResult;
 import com.weav.identity.application.dto.RefreshTokenCommand;
 import com.weav.identity.application.dto.TokenPairResult;
+import com.weav.identity.application.usecase.LoginUseCase;
 import com.weav.identity.application.usecase.LogoutUseCase;
 import com.weav.identity.application.usecase.OAuthFlowCoordinator;
 import com.weav.identity.application.usecase.RefreshSessionUseCase;
@@ -13,6 +14,9 @@ import com.weav.identity.domain.exception.OAuthCallbackInvalidException;
 import com.weav.identity.domain.exception.UnauthorizedException;
 import com.weav.identity.infrastructure.config.OAuthEnabledCondition;
 import com.weav.identity.presentation.http.oauth.OAuthWebProtection;
+import com.weav.identity.application.validation.AuthInputPolicy;
+import com.weav.identity.infrastructure.security.AuthRateLimiter;
+import com.weav.identity.presentation.http.request.LoginRequest;
 import com.weav.identity.presentation.http.request.OAuthExchangeRequest;
 import com.weav.identity.presentation.http.request.OAuthStartRequest;
 import com.weav.identity.presentation.http.response.OAuthCsrfResponse;
@@ -59,19 +63,28 @@ public final class OAuthController {
     private final UserPresentationMapper userPresentationMapper;
     private final RefreshSessionUseCase refreshSessionUseCase;
     private final LogoutUseCase logoutUseCase;
+    private final LoginUseCase loginUseCase;
+    private final AuthRateLimiter rateLimiter;
+    private final AuthInputPolicy inputPolicy;
 
     public OAuthController(
             OAuthFlowCoordinator coordinator,
             OAuthWebProtection webProtection,
             UserPresentationMapper userPresentationMapper,
             RefreshSessionUseCase refreshSessionUseCase,
-            LogoutUseCase logoutUseCase
+            LogoutUseCase logoutUseCase,
+            LoginUseCase loginUseCase,
+            AuthRateLimiter rateLimiter,
+            AuthInputPolicy inputPolicy
     ) {
         this.coordinator = coordinator;
         this.webProtection = webProtection;
         this.userPresentationMapper = userPresentationMapper;
         this.refreshSessionUseCase = refreshSessionUseCase;
         this.logoutUseCase = logoutUseCase;
+        this.loginUseCase = loginUseCase;
+        this.rateLimiter = rateLimiter;
+        this.inputPolicy = inputPolicy;
     }
 
     @PostMapping("/oauth/google/start")
@@ -189,6 +202,35 @@ public final class OAuthController {
                 .header(REFERRER_POLICY_HEADER, REFERRER_POLICY_VALUE)
                 .header(HttpHeaders.SET_COOKIE, webProtection.csrfCookie(csrfToken).toString())
                 .body(new OAuthCsrfResponse(csrfToken));
+    }
+
+    /**
+     * Password login for the web client: same checks and rate limits as {@code /auth/login}, but the refresh
+     * token goes into the HttpOnly cookie so the session survives reloads like a Google one.
+     */
+    @PostMapping("/web/login")
+    public ResponseEntity<OAuthLoginExchangeResponse> loginWeb(
+            @Valid @RequestBody LoginRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        webProtection.requireOriginAndCsrf(httpRequest);
+        String account = inputPolicy.canonicalizeEmail(request.email());
+        rateLimiter.requireAllowed(AuthRateLimiter.Scope.LOGIN_ACCOUNT, account);
+        TokenPairResult result = loginUseCase.execute(userPresentationMapper.toCommand(
+                request,
+                truncate(httpRequest.getHeader("User-Agent"), MAX_USER_AGENT_LENGTH),
+                truncate(httpRequest.getRemoteAddr(), MAX_IP_ADDRESS_LENGTH)));
+        rateLimiter.refund(AuthRateLimiter.Scope.LOGIN_ACCOUNT, account);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .header(REFERRER_POLICY_HEADER, REFERRER_POLICY_VALUE)
+                .header(HttpHeaders.SET_COOKIE, webProtection.refreshCookie(result.refreshToken()).toString())
+                .body(new OAuthLoginExchangeResponse(
+                        "LOGIN",
+                        result.accessToken(),
+                        result.tokenType(),
+                        result.expiresIn(),
+                        userPresentationMapper.toResponse(result.user())));
     }
 
     @PostMapping("/web/refresh")

@@ -1,4 +1,6 @@
 import type { WorkflowDefinition, WorkflowEdge, WorkflowNode, WorkflowStatus } from '../types/workflow.types';
+import { tr } from '../lib/i18n/tr';
+import { useAuthStore } from '../store/useAuthStore';
 
 const ACTIVE_WORKSPACE_KEY = 'weav_active_workspace_id';
 const PAGE_SIZE = 100;
@@ -134,11 +136,29 @@ function apiBaseUrl(): string {
 
 function authToken(): string {
   const token = typeof localStorage === 'undefined' ? null : localStorage.getItem('weav_token');
-  if (!token) throw new WorkflowApiError(401, 'Sign in to access workflows.');
+  if (!token) throw new WorkflowApiError(401, tr('msg.sign_in_to_access_workflows'));
   return token;
 }
 
+const DETAIL_CACHE_MS = 5_000;
+const detailCache = new Map<string, { at: number; promise: Promise<WorkflowDetailV1> }>();
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  // Any write invalidates cached workflow details.
+  if (init.method && init.method !== 'GET') detailCache.clear();
+  const token = localStorage.getItem('weav_token');
+  try {
+    return await requestOnce<T>(path, init);
+  } catch (error) {
+    if (!(error instanceof WorkflowApiError) || error.status !== 401) throw error;
+    // Another call may already have renewed the token; otherwise renew it once, then retry.
+    if (localStorage.getItem('weav_token') === token
+      && !(await useAuthStore.getState().handleUnauthorized())) throw error;
+    return requestOnce<T>(path, init);
+  }
+}
+
+async function requestOnce<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Authorization', `Bearer ${authToken()}`);
   headers.set('Accept', 'application/json');
@@ -154,7 +174,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       cache: 'no-store',
     });
   } catch {
-    throw new WorkflowApiError(0, 'Workflow service is temporarily unavailable.');
+    throw new WorkflowApiError(0, tr('msg.workflow_service_is_temporarily_unavailable'));
   }
 
   if (response.status === 204) return undefined as T;
@@ -163,36 +183,61 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   try {
     payload = await response.json();
   } catch {
-    throw new WorkflowApiError(502, 'Workflow service returned an invalid response.');
+    throw new WorkflowApiError(502, tr('msg.workflow_service_returned_an_invalid_response'));
   }
 
   if (!response.ok) {
     const envelope = isRecord(payload) && isRecord(payload.error) ? payload.error : undefined;
-    const message = typeof envelope?.message === 'string'
+    const message = response.status === 429
+      ? tr('msg.rate_limited')
+      : typeof envelope?.message === 'string'
       ? envelope.message
       : response.status === 401
-        ? 'Your session has expired. Sign in again.'
+        ? tr('msg.your_session_has_expired_sign_in_again')
         : response.status >= 500
-          ? 'Workflow service is temporarily unavailable.'
-          : 'The workflow request could not be completed.';
-    throw new WorkflowApiError(response.status, message);
+          ? tr('msg.workflow_service_is_temporarily_unavailable')
+          : tr('msg.the_workflow_request_could_not_be_completed');
+    // Validation errors carry the reason in details[]; show the first one instead of a bare "invalid".
+    const firstDetail = response.status === 400 && Array.isArray(envelope?.details) && isRecord(envelope.details[0])
+      ? envelope.details[0].message
+      : undefined;
+    throw new WorkflowApiError(response.status, typeof firstDetail === 'string' && firstDetail ? `${message}: ${firstDetail}` : message);
   }
 
   return payload as T;
 }
 
-async function loadWorkspaces(): Promise<WorkspaceSummary[]> {
+const WORKSPACE_CACHE_MS = 10_000;
+let workspaceCache: { at: number; promise: Promise<WorkspaceSummary[]> } | null = null;
+
+/** Workspace list shared by every workflow call within a short window (dedupes bursts, avoids 429). */
+function loadWorkspaces(): Promise<WorkspaceSummary[]> {
+  const now = Date.now();
+  if (workspaceCache && now - workspaceCache.at < WORKSPACE_CACHE_MS) return workspaceCache.promise;
+  const promise = fetchWorkspaces();
+  workspaceCache = { at: now, promise };
+  promise.catch(() => {
+    if (workspaceCache?.promise === promise) workspaceCache = null;
+  });
+  return promise;
+}
+
+export function resetWorkflowWorkspaceCache(): void {
+  workspaceCache = null;
+}
+
+async function fetchWorkspaces(): Promise<WorkspaceSummary[]> {
   const page = await request<Page<WorkspaceSummary>>(
     `/api/v1/workspaces?page=0&size=${PAGE_SIZE}&sort=name&direction=asc`,
   );
-  if (!Array.isArray(page.items)) throw new WorkflowApiError(502, 'Workspace service returned an invalid response.');
+  if (!Array.isArray(page.items)) throw new WorkflowApiError(502, tr('msg.workspace_service_returned_an_invalid_response'));
   return page.items.filter((item) => typeof item?.id === 'string' && typeof item.name === 'string');
 }
 
 export async function getActiveWorkflowWorkspaceId(): Promise<string> {
   const workspaces = await loadWorkspaces();
   if (workspaces.length === 0) {
-    throw new WorkflowApiError(409, 'Create or join a workspace before using workflows.');
+    throw new WorkflowApiError(409, tr('msg.create_or_join_a_workspace_before_using'));
   }
 
   const selectedId = typeof localStorage === 'undefined'
@@ -211,7 +256,7 @@ function safeString(value: unknown, fallback = ''): string {
 
 function safeStatus(value: unknown): WorkflowStatus {
   if (value === 'DRAFT' || value === 'PUBLISHED' || value === 'PAUSED') return value;
-  throw new WorkflowApiError(502, 'Workflow service returned an unknown workflow status.');
+  throw new WorkflowApiError(502, tr('msg.workflow_service_returned_an_unknown_workflow_status'));
 }
 
 export type GenerationResponse =
@@ -267,7 +312,7 @@ export function definitionToCanvas(
 
 function mapSummary(summary: WorkflowSummaryV1, workspaceId: string): WorkflowDefinition {
   if (!summary || typeof summary.workflowId !== 'string' || typeof summary.name !== 'string') {
-    throw new WorkflowApiError(502, 'Workflow service returned an invalid workflow.');
+    throw new WorkflowApiError(502, tr('msg.workflow_service_returned_an_invalid_workflow'));
   }
   return {
     id: summary.workflowId,
@@ -281,6 +326,7 @@ function mapSummary(summary: WorkflowSummaryV1, workspaceId: string): WorkflowDe
     edges: [],
     createdAt: safeString(summary.createdAt),
     updatedAt: safeString(summary.updatedAt, safeString(summary.createdAt)),
+    ...(typeof summary.publishedAt === 'string' ? { publishedAt: summary.publishedAt } : {}),
     ownerName: '',
   };
 }
@@ -336,7 +382,7 @@ export const workflowV1Api = {
       const page = await request<Page<WorkflowSummaryV1>>(
         `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows?page=${pageNumber}&size=${PAGE_SIZE}`,
       );
-      if (!Array.isArray(page.items)) throw new WorkflowApiError(502, 'Workflow service returned an invalid list.');
+      if (!Array.isArray(page.items)) throw new WorkflowApiError(502, tr('msg.workflow_service_returned_an_invalid_list'));
       items.push(...page.items);
       if (items.length >= page.totalElements || page.items.length === 0) break;
     }
@@ -346,10 +392,17 @@ export const workflowV1Api = {
   async getWorkflow(id: string, workspaceId?: string): Promise<WorkflowDefinition | null> {
     const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
     try {
-      const detail = await request<WorkflowDetailV1>(
-        `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}`,
-      );
-      return mapDetail(detail, activeWorkspaceId);
+      const path = `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}`;
+      const cached = detailCache.get(path);
+      let promise: Promise<WorkflowDetailV1>;
+      if (cached && Date.now() - cached.at < DETAIL_CACHE_MS) {
+        promise = cached.promise;
+      } else {
+        promise = requestOnce<WorkflowDetailV1>(path);
+        detailCache.set(path, { at: Date.now(), promise });
+        promise.catch(() => detailCache.delete(path));
+      }
+      return mapDetail(await promise, activeWorkspaceId);
     } catch (error) {
       if (error instanceof WorkflowApiError && error.status === 404) return null;
       throw error;
@@ -377,14 +430,14 @@ export const workflowV1Api = {
       { method: 'POST', body: JSON.stringify({ name: payload.name, ...(payload.description ? { description: payload.description } : {}) }) },
     );
     const workflow = await this.getWorkflow(created.workflowId, activeWorkspaceId);
-    if (!workflow) throw new WorkflowApiError(502, 'Created workflow could not be loaded.');
+    if (!workflow) throw new WorkflowApiError(502, tr('msg.created_workflow_could_not_be_loaded'));
     return workflow;
   },
 
   async updateWorkflow(id: string, updates: Partial<WorkflowDefinition>, workspaceId?: string): Promise<WorkflowDefinition> {
     const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
     const current = await this.getWorkflow(id, activeWorkspaceId);
-    if (!current) throw new WorkflowApiError(404, 'Workflow not found.');
+    if (!current) throw new WorkflowApiError(404, tr('msg.workflow_not_found'));
     const merged = { ...current, ...updates, id: current.id, workspaceId: activeWorkspaceId };
     const saved = await request<WorkflowDetailV1>(
       `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}/draft`,
@@ -400,7 +453,7 @@ export const workflowV1Api = {
       { method: 'POST' },
     );
     const workflow = await this.getWorkflow(id, activeWorkspaceId);
-    if (!workflow) throw new WorkflowApiError(404, 'Published workflow could not be loaded.');
+    if (!workflow) throw new WorkflowApiError(404, tr('msg.published_workflow_could_not_be_loaded'));
     return { workflow, webhooks: Array.isArray(publication.webhooks) ? publication.webhooks : [] };
   },
 
@@ -408,7 +461,7 @@ export const workflowV1Api = {
     const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
     await request<unknown>(`/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}/pause`, { method: 'POST' });
     const workflow = await this.getWorkflow(id, activeWorkspaceId);
-    if (!workflow) throw new WorkflowApiError(404, 'Workflow not found.');
+    if (!workflow) throw new WorkflowApiError(404, tr('msg.workflow_not_found'));
     return workflow;
   },
 
@@ -416,7 +469,7 @@ export const workflowV1Api = {
     const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
     await request<unknown>(`/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}/resume`, { method: 'POST' });
     const workflow = await this.getWorkflow(id, activeWorkspaceId);
-    if (!workflow) throw new WorkflowApiError(404, 'Workflow not found.');
+    if (!workflow) throw new WorkflowApiError(404, tr('msg.workflow_not_found'));
     return workflow;
   },
 
@@ -439,12 +492,16 @@ export const workflowV1Api = {
   async duplicateWorkflow(id: string, workspaceId?: string): Promise<WorkflowDefinition> {
     const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
     const source = await this.getWorkflow(id, activeWorkspaceId);
-    if (!source) throw new WorkflowApiError(404, 'Workflow not found.');
+    if (!source) throw new WorkflowApiError(404, tr('msg.workflow_not_found'));
     const created = await this.createWorkflow({ name: `${source.name} (Copy)`, description: source.description }, activeWorkspaceId);
     return this.updateWorkflow(created.id, { ...source, id: created.id, name: `${source.name} (Copy)`, status: 'DRAFT' }, activeWorkspaceId);
   },
 
-  async deleteWorkflow(): Promise<void> {
-    throw new WorkflowApiError(405, 'Workflow Service V1 does not provide a delete endpoint.');
+  async deleteWorkflow(id: string, workspaceId?: string): Promise<void> {
+    const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
+    await request<void>(
+      `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+    );
   },
 };

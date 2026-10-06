@@ -334,6 +334,50 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /auth/web/login:
+    post:
+      tags: [Authentication]
+      operationId: loginWeb
+      summary: Password login for the web client with an HttpOnly refresh cookie
+      description: >-
+        Same credential checks, generic 401, and rate limits as /auth/login,
+        plus the exact Origin and XSRF double-submit checks of /auth/web/refresh.
+        The refresh token is never returned in the body; it is set as the
+        HttpOnly refresh cookie that /auth/web/refresh rotates, so the browser
+        keeps the session for the configured refresh lifetime. Exists only when
+        the web OAuth transport is enabled.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Access token and public current user; refresh material is cookie-only.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Referrer-Policy:
+              $ref: '#/components/headers/ReferrerPolicyNoReferrer'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthLoginExchangeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /auth/web/refresh:
     post:
       tags: [Authentication]

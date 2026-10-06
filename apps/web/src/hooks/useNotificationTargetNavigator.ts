@@ -76,7 +76,7 @@ export function useNotificationTargetNavigator() {
         ? `/executions/${encodeURIComponent(target.executionId)}`
         : target.kind === 'WORKSPACE'
           ? '/workspace'
-          : '/connections';
+          : '/workspace/connections';
     navigate(route);
   }, [navigate]);
 }

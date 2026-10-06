@@ -5,9 +5,10 @@ import { getActiveWorkflowWorkspaceId, workflowV1Api, type WorkflowExecutionDeta
 const isWorkflowMockMode = import.meta.env.VITE_API_MODE === 'mock';
 
 const mockExecutionApi = {
-  async getExecutions(): Promise<ExecutionDetail[]> {
+  async getExecutions(workflowId?: string): Promise<ExecutionDetail[]> {
     await delay(200);
-    return getStorage<ExecutionDetail[]>(STORAGE_KEYS.EXECUTIONS, []);
+    const executions = getStorage<ExecutionDetail[]>(STORAGE_KEYS.EXECUTIONS, []);
+    return workflowId ? executions.filter((execution) => execution.workflowId === workflowId) : executions;
   },
 
   async getExecution(id: string): Promise<ExecutionDetail | null> {
@@ -162,21 +163,40 @@ async function findWorkflowForExecution(executionId: string, workspaceId: string
 
 export const executionApi = {
   async getExecutions(workflowId?: string): Promise<ExecutionDetail[]> {
-    if (isWorkflowMockMode) return mockExecutionApi.getExecutions();
+    if (isWorkflowMockMode) return mockExecutionApi.getExecutions(workflowId);
 
     const workspaceId = await getActiveWorkflowWorkspaceId();
-    const workflows = await workflowV1Api.getWorkflows(workspaceId);
-    const selected = workflowId ? workflows.filter((workflow) => workflow.id === workflowId) : workflows;
+    const selected = workflowId
+      ? [await workflowV1Api.getWorkflow(workflowId, workspaceId)].filter((workflow): workflow is WorkflowDefinition => workflow !== null)
+      : await workflowV1Api.getWorkflows(workspaceId);
     const executions: ExecutionDetail[] = [];
-    for (let index = 0; index < selected.length; index += 5) {
-      const group = selected.slice(index, index + 5);
+    for (let index = 0; index < selected.length; index += 3) {
+      const group = selected.slice(index, index + 3);
       const pages = await Promise.all(group.map(async (workflow) => {
         const page = await workflowV1Api.listExecutions(workflow.id, 0, 100, workspaceId);
-        return page.items.map((summary) => summaryToExecution(summary, workflow));
+        return page.items.filter((summary) => typeof summary?.executionId === "string").map((summary) => summaryToExecution(summary, workflow));
       }));
       executions.push(...pages.flat());
     }
     return executions.sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt));
+  },
+
+  /** Recent runs for a bounded set of workflows (concurrency-limited) to derive list statistics cheaply. */
+  async getRecentExecutions(workflows: WorkflowDefinition[], options: { limit?: number; concurrency?: number } = {}): Promise<ExecutionDetail[]> {
+    if (isWorkflowMockMode) return mockExecutionApi.getExecutions();
+    const limit = options.limit ?? 20;
+    const concurrency = options.concurrency ?? 3;
+    const selected = workflows.filter((workflow) => workflow.status !== 'DRAFT').slice(0, limit);
+    const executions: ExecutionDetail[] = [];
+    for (let index = 0; index < selected.length; index += concurrency) {
+      const group = selected.slice(index, index + concurrency);
+      const pages = await Promise.all(group.map(async (workflow) => {
+        const page = await workflowV1Api.listExecutions(workflow.id, 0, 50, workflow.workspaceId);
+        return page.items.filter((summary) => typeof summary?.executionId === "string").map((summary) => summaryToExecution(summary, workflow));
+      }));
+      executions.push(...pages.flat());
+    }
+    return executions;
   },
 
   async getExecution(id: string, workflowId?: string): Promise<ExecutionDetail | null> {

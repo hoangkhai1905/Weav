@@ -226,6 +226,25 @@ public class WorkflowPublicationService {
         return changeState(workspaceId, workflowId, actorId, false);
     }
 
+    /**
+     * Soft-deletes the workflow and disables its current triggers so schedules and webhooks stop admitting work.
+     * Runs already admitted finish. Read paths already exclude deleted workflows; per the 2026-09-21 decision its
+     * published versions keep counting as connection usage, only the draft stops.
+     */
+    public void delete(UUID workspaceId, UUID workflowId, UUID actorId) {
+        workspaceAuthorization.require(workspaceId, actorId, STATE_CAPABILITY);
+        transactions.executeWithoutResult(status -> {
+            Workflow workflow = workflowRepository.lockByWorkspaceAndId(workspaceId, workflowId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Workflow not found"));
+            Instant deletedAt = Instant.now();
+            if (workflow.getCurrentVersionId() != null) {
+                triggers.setCurrentEnabled(workflowId, workflow.getCurrentVersionId(), false, deletedAt, Map.of());
+            }
+            workflow.delete(actorId, deletedAt);
+            workflowRepository.save(workflow);
+        });
+    }
+
     /** Current registration detail; callers must authorize the workflow before requesting this projection. */
     public List<WorkflowTrigger> currentTriggers(UUID workflowId, UUID versionId) {
         if (versionId == null) {

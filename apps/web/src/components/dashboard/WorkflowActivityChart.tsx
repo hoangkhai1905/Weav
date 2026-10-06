@@ -33,26 +33,26 @@ export const WorkflowActivityChart: React.FC = () => {
   const activeItem = hoveredIdx !== null ? CHART_DATA[hoveredIdx] : CHART_DATA[5];
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 sm:p-5 flex flex-col justify-between shadow-2xs h-full">
+    <div className="bg-card border border-border rounded-lg p-4 sm:p-5 flex flex-col justify-between shadow-2xs h-full">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex flex-col">
-          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight">
+          <h2 className="text-sm font-bold text-foreground tracking-tight">
             {t('dashboard.activity')}
           </h2>
           <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+            <span className="text-xs font-semibold text-foreground">
               128 {t('dashboard.executions_count')}
             </span>
-            <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+            <span className="text-[11px] font-medium text-ok">
               +18.4% {t('dashboard.vs_previous')}
             </span>
           </div>
         </div>
 
-        <button className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors">
+        <button className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-subtle border border-border text-xs font-medium text-text-2 hover:bg-subtle transition-colors">
           <span>{t('dashboard.last_7_days')}</span>
-          <ChevronDown size={14} className="text-slate-400" />
+          <ChevronDown size={14} className="text-muted-foreground" />
         </button>
       </div>
 
@@ -60,7 +60,7 @@ export const WorkflowActivityChart: React.FC = () => {
       <div className="relative w-full h-[210px] pt-2">
         {/* Active Floating Tooltip */}
         <div
-          className="absolute z-20 pointer-events-none px-2.5 py-1.5 rounded-md bg-slate-900 text-white font-mono text-[11px] shadow-md transition-all duration-150 transform -translate-x-1/2 -translate-y-full"
+          className="absolute z-20 pointer-events-none px-2.5 py-1.5 rounded-md bg-foreground text-background font-mono text-[11px] transition-all duration-150 transform -translate-x-1/2 -translate-y-full"
           style={{
             left: `${(activeItem.x / 540) * 100}%`,
             top: `${(activeItem.y / 180) * 100 - 8}px`,
@@ -69,7 +69,7 @@ export const WorkflowActivityChart: React.FC = () => {
           <div className="font-semibold text-white leading-tight">
             {localizedDay(activeItem.day)}: {activeItem.count} {t('dashboard.runs')}
           </div>
-          <div className="text-emerald-400 text-[10px] leading-tight mt-0.5">
+          <div className="text-ok text-[10px] leading-tight mt-0.5">
             {activeItem.successRate} {t('dashboard.success_rate')}
           </div>
         </div>
@@ -83,10 +83,10 @@ export const WorkflowActivityChart: React.FC = () => {
           </defs>
 
           {/* Grid Lines */}
-          <line x1="0" y1="20" x2="540" y2="20" stroke="currentColor" strokeDasharray="3 3" strokeWidth="1" className="text-slate-200 dark:text-slate-800" />
-          <line x1="0" y1="65" x2="540" y2="65" stroke="currentColor" strokeDasharray="3 3" strokeWidth="1" className="text-slate-200 dark:text-slate-800" />
-          <line x1="0" y1="110" x2="540" y2="110" stroke="currentColor" strokeDasharray="3 3" strokeWidth="1" className="text-slate-200 dark:text-slate-800" />
-          <line x1="0" y1="155" x2="540" y2="155" stroke="currentColor" strokeWidth="1" className="text-slate-200 dark:text-slate-800" />
+          <line x1="0" y1="20" x2="540" y2="20" stroke="currentColor" strokeDasharray="3 3" strokeWidth="1" className="text-foreground" />
+          <line x1="0" y1="65" x2="540" y2="65" stroke="currentColor" strokeDasharray="3 3" strokeWidth="1" className="text-foreground" />
+          <line x1="0" y1="110" x2="540" y2="110" stroke="currentColor" strokeDasharray="3 3" strokeWidth="1" className="text-foreground" />
+          <line x1="0" y1="155" x2="540" y2="155" stroke="currentColor" strokeWidth="1" className="text-foreground" />
 
           {/* Gradient Area */}
           <polygon points={polygonPoints} fill="url(#chartGrad)" />
@@ -141,7 +141,7 @@ export const WorkflowActivityChart: React.FC = () => {
         </svg>
 
         {/* X-Axis Labels */}
-        <div className="flex justify-between items-center text-xs font-mono text-slate-400 dark:text-slate-500 pt-2 px-1">
+        <div className="flex justify-between items-center text-xs font-mono text-muted-foreground pt-2 px-1">
           {CHART_DATA.map((d, i) => {
             const isActive = activeItem.day === d.day;
             return (
@@ -150,8 +150,8 @@ export const WorkflowActivityChart: React.FC = () => {
                 onMouseEnter={() => setHoveredIdx(i)}
                 className={`cursor-pointer transition-colors ${
                   isActive
-                    ? 'text-blue-600 dark:text-blue-400 font-bold'
-                    : 'hover:text-slate-700 dark:hover:text-slate-300'
+                    ? 'text-run font-bold'
+                    : 'hover:text-text-2'
                 }`}
               >
                 {localizedDay(d.day)}

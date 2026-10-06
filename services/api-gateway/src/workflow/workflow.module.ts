@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Injectable,
   Logger,
@@ -83,7 +84,7 @@ const manualExecutionSchema = z
   })
   .strict();
 
-type WorkflowMethod = 'GET' | 'POST' | 'PUT';
+type WorkflowMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 interface WorkflowForwardOptions {
   body?: unknown;
@@ -393,6 +394,23 @@ export class WorkflowProxyController {
       request,
       reply,
       `/workspaces/${workspace}/workflows/${workflow}/publish`,
+    );
+  }
+
+  @Delete(':workflowId')
+  remove(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('workflowId') rawWorkflowId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    const workflow = workflowId(rawWorkflowId);
+    return this.proxy.forward(
+      'DELETE',
+      request,
+      reply,
+      `/workspaces/${workspace}/workflows/${workflow}`,
     );
   }
 
