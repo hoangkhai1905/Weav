@@ -7,7 +7,7 @@
 | Date | 2026-10-05 (Asia/Saigon) |
 | Branch | `feat/ai-generate-node` (from `staging`), merged into `staging` (f5db227) |
 | Owner | K / Sonnet worker, coordinator reviews and commits |
-| Status | Done, committed and merged into `staging`. No live DeepSeek call made for this node (section 7) |
+| Status | Done, committed and merged into `staging`. Live test against real DeepSeek passed 2026-10-06 (section 7) |
 | Scope | Free-form prompt step: ai-service operation `prompt` (`POST /v1/prompt`, scope `ai:prompt`) and workflow node `ai.generate`, counted by the AI-2 quota |
 
 ## 2. Summary
@@ -73,8 +73,10 @@ Needs the real stack with the AI service enabled (`WORKFLOW_AI_ENABLED=true`, De
 }
 ```
 
-Expected: execution `SUCCEEDED`; node `gen` output `{ "text": "<non-empty Vietnamese sentence, at most 200 characters>", "truncated": false }` (fake provider: `{"text":"Echo: Viết một câu chào ngắn về chủ đề: cà phê","truncated":false}`). Negative: blank `prompt` is rejected by publish validation; `maxLength: 5001` fails the node with `CONFIGURATION_ERROR`; with the daily limit exhausted the node fails with `AI_QUOTA_EXCEEDED` (each run counts 1). The `-Flow ai` flow exists in the script (fefb1fc); a live run result is not recorded here.
+Expected: execution `SUCCEEDED`; node `gen` output `{ "text": "<non-empty Vietnamese sentence, at most 200 characters>", "truncated": false }` (fake provider: `{"text":"Echo: Viết một câu chào ngắn về chủ đề: cà phê","truncated":false}`). Negative: blank `prompt` is rejected by publish validation; `maxLength: 5001` fails the node with `CONFIGURATION_ERROR`; with the daily limit exhausted the node fails with `AI_QUOTA_EXCEEDED` (each run counts 1). The `-Flow ai` flow exists in the script (fefb1fc).
+
+**Live test result (2026-10-06): done.** `-Flow ai -Cleanup` against the real stack (`WORKFLOW_AI_ENABLED=true`, `WORKFLOW_AI_GENERATION_ENABLED=true`, real DeepSeek, started without `compose.ai-local.yml`): all steps PASS, reported by K (one run; `text` non-empty and within `maxLength` 200). Run after the partner's stack was stopped (shared Neon `workflow_db`, see `docs/work_logs/K/workflow/core-logic-nodes.md` section 9). The AI flags were left `true` in K's local `.env` afterwards.
 
 ## 8. Next steps
 
-- Run the live test and record the result; add web UI (node catalog, readiness, translations) if the node should appear in the builder.
+- Add web UI (node catalog, readiness, translations) if the node should appear in the builder.
