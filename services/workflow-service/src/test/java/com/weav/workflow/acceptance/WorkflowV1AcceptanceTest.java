@@ -355,6 +355,45 @@ class WorkflowV1AcceptanceTest {
     }
 
     @Test
+    void dataSetFeedsSwitchOverRealHttpWithNumericAndNestedManualInput() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        String token = accessToken(USER_ID);
+        JsonNode created = read(request("POST", uri("/workspaces/" + workspaceId + "/workflows"), token,
+                json(Map.of("name", "data-set-switch", "description", "Disposable fixture")), Map.of()));
+        UUID workflowId = UUID.fromString(created.path("workflowId").stringValue());
+        URI workflow = uri("/workspaces/" + workspaceId + "/workflows/" + workflowId);
+        JsonNode definition = objectMapper.readTree("""
+                {"schemaVersion":"1.0","variables":{},"nodes":[
+                 {"id":"root","type":"trigger.manual","config":{}},
+                 {"id":"shape","type":"data.set","config":{"fields":{"n":"{{ trigger.input.count }}",
+                   "name":"{{ trigger.input.user.first }}","plan":"{{ trigger.input.plan }}"}}},
+                 {"id":"route","type":"logic.switch","config":{"value":"{{ nodes.shape.output.plan }}","cases":["1","2"]}},
+                 {"id":"branch-one","type":"data.set","config":{"fields":{"x":"one"}}},
+                 {"id":"branch-two","type":"data.set","config":{"fields":{"x":"two"}}},
+                 {"id":"branch-other","type":"data.set","config":{"fields":{"x":"other"}}}],
+                 "edges":[
+                 {"id":"e1","source":"root","target":"shape"},
+                 {"id":"e2","source":"shape","target":"route"},
+                 {"id":"e3","source":"route","target":"branch-one","sourcePort":"1"},
+                 {"id":"e4","source":"route","target":"branch-two","sourcePort":"2"},
+                 {"id":"e5","source":"route","target":"branch-other","sourcePort":"default"}]}
+                """);
+        assertEquals(200, saveDraft(workflow, token, "data-set-switch", definition).statusCode());
+        assertEquals(200, request("POST", child(workflow, "/publish"), token, null, Map.of()).statusCode());
+        HttpResponse<String> admitted = request("POST", child(workflow, "/executions"), token,
+                "{\"input\":{\"plan\":1,\"user\":{\"first\":\"Ada\"},\"count\":7}}",
+                Map.of("Content-Type", "application/json"));
+        assertEquals(202, admitted.statusCode());
+        UUID executionId = UUID.fromString(read(admitted).path("executionId").stringValue());
+        assertTrue(outboxPublisher.publishPending() >= 1);
+        JsonNode detail = awaitExecution(workflow, token, executionId, "SUCCESS");
+        assertNode(detail, "shape", "SUCCESS", 1);
+        assertNode(detail, "branch-one", "SUCCESS", 1);
+        assertEquals("Ada", scalar("select output ->> 'name' from workflow.node_executions "
+                + "where execution_id = ? and node_id = 'shape'", executionId));
+    }
+
+    @Test
     void unconfiguredDependencyFixtureFailsClosedWithOnePersistedAttempt() throws Exception {
         UUID workspaceId = UUID.randomUUID();
         String token = accessToken(USER_ID);

@@ -367,11 +367,15 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
                 new MappingContext(runtime.snapshot.input(), outputs, runtime.snapshot.definition().variables()),
                 definitionNode.id(), "config");
         if (!(resolved instanceof Map<?, ?> map)) {
+            LOGGER.warn("Node configuration rejected (execution {}, node {}): resolved config is not an object",
+                    runtime.executionId, definitionNode.id());
             throw new ConfigurationFailure();
         }
         Map<String, Object> config = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : map.entrySet()) {
             if (!(entry.getKey() instanceof String key)) {
+                LOGGER.warn("Node configuration rejected (execution {}, node {}): config key is not a string",
+                        runtime.executionId, definitionNode.id());
                 throw new ConfigurationFailure();
             }
             config.put(key, entry.getValue());
@@ -394,6 +398,11 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
                 List.of(), Map.of());
         List<ValidationIssue> issues = new DefinitionValidator().validateDraft(single);
         if (!issues.isEmpty()) {
+            // Codes and field paths only: never config values, which may carry user data.
+            LOGGER.warn("Node configuration rejected (execution {}, node {}, type {}, catalog size {}, issues {})",
+                    runtime.executionId, definitionNode.id(), definitionNode.type(),
+                    NodeCatalog.supportedTypes().size(),
+                    issues.stream().map(issue -> issue.code() + "@" + issue.field()).toList());
             throw new ConfigurationFailure();
         }
         return JsonValues.freezeMap(config);
@@ -689,7 +698,10 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
 
     private WorkflowDefinition.Node definitionNode(WorkflowDefinition definition, String nodeId) {
         return definition.nodes().stream().filter(node -> node != null && nodeId.equals(node.id())).findFirst()
-                .orElseThrow(() -> new ConfigurationFailure());
+                .orElseThrow(() -> {
+                    LOGGER.warn("Node {} not found in the definition", nodeId);
+                    return new ConfigurationFailure();
+                });
     }
 
     private static NodeExecution copyNode(NodeExecution source, NodeExecutionStatus status,
