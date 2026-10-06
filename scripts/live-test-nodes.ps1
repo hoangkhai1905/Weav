@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Live test for Weav's workflow nodes (Telegram, Google, logic.switch/data.set, ai.generate, trigger.gmail), driven through the API Gateway.
+    Live test for Weav's workflow nodes (Telegram, Google, logic.switch/data.set, ai.generate, trigger.gmail) and the AI assistant, driven through the API Gateway.
 
 .DESCRIPTION
     Replaces the UI for a manual live test. Logs in through the gateway, creates the connections and
@@ -8,13 +8,17 @@
     Tokens, passwords, cookies and the bot token are kept in memory only and are never printed or written.
     See scripts/README.md for the preconditions.
 
+    The assistant flow makes about 4 chats (roughly 8-12 small DeepSeek calls per run). It needs
+    AI_ASSISTANT_ENABLED=true, the ai-service DB migrated (pnpm --dir services/ai-service db:migrate)
+    and identity signing RS256 access tokens.
+
 .EXAMPLE
     .\scripts\live-test-nodes.ps1 -Flow telegram -Cleanup
 #>
 [CmdletBinding()]
 param(
     [string]$GatewayUrl = 'http://localhost:3000',
-    [ValidateSet('telegram', 'google', 'logic', 'ai', 'gmail', 'all')][string]$Flow = 'all',
+    [ValidateSet('telegram', 'google', 'logic', 'ai', 'gmail', 'assistant', 'all')][string]$Flow = 'all',
     [string]$WorkspaceId,
     [ValidateScript({ [string]::IsNullOrEmpty($_) -or ($_ -as [guid]) })][string]$GmailConnectionId,
     [switch]$Cleanup
@@ -28,6 +32,7 @@ $script:Token = $null
 $script:Ws = $null
 $script:Results = New-Object System.Collections.Generic.List[object]
 $script:Workflows = New-Object System.Collections.Generic.List[object]
+$script:Conversations = New-Object System.Collections.Generic.List[string]
 $script:Stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
 
 # ---------- helpers ----------
@@ -652,6 +657,133 @@ You will need to send one email yourself while the script waits (a few minutes).
     Add-Result 'gmail no duplicate run after another poll' ($count -eq 1) ("GMAIL runs $count, expected 1")
 }
 
+# ---------- assistant flow ----------
+
+function Add-Warn([string]$Step, [string]$Detail = '') {
+    $script:Results.Add([pscustomobject]@{ Step = $Step; Result = 'WARN'; Detail = $Detail })
+    Write-Host ('  -> WARN ' + $Step + $(if ($Detail) { ' (' + $Detail + ')' } else { '' })) -ForegroundColor Yellow
+}
+
+# POSTs one chat message and parses the buffered SSE body (the stream ends with done/error).
+# Never prints the token or the raw stream; returns Status, Raw, Events (Name, Data).
+function Invoke-AssistantChat([string]$Label, [hashtable]$Body) {
+    $req = @{
+        UseBasicParsing = $true; TimeoutSec = 120; Method = 'POST'; Uri = ($script:Base + '/api/v1/assistant/chat')
+        Headers = @{ Accept = 'text/event-stream'; Authorization = ('Bearer ' + $script:Token) }
+        ContentType = 'application/json; charset=utf-8'
+        Body = [Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $Body -Depth 10 -Compress))
+    }
+    $status = 0; $raw = ''
+    try {
+        $r = Invoke-WebRequest @req
+        $status = [int]$r.StatusCode
+        $raw = if ($r.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($r.Content) } else { [string]$r.Content }
+    } catch {
+        $resp = Get-Prop $_.Exception 'Response'
+        if ($null -ne $resp) { $status = [int]$resp.StatusCode } else { Write-Host ("  [{0}] no response: {1}" -f $Label, (Short $_.Exception.Message 160)) -ForegroundColor Red }
+    }
+    $events = New-Object System.Collections.Generic.List[object]
+    foreach ($block in ($raw -split '\r?\n\r?\n')) {
+        $name = $null; $data = $null
+        foreach ($line in ($block -split '\r?\n')) {
+            if ($line.StartsWith('event:')) { $name = $line.Substring(6).Trim() }
+            elseif ($line.StartsWith('data:')) { $data = $line.Substring(5).Trim() }
+        }
+        if ($name) {
+            $parsed = $null
+            if ($data) { try { $parsed = $data | ConvertFrom-Json } catch { $parsed = $null } }
+            $events.Add([pscustomobject]@{ Name = $name; Data = $parsed })
+        }
+    }
+    $parts = @($events | ForEach-Object { if ($_.Name -eq 'tool_call') { 'tool_call:' + (Get-Prop $_.Data 'name') } else { $_.Name } })
+    foreach ($e in @($events | Where-Object { $_.Name -eq 'conversation' })) {
+        $cid = [string](Get-Prop $e.Data 'conversationId')
+        if ($cid -and -not $script:Conversations.Contains($cid)) { $script:Conversations.Add($cid) }
+    }
+    $summary = ($parts -join ' ') -replace '(delta )+', 'delta... '
+    Write-Host ("  [{0}] HTTP {1} events: {2}" -f $Label, $status, (Short $summary 200)) -ForegroundColor DarkGray
+    return [pscustomobject]@{ Status = $status; Raw = $raw; Events = $events }
+}
+
+function Get-FirstEventData($Chat, [string]$Name) {
+    $e = @($Chat.Events | Where-Object { $_.Name -eq $Name }) | Select-Object -First 1
+    return $e
+}
+
+function Test-ToolStep($Chat, [string]$Step, [string]$Tool, [bool]$NoEmail = $false) {
+    $names = @($Chat.Events | ForEach-Object { $_.Name })
+    $tools = @($Chat.Events | Where-Object { $_.Name -eq 'tool_call' } | ForEach-Object { Get-Prop $_.Data 'name' })
+    $ok = ($Chat.Status -eq 200) -and ($names -contains 'conversation') -and ($tools -contains $Tool) -and ($names -contains 'done')
+    $detail = 'tools: ' + ($tools -join ',')
+    if ($NoEmail -and $Chat.Raw -match '[^\s@"]+@[^\s@"]+') { $ok = $false; $detail += '; an email pattern appears in the stream' }
+    Add-Result $Step $ok $detail
+}
+
+function Invoke-AssistantFlow {
+    Write-Host ''
+    Write-Host '== Assistant flow ==' -ForegroundColor Cyan
+    Write-Host @'
+Preconditions: AI_ASSISTANT_ENABLED=true, ai-service DB migrated (pnpm --dir services/ai-service db:migrate),
+identity signing RS256 tokens, the AI service enabled as for the ai flow.
+COST: about 4 real chats, roughly 8-12 small DeepSeek calls; each chat uses daily AI quota.
+Tool-name checks depend on the model's choice, so a FAIL there may be model behaviour, not a bug.
+'@
+    $answer = Read-Host 'Type yes to run it'
+    if ($answer -ne 'yes') { Write-Host '  Assistant flow skipped.' -ForegroundColor Yellow; return }
+
+    try {
+
+        $c1 = Invoke-AssistantChat 'chat 1' @{ workspaceId = $script:Ws; message = 'Which workflows do I have?' }
+        $e = Get-FirstEventData $c1 'conversation'
+        $conv1 = if ($null -ne $e) { [string](Get-Prop $e.Data 'conversationId') } else { '' }
+        if (-not $conv1) { Add-Result 'chat: list workflows' $false ('HTTP ' + $c1.Status + ', no conversation event'); throw 'First chat failed (is AI_ASSISTANT_ENABLED=true?).' }
+        Test-ToolStep $c1 'chat: list workflows' 'list_workflows'
+
+        $c2 = Invoke-AssistantChat 'chat 2' @{ workspaceId = $script:Ws; conversationId = $conv1; message = 'Which of them failed today?' }
+        Test-ToolStep $c2 'chat: failed runs today' 'list_failed_runs_today'
+
+        $c3 = Invoke-AssistantChat 'chat 3' @{ workspaceId = $script:Ws; conversationId = $conv1; message = 'Who is in this workspace?' }
+        Test-ToolStep $c3 'chat: members, no email leaked' 'list_members' $true
+
+        $prompt = 'Make a workflow that runs manually, fetches https://example.com with an HTTP GET and then branches with a switch on the status code: 200 or default.'
+        $c4 = Invoke-AssistantChat 'chat 4' @{ workspaceId = $script:Ws; message = $prompt }
+        $e = Get-FirstEventData $c4 'conversation'
+        $conv2 = if ($null -ne $e) { [string](Get-Prop $e.Data 'conversationId') } else { '' }
+        $draft = Get-FirstEventData $c4 'draft'
+        if ($null -ne $draft) {
+            $json = ConvertTo-Json -InputObject (Get-Prop $draft.Data 'definition') -Depth 20 -Compress
+            Add-Result 'chat: draft contains logic.switch' ($json -match '"type":"logic\.switch"') ('draft name: ' + (Short (Get-Prop $draft.Data 'name') 60))
+        } else {
+            $text = (@($c4.Events | Where-Object { $_.Name -eq 'delta' } | ForEach-Object { Get-Prop $_.Data 'text' }) -join '')
+            Add-Warn 'chat: no draft event (needs_input or unsupported?)' (Short $text 200)
+        }
+
+        $r = Invoke-Api 'list conversations' 'GET' "/api/v1/assistant/conversations?workspaceId=$script:Ws&limit=50"
+        $ids = @(@(Get-Prop $r.Data 'items') | ForEach-Object { $_.conversationId })
+        $both = $r.Ok -and ($ids -contains $conv1) -and ((-not $conv2) -or ($ids -contains $conv2))
+        Add-Result 'history: conversations list both' $both ('listed ' + $ids.Count)
+
+        $r = Invoke-Api 'get messages' 'GET' "/api/v1/assistant/conversations/$conv1/messages"
+        $msgs = @(Get-Prop $r.Data 'messages')
+        $users = @($msgs | Where-Object { $_.role -eq 'user' }).Count
+        $assistants = @($msgs | Where-Object { $_.role -eq 'assistant' }).Count
+        Add-Result 'history: first conversation has 6 messages (3 user + 3 assistant)' ($r.Ok -and $msgs.Count -eq 6 -and $users -eq 3 -and $assistants -eq 3) ("user $users, assistant $assistants")
+
+        $c5 = Invoke-AssistantChat 'chat random workspace' @{ workspaceId = [guid]::NewGuid().ToString(); message = 'Which workflows do I have?' }
+        Add-Result 'chat: random workspace id -> 404' ($c5.Status -eq 404) ('HTTP ' + $c5.Status)
+
+    } finally {
+        if ($Cleanup) {
+            foreach ($id in @($script:Conversations)) {
+                $r = Invoke-Api 'delete conversation' 'DELETE' "/api/v1/assistant/conversations/$id"
+                Add-Result ('delete conversation ' + $id.Substring(0, 8) + ' -> 204') ($r.Status -eq 204) ('HTTP ' + $r.Status)
+                $r = Invoke-Api 'get messages after delete' 'GET' "/api/v1/assistant/conversations/$id/messages"
+                Add-Result ('messages after delete ' + $id.Substring(0, 8) + ' -> 404') ($r.Status -eq 404) ('HTTP ' + $r.Status)
+            }
+        }
+    }
+}
+
 # ---------- main ----------
 
 try {
@@ -670,6 +802,9 @@ try {
     }
     if ($Flow -in @('gmail', 'all')) {
         try { Invoke-GmailFlow } catch { Write-Host ('  Gmail flow stopped: ' + $_.Exception.Message) -ForegroundColor Red }
+    }
+    if ($Flow -in @('assistant', 'all')) {
+        try { Invoke-AssistantFlow } catch { Write-Host ('  Assistant flow stopped: ' + $_.Exception.Message) -ForegroundColor Red }
     }
     if ($Cleanup -and $script:Workflows.Count -gt 0) {
         Write-Host ''
@@ -695,6 +830,7 @@ Write-Host '  [ ] Telegram: the bot echoed "Echo: <your text>" back to you'
 Write-Host '  [ ] Google Calendar: event "Weav live test" exists at the expected local time (about 1 h from the run, 30 min long)'
 Write-Host '  [ ] Google Drive: file weav-live-test-<timestamp>.txt exists'
 Write-Host '  [ ] Gmail: the consent screen listed gmail.readonly and gmail.send; the email you sent started exactly one run'
+Write-Host '  [ ] Assistant: any WARN above (no draft) is worth a look at the answer text'
 Write-Host '  [ ] Consent screens listed only calendar.events (Calendar) / drive.file (Drive) plus openid and email'
 
 $failed = @($script:Results | Where-Object { $_.Result -eq 'FAIL' }).Count
