@@ -74,6 +74,44 @@ class WorkflowGenerationServiceTest {
         assertEquals("INVALID_INTENT", ((Map<?, ?>) ((List<?>) result.get("reasons")).get(0)).get("code"));
     }
 
+    private static Map<String, Object> emailWithoutBody() {
+        return Map.of("name", "Mail", "nodes", List.of(
+                node("start", "trigger.manual", Map.of()),
+                node("send_email", "email.send", Map.of("to", "a@example.test", "subject", "Hi"))),
+                "edges", List.of(edge("start", "send_email")));
+    }
+
+    @Test void missingRequiredTextBecomesValueQuestionBeforeConnectionQuestion() {
+        Map<String, Object> result = service(new FakeAi(Map.of("status", "ready", "intent", emailWithoutBody())),
+                new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null, Map.of());
+        assertEquals("needs_input", result.get("status"));
+        assertEquals(List.of(Map.of("code", "VALUE", "field", "email.send.body")), result.get("questions"));
+    }
+
+    @Test void answersFillTheMissingValueAndAreSentToTheAi() {
+        FakeAi ai = new FakeAi(Map.of("status", "ready", "intent", emailWithoutBody()));
+        Map<String, Object> result = service(ai, new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null,
+                Map.of("email.send", UUID.randomUUID()), Map.of("email.send.body", "Hello there"));
+        assertEquals("ready", result.get("status"));
+        var definition = (com.weav.workflow.domain.definition.WorkflowDefinition) result.get("definition");
+        assertEquals("Hello there", definition.nodes().get(1).config().get("body"));
+        assertTrue(String.valueOf(ai.payload.get("prompt")).contains("email.send.body: Hello there"));
+    }
+
+    @Test void answerKeyedByNodeIdAlsoFillsAndNonTextFieldsAreNotAskable() {
+        Map<String, Object> result = service(new FakeAi(Map.of("status", "ready", "intent", emailWithoutBody())),
+                new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null,
+                Map.of("email.send", UUID.randomUUID()), Map.of("send_email.config.body", "Hello"));
+        assertEquals("ready", result.get("status"));
+        Map<String, Object> noValues = Map.of("name", "Sheets", "nodes", List.of(
+                node("start", "trigger.manual", Map.of()),
+                node("w", "google.sheets", Map.of("operation", "append", "spreadsheetId", "a", "range", "A1"))),
+                "edges", List.of(edge("start", "w")));
+        assertEquals("INVALID_INTENT", ((Map<?, ?>) ((List<?>) service(new FakeAi(Map.of("status", "ready",
+                "intent", noValues)), new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null,
+                Map.of("google.sheets", UUID.randomUUID())).get("reasons")).get(0)).get("code"));
+    }
+
     @Test void capabilitiesExcludeUnavailableTypesConnectionIdAndLegacySchemaDescription() {
         FakeAi ai = new FakeAi(Map.of("status", "unsupported", "reasons", List.of(Map.of("code", "OUT_OF_SCOPE"))));
         UUID connectionId = UUID.randomUUID();
@@ -133,11 +171,17 @@ class WorkflowGenerationServiceTest {
     }
 
     @Test void otherAiFailuresBecomeAiUnavailable() {
-        for (String code : List.of("AI_OUTPUT_INVALID", "DEPENDENCY_NOT_CONFIGURED")) {
+        for (String code : List.of("DEPENDENCY_NOT_CONFIGURED", "AI_PROVIDER_UNAVAILABLE")) {
             FakeAi ai = new FakeAi(new NodeExecutor.Failure(code, "failure", false));
             assertThrows(AiUnavailableException.class, () -> service(ai, new Connections(), () -> true)
                     .generate(UUID.randomUUID(), UUID.randomUUID(), "x", null, Map.of()));
         }
+    }
+
+    @Test void unusableModelOutputBecomesInvalidIntentNotUnavailable() {
+        FakeAi ai = new FakeAi(new NodeExecutor.Failure("AI_OUTPUT_INVALID", "failure", false));
+        assertEquals(Map.of("status", "unsupported", "reasons", List.of(Map.of("code", "INVALID_INTENT"))),
+                service(ai, new Connections(), () -> true).generate(UUID.randomUUID(), UUID.randomUUID(), "x", null, Map.of()));
     }
 
     @Test void sixthCallWithinAMinuteIsRateLimitedPerUserAndWorkspace() {

@@ -6,7 +6,8 @@ const schema = z.object({
   DEEPSEEK_API_KEY: z.string().min(1).optional(),
   DEEPSEEK_MODEL: z.string().min(1).optional(),
   DEEPSEEK_BASE_URL: z.url().default('https://api.deepseek.com'),
-  DEEPSEEK_MAX_TOKENS: z.coerce.number().int().min(256).max(8192).default(4096),
+  // Reasoning models spend part of this budget on hidden thinking; 4096 ran out mid-generation (finish_reason=length).
+  DEEPSEEK_MAX_TOKENS: z.coerce.number().int().min(256).max(8192).default(8192),
   AI_SERVICE_JWKS_FILE: z.string().min(1).optional(),
   AI_REQUEST_TIMEOUT_MS: z.coerce
     .number()

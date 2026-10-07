@@ -64,7 +64,8 @@ test('generate with AI', async ({ page }) => {
   await page.getByLabel('Describe the workflow').fill('scenario:needs-input ping a website every morning');
   await page.getByRole('button', { name: 'Generate', exact: true }).click();
   await expect(page.getByText('Which URL should be used?')).toBeVisible();
+  await page.getByLabel('Which URL should be used?').fill('https://example.com');
   await page.getByLabel('Describe the workflow').fill('ping https://example.com then summarize it');
-  await page.getByRole('button', { name: 'Generate', exact: true }).click();
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.locator('.react-flow__node')).toHaveCount(3);
 });

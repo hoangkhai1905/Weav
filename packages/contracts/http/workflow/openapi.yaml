@@ -540,6 +540,13 @@ components:
           additionalProperties:
             type: string
             format: uuid
+        answers:
+          type: object
+          description: >-
+            The user's replies to an earlier needs_input question, keyed by that question's `field`
+            (for example `email.send.body`). Send the original prompt again together with the answers.
+          maxProperties: 10
+          additionalProperties: { type: string, minLength: 1, maxLength: 4000 }
 
     GenerateWorkflowResponse:
       oneOf:

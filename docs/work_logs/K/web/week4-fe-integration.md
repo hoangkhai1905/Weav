@@ -127,7 +127,26 @@ User chọn: (1) hiển thị tối thiểu in đậm + code; (2) thêm chọn k
 - `DataSetEditor.tsx`: mỗi dòng chọn kiểu "Văn bản / Số / Đúng-Sai / Lấy từ bước trước". Số lưu dạng số (không hợp lệ thì báo lỗi và chưa lưu dòng đó), Đúng/Sai lưu boolean, mapping lưu chuỗi. Khi mở lại tự nhận kiểu; object/array/null hiện chỉ đọc "giá trị nâng cao, giữ nguyên".
 - `SchemaField.tsx`: nhãn lựa chọn lấy từ `builder.field.<type>.<name>.<value>` (giá trị lưu vẫn là mã gốc); thêm nhãn vi + en dễ hiểu cho thao tác Drive/Calendar, định dạng email, định dạng Telegram, cách ghi Sheets; gợi ý viết lại bằng lời thường.
 - Kiểm tra: tsc, eslint, `pnpm build`, `git diff --check` qua. e2e `assistant` + `workspace-connections`: 66 qua, 2 lỗi 401 có sẵn. Test "a step added from the palette..." từng fail một lần khi chạy song song, chạy riêng 3/3 qua (chập chờn).
-- Còn có thể làm: gợi ý ngày giờ Calendar ("RFC 3339") và nhãn "MIME" của Drive vẫn còn thuật ngữ.
+- Gợi ý ngày giờ Calendar và nhãn MIME của Drive: đã viết lại bằng lời thường (vi + en, có ví dụ ngày giờ Việt Nam, "Loại tệp (không bắt buộc)" kèm ví dụ); thêm gợi ý múi giờ và "Đến thời điểm". Week 4 e2e 13/13.
+
+## 6f. Ô chọn lịch và "Tạo bằng AI" thật (2026-10-07)
+
+- Ô chọn lịch (`components/builder/SchedulePicker.tsx`, `lib/schedule.ts`, commit `0e52fda`): thay ô cron + múi giờ thô bằng "Mỗi N phút / Mỗi N giờ / Hằng ngày / Các ngày trong tuần / Hằng tháng / Nâng cao (cron)", chọn giờ, múi giờ có tên dễ hiểu + "Khác…", câu tóm tắt ("Chạy lúc 09:00 mỗi ngày (giờ Việt Nam)"). Cron không nhận dạng được mở ở Nâng cao và giữ nguyên. Backend chỉ yêu cầu cron Spring 6 trường hợp lệ + múi giờ IANA (không có khoảng tối thiểu). 5 e2e mới qua.
+- "Tạo bằng AI" (`AiGeneratorPage.tsx`): bỏ demo `setTimeout`; người dùng mô tả bằng lời → tạo workflow nháp mới (`workflowApi.createWorkflow`, tên = 60 ký tự đầu) → mở builder, truyền mô tả qua router state (không qua URL), builder mở sẵn `GenerateWorkflowPanel` với mô tả điền sẵn rồi xóa state (tải lại không mở lại). Không tự chạy: người dùng bấm "Tạo" để chọn kết nối trước và không tốn quota ngoài ý muốn. Chế độ mock: nút bị vô hiệu kèm ghi chú. Xóa khoảng 190 dòng key `ai_gen.*` không còn dùng. e2e `ai-generator.spec.ts` 3/3; đã sửa các test cũ của trang demo (`localization`, `workflow-ui`).
+- Kiểm tra: tsc, eslint, build, diff --check qua. `ai-generator` + `assistant` + `workspace-connections`: 74 qua, 2 lỗi 401 có sẵn. `localization` 3 và `workflow-catalog-v1` 6 lỗi có sẵn, không thêm. Một số test chạy song song thỉnh thoảng chập chờn ("badge, inspector warning...", "a condition switches...", "a step added from the palette..."), chạy riêng đều qua — nên xem lại (giảm worker hoặc chờ ổn định).
+- Chưa kiểm stack thật cho hai phần này.
+
+## 6g. Sửa lỗi "Tạo bằng AI" trên stack thật (2026-10-07)
+
+User báo lỗi "Dịch vụ quy trình tạm thời không khả dụng." khi bấm Tạo. Nguyên nhân:
+1. Web hủy request sau 15 giây (`AbortSignal.timeout(15_000)` cho mọi request trong `workflow-v1.api.ts`), lần sinh mất 18,6 s → `ERR_ABORTED`. Sửa: riêng `generateWorkflow` timeout 85 s (trên giới hạn Gateway 80 s, workflow-service 65 s, ai-service 60 s); hết giờ phía client báo 504 "AI mất quá lâu".
+2. ai-service trả `AI_OUTPUT_INVALID`: nhiều khả năng DeepSeek dùng hết `max_tokens` 4096 cho phần suy luận ẩn nên `finish_reason != stop`. Sửa: mặc định `DEEPSEEK_MAX_TOKENS` 8192 (`ai-config.ts`, có test, cập nhật `docs/specs/services/ai-service.md`). Chưa chứng minh bằng một lần fail thật.
+3. workflow-service đổi `AI_OUTPUT_INVALID` từ 503 "tạm thời không khả dụng" sang kết quả `unsupported`/`INVALID_INTENT` sẵn có (không đổi hợp đồng); câu hiển thị "AI chưa tạo được quy trình này, hãy diễn đạt lại".
+4. Prompt ai-service: dặn model hỏi lại khi thiếu tiêu đề/nội dung email thay vì bỏ trống.
+- Kiểm tra: ai-service 203 test qua + build; `WorkflowGenerationServiceTest` qua (JDK 25 trong container); web tsc/eslint/build, `ai-generator.spec.ts` 3/3. Stack thật (đã build lại ai-service, workflow-service): prompt mẫu không có nội dung email → panel báo thiếu `send_email.config.body` (đúng hành vi nhưng câu chữ kỹ thuật). Dùng 4 lượt DeepSeek.
+- User chọn: hỏi lại bằng lời thường. Đã làm (subagent): `IntentCompiler` đổi trường văn bản bắt buộc còn thiếu thành câu hỏi `needs_input` `VALUE` (hỏi giá trị trước, kết nối sau); request generate thêm trường tùy chọn `answers` (≤ 10 mục, mỗi mục 1–4000 ký tự; prompt + answers < 3900) — thay đổi hợp đồng **cộng thêm** (`packages/contracts/http/workflow/openapi.yaml`, Gateway zod, `GenerateWorkflowRequest`, `WorkflowController`). Panel: mỗi câu hỏi có ô nhập, nút "Tiếp tục", câu hỏi lấy từ i18n theo trường (email, Telegram, Sheets, Calendar, HTTP, lịch), không hiện đường dẫn trường; lỗi kỹ thuật đổi thành lời thường.
+- Kiểm tra: workflow-service `WorkflowGenerationServiceTest` + `IntentCompilerTest` + `WorkflowGenerationHttpTest` 32/32 (JDK 25 container); Gateway `routes.e2e-spec` 16/16; web tsc/eslint/build; `ai-generator.spec.ts` 4/4. Stack thật (đã build lại workflow-service, api-gateway): hỏi "Email gửi đi nên có nội dung gì?" → trả lời → request mang `answers` trả 200 → hỏi tiếp chọn kết nối Gmail (đúng thứ tự). Chưa thấy bước cuối thả nháp lên canvas vì không chọn kết nối (giới hạn lượt DeepSeek). Workflow `956f80f7…` không bị lưu. Dùng thêm 3 lượt DeepSeek.
+- Còn mở: trường lạ dùng tên tiếng Anh tự sinh khi hỏi; panel chỉ có ô chọn kết nối cho Sheets và Gmail.
 
 ## 7. Hướng dẫn cho agent tiếp theo
 
@@ -141,10 +160,9 @@ User chọn: (1) hiển thị tối thiểu in đậm + code; (2) thêm chọn k
 
 ## 8. Việc khác còn mở (từ các phiên trước)
 
-- Nút "Tạo bằng AI": user chọn nối vào luồng thật (tạo bản nháp rồi mở builder với `GenerateWorkflowPanel` bật sẵn), làm sau. `/ai/workflow-generator` (`AiGeneratorPage`) hiện chỉ là demo `setTimeout`.
+- Nút "Tạo bằng AI": đã nối luồng thật (mục 6f).
 - Volume tạm `weav-m2-tmp` (cache Maven) còn; hook chặn agent xóa volume, user tự chạy `docker volume rm weav-m2-tmp` khi không cần.
 - Stack dev đã build lại bằng code đã gộp (2026-10-07); identity dev chạy RS256, khóa dev trong `tmp/service-keys/` (identity, public, private).
-- Gợi ý ngày giờ Calendar và nhãn MIME của Drive còn thuật ngữ kỹ thuật.
 - Stash `stash@{0}` (`codex/web-session-renewal`) là bản làm dở cũ của tính năng giữ đăng nhập; tính năng đã xong bằng cách khác (xem `web-session-renewal.md`), stash để nguyên.
 
 ## 9. Kết thúc phiên

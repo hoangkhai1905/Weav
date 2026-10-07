@@ -2,12 +2,14 @@ package com.weav.workflow.domain.generation;
 
 import com.weav.workflow.domain.definition.DefinitionValidator;
 import com.weav.workflow.domain.definition.NodeCatalog;
+import com.weav.workflow.domain.definition.NodeConfigSchema;
 import com.weav.workflow.domain.definition.ValidationIssue;
 import com.weav.workflow.domain.definition.WorkflowDefinition;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -26,13 +28,20 @@ public final class IntentCompiler {
         this.validator = Objects.requireNonNull(validator, "validator must not be null");
     }
 
-    public sealed interface Compilation permits Ready, NeedsConnections, Invalid {
+    public sealed interface Compilation permits Ready, NeedsConnections, NeedsValues, Invalid {
     }
 
     public record Ready(String name, WorkflowDefinition definition, Map<String, Position> layout) implements Compilation {
     }
 
     public record NeedsConnections(List<String> nodeTypes) implements Compilation {
+    }
+
+    /** Required plain-text config values the user has to supply, one entry per node type and field. */
+    public record NeedsValues(List<Missing> missing) implements Compilation {
+    }
+
+    public record Missing(String type, String field) {
     }
 
     public record Invalid() implements Compilation {
@@ -42,6 +51,14 @@ public final class IntentCompiler {
     }
 
     public Compilation compile(Object intent, Map<String, UUID> connections) {
+        return compile(intent, connections, Map.of());
+    }
+
+    /**
+     * {@code answers} maps "&lt;nodeType&gt;.&lt;field&gt;" (or "&lt;nodeId&gt;.config.&lt;field&gt;") to a user-given value
+     * that fills a config field the model left empty.
+     */
+    public Compilation compile(Object intent, Map<String, UUID> connections, Map<String, String> answers) {
         if (!(intent instanceof Map<?, ?> root) || !(root.get("name") instanceof String name)
                 || name.isBlank() || name.codePointCount(0, name.length()) > 120
                 || !(root.get("nodes") instanceof List<?> rawNodes) || rawNodes.size() < 2 || rawNodes.size() > 20
@@ -62,6 +79,7 @@ public final class IntentCompiler {
                 }
                 config.put(key, entry.getValue());
             }
+            fillAnswers(id, type, config, answers);
             UUID connection = connections.get(type);
             if (connection != null && NodeCatalog.configFields(type).contains("connectionId")) {
                 config.put("connectionId", connection.toString());
@@ -89,18 +107,51 @@ public final class IntentCompiler {
         }
         List<ValidationIssue> issues = validator.validatePublish(definition);
         if (!issues.isEmpty()) {
-            boolean onlyMissingConnections = issues.stream().allMatch(issue ->
-                    "REQUIRED_FIELD_MISSING".equals(issue.code()) && "config.connectionId".equals(issue.field()));
-            if (!onlyMissingConnections) {
-                return new Invalid();
-            }
             Map<String, String> typeById = new HashMap<>();
             nodes.forEach(node -> typeById.put(node.id(), node.type()));
-            Set<String> types = new TreeSet<>();
-            issues.forEach(issue -> types.add(typeById.get(issue.nodeId())));
-            return new NeedsConnections(List.copyOf(types));
+            Set<String> connectionTypes = new TreeSet<>();
+            Set<Missing> values = new LinkedHashSet<>();
+            for (ValidationIssue issue : issues) {
+                String type = typeById.get(issue.nodeId());
+                String field = issue.field() != null && issue.field().startsWith("config.")
+                        ? issue.field().substring("config.".length()) : null;
+                if (!"REQUIRED_FIELD_MISSING".equals(issue.code()) || type == null || field == null) {
+                    return new Invalid();
+                }
+                if (field.equals("connectionId")) {
+                    connectionTypes.add(type);
+                } else if (askable(type, field) && values.size() < 10) {
+                    values.add(new Missing(type, field));
+                } else {
+                    return new Invalid();
+                }
+            }
+            // Values first: the connection question comes back on the next round, once the values are filled.
+            return values.isEmpty() ? new NeedsConnections(List.copyOf(connectionTypes))
+                    : new NeedsValues(List.copyOf(values));
         }
         return new Ready(name, definition, layout(nodes, edges));
+    }
+
+    private static void fillAnswers(String id, String type, Map<String, Object> config, Map<String, String> answers) {
+        answers.forEach((key, value) -> {
+            String field = key.startsWith(type + ".") ? key.substring(type.length() + 1)
+                    : key.startsWith(id + ".config.") ? key.substring(id.length() + ".config.".length()) : null;
+            if (field != null && !value.isBlank() && askable(type, field)
+                    && (config.get(field) == null || config.get(field) instanceof String text && text.isBlank())) {
+                config.put(field, value);
+            }
+        });
+    }
+
+    /** Only plain free-text fields can be answered in words (not enums, lists, objects or connections). */
+    private static boolean askable(String type, String field) {
+        if (!NodeCatalog.supports(type)) {
+            return false;
+        }
+        NodeConfigSchema.Field property = NodeCatalog.schema(type).properties().get(field);
+        return property != null && property.enumValues().isEmpty()
+                && ("string".equals(property.type()) || property.oneOf().stream().anyMatch(branch -> "string".equals(branch.type())));
     }
 
     /** x = 100 + 300 × longest-path depth; y = 100 + 150 × order within that depth. The graph is already validated acyclic. */

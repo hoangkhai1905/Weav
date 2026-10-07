@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ReactFlow,
@@ -74,6 +74,7 @@ import { ConditionEditor } from '../components/builder/ConditionEditor';
 import { AttachmentsEditor } from '../components/builder/AttachmentsEditor';
 import { SwitchEditor } from '../components/builder/SwitchEditor';
 import { DataSetEditor } from '../components/builder/DataSetEditor';
+import { SchedulePicker } from '../components/builder/SchedulePicker';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
 import { definitionToCanvas, type GenerationResponse } from '../api/workflow-v1.api';
@@ -293,6 +294,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   const refreshNotifications = useNotificationMilestoneRefresh();
   const { workflowId } = useParams<{ workflowId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { theme } = useUIStore();
   const { language, t } = useI18nStore();
@@ -406,7 +408,13 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [publishedWebhooks, setPublishedWebhooks] = useState<WebhookProvisioning[]>([]);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null);
-  const [isGeneratePanelOpen, setIsGeneratePanelOpen] = useState(false);
+  // Handed over once by the Create with AI page via router state; cleared below so a reload does not reopen it.
+  const [generateSeed] = useState(() => (location.state as { generatePrompt?: string } | null)?.generatePrompt ?? '');
+  const [isGeneratePanelOpen, setIsGeneratePanelOpen] = useState(Boolean(generateSeed));
+  useEffect(() => {
+    if (generateSeed) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
 
   // Inspector Form State (for selected node)
   const [ocrLanguage, setOcrLanguage] = useState('vi+en');
@@ -1768,30 +1776,12 @@ export const WorkflowBuilderPage: React.FC = () => {
               ) : selectedNodeType === 'logic.condition' ? (
                 <ConditionEditor config={selectedNodeConfig} onChange={updateSelectedNodeConfig} />
               ) : selectedNodeType === 'trigger.schedule' ? (
-                <div data-testid="schedule-config" className="space-y-3">
-                  <div>
-                    <label htmlFor="schedule-cron" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cron')}</label>
-                    <input
-                      id="schedule-cron"
-                      data-testid="schedule-cron"
-                      value={String(selectedNodeConfig.cron ?? '')}
-                      placeholder="0 0 9 * * *"
-                      onChange={(event) => updateSelectedNodeConfig({ cron: event.target.value })}
-                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="schedule-timezone" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.timezone')}</label>
-                    <input
-                      id="schedule-timezone"
-                      data-testid="schedule-timezone"
-                      value={String(selectedNodeConfig.timezone ?? '')}
-                      placeholder="Asia/Ho_Chi_Minh"
-                      onChange={(event) => updateSelectedNodeConfig({ timezone: event.target.value })}
-                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                </div>
+                <SchedulePicker
+                  key={selectedNodeId}
+                  cron={String(selectedNodeConfig.cron ?? '')}
+                  timezone={String(selectedNodeConfig.timezone ?? '')}
+                  onChange={updateSelectedNodeConfig}
+                />
               ) : selectedNodeType === 'trigger.webhook' ? (
                 <div data-testid="webhook-config" className="space-y-3">
                   <p className="text-[11px] leading-relaxed text-text-2">{t('builder.cfg.webhook_body')}</p>
@@ -2475,6 +2465,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       />
       <GenerateWorkflowPanel
         open={isGeneratePanelOpen}
+        initialPrompt={generateSeed}
         onClose={() => setIsGeneratePanelOpen(false)}
         onReady={handleGenerateReady}
       />

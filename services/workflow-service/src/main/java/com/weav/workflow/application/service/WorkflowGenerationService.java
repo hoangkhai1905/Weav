@@ -21,6 +21,7 @@ import java.util.function.BooleanSupplier;
 @Service
 public class WorkflowGenerationService {
     private static final Set<String> QUESTION_CODES = Set.of("URL", "SCHEDULE", "TIMEZONE", "VALUE");
+    private static final String ANSWERS_HEADER = "\n\nAnswers the user already gave:\n";
     private static final Set<String> REASON_CODES = Set.of("CAPABILITY_UNAVAILABLE", "OUT_OF_SCOPE", "AMBIGUOUS_REQUEST");
     private final WorkspaceAuthorization authorization;
     private final WorkspaceConnectionPort connections;
@@ -47,12 +48,20 @@ public class WorkflowGenerationService {
 
     public Map<String, Object> generate(UUID workspaceId, UUID actorId, String prompt, String timezone,
                                         Map<String, UUID> picked) {
+        return generate(workspaceId, actorId, prompt, timezone, picked, Map.of());
+    }
+
+    /** {@code answers}: the user's replies to earlier VALUE/URL/SCHEDULE/TIMEZONE questions, keyed by the question's field. */
+    public Map<String, Object> generate(UUID workspaceId, UUID actorId, String prompt, String timezone,
+                                        Map<String, UUID> picked, Map<String, String> answers) {
         if (!enabled.getAsBoolean()) throw new AiUnavailableException();
         if (!rateLimiter.tryAcquire(actorId, workspaceId)) throw new GenerationRateLimitedException();
         authorization.require(workspaceId, actorId, "WORKFLOW_CREATE");
         picked.values().forEach(id -> connections.authorizeAttachment(workspaceId, id, actorId));
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("prompt", prompt);
+        payload.put("prompt", answers.isEmpty() ? prompt : prompt + ANSWERS_HEADER
+                + answers.entrySet().stream().map(a -> "- " + a.getKey() + ": " + a.getValue())
+                        .collect(java.util.stream.Collectors.joining("\n")));
         if (timezone != null) payload.put("timezone", timezone);
         payload.put("capabilities", capabilities());
         Map<String, Object> result;
@@ -60,13 +69,17 @@ public class WorkflowGenerationService {
         catch (NodeExecutor.Failure failure) {
             if ("AI_QUOTA_EXCEEDED".equals(failure.code())) throw new AiQuotaExceededException();
             if ("AI_TIMEOUT".equals(failure.code()) || "TIMEOUT".equals(failure.code())) throw new AiTimeoutException();
+            // The model answered, but not with a usable workflow: tell the user to rephrase, not "unavailable".
+            if ("AI_OUTPUT_INVALID".equals(failure.code())) return invalidIntent();
             throw new AiUnavailableException();
         }
         return switch (String.valueOf(result.get("status"))) {
-            case "ready" -> switch (compiler.compile(result.get("intent"), picked)) {
+            case "ready" -> switch (compiler.compile(result.get("intent"), picked, answers)) {
                 case IntentCompiler.Ready ready -> ready(ready);
                 case IntentCompiler.NeedsConnections needs -> Map.of("status", "needs_input", "questions",
                         needs.nodeTypes().stream().map(type -> Map.of("code", "CONNECTION", "field", type)).toList());
+                case IntentCompiler.NeedsValues needs -> Map.of("status", "needs_input", "questions",
+                        needs.missing().stream().map(m -> Map.of("code", "VALUE", "field", m.type() + "." + m.field())).toList());
                 case IntentCompiler.Invalid ignored -> invalidIntent();
             };
             case "needs_input" -> codes(result.get("questions"), QUESTION_CODES, true)

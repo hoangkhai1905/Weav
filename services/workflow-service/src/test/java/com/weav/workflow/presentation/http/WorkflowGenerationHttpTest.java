@@ -85,6 +85,15 @@ class WorkflowGenerationHttpTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test void answersAreAcceptedWhenTextAndRejectedWhenBlankOrOversized() throws Exception {
+        mvc.perform(request("{\"prompt\":\"ping\",\"answers\":{\"email.send.body\":\"Hello\"}}"))
+                .andExpect(status().isOk());
+        mvc.perform(request("{\"prompt\":\"ping\",\"answers\":{\"email.send.body\":\" \"}}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(request("{\"prompt\":\"ping\",\"answers\":{\"email.send.body\":\"" + "x".repeat(4000) + "\"}}"))
+                .andExpect(status().isBadRequest());
+    }
+
     @Test void exhaustedAiQuotaIs429() throws Exception {
         ai.failure = new com.weav.workflow.application.node.NodeExecutor.Failure("AI_QUOTA_EXCEEDED", "quota", false);
         mvc.perform(request("{\"prompt\":\"ping\"}")).andExpect(status().isTooManyRequests())

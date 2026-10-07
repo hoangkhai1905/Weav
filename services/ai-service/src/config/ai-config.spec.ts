@@ -21,3 +21,9 @@ describe('missingAssistantDbVars', () => {
     ).toEqual(['DB_HOST']);
   });
 });
+
+describe('DEEPSEEK_MAX_TOKENS', () => {
+  it('defaults to the 8192 ceiling so reasoning models do not truncate generated workflows', () => {
+    expect(loadAiConfig({}).DEEPSEEK_MAX_TOKENS).toBe(8192);
+  });
+});

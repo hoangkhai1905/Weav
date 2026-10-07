@@ -256,23 +256,14 @@ test.describe('Vietnamese and English web localization', () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test('localizes AI workflow prompt and generated-flow labels in Vietnamese and English', async ({ page }, testInfo) => {
+  test('localizes the Create with AI entry page in Vietnamese and English', async ({ page }, testInfo) => {
     for (const locale of ['VI', 'EN'] as const) {
       await page.addInitScript((selectedLocale) => (globalThis as unknown as BrowserContext).localStorage.setItem('weav_lang_v1', selectedLocale), locale);
       await page.goto('/ai/workflow-generator');
 
-      const prompt = page.getByLabel(locale === 'VI' ? 'Quy trình này cần làm gì?' : 'What should this workflow do?');
-      await expect(prompt).toHaveValue(locale === 'VI' ? /Khi nhận được đơn hàng mới/ : /When a new order arrives/);
-      await expect(page.getByText(locale === 'VI' ? 'Cổng điều kiện' : 'Conditional gate', { exact: true })).toBeVisible();
-      await page.getByTestId('technical-details').locator('summary').click();
-      await expect(page.getByText(locale === 'VI' ? 'Liên kết biến' : 'Variable bindings', { exact: true })).toBeVisible();
-      await expect(page.getByText(locale === 'VI' ? 'Không phát hiện rò rỉ thông tin bí mật' : 'Zero secret leakages detected')).toBeVisible();
-      await expect(page.getByText(locale === 'VI' ? 'Định nghĩa quy trình đã tổng hợp' : 'Synthesized Workflow Definition', { exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: locale === 'VI' ? 'Sao chép JSON' : 'Copy JSON' })).toBeVisible();
-      await expect(page.getByText(locale === 'VI' ? 'Hợp lệ theo RFC 8259' : 'Valid RFC 8259', { exact: true })).toBeVisible();
-      await expect(page.getByText(locale === 'VI' ? 'KÍCH HOẠT' : 'TRIGGER', { exact: true })).toBeVisible();
-      await expect(page.getByText(locale === 'VI' ? 'CSDL' : 'DATABASE', { exact: true })).toBeVisible();
-      await expect(page.getByText(locale === 'VI' ? 'AI TẠO' : 'SYNTHESIZED', { exact: true })).toBeVisible();
+      await expect(page.getByLabel(locale === 'VI' ? 'Quy trình này cần làm gì?' : 'What should this workflow do?')).toBeVisible();
+      await expect(page.getByRole('button', { name: locale === 'VI' ? 'Tóm tắt email mỗi ngày' : 'Daily email summary' })).toBeVisible();
+      await expect(page.getByTestId('ai-generator-continue')).toHaveText(locale === 'VI' ? 'Tiếp tục' : 'Continue');
       await page.screenshot({ path: testInfo.outputPath(`ai-generator-${locale.toLowerCase()}.png`), fullPage: true });
     }
   });

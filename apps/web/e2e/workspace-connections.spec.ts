@@ -2388,3 +2388,175 @@ test.describe("workflow builder Telegram trigger", () => {
     expect(config).toEqual({ connectionId: TG_ACTIVE_ID });
   });
 });
+
+test.describe("workflow builder schedule picker", () => {
+  const WORKFLOW_ID = "30000000-0000-4000-8000-000000000005";
+  const node = '[data-testid="workflow-node"][data-node-type="trigger.schedule"]';
+  type Config = Record<string, unknown>;
+  const DEFAULT: Config = { cron: "0 0 9 * * *", timezone: "Asia/Ho_Chi_Minh" };
+
+  const detail = (config: Config) => ({
+    workflowId: WORKFLOW_ID,
+    name: "Schedule picker",
+    status: "DRAFT",
+    schemaVersion: "1.0",
+    currentVersionId: null,
+    createdAt: "2026-08-01T00:00:00Z",
+    updatedAt: "2026-08-01T00:00:00Z",
+    definition: { schemaVersion: "1.0", nodes: [{ id: "schedule", type: "trigger.schedule", config }], edges: [], variables: {} },
+    editorState: { nodes: { schedule: { name: "schedule", position: { x: 0, y: 0 } } } },
+  });
+
+  async function openBuilder(page: Page, state: { config: Config }) {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) => fulfillJson(route, []));
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/draft") && route.request().method() === "PUT") {
+        const body = route.request().postDataJSON() as { definition: { nodes: Array<{ config: Config }> } };
+        state.config = body.definition.nodes[0].config;
+        return fulfillJson(route, detail(state.config));
+      }
+      if (url.pathname.endsWith(`/workflows/${WORKFLOW_ID}`)) return fulfillJson(route, detail(state.config));
+      return fulfillJson(route, pageResult([]));
+    });
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+    await page.locator(node).click();
+  }
+
+  async function save(page: Page) {
+    const saved = page.waitForResponse((response) => response.request().method() === "PUT" && response.url().endsWith("/draft"));
+    await page.getByTestId("workflow-save-inspector").click();
+    await saved;
+  }
+
+  test("the default config opens as daily 09:00 Vietnam time and saves nothing new until edited", async ({ page }) => {
+    const state = { config: { ...DEFAULT } };
+    await openBuilder(page, state);
+    await expect(page.getByTestId("schedule-repeat")).toHaveValue("daily");
+    await expect(page.getByTestId("schedule-time")).toHaveValue("09:00");
+    await expect(page.getByTestId("schedule-timezone")).toHaveValue("Asia/Ho_Chi_Minh");
+    await expect(page.getByTestId("schedule-summary")).toHaveText("Runs at 09:00 every day (Vietnam time)");
+    await expect(page.getByTestId("schedule-cron")).toHaveCount(0);
+    await expect(page.locator(node)).toHaveAttribute("data-readiness", "ready");
+
+    await page.getByTestId("schedule-time").fill("18:05");
+    await save(page);
+    expect(state.config).toEqual({ cron: "0 5 18 * * *", timezone: "Asia/Ho_Chi_Minh" });
+  });
+
+  test("weekdays, every N minutes/hours and monthly build the expected cron", async ({ page }) => {
+    const state = { config: { ...DEFAULT } };
+    await openBuilder(page, state);
+
+    await page.getByTestId("schedule-repeat").selectOption("weekly");
+    await page.getByTestId("schedule-time").fill("08:30");
+    await expect(page.getByTestId("schedule-summary")).toHaveText("Runs at 08:30 on Monday – Friday (Vietnam time)");
+    await save(page);
+    expect(state.config.cron).toBe("0 30 8 * * MON-FRI");
+
+    await page.getByTestId("schedule-day-SAT").click();
+    await page.getByTestId("schedule-day-WED").click();
+    await save(page);
+    expect(state.config.cron).toBe("0 30 8 * * MON,TUE,THU-SAT");
+    await expect(page.getByTestId("schedule-day-WED")).toHaveAttribute("aria-pressed", "false");
+
+    await page.getByTestId("schedule-repeat").selectOption("minutes");
+    await expect(page.getByTestId("schedule-summary")).toHaveText("Runs every 15 minutes");
+    await save(page);
+    expect(state.config.cron).toBe("0 */15 * * * *");
+    await page.getByTestId("schedule-step").selectOption("5");
+    await save(page);
+    expect(state.config.cron).toBe("0 */5 * * * *");
+
+    await page.getByTestId("schedule-repeat").selectOption("hours");
+    await page.getByTestId("schedule-step").selectOption("6");
+    await save(page);
+    expect(state.config.cron).toBe("0 0 */6 * * *");
+
+    await page.getByTestId("schedule-repeat").selectOption("monthly");
+    await page.getByTestId("schedule-time").fill("07:00");
+    await save(page);
+    expect(state.config.cron).toBe("0 0 7 1 * *");
+    await expect(page.getByTestId("schedule-summary")).toHaveText("Runs at 07:00 on day 1 of every month (Vietnam time)");
+    await page.getByTestId("schedule-dom").selectOption("31");
+    await expect(page.getByText("Months without this day")).toBeVisible();
+    await save(page);
+    expect(state.config.cron).toBe("0 0 7 31 * *");
+  });
+
+  test("the time zone comes from the list or from Other and a saved unlisted zone stays", async ({ page }) => {
+    const state: { config: Config } = { config: { ...DEFAULT } };
+    await openBuilder(page, state);
+
+    await page.getByTestId("schedule-timezone").selectOption("Asia/Tokyo");
+    await save(page);
+    expect(state.config).toEqual({ cron: "0 0 9 * * *", timezone: "Asia/Tokyo" });
+
+    await page.getByTestId("schedule-timezone").selectOption({ label: "Other…" });
+    await page.getByTestId("schedule-timezone-other").fill("Africa/Cairo");
+    await save(page);
+    expect(state.config.timezone).toBe("Africa/Cairo");
+
+    await page.reload();
+    await page.locator(node).click();
+    await expect(page.getByTestId("schedule-timezone-other")).toHaveValue("Africa/Cairo");
+    await page.getByTestId("schedule-timezone").selectOption("UTC");
+    await expect(page.getByTestId("schedule-timezone-other")).toHaveCount(0);
+    await save(page);
+    expect(state.config.timezone).toBe("UTC");
+  });
+
+  test("simple crons round-trip and unusual ones open in advanced mode and are saved unchanged", async ({ page }) => {
+    const state: { config: Config } = { config: { ...DEFAULT } };
+    await openBuilder(page, state);
+
+    const simple: Array<[string, string]> = [
+      ["0 0 9 * * *", "daily"],
+      ["0 30 8 * * MON-FRI", "weekly"],
+      ["0 30 8 * * MON,WED", "weekly"],
+      ["0 */15 * * * *", "minutes"],
+      ["0 0 */2 * * *", "hours"],
+      ["0 0 9 1 * *", "monthly"],
+    ];
+    for (const [cron, repeat] of simple) {
+      state.config = { cron, timezone: "Asia/Ho_Chi_Minh" };
+      await page.reload();
+      await page.locator(node).click();
+      await expect(page.getByTestId("schedule-repeat"), cron).toHaveValue(repeat);
+    }
+    state.config = { cron: "0 30 8 * * MON,WED", timezone: "Asia/Ho_Chi_Minh" };
+    await page.reload();
+    await page.locator(node).click();
+    await expect(page.getByTestId("schedule-summary")).toHaveText("Runs at 08:30 on Monday, Wednesday (Vietnam time)");
+
+    for (const cron of ["0 15 10 ? * 6L", "0 0 9-17 * * MON-FRI", "0 */7 * * * *"]) {
+      state.config = { cron, timezone: "Asia/Ho_Chi_Minh" };
+      await page.reload();
+      await page.locator(node).click();
+      await expect(page.getByTestId("schedule-repeat"), cron).toHaveValue("advanced");
+      await expect(page.getByTestId("schedule-cron")).toHaveValue(cron);
+      await page.getByTestId("schedule-timezone").selectOption("Europe/London");
+      await save(page);
+      expect(state.config).toEqual({ cron, timezone: "Europe/London" });
+    }
+  });
+
+  test("advanced mode edits the raw cron and the picker fits the inspector", async ({ page }) => {
+    const state = { config: { ...DEFAULT } };
+    await openBuilder(page, state);
+    await page.getByTestId("schedule-repeat").selectOption("advanced");
+    await expect(page.getByTestId("schedule-cron")).toHaveValue("0 0 9 * * *");
+    await page.getByTestId("schedule-cron").fill("0 0 9 * * MON-FRI");
+    await expect(page.getByTestId("schedule-repeat")).toHaveValue("advanced");
+    await save(page);
+    expect(state.config.cron).toBe("0 0 9 * * MON-FRI");
+
+    const fits = () => page.getByTestId("workflow-inspector").evaluate((el) => el.scrollWidth <= el.clientWidth);
+    expect(await fits()).toBe(true);
+    await page.getByTestId("schedule-repeat").selectOption("weekly");
+    expect(await fits()).toBe(true);
+    const overflow = await page.getByTestId("schedule-config").evaluate((el) => el.scrollWidth > el.clientWidth);
+    expect(overflow).toBe(false);
+  });
+});
