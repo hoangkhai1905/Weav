@@ -1,6 +1,6 @@
-import React, { memo } from 'react';
+import React, { memo, useEffect } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import {
   Play,
   Clock,
@@ -20,9 +20,15 @@ import {
   XCircle,
   GitBranch,
   Filter,
+  Inbox,
+  HardDrive,
+  CalendarDays,
+  Split,
+  Braces,
+  WandSparkles,
 } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
-import { NODE_CATALOG } from '../../lib/constants/nodeCatalog';
+import { NODE_CATALOG, nodeSourcePorts } from '../../lib/constants/nodeCatalog';
 import { getNodeReadinessBadge } from '../../lib/nodeReadiness';
 import { useAttachableConnectionIds } from '../../hooks/useConnections';
 
@@ -51,6 +57,12 @@ const ICON_MAP: Record<string, React.ElementType> = {
   'ocr.extract': Scan,
   'logic.condition': GitBranch,
   'logic.filter': Filter,
+  'trigger.gmail': Inbox,
+  'google.drive': HardDrive,
+  'google.calendar': CalendarDays,
+  'logic.switch': Split,
+  'data.set': Braces,
+  'ai.generate': WandSparkles,
 };
 
 export interface CustomNodeData {
@@ -64,7 +76,7 @@ export interface CustomNodeData {
   selected?: boolean;
 }
 
-export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected }) => {
+export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selected }) => {
   const prefersReducedMotion = useReducedMotion();
   const { t } = useI18nStore();
   const nodeType = (data.nodeType as string) || 'trigger.webhook';
@@ -75,7 +87,14 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
   const readiness = getNodeReadinessBadge(nodeType, config, useAttachableConnectionIds());
   const isNodeSelected = Boolean(selected || data.selected);
   const isUnsupported = !SUPPORTED_NODE_TYPES.has(nodeType);
-  const sourcePorts = NODE_CATALOG.find((item) => item.type === nodeType)?.sourcePorts;
+  const sourcePorts = nodeSourcePorts(nodeType, config);
+  // Two ports keep the original true/false spacing; more (switch cases) grow the card and spread evenly.
+  const portCount = sourcePorts?.length ?? 0;
+  const updateNodeInternals = useUpdateNodeInternals();
+  const portKey = JSON.stringify(sourcePorts?.map((port) => port.id) ?? []);
+  // Switch ports follow config.cases; React Flow must re-measure handles when they change.
+  useEffect(() => { updateNodeInternals(id); }, [id, portKey, updateNodeInternals]);
+  const portTop = (index: number) => (portCount <= 2 ? 36 + index * 32 : ((index + 1) / (portCount + 1)) * 100);
 
   const Icon = ICON_MAP[nodeType] || AlertCircle;
   const isTrigger = nodeType.startsWith('trigger');
@@ -172,6 +191,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
       initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.985 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: prefersReducedMotion ? 0.01 : 0.15, ease: [0.16, 1, 0.3, 1] }}
+      style={portCount > 2 ? { minHeight: portCount * 26 + 16 } : undefined}
       className={`relative w-[232px] select-none rounded-lg border bg-card py-2.5 pl-[15px] pr-3 transition-[border-color,box-shadow] duration-150 ${borderStyle}`}
     >
       <span aria-hidden="true" className={`pointer-events-none absolute -bottom-px -left-px -top-px w-[3px] rounded-l-lg ${stripeClass}`} />
@@ -227,13 +247,13 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ data, selected })
               data-testid={`condition-source-${port.id}`}
               type="source"
               position={Position.Right}
-              style={{ top: `${36 + index * 32}%` }}
+              style={{ top: `${portTop(index)}%` }}
               className={`${handleClass} !-right-1`}
             />
             <span
               data-testid={`condition-port-label-${port.id}`}
-              className="pointer-events-none absolute left-[calc(100%+10px)] z-10 -translate-y-1/2 rounded border border-border bg-card px-1.5 py-px text-[10px] font-medium leading-4 text-text-2"
-              style={{ top: `${36 + index * 32}%` }}
+              className="pointer-events-none absolute left-[calc(100%+10px)] z-10 -translate-y-1/2 whitespace-nowrap rounded border border-border bg-card px-1.5 py-px text-[10px] font-medium leading-4 text-text-2"
+              style={{ top: `${portTop(index)}%` }}
             >
               {t(`builder.cfg.port_${port.id}`) === `builder.cfg.port_${port.id}` ? port.label : t(`builder.cfg.port_${port.id}`)}
             </span>

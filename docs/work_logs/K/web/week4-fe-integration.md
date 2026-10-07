@@ -7,7 +7,7 @@
 | Ngày | `2026-10-06` → `2026-10-07`, Asia/Saigon |
 | Nhánh | `feat/week4-fe-integration`, tạo từ `staging` (`c366fbe`), đã gộp `dev` (`991aa12`) |
 | Người thực hiện | K + AI agent |
-| Trạng thái | Đang tiếp tục: phần (a) xong code + e2e; (b) 6 node mới và (c) trợ lý AI chưa làm |
+| Trạng thái | Đang tiếp tục: (a) và (b) xong (commit, chưa push); (c) trợ lý AI chưa làm |
 | Phạm vi | Đưa các node và trợ lý AI Week 1–4 của backend (`staging`) lên giao diện web |
 
 ## 2. Bối cảnh
@@ -79,7 +79,24 @@ Kiểm tra:
 - Stack thật (2026-10-07 00:50): `docker compose -f compose.yml -f compose.dev.yml --profile app up -d --build` (code đã gộp, bật lại `weav-rabbitmq`); Vite 5173 (của phiên khác, cùng thư mục). Tạo workflow thử `bf546b65-c350-48a4-b310-441ba10aa9c2` qua UI, thêm điều kiện AND/OR (`gt 500` + `eq paid`), Sheets lookup (bảng tính thử, cột A, `limit` 5), email (html, cc 2 địa chỉ, 1 đính kèm URL, `senderName`), Telegram (HTML, im lặng, reply 42; workspace chưa có kết nối TELEGRAM nên form hiện gợi ý + link). `PUT .../draft` → 200 cả hai lần, server trả lại đúng config (`right: 500` là số, `limit: 5`, `replyToMessageId: 42`, `disableNotification: true`). Badge: điều kiện/Sheets/email "Sẵn sàng", Telegram "Chưa cấu hình" (thiếu kết nối). Console: chỉ có `ERR_EMPTY_RESPONSE`/503 từ lần tải đầu khi stack vừa khởi động; document hiện tại không có request lỗi.
 - Lỗi tìm thấy khi kiểm stack thật và đã sửa: hàng đính kèm, `select` nguồn có cả `w-full` và `w-28` nên ô URL chỉ còn 21px (tràn panel). Tách class; đo lại ô URL 200px. Thêm assertion độ rộng > 150px vào e2e email; 4/4 qua.
 - Chưa làm: chạy thật (publish + run) workflow với Sheets lookup/email gửi thật; publish, gửi Telegram cần kết nối bot.
-- Workflow thử `bf546b65…` còn trong workspace (chưa xóa, chờ user đồng ý).
+- Workflow thử `bf546b65…`: user đồng ý, đã xóa qua UI (DELETE 204).
+
+## 6b. Phần (b): 6 node mới + provider Drive/Calendar (2026-10-07)
+
+Chia việc: agent chính lên kế hoạch, viết code chính, review, commit; subagent Sonnet làm i18n, e2e và kiểm trên stack thật (user yêu cầu để tiết kiệm token).
+
+- Kết nối: `api/connection.api.ts` thêm `GOOGLE_CALENDAR`, `GOOGLE_DRIVE` (`GOOGLE_PROVIDERS`). **Sửa lỗi ngầm**: `parseConnection` từ chối provider lạ, nên một kết nối Drive/Calendar làm hỏng cả danh sách. `ConnectionsPage` cho tạo 2 provider mới + OAuth.
+- Catalog (`nodeCatalog.ts`): `trigger.gmail`, `google.drive`, `google.calendar`, `logic.switch`, `data.set`, `ai.generate` (icon, palette, default config). `nodeSourcePorts`: switch có một cổng mỗi case + `default` (bỏ case trống và `default`); `CustomWorkflowNode` rải cổng đều khi > 2, node cao theo số cổng, `useUpdateNodeInternals` khi cổng đổi, nhãn cổng không xuống dòng.
+- Inspector: `SCHEMA_FORMS` trong `WorkflowBuilderPage.tsx` render bằng `SchemaField` theo thao tác (Gmail trigger, Drive upload/list, Calendar create/list, AI generate), kèm chọn kết nối theo provider + nút thêm kết nối. `SchemaField` thêm textarea và mảng chuỗi (attendees: "a, b" → mảng; mapping giữ chuỗi). Viết tay: `SwitchEditor` (value + 1–20 case, báo lỗi trống/`default`/mapping/trùng; đổi hoặc xóa case thì bỏ cạnh của cổng đó), `DataSetEditor` (tên/giá trị, tối đa 100, tên ≤ 128, báo trùng; hoặc mapping).
+- Readiness (`nodeReadiness.ts`): Drive upload có `content` cần `name`, `content` + `file` cùng lúc = chưa cấu hình; Calendar create cần summary/start/end; switch/data.set theo `DefinitionValidator`; AI cần prompt. Thông báo inspector + publish blocker cho cả 6.
+- i18n: subagent thêm 90 key vi + en (tên node, nhãn field + gợi ý, thông báo, switch, data.set, `port_default`); script kiểm không thiếu key, không trùng.
+- Sửa thêm: `ConditionEditor.tsx` export hằng làm eslint `react-refresh/only-export-components` báo lỗi (lọt từ commit `ac03bee`) → bỏ export.
+
+Kiểm tra:
+- `tsc --noEmit -p tsconfig.app.json`, eslint các file đã đổi, `pnpm build`, `git diff --check`: qua (build từng fail vì spec dùng `HTMLOptionElement`, đã đổi sang `getAttribute`).
+- Playwright: subagent thêm describe "workflow builder Week 4 new nodes" (8 test: Drive, Calendar, Gmail trigger, AI generate, switch + bỏ cạnh, data.set, Connections page 2 provider, palette). Week 4: 12/12 qua; lặp 3 lần 36/36. Cả spec: 53 qua, 2 fail đúng 2 lỗi có sẵn (401 adapter). Một lần chạy đầu fail 1 test `toContainText` không lặp lại được (nghi Vite biên dịch lần đầu).
+- Stack thật (subagent, browser pane): workflow thử `3b2a581f-893f-4ade-b76e-4c963385beea`, thêm cả 6 node, `PUT .../draft` → 200; server trả đúng kiểu (`cases` mảng, `fields` object, `maxLength` 200, `attendees` mảng, `pageSize` 20, `pollIntervalMinutes` 15). Workspace chưa có kết nối Gmail/Drive/Calendar nên inspector hiện gợi ý + nút thêm. Console: chỉ 403 refresh lúc tải trang rồi retry 200. Đã xóa workflow thử (DELETE 204).
+- Giới hạn đã biết: `data.set` lưu mọi giá trị dạng chuỗi (`42` → `"42"`); muốn số thì dùng mapping hoặc thêm chọn kiểu sau. Đổi Drive/Calendar sang `list` không xóa các key của `upload`/`create` (vô hại với executor, chưa kiểm). Chưa chạy thật (publish + run), chưa thử OAuth cho 2 provider mới.
 
 ## 7. Hướng dẫn cho agent tiếp theo
 

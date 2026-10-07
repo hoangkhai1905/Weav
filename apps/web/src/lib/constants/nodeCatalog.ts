@@ -132,6 +132,68 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
     outputs: [{ name: 'summary', type: 'string' }],
   },
   {
+    type: 'trigger.gmail',
+    title: 'New Gmail email',
+    description: 'Start the workflow when a Gmail search finds a new email.',
+    category: 'trigger',
+    iconName: 'Inbox',
+    defaultConfig: { pollIntervalMinutes: 5 },
+    inputs: [],
+    outputs: [{ name: 'input', type: 'object' }],
+  },
+  {
+    type: 'google.drive',
+    title: 'Google Drive',
+    description: 'Upload a file to or list files in Google Drive.',
+    category: 'action',
+    iconName: 'HardDrive',
+    defaultConfig: { operation: 'upload' },
+    inputs: [{ name: 'data', type: 'any' }],
+    outputs: [{ name: 'result', type: 'object' }],
+  },
+  {
+    type: 'google.calendar',
+    title: 'Google Calendar',
+    description: 'Create or list Google Calendar events.',
+    category: 'action',
+    iconName: 'CalendarDays',
+    defaultConfig: { operation: 'create' },
+    inputs: [{ name: 'data', type: 'any' }],
+    outputs: [{ name: 'result', type: 'object' }],
+  },
+  {
+    type: 'logic.switch',
+    title: 'Switch',
+    description: 'Route to the branch whose case equals the value, else default.',
+    category: 'logic',
+    iconName: 'Split',
+    defaultConfig: { value: '', cases: [] },
+    inputs: [{ name: 'value', type: 'any' }],
+    outputs: [],
+    // The case ports come from config.cases (nodeSourcePorts); "default" always exists.
+    sourcePorts: [{ id: 'default', label: 'Default' }],
+  },
+  {
+    type: 'data.set',
+    title: 'Set data',
+    description: 'Build named values from literals and mappings for later steps.',
+    category: 'logic',
+    iconName: 'Braces',
+    defaultConfig: { fields: {} },
+    inputs: [{ name: 'data', type: 'any' }],
+    outputs: [{ name: 'fields', type: 'object' }],
+  },
+  {
+    type: 'ai.generate',
+    title: 'Generate text with AI',
+    description: 'Write text from a prompt and optional instructions.',
+    category: 'ai',
+    iconName: 'WandSparkles',
+    defaultConfig: { prompt: '' },
+    inputs: [{ name: 'prompt', type: 'string' }],
+    outputs: [{ name: 'text', type: 'string' }],
+  },
+  {
     type: 'ocr.extract',
     title: 'OCR Text Extract',
     description: 'Workflow OCR execution is unavailable until service and artifact prerequisites are verified.',
@@ -148,3 +210,12 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
     ],
   },
 ];
+
+/** Output ports of a step: logic.switch has one per case plus "default"; others use the catalog. */
+export const nodeSourcePorts = (type: string, config: Record<string, unknown>): Array<{ id: string; label: string }> | undefined => {
+  if (type === 'logic.switch') {
+    const cases = Array.isArray(config.cases) ? config.cases.filter((item): item is string => typeof item === 'string' && item.trim() !== '' && item !== 'default') : [];
+    return [...new Set(cases)].map((item) => ({ id: item, label: item })).concat({ id: 'default', label: 'Default' });
+  }
+  return NODE_CATALOG.find((item) => item.type === type)?.sourcePorts;
+};

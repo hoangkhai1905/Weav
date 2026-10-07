@@ -43,6 +43,12 @@ import {
   Plus,
   Undo2,
   Redo2,
+  Inbox,
+  HardDrive,
+  CalendarDays,
+  Split,
+  Braces,
+  WandSparkles,
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
@@ -61,11 +67,13 @@ import { CreateConnectionDialog } from './ConnectionsPage';
 import { storeOAuthPendingContext } from '../lib/oauthPending';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
-import { NODE_CATALOG } from '../lib/constants/nodeCatalog';
+import { NODE_CATALOG, nodeSourcePorts } from '../lib/constants/nodeCatalog';
 import { getNodeReadinessBadge, isConditionComplete } from '../lib/nodeReadiness';
 import { SchemaField } from '../components/builder/SchemaField';
 import { ConditionEditor } from '../components/builder/ConditionEditor';
 import { AttachmentsEditor } from '../components/builder/AttachmentsEditor';
+import { SwitchEditor } from '../components/builder/SwitchEditor';
+import { DataSetEditor } from '../components/builder/DataSetEditor';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
 import { definitionToCanvas, type GenerationResponse } from '../api/workflow-v1.api';
@@ -96,6 +104,12 @@ const PALETTE_PRESENTATION: Record<
   'ai.classify': { nameKey: 'builder.node.ai_classify', descKey: 'builder.node.ai_classify_desc', icon: Tags },
   'ai.summarize': { nameKey: 'builder.node.ai_summarize', descKey: 'builder.node.ai_summarize_desc', icon: FileText },
   'ocr.extract': { nameKey: 'builder.node.ocr', descKey: 'builder.node.ocr_desc', icon: Scan },
+  'trigger.gmail': { nameKey: 'builder.node.gmail_trigger', descKey: 'builder.node.gmail_trigger_desc', icon: Inbox },
+  'google.drive': { nameKey: 'builder.node.google_drive', descKey: 'builder.node.google_drive_desc', icon: HardDrive },
+  'google.calendar': { nameKey: 'builder.node.google_calendar', descKey: 'builder.node.google_calendar_desc', icon: CalendarDays },
+  'logic.switch': { nameKey: 'builder.node.switch', descKey: 'builder.node.switch_desc', icon: Split },
+  'data.set': { nameKey: 'builder.node.data_set', descKey: 'builder.node.data_set_desc', icon: Braces },
+  'ai.generate': { nameKey: 'builder.node.ai_generate', descKey: 'builder.node.ai_generate_desc', icon: WandSparkles },
 };
 
 const PALETTE_CATEGORY_KEYS = {
@@ -149,6 +163,40 @@ const CONNECTION_STEP_MESSAGES: Record<string, [string, string, string]> = {
   'google.sheets': ['builder.cfg.msg_sheets_select', 'builder.cfg.msg_sheets_auth', 'builder.cfg.msg_sheets_fields'],
   'email.send': ['builder.cfg.msg_gmail_select', 'builder.cfg.msg_gmail_auth', 'builder.cfg.msg_email_fields'],
   'telegram.send_message': ['builder.cfg.msg_tg_select', 'builder.cfg.msg_tg_auth', 'builder.cfg.msg_tg_fields'],
+  'trigger.gmail': ['builder.cfg.msg_gmail_select', 'builder.cfg.msg_gmail_auth', 'builder.cfg.msg_gmail_select'],
+  'google.drive': ['builder.cfg.msg_drive_select', 'builder.cfg.msg_drive_auth', 'builder.cfg.msg_drive_fields'],
+  'google.calendar': ['builder.cfg.msg_calendar_select', 'builder.cfg.msg_calendar_auth', 'builder.cfg.msg_calendar_fields'],
+};
+const PROVIDER_NAMES: Record<GoogleProvider, string> = {
+  GMAIL: 'Gmail',
+  GOOGLE_SHEETS: 'Google Sheets',
+  GOOGLE_CALENDAR: 'Google Calendar',
+  GOOGLE_DRIVE: 'Google Drive',
+};
+
+// Readiness message of the steps without a connection that the badge marks as not configured.
+const FIELD_STEP_MESSAGES: Record<string, string> = {
+  'logic.switch': 'builder.cfg.msg_switch',
+  'data.set': 'builder.cfg.msg_data_set',
+  'ai.generate': 'builder.cfg.msg_ai_generate',
+};
+
+// Steps whose inspector is rendered from packages/workflow-schema (SchemaField), per operation.
+const SCHEMA_FORMS: Record<string, { provider?: GoogleProvider; fields: (config: Record<string, unknown>) => string[]; multiline?: string[] }> = {
+  'trigger.gmail': { provider: 'GMAIL', fields: () => ['query', 'pollIntervalMinutes'] },
+  'google.drive': {
+    provider: 'GOOGLE_DRIVE',
+    fields: (config) => ['operation', ...(config.operation === 'list' ? ['folderId', 'nameContains', 'pageSize'] : ['file', 'content', 'name', 'mimeType', 'folderId'])],
+    multiline: ['content'],
+  },
+  'google.calendar': {
+    provider: 'GOOGLE_CALENDAR',
+    fields: (config) => ['operation', 'calendarId', ...(config.operation === 'list'
+      ? ['timeMin', 'timeMax', 'maxResults', 'query']
+      : ['summary', 'start', 'end', 'timeZone', 'description', 'location', 'attendees', 'sendInvitations'])],
+    multiline: ['description'],
+  },
+  'ai.generate': { fields: () => ['prompt', 'instructions', 'maxLength'], multiline: ['prompt', 'instructions'] },
 };
 
 const getNodeReadinessMessage = (
@@ -168,6 +216,9 @@ const getNodeReadinessMessage = (
     if (state === 'authorization-required') return t(authKey);
     if (!String(config.connectionId ?? '').trim()) return t(selectKey);
     return t(fieldsKey);
+  }
+  if (FIELD_STEP_MESSAGES[type]) {
+    return getNodeReadinessBadge(type, config).state === 'ready' ? undefined : t(FIELD_STEP_MESSAGES[type]);
   }
   if (type === 'trigger.telegram') return t('builder.cfg.msg_tg_trigger');
   if (type === 'logic.condition' && !isConditionComplete(config)) {
@@ -216,7 +267,7 @@ const getPublishBlockers = (nodes: Node[], edges: Edge[], t: (key: string) => st
     if (type === 'http.request' && !String(config.url ?? '').trim()) {
       blockers.add(t('builder.blocker.http'));
     }
-    if (CONNECTION_STEP_MESSAGES[type]) {
+    if (CONNECTION_STEP_MESSAGES[type] || FIELD_STEP_MESSAGES[type]) {
       const message = getNodeReadinessMessage(type, config, t, attachableConnectionIds);
       if (message) blockers.add(message);
     }
@@ -279,7 +330,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     [workspaceConnections],
   );
   // Schema-rendered field bound to the selected step's config (see components/builder/SchemaField).
-  const configField = (name: string, connections?: { id: string; name: string }[]) => (
+  const configField = (name: string, connections?: { id: string; name: string }[], multiline?: boolean) => (
     <SchemaField
       key={name}
       nodeType={selectedNodeType}
@@ -287,8 +338,16 @@ export const WorkflowBuilderPage: React.FC = () => {
       value={selectedNodeConfig[name]}
       onChange={(value) => updateSelectedNodeConfig({ [name]: value })}
       connections={connections}
+      multiline={multiline}
     />
   );
+  const selectedSchemaForm = SCHEMA_FORMS[selectedNodeType];
+  // Edges leave a switch by case name; drop the ones whose case was removed or renamed (INVALID_SOURCE_PORT).
+  const updateSwitchCases = (cases: string[]) => {
+    updateSelectedNodeConfig({ cases });
+    setEdges((eds) => eds.filter((edge) => edge.source !== selectedNodeId || !edge.sourceHandle
+      || edge.sourceHandle === 'default' || cases.includes(edge.sourceHandle)));
+  };
   const unsupportedNodeTypes = useMemo(
     () => [...new Set(nodes.map((node) => String(node.data?.nodeType ?? '')).filter((type) => !SUPPORTED_NODE_TYPES.has(type)))],
     [nodes]
@@ -1048,7 +1107,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     const anchorType = String(anchor?.data?.nodeType ?? '');
     const linkFromAnchor = Boolean(anchor)
       && !type.startsWith('trigger.')
-      && !NODE_CATALOG.find((item) => item.type === anchorType)?.sourcePorts
+      && !nodeSourcePorts(anchorType, (anchor?.data?.config ?? {}) as Record<string, unknown>)
       && !edges.some((edge) => edge.source === anchor?.id);
     const newNode: Node = {
       id: newNodeId,
@@ -1658,6 +1717,37 @@ export const WorkflowBuilderPage: React.FC = () => {
                     {JSON.stringify(selectedNodeConfig, null, 2)}
                   </pre>
                 </div>
+              ) : selectedSchemaForm ? (
+                <div data-testid="schema-config" className="space-y-3">
+                  {selectedSchemaForm.provider && (() => {
+                    const provider = selectedSchemaForm.provider;
+                    const options = (workspaceConnections ?? []).filter(
+                      (connection) => connection.provider === provider && connection.status === 'ACTIVE' && connection.canAttach,
+                    );
+                    return (
+                      <div>
+                        {configField('connectionId', options)}
+                        {!isLoadingConnections && options.length === 0 && (
+                          <p className="mt-1 text-[10px] text-muted-foreground">
+                            {t('builder.cfg.no_provider_connection').replace('{provider}', PROVIDER_NAMES[provider])}{' '}
+                            <Link to="/workspace/connections" className="text-run underline">{t('builder.cfg.sheets_link')}</Link>.
+                          </p>
+                        )}
+                        {activeWorkspaceId && workflow && (
+                          <button type="button" data-testid={`add-connection-${provider}`} onClick={() => selectedNodeId && setAddConnectionFor({ provider, nodeId: selectedNodeId })} className={addConnectionButtonCls}>
+                            <Plus size={12} aria-hidden="true" />{t('builder.cfg.add_provider_connection').replace('{provider}', PROVIDER_NAMES[provider])}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  {selectedSchemaForm.fields(selectedNodeConfig).map((name) => configField(name, undefined, selectedSchemaForm.multiline?.includes(name)))}
+                  {selectedNodeType === 'google.drive' && <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.drive_hint')}</p>}
+                </div>
+              ) : selectedNodeType === 'logic.switch' ? (
+                <SwitchEditor config={selectedNodeConfig} onChange={updateSelectedNodeConfig} onCasesChange={updateSwitchCases} />
+              ) : selectedNodeType === 'data.set' ? (
+                <DataSetEditor key={selectedNodeId} value={selectedNodeConfig.fields} onChange={(fields) => updateSelectedNodeConfig({ fields })} />
               ) : selectedNodeType === 'logic.condition' ? (
                 <ConditionEditor config={selectedNodeConfig} onChange={updateSelectedNodeConfig} />
               ) : selectedNodeType === 'trigger.schedule' ? (

@@ -12,14 +12,17 @@ interface SchemaFieldProps {
   onChange: (value: unknown) => void;
   /** Options for an `x-weav-connection` field. */
   connections?: { id: string; name: string }[];
+  /** Render a text field as a textarea (prompts, file content, descriptions). */
+  multiline?: boolean;
 }
 
 /**
  * One node config field rendered from its JSON Schema property (packages/workflow-schema/README.md):
- * enum → select, boolean → checkbox, integer → number-or-mapping text, anything else → text.
+ * enum → select, boolean → checkbox, integer → number-or-mapping text, array of strings → comma list,
+ * anything else → text.
  * Labels come from `builder.field.<type>.<name>` (fallback: schema title); `..._hint` adds help text.
  */
-export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value, onChange, connections }) => {
+export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value, onChange, connections, multiline }) => {
   const { t } = useI18nStore();
   const property = NODE_SCHEMAS[nodeType]?.properties[name];
   if (!property) return null;
@@ -49,6 +52,25 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
         {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
         {text && !options.some((option) => option.id === text) && <option value={text}>{property.enum ? text : t('builder.cfg.unavailable_connection')}</option>}
       </select>
+    );
+  } else if (multiline) {
+    control = (
+      <textarea id={id} data-testid={`field-${name}`} rows={4} value={text} onChange={(event) => onChange(event.target.value === '' ? undefined : event.target.value)} className={`${inputCls} resize-y`} />
+    );
+  } else if (property.type === 'array') {
+    // "a@x.test, b@x.test" is saved as a list; a mapping stays one string resolved at run time.
+    control = (
+      <input
+        id={id}
+        data-testid={`field-${name}`}
+        type="text"
+        value={text}
+        onChange={(event) => {
+          const next = event.target.value;
+          onChange(next.trim() === '' ? undefined : next.includes('{{') ? next : next.split(',').map((item) => item.trim()));
+        }}
+        className={`${inputCls} font-mono`}
+      />
     );
   } else {
     // Integer fields also take a mapping such as {{ trigger.input.id }}; plain digits are saved as a number.

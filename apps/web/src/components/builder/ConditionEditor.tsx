@@ -5,7 +5,7 @@ import { useI18nStore } from '../../store/useI18nStore';
 const inputCls = 'w-full min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
 const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
 
-export const CONDITION_OPERATORS = [
+const CONDITION_OPERATORS = [
   { value: 'eq', labelKey: 'builder.cfg.op_eq' },
   { value: 'ne', labelKey: 'builder.cfg.op_ne' },
   { value: 'gt', labelKey: 'builder.cfg.op_gt' },
