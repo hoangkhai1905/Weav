@@ -28,8 +28,10 @@ export function getSafeNotificationRoute(value: unknown): SafeNotificationRoute 
         ? `/(app)/workflows/${target.workflowId}`
         : null;
     case 'EXECUTION':
+      // CONTRACT LIMITATION: the notification has no workflowId, so it opens the lookup screen,
+      // which resolves it via executionRepository.findWorkflowIdForExecution.
       return isUuid(target.workspaceId) && isUuid(target.executionId)
-        ? `/(app)/executions/${target.executionId}`
+        ? `/(app)/executions/lookup/${target.executionId}`
         : null;
     case 'WORKSPACE':
       return isUuid(target.workspaceId) ? '/(app)/workspace' : null;

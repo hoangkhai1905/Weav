@@ -63,7 +63,7 @@ function assertScreenWiring(caller) {
   const mutationAt = source.indexOf('runMutation.mutateAsync(', awaitAt);
   const guardAt = source.indexOf("if (completion.status !== 'success') return;", mutationAt);
   const resetAt = source.indexOf('setPayloadInput(\'\');', guardAt);
-  const navigationAt = source.indexOf('router.push(`/(app)/executions/${res.executionId}`)', guardAt);
+  const navigationAt = source.indexOf('router.push(`/(app)/executions/${res.workflowId}/${res.executionId}`)', guardAt);
   assert.ok(mutationAt > awaitAt, `${caller.name} must pass its run mutation into the fence`);
   assert.ok(guardAt > mutationAt, `${caller.name} must stop stale/failed completion before UI effects`);
   assert.ok(resetAt > guardAt, `${caller.name} must reset UI only after the session fence`);
@@ -80,7 +80,7 @@ async function runScreenCompletion(caller, observer, effects) {
 
   caller.reset(effects);
   if (completion.result?.executionId) {
-    effects.routes.push(`/(app)/executions/${completion.result.executionId}`);
+    effects.routes.push(`/(app)/executions/${completion.result.workflowId}/${completion.result.executionId}`);
   }
   return completion;
 }
@@ -103,7 +103,7 @@ for (const caller of callers) {
 
     const running = runScreenCompletion(caller, observer, effects);
     setSession('account-b');
-    pending.resolve({ executionId: 'execution-from-account-a' });
+    pending.resolve({ executionId: 'execution-from-account-a', workflowId: 'workflow-a' });
     await running;
 
     assert.deepEqual(effects, { modalOpen: true, payload: '{"a":1}', routes: [] });
@@ -122,7 +122,7 @@ for (const caller of callers) {
 
     const running = runScreenCompletion(caller, observer, effects);
     useAuthStore.getState().clearAuthSession();
-    pending.resolve({ executionId: 'execution-after-logout' });
+    pending.resolve({ executionId: 'execution-after-logout', workflowId: 'workflow-a' });
     await running;
 
     assert.deepEqual(effects, { modalOpen: true, payload: '{"a":1}', routes: [] });
@@ -143,7 +143,7 @@ for (const caller of callers) {
     const running = runScreenCompletion(caller, observer, effects);
     setSession('account-a');
     assert.notEqual(useAuthStore.getState().sessionGeneration, firstGeneration);
-    pending.resolve({ executionId: 'execution-from-old-generation' });
+    pending.resolve({ executionId: 'execution-from-old-generation', workflowId: 'workflow-a' });
     await running;
 
     assert.deepEqual(effects, { modalOpen: true, payload: '{"a":1}', routes: [] });
@@ -162,11 +162,11 @@ for (const caller of callers) {
     const effects = { modalOpen: true, payload: '{"a":1}', routes: [] };
 
     const running = runScreenCompletion(caller, observer, effects);
-    pending.resolve({ executionId: 'execution-current' });
+    pending.resolve({ executionId: 'execution-current', workflowId: 'workflow-current' });
     const completion = await running;
     assert.equal(completion.status, 'success', JSON.stringify(toasts.map(({ type, title, message }) => ({ type, title, message }))));
 
-    assert.deepEqual(effects, { modalOpen: false, payload: '', routes: ['/(app)/executions/execution-current'] });
+    assert.deepEqual(effects, { modalOpen: false, payload: '', routes: ['/(app)/executions/workflow-current/execution-current'] });
     assert.equal(toasts.length, 1);
     assert.equal(toasts[0].type, 'success');
     assert.equal(toasts[0].title, 'Đã gửi lượt chạy');

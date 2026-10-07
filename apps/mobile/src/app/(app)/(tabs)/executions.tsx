@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Clock, ChevronRight } from 'lucide-react-native';
 import { useExecutions } from '../../../features/executions/hooks/useExecutions';
+import { useWorkflowNames } from '../../../features/workflows/hooks/useWorkflows';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
@@ -13,6 +14,7 @@ export default function ExecutionsScreen() {
   const colors = useThemeColors();
   const { t } = useTranslation();
   const { data: executions, isLoading, refetch } = useExecutions();
+  const workflowNames = useWorkflowNames();
 
   const [filter, setFilter] = useState<'ALL' | 'RUNNING' | 'SUCCESS' | 'FAILED'>('ALL');
   const [refreshing, setRefreshing] = useState(false);
@@ -25,7 +27,7 @@ export default function ExecutionsScreen() {
 
   const filtered = (executions || []).filter((e) => {
     if (filter === 'ALL') return true;
-    if (filter === 'RUNNING') return e.status === 'RUNNING' || e.status === 'QUEUED';
+    if (filter === 'RUNNING') return e.status === 'RUNNING' || e.status === 'QUEUED' || e.status === 'WAITING';
     return e.status === filter;
   });
 
@@ -63,18 +65,18 @@ export default function ExecutionsScreen() {
       {/* Execution Cards List */}
       <FlatList
         data={filtered}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.executionId}
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         renderItem={({ item }) => (
           <Pressable
             style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => router.push(`/(app)/executions/${item.id}`)}
+            onPress={() => router.push(`/(app)/executions/${item.workflowId}/${item.executionId}`)}
           >
             <View style={styles.cardHeader}>
               <View style={styles.cardInfo}>
-                <Text style={[styles.wfName, { color: colors.text }]} numberOfLines={1}>{item.workflowName}</Text>
-                <Text style={[styles.execId, { color: colors.textSubtle }]}>{item.id} • {item.triggerType}</Text>
+                <Text style={[styles.wfName, { color: colors.text }]} numberOfLines={1}>{workflowNames.get(item.workflowId) ?? item.workflowId}</Text>
+                <Text style={[styles.execId, { color: colors.textSubtle }]}>{item.executionId.slice(0, 8)} • {item.triggerType}</Text>
               </View>
               <StatusBadge status={item.status} />
             </View>
@@ -83,7 +85,7 @@ export default function ExecutionsScreen() {
               <View style={styles.metaItem}>
                 <Clock color={colors.textSubtle} size={13} />
                 <Text style={[styles.metaText, { color: colors.textMuted }]}>
-                  {item.durationMs ? `${(item.durationMs / 1000).toFixed(1)}s` : 'Processing...'}
+                  {item.durationMs ? `${(item.durationMs / 1000).toFixed(1)}s` : t('execution.running_duration')}
                 </Text>
               </View>
               <View style={styles.detailLink}>

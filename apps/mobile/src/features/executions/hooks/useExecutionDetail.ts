@@ -1,25 +1,19 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { executionRepository } from '../../../infrastructure/repository-factory';
+import { ACTIVE_EXECUTION_STATUSES } from '../../../domain/execution/execution.types';
+import { useActiveWorkspaceId } from '../../workspace/active-workspace';
 
-export function useExecutionDetail(id: string) {
+/** An execution is only readable through its workflow, hence both ids. */
+export function useExecutionDetail(workflowId: string, executionId: string) {
+  const workspaceId = useActiveWorkspaceId();
   return useQuery({
-    queryKey: ['execution', id],
-    queryFn: () => executionRepository.getExecution(id),
-    enabled: !!id,
+    queryKey: ['execution', workspaceId, workflowId, executionId],
+    queryFn: () =>
+      executionRepository.getExecution(workspaceId ?? '', workflowId, executionId, { logSize: 50 }),
+    enabled: !!workspaceId && !!workflowId && !!executionId,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return status === 'QUEUED' || status === 'RUNNING' ? 1500 : false;
-    },
-  });
-}
-
-export function useRetryExecution() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => executionRepository.retryExecution(id),
-    onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ['executions'] });
-      queryClient.invalidateQueries({ queryKey: ['execution', res.id] });
+      return status && ACTIVE_EXECUTION_STATUSES.includes(status) ? 2000 : false;
     },
   });
 }

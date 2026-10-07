@@ -9,11 +9,13 @@ import { useRunWorkflow } from '../../../features/workflows/hooks/useRunWorkflow
 import { completeWorkflowRunInCurrentSession } from '../../../features/workflows/run-workflow.session';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { useThemeColors } from '../../../hooks/useThemeColors';
+import { useTranslation } from '../../../hooks/useTranslation';
 
 export default function WorkflowDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const colors = useThemeColors();
+  const { t } = useTranslation();
   const { data: workflow, isLoading } = useWorkflowDetail(id || '');
 
   const pauseMutation = usePauseWorkflow();
@@ -43,14 +45,14 @@ export default function WorkflowDetailScreen() {
       }
     }
     const completion = await completeWorkflowRunInCurrentSession(
-      () => runMutation.mutateAsync({ id: workflow.id, input }),
+      () => runMutation.mutateAsync({ id: workflow.workflowId, input }),
     );
     if (completion.status !== 'success') return;
     const res = completion.result;
     setShowRunModal(false);
     setPayloadInput('');
     if (res?.executionId) {
-      router.push(`/(app)/executions/${res.executionId}`);
+      router.push(`/(app)/executions/${res.workflowId}/${res.executionId}`);
     }
   };
 
@@ -82,20 +84,20 @@ export default function WorkflowDetailScreen() {
           <View style={[styles.infoGrid, { borderTopColor: colors.border }]}>
             <View style={styles.infoItem}>
               <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>Trigger Type</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]}>{workflow.triggerType}</Text>
+              <Text style={[styles.infoValue, { color: colors.text }]}>{workflow.triggers[0]?.type ?? t('workflow.trigger_manual')}</Text>
             </View>
             <View style={styles.infoItem}>
-              <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>Version</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]}>v{workflow.version}</Text>
+              <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>{t('workflow.revision')}</Text>
+              <Text style={[styles.infoValue, { color: colors.text }]}>{workflow.revision}</Text>
             </View>
             <View style={styles.infoItem}>
-              <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>Owner</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]}>{workflow.ownerName}</Text>
+              <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>{t('workflow.updated_at')}</Text>
+              <Text style={[styles.infoValue, { color: colors.text }]}>{new Date(workflow.updatedAt).toLocaleDateString()}</Text>
             </View>
             <View style={styles.infoItem}>
-              <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>Last Run</Text>
+              <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>{t('workflow.published_at')}</Text>
               <Text style={[styles.infoValue, { color: colors.text }]}>
-                {workflow.lastRunAt ? new Date(workflow.lastRunAt).toLocaleTimeString() : 'Never'}
+                {workflow.publishedAt ? new Date(workflow.publishedAt).toLocaleDateString() : t('workflow.not_published')}
               </Text>
             </View>
           </View>
@@ -109,7 +111,7 @@ export default function WorkflowDetailScreen() {
                 <Play color="#ffffff" size={16} />
                 <Text style={styles.runBtnText}>Run Workflow Now</Text>
               </Pressable>
-              <Pressable style={[styles.pauseBtn, { backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong }]} onPress={() => pauseMutation.mutate(workflow.id)}>
+              <Pressable style={[styles.pauseBtn, { backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong }]} onPress={() => pauseMutation.mutate(workflow.workflowId)}>
                 <Pause color={colors.warning} size={16} />
                 <Text style={[styles.pauseBtnText, { color: colors.warning }]}>Pause Workflow</Text>
               </Pressable>
@@ -117,7 +119,7 @@ export default function WorkflowDetailScreen() {
           )}
 
           {workflow.status === 'PAUSED' && (
-            <Pressable style={[styles.resumeBtn, { backgroundColor: colors.successBg, borderColor: colors.success }]} onPress={() => resumeMutation.mutate(workflow.id)}>
+            <Pressable style={[styles.resumeBtn, { backgroundColor: colors.successBg, borderColor: colors.success }]} onPress={() => resumeMutation.mutate(workflow.workflowId)}>
               <Play color={colors.success} size={16} />
               <Text style={[styles.resumeBtnText, { color: colors.success }]}>Resume Workflow</Text>
             </Pressable>
@@ -138,18 +140,14 @@ export default function WorkflowDetailScreen() {
         </View>
 
         <View style={[styles.nodesTimeline, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {(workflow.nodes || [
-            { id: 'n-1', name: 'Trigger Event', type: workflow.triggerType },
-            { id: 'n-2', name: 'AI Action Processing', type: 'ai.extract' },
-            { id: 'n-3', name: 'Service Output', type: 'sheets.append' },
-          ]).map((node, index, arr) => (
+          {workflow.nodes.map((node, index, arr) => (
             <View key={node.id} style={styles.nodeItem}>
               <View style={styles.nodeRow}>
                 <View style={[styles.nodeBadge, { backgroundColor: colors.cardSecondary }]}>
                   <Layers color={colors.primary} size={16} />
                 </View>
                 <View style={styles.nodeMain}>
-                  <Text style={[styles.nodeName, { color: colors.text }]}>{node.name}</Text>
+                  <Text style={[styles.nodeName, { color: colors.text }]}>{node.name ?? node.type}</Text>
                   <Text style={[styles.nodeType, { color: colors.textSubtle }]}>{node.type}</Text>
                 </View>
               </View>

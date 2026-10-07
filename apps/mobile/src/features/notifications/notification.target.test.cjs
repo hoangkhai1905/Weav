@@ -22,7 +22,7 @@ test('maps only validated catalog targets to fixed Expo routes', () => {
   );
   assert.equal(
     getSafeNotificationRoute(notification({ kind: 'EXECUTION', workspaceId, executionId }).target),
-    `/(app)/executions/${executionId}`,
+    `/(app)/executions/lookup/${executionId}`,
   );
   assert.equal(getSafeNotificationRoute({ kind: 'WORKSPACE', workspaceId }), '/(app)/workspace');
   assert.equal(

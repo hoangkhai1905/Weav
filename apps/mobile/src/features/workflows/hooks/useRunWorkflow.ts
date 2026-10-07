@@ -1,9 +1,11 @@
 import { useMutation, useQueryClient, type QueryClient, type UseMutationOptions } from '@tanstack/react-query';
 import { workflowRepository } from '../../../infrastructure/repository-factory';
 import { useUIStore } from '../../../stores/ui.store';
+import type { WorkflowRunAccepted } from '../../../domain/workflow/workflow.types';
 import { captureAuthSessionScope, isAuthSessionScopeCurrent } from '../../auth/auth-session.scope';
 import { showMilestoneToastForSession } from '../../feedback/milestone-toast';
 import { notificationQueryKey } from '../../notifications/notification.query';
+import { getActiveWorkspaceId } from '../../workspace/active-workspace';
 
 type RunWorkflowVariables = { id: string; input?: Record<string, unknown> };
 type RunWorkflowScope = ReturnType<typeof captureAuthSessionScope>;
@@ -12,9 +14,10 @@ type ShowToast = ReturnType<typeof useUIStore.getState>['showToast'];
 export function createRunWorkflowMutationOptions(
   queryClient: QueryClient,
   showToast: ShowToast,
-): UseMutationOptions<{ executionId: string }, Error, RunWorkflowVariables, RunWorkflowScope> {
+): UseMutationOptions<WorkflowRunAccepted, Error, RunWorkflowVariables, RunWorkflowScope> {
   return {
-    mutationFn: ({ id, input }) => workflowRepository.runWorkflow(id, input),
+    // The repository creates one Idempotency-Key per call and reuses it if it retries a 504/timeout.
+    mutationFn: ({ id, input }) => workflowRepository.runWorkflow(getActiveWorkspaceId(), id, { input }),
     onMutate: () => captureAuthSessionScope(),
     onSuccess: (res, _variables, scope) => {
       if (!scope || !isAuthSessionScopeCurrent(scope)) return res;

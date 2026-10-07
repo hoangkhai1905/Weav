@@ -16,12 +16,12 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'sm' })
   let border = colors.border;
   let dotColor = colors.textSubtle;
 
-  if (upper === 'PUBLISHED' || upper === 'SUCCESS' || upper === 'CONNECTED') {
+  if (upper === 'PUBLISHED' || upper === 'SUCCESS' || upper === 'CONNECTED' || upper === 'ACTIVE') {
     bg = colors.successBg;
     text = colors.success;
     border = colors.isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(5, 150, 105, 0.3)';
     dotColor = colors.success;
-  } else if (upper === 'RUNNING' || upper === 'QUEUED') {
+  } else if (upper === 'RUNNING' || upper === 'QUEUED' || upper === 'WAITING') {
     bg = colors.primaryBg;
     text = colors.primary;
     border = colors.primaryBorder;
@@ -31,7 +31,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'sm' })
     text = colors.warning;
     border = colors.isDark ? 'rgba(245, 158, 11, 0.3)' : 'rgba(217, 119, 6, 0.3)';
     dotColor = colors.warning;
-  } else if (upper === 'FAILED' || upper === 'DISCONNECTED') {
+  } else if (upper === 'FAILED' || upper === 'DISCONNECTED' || upper === 'INVALID') {
     bg = colors.dangerBg;
     text = colors.danger;
     border = colors.isDark ? 'rgba(244, 63, 94, 0.3)' : 'rgba(225, 29, 72, 0.3)';

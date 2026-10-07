@@ -9,7 +9,7 @@ import { completeWorkflowRunInCurrentSession } from '../../../features/workflows
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
-import type { Workflow } from '../../../domain/workflow/workflow.types';
+import type { WorkflowSummary } from '../../../domain/workflow/workflow.types';
 
 export default function WorkflowsScreen() {
   const router = useRouter();
@@ -25,7 +25,7 @@ export default function WorkflowsScreen() {
   const [filter, setFilter] = useState<'ALL' | 'PUBLISHED' | 'PAUSED' | 'DRAFT'>('ALL');
   const [refreshing, setRefreshing] = useState(false);
 
-  const [selectedWfToRun, setSelectedWfToRun] = useState<Workflow | null>(null);
+  const [selectedWfToRun, setSelectedWfToRun] = useState<WorkflowSummary | null>(null);
   const [payloadInput, setPayloadInput] = useState('');
 
   const onRefresh = async () => {
@@ -51,14 +51,14 @@ export default function WorkflowsScreen() {
       }
     }
     const completion = await completeWorkflowRunInCurrentSession(
-      () => runMutation.mutateAsync({ id: selectedWfToRun.id, input }),
+      () => runMutation.mutateAsync({ id: selectedWfToRun.workflowId, input }),
     );
     if (completion.status !== 'success') return;
     const res = completion.result;
     setSelectedWfToRun(null);
     setPayloadInput('');
     if (res?.executionId) {
-      router.push(`/(app)/executions/${res.executionId}`);
+      router.push(`/(app)/executions/${res.workflowId}/${res.executionId}`);
     }
   };
 
@@ -117,18 +117,18 @@ export default function WorkflowsScreen() {
       {/* Workflows List */}
       <FlatList
         data={filtered}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.workflowId}
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         renderItem={({ item }) => (
           <Pressable
             style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => router.push(`/(app)/workflows/${item.id}`)}
+            onPress={() => router.push(`/(app)/workflows/${item.workflowId}`)}
           >
             <View style={styles.cardTop}>
               <View style={styles.cardInfo}>
                 <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                <Text style={[styles.cardMeta, { color: colors.textSubtle }]}>{item.triggerType} • v{item.version}</Text>
+                <Text style={[styles.cardMeta, { color: colors.textSubtle }]}>{t('workflow.updated_at')} {new Date(item.updatedAt).toLocaleDateString()}</Text>
               </View>
               <StatusBadge status={item.status} />
             </View>
@@ -155,7 +155,7 @@ export default function WorkflowsScreen() {
                   </Pressable>
                   <Pressable
                     style={[styles.actionBtn, { backgroundColor: colors.cardSecondary }]}
-                    onPress={() => pauseMutation.mutate(item.id)}
+                    onPress={() => pauseMutation.mutate(item.workflowId)}
                   >
                     <Pause color={colors.warning} size={13} />
                     <Text style={[styles.actionBtnText, { color: colors.warning }]}>{t('workflows.pause')}</Text>
@@ -166,7 +166,7 @@ export default function WorkflowsScreen() {
               {item.status === 'PAUSED' && (
                 <Pressable
                   style={[styles.actionBtn, { backgroundColor: colors.successBg, borderColor: colors.success, borderWidth: 1 }]}
-                  onPress={() => resumeMutation.mutate(item.id)}
+                  onPress={() => resumeMutation.mutate(item.workflowId)}
                 >
                   <Play color={colors.success} size={13} />
                   <Text style={[styles.resumeBtnText, { color: colors.success }]}>{t('workflows.resume')}</Text>
@@ -175,7 +175,7 @@ export default function WorkflowsScreen() {
 
               <Pressable
                 style={[styles.actionBtn, { backgroundColor: colors.cardSecondary }]}
-                onPress={() => router.push(`/(app)/workflows/${item.id}`)}
+                onPress={() => router.push(`/(app)/workflows/${item.workflowId}`)}
               >
                 <ExternalLink color={colors.primary} size={13} />
                 <Text style={[styles.actionBtnText, { color: colors.primary }]}>{t('workflows.view')}</Text>
@@ -199,7 +199,7 @@ export default function WorkflowsScreen() {
             {selectedWfToRun && (
               <View style={styles.modalBody}>
                 <Text style={[styles.modalWfName, { color: colors.primary }]}>{selectedWfToRun.name}</Text>
-                <Text style={[styles.modalLabel, { color: colors.textMuted }]}>Trigger: {selectedWfToRun.triggerType}</Text>
+                <Text style={[styles.modalLabel, { color: colors.textMuted }]}>{t('workflow.updated_at')}: {new Date(selectedWfToRun.updatedAt).toLocaleDateString()}</Text>
 
                 <Text style={[styles.modalLabel, { color: colors.textMuted, marginTop: 12 }]}>Input Payload (Optional JSON):</Text>
                 <TextInput

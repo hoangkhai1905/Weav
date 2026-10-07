@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Sparkles, CheckCircle2, AlertTriangle, Layers, ExternalLink } from 'lucide-react-native';
+import { ArrowLeft, Sparkles, AlertTriangle, Layers, ExternalLink } from 'lucide-react-native';
 import { useAiGenerator } from '../../../features/ai/hooks/useAiGenerator';
 import { useUIStore } from '../../../stores/ui.store';
 import { useThemeColors } from '../../../hooks/useThemeColors';
+import { useTranslation } from '../../../hooks/useTranslation';
 import type { AiGenerationResult } from '../../../domain/ai/ai.types';
 
 const SAMPLE_PROMPTS = [
@@ -17,6 +18,7 @@ const SAMPLE_PROMPTS = [
 export default function AiGeneratorScreen() {
   const router = useRouter();
   const colors = useThemeColors();
+  const { t } = useTranslation();
   const generateMutation = useAiGenerator();
   const showToast = useUIStore((s) => s.showToast);
 
@@ -29,9 +31,11 @@ export default function AiGeneratorScreen() {
       return;
     }
     try {
-      const res = await generateMutation.mutateAsync(prompt);
+      const res = await generateMutation.mutateAsync({ prompt: prompt.trim() });
       setResult(res);
-      showToast({ type: 'success', title: 'Workflow Generated ✨', message: 'AI DAG generated successfully.' });
+      if (res.status === 'ready') {
+        showToast({ type: 'success', title: 'Workflow Generated ✨', message: 'AI DAG generated successfully.' });
+      }
     } catch (e: any) {
       showToast({ type: 'error', title: 'Generation Error', message: e.message });
     }
@@ -98,38 +102,40 @@ export default function AiGeneratorScreen() {
           </Pressable>
         </View>
 
-        {/* AI Result Preview Card */}
-        {result && (
-          <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.primary }]}>
-            <Text style={[styles.resultWfName, { color: colors.text }]}>{result.workflowPreview.name}</Text>
-            <Text style={[styles.resultReasoning, { color: colors.textMuted }]}>{result.reasoning}</Text>
-
-            {/* Validation Banner */}
-            <View style={[styles.valBanner, result.validation.valid ? styles.valSuccess : styles.valWarning]}>
-              {result.validation.valid ? (
-                <CheckCircle2 color={colors.success} size={18} />
-              ) : (
-                <AlertTriangle color={colors.warning} size={18} />
-              )}
+        {/* needs_input / unsupported: answering questions is a later UI step */}
+        {result && result.status !== 'ready' && (
+          <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.warning }]}>
+            <View style={[styles.valBanner, styles.valWarning]}>
+              <AlertTriangle color={colors.warning} size={18} />
               <Text style={[styles.valTitle, { color: colors.text }]}>
-                {result.validation.valid ? 'Valid Workflow DAG' : 'Validation Warnings'}
+                {t(result.status === 'needs_input' ? 'ai.needs_input' : 'ai.unsupported')}
               </Text>
             </View>
+            {result.status === 'needs_input'
+              ? result.questions.map((q, i) => (
+                  <Text key={i} style={[styles.warningText, { color: colors.warning }]}>• {q.code}: {q.field}</Text>
+                ))
+              : result.reasons.map((r, i) => (
+                  <Text key={i} style={[styles.warningText, { color: colors.warning }]}>• {r.code}</Text>
+                ))}
+          </View>
+        )}
 
-            {result.validation.warnings.map((w, i) => (
-              <Text key={i} style={[styles.warningText, { color: colors.warning }]}>• {w}</Text>
-            ))}
+        {/* AI Result Preview Card */}
+        {result && result.status === 'ready' && (
+          <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.primary }]}>
+            <Text style={[styles.resultWfName, { color: colors.text }]}>{result.name}</Text>
 
             {/* Generated Node Chain Preview */}
             <Text style={[styles.chainTitle, { color: colors.text }]}>Generated Node Chain:</Text>
             <View style={styles.nodesChain}>
-              {result.workflowPreview.nodes?.map((node) => (
+              {result.nodes.map((node) => (
                 <View key={node.id} style={[styles.chainNode, { backgroundColor: colors.cardSecondary }]}>
                   <View style={[styles.chainIcon, { backgroundColor: colors.card }]}>
                     <Layers color={colors.primary} size={14} />
                   </View>
                   <View style={styles.chainTextGroup}>
-                    <Text style={[styles.chainNodeName, { color: colors.text }]}>{node.name}</Text>
+                    <Text style={[styles.chainNodeName, { color: colors.text }]}>{node.name ?? node.type}</Text>
                     <Text style={[styles.chainNodeType, { color: colors.textSubtle }]}>{node.type}</Text>
                   </View>
                 </View>

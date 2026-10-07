@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Building2, Link2, Bot, Settings, LogOut, ChevronRight, Sparkles } from 'lucide-react-native';
+import { Building2, Link2, Settings, LogOut, ChevronRight, Sparkles } from 'lucide-react-native';
 import { useAuthStore } from '../../../stores/auth.store';
 import {
   selectActiveWorkspace,
@@ -162,20 +162,6 @@ export default function ProfileScreen() {
           <View style={styles.menuTextGroup}>
             <Text style={[styles.menuTitle, { color: colors.text }]}>{t('profile.conn')}</Text>
             <Text style={[styles.menuSub, { color: colors.textSubtle }]}>{t('profile.conn_sub')}</Text>
-          </View>
-          <ChevronRight color={colors.textSubtle} size={16} />
-        </Pressable>
-
-        <Pressable
-          style={[styles.menuItem, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => router.push('/(app)/telegram')}
-        >
-          <View style={[styles.iconCircle, { backgroundColor: colors.cardSecondary }]}>
-            <Bot color="#38bdf8" size={18} />
-          </View>
-          <View style={styles.menuTextGroup}>
-            <Text style={[styles.menuTitle, { color: colors.text }]}>{t('profile.tg')}</Text>
-            <Text style={[styles.menuSub, { color: colors.textSubtle }]}>{t('profile.tg_sub')}</Text>
           </View>
           <ChevronRight color={colors.textSubtle} size={16} />
         </Pressable>

@@ -1,49 +1,58 @@
-import type { WorkflowRepository, Workflow } from '../../domain/workflow/workflow.types';
-import { httpClient, normalizeApiError } from './http-client';
+import type {
+  RunWorkflowOptions,
+  Workflow,
+  WorkflowListQuery,
+  WorkflowPage,
+  WorkflowRepository,
+  WorkflowRunAccepted,
+} from '../../domain/workflow/workflow.types';
+import { isUnknownOutcomeTimeout, requestGateway } from './gateway-request';
+import {
+  buildPauseWorkflowRequest,
+  buildResumeWorkflowRequest,
+  buildRunWorkflowRequest,
+  buildWorkflowDetailRequest,
+  buildWorkflowListRequest,
+  newIdempotencyKey,
+} from './workflow.http.contract';
+import { mapWorkflow, mapWorkflowPage, mapWorkflowRunAccepted } from './workflow.mapper';
 
 export class HttpWorkflowRepository implements WorkflowRepository {
-  async getWorkflows(): Promise<Workflow[]> {
+  getWorkflows(workspaceId: string, query: WorkflowListQuery = {}): Promise<WorkflowPage> {
+    return requestGateway(buildWorkflowListRequest(workspaceId, query), mapWorkflowPage);
+  }
+
+  getWorkflow(workspaceId: string, workflowId: string): Promise<Workflow> {
+    return requestGateway(buildWorkflowDetailRequest(workspaceId, workflowId), mapWorkflow);
+  }
+
+  /**
+   * One new Idempotency-Key per call (per click). If the gateway answers 504 or the
+   * request times out the outcome is unknown, so it is retried ONCE with the SAME key:
+   * the backend then returns the original execution instead of starting a second one.
+   */
+  async runWorkflow(
+    workspaceId: string,
+    workflowId: string,
+    options: RunWorkflowOptions = {},
+  ): Promise<WorkflowRunAccepted> {
+    const request = buildRunWorkflowRequest(workspaceId, workflowId, {
+      ...options,
+      idempotencyKey: options.idempotencyKey ?? newIdempotencyKey(),
+    });
     try {
-      const res = await httpClient.get<Workflow[]>('/api/workflows');
-      return res.data;
-    } catch (err) {
-      throw normalizeApiError(err);
+      return await requestGateway(request, mapWorkflowRunAccepted);
+    } catch (error) {
+      if (!isUnknownOutcomeTimeout(error)) throw error;
+      return requestGateway(request, mapWorkflowRunAccepted);
     }
   }
 
-  async getWorkflow(id: string): Promise<Workflow | null> {
-    try {
-      const res = await httpClient.get<Workflow>(`/api/workflows/${id}`);
-      return res.data;
-    } catch (err) {
-      throw normalizeApiError(err);
-    }
+  pauseWorkflow(workspaceId: string, workflowId: string): Promise<Workflow> {
+    return requestGateway(buildPauseWorkflowRequest(workspaceId, workflowId), mapWorkflow);
   }
 
-  async runWorkflow(id: string, inputPayload?: Record<string, unknown>): Promise<{ executionId: string }> {
-    try {
-      const res = await httpClient.post<{ executionId: string }>(`/api/workflows/${id}/run`, { inputPayload });
-      return res.data;
-    } catch (err) {
-      throw normalizeApiError(err);
-    }
-  }
-
-  async pauseWorkflow(id: string): Promise<Workflow> {
-    try {
-      const res = await httpClient.post<Workflow>(`/api/workflows/${id}/pause`);
-      return res.data;
-    } catch (err) {
-      throw normalizeApiError(err);
-    }
-  }
-
-  async resumeWorkflow(id: string): Promise<Workflow> {
-    try {
-      const res = await httpClient.post<Workflow>(`/api/workflows/${id}/resume`);
-      return res.data;
-    } catch (err) {
-      throw normalizeApiError(err);
-    }
+  resumeWorkflow(workspaceId: string, workflowId: string): Promise<Workflow> {
+    return requestGateway(buildResumeWorkflowRequest(workspaceId, workflowId), mapWorkflow);
   }
 }

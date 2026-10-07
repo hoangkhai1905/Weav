@@ -1,31 +1,34 @@
-import type { ConnectionRepository, ConnectionItem } from '../../domain/connection/connection.types';
-import { httpClient, normalizeApiError } from './http-client';
+import type {
+  ConnectionItem,
+  ConnectionRepository,
+  ConnectionTestOutcome,
+} from '../../domain/connection/connection.types';
+import {
+  buildConnectionDetailRequest,
+  buildConnectionListRequest,
+  buildDisableConnectionRequest,
+  buildTestConnectionRequest,
+} from './connection.http.contract';
+import { mapConnection, mapConnectionList, mapConnectionTestOutcome } from './connection.mapper';
+import { requestGateway } from './gateway-request';
 
 export class HttpConnectionRepository implements ConnectionRepository {
-  async getConnections(): Promise<ConnectionItem[]> {
-    try {
-      const res = await httpClient.get<ConnectionItem[]>('/api/connections');
-      return res.data;
-    } catch (err) {
-      throw normalizeApiError(err);
-    }
+  getConnections(workspaceId: string): Promise<ConnectionItem[]> {
+    return requestGateway(buildConnectionListRequest(workspaceId), mapConnectionList);
   }
 
-  async getConnection(id: string): Promise<ConnectionItem | null> {
-    try {
-      const res = await httpClient.get<ConnectionItem>(`/api/connections/${id}`);
-      return res.data;
-    } catch (err) {
-      throw normalizeApiError(err);
-    }
+  getConnection(workspaceId: string, connectionId: string): Promise<ConnectionItem> {
+    return requestGateway(buildConnectionDetailRequest(workspaceId, connectionId), mapConnection);
   }
 
-  async testConnection(id: string): Promise<{ success: boolean; message: string; latencyMs: number }> {
-    try {
-      const res = await httpClient.post<{ success: boolean; message: string; latencyMs: number }>(`/api/connections/${id}/test`);
-      return res.data;
-    } catch (err) {
-      throw normalizeApiError(err);
-    }
+  testConnection(workspaceId: string, connectionId: string): Promise<ConnectionTestOutcome> {
+    return requestGateway(
+      buildTestConnectionRequest(workspaceId, connectionId),
+      mapConnectionTestOutcome,
+    );
+  }
+
+  disableConnection(workspaceId: string, connectionId: string): Promise<ConnectionItem> {
+    return requestGateway(buildDisableConnectionRequest(workspaceId, connectionId), mapConnection);
   }
 }

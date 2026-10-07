@@ -7,12 +7,14 @@ import { useConnections, useTestConnection } from '../../../features/connections
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { useUIStore } from '../../../stores/ui.store';
 import { useThemeColors } from '../../../hooks/useThemeColors';
+import { useTranslation } from '../../../hooks/useTranslation';
 import type { ConnectionProvider } from '../../../domain/connection/connection.types';
 import { captureAuthSessionScope, isAuthSessionScopeCurrent } from '../../../features/auth/auth-session.scope';
 
 export default function ConnectionsScreen() {
   const router = useRouter();
   const colors = useThemeColors();
+  const { t } = useTranslation();
   const { data: connections, isLoading, refetch } = useConnections();
   const testMutation = useTestConnection();
   const showToast = useUIStore((s) => s.showToast);
@@ -30,10 +32,14 @@ export default function ConnectionsScreen() {
     const scope = captureAuthSessionScope();
     setTestingId(id);
     try {
-      const res = await testMutation.mutateAsync(id);
-      if (res.success) return;
+      const outcome = await testMutation.mutateAsync(id);
+      if (outcome === 'VERIFIED') return;
       if (isAuthSessionScopeCurrent(scope)) {
-        showToast({ type: 'warning', title: 'Connection Warning', message: res.message });
+        showToast({
+          type: 'warning',
+          title: 'Connection Warning',
+          message: t(outcome === 'AUTH_INVALID' ? 'connections.test_auth_invalid' : 'connections.test_dependency_failure'),
+        });
       }
     } catch (err: any) {
       if (isAuthSessionScopeCurrent(scope)) {
@@ -46,13 +52,15 @@ export default function ConnectionsScreen() {
 
   const getProviderIcon = (provider: ConnectionProvider) => {
     switch (provider) {
-      case 'gmail':
+      case 'GMAIL':
         return <Mail color="#f43f5e" size={20} />;
-      case 'sheets':
+      case 'GOOGLE_SHEETS':
+      case 'GOOGLE_CALENDAR':
+      case 'GOOGLE_DRIVE':
         return <FileSpreadsheet color="#10b981" size={20} />;
-      case 'telegram':
+      case 'TELEGRAM':
         return <Send color="#0ea5e9" size={20} />;
-      case 'http':
+      case 'HTTP':
         return <Globe color={colors.primary} size={20} />;
     }
   };
@@ -87,13 +95,13 @@ export default function ConnectionsScreen() {
               </View>
               <View style={styles.cardInfo}>
                 <Text style={[styles.connName, { color: colors.text }]}>{item.name}</Text>
-                <Text style={[styles.connProvider, { color: colors.textSubtle }]}>{item.provider.toUpperCase()} Credential</Text>
+                <Text style={[styles.connProvider, { color: colors.textSubtle }]}>{item.provider} • {item.authType}</Text>
               </View>
               <StatusBadge status={item.status} />
             </View>
 
             <View style={[styles.cardMeta, { borderTopColor: colors.border }]}>
-              <Text style={[styles.metaText, { color: colors.textMuted }]}>Created by: {item.createdBy}</Text>
+              <Text style={[styles.metaText, { color: colors.textMuted }]}>{t('connections.last_verified')}: {item.lastVerifiedAt ? new Date(item.lastVerifiedAt).toLocaleDateString() : t('connections.never_verified')}</Text>
               <Text style={[styles.metaText, { color: colors.textMuted }]}>Created: {new Date(item.createdAt).toLocaleDateString()}</Text>
             </View>
 

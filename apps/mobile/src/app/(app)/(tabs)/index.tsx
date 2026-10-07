@@ -39,7 +39,7 @@ import {
   selectActiveWorkspace,
   useWorkspaceStore,
 } from '../../../stores/workspace.store';
-import { useWorkflows } from '../../../features/workflows/hooks/useWorkflows';
+import { useWorkflowNames, useWorkflows } from '../../../features/workflows/hooks/useWorkflows';
 import { useExecutions } from '../../../features/executions/hooks/useExecutions';
 import { useNotificationUnreadCount } from '../../../features/notifications/hooks/useNotifications';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
@@ -57,6 +57,7 @@ export default function HomeScreen() {
 
   const { data: workflows, isLoading: loadingWfs, refetch: refetchWfs } = useWorkflows();
   const { data: executions, isLoading: loadingExecs, refetch: refetchExecs } = useExecutions();
+  const workflowNames = useWorkflowNames();
   const { data: unreadNotifCount = 0 } = useNotificationUnreadCount();
 
   const [refreshing, setRefreshing] = React.useState(false);
@@ -87,7 +88,7 @@ export default function HomeScreen() {
 
   const totalWfs = workflows?.length || 0;
   const publishedWfs = workflows?.filter((w) => w.status === 'PUBLISHED').length || 0;
-  const runningExecs = executions?.filter((e) => e.status === 'RUNNING' || e.status === 'QUEUED').length || 0;
+  const runningExecs = executions?.filter((e) => e.status === 'RUNNING' || e.status === 'QUEUED' || e.status === 'WAITING').length || 0;
   const failedExecs = executions?.filter((e) => e.status === 'FAILED').length || 0;
   const queuedWfs = workflows?.filter((w) => w.status === 'DRAFT').length || 0;
 
@@ -321,14 +322,14 @@ export default function HomeScreen() {
           <View style={styles.listGap}>
             {recentWfs.map((wf) => (
               <Pressable
-                key={wf.id}
+                key={wf.workflowId}
                 style={[styles.itemCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                onPress={() => router.push(`/(app)/workflows/${wf.id}`)}
+                onPress={() => router.push(`/(app)/workflows/${wf.workflowId}`)}
               >
                 <View style={styles.itemCardHeader}>
                   <View style={styles.itemTitleGroup}>
                     <Text style={[styles.itemTitle, { color: colors.text }]} numberOfLines={1}>{wf.name}</Text>
-                    <Text style={[styles.itemMeta, { color: colors.textSubtle }]}>v{wf.version} • {wf.triggerType}</Text>
+                    <Text style={[styles.itemMeta, { color: colors.textSubtle }]}>{wf.schemaVersion}</Text>
                   </View>
                   <StatusBadge status={wf.status} />
                 </View>
@@ -374,9 +375,9 @@ export default function HomeScreen() {
 
             return (
               <Pressable
-                key={exec.id}
+                key={exec.executionId}
                 style={styles.activityRow}
-                onPress={() => router.push(`/(app)/executions/${exec.id}`)}
+                onPress={() => router.push(`/(app)/executions/${exec.workflowId}/${exec.executionId}`)}
               >
                 {exec.status === 'RUNNING' || exec.status === 'QUEUED' ? (
                   <Animated.View style={[styles.activeDot, pulseStyle]} />
@@ -385,9 +386,9 @@ export default function HomeScreen() {
                 )}
 
                 <View style={styles.activityMain}>
-                  <Text style={[styles.activityTitle, { color: colors.text }]} numberOfLines={1}>{exec.workflowName}</Text>
+                  <Text style={[styles.activityTitle, { color: colors.text }]} numberOfLines={1}>{workflowNames.get(exec.workflowId) ?? exec.workflowId}</Text>
                   <Text style={[styles.activityMeta, { color: colors.textSubtle }]}>
-                    {exec.durationMs ? `${(exec.durationMs / 1000).toFixed(1)}s` : 'Running...'} • {exec.triggerType}
+                    {exec.durationMs ? `${(exec.durationMs / 1000).toFixed(1)}s` : t('execution.running_duration')} • {exec.triggerType}
                   </Text>
                 </View>
 

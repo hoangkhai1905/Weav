@@ -3,19 +3,35 @@ import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, RefreshCw, CheckCircle2, XCircle, Clock, AlertTriangle, X, Terminal } from 'lucide-react-native';
-import { useExecutionDetail, useRetryExecution } from '../../../features/executions/hooks/useExecutionDetail';
-import { StatusBadge } from '../../../components/ui/StatusBadge';
-import { useThemeColors } from '../../../hooks/useThemeColors';
-import type { NodeExecutionResult } from '../../../domain/execution/execution.types';
+import { useExecutionDetail } from '../../../../features/executions/hooks/useExecutionDetail';
+import { useWorkflowDetail } from '../../../../features/workflows/hooks/useWorkflowDetail';
+import { StatusBadge } from '../../../../components/ui/StatusBadge';
+import { useThemeColors } from '../../../../hooks/useThemeColors';
+import { useTranslation } from '../../../../hooks/useTranslation';
+import type { NodeExecution } from '../../../../domain/execution/execution.types';
+
+/** Node/attempt errors are free-form JSON: show a message when there is one, else the JSON. */
+function describeError(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (typeof error === 'object' && error !== null && 'message' in error && typeof (error as { message: unknown }).message === 'string') {
+    return (error as { message: string }).message;
+  }
+  return JSON.stringify(error, null, 2) ?? '';
+}
 
 export default function ExecutionDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { workflowId, executionId } = useLocalSearchParams<{ workflowId: string; executionId: string }>();
   const router = useRouter();
   const colors = useThemeColors();
-  const { data: execution, isLoading } = useExecutionDetail(id || '');
-  const retryMutation = useRetryExecution();
+  const { t } = useTranslation();
+  const { data: execution, isLoading } = useExecutionDetail(workflowId || '', executionId || '');
+  // Node labels live in the workflow (editorState), not in the execution.
+  const { data: workflow } = useWorkflowDetail(workflowId || '');
 
-  const [selectedNode, setSelectedNode] = useState<NodeExecutionResult | null>(null);
+  const [selectedNode, setSelectedNode] = useState<NodeExecution | null>(null);
+
+  const nodeLabel = (node: NodeExecution) =>
+    workflow?.nodes.find((n) => n.id === node.nodeId)?.name ?? node.nodeType;
 
   if (isLoading || !execution) {
     return (
@@ -27,7 +43,8 @@ export default function ExecutionDetailScreen() {
     );
   }
 
-  const nodeResultsList = Object.values(execution.nodeResults || {});
+  const nodeResultsList = execution.nodes;
+  const failedNode = nodeResultsList.find((n) => n.status === 'FAILED');
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -51,20 +68,20 @@ export default function ExecutionDetailScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Workflow & Execution Metadata Card */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.wfName, { color: colors.text }]}>{execution.workflowName}</Text>
-          <Text style={[styles.execId, { color: colors.textSubtle }]}>{execution.id}</Text>
+          <Text style={[styles.wfName, { color: colors.text }]}>{workflow?.name ?? execution.workflowId}</Text>
+          <Text style={[styles.execId, { color: colors.textSubtle }]}>{execution.executionId}</Text>
 
           <View style={[styles.infoGrid, { borderTopColor: colors.border }]}>
             <View style={styles.infoItem}>
               <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>Started At</Text>
               <Text style={[styles.infoValue, { color: colors.text }]}>
-                {new Date(execution.startedAt).toLocaleTimeString()}
+                {execution.startedAt ? new Date(execution.startedAt).toLocaleTimeString() : t('execution.not_started')}
               </Text>
             </View>
             <View style={styles.infoItem}>
               <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>Duration</Text>
               <Text style={[styles.infoValue, { color: colors.text }]}>
-                {execution.durationMs ? `${(execution.durationMs / 1000).toFixed(1)}s` : 'Running...'}
+                {execution.durationMs ? `${(execution.durationMs / 1000).toFixed(1)}s` : t('execution.running_duration')}
               </Text>
             </View>
             <View style={styles.infoItem}>
@@ -85,16 +102,7 @@ export default function ExecutionDetailScreen() {
               <AlertTriangle color={colors.danger} size={20} />
               <Text style={[styles.failedTitle, { color: colors.danger }]}>Execution Failed</Text>
             </View>
-            <Text style={[styles.failedError, { color: colors.danger }]}>{execution.error || 'An error occurred during step execution.'}</Text>
-
-            <Pressable
-              style={[styles.retryBtn, { backgroundColor: colors.danger }]}
-              onPress={() => retryMutation.mutate(execution.id)}
-              disabled={retryMutation.isPending}
-            >
-              <RefreshCw color="#ffffff" size={14} />
-              <Text style={styles.retryText}>{retryMutation.isPending ? 'Retrying...' : 'Retry Execution'}</Text>
-            </Pressable>
+            <Text style={[styles.failedError, { color: colors.danger }]}>{failedNode ? describeError(failedNode.error) : t('execution.failed_generic')}</Text>
           </View>
         )}
 
@@ -115,7 +123,7 @@ export default function ExecutionDetailScreen() {
               } else if (node.status === 'FAILED') {
                 Icon = XCircle;
                 iconColor = colors.danger;
-              } else if (node.status === 'RUNNING') {
+              } else if (node.status === 'RUNNING' || node.status === 'WAITING') {
                 Icon = RefreshCw;
                 iconColor = colors.primary;
               }
@@ -133,13 +141,13 @@ export default function ExecutionDetailScreen() {
 
                   <View style={styles.stepMain}>
                     <View style={styles.stepHeader}>
-                      <Text style={[styles.stepName, { color: colors.text }]}>{node.nodeName}</Text>
+                      <Text style={[styles.stepName, { color: colors.text }]}>{nodeLabel(node)}</Text>
                       <StatusBadge status={node.status} />
                     </View>
 
                     <Text style={[styles.stepMeta, { color: colors.textSubtle }]}>
-                      {node.durationMs ? `${node.durationMs}ms` : 'Processing...'}
-                      {node.retryCount ? ` • ${node.retryCount} retries` : ''}
+                      {node.durationMs ? `${node.durationMs}ms` : t('execution.running_duration')}
+                      {node.attemptCount > 1 ? ` • ${node.attemptCount - 1} ${t('execution.retries')}` : ''}
                     </Text>
                   </View>
                 </Pressable>
@@ -151,19 +159,19 @@ export default function ExecutionDetailScreen() {
         </View>
 
         {/* Execution Event Logs Stream */}
-        {execution.logs && execution.logs.length > 0 && (
+        {execution.logs.items.length > 0 && (
           <>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Logs Stream</Text>
             </View>
 
             <View style={[styles.logsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {execution.logs.map((log) => (
+              {execution.logs.items.map((log) => (
                 <View key={log.id} style={styles.logRow}>
                   <Terminal color={colors.textSubtle} size={13} />
-                  <Text style={[styles.logTime, { color: colors.textSubtle }]}>{log.timestamp}</Text>
+                  <Text style={[styles.logTime, { color: colors.textSubtle }]}>{log.createdAt}</Text>
                   <Text style={[styles.logMessage, { color: colors.textMuted }]} numberOfLines={2}>
-                    {log.message}
+                    {log.message ?? log.eventType}
                   </Text>
                 </View>
               ))}
@@ -186,7 +194,7 @@ export default function ExecutionDetailScreen() {
             {selectedNode && (
               <ScrollView contentContainerStyle={styles.modalBody}>
                 <View style={styles.nodeHeaderRow}>
-                  <Text style={[styles.modalNodeName, { color: colors.primary }]}>{selectedNode.nodeName}</Text>
+                  <Text style={[styles.modalNodeName, { color: colors.primary }]}>{nodeLabel(selectedNode)}</Text>
                   <StatusBadge status={selectedNode.status} />
                 </View>
 
@@ -195,24 +203,17 @@ export default function ExecutionDetailScreen() {
                   <Text style={[styles.modalLabel, { color: colors.textMuted }]}>Duration: {selectedNode.durationMs}ms</Text>
                 )}
 
-                {selectedNode.input && (
-                  <View style={[styles.codeBlockGroup, { backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong }]}>
-                    <Text style={[styles.codeBlockTitle, { color: colors.primary }]}>Input Data Payload:</Text>
-                    <Text style={[styles.codeBlockText, { color: colors.text }]}>{JSON.stringify(selectedNode.input, null, 2)}</Text>
-                  </View>
-                )}
-
-                {selectedNode.output && (
+                {selectedNode.output != null && (
                   <View style={[styles.codeBlockGroup, { backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong }]}>
                     <Text style={[styles.codeBlockTitle, { color: colors.primary }]}>Output Result Payload:</Text>
                     <Text style={[styles.codeBlockText, { color: colors.text }]}>{JSON.stringify(selectedNode.output, null, 2)}</Text>
                   </View>
                 )}
 
-                {selectedNode.error && (
+                {selectedNode.error != null && (
                   <View style={[styles.codeBlockGroup, { backgroundColor: colors.dangerBg, borderColor: colors.danger }]}>
                     <Text style={[styles.codeBlockTitle, { color: colors.danger }]}>Error Exception:</Text>
-                    <Text style={[styles.codeBlockText, { color: colors.danger }]}>{selectedNode.error}</Text>
+                    <Text style={[styles.codeBlockText, { color: colors.danger }]}>{describeError(selectedNode.error)}</Text>
                   </View>
                 )}
 
