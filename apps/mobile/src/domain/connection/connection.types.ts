@@ -1,18 +1,36 @@
-export type ConnectionProvider = 'gmail' | 'sheets' | 'telegram' | 'http';
-export type ConnectionStatus = 'CONNECTED' | 'EXPIRED' | 'DISCONNECTED';
+export type ConnectionProvider =
+  | 'GMAIL'
+  | 'GOOGLE_SHEETS'
+  | 'GOOGLE_CALENDAR'
+  | 'GOOGLE_DRIVE'
+  | 'TELEGRAM'
+  | 'HTTP';
+export type ConnectionAuthType = 'NONE' | 'TOKEN' | 'API_KEY' | 'BASIC' | 'OAUTH2';
+export type ConnectionStatus = 'ACTIVE' | 'INVALID' | 'DISABLED';
+export type ConnectionTestOutcome = 'VERIFIED' | 'AUTH_INVALID' | 'DEPENDENCY_FAILURE';
 
 export interface ConnectionItem {
   id: string;
-  provider: ConnectionProvider;
-  name: string;
-  status: ConnectionStatus;
+  workspaceId: string;
+  /** User id (uuid), not a display name. */
   createdBy: string;
+  name: string;
+  provider: ConnectionProvider;
+  authType: ConnectionAuthType;
+  status: ConnectionStatus;
+  config: Record<string, unknown> | null;
+  hasCredential: boolean;
+  credentialExpiresAt: string | null;
+  lastVerifiedAt: string | null;
+  canManage: boolean;
+  canAttach: boolean;
   createdAt: string;
-  lastRunAt?: string;
+  updatedAt: string;
 }
 
 export interface ConnectionRepository {
-  getConnections(): Promise<ConnectionItem[]>;
-  getConnection(id: string): Promise<ConnectionItem | null>;
-  testConnection(id: string): Promise<{ success: boolean; message: string; latencyMs: number }>;
+  getConnections(workspaceId: string): Promise<ConnectionItem[]>;
+  getConnection(workspaceId: string, connectionId: string): Promise<ConnectionItem>;
+  testConnection(workspaceId: string, connectionId: string): Promise<ConnectionTestOutcome>;
+  disableConnection(workspaceId: string, connectionId: string): Promise<ConnectionItem>;
 }
