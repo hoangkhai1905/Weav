@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
-import { Plus, Play, RotateCw, Sparkles, X, Check, ArrowRight, Activity, ShoppingCart, ArrowLeftRight, Headphones, Cloud } from 'lucide-react';
+import { motion, useReducedMotion } from 'framer-motion';
+import { Plus, Play, RotateCw, Sparkles, ArrowRight, Activity, ShoppingCart, ArrowLeftRight, Headphones, Cloud } from 'lucide-react';
 import type { ExecutionDetail, WorkflowDefinition } from '../types/workflow.types';
 import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
 import { WorkflowActivityChart } from '../components/dashboard/WorkflowActivityChart';
@@ -12,6 +12,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchRecentExecutions, fetchWorkflowList, workflowRunStatsKey } from '../lib/queries/workflows';
 import { statusBadgeClass, type StatusTone } from '../components/common/statusBadgeClass';
 import { formatRelativeTime } from '../lib/relativeTime';
+import { FirstWorkspaceCard } from '../components/onboarding/FirstWorkspaceCard';
+import { useWorkspaceListContext } from '../hooks/useWorkspace';
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -33,10 +35,9 @@ interface HttpDashboardContentProps {
 
 interface DashboardQuickActionsProps {
   prefersReducedMotion: boolean | null;
-  onOpenAi: () => void;
 }
 
-function DashboardQuickActions({ prefersReducedMotion, onOpenAi }: DashboardQuickActionsProps) {
+function DashboardQuickActions({ prefersReducedMotion }: DashboardQuickActionsProps) {
   const { t } = useI18nStore();
 
   return (
@@ -77,42 +78,21 @@ function DashboardQuickActions({ prefersReducedMotion, onOpenAi }: DashboardQuic
           </span>
         </Link>
 
-        {isWorkflowMockMode ? (
-          <button
-            type="button"
-            onClick={onOpenAi}
-            className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-run-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-run/30"
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-run-bg text-run transition-transform duration-200 group-hover:-translate-y-0.5">
-              <Sparkles size={17} />
+        <Link
+          to="/ai/workflow-generator"
+          className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-run-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-run/30"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-run-bg text-run transition-transform duration-200 group-hover:-translate-y-0.5">
+            <Sparkles size={17} />
+          </span>
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+              {t('dashboard.generate_ai')}
+              <ArrowRight size={12} className="text-run transition-transform duration-200 group-hover:translate-x-0.5" />
             </span>
-            <span className="min-w-0">
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                {t('dashboard.generate_ai')}
-                <ArrowRight size={12} className="text-run transition-transform duration-200 group-hover:translate-x-0.5" />
-              </span>
-              <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">{t('dashboard.create_ai_desc')}</span>
-            </span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            disabled
-            aria-disabled="true"
-            title={t('dashboard.ai_unavailable')}
-            className="group flex cursor-not-allowed items-start gap-3 p-4 text-left opacity-60"
-          >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-subtle text-muted-foreground">
-              <Sparkles size={17} />
-            </span>
-            <span className="min-w-0">
-              <span className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                {t('dashboard.generate_ai')}
-              </span>
-              <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">{t('dashboard.ai_unavailable')}</span>
-            </span>
-          </button>
-        )}
+            <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">{t('dashboard.create_ai_desc')}</span>
+          </span>
+        </Link>
 
         <Link
           to={isWorkflowMockMode ? '/workflows/wf-prod-8492/builder' : '/workflows'}
@@ -325,12 +305,10 @@ export function DashboardPage() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const [aiModalOpen, setAiModalOpen] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedNodes, setGeneratedNodes] = useState<string[]>([]);
-
   const queryClient = useQueryClient();
+  const { userId, workspacesQuery } = useWorkspaceListContext();
+  // First run: a signed-in user with no workspace yet gets a create card instead of a failed data load.
+  const hasNoWorkspace = !isWorkflowMockMode && workspacesQuery.isSuccess && workspacesQuery.data.items.length === 0;
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setApiError(null);
@@ -361,26 +339,14 @@ export function DashboardPage() {
     }
   };
 
-  const handleAiGenerateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!aiPrompt.trim()) return;
-
-    setIsGenerating(true);
-    setGeneratedNodes([]);
-
-    setTimeout(() => {
-      setGeneratedNodes(['Webhook Trigger']);
-    }, 400);
-
-    setTimeout(() => {
-      setGeneratedNodes(['Webhook Trigger', 'AI Data Extraction']);
-    }, 900);
-
-    setTimeout(() => {
-      setGeneratedNodes(['Webhook Trigger', 'AI Data Extraction', 'Google Sheets Action']);
-      setIsGenerating(false);
-    }, 1500);
-  };
+  if (hasNoWorkspace) {
+    return (
+      <div className="mx-auto max-w-7xl space-y-6 pb-12">
+        <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{t('dashboard.title')}</h1>
+        <FirstWorkspaceCard userId={userId} onCreated={() => void loadData()} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 select-none">
@@ -416,10 +382,7 @@ export function DashboardPage() {
       </div>
 
       {/* 2. QUICK ACTIONS */}
-      <DashboardQuickActions
-        prefersReducedMotion={prefersReducedMotion}
-        onOpenAi={() => setAiModalOpen(true)}
-      />
+      <DashboardQuickActions prefersReducedMotion={prefersReducedMotion} />
 
       {/* 3. UNIFIED METRICS BAND */}
       {isWorkflowMockMode ? (
@@ -726,101 +689,6 @@ export function DashboardPage() {
         />
       )}
 
-      {/* 6. CREATE WITH AI MODAL */}
-      <AnimatePresence>
-        {aiModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setAiModalOpen(false)}
-              className="absolute inset-0 bg-foreground/30"
-            />
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 10 }}
-              className="relative w-full max-w-lg bg-card border border-border rounded-md p-6 shadow-pop space-y-4 z-10"
-            >
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles size={16} className="text-run" />
-                  <h3 className="text-sm font-bold text-foreground">
-                    {t('dashboard.ai_modal_title')}
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setAiModalOpen(false)}
-                  className="text-muted-foreground hover:text-text-2 p-1"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                {t('dashboard.ai_modal_subtitle')}
-              </p>
-
-              <form onSubmit={handleAiGenerateSubmit} className="space-y-4">
-                <textarea
-                  rows={3}
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  placeholder={t('dashboard.ai_prompt_placeholder')}
-                  className="w-full p-3 bg-subtle border border-border rounded-md text-xs text-foreground focus:outline-none focus:border-run/30 transition-colors resize-none"
-                />
-
-                {generatedNodes.length > 0 && (
-                  <div className="p-3 bg-subtle rounded border border-border space-y-2">
-                    <div className="text-[11px] font-semibold text-muted-foreground">{t('dashboard.generated_flow')}</div>
-                    <div className="flex items-center gap-2 font-mono text-xs text-run flex-wrap">
-                      {generatedNodes.map((node, idx) => (
-                        <div key={idx} className="flex items-center gap-2">
-                          <span className="px-2 py-1 bg-run-bg border border-run/30 rounded">
-                            {node}
-                          </span>
-                          {idx < generatedNodes.length - 1 && <span>→</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-                  <button
-                    type="button"
-                    onClick={() => setAiModalOpen(false)}
-                    className="px-3 py-1.5 text-xs font-medium text-text-2 hover:bg-subtle rounded transition-colors"
-                  >
-                    {t('dashboard.cancel')}
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isGenerating || !aiPrompt.trim()}
-                    className="px-4 py-1.5 bg-primary hover:bg-primary text-white rounded text-xs font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
-                  >
-                    {isGenerating ? (
-                      <span>{t('dashboard.generating')}</span>
-                    ) : generatedNodes.length > 0 ? (
-                      <>
-                        <Check size={14} />
-                        <span>{t('dashboard.done')}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>{t('dashboard.generate_workflow')}</span>
-                        <ArrowRight size={14} />
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

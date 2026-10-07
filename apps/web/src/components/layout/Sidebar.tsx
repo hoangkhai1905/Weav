@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  Bell,
   Bot,
   GitFork,
   HelpCircle,
@@ -11,6 +12,7 @@ import {
   Sparkles,
   PanelLeftClose,
   PanelLeftOpen,
+  Send,
   Users,
   X,
 } from "lucide-react";
@@ -42,6 +44,8 @@ const MAIN_NAV_ITEMS: NavItem[] = [
     testId: "sidebar-ai-promo",
   },
   { translationKey: "nav.assistant", path: "/assistant", icon: Bot, testId: "sidebar-assistant" },
+  { translationKey: "nav.telegram", path: "/telegram", icon: Send, testId: "sidebar-telegram" },
+  { translationKey: "nav.notification_center", path: "/notifications", icon: Bell, testId: "sidebar-notifications" },
 ];
 
 const BOTTOM_NAV_ITEMS: NavItem[] = [

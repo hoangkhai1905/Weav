@@ -1,621 +1,314 @@
-import { useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
-import {
-  ArrowLeft,
-  Sparkles,
-  Zap,
-  CheckCircle2,
-  Loader2,
-  RefreshCw,
-  Edit3,
-  Code2,
-  Copy,
-  Terminal,
-  Database,
-  Globe,
-  GitBranch,
-  Send,
-  Lock,
-  ArrowRight,
-} from 'lucide-react';
-import { workflowApi } from '../api/workflow.api';
+import { useEffect, useId, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { connectionApi, type ConnectionProvider, type ConnectionResponse } from '../api/connection.api';
+import { definitionToCanvas, workflowV1Api } from '../api/workflow-v1.api';
+import { useWorkflowGeneration, type ReadyGeneration } from '../components/ai/useWorkflowGeneration';
+import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
+import { showSuccessToast } from '../lib/feedback/toast';
+import { NODE_SCHEMAS } from '../lib/nodeSchemas';
+import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
+import { useAuthStore } from '../store/useAuthStore';
 import { useI18nStore } from '../store/useI18nStore';
+import { useWorkspaceStore } from '../store/useWorkspaceStore';
+
+type Question = { code: string; field: string };
+
+// Which connection provider each node type needs, to offer the right connections for a CONNECTION question.
+const PROVIDER_BY_NODE: Record<string, ConnectionProvider> = {
+  'google.sheets': 'GOOGLE_SHEETS',
+  'google.calendar': 'GOOGLE_CALENDAR',
+  'google.drive': 'GOOGLE_DRIVE',
+  'email.send': 'GMAIL',
+  'trigger.gmail': 'GMAIL',
+  'telegram.send_message': 'TELEGRAM',
+  'trigger.telegram': 'TELEGRAM',
+  'http.request': 'HTTP',
+};
+
+const STARTER_KEYS = ['gmail_drive', 'webhook_sheets', 'schedule_telegram', 'telegram_reply'] as const;
+const RECIPIENT_FIELD = /(^|[._])(to|cc|bcc|recipient|recipients)$/i;
+const MAX_PROMPT = 4000;
+
+const fieldClass = 'w-full rounded-md border border-border bg-subtle px-3 py-2 text-sm text-foreground focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/10';
+const primaryButton = 'inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
+const secondaryButton = 'inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
 
 export function AiGeneratorPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const prefersReducedMotion = useReducedMotion();
   const { t } = useI18nStore();
+  const userEmail = useAuthStore((state) => state.user?.email ?? '');
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const refreshNotifications = useNotificationMilestoneRefresh();
+  const promptId = useId();
+  const { isPending, error, result, generate, reset } = useWorkflowGeneration();
 
-  // Initial prompt state (passed from CreateWorkflowPage or default)
-  const [prompt, setPrompt] = useState<string>(
-    (location.state as { initialPrompt?: string })?.initialPrompt ?? t('ai_gen.default_prompt')
-  );
+  const [prompt, setPrompt] = useState<string>((location.state as { initialPrompt?: string } | null)?.initialPrompt ?? '');
+  const [connections, setConnections] = useState<ConnectionResponse[]>([]);
+  // Answers typed for the current needs_input round, keyed by question index.
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  // Connection picked per node type, sent as `connections` on the next request.
+  const [picked, setPicked] = useState<Record<string, string>>({});
+  // Answers from earlier rounds, by field. The generate API has no answers field, so they are appended to the prompt.
+  const [known, setKnown] = useState<Record<string, string>>({});
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
-  // Generation Stages & Animation State
-  const [isSynthesizing, setIsSynthesizing] = useState(false);
-  const [visibleNodesCount, setVisibleNodesCount] = useState<number>(5);
-  const [copiedCode, setCopiedCode] = useState(false);
+  // Connections, answers and results belong to one workspace: start over when it changes.
+  const [seenWorkspaceId, setSeenWorkspaceId] = useState(activeWorkspaceId);
+  if (seenWorkspaceId !== activeWorkspaceId) {
+    setSeenWorkspaceId(activeWorkspaceId);
+    setPicked({});
+    setAnswers({});
+    setKnown({});
+    setLocalError(null);
+    setConnections([]);
+    reset();
+  }
 
-  const handleSynthesize = () => {
-    if (isSynthesizing) return;
-    setIsSynthesizing(true);
-    setVisibleNodesCount(0);
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    const controller = new AbortController();
+    connectionApi
+      .list(activeWorkspaceId, controller.signal)
+      .then(setConnections)
+      .catch(() => setConnections([]));
+    return () => controller.abort();
+  }, [activeWorkspaceId]);
 
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const trimmedPrompt = prompt.trim();
 
-    if (prefersReducedMotion) {
-      setVisibleNodesCount(5);
-      setIsSynthesizing(false);
+  const submitFresh = async () => {
+    if (isPending || !trimmedPrompt) return;
+    setAnswers({});
+    setPicked({});
+    setKnown({});
+    setLocalError(null);
+    setDraftError(null);
+    await generate({ prompt: trimmedPrompt });
+  };
+
+  const defaultAnswer = (question: Question) =>
+    question.code === 'VALUE' && RECIPIENT_FIELD.test(question.field) ? userEmail : '';
+
+  const submitAnswers = async (questions: Question[]) => {
+    if (isPending) return;
+    const next = { ...known };
+    questions.forEach((question, index) => {
+      if (question.code === 'CONNECTION') return;
+      const value = (answers[index] ?? defaultAnswer(question)).trim();
+      if (value) next[question.field] = value;
+    });
+    const lines = Object.entries(next).map(([field, value]) => `- ${field}: ${value}`);
+    const fullPrompt = lines.length > 0 ? `${trimmedPrompt}\n${lines.join('\n')}` : trimmedPrompt;
+    if (fullPrompt.length > MAX_PROMPT) {
+      setLocalError(t('hp.ai.prompt_too_long'));
       return;
     }
-
-    // Stage 1: Understand (~400ms)
-    setTimeout(() => {
-      // Stage 2: Build - progressive node reveals
-      setVisibleNodesCount(1);
-    }, 500);
-
-    setTimeout(() => setVisibleNodesCount(2), 800);
-    setTimeout(() => setVisibleNodesCount(3), 1100);
-    setTimeout(() => setVisibleNodesCount(4), 1400);
-    setTimeout(() => {
-      setVisibleNodesCount(5);
-    }, 1700);
-
-    // Stage 3: Validate & Complete
-    setTimeout(() => {
-      setIsSynthesizing(false);
-    }, 2200);
+    setLocalError(null);
+    setKnown(next);
+    setAnswers({});
+    await generate({ prompt: fullPrompt, connections: picked });
   };
 
-  const handleAcceptPipeline = async () => {
+  const createDraft = async (ready: ReadyGeneration) => {
+    if (isSaving) return;
+    const session = captureNotificationSession();
+    setIsSaving(true);
+    setDraftError(null);
     try {
-      const created = await workflowApi.createWorkflow({
-        name: 'Stripe Order & AI Enrichment Pipeline',
-        description: prompt,
+      const workflowId = await workflowV1Api.createWorkflowFromDefinition({
+        name: ready.name,
+        definition: ready.definition,
+        layout: ready.layout,
       });
-      navigate(`/workflows/${created.id}/builder`);
-    } catch {
-      navigate('/workflows/wf-prod-8492/builder');
+      if (!mounted.current || !isCurrentNotificationSession(session)) return;
+      showSuccessToast('toast.workflow.created', session);
+      refreshNotifications(session);
+      navigate(`/workflows/${workflowId}/builder`);
+    } catch (unknown) {
+      if (mounted.current && isCurrentNotificationSession(session)) {
+        setDraftError(unknown instanceof Error ? unknown.message : t('hp.ai.draft_failed'));
+      }
+    } finally {
+      if (mounted.current) setIsSaving(false);
     }
   };
 
-  const handleCopyJson = () => {
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
+  const connectionsChosen = (questions: Question[]) =>
+    questions.every((question) => question.code !== 'CONNECTION' || Boolean(picked[question.field]));
+
+  const renderQuestions = (questions: Question[]) => (
+    <section aria-labelledby={`${promptId}-questions`} className="space-y-3 rounded-lg border border-warn/30 bg-warn-bg p-4">
+      <h2 id={`${promptId}-questions`} className="text-sm font-semibold text-foreground">{t('hp.ai.needs_input_title')}</h2>
+      <p className="text-xs text-text-2">{t('hp.ai.needs_input_hint')}</p>
+      <ul className="space-y-3">
+        {questions.map((question, index) => {
+          const label = t(`ai.question.${question.code}`);
+          const controlId = `${promptId}-q-${index}`;
+          if (question.code === 'CONNECTION') {
+            const provider = PROVIDER_BY_NODE[question.field];
+            const options = connections.filter((item) => item.provider === provider && item.status === 'ACTIVE');
+            const nodeTitle = NODE_SCHEMAS[question.field]?.title ?? question.field;
+            return (
+              <li key={`${question.code}-${question.field}-${index}`}>
+                <label htmlFor={controlId} className="mb-1 block text-xs font-medium text-foreground">
+                  {label} <span className="text-muted-foreground">({nodeTitle})</span>
+                </label>
+                <select
+                  id={controlId}
+                  value={picked[question.field] ?? ''}
+                  onChange={(event) => setPicked((current) => ({ ...current, [question.field]: event.target.value }))}
+                  className={fieldClass}
+                >
+                  <option value="">{t('ai.connection_none')}</option>
+                  {options.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+                {options.length === 0 ? (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {t('hp.ai.no_connection')} <Link to="/connections" className="font-medium text-run underline">{t('hp.ai.open_connections')}</Link>
+                  </p>
+                ) : null}
+              </li>
+            );
+          }
+          return (
+            <li key={`${question.code}-${question.field}-${index}`}>
+              <label htmlFor={controlId} className="mb-1 block text-xs font-medium text-foreground">
+                {label} <span className="font-mono text-muted-foreground">({question.field})</span>
+              </label>
+              <input
+                id={controlId}
+                type="text"
+                maxLength={500}
+                value={answers[index] ?? defaultAnswer(question)}
+                onChange={(event) => setAnswers((current) => ({ ...current, [index]: event.target.value }))}
+                className={fieldClass}
+              />
+            </li>
+          );
+        })}
+      </ul>
+      <div className="flex justify-end">
+        <button type="button" onClick={() => void submitAnswers(questions)} disabled={isPending || !connectionsChosen(questions)} className={primaryButton}>
+          {isPending ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
+          {t('hp.ai.send_answers')}
+        </button>
+      </div>
+    </section>
+  );
+
+  const renderPreview = (ready: ReadyGeneration) => {
+    const { nodes } = definitionToCanvas(ready.definition, ready.layout);
+    const needsConnection = nodes.filter((node) => {
+      return NODE_SCHEMAS[node.type]?.required.includes('connectionId') && !node.config.connectionId;
+    });
+    return (
+      <section data-testid="ai-generator-preview" aria-labelledby={`${promptId}-preview`} className="space-y-4 rounded-lg border border-border bg-card p-4">
+        <div>
+          <h2 id={`${promptId}-preview`} className="text-sm font-semibold text-foreground">{t('hp.ai.preview_title')}</h2>
+          <p className="mt-0.5 text-lg font-bold text-foreground">{ready.name}</p>
+        </div>
+        <ol className="space-y-1.5">
+          {nodes.map((node, index) => (
+            <li key={node.id} className="flex items-center gap-2 rounded-md border border-border bg-subtle px-3 py-2 text-sm">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-text-2">{index + 1}</span>
+              <span className="min-w-0 flex-1 truncate font-medium text-foreground">{node.name}</span>
+              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{NODE_SCHEMAS[node.type]?.title ?? node.type}</span>
+            </li>
+          ))}
+        </ol>
+        {needsConnection.length > 0 ? (
+          <div className="rounded-md border border-warn/30 bg-warn-bg px-3 py-2 text-xs text-warn">
+            <p className="font-semibold">{t('hp.ai.connections_needed')}</p>
+            <ul className="mt-1 list-disc pl-4">
+              {needsConnection.map((node) => (
+                <li key={node.id}>{node.name} ({NODE_SCHEMAS[node.type]?.properties.connectionId['x-weav-connection']?.provider ?? node.type})</li>
+              ))}
+            </ul>
+            <p className="mt-1 text-text-2">{t('hp.ai.connections_hint')}</p>
+          </div>
+        ) : null}
+        {draftError ? <p role="alert" className="text-xs text-err">{draftError}</p> : null}
+        <div className="flex flex-wrap justify-end gap-2">
+          <button type="button" onClick={reset} disabled={isSaving} className={secondaryButton}>{t('hp.ai.try_again')}</button>
+          <button type="button" onClick={() => void createDraft(ready)} disabled={isSaving} className={primaryButton}>
+            {isSaving ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
+            {t('hp.ai.create_draft')}
+            <ArrowRight size={15} aria-hidden="true" />
+          </button>
+        </div>
+      </section>
+    );
   };
 
-  const PROMPT_STARTERS = [
-    { label: 'ai_gen.starter.orders', prompt: 'ai_gen.starter_prompt.orders' },
-    { label: 'ai_gen.starter.customers', prompt: 'ai_gen.starter_prompt.customers' },
-    { label: 'ai_gen.starter.reports', prompt: 'ai_gen.starter_prompt.reports' },
-    { label: 'ai_gen.starter.payments', prompt: 'ai_gen.starter_prompt.payments' },
-    { label: 'ai_gen.starter.invoices', prompt: 'ai_gen.starter_prompt.invoices' },
-  ];
-
   return (
-    <div data-testid="ai-generator-page" className="space-y-5 text-foreground font-sans pb-16">
-      {/* Focused creation header */}
+    <div data-testid="ai-generator-page" className="mx-auto max-w-3xl space-y-5 pb-16 font-sans text-foreground">
       <div className="space-y-2">
-        <Link
-          to="/workflows/new"
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft size={14} />
+        <Link to="/workflows/new" className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
+          <ArrowLeft size={14} aria-hidden="true" />
           {t('ai_gen.back')}
         </Link>
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-xl font-bold tracking-tight text-foreground">{t('ai_gen.title')}</h1>
-          <span className="inline-flex items-center gap-1 rounded-full bg-ok-bg px-2 py-0.5 text-[10px] font-medium text-ok">
-            <span className="h-1.5 w-1.5 rounded-full bg-ok" />
-            {t('ai_gen.ready')}
-          </span>
-        </div>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          {t('ai_gen.simple_subtitle')}
-        </p>
+        <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-foreground">
+          <Sparkles size={18} className="text-run" aria-hidden="true" />
+          {t('ai_gen.title')}
+        </h1>
+        <p className="max-w-2xl text-sm text-muted-foreground">{t('ai_gen.simple_subtitle')}</p>
       </div>
 
-      {/* Focused prompt workbench */}
-      <motion.section
-        data-testid="ai-prompt-workbench"
-        initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: prefersReducedMotion ? 0 : 0.32, ease: [0.16, 1, 0.3, 1] }}
-        className="space-y-3 rounded-xl border border-border bg-card p-4"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <label htmlFor="workflow-prompt" className="text-sm font-semibold text-foreground">
-              {t('ai_gen.prompt_label')}
-            </label>
-            <p className="mt-1 text-xs text-muted-foreground">{t('ai_gen.prompt_hint')}</p>
-          </div>
-          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{t('ai_gen.characters').replace('{count}', String(prompt.length))}</span>
+      <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+        <label htmlFor={promptId} className="block text-xs font-medium text-text-2">{t('ai_gen.prompt_label')}</label>
+        <textarea
+          id={promptId}
+          rows={4}
+          maxLength={4000}
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          className={`${fieldClass} resize-y`}
+        />
+        <p className="text-[11px] text-muted-foreground">{t('ai_gen.prompt_hint')}</p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] text-muted-foreground">{t('ai_gen.try_example')}:</span>
+          {STARTER_KEYS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setPrompt(t(`hp.ai.starter_prompt.${key}`))}
+              className="rounded-full border border-border bg-subtle px-2.5 py-1 text-[11px] text-text-2 transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {t(`hp.ai.starter.${key}`)}
+            </button>
+          ))}
         </div>
+        <div className="flex justify-end">
+          <button type="button" onClick={() => void submitFresh()} disabled={isPending || !trimmedPrompt} className={primaryButton}>
+            {isPending ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Sparkles size={15} aria-hidden="true" />}
+            {t('ai_gen.btn_generate')}
+          </button>
+        </div>
+      </div>
 
-        <div className="rounded-lg border border-run/30 bg-subtle p-3 transition-colors focus-within:border-run/30">
-          <textarea
-            id="workflow-prompt"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            rows={4}
-            placeholder={t('ai_gen.prompt_hint')}
-            className="w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
-          />
-
-          <div className="mt-3 flex items-center gap-2 overflow-x-auto border-t border-border-strong pt-3">
-            <span className="shrink-0 text-[11px] font-medium text-muted-foreground">{t('ai_gen.try_example')}</span>
-            {PROMPT_STARTERS.slice(0, 3).map((starter) => (
-              <motion.button
-                key={starter.label}
-                type="button"
-                onClick={() => setPrompt(t(starter.prompt))}
-                whileHover={prefersReducedMotion ? undefined : { y: -1 }}
-                whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
-                className="shrink-0 rounded-md border border-border-strong bg-card px-2.5 py-1 text-[11px] font-medium text-text-2 transition-colors hover:border-run/30 hover:bg-run-bg hover:text-run"
-              >
-                {t(starter.label)}
-              </motion.button>
+      <div aria-live="polite" className="space-y-4">
+        {isPending ? <p data-testid="generation-status" className="text-sm text-muted-foreground">{t('hp.ai.generating')}</p> : null}
+        {error || localError ? <p role="alert" className="rounded-md border border-err-border bg-err-bg px-3 py-2 text-sm text-err">{localError ?? error}</p> : null}
+        {!isPending && result?.status === 'needs_input' ? renderQuestions(result.questions) : null}
+        {!isPending && result?.status === 'unsupported' ? (
+          <ul className="space-y-1.5">
+            {result.reasons.map((reason, index) => (
+              <li key={`${reason.code}-${index}`} className="rounded-md border border-border bg-subtle px-3 py-2 text-sm text-text-2">
+                {t(`ai.reason.${reason.code}`)}
+              </li>
             ))}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-          <motion.div
-            key={isSynthesizing ? 'building' : 'ready'}
-            data-testid="generation-status"
-            initial={prefersReducedMotion ? false : { opacity: 0, x: -4 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-1.5 text-xs text-text-2"
-          >
-            {isSynthesizing ? <Loader2 size={14} className="animate-spin text-run" /> : <CheckCircle2 size={14} className="text-ok" />}
-            <span>{isSynthesizing ? t('ai_gen.building_status') : t('ai_gen.ready_status')}</span>
-          </motion.div>
-          <motion.button
-            onClick={handleSynthesize}
-            disabled={isSynthesizing}
-            whileHover={prefersReducedMotion ? undefined : { y: -1, scale: 1.01 }}
-            whileTap={prefersReducedMotion ? undefined : { scale: 0.98 }}
-            animate={isSynthesizing && !prefersReducedMotion ? { boxShadow: ['0 0 0 0 rgba(37, 99, 235, 0)', '0 0 0 6px rgba(37, 99, 235, 0.16)', '0 0 0 0 rgba(37, 99, 235, 0)'] } : undefined}
-            transition={isSynthesizing && !prefersReducedMotion ? { duration: 1.25, repeat: Infinity } : undefined}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary disabled:cursor-wait disabled:opacity-70"
-          >
-            {isSynthesizing ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
-            <span>{isSynthesizing ? t('ai_gen.building') : t('ai_gen.btn_generate')}</span>
-          </motion.button>
-        </div>
-      </motion.section>
-
-      {/* Generated Graph Pipeline Preview */}
-      <motion.div
-        data-testid="workflow-preview"
-        initial={prefersReducedMotion ? false : { opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: prefersReducedMotion ? 0 : 0.36, delay: prefersReducedMotion ? 0 : 0.08, ease: [0.16, 1, 0.3, 1] }}
-        className="bg-card border border-border rounded-xl overflow-hidden flex flex-col"
-      >
-        {/* Section Header */}
-        <div className="px-4 py-2.5 bg-subtle border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Sparkles size={16} className="text-run" />
-              <span className="text-xs font-bold text-foreground">
-                {t('ai_gen.preview')}
-              </span>
-            </div>
-
-            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-ok-bg text-ok border border-ok/30 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-ok" />
-              {t('ai_gen.steps_ready')}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleSynthesize}
-              className="h-7 px-2.5 rounded text-xs font-medium bg-card hover:bg-subtle text-text-2 border border-border transition-colors flex items-center gap-1"
-            >
-              <RefreshCw size={12} />
-              <span>{t('ai_gen.btn_regenerate')}</span>
-            </button>
-            <button
-              onClick={handleAcceptPipeline}
-              className="h-7 px-2.5 rounded text-xs font-medium bg-card hover:bg-subtle text-text-2 border border-border transition-colors flex items-center gap-1"
-            >
-              <Edit3 size={12} />
-              <span>{t('ai_gen.edit')}</span>
-            </button>
-            <button
-              onClick={handleAcceptPipeline}
-              className="h-7 px-3 rounded text-xs font-semibold bg-primary hover:bg-primary text-white transition-colors flex items-center gap-1"
-            >
-              <span>{t('ai_gen.use_workflow')}</span>
-              <ArrowRight size={12} />
-            </button>
-          </div>
-        </div>
-
-        {/* Graph Visual Area with Dot Matrix Backing */}
-        <div
-          className="relative w-full p-6 bg-subtle overflow-x-auto min-h-[220px]"
-          style={{
-            backgroundImage: 'radial-gradient(#94a3b8 1px, transparent 1px)',
-            backgroundSize: '16px 16px',
-          }}
-        >
-          {/* Canvas Status Ribbon Top Left */}
-          <div className="absolute top-3 left-4 flex items-center gap-2 bg-card/90 backdrop-blur rounded px-2.5 py-1 border border-border text-[10px] font-mono text-text-2">
-            <span className="flex items-center gap-1 text-ok font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-ok" />
-              {t('ai_gen.diagram.deterministic')}
-            </span>
-            <span>•</span>
-            <span>{t('ai_gen.diagram.zoom')}</span>
-            <span>•</span>
-            <span>{t('ai_gen.diagram.linear_mode')}</span>
-          </div>
-
-          {/* Sequential Pipeline Row (5 Node Cards Connected) */}
-          <div className="flex items-center gap-0 min-w-max pt-6 pb-2 px-2">
-            {/* NODE 1: Webhook Trigger */}
-            {visibleNodesCount >= 1 && (
-              <div className="w-64 bg-card rounded-lg border border-border flex flex-col relative transition-all">
-                <div className="h-8 px-3 bg-warn-bg rounded-t-lg flex items-center justify-between border-b border-warn/30">
-                  <div className="flex items-center gap-2">
-                    <Globe size={14} className="text-warn" />
-                    <span className="text-xs font-semibold text-foreground">{t('ai_gen.diagram.node.webhook')}</span>
-                  </div>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-warn-bg text-warn">
-                    {t('ai_gen.diagram.badge_trigger')}
-                  </span>
-                </div>
-                <div className="p-2.5 space-y-2 text-xs">
-                  <div>
-                    <p className="font-semibold text-foreground text-[11px]">POST /stripe-orders</p>
-                    <p className="font-mono text-[10px] text-muted-foreground truncate">{t('ai_gen.diagram.listen_for')}: payment_intent.succeeded</p>
-                  </div>
-                <div className="p-1.5 bg-subtle rounded font-mono text-[10px] text-text-2 flex items-center justify-between">
-                    <span>{t('ai_gen.diagram.output')}: $json.body</span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-ok" />
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border">
-                    <span>{t('ai_gen.diagram.auth')}: HMAC SHA256</span>
-                    <span className="text-ok font-semibold font-mono">{t('ai_gen.ready')}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* CONNECTOR 1 -> 2 */}
-            {visibleNodesCount >= 2 && (
-              <div className="w-10 flex items-center justify-center relative">
-                <svg className="w-full h-4 text-muted-foreground" fill="none" viewBox="0 0 40 16">
-                  <path d="M 0 8 L 32 8" stroke="currentColor" strokeDasharray="2 2" strokeWidth="2" />
-                  <polygon fill="currentColor" points="32,4 40,8 32,12" />
-                </svg>
-                <motion.div
-                  data-testid="preview-flow-dot"
-                  animate={prefersReducedMotion ? { opacity: 0.8 } : { x: [-8, 8], opacity: [0.45, 1, 0.45] }}
-                  transition={prefersReducedMotion ? undefined : { duration: 1.1, repeat: Infinity, delay: 0 }}
-                  className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-primary"
-                />
-              </div>
-            )}
-
-            {/* NODE 2: Database Query */}
-            {visibleNodesCount >= 2 && (
-              <div className="w-64 bg-card rounded-lg border border-border flex flex-col relative transition-all">
-                <div className="h-8 px-3 bg-run-bg rounded-t-lg flex items-center justify-between border-b border-run/30">
-                  <div className="flex items-center gap-2">
-                    <Database size={14} className="text-run" />
-                    <span className="text-xs font-semibold text-foreground">{t('ai_gen.diagram.node.postgres')}</span>
-                  </div>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-run-bg text-run">
-                    {t('ai_gen.diagram.badge_database')}
-                  </span>
-                </div>
-                <div className="p-2.5 space-y-2 text-xs">
-                  <div>
-                    <p className="font-semibold text-foreground text-[11px]">{t('ai_gen.diagram.query_inventory')}</p>
-                    <p className="font-mono text-[10px] text-muted-foreground truncate">SELECT stock FROM items WHERE id = :id</p>
-                  </div>
-                <div className="p-1.5 bg-subtle rounded font-mono text-[10px] text-text-2 flex items-center justify-between">
-                    <span>{t('ai_gen.diagram.input')}: {`{{$json.item_id}}`}</span>
-                    <span className="text-ok font-mono">200 OK</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border">
-                    <span>{t('ai_gen.diagram.pool')}: pg-warehouse</span>
-                    <span className="text-ok font-semibold font-mono">{t('ai_gen.diagram.configured')}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* CONNECTOR 2 -> 3 */}
-            {visibleNodesCount >= 3 && (
-              <div className="w-10 flex items-center justify-center relative">
-                <svg className="w-full h-4 text-muted-foreground" fill="none" viewBox="0 0 40 16">
-                  <path d="M 0 8 L 32 8" stroke="currentColor" strokeDasharray="2 2" strokeWidth="2" />
-                  <polygon fill="currentColor" points="32,4 40,8 32,12" />
-                </svg>
-                <motion.div
-                  data-testid="preview-flow-dot"
-                  animate={prefersReducedMotion ? { opacity: 0.8 } : { x: [-8, 8], opacity: [0.45, 1, 0.45] }}
-                  transition={prefersReducedMotion ? undefined : { duration: 1.1, repeat: Infinity, delay: 0.18 }}
-                  className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-primary"
-                />
-              </div>
-            )}
-
-            {/* NODE 3: AI Extract Node (Highlighted) */}
-            {visibleNodesCount >= 3 && (
-              <div className="w-68 bg-card rounded-lg border-2 border-primary  flex flex-col relative transition-all">
-                <div className="h-8 px-3 bg-primary rounded-t-[6px] flex items-center justify-between text-white">
-                  <div className="flex items-center gap-2">
-                    <Sparkles size={14} className="fill-white" />
-                    <span className="text-xs font-semibold">{t('ai_gen.diagram.node.ai_extract')}</span>
-                  </div>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-black/20 text-white">
-                    {t('ai_gen.diagram.badge_synthesized')}
-                  </span>
-                </div>
-                <div className="p-2.5 space-y-2 text-xs">
-                  <div>
-                    <p className="font-semibold text-foreground text-[11px]">{t('ai_gen.diagram.extract_customer')}</p>
-                    <p className="font-mono text-[10px] text-muted-foreground">{t('ai_gen.diagram.model')}: gpt-4o-mini ({t('ai_gen.diagram.structured')})</p>
-                  </div>
-                  <div className="p-1.5 bg-primary/10 border border-run/20 rounded font-mono text-[10px] space-y-0.5">
-                    <span className="text-run font-semibold block">{t('ai_gen.diagram.schema')}: customer_schema_v1</span>
-                    <span className="text-text-2 block truncate">{t('ai_gen.diagram.yields')}: {`{{$json.customer_profile}}`}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border">
-                    <span className="text-run font-medium">{t('ai_gen.diagram.auto_bound_schema')}</span>
-                    <span className="text-ok font-semibold font-mono">{t('ai_gen.diagram.valid')}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* CONNECTOR 3 -> 4 */}
-            {visibleNodesCount >= 4 && (
-              <div className="w-10 flex items-center justify-center relative">
-                <svg className="w-full h-4 text-muted-foreground" fill="none" viewBox="0 0 40 16">
-                  <path d="M 0 8 L 32 8" stroke="currentColor" strokeDasharray="2 2" strokeWidth="2" />
-                  <polygon fill="currentColor" points="32,4 40,8 32,12" />
-                </svg>
-                <motion.div
-                  data-testid="preview-flow-dot"
-                  animate={prefersReducedMotion ? { opacity: 0.8 } : { x: [-8, 8], opacity: [0.45, 1, 0.45] }}
-                  transition={prefersReducedMotion ? undefined : { duration: 1.1, repeat: Infinity, delay: 0.36 }}
-                  className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-primary"
-                />
-              </div>
-            )}
-
-            {/* NODE 4: Condition Node */}
-            {visibleNodesCount >= 4 && (
-              <div className="w-64 bg-card rounded-lg border border-border flex flex-col relative transition-all">
-                <div className="h-8 px-3 bg-run-bg rounded-t-lg flex items-center justify-between border-b border-run/30">
-                  <div className="flex items-center gap-2">
-                    <GitBranch size={14} className="text-run" />
-                    <span className="text-xs font-semibold text-foreground">{t('ai_gen.diagram.node.condition')}</span>
-                  </div>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-run-bg text-run">
-                    LOGIC
-                  </span>
-                </div>
-                <div className="p-2.5 space-y-2 text-xs">
-                  <div>
-                    <p className="font-semibold text-foreground text-[11px]">{t('ai_gen.diagram.order_total')}</p>
-                    <p className="font-mono text-[10px] text-muted-foreground truncate">eval({`{{$json.amount}}`} &gt; 10000)</p>
-                  </div>
-                <div className="p-1.5 bg-subtle rounded font-mono text-[10px] text-text-2 flex items-center justify-between">
-                    <span>{t('ai_gen.diagram.branch')}: true</span>
-                    <span className="text-ok font-semibold font-mono">{t('ai_gen.diagram.passed')}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border">
-                    <span>{t('ai_gen.diagram.operator')}: GreaterThan</span>
-                    <span className="text-ok font-semibold font-mono">{t('ai_gen.diagram.evaluated')}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* CONNECTOR 4 -> 5 */}
-            {visibleNodesCount >= 5 && (
-              <div className="w-10 flex items-center justify-center relative">
-                <svg className="w-full h-4 text-muted-foreground" fill="none" viewBox="0 0 40 16">
-                  <path d="M 0 8 L 32 8" stroke="currentColor" strokeDasharray="2 2" strokeWidth="2" />
-                  <polygon fill="currentColor" points="32,4 40,8 32,12" />
-                </svg>
-                <motion.div
-                  data-testid="preview-flow-dot"
-                  animate={prefersReducedMotion ? { opacity: 0.8 } : { x: [-8, 8], opacity: [0.45, 1, 0.45] }}
-                  transition={prefersReducedMotion ? undefined : { duration: 1.1, repeat: Infinity, delay: 0.54 }}
-                  className="absolute top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-primary"
-                />
-              </div>
-            )}
-
-            {/* NODE 5: Slack Dispatch Action */}
-            {visibleNodesCount >= 5 && (
-              <div className="w-64 bg-card rounded-lg border border-border flex flex-col relative transition-all">
-                <div className="h-8 px-3 bg-ok-bg rounded-t-lg flex items-center justify-between border-b border-ok/30">
-                  <div className="flex items-center gap-2">
-                    <Send size={14} className="text-ok" />
-                    <span className="text-xs font-semibold text-foreground">{t('ai_gen.diagram.node.slack')}</span>
-                  </div>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-ok-bg text-ok">
-                    ACTION
-                  </span>
-                </div>
-                <div className="p-2.5 space-y-2 text-xs">
-                  <div>
-                    <p className="font-semibold text-foreground text-[11px]">{t('ai_gen.diagram.notify_channel')}</p>
-                    <p className="font-mono text-[10px] text-muted-foreground truncate">BlockKit: {t('ai_gen.diagram.order_vip_notification')}</p>
-                  </div>
-                <div className="p-1.5 bg-subtle rounded font-mono text-[10px] text-text-2 flex items-center justify-between">
-                    <span>{t('ai_gen.diagram.channel')}: #sales-alerts</span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-ok" />
-                  </div>
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border">
-                    <span>{t('ai_gen.diagram.webhook_bot_active')}</span>
-                    <span className="text-ok font-semibold font-mono">{t('ai_gen.ready')}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Optional technical details */}
-      <details data-testid="technical-details" className="group rounded-xl border border-border bg-card">
-        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-text-2 transition-colors hover:text-foreground">
-          <span className="inline-flex items-center gap-2">
-            <Code2 size={15} className="text-run" />
-            {t('ai_gen.technical_details')}
-            <span className="text-xs font-normal text-muted-foreground">{t('ai_gen.optional')}</span>
-          </span>
-        </summary>
-        <div className="grid grid-cols-1 gap-4 border-t border-border p-3 lg:grid-cols-3">
-        {/* Left: Variable Bindings */}
-        <div className="bg-card border border-border rounded-xl p-4 space-y-3 lg:col-span-1">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Code2 size={16} className="text-run" />
-              <span className="text-xs font-bold text-foreground">{t('ai_gen.diagram.variable_bindings')}</span>
-            </div>
-            <span className="font-mono text-[10px] text-muted-foreground">{t('ai_gen.diagram.parameters_bound').replace('{count}', '3')}</span>
-          </div>
-
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            {t('ai_gen.diagram.variable_bindings_description')}
-          </p>
-
-          <div className="space-y-2 font-mono text-xs">
-            <div className="p-2.5 rounded bg-subtle border border-border space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-run font-semibold truncate">{`{{$json.body.order_id}}`}</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-text-2">
-                  UUIDv4
-                </span>
-              </div>
-              <p className="text-[10px] text-muted-foreground">{t('ai_gen.diagram.mapping.node_1')}</p>
-            </div>
-
-            <div className="p-2.5 rounded bg-subtle border border-border space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-run font-semibold truncate">{`{{$json.customer_profile}}`}</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-text-2">
-                  Object
-                </span>
-              </div>
-              <p className="text-[10px] text-muted-foreground">{t('ai_gen.diagram.mapping.node_3')}</p>
-            </div>
-
-            <div className="p-2.5 rounded bg-subtle border border-border space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-run font-semibold truncate">{`{{$json.inventory_status}}`}</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-text-2">
-                  Boolean
-                </span>
-              </div>
-              <p className="text-[10px] text-muted-foreground">{t('ai_gen.diagram.mapping.node_2')}</p>
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-border flex items-center justify-between text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Lock size={12} className="text-ok" />
-              {t('ai_gen.diagram.no_secret_leaks')}
-            </span>
-            <button className="text-run hover:underline font-medium text-[11px]">{t('ai_gen.diagram.view_map')}</button>
-          </div>
-        </div>
-
-        {/* Right: Synthesized Workflow AST JSON Specification */}
-        <div className="bg-card border border-border rounded-xl p-4 space-y-3 lg:col-span-2">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Terminal size={16} className="text-run" />
-              <span className="text-xs font-bold text-foreground">
-                {t('ai_gen.diagram.synthesized_definition')}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleCopyJson}
-                className="h-6 px-2 rounded text-[11px] font-medium bg-subtle hover:bg-muted text-text-2 transition-colors flex items-center gap-1"
-              >
-                <Copy size={11} />
-                <span>{copiedCode ? t('ai_gen.diagram.copied') : t('ai_gen.diagram.copy_json')}</span>
-              </button>
-              <span className="text-ok font-mono text-[10px] font-semibold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-ok" />
-                {t('ai_gen.diagram.valid_rfc').replace('{number}', '8259')}
-              </span>
-            </div>
-          </div>
-
-          {/* Code Block Container */}
-          <pre className="p-3 bg-subtle rounded-lg font-mono text-[11px] text-muted-foreground overflow-x-auto max-h-[160px] leading-relaxed border border-border">
-            {`{
-  "workflow_id": "wf_syn_802fb9",
-  "execution_engine": "weav-runtime-v2",
-  "topology": {
-    "nodes_count": 5,
-    "entrypoint": "node_webhook_01",
-    "edges": [
-      { "from": "node_webhook_01", "to": "node_pg_query_02" },
-      { "from": "node_pg_query_02", "to": "node_ai_extract_03" },
-      { "from": "node_ai_extract_03", "to": "node_cond_gate_04" },
-      { "from": "node_cond_gate_04", "to": "node_slack_notify_05", "condition": "true" }
-    ]
-  },
-  "verification_hash": "sha256:7f9a2e38c01b..."
-}`}
-          </pre>
-        </div>
-        </div>
-      </details>
-
-      {/* Prominent Operational Control Bottom Bar (Fixed Sticky) */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 md:left-[220px] bg-card/95 backdrop-blur border-t border-border p-3 shadow-pop flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="w-2.5 h-2.5 rounded-full bg-ok animate-pulse shrink-0" />
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-foreground">
-              {t('ai_gen.workflow_ready')}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-          <Link
-            to="/workflows/new"
-            className="px-3 py-1.5 text-xs font-medium text-text-2 hover:text-err hover:bg-err-bg rounded transition-colors"
-          >
-            {t('ai_gen.discard_draft')}
-          </Link>
-          <button
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="px-3 py-1.5 text-xs font-medium bg-subtle hover:bg-muted text-foreground rounded transition-colors"
-          >
-            {t('ai_gen.edit_prompt')}
-          </button>
-          <button
-            onClick={handleAcceptPipeline}
-            className="px-4 py-1.5 text-xs font-semibold bg-primary hover:bg-primary text-white rounded transition-colors flex items-center gap-1.5"
-          >
-            <Zap size={14} />
-            <span>{t('ai_gen.create_workflow')}</span>
-          </button>
-        </div>
+          </ul>
+        ) : null}
+        {!isPending && result?.status === 'ready' ? renderPreview(result) : null}
       </div>
     </div>
   );
