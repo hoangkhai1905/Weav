@@ -127,7 +127,7 @@ User chọn: (1) hiển thị tối thiểu in đậm + code; (2) thêm chọn k
 - `DataSetEditor.tsx`: mỗi dòng chọn kiểu "Văn bản / Số / Đúng-Sai / Lấy từ bước trước". Số lưu dạng số (không hợp lệ thì báo lỗi và chưa lưu dòng đó), Đúng/Sai lưu boolean, mapping lưu chuỗi. Khi mở lại tự nhận kiểu; object/array/null hiện chỉ đọc "giá trị nâng cao, giữ nguyên".
 - `SchemaField.tsx`: nhãn lựa chọn lấy từ `builder.field.<type>.<name>.<value>` (giá trị lưu vẫn là mã gốc); thêm nhãn vi + en dễ hiểu cho thao tác Drive/Calendar, định dạng email, định dạng Telegram, cách ghi Sheets; gợi ý viết lại bằng lời thường.
 - Kiểm tra: tsc, eslint, `pnpm build`, `git diff --check` qua. e2e `assistant` + `workspace-connections`: 66 qua, 2 lỗi 401 có sẵn. Test "a step added from the palette..." từng fail một lần khi chạy song song, chạy riêng 3/3 qua (chập chờn).
-- Còn có thể làm: gợi ý ngày giờ Calendar ("RFC 3339") và nhãn "MIME" của Drive vẫn còn thuật ngữ.
+- Gợi ý ngày giờ Calendar và nhãn MIME của Drive: đã viết lại bằng lời thường (vi + en, có ví dụ ngày giờ Việt Nam, "Loại tệp (không bắt buộc)" kèm ví dụ); thêm gợi ý múi giờ và "Đến thời điểm". Week 4 e2e 13/13.
 
 ## 7. Hướng dẫn cho agent tiếp theo
 
@@ -144,7 +144,6 @@ User chọn: (1) hiển thị tối thiểu in đậm + code; (2) thêm chọn k
 - Nút "Tạo bằng AI": user chọn nối vào luồng thật (tạo bản nháp rồi mở builder với `GenerateWorkflowPanel` bật sẵn), làm sau. `/ai/workflow-generator` (`AiGeneratorPage`) hiện chỉ là demo `setTimeout`.
 - Volume tạm `weav-m2-tmp` (cache Maven) còn; hook chặn agent xóa volume, user tự chạy `docker volume rm weav-m2-tmp` khi không cần.
 - Stack dev đã build lại bằng code đã gộp (2026-10-07); identity dev chạy RS256, khóa dev trong `tmp/service-keys/` (identity, public, private).
-- Gợi ý ngày giờ Calendar và nhãn MIME của Drive còn thuật ngữ kỹ thuật.
 - Stash `stash@{0}` (`codex/web-session-renewal`) là bản làm dở cũ của tính năng giữ đăng nhập; tính năng đã xong bằng cách khác (xem `web-session-renewal.md`), stash để nguyên.
 
 ## 9. Kết thúc phiên
