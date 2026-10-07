@@ -7,7 +7,7 @@
 | Ngày | `2026-10-06` → `2026-10-07`, Asia/Saigon |
 | Nhánh | `feat/week4-fe-integration`, tạo từ `staging` (`c366fbe`), đã gộp `dev` (`991aa12`) |
 | Người thực hiện | K + AI agent |
-| Trạng thái | Đang tiếp tục: (a) và (b) xong (commit, chưa push); (c) trợ lý AI chưa làm |
+| Trạng thái | (a), (b), (c) xong (commit, chưa push); còn việc tồn ở mục 8 |
 | Phạm vi | Đưa các node và trợ lý AI Week 1–4 của backend (`staging`) lên giao diện web |
 
 ## 2. Bối cảnh
@@ -98,6 +98,19 @@ Kiểm tra:
 - Stack thật (subagent, browser pane): workflow thử `3b2a581f-893f-4ade-b76e-4c963385beea`, thêm cả 6 node, `PUT .../draft` → 200; server trả đúng kiểu (`cases` mảng, `fields` object, `maxLength` 200, `attendees` mảng, `pageSize` 20, `pollIntervalMinutes` 15). Workspace chưa có kết nối Gmail/Drive/Calendar nên inspector hiện gợi ý + nút thêm. Console: chỉ 403 refresh lúc tải trang rồi retry 200. Đã xóa workflow thử (DELETE 204).
 - Giới hạn đã biết: `data.set` lưu mọi giá trị dạng chuỗi (`42` → `"42"`); muốn số thì dùng mapping hoặc thêm chọn kiểu sau. Đổi Drive/Calendar sang `list` không xóa các key của `upload`/`create` (vô hại với executor, chưa kiểm). Chưa chạy thật (publish + run), chưa thử OAuth cho 2 provider mới.
 
+## 6c. Phần (c): trang trợ lý AI (2026-10-07)
+
+Quyết định của user: trang riêng `/assistant` (mục sidebar luôn hiện); draft → tạo workflow mới rồi mở builder; ai-service tắt → trang vẫn hiện và báo "chưa bật"; câu trả lời hiển thị text thuần, giữ xuống dòng (không markdown). Subagent Sonnet nghiên cứu hợp đồng, code, viết e2e và kiểm stack thật; agent chính duyệt và commit.
+
+- `api/assistant.api.ts`: list/messages/delete (mẫu `request()` + retry 401 của `workflow-v1.api.ts`), `chat` stream bằng `fetch` + `ReadableStream` (EventSource không gửi được header Authorization), parser SSE thuần `parseSseFrames`, lỗi có kiểu `AssistantApiError`, hủy bằng AbortSignal, không timeout cho stream.
+- `pages/AssistantPage.tsx`: danh sách hội thoại theo workspace (tải thêm, xóa có xác nhận), khung chat stream (`aria-live`), chip công cụ, thẻ draft "Mở trong trình soạn" (`workflowV1Api.createWorkflowFromDefinition`: POST workflow rồi PUT draft với definition + editorState), lỗi theo mã (bận, hết quota, rate limit, timeout, provider, tắt). Màn hẹp: danh sách vào nút "Cuộc trò chuyện". Route trong `App.tsx`, mục `Sidebar.tsx`, 38 key vi + en. `workflow-v1.api.ts` export `apiBaseUrl`.
+- Ghi chú: effect tải danh sách dùng `queueMicrotask` để tránh lint `set-state-in-effect`; có thể chuyển sang react-query sau.
+
+Kiểm tra:
+- tsc, eslint các file đổi, `pnpm build`, `git diff --check`: qua. `e2e/assistant.spec.ts` 8/8 (danh sách + lịch sử, stream + chip + tái dùng conversationId, draft → builder, lỗi 429/stream error, 503 tắt, xóa, retry 401, 375px không cuộn ngang); Week 4 builder 12/12.
+- Stack thật: phải bật đủ điều kiện cho trợ lý: sinh khóa dịch vụ `node scripts/ai-dev-keys.mjs` (tmp/service-keys/public|private), khóa identity `node scripts/identity-dev-keys.mjs`, tạo lại workflow-service, workspace-service, ai-service, identity-service (identity trước đó chạy HS256 dù `.env` đặt RS256; JWKS rỗng → ai-service từ chối mọi token, Gateway trả 401). Sau đó user đăng nhập lại để có token RS256. Kết quả: GET conversations 200, chat 200 stream được, chip "Đang xem danh sách quy trình", trả lời đúng số workflow; lịch sử mở được (GET messages 200); xóa hội thoại 204. Lượt tạo workflow: trợ lý trả `INVALID_INTENT` rồi báo workspace không có kết nối Gmail nên không có thẻ draft (do môi trường; e2e đã phủ). Dùng 3 lượt DeepSeek.
+- Còn mở: DeepSeek trả markdown (`**đậm**`, backtick) nên hiện ký tự thô vì đã chọn text thuần; có thể xử lý bằng cách render tối thiểu (đậm/code) không dùng thư viện hoặc dặn model trả text thuần — cần user quyết.
+
 ## 7. Hướng dẫn cho agent tiếp theo
 
 1. `git status`: phải đang ở `feat/week4-fe-integration`, worktree sạch (trừ `examples/` không thuộc dự án). Kiểm `git log -1` là merge commit "Merge branch 'dev' into feat/week4-fe-integration".
@@ -112,7 +125,8 @@ Kiểm tra:
 
 - Nút "Tạo bằng AI": user chọn nối vào luồng thật (tạo bản nháp rồi mở builder với `GenerateWorkflowPanel` bật sẵn), làm sau. `/ai/workflow-generator` (`AiGeneratorPage`) hiện chỉ là demo `setTimeout`.
 - Volume tạm `weav-m2-tmp` (cache Maven) còn; hook chặn agent xóa volume, user tự chạy `docker volume rm weav-m2-tmp` khi không cần.
-- Stack dev đang chạy bản build từ `dev`; khi chuyển sang code đã gộp cần build lại các service (`--build`).
+- Stack dev đã build lại bằng code đã gộp (2026-10-07); identity dev chạy RS256, khóa dev trong `tmp/service-keys/` (identity, public, private).
+- Trang Connections chưa tạo được kết nối Telegram (cần token bot) nên `telegram.send_message` chưa dùng thật được; `data.set` lưu mọi giá trị dạng chuỗi.
 - Stash `stash@{0}` (`codex/web-session-renewal`) là bản làm dở cũ của tính năng giữ đăng nhập; tính năng đã xong bằng cách khác (xem `web-session-renewal.md`), stash để nguyên.
 
 ## 9. Kết thúc phiên
