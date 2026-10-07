@@ -44,6 +44,7 @@ export const SwitchEditor: React.FC<SwitchEditorProps> = ({ config, onChange, on
                   aria-label={t('builder.cfg.switch_case').replace('{n}', n)}
                   aria-invalid={Boolean(problem)}
                   data-testid="switch-case"
+                  data-notemplate
                   maxLength={64}
                   value={value}
                   onChange={(event) => onCasesChange(cases.map((item, i) => (i === index ? event.target.value : item)))}

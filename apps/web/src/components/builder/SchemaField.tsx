@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { NODE_SCHEMAS, schemaTypes } from '../../lib/nodeSchemas';
+
+// The executors reject more than this even where the schema has no maximum.
+const INTEGER_CAP: Record<string, number> = { maxLength: 5000 };
 
 const inputCls = 'w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
 
@@ -25,6 +28,8 @@ interface SchemaFieldProps {
  */
 export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value, onChange, connections, multiline }) => {
   const { t } = useI18nStore();
+  // Text that is not a valid whole number is shown with an error but never written to the config.
+  const [badInteger, setBadInteger] = useState<string | null>(null);
   const property = NODE_SCHEMAS[nodeType]?.properties[name];
   if (!property) return null;
   const key = `builder.field.${nodeType}.${name}`;
@@ -76,22 +81,44 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
       />
     );
   } else {
-    // Integer fields also take a mapping such as {{ trigger.input.id }}; plain digits are saved as a number.
+    // Integer fields also take a mapping such as {{ trigger.input.id }}. Plain digits within the schema range
+    // are saved as a number; a mapping stays text; anything else is flagged and not saved.
     const isInteger = types.includes('integer');
+    const min = property.minimum ?? 0;
+    const max = property.maximum ?? INTEGER_CAP[name];
+    const shown = badInteger ?? text;
+    const invalid = isInteger && badInteger !== null;
     control = (
-      <input
-        id={id}
-        data-testid={`field-${name}`}
-        type="text"
-        inputMode={isInteger ? 'numeric' : undefined}
-        maxLength={property.maxLength}
-        value={text}
-        onChange={(event) => {
-          const next = event.target.value;
-          onChange(next === '' ? undefined : isInteger && /^\d+$/.test(next) ? Number(next) : next);
-        }}
-        className={`${inputCls} ${property['x-weav-template'] ? 'font-mono' : ''}`}
-      />
+      <>
+        <input
+          id={id}
+          data-testid={`field-${name}`}
+          type="text"
+          inputMode={isInteger ? 'numeric' : undefined}
+          maxLength={property.maxLength}
+          value={shown}
+          aria-invalid={invalid || undefined}
+          aria-describedby={invalid ? `${id}-error` : undefined}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (!isInteger || next === '' || next.includes('{{')) {
+              setBadInteger(null);
+              onChange(next === '' ? undefined : next);
+            } else if (/^(0|[1-9]\d{0,8})$/.test(next) && Number(next) >= min && (max === undefined || Number(next) <= max)) {
+              setBadInteger(null);
+              onChange(Number(next));
+            } else {
+              setBadInteger(next);
+            }
+          }}
+          className={`${inputCls} ${property['x-weav-template'] ? 'font-mono' : ''}`}
+        />
+        {invalid && (
+          <p id={`${id}-error`} role="alert" className="mt-1 text-[10px] text-err">
+            {t('builder.field.int_invalid').replace('{min}', String(min)).replace('{max}', max === undefined ? '∞' : String(max))}
+          </p>
+        )}
+      </>
     );
   }
 

@@ -219,7 +219,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
           <span className="truncate text-[13px] font-medium text-foreground">{name}</span>
           <span className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
             {isTrigger ? `${t('builder.status.trigger')} · ` : ''}
-            {data.id ? String(data.id) : nodeType}
+            {id}
           </span>
         </div>
       </div>

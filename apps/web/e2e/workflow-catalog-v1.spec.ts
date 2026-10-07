@@ -79,8 +79,9 @@ test('catalog matches exactly the Workflow V1 node set and contract defaults', a
   ]);
 
   const webhook = catalog.find((item) => item.type === 'trigger.webhook');
-  expect(webhook?.defaultConfig).not.toHaveProperty('path');
-  expect(catalog.find((item) => item.type === 'google.sheets')?.defaultConfig.connectionId).toBe('');
+  expect(webhook?.defaultConfig).toEqual({}); // the schema has no webhook settings
+  // connectionId is omitted until picked: an empty string is INVALID_CONNECTION_ID on draft save.
+  expect(catalog.find((item) => item.type === 'google.sheets')?.defaultConfig).not.toHaveProperty('connectionId');
   expect(JSON.stringify(catalog)).not.toContain('$json');
   expect(JSON.stringify(catalog)).not.toContain('google-workspace');
   expect(catalog.some((item) => ['agent.task', 'google.docs', 'logic.filter'].includes(item.type))).toBe(false);

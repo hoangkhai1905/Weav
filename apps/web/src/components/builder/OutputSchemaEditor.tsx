@@ -35,7 +35,7 @@ export function OutputSchemaEditor({ value, legacyDescription, onChange }: {
         <p className="text-[11px] text-muted-foreground">{t('builder.cfg.schema_legacy')}{legacyDescription}</p>
       ) : null}
       <label htmlFor={id} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.schema_label')}</label>
-      <textarea id={id} rows={8} spellCheck={false} value={draft} aria-invalid={error !== null}
+      <textarea id={id} data-notemplate rows={8} spellCheck={false} value={draft} aria-invalid={error !== null}
         onChange={(event) => setDraft(event.target.value)} onBlur={commit}
         className="w-full resize-y rounded border border-border bg-subtle px-2.5 py-1.5 font-mono text-xs text-foreground" />
       {error ? <p role="alert" className="text-[11px] text-err">{error}</p> : null}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
+import { isCredentialKey, isReferenceableName } from '../../lib/mappingGrammar';
 
 const fieldCls = 'min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
 const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
@@ -93,6 +94,7 @@ export const DataSetEditor: React.FC<DataSetEditorProps> = ({ value, onChange })
                     aria-label={t('builder.cfg.data_set_name').replace('{n}', n)}
                     aria-invalid={duplicate}
                     data-testid="data-set-key"
+                    data-notemplate
                     maxLength={128}
                     value={row.key}
                     placeholder={t('builder.cfg.data_set_name_placeholder')}
@@ -144,6 +146,8 @@ export const DataSetEditor: React.FC<DataSetEditorProps> = ({ value, onChange })
                 {row.type === 'mapping' && <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.data_set_mapping_hint')}</p>}
                 {invalidNumber(row) && <p role="alert" className="text-[10px] text-err">{t('builder.cfg.data_set_number_invalid')}</p>}
                 {duplicate && <p role="alert" className="text-[10px] text-err">{t('builder.cfg.data_set_duplicate')}</p>}
+                {!duplicate && row.key.trim() !== '' && isCredentialKey(row.key) && <p role="alert" className="text-[10px] text-err">{t('builder.cfg.data_set_credential')}</p>}
+                {!duplicate && row.key.trim() !== '' && !isCredentialKey(row.key) && !isReferenceableName(row.key) && <p role="note" className="text-[10px] text-warn">{t('builder.cfg.data_set_unreferenceable')}</p>}
               </div>
             );
           })}
