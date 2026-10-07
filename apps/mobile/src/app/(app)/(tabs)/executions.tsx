@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Activity, ChevronDown } from 'lucide-react-native';
+import { Activity, ChevronDown, MessageCircle } from 'lucide-react-native';
 import { useExecutions } from '../../../features/executions/hooks/useExecutions';
 import { useWorkflowNames } from '../../../features/workflows/hooks/useWorkflows';
 import { fill } from '../../../features/common/fill';
@@ -135,6 +135,16 @@ export default function ExecutionsScreen() {
       <ScreenHeader
         title={t('exl.title')}
         subtitle={query.data ? fill(t('exl.count'), { n: visible.length }) : undefined}
+        trailing={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('asst.open')}
+            onPress={() => router.push('/(app)/assistant')}
+            style={styles.assistant}
+          >
+            <MessageCircle size={22} color={colors.primary} />
+          </Pressable>
+        }
       />
       {body}
       <Sheet visible={pickerOpen} onClose={() => setPickerOpen(false)} title={t('exl.filter.pick')}>
@@ -200,6 +210,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
   },
   pickerText: { flex: 1 },
+  assistant: { width: MinTouch, height: MinTouch, alignItems: 'center', justifyContent: 'center' },
   note: { textAlign: 'center', paddingTop: Spacing.three },
   choice: {
     minHeight: MinTouch,

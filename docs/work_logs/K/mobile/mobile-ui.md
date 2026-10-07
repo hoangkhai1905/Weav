@@ -101,3 +101,38 @@ Chưa kiểm tra: chạy app thật với gateway (Expo Web/thiết bị); strea
 - Tab Lịch sử gộp từ 20 workflow ĐẦU của danh sách (sắp theo `createdAt` giảm dần, không phải theo hoạt động): workspace có hơn 20 workflow mới hơn thì lượt chạy của workflow cũ không hiện. Đây là giới hạn của cách gộp theo brief; cần endpoint toàn workspace.
 - Chưa kiểm chứng: kéo để làm mới bằng cử chỉ, cuộn tới cuối tự tải trang (đã kiểm chứng bằng nút "Tải thêm"), cỡ chữ lớn (Dynamic Type), thiết bị thật. `Alert` không dùng (không chạy trên web).
 - Nhánh hiện tại là `feature/mobile` (brief ghi `feature/mobile-ui`).
+
+---
+
+## Bước 6, làn B: Trang chủ, AI Generator, Trợ lý AI (commit "feat(mobile): dashboard, AI generator and assistant screens")
+
+- **Trang chủ** (`(tabs)/index.tsx`, `features/dashboard/`): đổi không gian làm việc ngay ở đầu trang (Sheet), chuông thông báo, hai lối tắt (Trợ lý, Tạo bằng AI). Thẻ tổng quan tính phía client (`dashboard.stats.ts`, có test): số quy trình theo trạng thái, tỉ lệ thành công, đang chạy/chờ, bị lỗi. Nhãn trung thực: "trong N lượt chạy gần nhất", có dòng ghi chú "không phải thống kê theo ngày hay tuần". "Cần chú ý": 3 lượt FAILED mới nhất, trigger DISABLED (dùng lại `trigger.reason.*` của làn A), connection INVALID. Trigger chỉ có ở chi tiết quy trình nên chỉ kiểm tra tối đa 10 quy trình đã xuất bản (`TRIGGER_CHECK_LIMIT`), dùng chung query key `['workflow', ws, id]` với màn chi tiết. Có skeleton, empty, ErrorState, 403.
+- **AI Generator** (`ai/generator.tsx`, `features/ai/`): ô mô tả (<= 4000 ký tự, bộ đếm, 3 gợi ý), màn chờ có các giai đoạn theo thời gian + đồng hồ (route chậm tới ~80 s; các giai đoạn là ước lượng theo giây, không phải tiến độ thật của backend). `needs_input`: mỗi mã câu hỏi một control: URL (kiểm tra http/https), SCHEDULE (chọn Mỗi giờ/ngày/tuần/tháng + giờ/phút, không gõ cron), TIMEZONE (mặc định múi giờ thiết bị), VALUE (nhãn thân thiện theo tên trường: subject, body, to...), CONNECTION (chọn trong kết nối ACTIVE + `canAttach` đúng provider). Gửi lại prompt kèm `answers` / `connections` cộng dồn qua các vòng. `unsupported`: lý do dễ hiểu + gợi ý viết lại. `ready`: xem trước dạng danh sách dọc (`FlowList`), sửa tên, "Lưu bản nháp" = `POST` tạo rồi `PUT draft` (kèm `editorState.nodes[id] = {name, position}` để web hiển thị tên bước; nếu `PUT` lỗi thì giữ `workflowId` để thử lại không tạo trùng), rồi "Xuất bản ngay" nếu `canPublish` (secret webhook hiện một lần qua `PublishResultSheet`).
+- **Định dạng câu trả lời SCHEDULE**: backend ghép `answers` vào prompt rồi để model hiểu (prompt định nghĩa cron 6 trường "giây phút giờ ngày tháng thứ"). Mobile gửi câu mô tả + cron, ví dụ `Mỗi thứ sáu lúc 17:30 (cron: 0 30 17 * * FRI)`. Ngày trong tháng chỉ 1-28.
+- **Trợ lý AI** (`assistant/index.tsx`, `assistant/chat.tsx`, `features/assistant/`): danh sách hội thoại, câu hỏi nhanh, mở lại hội thoại, xóa (xác nhận). Chat qua `HttpAssistantRepository.chat` (SSE, `expo/fetch`); `applyAssistantEvent` gom `delta/tool_call/draft/done/error` (có test). Định dạng tối thiểu: **đậm**, `code`, dòng gạch đầu dòng/đánh số, không thêm thư viện. Sự kiện `draft` hiện thẻ đề xuất với nút lưu thành bản nháp (không lưu tự động). Lối vào: Trang chủ và nút trên tiêu đề tab Lịch sử (giữ 5 tab).
+- Chung: `components/ui/Button.tsx` (44 pt), `features/common/timezone.ts`, i18n `stores/i18n.ai.ts` (vi + en, có test đủ khóa và placeholder). Sửa lỗi phát hiện khi chạy web: nút xóa lồng trong `ListItem` (button trong button) nên tách thành phần tử anh em.
+
+### Kiểm tra (làn B)
+
+| Hạng mục | Kết quả |
+| --- | --- |
+| `npx tsc --noEmit -p .` | PASS |
+| `node --test $(find src -name "*.test.cjs")` | 154 pass, 0 fail (trước 136; thêm dashboard.stats, schedule, ai.answers, assistant.chat, i18n.ai) |
+| `git diff --check` | PASS |
+| Expo Web `:5173` (`EXPO_PUBLIC_API_MODE=http`, gateway `localhost:3000`) + Playwright 390x844, sáng/tối | Đăng nhập, Trang chủ có dữ liệu + trống + đổi workspace + 403; AI Generator thật: 2 vòng `needs_input` (URL, SCHEDULE, VALUE) rồi `unsupported` (INVALID_INTENT), một prompt khác ra `ready` -> Lưu bản nháp (POST 201 + PUT 200) -> Xuất bản; Trợ lý thật: gửi 2 tin, trả lời, mở lại lịch sử, xóa (204). Không có lỗi console ngoài 2 cảnh báo deprecate của react-native-web (`shadow*`, `pointerEvents`) |
+| Route đã gọi | `POST /api/v1/workspaces/:id/workflows/generate`, `POST .../workflows` (201), `PUT .../draft`, `POST .../publish`, `GET .../workflows[/:id]`, `GET .../workflows/:id/executions`, `GET .../connections`, `GET .../members`, `POST /api/v1/assistant/chat`, `GET /api/v1/assistant/conversations[?workspaceId&limit]`, `GET .../conversations/:id/messages`, `DELETE .../conversations/:id` |
+| Kiểm tra UI bằng phản hồi giả (route stub của Playwright, không ghi gì vào backend) | AI thật không lỗi nên 429 `AI_QUOTA_EXCEEDED`, 503 `AI_UNAVAILABLE` (generate và chat), 403 ở Trang chủ, câu hỏi `CONNECTION`/`TIMEZONE` (không phải model nào cũng sinh) được kiểm bằng stub. Payload `answers`/`connections` kiểm đúng: `connections: {"email.send": <uuid>}`, `answers: {"email.send.subject": ..., "trigger.schedule.cron": "... (cron: 0 30 17 * * FRI)"}` |
+| Ảnh chụp | `apps/mobile/docs/screens/home-*`, `ai-generator-*`, `assistant-*` (sáng + tối) |
+
+### Dữ liệu thử đã tạo / dọn
+
+- Tài khoản mới `mobile-b-1791392546173@example.test` (tên "Mobile Lane B", không có API xóa tài khoản) với không gian "Không gian thử B". Mật khẩu chỉ nằm trong file tạm đã xóa. Đã xóa mọi quy trình (5, gồm 2 do AI tạo) và hội thoại tạo khi thử; tài khoản và không gian còn lại. Tài khoản/không gian của làn A giữ nguyên (mật khẩu của làn A không được ghi lại nên không dùng lại được).
+
+### Phát hiện, rủi ro, việc chưa làm
+
+- Backend chưa có endpoint tổng hợp: Trang chủ phụ thuộc cách gộp client (<= 20 quy trình x 10 lượt) và <= 10 lần `GET workflow` để kiểm trigger (N+1).
+- Cuộc gọi generate chưa hủy được khi người dùng rời màn hình (mutation không truyền `AbortSignal`); đang chờ tối đa 85 s.
+- Các giai đoạn trên màn chờ AI chỉ là ước lượng theo giây.
+- Tên bước ở câu hỏi VALUE/URL dùng id nút do model đặt (ví dụ "read revenue") khi không khớp loại nút nào.
+- Thanh tab dưới cùng bị cắt nhãn trên web 390x844 (có sẵn từ trước, không thuộc làn B).
+- Chưa kiểm: thiết bị thật, stream từng chunk của `expo/fetch` trên native, Dynamic Type, kéo để làm mới bằng cử chỉ.

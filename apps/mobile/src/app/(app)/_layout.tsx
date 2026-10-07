@@ -33,6 +33,8 @@ export default function AppLayout() {
       <Stack.Screen name="connections/index" options={{ presentation: 'card' }} />
       <Stack.Screen name="workspace/index" options={{ presentation: 'card' }} />
       <Stack.Screen name="ai/generator" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="assistant/index" options={{ presentation: 'card' }} />
+      <Stack.Screen name="assistant/chat" options={{ presentation: 'card' }} />
       <Stack.Screen name="settings/index" options={{ presentation: 'card' }} />
     </Stack>
     </View>
