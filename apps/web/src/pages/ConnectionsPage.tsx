@@ -6,6 +6,7 @@ import { LoaderCircle, MoreHorizontal, Plus, RefreshCw, X } from "lucide-react";
 import {
   ConnectionApiError,
   connectionApi,
+  GOOGLE_PROVIDERS,
   type ConnectionResponse,
   type ConnectionStatus,
   type GoogleProvider,
@@ -237,7 +238,7 @@ function ConnectionRow({
   isWorking: boolean;
 }) {
   const isGoogleOAuth =
-    (connection.provider === "GMAIL" || connection.provider === "GOOGLE_SHEETS") && connection.authType === "OAUTH2";
+    (GOOGLE_PROVIDERS as readonly string[]).includes(connection.provider) && connection.authType === "OAUTH2";
   // Primary contextual action: (re)authorize a Google connection that needs it, otherwise verify it.
   const primaryIsOAuth = isGoogleOAuth && (connection.status !== "ACTIVE" || !connection.hasCredential);
   return (
@@ -495,6 +496,8 @@ export function CreateConnectionDialog({
             >
               <option value="GMAIL">Gmail</option>
               <option value="GOOGLE_SHEETS">Google Sheets</option>
+              <option value="GOOGLE_CALENDAR">Google Calendar</option>
+              <option value="GOOGLE_DRIVE">Google Drive</option>
             </select>
           </div>
           {createError && (

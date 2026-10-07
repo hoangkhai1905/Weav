@@ -4,11 +4,12 @@ import { tr } from '../lib/i18n/tr';
 import { useAuthStore } from '../store/useAuthStore';
 
 export type ConnectionProvider =
-  "TELEGRAM" | "HTTP" | "GMAIL" | "GOOGLE_SHEETS";
+  "TELEGRAM" | "HTTP" | "GMAIL" | "GOOGLE_SHEETS" | "GOOGLE_CALENDAR" | "GOOGLE_DRIVE";
 export type GoogleProvider = Extract<
   ConnectionProvider,
-  "GMAIL" | "GOOGLE_SHEETS"
+  "GMAIL" | "GOOGLE_SHEETS" | "GOOGLE_CALENDAR" | "GOOGLE_DRIVE"
 >;
+export const GOOGLE_PROVIDERS: readonly GoogleProvider[] = ["GMAIL", "GOOGLE_SHEETS", "GOOGLE_CALENDAR", "GOOGLE_DRIVE"];
 export type ConnectionAuthType =
   "NONE" | "TOKEN" | "API_KEY" | "BASIC" | "OAUTH2";
 export type ConnectionStatus = "DISABLED" | "ACTIVE" | "INVALID";
@@ -168,7 +169,7 @@ function parseConnection(value: unknown): ConnectionResponse {
       tr('msg.workspace_returned_an_invalid_connection_response'),
     );
 
-  const providers = ["TELEGRAM", "HTTP", "GMAIL", "GOOGLE_SHEETS"] as const;
+  const providers = ["TELEGRAM", "HTTP", ...GOOGLE_PROVIDERS] as const;
   const authTypes = ["NONE", "TOKEN", "API_KEY", "BASIC", "OAUTH2"] as const;
   const statuses = ["DISABLED", "ACTIVE", "INVALID"] as const;
   const nullableString = (field: unknown) =>
