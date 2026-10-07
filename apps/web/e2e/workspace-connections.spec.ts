@@ -2044,6 +2044,9 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await saveDraft(page);
     expect(savedConfig(state, "drive")).toEqual({ connectionId: CONNECTION_DRIVE_ID, operation: "upload", content: "hello", name: "notes.txt" });
 
+    // Friendly option names; the saved value stays the raw enum.
+    await expect(page.getByTestId("field-operation")).toContainText("Upload a file");
+    await expect(page.getByTestId("field-operation")).toContainText("List files");
     await page.getByTestId("field-operation").selectOption("list");
     await expect(page.getByTestId("field-folderId")).toBeVisible();
     await expect(page.getByTestId("field-nameContains")).toBeVisible();
@@ -2193,6 +2196,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(set).toHaveAttribute("data-readiness", "not-configured");
     await page.getByTestId("data-set-add").click();
     await page.getByLabel("Field 1 name").fill("email");
+    await page.getByLabel("Value type of field 1").selectOption("mapping");
     await page.getByLabel("Field 1 value").fill("{{ trigger.input.email }}");
     await page.getByTestId("data-set-add").click();
     await page.getByLabel("Field 2 name").fill("plan");
@@ -2200,6 +2204,36 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(set).toHaveAttribute("data-readiness", "ready");
     await saveDraft(page);
     expect(savedConfig(state, "set")).toEqual({ fields: { email: "{{ trigger.input.email }}", plan: "pro" } });
+
+    // Number is saved as a JSON number and Yes/No as a boolean; a text value that looks numeric stays text.
+    await page.getByTestId("data-set-add").click();
+    await page.getByLabel("Field 3 name").fill("count");
+    await page.getByLabel("Value type of field 3").selectOption("number");
+    await page.getByLabel("Field 3 value").fill("42");
+    await page.getByTestId("data-set-add").click();
+    await page.getByLabel("Field 4 name").fill("active");
+    await page.getByLabel("Value type of field 4").selectOption("boolean");
+    await page.getByLabel("Field 4 value").selectOption("false");
+    await page.getByTestId("data-set-add").click();
+    await page.getByLabel("Field 5 name").fill("code");
+    await page.getByLabel("Field 5 value").fill("007");
+    await saveDraft(page);
+    expect(savedConfig(state, "set")).toEqual({
+      fields: { email: "{{ trigger.input.email }}", plan: "pro", count: 42, active: false, code: "007" },
+    });
+
+    // An invalid number shows a friendly error and is left out of the saved fields until fixed.
+    await page.getByLabel("Field 3 value").fill("forty");
+    await expect(page.getByRole("alert")).toContainText("Enter a number");
+    await saveDraft(page);
+    expect(savedConfig(state, "set")).toEqual({
+      fields: { email: "{{ trigger.input.email }}", plan: "pro", active: false, code: "007" },
+    });
+    await page.getByLabel("Field 3 value").fill("3.5");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await saveDraft(page);
+    expect((savedConfig(state, "set") as { fields: Record<string, unknown> }).fields.count).toBe(3.5);
+    for (let i = 0; i < 3; i += 1) await page.getByLabel("Remove field 3").click();
 
     await page.getByLabel("Field 2 name").fill("email");
     await expect(page.getByRole("alert")).toContainText("Duplicate");
@@ -2219,6 +2253,31 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await page.getByLabel("Remove field 1").click();
     await expect(page.getByTestId("data-set-key")).toHaveCount(0);
     await expect(set).toHaveAttribute("data-readiness", "not-configured");
+  });
+
+  test("data.set infers the value type of an existing config and keeps advanced values unchanged", async ({ page }) => {
+    const nested = { a: [1, 2], b: { c: true } };
+    const state = await openBuilder(page, [
+      { id: "manual", type: "trigger.manual", config: {} },
+      { id: "set", type: "data.set", config: { fields: { name: "Ann", age: 30, vip: true, email: "{{ trigger.input.email }}", extra: nested } } },
+    ], [{ id: "manual-set", source: "manual", target: "set" }]);
+
+    await page.locator(node("data.set")).click();
+    const types = page.getByTestId("data-set-type");
+    await expect(types).toHaveCount(4);
+    await expect(types.nth(0)).toHaveValue("text");
+    await expect(types.nth(1)).toHaveValue("number");
+    await expect(types.nth(2)).toHaveValue("boolean");
+    await expect(types.nth(3)).toHaveValue("mapping");
+    await expect(page.getByLabel("Field 2 value")).toHaveValue("30");
+    await expect(page.getByLabel("Field 3 value")).toHaveValue("true");
+    await expect(page.getByTestId("data-set-advanced")).toHaveText("Advanced value, kept as is.");
+
+    await page.getByLabel("Field 1 value").fill("Bob");
+    await saveDraft(page);
+    expect(savedConfig(state, "set")).toEqual({
+      fields: { name: "Bob", age: 30, vip: true, email: "{{ trigger.input.email }}", extra: nested },
+    });
   });
 
   test("Connections page offers Google Calendar and Drive and lists them without a parse error", async ({ page }) => {

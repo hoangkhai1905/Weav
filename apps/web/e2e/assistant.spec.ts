@@ -160,6 +160,29 @@ test.describe("AI assistant page", () => {
     expect(bodies[1]).toMatchObject({ workspaceId: WORKSPACE_ID, conversationId: NEW_CONVERSATION, message: "And again" });
   });
 
+  test("formats bold and inline code in replies and keeps everything else literal", async ({ page }) => {
+    await installAuthFixture(page);
+    await stubConversationList(page, []);
+    const reply = "You have **21 workflows**, run `list_runs` now.\n- an unclosed **marker\n<img src=x onerror=alert(1)>";
+    await page.route("**/api/v1/assistant/chat", (route) =>
+      fulfillStream(route, sse(["conversation", { conversationId: NEW_CONVERSATION }], ["delta", { text: reply }], ["done", {}])),
+    );
+
+    await gotoAssistant(page);
+    await ask(page, "**not bold** `not code`");
+    const bubble = page.getByTestId("assistant-message-assistant");
+    await expect(bubble.locator("strong")).toHaveText("21 workflows");
+    await expect(bubble.locator("code")).toHaveText("list_runs");
+    await expect(bubble.locator("div.whitespace-pre-wrap")).toHaveText(
+      "You have 21 workflows, run list_runs now.\n- an unclosed **marker\n<img src=x onerror=alert(1)>",
+    );
+    await expect(bubble.locator("img")).toHaveCount(0);
+    // User messages stay literal.
+    const mine = page.getByTestId("assistant-message-user");
+    await expect(mine).toHaveText("**not bold** `not code`");
+    await expect(mine.locator("strong, code")).toHaveCount(0);
+  });
+
   test("draft card opens a new workflow in the builder", async ({ page }) => {
     await installAuthFixture(page);
     await stubConversationList(page, []);

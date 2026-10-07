@@ -13,6 +13,7 @@ import { workflowV1Api } from '../api/workflow-v1.api';
 import { ConfirmModal } from '../components/common/ConfirmModal';
 import { useWorkspaceListContext } from '../hooks/useWorkspace';
 import { showErrorToast } from '../lib/feedback/toast';
+import { formatAssistantText } from '../lib/formatAssistantText';
 import { useI18nStore } from '../store/useI18nStore';
 
 interface Draft {
@@ -346,7 +347,7 @@ function AssistantChat({ activeWorkspaceId }: { activeWorkspaceId: string | null
                     </div>
                   )}
                   <div aria-live={live ? 'polite' : undefined} aria-busy={live || undefined} className="whitespace-pre-wrap break-words">
-                    {message.content}
+                    {message.role === 'assistant' ? formatAssistantText(message.content) : message.content}
                     {live && !message.content && <Loader2 size={14} className="animate-spin text-muted-foreground" aria-label={t('assistant.thinking')} />}
                   </div>
                   {message.draft && (

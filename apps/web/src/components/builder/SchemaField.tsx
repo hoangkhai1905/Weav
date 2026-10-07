@@ -20,7 +20,8 @@ interface SchemaFieldProps {
  * One node config field rendered from its JSON Schema property (packages/workflow-schema/README.md):
  * enum → select, boolean → checkbox, integer → number-or-mapping text, array of strings → comma list,
  * anything else → text.
- * Labels come from `builder.field.<type>.<name>` (fallback: schema title); `..._hint` adds help text.
+ * Labels come from `builder.field.<type>.<name>` (fallback: schema title); `..._hint` adds help text;
+ * enum options use `builder.field.<type>.<name>.<value>` (fallback: the raw value).
  */
 export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value, onChange, connections, multiline }) => {
   const { t } = useI18nStore();
@@ -45,7 +46,9 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
 
   let control: React.ReactNode;
   if (property['x-weav-connection'] || property.enum) {
-    const options = property.enum?.map((option) => ({ id: option, name: option })) ?? connections ?? [];
+    // Friendly option names come from `<key>.<value>`; the saved value stays the raw enum.
+    const optionLabel = (option: string) => (t(`${key}.${option}`) === `${key}.${option}` ? option : t(`${key}.${option}`));
+    const options = property.enum?.map((option) => ({ id: option, name: optionLabel(option) })) ?? connections ?? [];
     control = (
       <select id={id} data-testid={`field-${name}`} value={text} onChange={(event) => onChange(event.target.value || undefined)} className={inputCls}>
         <option value="">{t(property.enum ? 'builder.field.default' : 'builder.field.select_connection')}</option>

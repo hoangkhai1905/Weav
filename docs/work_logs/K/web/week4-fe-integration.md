@@ -120,6 +120,15 @@ Subagent Sonnet làm, agent chính duyệt và commit.
 - Kiểm tra: tsc, eslint (chỉ lỗi có sẵn ở WorkflowBuilderPage), `pnpm build`, `git diff --check` qua. e2e `workspace-connections` + `assistant`: 64/66 (2 lỗi 401 có sẵn). `localization`: 3 lỗi có sẵn. `workflow-catalog-v1`: 6 lỗi có sẵn; test "catalog matches exactly..." từng fail do phần (b) thêm 6 node mà danh sách mong đợi chưa cập nhật (regression của (b), đã sửa: danh sách = 19 node của `packages/workflow-schema`).
 - Chưa kiểm stack thật (cần token bot thật do user nhập và URL công khai).
 
+## 6e. Theo quyết định của user (2026-10-07): định dạng câu trả lời, kiểu giá trị, nhãn dễ hiểu
+
+User chọn: (1) hiển thị tối thiểu in đậm + code; (2) thêm chọn kiểu cho Set data; (3) đồng ý 4 giả định Telegram ở 6d; (4) gộp vào `dev` và push. Lưu ý chung: giao diện cho người không chuyên lập trình, dễ dùng.
+- `lib/formatAssistantText.tsx` (mới): `**đậm**` → `<strong>`, `` `code` `` → `<code>`, không thư viện, không `dangerouslySetInnerHTML`; marker không đóng và chuỗi giống HTML giữ nguyên chữ. Chỉ áp cho tin của trợ lý.
+- `DataSetEditor.tsx`: mỗi dòng chọn kiểu "Văn bản / Số / Đúng-Sai / Lấy từ bước trước". Số lưu dạng số (không hợp lệ thì báo lỗi và chưa lưu dòng đó), Đúng/Sai lưu boolean, mapping lưu chuỗi. Khi mở lại tự nhận kiểu; object/array/null hiện chỉ đọc "giá trị nâng cao, giữ nguyên".
+- `SchemaField.tsx`: nhãn lựa chọn lấy từ `builder.field.<type>.<name>.<value>` (giá trị lưu vẫn là mã gốc); thêm nhãn vi + en dễ hiểu cho thao tác Drive/Calendar, định dạng email, định dạng Telegram, cách ghi Sheets; gợi ý viết lại bằng lời thường.
+- Kiểm tra: tsc, eslint, `pnpm build`, `git diff --check` qua. e2e `assistant` + `workspace-connections`: 66 qua, 2 lỗi 401 có sẵn. Test "a step added from the palette..." từng fail một lần khi chạy song song, chạy riêng 3/3 qua (chập chờn).
+- Còn có thể làm: gợi ý ngày giờ Calendar ("RFC 3339") và nhãn "MIME" của Drive vẫn còn thuật ngữ.
+
 ## 7. Hướng dẫn cho agent tiếp theo
 
 1. `git status`: phải đang ở `feat/week4-fe-integration`, worktree sạch (trừ `examples/` không thuộc dự án). Kiểm `git log -1` là merge commit "Merge branch 'dev' into feat/week4-fe-integration".
@@ -135,7 +144,7 @@ Subagent Sonnet làm, agent chính duyệt và commit.
 - Nút "Tạo bằng AI": user chọn nối vào luồng thật (tạo bản nháp rồi mở builder với `GenerateWorkflowPanel` bật sẵn), làm sau. `/ai/workflow-generator` (`AiGeneratorPage`) hiện chỉ là demo `setTimeout`.
 - Volume tạm `weav-m2-tmp` (cache Maven) còn; hook chặn agent xóa volume, user tự chạy `docker volume rm weav-m2-tmp` khi không cần.
 - Stack dev đã build lại bằng code đã gộp (2026-10-07); identity dev chạy RS256, khóa dev trong `tmp/service-keys/` (identity, public, private).
-- `data.set` lưu mọi giá trị dạng chuỗi; câu trả lời trợ lý hiện ký tự markdown thô (chờ user quyết).
+- Gợi ý ngày giờ Calendar và nhãn MIME của Drive còn thuật ngữ kỹ thuật.
 - Stash `stash@{0}` (`codex/web-session-renewal`) là bản làm dở cũ của tính năng giữ đăng nhập; tính năng đã xong bằng cách khác (xem `web-session-renewal.md`), stash để nguyên.
 
 ## 9. Kết thúc phiên
