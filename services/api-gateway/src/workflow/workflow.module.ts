@@ -112,6 +112,7 @@ const generateWorkflowSchema = z
     prompt: z.string().min(1).max(16_000),
     timezone: z.string().min(1).max(64).optional(),
     connections: z.record(z.string().max(128), z.string().uuid()).optional(),
+    answers: z.record(z.string().min(1).max(200), z.string().min(1).max(4_000)).optional(),
   })
   .strict();
 

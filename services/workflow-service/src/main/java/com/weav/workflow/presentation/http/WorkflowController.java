@@ -81,7 +81,8 @@ public class WorkflowController {
         request.validate();
         java.util.Map<String,Object> response = new java.util.LinkedHashMap<>(workflowGenerationService.generate(
                 workspaceId, actorId(jwt), request.prompt(), request.timezone(),
-                request.connections() == null ? java.util.Map.of() : request.connections()));
+                request.connections() == null ? java.util.Map.of() : request.connections(),
+                request.answers() == null ? java.util.Map.of() : request.answers()));
         if (response.get("definition") instanceof WorkflowDefinition definition) {
             response.put("definition", definitionCodec.encode(definition));
         }

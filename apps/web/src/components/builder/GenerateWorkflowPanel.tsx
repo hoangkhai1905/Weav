@@ -7,6 +7,31 @@ import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 import { tr } from '../../lib/i18n/tr';
 
 type ReadyResult = Extract<GenerationResponse, { status: 'ready' }>;
+type Question = Extract<GenerationResponse, { status: 'needs_input' }>['questions'][number];
+
+/** Everything except a connection pick can be answered in words. */
+const isAnswerable = (question: Question) => question.code !== 'CONNECTION';
+
+/** Plain-language question for a server question; never shows field paths or node ids. */
+function questionText(t: (key: string) => string, question: Question): string {
+  const lookup = (key: string) => {
+    const text = t(key);
+    return text === key ? null : text;
+  };
+  const parts = question.field.split('.');
+  const name = parts[parts.length - 1];
+  if (question.code === 'CONNECTION') {
+    return `${t('ai.question.CONNECTION')} (${lookup(`ai.service.${question.field}`) ?? name.replace(/_/g, ' ')})`;
+  }
+  if (question.code !== 'VALUE') return t(`ai.question.${question.code}`);
+  // "email.send.body" (node type + field) or "<nodeId>.config.body" (a node id from the model).
+  const type = question.field.includes('.config.') ? '' : parts.slice(0, -1).join('.');
+  return (
+    (type ? lookup(`ai.ask.${type}.${name}`) : null) ??
+    lookup(`ai.ask.${name}`) ??
+    t('ai.ask.generic').replace('{label}', name.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').toLowerCase())
+  );
+}
 
 interface GenerateWorkflowPanelProps {
   open: boolean;
@@ -29,11 +54,13 @@ export function GenerateWorkflowPanel({ open, onClose, onReady, initialPrompt = 
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerationResponse | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
     setError(null);
     setResult(null);
+    setAnswers({});
     setConnections([]);
   }
 
@@ -56,8 +83,12 @@ export function GenerateWorkflowPanel({ open, onClose, onReady, initialPrompt = 
     (connection) => connection.provider === 'GMAIL' && connection.status === 'ACTIVE',
   );
 
+  const questions = result?.status === 'needs_input' ? result.questions.filter(isAnswerable) : [];
+  const canSubmit = !isPending && prompt.trim() !== '' && questions.every((question) => answers[question.field]?.trim());
+
   const handleGenerate = async () => {
-    if (isPending || !prompt.trim()) return;
+    if (!canSubmit) return;
+    const given = Object.fromEntries(Object.entries(answers).filter(([, value]) => value.trim()));
     setIsPending(true);
     setError(null);
     setResult(null);
@@ -65,6 +96,7 @@ export function GenerateWorkflowPanel({ open, onClose, onReady, initialPrompt = 
       const generated = await workflowApi.generateWorkflow({
         prompt: prompt.trim(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ...(Object.keys(given).length ? { answers: given } : {}),
         ...((sheetsConnection || emailConnection)
           ? {
               connections: {
@@ -84,9 +116,11 @@ export function GenerateWorkflowPanel({ open, onClose, onReady, initialPrompt = 
         if (unknown.status === 429) setError(tr('msg.too_many_requests_wait_a_minute'));
         else if (unknown.status === 503) setError(tr('msg.ai_is_unavailable_right_now'));
         else if (unknown.status === 504) setError(tr('msg.ai_took_too_long_try_a_shorter'));
-        else setError(unknown.message);
+        else if (unknown.status === 400 || unknown.status === 413) setError(tr('ai.error.invalid_request'));
+        else if (unknown.status === 403) setError(tr('ai.error.no_permission'));
+        else setError(tr('msg.the_workflow_request_could_not_be_completed'));
       } else {
-        setError(unknown instanceof Error ? unknown.message : tr('msg.the_workflow_request_could_not_be_completed'));
+        setError(tr('msg.the_workflow_request_could_not_be_completed'));
       }
     } finally {
       setIsPending(false);
@@ -146,11 +180,20 @@ export function GenerateWorkflowPanel({ open, onClose, onReady, initialPrompt = 
           </div>
           {error ? <p role="alert" className="text-[11px] text-err">{error}</p> : null}
           {result?.status === 'needs_input' ? (
-            <ul className="space-y-1.5">
+            <ul className="space-y-2" data-testid="generate-questions">
               {result.questions.map((question, index) => (
-                <li key={`${question.code}-${index}`} className="rounded border border-warn/30 bg-warn-bg px-2.5 py-1.5 text-[11px] text-warn">
-                  <span className="font-medium">{t(`ai.question.${question.code}`)}</span>
-                  <span className="ml-1.5 text-muted-foreground">{question.field}</span>
+                <li key={`${question.code}-${question.field}-${index}`} className="rounded border border-warn/30 bg-warn-bg px-2.5 py-1.5 text-[11px] text-warn">
+                  <label htmlFor={`${promptId}-q${index}`} className="block font-medium">{questionText(t, question)}</label>
+                  {isAnswerable(question) ? (
+                    <input
+                      id={`${promptId}-q${index}`}
+                      type="text"
+                      maxLength={1000}
+                      value={answers[question.field] ?? ''}
+                      onChange={(event) => setAnswers((current) => ({ ...current, [question.field]: event.target.value }))}
+                      className="mt-1 w-full rounded border border-border bg-card px-2.5 py-1.5 text-xs text-foreground"
+                    />
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -175,10 +218,10 @@ export function GenerateWorkflowPanel({ open, onClose, onReady, initialPrompt = 
             <button
               type="button"
               onClick={() => void handleGenerate()}
-              disabled={isPending || !prompt.trim()}
+              disabled={!canSubmit}
               className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {t('ai.generate')}
+              {questions.length ? t('ai.continue') : t('ai.generate')}
             </button>
           </div>
         </div>

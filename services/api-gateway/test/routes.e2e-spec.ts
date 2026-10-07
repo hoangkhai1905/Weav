@@ -404,6 +404,17 @@ describe('Gateway routes added for full service coverage (Fastify e2e)', () => {
     expect(fixtureRequests[0].path).toBe(
       `/workspaces/${WORKSPACE_ID}/workflows/generate`,
     );
+    const answered = await inject({
+      method: 'POST',
+      url: `/api/v1/workspaces/${WORKSPACE_ID}/workflows/generate`,
+      headers: { authorization: user },
+      payload: { prompt: 'email me', answers: { 'email.send.body': 'Hello' } },
+    });
+    expect(answered.statusCode).toBe(200);
+    expect(JSON.parse(fixtureRequests[1].body.toString())).toMatchObject({
+      answers: { 'email.send.body': 'Hello' },
+    });
+    fixtureRequests.length = 1;
 
     const tooLarge = await inject({
       method: 'POST',

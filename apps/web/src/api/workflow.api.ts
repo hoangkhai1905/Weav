@@ -159,7 +159,7 @@ export const workflowApi = {
     return workflowV1Api.runWorkflow(id, input);
   },
 
-  generateWorkflow(input: { prompt: string; timezone?: string; connections?: Record<string, string> }): Promise<GenerationResponse> {
+  generateWorkflow(input: { prompt: string; timezone?: string; connections?: Record<string, string>; answers?: Record<string, string> }): Promise<GenerationResponse> {
     if (isWorkflowMockMode) return Promise.resolve({ status: 'unsupported', reasons: [{ code: 'CAPABILITY_UNAVAILABLE' }] });
     return workflowV1Api.generateWorkflow(input);
   },

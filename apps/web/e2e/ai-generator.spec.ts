@@ -53,7 +53,10 @@ async function installAuthFixture(page: Page) {
 const PROMPT = "When a new email arrives in Gmail, add the sender to Google Sheets.";
 const emptyDetail = { workflowId: WORKFLOW_ID, name: "x", status: "DRAFT", definition: { schemaVersion: "1.0", nodes: [], edges: [], variables: {} }, editorState: { nodes: {} } };
 
-async function stubWorkflows(page: Page, opts: { createStatus?: number } = {}) {
+async function stubWorkflows(
+  page: Page,
+  opts: { createStatus?: number; generate?: (body: Record<string, unknown>) => unknown } = {},
+) {
   const posts: unknown[] = [];
   const generates: unknown[] = [];
   await page.route(`**/api/v1/workspaces/${WORKSPACE_ID}/workflows**`, async (route) => {
@@ -61,6 +64,7 @@ async function stubWorkflows(page: Page, opts: { createStatus?: number } = {}) {
     const path = new URL(request.url()).pathname;
     if (request.method() === "POST" && path.endsWith("/workflows/generate")) {
       generates.push(request.postDataJSON());
+      if (opts.generate) return fulfillJson(route, opts.generate(request.postDataJSON()));
       return fulfillJson(route, { error: { code: "AI_DISABLED", message: "AI disabled" } }, 503);
     }
     if (request.method() === "POST") {
@@ -107,6 +111,49 @@ test.describe("Create with AI page", () => {
     await expect(page.getByTestId("workflow-generate-ai")).toBeVisible();
     await expect(page.getByRole("dialog", { name: "Generate with AI" })).toHaveCount(0);
     expect(generates).toHaveLength(1);
+  });
+
+  test("asks a plain question for a missing value, then builds the workflow from the answer", async ({ page }) => {
+    await installAuthFixture(page);
+    const ready = {
+      status: "ready",
+      name: "Welcome email",
+      definition: {
+        schemaVersion: "1.0",
+        nodes: [
+          { id: "start", type: "trigger.manual", config: {} },
+          { id: "send_email", type: "email.send", config: { to: "a@example.test", subject: "Hi", body: "Hello there" } },
+        ],
+        edges: [{ id: "e1", source: "start", target: "send_email" }],
+        variables: {},
+      },
+      layout: { start: { x: 100, y: 100 }, send_email: { x: 400, y: 100 } },
+    };
+    const { generates } = await stubWorkflows(page, {
+      generate: (body) =>
+        (body.answers as Record<string, string> | undefined)?.["email.send.body"]
+          ? ready
+          : { status: "needs_input", questions: [{ code: "VALUE", field: "email.send.body" }] },
+    });
+    await gotoGenerator(page);
+    await page.locator("#workflow-prompt").fill(PROMPT);
+    await page.getByTestId("ai-generator-continue").click();
+
+    const dialog = page.getByRole("dialog", { name: "Generate with AI" });
+    await dialog.getByRole("button", { name: "Generate", exact: true }).click();
+    const question = dialog.getByLabel("What should the email say?");
+    await expect(question).toBeVisible();
+    await expect(dialog.getByTestId("generate-questions")).not.toContainText("email.send");
+    await expect(dialog.getByTestId("generate-questions")).not.toContainText("config");
+    await expect(dialog.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
+
+    await question.fill("Hello there");
+    await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator(".react-flow__node")).toHaveCount(2);
+    expect(generates).toHaveLength(2);
+    expect((generates[1] as { prompt: string; answers: unknown }).prompt).toBe(PROMPT);
+    expect((generates[1] as { answers: unknown }).answers).toEqual({ "email.send.body": "Hello there" });
   });
 
   test("shows a friendly error and stays when the draft cannot be created", async ({ page }) => {
