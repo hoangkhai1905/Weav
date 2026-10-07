@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { workflowRepository } from '../../../infrastructure/repository-factory';
 import { captureAuthSessionScope, isAuthSessionScopeCurrent } from '../../auth/auth-session.scope';
 import { showMilestoneToastForSession } from '../../feedback/milestone-toast';
@@ -14,6 +14,45 @@ export function useWorkflows() {
     select: (page) => page.items,
     enabled: !!workspaceId,
     staleTime: 5000,
+  });
+}
+
+export const WORKFLOW_PAGE_SIZE = 20;
+
+/** Workflows tab: pages of 20. The endpoint has no hasNext, so the mapper derives it from totalElements. */
+export function useInfiniteWorkflows() {
+  const workspaceId = useActiveWorkspaceId();
+  return useInfiniteQuery({
+    queryKey: ['workflows', workspaceId, 'infinite'],
+    queryFn: ({ pageParam }) =>
+      workflowRepository.getWorkflows(workspaceId ?? '', { page: pageParam, size: WORKFLOW_PAGE_SIZE }),
+    initialPageParam: 0,
+    getNextPageParam: (last) => (last.hasNext ? last.page + 1 : undefined),
+    enabled: !!workspaceId,
+    staleTime: 5000,
+  });
+}
+
+export function usePublishWorkflow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => workflowRepository.publishWorkflow(getActiveWorkspaceId(), id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['workflows'] });
+      void queryClient.invalidateQueries({ queryKey: ['workflow'] });
+    },
+  });
+}
+
+export function useDeleteWorkflow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => workflowRepository.deleteWorkflow(getActiveWorkspaceId(), id),
+    onSuccess: (_void, id) => {
+      queryClient.removeQueries({ queryKey: ['workflow', getActiveWorkspaceId(), id] });
+      void queryClient.invalidateQueries({ queryKey: ['workflows'] });
+      void queryClient.invalidateQueries({ queryKey: ['executions'] });
+    },
   });
 }
 

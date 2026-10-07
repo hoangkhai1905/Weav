@@ -68,7 +68,7 @@ const Row: React.FC<{ item: NodeTimelineItem; last: boolean }> = ({ item, last }
         ) : null}
         {open ? (
           <View style={styles.details}>
-            {hasValue(item.error) ? <JsonViewer label={t('ui.timeline.error')} value={item.error} /> : null}
+            {hasValue(item.error) ? <JsonViewer label={t('ui.timeline.error')} value={item.error} defaultExpanded /> : null}
             {hasValue(item.output) ? <JsonViewer label={t('ui.timeline.output')} value={item.output} /> : null}
             {attempts.map((a) => (
               <View key={a.id} style={[styles.attempt, { borderColor: colors.border, backgroundColor: colors.card }]}>
@@ -81,7 +81,7 @@ const Row: React.FC<{ item: NodeTimelineItem; last: boolean }> = ({ item, last }
                     {formatDuration(a.durationMs)}
                   </Text>
                 </View>
-                {hasValue(a.error) ? <JsonViewer label={t('ui.timeline.error')} value={a.error} /> : null}
+                {hasValue(a.error) ? <JsonViewer label={t('ui.timeline.error')} value={a.error} defaultExpanded /> : null}
                 {hasValue(a.output) ? <JsonViewer label={t('ui.timeline.output')} value={a.output} /> : null}
               </View>
             ))}

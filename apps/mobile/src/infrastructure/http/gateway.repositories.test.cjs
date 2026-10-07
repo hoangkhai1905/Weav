@@ -124,3 +124,24 @@ test('execution lookup probes workflows and returns the matching workflowId (or 
     null,
   );
 });
+
+test('workflow create/publish/delete hit the gateway routes', async () => {
+  const calls = [];
+  httpClient.request = async (config) => {
+    calls.push(`${config.method} ${config.url}`);
+    if (config.method === 'DELETE') return { data: '', status: 204 };
+    if (config.url.endsWith('/publish')) {
+      return { data: { workflowId: WF_A, versionId: WF_B, version: 1, status: 'PUBLISHED', webhooks: [] } };
+    }
+    return { data: { workflowId: WF_A, status: 'DRAFT' } };
+  };
+  const repo = new HttpWorkflowRepository();
+  await repo.createWorkflow(WS, { name: 'A' });
+  assert.equal((await repo.publishWorkflow(WS, WF_A)).version, 1);
+  await repo.deleteWorkflow(WS, WF_A);
+  assert.deepEqual(calls, [
+    `POST /api/v1/workspaces/${WS}/workflows`,
+    `POST /api/v1/workspaces/${WS}/workflows/${WF_A}/publish`,
+    `DELETE /api/v1/workspaces/${WS}/workflows/${WF_A}`,
+  ]);
+});

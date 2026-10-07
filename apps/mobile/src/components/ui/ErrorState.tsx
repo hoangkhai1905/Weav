@@ -6,9 +6,10 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { translations } from '../../stores/i18n.store';
 import { MinTouch, Fonts, Radius, Spacing, Typography } from '../../constants/theme';
 import type { ApiError } from '../../domain/common/error.types';
+import { errorMessageKey, isForbiddenError } from './status';
 
 interface ErrorStateProps {
-  error?: Pick<ApiError, 'code' | 'requestId'> | null;
+  error?: Pick<ApiError, 'code' | 'requestId' | 'status'> | null;
   onRetry?: () => void;
 }
 
@@ -16,15 +17,16 @@ interface ErrorStateProps {
 export const ErrorState: React.FC<ErrorStateProps> = ({ error, onRetry }) => {
   const colors = useThemeColors();
   const { t, language } = useTranslation();
-  const key = `ui.error.${error?.code ?? 'UNKNOWN'}`;
-  const message = translations[language][key] ? t(key) : t('ui.error.UNKNOWN');
+  const message = t(errorMessageKey(error, (key) => Boolean(translations[language][key])));
+  // 403: retrying cannot help, so show a calmer "no access" state without the retry button.
+  const forbidden = isForbiddenError(error);
 
   return (
     <View accessibilityRole="alert" style={styles.wrap}>
       <TriangleAlert size={32} color={colors.danger} />
-      <Text style={[Typography.title, styles.center, { color: colors.text }]}>{t('ui.error.title')}</Text>
+      <Text style={[Typography.title, styles.center, { color: colors.text }]}>{forbidden ? t('ui.forbidden.title') : t('ui.error.title')}</Text>
       <Text style={[Typography.body, styles.center, { color: colors.textMuted }]}>{message}</Text>
-      {onRetry ? (
+      {onRetry && !forbidden ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t('ui.retry')}

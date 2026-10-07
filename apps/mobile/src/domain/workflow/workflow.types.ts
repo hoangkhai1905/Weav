@@ -98,6 +98,35 @@ export interface RunWorkflowOptions {
   idempotencyKey?: string;
 }
 
+export interface CreateWorkflowInput {
+  name: string;
+  description?: string;
+}
+
+export interface SaveDraftInput {
+  name: string;
+  description?: string;
+  definition: WorkflowDefinition;
+  editorState?: Record<string, unknown>;
+  /** 409 DRAFT_REVISION_CONFLICT when it differs from the stored revision. */
+  expectedRevision?: number;
+}
+
+export interface WebhookProvisioning {
+  triggerId: string;
+  endpointKey: string;
+  /** Returned ONLY by the publish call: the UI must show it once and never store it. */
+  secret: string;
+}
+
+export interface WorkflowPublication {
+  workflowId: string;
+  versionId: string;
+  version: number;
+  status: 'PUBLISHED';
+  webhooks: WebhookProvisioning[];
+}
+
 /** Every call is scoped to a workspace (`workspaceId` comes from `workspace.store`). */
 export interface WorkflowRepository {
   getWorkflows(workspaceId: string, query?: WorkflowListQuery): Promise<WorkflowPage>;
@@ -110,4 +139,11 @@ export interface WorkflowRepository {
   /** Backend returns triggers: [] here. Refetch the detail instead of trusting it. */
   pauseWorkflow(workspaceId: string, workflowId: string): Promise<Workflow>;
   resumeWorkflow(workspaceId: string, workflowId: string): Promise<Workflow>;
+  createWorkflow(
+    workspaceId: string,
+    input: CreateWorkflowInput,
+  ): Promise<{ workflowId: string; status: WorkflowStatus }>;
+  saveDraft(workspaceId: string, workflowId: string, input: SaveDraftInput): Promise<Workflow>;
+  publishWorkflow(workspaceId: string, workflowId: string): Promise<WorkflowPublication>;
+  deleteWorkflow(workspaceId: string, workflowId: string): Promise<void>;
 }

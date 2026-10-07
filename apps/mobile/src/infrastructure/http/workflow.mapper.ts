@@ -4,7 +4,9 @@ import type {
   WorkflowEdge,
   WorkflowNode,
   WorkflowPage,
+  WorkflowPublication,
   WorkflowRunAccepted,
+  WorkflowStatus,
   WorkflowSummary,
   WorkflowTrigger,
 } from '../../domain/workflow/workflow.types';
@@ -145,3 +147,30 @@ export function mapWorkflowRunAccepted(value: unknown): WorkflowRunAccepted {
     status: 'QUEUED',
   };
 }
+
+export function mapWorkflowCreated(value: unknown): { workflowId: string; status: WorkflowStatus } {
+  const r = rec(value, 'created');
+  return { workflowId: str(r, 'workflowId', 'created'), status: oneOf(r, 'status', STATUSES, 'created') };
+}
+
+export function mapWorkflowPublication(value: unknown): WorkflowPublication {
+  const r = rec(value, 'publication');
+  if (r.status !== 'PUBLISHED') invalid('publication.status');
+  return {
+    workflowId: str(r, 'workflowId', 'publication'),
+    versionId: str(r, 'versionId', 'publication'),
+    version: int(r, 'version', 'publication'),
+    status: 'PUBLISHED',
+    webhooks: arr(r, 'webhooks', 'publication').map((w) => {
+      const x = rec(w, 'webhook');
+      return {
+        triggerId: str(x, 'triggerId', 'webhook'),
+        endpointKey: str(x, 'endpointKey', 'webhook'),
+        secret: str(x, 'secret', 'webhook'),
+      };
+    }),
+  };
+}
+
+/** DELETE answers 204 with no body. */
+export function mapNoContent(): void {}

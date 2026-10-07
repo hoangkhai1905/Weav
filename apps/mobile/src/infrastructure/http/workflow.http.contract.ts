@@ -1,6 +1,11 @@
 import type { AxiosRequestConfig } from 'axios';
-import type { RunWorkflowOptions, WorkflowListQuery } from '../../domain/workflow/workflow.types';
-import type { ManualExecutionRequestDto } from './workflow.dto';
+import type {
+  CreateWorkflowInput,
+  RunWorkflowOptions,
+  SaveDraftInput,
+  WorkflowListQuery,
+} from '../../domain/workflow/workflow.types';
+import type { ManualExecutionRequestDto, SaveDraftRequestDto } from './workflow.dto';
 import { isUuid } from './notification.http.contract';
 
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
@@ -100,4 +105,71 @@ export function buildRunWorkflowRequest(
     data: { input: options.input ?? {} },
     headers: { 'Idempotency-Key': options.idempotencyKey },
   };
+}
+
+function assertName(name: string): void {
+  if (typeof name !== 'string' || name.trim().length === 0 || name.length > 255) {
+    throw new Error('Invalid workflow name.');
+  }
+}
+
+function assertDescription(description: string | undefined): void {
+  if (description !== undefined && description.length > 2000) throw new Error('Invalid workflow description.');
+}
+
+/** Gateway body is zod .strict(): name 1..255, description <= 2000, nothing else. */
+export function buildCreateWorkflowRequest(
+  workspaceId: string,
+  input: CreateWorkflowInput,
+): AxiosRequestConfig<CreateWorkflowInput> {
+  assertName(input.name);
+  assertDescription(input.description);
+  return {
+    method: 'POST',
+    url: workspaceWorkflowsPath(workspaceId),
+    data: {
+      name: input.name,
+      ...(input.description !== undefined ? { description: input.description } : {}),
+    },
+  };
+}
+
+export function buildSaveDraftRequest(
+  workspaceId: string,
+  workflowId: string,
+  input: SaveDraftInput,
+): AxiosRequestConfig<SaveDraftRequestDto> {
+  assertName(input.name);
+  assertDescription(input.description);
+  if (
+    input.expectedRevision !== undefined &&
+    (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 0)
+  ) {
+    throw new Error('Invalid expected revision.');
+  }
+  return {
+    method: 'PUT',
+    url: `${workflowPath(workspaceId, workflowId)}/draft`,
+    data: {
+      name: input.name,
+      ...(input.description !== undefined ? { description: input.description } : {}),
+      definition: input.definition,
+      ...(input.editorState !== undefined ? { editorState: input.editorState } : {}),
+      ...(input.expectedRevision !== undefined ? { expectedRevision: input.expectedRevision } : {}),
+    },
+  };
+}
+
+export function buildPublishWorkflowRequest(
+  workspaceId: string,
+  workflowId: string,
+): AxiosRequestConfig {
+  return { method: 'POST', url: `${workflowPath(workspaceId, workflowId)}/publish` };
+}
+
+export function buildDeleteWorkflowRequest(
+  workspaceId: string,
+  workflowId: string,
+): AxiosRequestConfig {
+  return { method: 'DELETE', url: workflowPath(workspaceId, workflowId) };
 }

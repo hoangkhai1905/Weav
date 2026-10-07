@@ -87,3 +87,26 @@ export function truncateJson(value: unknown, maxChars = 600): { text: string; tr
     ? { text: `${text.slice(0, maxChars)}…`, truncated: true }
     : { text, truncated: false };
 }
+
+/**
+ * i18n key of the friendly sentence for an API error: by `code` when a message exists for it,
+ * else by HTTP status (so an unmapped backend code such as RESOURCE_NOT_FOUND still reads well).
+ */
+export function errorMessageKey(
+  error: { code?: string; status?: number } | null | undefined,
+  has: (key: string) => boolean,
+): string {
+  const byCode = `ui.error.${error?.code ?? ''}`;
+  if (error?.code && has(byCode)) return byCode;
+  const status = error?.status ?? 0;
+  if (status === 401) return 'ui.error.UNAUTHORIZED';
+  if (status === 403) return 'ui.error.FORBIDDEN';
+  if (status === 404) return 'ui.error.NOT_FOUND';
+  if (status === 429) return 'ui.error.TOO_MANY_REQUESTS';
+  if (status >= 500) return 'ui.error.INTERNAL_ERROR';
+  return 'ui.error.UNKNOWN';
+}
+
+export function isForbiddenError(error: { code?: string; status?: number } | null | undefined): boolean {
+  return error?.code === 'FORBIDDEN' || error?.status === 403;
+}

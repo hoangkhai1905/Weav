@@ -18,11 +18,6 @@ const originalLanguage = useI18nStore.getState().language;
 
 const callers = [
   {
-    name: 'WorkflowsScreen',
-    file: path.resolve(__dirname, '../../app/(app)/(tabs)/workflows.tsx'),
-    reset: (effects) => { effects.modalOpen = false; effects.payload = ''; },
-  },
-  {
     name: 'WorkflowDetailScreen',
     file: path.resolve(__dirname, '../../app/(app)/workflows/[id].tsx'),
     reset: (effects) => { effects.modalOpen = false; effects.payload = ''; },
@@ -190,8 +185,8 @@ for (const caller of callers) {
     assert.deepEqual(effects, { modalOpen: true, payload: '{"a":1}', routes: [] });
     assert.equal(toasts.length, 1);
     assert.equal(toasts[0].type, 'error');
-    assert.equal(toasts[0].title, 'Execution Failed to Trigger');
-    assert.equal(toasts[0].message, 'synthetic run failure');
+    assert.equal(toasts[0].title, 'Chưa chạy được quy trình');
+    assert.equal(toasts[0].message, 'Có lỗi xảy ra. Vui lòng thử lại.');
     assert.deepEqual(invalidations, []);
     queryClient.clear();
   });

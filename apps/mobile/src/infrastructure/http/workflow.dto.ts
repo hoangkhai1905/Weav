@@ -74,3 +74,27 @@ export interface ManualExecutionAcceptedDto {
 export interface ManualExecutionRequestDto {
   input: Record<string, unknown>;
 }
+
+/** POST .../workflows -> 201. */
+export interface WorkflowCreatedDto {
+  workflowId: string;
+  status: WorkflowStatusDto;
+}
+
+/** PUT .../{id}/draft request body (zod .strict()). */
+export interface SaveDraftRequestDto {
+  name: string;
+  description?: string;
+  definition: WorkflowDefinitionDto;
+  editorState?: Record<string, unknown>;
+  expectedRevision?: number;
+}
+
+/** POST .../{id}/publish -> 200. `secret` is returned only this once. */
+export interface WorkflowPublicationDto {
+  workflowId: string;
+  versionId: string;
+  version: number;
+  status: 'PUBLISHED';
+  webhooks: { triggerId: string; endpointKey: string; secret: string }[];
+}

@@ -57,3 +57,42 @@ test('generated idempotency keys match the gateway pattern and are unique', () =
   assert.notEqual(a, b);
   assert.equal(isValidIdempotencyKey('x'.repeat(129)), false);
 });
+
+test('create, saveDraft, publish and delete build the documented requests', () => {
+  const c = require('./workflow.http.contract.ts');
+  const base = `/api/v1/workspaces/${WS}/workflows`;
+  assert.deepEqual(c.buildCreateWorkflowRequest(WS, { name: 'A' }), {
+    method: 'POST',
+    url: base,
+    data: { name: 'A' },
+  });
+  assert.throws(() => c.buildCreateWorkflowRequest(WS, { name: '  ' }), /name/i);
+  assert.throws(() => c.buildCreateWorkflowRequest(WS, { name: 'x'.repeat(256) }), /name/i);
+  assert.throws(() => c.buildCreateWorkflowRequest(WS, { name: 'A', description: 'x'.repeat(2001) }), /description/i);
+
+  const definition = { schemaVersion: '1.0', nodes: [], edges: [] };
+  assert.deepEqual(c.buildSaveDraftRequest(WS, WF, { name: 'A', definition, expectedRevision: 3 }), {
+    method: 'PUT',
+    url: `${base}/${WF}/draft`,
+    data: { name: 'A', definition, expectedRevision: 3 },
+  });
+  assert.throws(() => c.buildSaveDraftRequest(WS, WF, { name: 'A', definition, expectedRevision: -1 }), /revision/i);
+
+  assert.deepEqual(c.buildPublishWorkflowRequest(WS, WF), { method: 'POST', url: `${base}/${WF}/publish` });
+  assert.deepEqual(c.buildDeleteWorkflowRequest(WS, WF), { method: 'DELETE', url: `${base}/${WF}` });
+  assert.throws(() => c.buildDeleteWorkflowRequest(WS, 'x'), /workflow/i);
+});
+
+test('publication mapper keeps the one-time webhook secret and rejects bad shapes', () => {
+  const { mapWorkflowPublication, mapWorkflowCreated } = require('./workflow.mapper.ts');
+  const dto = {
+    workflowId: WF,
+    versionId: WS,
+    version: 2,
+    status: 'PUBLISHED',
+    webhooks: [{ triggerId: WF, endpointKey: 'k'.repeat(32), secret: 's'.repeat(43) }],
+  };
+  assert.equal(mapWorkflowPublication(dto).webhooks[0].secret, 's'.repeat(43));
+  assert.throws(() => mapWorkflowPublication({ ...dto, status: 'DRAFT' }), /status/);
+  assert.deepEqual(mapWorkflowCreated({ workflowId: WF, status: 'DRAFT' }), { workflowId: WF, status: 'DRAFT' });
+});

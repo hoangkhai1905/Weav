@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { workflowsEn, workflowsVi } from './i18n.workflows';
 
 export type Language = 'VI' | 'EN';
 
@@ -193,6 +194,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'ui.json.showMore': 'Xem thêm',
     'ui.json.showLess': 'Thu bớt',
     'ui.json.empty': 'Không có dữ liệu',
+    ...workflowsVi,
   },
   EN: {
     // Navigation Tabs
@@ -384,6 +386,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'ui.json.showMore': 'Show more',
     'ui.json.showLess': 'Show less',
     'ui.json.empty': 'No data',
+    ...workflowsEn,
   },
 };
 

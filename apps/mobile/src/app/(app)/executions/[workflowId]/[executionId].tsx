@@ -1,281 +1,324 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, Modal } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ArrowLeft, RefreshCw, CheckCircle2, XCircle, Clock, AlertTriangle, X, Terminal } from 'lucide-react-native';
+import { RefreshCw, TriangleAlert } from 'lucide-react-native';
 import { useExecutionDetail } from '../../../../features/executions/hooks/useExecutionDetail';
 import { useWorkflowDetail } from '../../../../features/workflows/hooks/useWorkflowDetail';
+import { useRunWorkflow } from '../../../../features/workflows/hooks/useRunWorkflow';
+import { completeWorkflowRunInCurrentSession } from '../../../../features/workflows/run-workflow.session';
+import { useNodeLabel } from '../../../../features/workflows/components/FlowList';
+import { orderFlowNodes } from '../../../../features/workflows/workflow-flow';
+import { fill } from '../../../../features/common/fill';
+import { durationBetween, formatClock, formatDateTime } from '../../../../features/common/time';
+import { ErrorState } from '../../../../components/ui/ErrorState';
+import { FilterChips, type ChipOption } from '../../../../components/ui/FilterChips';
+import { JsonViewer } from '../../../../components/ui/JsonViewer';
+import { NodeTimeline, type NodeTimelineItem } from '../../../../components/ui/NodeTimeline';
+import { ScreenHeader } from '../../../../components/ui/ScreenHeader';
+import { Skeleton } from '../../../../components/ui/Skeleton';
 import { StatusBadge } from '../../../../components/ui/StatusBadge';
+import { formatDuration, shortId } from '../../../../components/ui/status';
 import { useThemeColors } from '../../../../hooks/useThemeColors';
 import { useTranslation } from '../../../../hooks/useTranslation';
-import type { NodeExecution } from '../../../../domain/execution/execution.types';
+import { Fonts, MinTouch, Radius, Spacing, Typography } from '../../../../constants/theme';
+import { ACTIVE_EXECUTION_STATUSES, type ExecutionLogLevel } from '../../../../domain/execution/execution.types';
+import type { ApiError } from '../../../../domain/common/error.types';
 
-/** Node/attempt errors are free-form JSON: show a message when there is one, else the JSON. */
-function describeError(error: unknown): string {
-  if (typeof error === 'string') return error;
-  if (typeof error === 'object' && error !== null && 'message' in error && typeof (error as { message: unknown }).message === 'string') {
-    return (error as { message: string }).message;
-  }
-  return JSON.stringify(error, null, 2) ?? '';
-}
+type LevelFilter = 'ALL' | ExecutionLogLevel;
+const LEVELS: LevelFilter[] = ['ALL', 'ERROR', 'WARN', 'INFO', 'DEBUG'];
 
 export default function ExecutionDetailScreen() {
-  const { workflowId, executionId } = useLocalSearchParams<{ workflowId: string; executionId: string }>();
+  const { workflowId = '', executionId = '' } = useLocalSearchParams<{ workflowId: string; executionId: string }>();
   const router = useRouter();
   const colors = useThemeColors();
   const { t } = useTranslation();
-  const { data: execution, isLoading } = useExecutionDetail(workflowId || '', executionId || '');
-  // Node labels live in the workflow (editorState), not in the execution.
-  const { data: workflow } = useWorkflowDetail(workflowId || '');
+  const labelOf = useNodeLabel();
+  const [logPage, setLogPage] = useState(0);
+  const [level, setLevel] = useState<LevelFilter>('ALL');
 
-  const [selectedNode, setSelectedNode] = useState<NodeExecution | null>(null);
+  const query = useExecutionDetail(workflowId, executionId, logPage);
+  // Node labels live in the workflow definition/editor state, not in the execution.
+  const workflowQuery = useWorkflowDetail(workflowId);
+  const runMutation = useRunWorkflow();
+  const workflow = workflowQuery.data;
+  const execution = query.data;
 
-  const nodeLabel = (node: NodeExecution) =>
-    workflow?.nodes.find((n) => n.id === node.nodeId)?.name ?? node.nodeType;
+  const nodeInfo = useMemo(() => {
+    const byId = new Map((workflow?.nodes ?? []).map((n) => [n.id, n]));
+    const order = new Map(
+      workflow ? orderFlowNodes(workflow.nodes, workflow.edges).map((n, i) => [n.id, i] as const) : [],
+    );
+    return { byId, order };
+  }, [workflow]);
 
-  if (isLoading || !execution) {
-    return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
+  const labelForNode = (nodeId: string, nodeType: string) =>
+    labelOf({ type: nodeType, name: nodeInfo.byId.get(nodeId)?.name ?? null });
+
+  const timelineItems = useMemo<NodeTimelineItem[]>(() => {
+    if (!execution) return [];
+    return [...execution.nodes]
+      .sort((a, b) => (nodeInfo.order.get(a.nodeId) ?? 1e6) - (nodeInfo.order.get(b.nodeId) ?? 1e6))
+      .map((n) => ({
+        id: n.nodeExecutionId,
+        label: labelForNode(n.nodeId, n.nodeType),
+        status: n.status,
+        durationMs: n.durationMs ?? durationBetween(n.startedAt, n.finishedAt),
+        attemptCount: n.attemptCount,
+        output: n.output,
+        error: n.error,
+        attempts: n.attempts.map((a) => ({
+          id: a.attemptId,
+          number: a.attemptNumber,
+          status: a.status,
+          durationMs: durationBetween(a.startedAt, a.finishedAt),
+          output: a.output,
+          error: a.error,
+        })),
+      }));
+    // labelForNode closes over labelOf/nodeInfo, which change with language and workflow.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [execution, nodeInfo, labelOf]);
+
+  const handleBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(app)/(tabs)/executions');
+  };
+
+  const handleRerun = async () => {
+    const completion = await completeWorkflowRunInCurrentSession(() =>
+      runMutation.mutateAsync({ id: workflowId }),
+    );
+    if (completion.status !== 'success') return;
+    const res = completion.result;
+    if (res?.executionId) router.push(`/(app)/executions/${res.workflowId}/${res.executionId}`);
+  };
+
+  let body: React.ReactNode;
+  if (query.isPending) {
+    body = (
+      <View style={styles.content}>
+        <Skeleton height={120} radius={Radius.lg} />
+        <Skeleton height={20} width="50%" />
+        <Skeleton height={64} />
+        <Skeleton height={64} />
+      </View>
+    );
+  } else if (query.isError && !execution) {
+    body = <ErrorState error={query.error as unknown as ApiError} onRetry={() => void query.refetch()} />;
+  } else if (execution) {
+    const active = ACTIVE_EXECUTION_STATUSES.includes(execution.status);
+    const total = durationBetween(execution.startedAt, execution.finishedAt);
+    const failedNode = execution.nodes.find((n) => n.status === 'FAILED');
+    const logs = execution.logs;
+    const pages = Math.max(1, Math.ceil(logs.totalElements / logs.size));
+    const shownLogs = logs.items.filter((l) => level === 'ALL' || l.level === level);
+    const logNode = (nodeExecutionId: string | null) => {
+      const n = execution.nodes.find((x) => x.nodeExecutionId === nodeExecutionId);
+      return n ? labelForNode(n.nodeId, n.nodeType) : null;
+    };
+    const levelChips: ChipOption<LevelFilter>[] = LEVELS.map((value) => ({
+      value,
+      label: value === 'ALL' ? t('ui.filter.all') : t(`log.level.${value}`),
+    }));
+
+    body = (
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={query.isRefetching && !active} onRefresh={() => void query.refetch()} tintColor={colors.primary} />
+        }
+      >
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.headRow}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${t('exd.workflow')}: ${workflow?.name ?? shortId(workflowId)}`}
+              onPress={() => router.push(`/(app)/workflows/${workflowId}`)}
+              style={styles.wfLink}
+            >
+              <Text style={[Typography.caption, { color: colors.textMuted }]}>{t('exd.workflow')}</Text>
+              <Text numberOfLines={2} style={[Typography.title, { color: colors.primary }]}>
+                {workflow?.name ?? shortId(workflowId)}
+              </Text>
+            </Pressable>
+            <StatusBadge status={execution.status} size="md" />
+          </View>
+          <Text selectable style={[Typography.mono, { color: colors.textSubtle, fontFamily: Fonts?.mono }]}>
+            {shortId(execution.executionId, 13)}
+          </Text>
+          <View style={[styles.grid, { borderTopColor: colors.border }]}>
+            <Info label={t('exd.trigger')} value={t(`execution.trigger.${execution.triggerType}`)} />
+            <Info label={t('exd.duration')} value={total === null && active ? t('execution.running_duration') : formatDuration(total)} mono />
+            <Info label={t('exd.created')} value={formatDateTime(execution.createdAt)} mono />
+            <Info label={t('exd.started')} value={execution.startedAt ? formatClock(execution.startedAt) : t('execution.not_started')} mono />
+            <Info label={t('exd.finished')} value={execution.finishedAt ? formatClock(execution.finishedAt) : '-'} mono />
+          </View>
+          {active ? (
+            <View style={styles.live}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={[Typography.caption, { color: colors.textMuted }]}>{t('exd.live')}</Text>
+            </View>
+          ) : null}
         </View>
-      </SafeAreaView>
+
+        {execution.status === 'FAILED' ? (
+          <View
+            accessibilityRole="alert"
+            style={[styles.failed, { backgroundColor: colors.dangerBg, borderColor: colors.tones.danger.border }]}
+          >
+            <View style={styles.headRow}>
+              <TriangleAlert size={18} color={colors.danger} />
+              <Text style={[Typography.label, { color: colors.danger }]}>{t('exd.failed.title')}</Text>
+            </View>
+            <Text style={[Typography.body, { color: colors.text }]}>
+              {failedNode
+                ? fill(t('exd.failed.node'), { name: labelForNode(failedNode.nodeId, failedNode.nodeType) })
+                : t('execution.failed_generic')}
+            </Text>
+          </View>
+        ) : null}
+
+        {workflow?.status === 'PUBLISHED' ? (
+          <View style={styles.rerun}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('exd.rerun')}
+              accessibilityHint={t('exd.rerun.hint')}
+              accessibilityState={{ disabled: runMutation.isPending, busy: runMutation.isPending }}
+              disabled={runMutation.isPending}
+              onPress={() => void handleRerun()}
+              style={[styles.rerunBtn, { backgroundColor: colors.primary, opacity: runMutation.isPending ? 0.6 : 1 }]}
+            >
+              {runMutation.isPending ? (
+                <ActivityIndicator color={colors.onPrimary} />
+              ) : (
+                <RefreshCw size={18} color={colors.onPrimary} />
+              )}
+              <Text style={[Typography.label, { color: colors.onPrimary }]}>{t('exd.rerun')}</Text>
+            </Pressable>
+            <Text style={[Typography.caption, { color: colors.textSubtle }]}>{t('exd.rerun.hint')}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.section}>
+          <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>{t('exd.steps')}</Text>
+          <NodeTimeline nodes={timelineItems} />
+        </View>
+
+        <View style={styles.section}>
+          <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>{t('exd.logs')}</Text>
+          <View style={styles.chipsBleed}>
+            <FilterChips<LevelFilter> options={levelChips} value={level} onChange={setLevel} accessibilityLabel={t('exd.logs.filter')} />
+          </View>
+          {logs.items.length === 0 ? (
+            <Text style={[Typography.body, { color: colors.textMuted }]}>{t('exd.logs.empty')}</Text>
+          ) : shownLogs.length === 0 ? (
+            <Text style={[Typography.body, { color: colors.textMuted }]}>{t('exd.logs.noMatch')}</Text>
+          ) : (
+            shownLogs.map((l) => {
+              const tone = colors.tones[l.level === 'ERROR' ? 'danger' : l.level === 'WARN' ? 'warning' : l.level === 'INFO' ? 'info' : 'neutral'];
+              const node = logNode(l.nodeExecutionId);
+              return (
+                <View key={l.id} style={[styles.log, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={styles.logHead}>
+                    <View style={[styles.level, { backgroundColor: tone.bg, borderColor: tone.border }]}>
+                      <Text style={[Typography.caption, { color: tone.fg, fontWeight: '700' }]}>{t(`log.level.${l.level}`)}</Text>
+                    </View>
+                    <Text style={[Typography.mono, { color: colors.textMuted, fontFamily: Fonts?.mono }]}>{formatClock(l.createdAt)}</Text>
+                  </View>
+                  {node ? (
+                    <Text style={[Typography.caption, { color: colors.textMuted }]}>
+                      {t('exd.logs.step')}: {node}
+                    </Text>
+                  ) : null}
+                  <Text selectable style={[Typography.body, { color: colors.text }]}>{l.message ?? humanize(l.eventType)}</Text>
+                  {l.message ? (
+                    <Text style={[Typography.caption, { color: colors.textSubtle, fontFamily: Fonts?.mono }]}>{l.eventType}</Text>
+                  ) : null}
+                  {Object.keys(l.metadata).length > 0 ? <JsonViewer value={l.metadata} label="metadata" /> : null}
+                </View>
+              );
+            })
+          )}
+          {pages > 1 ? (
+            <View style={styles.pager}>
+              <PagerButton label={t('exd.logs.prev')} disabled={logPage === 0} onPress={() => setLogPage((p) => Math.max(0, p - 1))} />
+              <Text style={[Typography.label, { color: colors.textMuted }]}>
+                {fill(t('exd.logs.page'), { page: logPage + 1, total: pages })}
+              </Text>
+              <PagerButton label={t('exd.logs.next')} disabled={!logs.hasNext} onPress={() => setLogPage((p) => p + 1)} />
+            </View>
+          ) : null}
+        </View>
+      </ScrollView>
     );
   }
 
-  const nodeResultsList = execution.nodes;
-  const failedNode = nodeResultsList.find((n) => n.status === 'FAILED');
-
-  const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/(app)/(tabs)/executions');
-    }
-  };
-
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
-      {/* Top Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Pressable style={styles.backBtn} onPress={handleBack}>
-          <ArrowLeft color={colors.text} size={20} />
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>Execution Progress</Text>
-        <StatusBadge status={execution.status} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Workflow & Execution Metadata Card */}
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.wfName, { color: colors.text }]}>{workflow?.name ?? execution.workflowId}</Text>
-          <Text style={[styles.execId, { color: colors.textSubtle }]}>{execution.executionId}</Text>
-
-          <View style={[styles.infoGrid, { borderTopColor: colors.border }]}>
-            <View style={styles.infoItem}>
-              <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>Started At</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]}>
-                {execution.startedAt ? new Date(execution.startedAt).toLocaleTimeString() : t('execution.not_started')}
-              </Text>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>Duration</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]}>
-                {execution.durationMs ? `${(execution.durationMs / 1000).toFixed(1)}s` : t('execution.running_duration')}
-              </Text>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>Trigger</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]}>{execution.triggerType}</Text>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={[styles.infoLabel, { color: colors.textSubtle }]}>Status</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]}>{execution.status}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Failed Banner & Retry Action */}
-        {execution.status === 'FAILED' && (
-          <View style={[styles.failedCard, { backgroundColor: colors.dangerBg, borderColor: colors.danger }]}>
-            <View style={styles.failedHeader}>
-              <AlertTriangle color={colors.danger} size={20} />
-              <Text style={[styles.failedTitle, { color: colors.danger }]}>Execution Failed</Text>
-            </View>
-            <Text style={[styles.failedError, { color: colors.danger }]}>{failedNode ? describeError(failedNode.error) : t('execution.failed_generic')}</Text>
-          </View>
-        )}
-
-        {/* Execution Progress */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Execution Step Progress</Text>
-          <Text style={[styles.sectionSub, { color: colors.textSubtle }]}>Tap any node for input/output inspection</Text>
-        </View>
-
-        <View style={[styles.timelineCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {nodeResultsList.length > 0 ? (
-            nodeResultsList.map((node, index) => {
-              let Icon = Clock;
-              let iconColor = colors.textSubtle;
-              if (node.status === 'SUCCESS') {
-                Icon = CheckCircle2;
-                iconColor = colors.success;
-              } else if (node.status === 'FAILED') {
-                Icon = XCircle;
-                iconColor = colors.danger;
-              } else if (node.status === 'RUNNING' || node.status === 'WAITING') {
-                Icon = RefreshCw;
-                iconColor = colors.primary;
-              }
-
-              return (
-                <Pressable
-                  key={node.nodeId}
-                  style={styles.timelineStep}
-                  onPress={() => setSelectedNode(node)}
-                >
-                  <View style={styles.stepLeft}>
-                    <Icon color={iconColor} size={20} />
-                    {index < nodeResultsList.length - 1 && <View style={[styles.stepConnector, { backgroundColor: colors.borderStrong }]} />}
-                  </View>
-
-                  <View style={styles.stepMain}>
-                    <View style={styles.stepHeader}>
-                      <Text style={[styles.stepName, { color: colors.text }]}>{nodeLabel(node)}</Text>
-                      <StatusBadge status={node.status} />
-                    </View>
-
-                    <Text style={[styles.stepMeta, { color: colors.textSubtle }]}>
-                      {node.durationMs ? `${node.durationMs}ms` : t('execution.running_duration')}
-                      {node.attemptCount > 1 ? ` • ${node.attemptCount - 1} ${t('execution.retries')}` : ''}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })
-          ) : (
-            <Text style={[styles.emptyText, { color: colors.textSubtle }]}>No node execution results yet.</Text>
-          )}
-        </View>
-
-        {/* Execution Event Logs Stream */}
-        {execution.logs.items.length > 0 && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Logs Stream</Text>
-            </View>
-
-            <View style={[styles.logsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {execution.logs.items.map((log) => (
-                <View key={log.id} style={styles.logRow}>
-                  <Terminal color={colors.textSubtle} size={13} />
-                  <Text style={[styles.logTime, { color: colors.textSubtle }]}>{log.createdAt}</Text>
-                  <Text style={[styles.logMessage, { color: colors.textMuted }]} numberOfLines={2}>
-                    {log.message ?? log.eventType}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </>
-        )}
-      </ScrollView>
-
-      {/* Node Details Bottom Sheet Modal */}
-      <Modal visible={!!selectedNode} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Node Execution Details</Text>
-              <Pressable onPress={() => setSelectedNode(null)}>
-                <X color={colors.textMuted} size={20} />
-              </Pressable>
-            </View>
-
-            {selectedNode && (
-              <ScrollView contentContainerStyle={styles.modalBody}>
-                <View style={styles.nodeHeaderRow}>
-                  <Text style={[styles.modalNodeName, { color: colors.primary }]}>{nodeLabel(selectedNode)}</Text>
-                  <StatusBadge status={selectedNode.status} />
-                </View>
-
-                <Text style={[styles.modalLabel, { color: colors.textMuted }]}>Node ID: {selectedNode.nodeId}</Text>
-                {selectedNode.durationMs && (
-                  <Text style={[styles.modalLabel, { color: colors.textMuted }]}>Duration: {selectedNode.durationMs}ms</Text>
-                )}
-
-                {selectedNode.output != null && (
-                  <View style={[styles.codeBlockGroup, { backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong }]}>
-                    <Text style={[styles.codeBlockTitle, { color: colors.primary }]}>Output Result Payload:</Text>
-                    <Text style={[styles.codeBlockText, { color: colors.text }]}>{JSON.stringify(selectedNode.output, null, 2)}</Text>
-                  </View>
-                )}
-
-                {selectedNode.error != null && (
-                  <View style={[styles.codeBlockGroup, { backgroundColor: colors.dangerBg, borderColor: colors.danger }]}>
-                    <Text style={[styles.codeBlockTitle, { color: colors.danger }]}>Error Exception:</Text>
-                    <Text style={[styles.codeBlockText, { color: colors.danger }]}>{describeError(selectedNode.error)}</Text>
-                  </View>
-                )}
-
-                <Pressable style={[styles.closeBtn, { backgroundColor: colors.cardSecondary }]} onPress={() => setSelectedNode(null)}>
-                  <Text style={[styles.closeBtnText, { color: colors.textMuted }]}>Close Inspection</Text>
-                </Pressable>
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
+      <ScreenHeader title={t('exd.title')} onBack={handleBack} />
+      {body}
     </SafeAreaView>
   );
 }
 
+/** NODE_FAILED -> "Node failed": raw event codes are never shown as the main text. */
+const humanize = (code: string) => {
+  const words = code.replace(/[_.]+/g, ' ').toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+const Info: React.FC<{ label: string; value: string; mono?: boolean }> = ({ label, value, mono }) => {
+  const colors = useThemeColors();
+  return (
+    <View style={styles.info}>
+      <Text style={[Typography.caption, { color: colors.textSubtle }]}>{label}</Text>
+      <Text style={[Typography.body, { color: colors.text, fontFamily: mono ? Fonts?.mono : undefined }]}>{value}</Text>
+    </View>
+  );
+};
+
+const PagerButton: React.FC<{ label: string; disabled: boolean; onPress: () => void }> = ({ label, disabled, onPress }) => {
+  const colors = useThemeColors();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.pagerBtn, { borderColor: colors.borderStrong, backgroundColor: colors.card, opacity: disabled ? 0.4 : 1 }]}
+    >
+      <Text style={[Typography.label, { color: colors.text }]}>{label}</Text>
+    </Pressable>
+  );
+};
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingTop: 10, paddingBottom: 10, borderBottomWidth: 1 },
-  backBtn: { padding: 6 },
-  headerTitle: { fontSize: 16, fontWeight: '800', flex: 1, marginHorizontal: 10 },
-  scrollContent: { padding: 18, paddingBottom: 40, gap: 14 },
-  card: { borderRadius: 20, borderWidth: 1, padding: 18, gap: 8 },
-  wfName: { fontSize: 18, fontWeight: '900' },
-  execId: { fontSize: 11, fontFamily: 'monospace' },
-  infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 8, paddingTop: 10, borderTopWidth: 1 },
-  infoItem: { minWidth: '45%' },
-  infoLabel: { fontSize: 11, fontWeight: '600' },
-  infoValue: { fontSize: 13, fontWeight: '700', marginTop: 2 },
-  failedCard: { borderRadius: 18, borderWidth: 1, padding: 16, gap: 10 },
-  failedHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  failedTitle: { fontSize: 15, fontWeight: '800' },
-  failedError: { fontSize: 12, lineHeight: 16 },
-  retryBtn: { borderRadius: 12, paddingVertical: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 4 },
-  retryText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
-  sectionHeader: { marginTop: 6 },
-  sectionTitle: { fontSize: 16, fontWeight: '800' },
-  sectionSub: { fontSize: 11, marginTop: 2 },
-  timelineCard: { borderRadius: 20, borderWidth: 1, padding: 18, gap: 4 },
-  timelineStep: { flexDirection: 'row', gap: 12 },
-  stepLeft: { alignItems: 'center', width: 24 },
-  stepConnector: { width: 2, flex: 1, marginVertical: 4 },
-  stepMain: { flex: 1, paddingBottom: 16 },
-  stepHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  stepName: { fontSize: 14, fontWeight: '700' },
-  stepMeta: { fontSize: 11, marginTop: 2 },
-  emptyText: { fontSize: 12 },
-  logsCard: { borderRadius: 18, borderWidth: 1, padding: 14, gap: 8 },
-  logRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logTime: { fontSize: 10, fontFamily: 'monospace' },
-  logMessage: { fontSize: 11, flex: 1 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, padding: 20, maxHeight: '80%' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  modalTitle: { fontSize: 18, fontWeight: '800' },
-  modalBody: { gap: 12 },
-  nodeHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  modalNodeName: { fontSize: 16, fontWeight: '800' },
-  modalLabel: { fontSize: 12 },
-  codeBlockGroup: { borderRadius: 12, borderWidth: 1, padding: 12, gap: 6 },
-  codeBlockTitle: { fontSize: 11, fontWeight: '700' },
-  codeBlockText: { fontSize: 11, fontFamily: 'monospace' },
-  closeBtn: { borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginTop: 10 },
-  closeBtnText: { fontSize: 13, fontWeight: '700' },
+  safe: { flex: 1 },
+  content: { gap: Spacing.four, padding: Spacing.three, paddingBottom: Spacing.six },
+  card: { gap: Spacing.two, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.lg },
+  headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
+  wfLink: { flex: 1, minHeight: MinTouch, justifyContent: 'center' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three, paddingTop: Spacing.three, borderTopWidth: 1 },
+  info: { width: '47%', gap: Spacing.half },
+  live: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  failed: { gap: Spacing.one, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.md },
+  rerun: { gap: Spacing.one },
+  rerunBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    minHeight: MinTouch,
+    borderRadius: Radius.md,
+  },
+  section: { gap: Spacing.two },
+  chipsBleed: { marginHorizontal: -Spacing.three },
+  log: { gap: Spacing.one, padding: Spacing.two, borderWidth: 1, borderRadius: Radius.sm },
+  logHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  level: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.pill, borderWidth: 1 },
+  pager: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
+  pagerBtn: { minHeight: MinTouch, justifyContent: 'center', paddingHorizontal: Spacing.three, borderRadius: Radius.md, borderWidth: 1 },
 });

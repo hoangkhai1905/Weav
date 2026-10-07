@@ -46,7 +46,8 @@ export const Fonts = Platform.select({
     sans: 'var(--font-display)',
     serif: 'var(--font-serif)',
     rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
+    // global.css is not loaded by the app, so the var() form never resolved (serif fallback).
+    mono: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
   },
 });
 

@@ -1,21 +1,36 @@
 import type {
+  CreateWorkflowInput,
   RunWorkflowOptions,
+  SaveDraftInput,
   Workflow,
   WorkflowListQuery,
   WorkflowPage,
+  WorkflowPublication,
   WorkflowRepository,
   WorkflowRunAccepted,
+  WorkflowStatus,
 } from '../../domain/workflow/workflow.types';
 import { isUnknownOutcomeTimeout, requestGateway } from './gateway-request';
 import {
+  buildCreateWorkflowRequest,
+  buildDeleteWorkflowRequest,
   buildPauseWorkflowRequest,
+  buildPublishWorkflowRequest,
   buildResumeWorkflowRequest,
+  buildSaveDraftRequest,
   buildRunWorkflowRequest,
   buildWorkflowDetailRequest,
   buildWorkflowListRequest,
   newIdempotencyKey,
 } from './workflow.http.contract';
-import { mapWorkflow, mapWorkflowPage, mapWorkflowRunAccepted } from './workflow.mapper';
+import {
+  mapNoContent,
+  mapWorkflow,
+  mapWorkflowCreated,
+  mapWorkflowPage,
+  mapWorkflowPublication,
+  mapWorkflowRunAccepted,
+} from './workflow.mapper';
 
 export class HttpWorkflowRepository implements WorkflowRepository {
   getWorkflows(workspaceId: string, query: WorkflowListQuery = {}): Promise<WorkflowPage> {
@@ -54,5 +69,25 @@ export class HttpWorkflowRepository implements WorkflowRepository {
 
   resumeWorkflow(workspaceId: string, workflowId: string): Promise<Workflow> {
     return requestGateway(buildResumeWorkflowRequest(workspaceId, workflowId), mapWorkflow);
+  }
+
+  createWorkflow(
+    workspaceId: string,
+    input: CreateWorkflowInput,
+  ): Promise<{ workflowId: string; status: WorkflowStatus }> {
+    return requestGateway(buildCreateWorkflowRequest(workspaceId, input), mapWorkflowCreated);
+  }
+
+  saveDraft(workspaceId: string, workflowId: string, input: SaveDraftInput): Promise<Workflow> {
+    return requestGateway(buildSaveDraftRequest(workspaceId, workflowId, input), mapWorkflow);
+  }
+
+  /** The response carries one-time webhook secrets; callers must not cache or log it. */
+  publishWorkflow(workspaceId: string, workflowId: string): Promise<WorkflowPublication> {
+    return requestGateway(buildPublishWorkflowRequest(workspaceId, workflowId), mapWorkflowPublication);
+  }
+
+  deleteWorkflow(workspaceId: string, workflowId: string): Promise<void> {
+    return requestGateway(buildDeleteWorkflowRequest(workspaceId, workflowId), mapNoContent);
   }
 }
