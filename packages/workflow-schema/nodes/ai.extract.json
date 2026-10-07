@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/ai.extract",
+  "title": "Extract data with AI",
+  "description": "Extracts structured data from text using an AI model.",
+  "x-weav-node": {
+    "type": "ai.extract",
+    "category": "ai",
+    "label": "Extract data with AI",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "text": {
+      "type": "string",
+      "title": "Text",
+      "description": "Text to extract data from.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "outputSchema": {
+      "type": "object",
+      "title": "Output schema",
+      "description": "JSON Schema describing the data to extract. Stored as written and never mapped.",
+      "x-weav-static": true
+    },
+    "instructions": {
+      "type": "string",
+      "title": "Instructions",
+      "description": "Extra guidance for the AI model.",
+      "x-weav-template": true
+    },
+    "schemaDescription": {
+      "type": "string",
+      "title": "Schema description",
+      "description": "Plain-language description of the expected output.",
+      "x-weav-template": true
+    }
+  },
+  "required": [
+    "text"
+  ],
+  "additionalProperties": false
+}

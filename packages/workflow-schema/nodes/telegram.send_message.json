@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/telegram.send_message",
+  "title": "Send Telegram message",
+  "description": "Sends a text message to a Telegram chat.",
+  "x-weav-node": {
+    "type": "telegram.send_message",
+    "category": "action",
+    "label": "Send Telegram message",
+    "sideEffect": true
+  },
+  "type": "object",
+  "properties": {
+    "connectionId": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Telegram bot connection",
+      "description": "Telegram bot connection (token from @BotFather) used to send the message.",
+      "x-weav-connection": {
+        "provider": "TELEGRAM"
+      }
+    },
+    "chatId": {
+      "title": "Chat ID",
+      "description": "Telegram chat that receives the message: a numeric chat id or an @channel username.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "text": {
+      "type": "string",
+      "title": "Message",
+      "description": "Message text to send.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "parseMode": {
+      "title": "Parse mode",
+      "description": "Formatting of the message text: none (default), HTML or MarkdownV2.",
+      "type": "string",
+      "x-weav-template": true,
+      "enum": [
+        "none",
+        "HTML",
+        "MarkdownV2"
+      ]
+    },
+    "disableNotification": {
+      "title": "Silent message",
+      "description": "Send without a notification sound (true or false). Default false.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "replyToMessageId": {
+      "title": "Reply to message ID",
+      "description": "Id of a message in the same chat to reply to. A missing original does not fail the send.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "required": [
+    "connectionId",
+    "chatId",
+    "text"
+  ],
+  "additionalProperties": false
+}

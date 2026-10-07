@@ -13,6 +13,8 @@ public final class ConnectionProviderPolicy {
     private static final Map<ConnectionProvider, Set<ConnectionAuthType>> ALLOWED_AUTH_TYPES = Map.of(
             ConnectionProvider.GMAIL, Set.of(ConnectionAuthType.OAUTH2),
             ConnectionProvider.GOOGLE_SHEETS, Set.of(ConnectionAuthType.OAUTH2),
+            ConnectionProvider.GOOGLE_CALENDAR, Set.of(ConnectionAuthType.OAUTH2),
+            ConnectionProvider.GOOGLE_DRIVE, Set.of(ConnectionAuthType.OAUTH2),
             ConnectionProvider.TELEGRAM, Set.of(ConnectionAuthType.TOKEN),
             ConnectionProvider.HTTP, Set.of(
                     ConnectionAuthType.NONE,

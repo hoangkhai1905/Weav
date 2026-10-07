@@ -1,6 +1,7 @@
 package com.weav.workflow.infrastructure.gmail;
 
 import com.weav.workflow.application.node.NodeExecutor;
+import com.weav.workflow.application.port.out.ConnectionReconnectRequiredException;
 import com.weav.workflow.application.port.out.ResolvedConnection;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
 import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableException;
@@ -27,16 +28,22 @@ public final class GmailNodeExecutor implements NodeExecutor {
     private static final int MAX_ADDRESS_LENGTH = 254;
     private static final int MAX_SUBJECT_LENGTH = 998;
     static final int MAX_BODY_LENGTH = 64 * 1024;
+    private static final int MAX_SENDER_NAME_LENGTH = 100;
+    private static final Pattern MESSAGE_ID = Pattern.compile("[0-9A-Fa-f]{1,32}");
     // ponytail: pragmatic address shape check; Gmail performs full RFC 5322 validation.
     private static final Pattern ADDRESS = Pattern.compile("[^@\\s,;<>\"()\\[\\]]+@[^@\\s,;<>\"()\\[\\]]+\\.[^@\\s,;<>\"()\\[\\]]+");
 
     private final GmailClient gmailClient;
     private final WorkspaceConnectionPort workspaceConnections;
 
-    public GmailNodeExecutor(GmailClient gmailClient, WorkspaceConnectionPort workspaceConnections) {
+    private final EmailAttachmentResolver attachmentResolver;
+
+    public GmailNodeExecutor(GmailClient gmailClient, WorkspaceConnectionPort workspaceConnections,
+                             EmailAttachmentResolver attachmentResolver) {
         this.gmailClient = Objects.requireNonNull(gmailClient, "gmailClient must not be null");
         this.workspaceConnections = Objects.requireNonNull(
                 workspaceConnections, "workspaceConnections must not be null");
+        this.attachmentResolver = Objects.requireNonNull(attachmentResolver, "attachmentResolver must not be null");
     }
 
     @Override
@@ -56,9 +63,16 @@ public final class GmailNodeExecutor implements NodeExecutor {
 
         try {
             Set<String> activeSecrets = activeSecrets(connection);
+            // The connection is checked first so a bad one fails without downloads; nothing is sent yet here.
+            EmailAttachmentResolver.Resolved attachments =
+                    attachmentResolver.resolve(context.workspaceId(), request.attachments());
             Map<String, Object> providerOutput;
             try {
-                providerOutput = gmailClient.send(request.recipients(), request.subject(), request.body(), connection);
+                providerOutput = request.isPlain() && attachments.attachments().isEmpty()
+                        ? gmailClient.send(request.recipients(), request.subject(), request.body(), connection)
+                        : gmailClient.sendMessage(new GmailClient.Outgoing(request.recipients(), request.cc(),
+                        request.bcc(), request.replyTo(), request.senderName(), request.subject(), request.body(),
+                        request.html(), request.replyToMessageId(), attachments.attachments()), connection);
             } catch (NodeExecutor.Failure failure) {
                 if ("AUTHENTICATION_REJECTED".equals(failure.code())) {
                     reportAuthenticationRejected(context.workspaceId(), request.connectionId(), connection);
@@ -81,6 +95,12 @@ public final class GmailNodeExecutor implements NodeExecutor {
                     jsonOutput.put(key, entry.getValue());
                 }
             }
+            if (EmailAttachmentResolver.configured(request.attachments())) {
+                jsonOutput.put("attachmentCount", attachments.attachments().size());
+                if (attachments.skipped() > 0) {
+                    jsonOutput.put("skippedAttachments", attachments.skipped());
+                }
+            }
             return new Result(jsonOutput, null);
         } finally {
             connection.close();
@@ -93,8 +113,32 @@ public final class GmailNodeExecutor implements NodeExecutor {
         }
         UUID connectionId = parseConnectionId(config.get("connectionId"));
         List<String> recipients = parseRecipients(config.get("to"));
+        List<String> cc = parseOptionalRecipients(config.get("cc"));
+        List<String> bcc = parseOptionalRecipients(config.get("bcc"));
+        List<String> replyTo = parseOptionalRecipients(config.get("replyTo"));
+        if (recipients.size() + cc.size() + bcc.size() > MAX_RECIPIENTS) {
+            throw configurationFailure();
+        }
+        String replyToMessageId = optionalText(config.get("replyToMessageId"));
+        if (replyToMessageId != null && !MESSAGE_ID.matcher(replyToMessageId).matches()) {
+            throw configurationFailure();
+        }
+        String senderName = optionalText(config.get("senderName"));
+        if (senderName != null && (senderName.length() > MAX_SENDER_NAME_LENGTH
+                || senderName.codePoints().anyMatch(Character::isISOControl))) {
+            throw configurationFailure();
+        }
+        boolean html = false;
+        if (optionalText(config.get("bodyType")) instanceof String type) {
+            html = switch (type.toLowerCase(java.util.Locale.ROOT)) {
+                case "text" -> false;
+                case "html" -> true;
+                default -> throw configurationFailure();
+            };
+        }
         String subject = config.get("subject") instanceof String text ? text : null;
-        if (subject == null || subject.isBlank() || subject.length() > MAX_SUBJECT_LENGTH
+        // A blank subject is allowed only when replying: it then becomes "Re: <original subject>".
+        if (subject == null || subject.isBlank() && replyToMessageId == null || subject.length() > MAX_SUBJECT_LENGTH
                 || subject.codePoints().anyMatch(Character::isISOControl)) {
             throw configurationFailure();
         }
@@ -103,7 +147,26 @@ public final class GmailNodeExecutor implements NodeExecutor {
                 || body.codePoints().anyMatch(c -> Character.isISOControl(c) && c != '\n' && c != '\r' && c != '\t')) {
             throw configurationFailure();
         }
-        return new Request(connectionId, recipients, subject, body);
+        return new Request(connectionId, recipients, subject, body, cc, bcc, replyTo, senderName, html,
+                replyToMessageId, config.get("attachments"));
+    }
+
+    /** Absent, null, blank text or an empty list all mean "not set". */
+    private static List<String> parseOptionalRecipients(Object value) {
+        if (value == null || value instanceof String text && text.isBlank() || value instanceof List<?> list && list.isEmpty()) {
+            return List.of();
+        }
+        return parseRecipients(value);
+    }
+
+    private static String optionalText(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof String text)) {
+            throw configurationFailure();
+        }
+        return text.isBlank() ? null : text.strip();
     }
 
     static List<String> parseRecipients(Object value) {
@@ -155,6 +218,9 @@ public final class GmailNodeExecutor implements NodeExecutor {
         } catch (ForbiddenException exception) {
             throw new NodeExecutor.Failure("CONNECTION_FORBIDDEN",
                     "The Gmail connection is not available to this workspace.", false);
+        } catch (ConnectionReconnectRequiredException exception) {
+            throw new NodeExecutor.Failure(ConnectionReconnectRequiredException.CODE,
+                    "The Gmail connection must be reconnected: open Connections and reconnect it.", false);
         } catch (WorkspaceDependencyUnavailableException exception) {
             throw new NodeExecutor.Failure("CONNECTION_UNAVAILABLE",
                     "The connection service is unavailable.", true, true);
@@ -186,6 +252,13 @@ public final class GmailNodeExecutor implements NodeExecutor {
                 "The email node configuration is invalid.", false);
     }
 
-    private record Request(UUID connectionId, List<String> recipients, String subject, String body) {
+    private record Request(UUID connectionId, List<String> recipients, String subject, String body,
+                           List<String> cc, List<String> bcc, List<String> replyTo, String senderName, boolean html,
+                           String replyToMessageId, Object attachments) {
+        /** No optional field is set: the message is exactly what the node sent before they existed. */
+        boolean isPlain() {
+            return cc.isEmpty() && bcc.isEmpty() && replyTo.isEmpty() && senderName == null && !html
+                    && replyToMessageId == null;
+        }
     }
 }

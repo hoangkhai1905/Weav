@@ -85,7 +85,14 @@ const connectionConfigSchema = z.record(z.string(), z.unknown());
 const createConnectionBodySchema = z
   .object({
     name: z.string().trim().min(1).max(120),
-    provider: z.enum(['TELEGRAM', 'HTTP', 'GMAIL', 'GOOGLE_SHEETS']),
+    provider: z.enum([
+      'TELEGRAM',
+      'HTTP',
+      'GMAIL',
+      'GOOGLE_SHEETS',
+      'GOOGLE_CALENDAR',
+      'GOOGLE_DRIVE',
+    ]),
     authType: z.enum(['NONE', 'TOKEN', 'API_KEY', 'BASIC', 'OAUTH2']),
     config: connectionConfigSchema.optional(),
   })

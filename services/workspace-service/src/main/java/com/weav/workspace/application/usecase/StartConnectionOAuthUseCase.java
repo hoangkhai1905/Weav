@@ -100,7 +100,7 @@ public final class StartConnectionOAuthUseCase {
 
     private void validateGoogleConnection(Connection connection) {
         ConnectionProvider provider = connection.getProvider();
-        if ((provider != ConnectionProvider.GMAIL && provider != ConnectionProvider.GOOGLE_SHEETS)
+        if (!provider.isGoogleOAuth()
                 || connection.getAuthType() != ConnectionAuthType.OAUTH2
                 || (connection.getConfig() != null && !connection.getConfig().isEmpty())) {
             throw new BadRequestException("Google connection configuration is invalid");

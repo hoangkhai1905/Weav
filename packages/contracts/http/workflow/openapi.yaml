@@ -187,7 +187,20 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
+        '409':
+          description: >-
+            Conflict, including TELEGRAM_BOT_IN_USE when another workflow already has an active trigger.telegram
+            on the same Telegram connection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '502':
+          description: >-
+            TELEGRAM_WEBHOOK_REGISTRATION_FAILED: Telegram rejected setWebhook or could not be reached; nothing
+            was published.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
         '503':
           description: A required trigger or connection-reference dependency is unavailable.
           content:
@@ -380,6 +393,48 @@ paths:
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /webhooks/telegram/{endpointKey}:
+    post:
+      tags: [Executions]
+      operationId: receiveTelegramUpdate
+      summary: Receive a Telegram bot update for a trigger.telegram registration
+      description: >-
+        Called by Telegram, not by users: publishing a workflow with trigger.telegram registers this URL (built
+        from WORKFLOW_PUBLIC_BASE_URL, through the gateway) with the Bot API setWebhook and a random secret_token.
+        The X-Telegram-Bot-Api-Secret-Token header is compared in constant time with the stored hash. Unknown,
+        missing, wrong, inactive, paused, superseded, or non-Telegram registrations all return the same generic
+        404. A text message starts one execution with trigger.input
+        {updateId, message: {messageId, date, text, chat: {id, type}, from: {id, username, firstName}}}
+        (only fields present); update_id is the idempotency key, so redeliveries return 200 without a second
+        execution. Updates without a text message are acknowledged with 200 and start nothing.
+      security: []
+      parameters:
+        - name: endpointKey
+          in: path
+          required: true
+          schema: { type: string, minLength: 32, maxLength: 32, pattern: '^[A-Za-z0-9_-]{32}$' }
+        - name: X-Telegram-Bot-Api-Secret-Token
+          in: header
+          required: true
+          description: secret_token supplied to setWebhook; never returned after publication.
+          schema: { type: string, minLength: 1, maxLength: 256, pattern: '^[A-Za-z0-9_-]{1,256}$', writeOnly: true }
+      requestBody:
+        required: true
+        description: Telegram Update object; bodies larger than 1 MiB are rejected before parsing.
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Update acknowledged (execution admitted, duplicate, or nothing to run).
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '404': { $ref: '#/components/responses/WebhookNotFound' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /internal/workspaces/{workspaceId}/connections/{connectionId}/usage:
     get:
       tags: [Internal]
@@ -546,11 +601,11 @@ components:
             required: [triggerId, type, status, reasonCode, nextRunAt, lastTriggeredAt]
             properties:
               triggerId: { type: string, format: uuid }
-              type: { type: string, enum: [SCHEDULE, WEBHOOK, TELEGRAM] }
+              type: { type: string, enum: [SCHEDULE, WEBHOOK, TELEGRAM, GMAIL] }
               status: { type: string, enum: [ACTIVE, DISABLED] }
               reasonCode:
                 type: string
-                enum: [DEPENDENCY_NOT_CONFIGURED, SCHEDULE_ADMISSION_FAILED]
+                enum: [DEPENDENCY_NOT_CONFIGURED, SCHEDULE_ADMISSION_FAILED, CONNECTION_RECONNECT_REQUIRED, AUTHENTICATION_REJECTED, CONNECTION_FORBIDDEN, CONNECTION_UNAVAILABLE, GMAIL_POLL_FAILED, GMAIL_MESSAGE_SKIPPED, GMAIL_BACKLOG_TRUNCATED]
                 nullable: true
               nextRunAt: { type: string, format: date-time, nullable: true }
               lastTriggeredAt: { type: string, format: date-time, nullable: true }
@@ -616,7 +671,7 @@ components:
         workflowId: { type: string, format: uuid }
         workflowVersionId: { type: string, format: uuid }
         status: { type: string, enum: [QUEUED, RUNNING, WAITING, SUCCESS, FAILED, CANCELLED] }
-        triggerType: { type: string, enum: [MANUAL, SCHEDULE, WEBHOOK, TELEGRAM] }
+        triggerType: { type: string, enum: [MANUAL, SCHEDULE, WEBHOOK, TELEGRAM, GMAIL] }
         createdAt: { type: string, format: date-time }
         startedAt: { type: string, format: date-time, nullable: true }
         finishedAt: { type: string, format: date-time, nullable: true }

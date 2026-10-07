@@ -1,5 +1,6 @@
 package com.weav.workflow.infrastructure.persistence.repository;
 
+import com.weav.workflow.application.port.out.GmailTriggerPort;
 import com.weav.workflow.application.port.out.WorkflowTriggerPort;
 import com.weav.workflow.domain.exception.ResourceNotFoundException;
 import com.weav.workflow.domain.model.aggregate.workflow.WorkflowTrigger;
@@ -22,7 +23,7 @@ import java.util.regex.Pattern;
 
 /** JPA adapter for current and historical workflow trigger registrations. */
 @Repository
-public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
+public class WorkflowTriggerAdapter implements WorkflowTriggerPort, GmailTriggerPort {
     private static final Pattern SQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     @PersistenceContext
@@ -30,6 +31,7 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
 
     private final WorkflowPersistenceMapper mapper;
     private final String triggerTable;
+    private final String workflowTable;
     private final java.time.Clock clock;
 
     public WorkflowTriggerAdapter(WorkflowPersistenceMapper mapper,
@@ -42,6 +44,7 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
             throw new IllegalArgumentException("The configured workflow schema name is invalid");
         }
         this.triggerTable = "\"" + schema + "\".workflow_triggers";
+        this.workflowTable = "\"" + schema + "\".workflows";
     }
 
     @Override
@@ -83,18 +86,107 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
     @Override
     @Transactional(readOnly = true)
     public Optional<WorkflowTrigger> findWebhookByEndpoint(String endpointKey) {
+        return findByEndpoint(endpointKey, com.weav.workflow.domain.valueobject.TriggerType.WEBHOOK);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<WorkflowTrigger> findTelegramByEndpoint(String endpointKey) {
+        return findByEndpoint(endpointKey, com.weav.workflow.domain.valueobject.TriggerType.TELEGRAM);
+    }
+
+    private Optional<WorkflowTrigger> findByEndpoint(
+            String endpointKey, com.weav.workflow.domain.valueobject.TriggerType type) {
         Objects.requireNonNull(endpointKey, "endpointKey must not be null");
         return entityManager.createQuery(
                         "select trigger from WorkflowTriggerJpaEntity trigger "
                                 + "where trigger.endpointKey = :endpointKey and trigger.type = :type",
                         WorkflowTriggerJpaEntity.class)
                 .setParameter("endpointKey", endpointKey)
-                .setParameter("type", com.weav.workflow.domain.valueobject.TriggerType.WEBHOOK)
+                .setParameter("type", type)
                 .setMaxResults(1)
                 .getResultList()
                 .stream()
                 .findFirst()
                 .map(mapper::toDomain);
+    }
+
+    @Override
+    @Transactional
+    public boolean isTelegramConnectionInUse(UUID connectionId, UUID excludingWorkflowId) {
+        Objects.requireNonNull(connectionId, "connectionId must not be null");
+        Objects.requireNonNull(excludingWorkflowId, "excludingWorkflowId must not be null");
+        String connection = connectionId.toString();
+        entityManager.createNativeQuery("select pg_advisory_xact_lock(hashtextextended(:connection, 0))")
+                .setParameter("connection", "telegram-bot:" + connection)
+                .getSingleResult();
+        Number matches = (Number) entityManager.createNativeQuery(
+                        "select count(*) from " + triggerTable + " t "
+                                + "join " + workflowTable + " w on w.id = t.workflow_id "
+                                + "where t.type = 'TELEGRAM' and t.status = 'ACTIVE' and w.deleted_at is null "
+                                + "and lower(t.config->>'connectionId') = :connection and t.workflow_id <> :workflowId")
+                .setParameter("connection", connection)
+                .setParameter("workflowId", excludingWorkflowId)
+                .getSingleResult();
+        return matches.longValue() > 0;
+    }
+
+    @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW,
+            readOnly = true)
+    public boolean hasActiveTelegramTrigger(UUID connectionId) {
+        Objects.requireNonNull(connectionId, "connectionId must not be null");
+        Number matches = (Number) entityManager.createNativeQuery(
+                        "select count(*) from " + triggerTable + " t "
+                                + "join " + workflowTable + " w on w.id = t.workflow_id "
+                                + "where t.type = 'TELEGRAM' and t.status = 'ACTIVE' and w.deleted_at is null "
+                                + "and lower(t.config->>'connectionId') = :connection")
+                .setParameter("connection", connectionId.toString())
+                .getSingleResult();
+        return matches.longValue() > 0;
+    }
+
+    @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void updateTelegramRegistration(UUID triggerId, String newSecretHash, Map<String, Object> lastError) {
+        Objects.requireNonNull(triggerId, "triggerId must not be null");
+        WorkflowTriggerJpaEntity trigger = entityManager.find(WorkflowTriggerJpaEntity.class, triggerId);
+        if (trigger == null || trigger.getType() != com.weav.workflow.domain.valueobject.TriggerType.TELEGRAM) {
+            return;
+        }
+        if (newSecretHash != null) {
+            if (newSecretHash.isBlank()) {
+                throw new IllegalArgumentException("secretHash must not be blank");
+            }
+            trigger.setSecretHash(newSecretHash);
+        }
+        trigger.setLastError(lastError == null ? null : mapper.toJsonNode(lastError));
+    }
+
+    @Override
+    @Transactional
+    public void disableTelegramNotConfigured(UUID triggerId) {
+        Objects.requireNonNull(triggerId, "triggerId must not be null");
+        WorkflowTriggerJpaEntity trigger = entityManager.find(WorkflowTriggerJpaEntity.class, triggerId);
+        if (trigger == null || trigger.getType() != com.weav.workflow.domain.valueobject.TriggerType.TELEGRAM) {
+            return;
+        }
+        trigger.setStatus(TriggerStatus.DISABLED);
+        trigger.setLastError(mapper.toJsonNode(Map.of("code", "DEPENDENCY_NOT_CONFIGURED")));
+    }
+
+    @Override
+    @Transactional
+    public void replaceSecretHash(UUID triggerId, String secretHash) {
+        Objects.requireNonNull(triggerId, "triggerId must not be null");
+        if (secretHash == null || secretHash.isBlank()) {
+            throw new IllegalArgumentException("secretHash must not be blank");
+        }
+        WorkflowTriggerJpaEntity trigger = entityManager.find(WorkflowTriggerJpaEntity.class, triggerId);
+        if (trigger == null || trigger.getEndpointKey() == null) {
+            throw new ResourceNotFoundException("Workflow trigger not found");
+        }
+        trigger.setSecretHash(secretHash);
     }
 
     @Override
@@ -134,6 +226,62 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
                 .setParameter("limit", limit)
                 .getResultList();
         return rows.stream().map(row -> new ScheduleCandidate((UUID) row[0], (UUID) row[1])).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<GmailTriggerPort.Candidate> findDueGmail(Instant now, int limit) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (limit < 1 || limit > 1_000) {
+            throw new IllegalArgumentException("Gmail poll limit must be between 1 and 1000");
+        }
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = entityManager.createNativeQuery(
+                        "select workflow_id, id from " + triggerTable + " "
+                                + "where type = 'GMAIL' and status = 'ACTIVE' "
+                                + "and next_run_at is not null and next_run_at <= :now "
+                                + "order by next_run_at, id limit :limit")
+                .setParameter("now", now)
+                .setParameter("limit", limit)
+                .getResultList();
+        return rows.stream().map(row -> new GmailTriggerPort.Candidate((UUID) row[0], (UUID) row[1])).toList();
+    }
+
+    @Override
+    @Transactional
+    public void advanceGmailPoll(UUID triggerId, Instant nextPollAt) {
+        WorkflowTriggerJpaEntity trigger = entityManager.find(WorkflowTriggerJpaEntity.class, triggerId);
+        if (trigger == null || trigger.getType() != com.weav.workflow.domain.valueobject.TriggerType.GMAIL
+                || trigger.getStatus() != TriggerStatus.ACTIVE) {
+            return;
+        }
+        trigger.setNextRunAt(Objects.requireNonNull(nextPollAt, "nextPollAt must not be null"));
+    }
+
+    @Override
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void recordGmailPoll(UUID triggerId, Instant newCursor, String lastMessageId, String lastErrorCode) {
+        Objects.requireNonNull(triggerId, "triggerId must not be null");
+        // Column-targeted statements: a full entity flush could overwrite next_run_at written by the next claim.
+        if (newCursor != null) {
+            entityManager.createNativeQuery("update " + triggerTable + " set poll_cursor = :cursor, "
+                            + "last_triggered_at = :cursor, updated_at = :now "
+                            + "where id = :id and type = 'GMAIL' and status = 'ACTIVE' "
+                            + "and (poll_cursor is null or poll_cursor < :cursor)")
+                    .setParameter("cursor", newCursor).setParameter("now", clock.instant())
+                    .setParameter("id", triggerId).executeUpdate();
+        }
+        if (lastMessageId != null) {
+            entityManager.createNativeQuery("update " + triggerTable + " set poll_cursor_message_id = :messageId, "
+                            + "updated_at = :now where id = :id and type = 'GMAIL' and status = 'ACTIVE'")
+                    .setParameter("messageId", lastMessageId).setParameter("now", clock.instant())
+                    .setParameter("id", triggerId).executeUpdate();
+        }
+        String error = lastErrorCode == null ? null : mapper.toJsonNode(Map.of("code", lastErrorCode)).toString();
+        entityManager.createNativeQuery("update " + triggerTable + " set last_error = cast(cast(:error as text) as jsonb), "
+                        + "updated_at = :now where id = :id and type = 'GMAIL' and status = 'ACTIVE'")
+                .setParameter("error", error).setParameter("now", clock.instant())
+                .setParameter("id", triggerId).executeUpdate();
     }
 
     @Override
@@ -231,6 +379,16 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort {
                     && "DEPENDENCY_NOT_CONFIGURED".equals(trigger.getLastError().path("code").asString());
             boolean activate = enabled && !hasReadinessError;
             trigger.setStatus(activate ? TriggerStatus.ACTIVE : TriggerStatus.DISABLED);
+            if (trigger.getType() == com.weav.workflow.domain.valueobject.TriggerType.GMAIL) {
+                // Like schedules, mail that arrives while paused is not replayed: polling restarts at "now".
+                trigger.setNextRunAt(activate ? enabledAt : null);
+                trigger.setPollCursor(activate ? enabledAt : null);
+                trigger.setPollCursorMessageId(null);
+                if (activate) {
+                    trigger.setLastError(null);
+                }
+                continue;
+            }
             if (trigger.getType() == com.weav.workflow.domain.valueobject.TriggerType.SCHEDULE) {
                 if (activate) {
                     Instant nextRunAt = nextRunAtByTrigger.get(trigger.getId());

@@ -43,7 +43,7 @@ class GoogleOAuthProviderTest {
     private static final String ACCESS_TOKEN = "synthetic-access-token";
     private static final String REFRESH_TOKEN = "synthetic-refresh-token";
     private static final String GMAIL_SCOPES =
-            "openid email https://www.googleapis.com/auth/gmail.metadata https://www.googleapis.com/auth/gmail.send";
+            "openid email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send";
     private static final String SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
     private static final String SHEETS_SCOPES = "openid email " + SHEETS_SCOPE;
 
@@ -79,15 +79,25 @@ class GoogleOAuthProviderTest {
                 .containsEntry("code_challenge", CHALLENGE)
                 .containsEntry("code_challenge_method", "S256")
                 .containsEntry("access_type", "offline")
-                .containsEntry("include_granted_scopes", "true")
+                .doesNotContainKey("include_granted_scopes")
                 .containsEntry("prompt", "consent");
-        // gmail.send is required by the email.send node; broader mail/drive scopes stay out.
-        assertThat(gmail.get("scope")).doesNotContain("gmail.readonly", "mail.google.com", "drive");
+        // gmail.readonly (trigger.gmail) and gmail.send (email.send); gmail.metadata would break reads, and no
+        // full-mail or drive scope. No incremental grants either: an old metadata grant must not merge in.
+        assertThat(gmail.get("scope")).contains("gmail.readonly", "gmail.send")
+                .doesNotContain("gmail.metadata", "mail.google.com", "drive");
 
         Map<String, String> sheets = query(URI.create(provider()
                 .authorizationUrl(ConnectionProvider.GOOGLE_SHEETS, "B".repeat(43), CHALLENGE)).getRawQuery());
+        assertThat(sheets).containsEntry("include_granted_scopes", "true");
         assertThat(sheets.get("scope")).isEqualTo(SHEETS_SCOPES)
                 .doesNotContain("drive");
+        Map<String, String> calendar = query(URI.create(provider()
+                .authorizationUrl(ConnectionProvider.GOOGLE_CALENDAR, "C".repeat(43), CHALLENGE)).getRawQuery());
+        assertThat(calendar.get("scope")).isEqualTo(
+                "openid email https://www.googleapis.com/auth/calendar.events");
+        Map<String, String> drive = query(URI.create(provider()
+                .authorizationUrl(ConnectionProvider.GOOGLE_DRIVE, "D".repeat(43), CHALLENGE)).getRawQuery());
+        assertThat(drive.get("scope")).isEqualTo("openid email https://www.googleapis.com/auth/drive.file");
         assertThat(provider().authorizationUrl(ConnectionProvider.GMAIL, "A".repeat(43), CHALLENGE))
                 .doesNotContain(CLIENT_SECRET);
         assertThatThrownBy(() -> provider().authorizationUrl(ConnectionProvider.GMAIL, "bad state", CHALLENGE))
@@ -106,7 +116,7 @@ class GoogleOAuthProviderTest {
         assertThat(tokens.refreshToken()).isEqualTo(REFRESH_TOKEN);
         assertThat(tokens.tokenType()).isEqualTo("Bearer");
         assertThat(tokens.grantedScopes()).containsExactly("openid", "email",
-                "https://www.googleapis.com/auth/gmail.metadata", "https://www.googleapis.com/auth/gmail.send");
+                "https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send");
         assertThat(tokens.expiresInSeconds()).isEqualTo(3600);
         assertThat(tokens.toString()).doesNotContain(ACCESS_TOKEN, REFRESH_TOKEN);
 
@@ -184,7 +194,7 @@ class GoogleOAuthProviderTest {
         assertThat(response.accessToken()).isEqualTo("refreshed-access");
         assertThat(response.refreshToken()).isNull();
         assertThat(response.grantedScopes()).containsExactly("openid", "email",
-                "https://www.googleapis.com/auth/gmail.metadata", "https://www.googleapis.com/auth/gmail.send");
+                "https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send");
         assertThat(response.toString()).doesNotContain("refreshed-access", REFRESH_TOKEN);
         CapturedRequest request = onlyRequest();
         assertThat(request.method()).isEqualTo("POST");
@@ -421,7 +431,7 @@ class GoogleOAuthProviderTest {
     }
 
     private static List<String> gmailScopes() {
-        return List.of("openid", "email", "https://www.googleapis.com/auth/gmail.metadata",
+        return List.of("openid", "email", "https://www.googleapis.com/auth/gmail.readonly",
                 "https://www.googleapis.com/auth/gmail.send");
     }
 

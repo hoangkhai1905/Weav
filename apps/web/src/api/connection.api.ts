@@ -4,11 +4,12 @@ import { tr } from '../lib/i18n/tr';
 import { useAuthStore } from '../store/useAuthStore';
 
 export type ConnectionProvider =
-  "TELEGRAM" | "HTTP" | "GMAIL" | "GOOGLE_SHEETS";
+  "TELEGRAM" | "HTTP" | "GMAIL" | "GOOGLE_SHEETS" | "GOOGLE_CALENDAR" | "GOOGLE_DRIVE";
 export type GoogleProvider = Extract<
   ConnectionProvider,
-  "GMAIL" | "GOOGLE_SHEETS"
+  "GMAIL" | "GOOGLE_SHEETS" | "GOOGLE_CALENDAR" | "GOOGLE_DRIVE"
 >;
+export const GOOGLE_PROVIDERS: readonly GoogleProvider[] = ["GMAIL", "GOOGLE_SHEETS", "GOOGLE_CALENDAR", "GOOGLE_DRIVE"];
 export type ConnectionAuthType =
   "NONE" | "TOKEN" | "API_KEY" | "BASIC" | "OAUTH2";
 export type ConnectionStatus = "DISABLED" | "ACTIVE" | "INVALID";
@@ -35,6 +36,14 @@ export interface CreateGoogleConnectionRequest {
   name: string;
   provider: GoogleProvider;
   authType: "OAUTH2";
+}
+
+export interface CreateTelegramConnectionRequest {
+  name: string;
+  provider: "TELEGRAM";
+  authType: "TOKEN";
+  /** Bot token from @BotFather; write-only, sent once to the credential endpoint and never kept. */
+  token: string;
 }
 
 export type ConnectionTestResponse = { outcome: "VERIFIED" | "AUTH_INVALID" };
@@ -168,7 +177,7 @@ function parseConnection(value: unknown): ConnectionResponse {
       tr('msg.workspace_returned_an_invalid_connection_response'),
     );
 
-  const providers = ["TELEGRAM", "HTTP", "GMAIL", "GOOGLE_SHEETS"] as const;
+  const providers = ["TELEGRAM", "HTTP", ...GOOGLE_PROVIDERS] as const;
   const authTypes = ["NONE", "TOKEN", "API_KEY", "BASIC", "OAUTH2"] as const;
   const statuses = ["DISABLED", "ACTIVE", "INVALID"] as const;
   const nullableString = (field: unknown) =>
@@ -301,7 +310,7 @@ export const connectionApi = {
 
   async create(
     workspaceId: string,
-    input: CreateGoogleConnectionRequest,
+    input: CreateGoogleConnectionRequest | CreateTelegramConnectionRequest,
   ): Promise<ConnectionResponse> {
     const value = await request<unknown>({
       method: "POST",
@@ -309,10 +318,36 @@ export const connectionApi = {
       data: {
         name: normalizedName(input.name),
         provider: input.provider,
-        authType: "OAUTH2",
+        authType: input.authType,
       },
     });
-    return parseConnection(value);
+    const created = parseConnection(value);
+    if (input.provider !== "TELEGRAM") return created;
+    // The connection is created DISABLED without a credential: store the token, then verify it
+    // (VERIFIED activates the connection). A failed save removes the empty shell again.
+    try {
+      await connectionApi.saveCredential(workspaceId, created.id, { token: input.token });
+    } catch (error) {
+      await connectionApi.remove(workspaceId, created.id).catch(() => undefined);
+      throw error;
+    }
+    // A failed verification leaves the row DISABLED/INVALID; the row's Test action retries it.
+    await connectionApi.test(workspaceId, created.id).catch(() => undefined);
+    return created;
+  },
+
+  async saveCredential(
+    workspaceId: string,
+    connectionId: string,
+    payload: { token: string },
+  ): Promise<ConnectionResponse> {
+    return parseConnection(
+      await request<unknown>({
+        method: "PUT",
+        url: `${itemPath(workspaceId, connectionId)}/credential`,
+        data: { payload },
+      }),
+    );
   },
 
   async get(

@@ -73,6 +73,12 @@ public class WorkflowTriggerJpaEntity {
     @Column(name = "last_error", columnDefinition = "jsonb")
     private JsonNode lastError;
 
+    @Column(name = "poll_cursor")
+    private Instant pollCursor;
+
+    @Column(name = "poll_cursor_message_id")
+    private String pollCursorMessageId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -92,6 +98,15 @@ public class WorkflowTriggerJpaEntity {
                                     TriggerType type, TriggerStatus status, JsonNode config, String endpointKey,
                                     String secretHash, Instant nextRunAt, Instant lastTriggeredAt, JsonNode lastError,
                                     Instant createdAt, Instant updatedAt) {
+        this(id, workflowId, workflowVersionId, triggerNodeId, type, status, config, endpointKey, secretHash,
+                nextRunAt, lastTriggeredAt, lastError, null, createdAt, updatedAt);
+    }
+
+    public WorkflowTriggerJpaEntity(UUID id, UUID workflowId, UUID workflowVersionId, String triggerNodeId,
+                                    TriggerType type, TriggerStatus status, JsonNode config, String endpointKey,
+                                    String secretHash, Instant nextRunAt, Instant lastTriggeredAt, JsonNode lastError,
+                                    Instant pollCursor, Instant createdAt, Instant updatedAt) {
+        this.pollCursor = pollCursor;
         this.id = id;
         this.workflowId = workflowId;
         this.workflowVersionId = workflowVersionId;
@@ -131,6 +146,8 @@ public class WorkflowTriggerJpaEntity {
     public Instant getNextRunAt() { return nextRunAt; }
     public Instant getLastTriggeredAt() { return lastTriggeredAt; }
     public JsonNode getLastError() { return lastError; }
+    public Instant getPollCursor() { return pollCursor; }
+    public String getPollCursorMessageId() { return pollCursorMessageId; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 
@@ -140,4 +157,6 @@ public class WorkflowTriggerJpaEntity {
     public void setNextRunAt(Instant nextRunAt) { this.nextRunAt = nextRunAt; }
     public void setLastTriggeredAt(Instant lastTriggeredAt) { this.lastTriggeredAt = lastTriggeredAt; }
     public void setLastError(JsonNode lastError) { this.lastError = lastError; }
+    public void setPollCursor(Instant pollCursor) { this.pollCursor = pollCursor; }
+    public void setPollCursorMessageId(String id) { this.pollCursorMessageId = id; }
 }

@@ -1,6 +1,7 @@
 services:
   rabbitmq:
     image: rabbitmq:4-management
+    restart: unless-stopped
     container_name: weav-rabbitmq
     ports:
       - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"

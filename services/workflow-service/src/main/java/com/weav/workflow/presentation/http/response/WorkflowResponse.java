@@ -48,7 +48,9 @@ public record WorkflowResponse(
             Map<String, Object> error = trigger.getLastError();
             String storedCode = error != null && error.get("code") instanceof String code ? code : null;
             String safeCode = switch (storedCode == null ? "" : storedCode) {
-                case "DEPENDENCY_NOT_CONFIGURED", "SCHEDULE_ADMISSION_FAILED" -> storedCode;
+                case "DEPENDENCY_NOT_CONFIGURED", "SCHEDULE_ADMISSION_FAILED", "CONNECTION_RECONNECT_REQUIRED",
+                     "AUTHENTICATION_REJECTED", "CONNECTION_FORBIDDEN", "CONNECTION_UNAVAILABLE",
+                     "GMAIL_POLL_FAILED", "GMAIL_MESSAGE_SKIPPED", "GMAIL_BACKLOG_TRUNCATED" -> storedCode;
                 default -> null;
             };
             return new TriggerRegistration(trigger.getId(), trigger.getType().name(), trigger.getStatus().name(),

@@ -21,6 +21,8 @@ public class WorkflowTrigger {
     private Instant nextRunAt;
     private Instant lastTriggeredAt;
     private Map<String, Object> lastError;
+    private Instant pollCursor;
+    private String pollCursorMessageId;
     private final Instant createdAt;
     private Instant updatedAt;
 
@@ -28,6 +30,15 @@ public class WorkflowTrigger {
                            TriggerStatus status, Map<String, Object> config, String endpointKey, String secretHash,
                            Instant nextRunAt, Instant lastTriggeredAt, Map<String, Object> lastError,
                            Instant createdAt, Instant updatedAt) {
+        this(id, workflowId, workflowVersionId, triggerNodeId, type, status, config, endpointKey, secretHash,
+                nextRunAt, lastTriggeredAt, lastError, null, createdAt, updatedAt);
+    }
+
+    public WorkflowTrigger(UUID id, UUID workflowId, UUID workflowVersionId, String triggerNodeId, TriggerType type,
+                           TriggerStatus status, Map<String, Object> config, String endpointKey, String secretHash,
+                           Instant nextRunAt, Instant lastTriggeredAt, Map<String, Object> lastError,
+                           Instant pollCursor, Instant createdAt, Instant updatedAt) {
+        this.pollCursor = pollCursor;
         this.id = Objects.requireNonNull(id); this.workflowId = Objects.requireNonNull(workflowId);
         this.workflowVersionId = Objects.requireNonNull(workflowVersionId); this.triggerNodeId = Objects.requireNonNull(triggerNodeId);
         this.type = Objects.requireNonNull(type); this.status = Objects.requireNonNull(status);
@@ -91,10 +102,12 @@ public class WorkflowTrigger {
     }
 
     public void provisionWebhook(String endpointKey, String secretHash) {
-        if (type != TriggerType.WEBHOOK || this.endpointKey != null || this.secretHash != null
+        if (type != TriggerType.WEBHOOK && type != TriggerType.TELEGRAM
+                || this.endpointKey != null || this.secretHash != null
                 || endpointKey == null || endpointKey.isBlank()
                 || secretHash == null || secretHash.isBlank()) {
-            throw new IllegalStateException("Webhook credentials can only be provisioned once for a webhook trigger");
+            throw new IllegalStateException(
+                    "Webhook credentials can only be provisioned once for a webhook or Telegram trigger");
         }
         this.endpointKey = endpointKey;
         this.secretHash = secretHash;
@@ -112,6 +125,17 @@ public class WorkflowTrigger {
     public Instant getNextRunAt() { return nextRunAt; }
     public Instant getLastTriggeredAt() { return lastTriggeredAt; }
     public Map<String, Object> getLastError() { return lastError; }
+    /** Newest Gmail internalDate already admitted (GMAIL triggers only); null for other types. */
+    public Instant getPollCursor() { return pollCursor; }
+    /** Id of the last Gmail message handled at the cursor, or null. */
+    public String getPollCursorMessageId() { return pollCursorMessageId; }
+    public WorkflowTrigger withPollCursorMessageId(String id) { this.pollCursorMessageId = id; return this; }
+    public void startPolling(Instant cursor) {
+        if (type != TriggerType.GMAIL || cursor == null) {
+            throw new IllegalArgumentException("Only a Gmail registration has a poll cursor");
+        }
+        this.pollCursor = cursor;
+    }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

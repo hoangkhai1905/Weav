@@ -12,7 +12,6 @@ const DEFAULT_UPSTREAMS = {
   workspace: 'http://workspace-service:8080',
   workflow: 'http://workflow-service:8080',
   ai: 'http://ai-service:3000',
-  bot: 'http://bot-service:3000',
   notification: 'http://notification-service:3000',
   ocr: 'http://ocr-service:8000',
 } as const;
@@ -135,7 +134,6 @@ const environmentSchema = z.object({
   WORKSPACE_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.workspace),
   WORKFLOW_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.workflow),
   AI_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.ai),
-  BOT_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.bot),
   NOTIFICATION_SERVICE_URL: upstreamUrlSchema.default(
     DEFAULT_UPSTREAMS.notification,
   ),
@@ -146,6 +144,7 @@ const environmentSchema = z.object({
   GATEWAY_AUTH_RATE_LIMIT: positiveIntegerEnvironmentSchema(10),
   GATEWAY_OCR_RATE_LIMIT: positiveIntegerEnvironmentSchema(10),
   GATEWAY_WEBHOOK_RATE_LIMIT: positiveIntegerEnvironmentSchema(60),
+  GATEWAY_ASSISTANT_RATE_LIMIT: positiveIntegerEnvironmentSchema(20),
   GATEWAY_RATE_LIMIT_WINDOW_MS: positiveIntegerEnvironmentSchema(60_000),
   // Empty keeps the in-memory throttler storage (single replica / tests).
   GATEWAY_THROTTLER_REDIS_URL: z
@@ -170,7 +169,6 @@ export interface GatewayConfig {
     workspace: string;
     workflow: string;
     ai: string;
-    bot: string;
     notification: string;
     ocr: string;
   };
@@ -190,6 +188,7 @@ export interface GatewayConfig {
     authPerMinute: number;
     ocrPerMinute: number;
     webhookPerMinute: number;
+    assistantPerMinute: number;
     windowMs: number;
     throttlerRedisUrl?: string;
   };
@@ -318,7 +317,6 @@ export function validateGatewayEnvironment(
       workspace: parsed.data.WORKSPACE_SERVICE_URL,
       workflow: parsed.data.WORKFLOW_SERVICE_URL,
       ai: parsed.data.AI_SERVICE_URL,
-      bot: parsed.data.BOT_SERVICE_URL,
       notification: parsed.data.NOTIFICATION_SERVICE_URL,
       ocr: parsed.data.OCR_SERVICE_URL,
     },
@@ -332,6 +330,7 @@ export function validateGatewayEnvironment(
       authPerMinute: parsed.data.GATEWAY_AUTH_RATE_LIMIT,
       ocrPerMinute: parsed.data.GATEWAY_OCR_RATE_LIMIT,
       webhookPerMinute: parsed.data.GATEWAY_WEBHOOK_RATE_LIMIT,
+      assistantPerMinute: parsed.data.GATEWAY_ASSISTANT_RATE_LIMIT,
       windowMs: parsed.data.GATEWAY_RATE_LIMIT_WINDOW_MS,
       throttlerRedisUrl: parsed.data.GATEWAY_THROTTLER_REDIS_URL,
     },

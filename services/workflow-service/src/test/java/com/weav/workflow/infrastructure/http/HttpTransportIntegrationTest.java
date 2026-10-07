@@ -90,6 +90,59 @@ class HttpTransportIntegrationTest {
     }
 
     @Test
+    void keepsEncodedPathAndSendsRawBodyWithItsOwnContentType() throws Exception {
+        AtomicReference<String> rawPath = new AtomicReference<>();
+        AtomicReference<String> rawQuery = new AtomicReference<>();
+        AtomicReference<String> contentType = new AtomicReference<>();
+        AtomicReference<String> body = new AtomicReference<>();
+        start(exchange -> {
+            rawPath.set(exchange.getRequestURI().getRawPath());
+            rawQuery.set(exchange.getRequestURI().getRawQuery());
+            contentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
+            body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            respond(exchange, 200, "application/json", "{}");
+        }, "/calendar");
+
+        URI uri = URI.create("http://public.example.test:" + server.getAddress().getPort()
+                + "/calendar/v3/calendars/a%2Fb%40x.test/events");
+        transport().execute(approved(uri), "POST", Map.of(), Map.of("sendUpdates", "none"),
+                new PinnedHttpTransport.RawBody("raw".getBytes(StandardCharsets.UTF_8), "multipart/related; boundary=x"));
+
+        assertEquals("/calendar/v3/calendars/a%2Fb%40x.test/events", rawPath.get());
+        assertEquals("sendUpdates=none", rawQuery.get());
+        assertEquals("multipart/related; boundary=x", contentType.get());
+        assertEquals("raw", body.get());
+    }
+
+    @Test
+    void getsAGmailMessageWithTheBearerTokenAndAnEncodedSearchQuery() throws Exception {
+        AtomicReference<String> method = new AtomicReference<>();
+        AtomicReference<String> rawPath = new AtomicReference<>();
+        AtomicReference<String> rawQuery = new AtomicReference<>();
+        AtomicReference<String> authorization = new AtomicReference<>();
+        start(exchange -> {
+            method.set(exchange.getRequestMethod());
+            rawPath.set(exchange.getRequestURI().getRawPath());
+            rawQuery.set(exchange.getRequestURI().getRawQuery());
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            respond(exchange, 200, "application/json", "{\"messages\":[{\"id\":\"18c0ffee00000001\"}]}");
+        }, "/gmail");
+
+        URI uri = URI.create("http://public.example.test:" + server.getAddress().getPort()
+                + "/gmail/v1/users/me/messages");
+        PinnedHttpTransport.HttpResponse response = transport().executeWithAuthentication(approved(uri), "GET",
+                Map.of(), Map.of("Authorization", "Bearer synthetic-token"),
+                gmailQuery(), null);
+
+        assertEquals(200, response.status());
+        assertEquals(Map.of("messages", List.of(Map.of("id", "18c0ffee00000001"))), response.data());
+        assertEquals("GET", method.get());
+        assertEquals("/gmail/v1/users/me/messages", rawPath.get());
+        assertEquals("q=from%3Aa%40example.test%20is%3Aunread%20after%3A1790000000&maxResults=10", rawQuery.get());
+        assertEquals("Bearer synthetic-token", authorization.get());
+    }
+
+    @Test
     void doesNotFollowRedirectsToAnotherDestination() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         start(exchange -> {
@@ -316,6 +369,13 @@ class HttpTransportIntegrationTest {
 
         assertEquals("HTTP_TIMEOUT", failure.code());
         assertTrue(failure.retryable());
+    }
+
+    private static Map<String, Object> gmailQuery() {
+        Map<String, Object> query = new java.util.LinkedHashMap<>();
+        query.put("q", "from:a@example.test is:unread after:1790000000");
+        query.put("maxResults", 10);
+        return query;
     }
 
     private PinnedHttpTransport transport() {

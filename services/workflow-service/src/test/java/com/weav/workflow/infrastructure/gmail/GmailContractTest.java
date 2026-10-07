@@ -60,6 +60,20 @@ class GmailContractTest {
     }
 
     @Test
+    void aQuotaRefusalIsRetryableBecauseNothingWasSentButOtherForbiddenIsNot() {
+        Map<String, Object> quota = Map.of("error", Map.of("errors", List.of(Map.of("reason", "userRateLimitExceeded"))));
+        NodeExecutor.Failure limited = assertThrows(NodeExecutor.Failure.class, () -> new GmailClient(
+                new RecordingTransport(response(403, quota))).send(List.of("a@example.test"), "Hi", "B", connection()));
+        assertEquals("HTTP_RATE_LIMITED", limited.code());
+        assertTrue(limited.retryable() && limited.requestNotSent());
+
+        NodeExecutor.Failure forbidden = assertThrows(NodeExecutor.Failure.class, () -> new GmailClient(
+                new RecordingTransport(response(403, Map.of()))).send(List.of("a@example.test"), "Hi", "B", connection()));
+        assertEquals("HTTP_BUSINESS_REJECTED", forbidden.code());
+        assertFalse(forbidden.retryable());
+    }
+
+    @Test
     void classifiesStatusesAndNeverRetriesWhenTheEmailMayHaveBeenSent() {
         for (StatusCase statusCase : List.of(
                 new StatusCase(401, "AUTHENTICATION_REJECTED", false),

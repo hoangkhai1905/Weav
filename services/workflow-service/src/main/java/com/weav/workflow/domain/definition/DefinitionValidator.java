@@ -3,8 +3,6 @@ package com.weav.workflow.domain.definition;
 import com.weav.workflow.domain.mapping.MappingException;
 import com.weav.workflow.domain.mapping.MappingResolver;
 
-import java.math.BigDecimal;
-import java.math.BigInteger;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
@@ -27,9 +25,23 @@ public final class DefinitionValidator {
     public static final int MAX_EDGES = 1_000;
     public static final int MAX_JSON_DEPTH = WorkflowDefinition.MAX_JSON_DEPTH;
 
-    private static final Set<String> CONDITION_OPERATORS = Set.of("eq", "ne", "gt", "gte", "lt", "lte");
+    private static final Set<String> CONDITION_OPERATORS = enumValues("logic.condition", "operator");
     private static final Set<String> CONDITION_PORTS = Set.of("true", "false");
-    private static final Set<String> SHEETS_OPERATIONS = Set.of("read", "append", "update");
+    private static final String DEFAULT_PORT = "default";
+    private static final int MAX_PORT_LENGTH = 64;
+    private static final int MAX_SWITCH_CASES = 20;
+    private static final int MAX_DATA_SET_FIELDS = 100;
+    private static final int MAX_DATA_SET_KEY_LENGTH = 128;
+    private static final Set<String> SHEETS_OPERATIONS = enumValues("google.sheets", "operation");
+    private static final Set<String> CONDITION_COMBINATORS = enumValues("logic.condition", "combinator");
+    private static final int MAX_CONDITIONS = 10;
+    private static final Set<String> CONDITION_ITEM_FIELDS = Set.of("left", "operator", "right");
+    private static final java.util.regex.Pattern SHEETS_COLUMN = java.util.regex.Pattern.compile("[A-Za-z]{1,3}");
+    /** New enum fields whose literal values are checked on draft save; mappings resolve at run time. */
+    private static final Map<String, Set<String>> LITERAL_ENUMS = Map.of(
+            "telegram.send_message.parseMode", enumValues("telegram.send_message", "parseMode"),
+            "google.sheets.valueInputOption", enumValues("google.sheets", "valueInputOption"),
+            "google.calendar.operation", enumValues("google.calendar", "operation"));
     private static final Set<String> HTTP_METHODS = Set.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
 
     private final ScheduleValidation scheduleValidation;
@@ -127,9 +139,10 @@ public final class DefinitionValidator {
             }
             validateId(edge.source(), null, "edges.source", "INVALID_EDGE_SOURCE", issues);
             validateId(edge.target(), null, "edges.target", "INVALID_EDGE_TARGET", issues);
-            if (edge.sourcePort() != null && !CONDITION_PORTS.contains(edge.sourcePort())) {
+            if (edge.sourcePort() != null
+                    && (edge.sourcePort().isBlank() || edge.sourcePort().length() > MAX_PORT_LENGTH)) {
                 add(issues, null, "edges.sourcePort", "INVALID_SOURCE_PORT",
-                        "Only true or false source ports are supported.");
+                        "A source port must be non-blank and at most 64 characters.");
             }
         }
 
@@ -143,7 +156,8 @@ public final class DefinitionValidator {
     private void validateNodeConfiguration(
             WorkflowDefinition.Node node, boolean publish, List<ValidationIssue> issues) {
         Map<String, Object> config = node.config();
-        Set<String> allowedFields = NodeCatalog.configFields(node.type());
+        NodeConfigSchema schema = NodeCatalog.schema(node.type());
+        Set<String> allowedFields = schema.fieldNames();
         for (String field : config.keySet()) {
             if (!allowedFields.contains(field)) {
                 add(issues, node.id(), "config", "UNKNOWN_CONFIG_FIELD", "The configuration contains an unsupported field.");
@@ -156,7 +170,7 @@ public final class DefinitionValidator {
             }
             String field = entry.getKey();
             Object value = entry.getValue();
-            if (!hasValidFieldShape(node.type(), field, value)) {
+            if (!hasValidFieldShape(schema.properties().get(field), value)) {
                 add(issues, node.id(), "config." + field, "INVALID_FIELD_TYPE", "The configuration field has an invalid shape.");
                 continue;
             }
@@ -165,6 +179,10 @@ public final class DefinitionValidator {
                 add(issues, node.id(), "config.connectionId", "INVALID_CONNECTION_ID",
                         "A connection reference must be a literal UUID.");
             }
+        }
+
+        if ("logic.condition".equals(node.type())) {
+            validateConditionForm(node, publish, issues);
         }
 
         if ("ocr.extract".equals(node.type())
@@ -177,11 +195,11 @@ public final class DefinitionValidator {
             return;
         }
 
-        for (String field : requiredFields(node.type())) {
+        for (String field : schema.required()) {
             if (!config.containsKey(field)) {
                 add(issues, node.id(), "config." + field, "REQUIRED_FIELD_MISSING",
                         "A required configuration field is missing.");
-            } else if (isBlankRequiredString(node.type(), field, config.get(field))) {
+            } else if (schema.properties().get(field).violatesMinimumContent(config.get(field))) {
                 add(issues, node.id(), "config." + field, "REQUIRED_FIELD_MISSING",
                         "A required configuration field must not be empty.");
             }
@@ -189,10 +207,24 @@ public final class DefinitionValidator {
 
         if ("google.sheets".equals(node.type())) {
             Object operation = config.get("operation");
-            if (operation instanceof String op && SHEETS_OPERATIONS.contains(op)
-                    && !"read".equals(op) && !config.containsKey("values")) {
-                add(issues, node.id(), "config.values", "REQUIRED_FIELD_MISSING",
-                        "Write operations require values.");
+            if (operation instanceof String op && SHEETS_OPERATIONS.contains(op)) {
+                if ("lookup".equals(op)) {
+                    validateSheetsLookup(node, issues);
+                } else if (!"read".equals(op) && !config.containsKey("values")) {
+                    add(issues, node.id(), "config.values", "REQUIRED_FIELD_MISSING",
+                            "Write operations require values.");
+                }
+            }
+        }
+        if ("google.calendar".equals(node.type()) && isCalendarCreate(config.get("operation"))) {
+            for (String field : List.of("summary", "start", "end")) {
+                if (!config.containsKey(field)) {
+                    add(issues, node.id(), "config." + field, "REQUIRED_FIELD_MISSING",
+                            "A required configuration field is missing.");
+                } else if (schema.properties().get(field).violatesMinimumContent(config.get(field))) {
+                    add(issues, node.id(), "config." + field, "REQUIRED_FIELD_MISSING",
+                            "A required configuration field must not be empty.");
+                }
             }
         }
         if ("ocr.extract".equals(node.type())) {
@@ -232,12 +264,164 @@ public final class DefinitionValidator {
             }
             validateAbsoluteHttpUrl(node, issues);
         }
+        if ("logic.switch".equals(node.type())) {
+            validateSwitchCases(node, issues);
+        }
+        if ("data.set".equals(node.type())) {
+            validateDataSetFields(node, issues);
+        }
         if ("logic.condition".equals(node.type())) {
             Object operator = config.get("operator");
             if (operator instanceof String text && Set.of("gt", "gte", "lt", "lte").contains(text)) {
                 validateOrderingOperand(node, "left", issues);
                 validateOrderingOperand(node, "right", issues);
             }
+        }
+    }
+
+    private static boolean isCalendarCreate(Object operation) {
+        // Absent or blank keeps the pre-"list" behaviour; a mapping resolves at run time and the executor decides.
+        return operation == null || operation instanceof String text && (text.isBlank() || "create".equals(text));
+    }
+
+    private static void validateSheetsLookup(WorkflowDefinition.Node node, List<ValidationIssue> issues) {
+        Map<String, Object> config = node.config();
+        for (String field : List.of("lookupColumn", "lookupValue")) {
+            if (config.get(field) == null) {
+                add(issues, node.id(), "config." + field, "REQUIRED_FIELD_MISSING",
+                        "Lookup requires a column and a value.");
+            }
+        }
+        if (config.get("lookupColumn") instanceof String column && !containsMappingDelimiter(column)
+                && !SHEETS_COLUMN.matcher(column).matches()) {
+            add(issues, node.id(), "config.lookupColumn", "INVALID_LOOKUP_COLUMN",
+                    "The lookup column must be a column letter such as B.");
+        }
+    }
+
+    /**
+     * Single form {left, operator, right} versus multi form {combinator, conditions}: never both. Structure
+     * and bounds are checked on draft save; completeness of each condition only on publish.
+     */
+    private static void validateConditionForm(
+            WorkflowDefinition.Node node, boolean publish, List<ValidationIssue> issues) {
+        Map<String, Object> config = node.config();
+        boolean multi = config.containsKey("conditions") || config.containsKey("combinator");
+        boolean single = config.containsKey("left") || config.containsKey("operator") || config.containsKey("right");
+        if (multi && single) {
+            add(issues, node.id(), "config", "CONDITION_FORM_CONFLICT",
+                    "Use either left/operator/right or combinator/conditions, not both.");
+            return;
+        }
+        if (!multi) {
+            if (publish) {
+                for (String field : List.of("left", "operator", "right")) {
+                    if (!config.containsKey(field)) {
+                        add(issues, node.id(), "config." + field, "REQUIRED_FIELD_MISSING",
+                                "A required configuration field is missing.");
+                    }
+                }
+            }
+            return;
+        }
+        if (config.get("combinator") instanceof String combinator && !CONDITION_COMBINATORS.contains(combinator)) {
+            add(issues, node.id(), "config.combinator", "INVALID_CONDITION_COMBINATOR",
+                    "The combinator must be and or or.");
+        }
+        if (publish && !config.containsKey("combinator")) {
+            add(issues, node.id(), "config.combinator", "REQUIRED_FIELD_MISSING",
+                    "A required configuration field is missing.");
+        }
+        if (!(config.get("conditions") instanceof List<?> conditions)) {
+            if (publish) {
+                add(issues, node.id(), "config.conditions", "REQUIRED_FIELD_MISSING",
+                        "A required configuration field is missing.");
+            }
+            return;
+        }
+        if (conditions.size() > MAX_CONDITIONS || publish && conditions.isEmpty()) {
+            add(issues, node.id(), "config.conditions", "INVALID_CONDITIONS",
+                    "A condition node needs 1 to 10 conditions.");
+        }
+        for (int index = 0; index < conditions.size(); index++) {
+            String path = "config.conditions[" + index + "]";
+            if (!(conditions.get(index) instanceof Map<?, ?> item)
+                    || !item.keySet().stream().allMatch(CONDITION_ITEM_FIELDS::contains)) {
+                add(issues, node.id(), path, "INVALID_CONDITIONS",
+                        "Each condition is an object with left, operator and right.");
+                continue;
+            }
+            Object operator = item.get("operator");
+            if (operator != null && !(operator instanceof String)) {
+                add(issues, node.id(), path + ".operator", "INVALID_FIELD_TYPE",
+                        "The configuration field has an invalid shape.");
+            } else if (operator instanceof String text && !containsMappingDelimiter(text)
+                    && !CONDITION_OPERATORS.contains(text)) {
+                add(issues, node.id(), path + ".operator", "INVALID_CONDITION_OPERATOR",
+                        "The condition operator is not supported.");
+            }
+            if (!publish) {
+                continue;
+            }
+            for (String field : CONDITION_ITEM_FIELDS) {
+                if (!item.containsKey(field)) {
+                    add(issues, node.id(), path + "." + field, "REQUIRED_FIELD_MISSING",
+                            "A required configuration field is missing.");
+                }
+            }
+            if (operator instanceof String text && Set.of("gt", "gte", "lt", "lte").contains(text)) {
+                for (String field : List.of("left", "right")) {
+                    Object value = item.get(field);
+                    boolean mapped = value instanceof String string && containsMappingDelimiter(string);
+                    if (item.containsKey(field) && !mapped && !(value instanceof Number)) {
+                        add(issues, node.id(), path + "." + field, "NUMERIC_OPERAND_REQUIRED",
+                                "Ordering conditions require numeric operands.");
+                    }
+                }
+            }
+        }
+    }
+
+    /** Literal case strings of a switch; non-string items are ignored (the shape check reports them). */
+    private static List<String> switchCases(WorkflowDefinition.Node node) {
+        return node.config().get("cases") instanceof List<?> list
+                ? list.stream().filter(String.class::isInstance).map(String.class::cast).toList() : List.of();
+    }
+
+    private static void validateSwitchCases(WorkflowDefinition.Node node, List<ValidationIssue> issues) {
+        if (!(node.config().get("cases") instanceof List<?> cases) || cases.isEmpty()) {
+            return; // missing or empty is REQUIRED_FIELD_MISSING (required + minItems)
+        }
+        Set<String> seen = new HashSet<>();
+        String problem = cases.size() > MAX_SWITCH_CASES ? "A switch supports at most 20 cases." : null;
+        for (Object item : cases) {
+            if (problem != null || !(item instanceof String text)) {
+                break;
+            }
+            if (text.isBlank() || text.length() > MAX_PORT_LENGTH) {
+                problem = "Each case must be non-blank and at most 64 characters.";
+            } else if (DEFAULT_PORT.equals(text)) {
+                problem = "The case name default is reserved.";
+            } else if (containsMappingDelimiter(text)) {
+                problem = "Cases must be literal text, not mappings.";
+            } else if (!seen.add(text)) {
+                problem = "Cases must be unique.";
+            }
+        }
+        if (problem != null) {
+            add(issues, node.id(), "config.cases", "INVALID_SWITCH_CASES", problem);
+        }
+    }
+
+    private static void validateDataSetFields(WorkflowDefinition.Node node, List<ValidationIssue> issues) {
+        if (!(node.config().get("fields") instanceof Map<?, ?> fields)) {
+            return; // missing is REQUIRED_FIELD_MISSING; a mapping string resolves at run time
+        }
+        boolean badKey = fields.keySet().stream().anyMatch(key ->
+                !(key instanceof String text) || text.isBlank() || text.length() > MAX_DATA_SET_KEY_LENGTH);
+        if (fields.isEmpty() || fields.size() > MAX_DATA_SET_FIELDS || badKey) {
+            add(issues, node.id(), "config.fields", "INVALID_DATA_SET_FIELDS",
+                    "Set data needs 1 to 100 fields, each named with 1 to 128 non-blank characters.");
         }
     }
 
@@ -254,6 +438,34 @@ public final class DefinitionValidator {
                 && !CONDITION_OPERATORS.contains(text)) {
             add(issues, node.id(), "config.operator", "INVALID_CONDITION_OPERATOR",
                     "The condition operator is not supported.");
+        } else if (LITERAL_ENUMS.containsKey(node.type() + "." + field) && !text.isBlank()
+                && !LITERAL_ENUMS.get(node.type() + "." + field).contains(text)) {
+            add(issues, node.id(), "config." + field, "INVALID_ENUM_VALUE", "The value is not supported.");
+        } else if (!text.isBlank() && !validLiteralString(node.type() + "." + field, text)) {
+            add(issues, node.id(), "config." + field, "INVALID_FIELD_TYPE",
+                    "The configuration field has an invalid shape.");
+        }
+    }
+
+    /** Upper bounds of the numeric fields that also accept text (null: no upper bound). */
+    private static final Map<String, Integer> TEXT_NUMBER_MAX = Map.of(
+            "google.sheets.limit", 100, "google.calendar.maxResults", 50, "telegram.send_message.replyToMessageId", 0);
+
+    /** Literal (non-mapping) text in a numeric or boolean field must say a valid number or true/false. */
+    private static boolean validLiteralString(String key, String text) {
+        if ("telegram.send_message.disableNotification".equals(key)) {
+            return text.equals("true") || text.equals("false");
+        }
+        if (!TEXT_NUMBER_MAX.containsKey(key)) {
+            return true;
+        }
+        int max = TEXT_NUMBER_MAX.get(key);
+        try {
+            java.math.BigDecimal number = new java.math.BigDecimal(text.trim());
+            return number.stripTrailingZeros().scale() <= 0 && number.signum() > 0
+                    && (max == 0 || number.compareTo(java.math.BigDecimal.valueOf(max)) <= 0);
+        } catch (NumberFormatException exception) {
+            return false;
         }
     }
 
@@ -330,69 +542,19 @@ public final class DefinitionValidator {
         }
     }
 
-    private static boolean hasValidFieldShape(String type, String field, Object value) {
-        if (NodeCatalog.staticFields(type).contains(field)) {
+    private static boolean hasValidFieldShape(NodeConfigSchema.Field schema, Object value) {
+        if (schema.isStatic()) {
             return OutputSchemaPolicy.isValid(value);
         }
-        if (value instanceof String text && containsMappingDelimiter(text)
-                && !"connectionId".equals(field)) {
+        if (schema.template() && value instanceof String text && containsMappingDelimiter(text)) {
             // Mapping grammar and resolved types are checked at publish/runtime respectively.
             return true;
         }
-        return switch (type + "." + field) {
-            case "http.request.method", "http.request.url",
-                    "email.send.subject", "email.send.body",
-                    "google.sheets.spreadsheetId", "google.sheets.range",
-                    "telegram.send_message.chatId", "telegram.send_message.text",
-                    "trigger.schedule.cron", "trigger.schedule.timezone",
-                    "trigger.manual.buttonLabel",
-                    "ai.extract.text", "ai.extract.instructions", "ai.extract.schemaDescription",
-                    "ai.classify.content",
-                    "ai.summarize.inputText",
-                    "ocr.extract.artifactId", "ocr.extract.fileUrl", "ocr.extract.language" -> value instanceof String;
-            case "http.request.headers" -> isStringMap(value);
-            case "http.request.query" -> value instanceof Map<?, ?>;
-            case "http.request.body", "google.sheets.values", "logic.condition.left", "logic.condition.right" -> true;
-            case "email.send.to" -> isString(value) || isStringList(value);
-            case "google.sheets.operation", "logic.condition.operator" -> value instanceof String;
-            case "ai.classify.categories" -> isStringList(value);
-            case "ai.summarize.maxLength" -> isPositiveInteger(value);
-            case "ocr.extract.detectTables" -> value instanceof Boolean;
-            case "http.request.connectionId", "google.sheets.connectionId", "email.send.connectionId" -> value instanceof String;
-            default -> false;
-        };
+        return schema.matchesShape(value);
     }
 
-    private static boolean isBlankRequiredString(String type, String field, Object value) {
-        if (!(value instanceof String text)) {
-            if ("email.send".equals(type) && "to".equals(field) && value instanceof List<?> recipients) {
-                return recipients.isEmpty() || recipients.stream().anyMatch(item -> item instanceof String s && s.isBlank());
-            }
-            return false;
-        }
-        return switch (type + "." + field) {
-            case "http.request.method", "http.request.url", "email.send.connectionId", "email.send.to", "email.send.subject",
-                    "google.sheets.connectionId", "google.sheets.operation", "google.sheets.spreadsheetId",
-                    "google.sheets.range", "telegram.send_message.chatId", "telegram.send_message.text",
-                    "trigger.schedule.cron", "trigger.schedule.timezone", "ai.extract.text",
-                    "ai.classify.content", "ai.summarize.inputText", "ocr.extract.artifactId", "ocr.extract.fileUrl" -> text.isBlank();
-            default -> false;
-        };
-    }
-
-    private static Set<String> requiredFields(String type) {
-        return switch (type) {
-            case "trigger.schedule" -> Set.of("cron", "timezone");
-            case "http.request" -> Set.of("method", "url");
-            case "email.send" -> Set.of("connectionId", "to", "subject", "body");
-            case "google.sheets" -> Set.of("connectionId", "operation", "spreadsheetId", "range");
-            case "telegram.send_message" -> Set.of("chatId", "text");
-            case "logic.condition" -> Set.of("left", "operator", "right");
-            case "ai.extract" -> Set.of("text");
-            case "ai.classify" -> Set.of("content");
-            case "ai.summarize" -> Set.of("inputText");
-            default -> Set.of();
-        };
+    private static Set<String> enumValues(String type, String field) {
+        return NodeCatalog.schema(type).properties().get(field).enumValues();
     }
 
     private static boolean isLiteralUuid(Object value) {
@@ -437,12 +599,20 @@ public final class DefinitionValidator {
                 add(issues, target.id(), "edges", "TRIGGER_HAS_INCOMING_EDGE", "Trigger nodes cannot have incoming edges.");
             }
 
-            boolean validPort = "logic.condition".equals(source.type())
-                    ? CONDITION_PORTS.contains(edge.sourcePort())
-                    : edge.sourcePort() == null;
-            if (!validPort && (edge.sourcePort() == null || CONDITION_PORTS.contains(edge.sourcePort()))) {
-                add(issues, source.id(), "edges.sourcePort", "INVALID_SOURCE_PORT",
-                        "Only condition nodes may use true or false output ports.");
+            if ("logic.switch".equals(source.type())) {
+                if (edge.sourcePort() == null || !DEFAULT_PORT.equals(edge.sourcePort())
+                        && !switchCases(source).contains(edge.sourcePort())) {
+                    add(issues, source.id(), "edges.sourcePort", "INVALID_SOURCE_PORT",
+                            "A switch edge must use one of its cases or the default port.");
+                }
+            } else {
+                boolean validPort = "logic.condition".equals(source.type())
+                        ? edge.sourcePort() != null && CONDITION_PORTS.contains(edge.sourcePort())
+                        : edge.sourcePort() == null;
+                if (!validPort) {
+                    add(issues, source.id(), "edges.sourcePort", "INVALID_SOURCE_PORT",
+                            "Only condition nodes may use true or false output ports.");
+                }
             }
             outgoing.get(source.id()).add(target.id());
             indegree.compute(target.id(), (ignored, degree) -> degree + 1);
@@ -565,39 +735,6 @@ public final class DefinitionValidator {
 
     private static boolean isPresent(String value) {
         return value != null && !value.isBlank();
-    }
-
-    private static boolean isString(Object value) {
-        return value instanceof String;
-    }
-
-    private static boolean isStringMap(Object value) {
-        if (!(value instanceof Map<?, ?> map)) {
-            return false;
-        }
-        return map.entrySet().stream().allMatch(entry -> entry.getKey() instanceof String
-                && entry.getValue() instanceof String);
-    }
-
-    private static boolean isStringList(Object value) {
-        return value instanceof List<?> list && list.stream().allMatch(String.class::isInstance);
-    }
-
-    private static boolean isPositiveInteger(Object value) {
-        try {
-            if (value instanceof BigInteger integer) {
-                return integer.signum() > 0;
-            }
-            if (value instanceof BigDecimal decimal) {
-                return decimal.stripTrailingZeros().scale() <= 0 && decimal.signum() > 0;
-            }
-            if (value instanceof Byte || value instanceof Short || value instanceof Integer || value instanceof Long) {
-                return ((Number) value).longValue() > 0;
-            }
-            return false;
-        } catch (ArithmeticException ignored) {
-            return false;
-        }
     }
 
     private static void validateCredentialKeys(

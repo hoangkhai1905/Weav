@@ -3,41 +3,44 @@ package com.weav.workflow.application.node;
 import com.weav.workflow.application.port.in.TelegramTriggerIngress;
 import com.weav.workflow.application.service.TriggerDependencyUnavailableException;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class UnavailableNodeExecutorTest {
 
-    @ParameterizedTest
-    @ValueSource(strings = {"telegram.send_message"})
-    void registryProvidesAnExplicitNonRetryableFailureForUnavailableIntegrations(String type) {
-        NodeExecutor executor = new NodeExecutorRegistry().executors().get(type);
-
-        assertNotNull(executor, "the node type should have an explicit unavailable adapter");
-        assertEquals(type, executor.type());
-        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
-                () -> executor.execute(new NodeExecutor.Context(
-                        UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "node", 1, null, null), Map.of()));
-        assertEquals("DEPENDENCY_NOT_CONFIGURED", failure.code());
-        assertFalse(failure.retryable());
+    @Test
+    void everyCatalogActionHasAnExecutorSoNoTypeIsUnavailable() {
+        assertTrue(UnavailableNodeExecutor.UNAVAILABLE_NODE_TYPES.isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> new UnavailableNodeExecutor("telegram.send_message"));
+        assertNull(new NodeExecutorRegistry().executors().get("telegram.send_message"));
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"telegram.send_message", "trigger.telegram"})
-    void readinessDoesNotLetNodeConfigurationEnableUnavailableIntegrations(String type) {
-        IntegrationReadiness.Readiness readiness = IntegrationReadiness.forType(type);
+    @Test
+    void telegramTriggerIsReadyOnlyWithAnHttpsPublicBaseUrl() {
+        for (String missing : new String[] {null, "", "  ", "http://weav.example.test", "ftp://weav.example.test",
+                "weav.example.test", "https://", "https://user:pw@weav.example.test", "https://weav.example.test?x=1"}) {
+            IntegrationReadiness.Readiness readiness = IntegrationReadiness.forType("trigger.telegram", missing);
+            assertFalse(readiness.configured(), String.valueOf(missing));
+            assertEquals("DEPENDENCY_NOT_CONFIGURED", readiness.reasonCode());
+        }
+        assertFalse(IntegrationReadiness.forType("trigger.telegram").configured());
+        assertTrue(IntegrationReadiness.forType("trigger.telegram", "https://weav.example.test").configured());
+        assertTrue(IntegrationReadiness.forType("trigger.telegram", "https://weav.example.test:8443/").configured());
+        assertEquals("https://weav.example.test", IntegrationReadiness.httpsBaseUrl(" https://weav.example.test// "));
+        assertTrue(IntegrationReadiness.forType("telegram.send_message").configured());
+    }
 
-        assertFalse(readiness.configured());
-        assertEquals("DEPENDENCY_NOT_CONFIGURED", readiness.reasonCode());
+    @Test
+    void gmailTriggerIsReadyLikeTheOtherGoogleNodes() {
+        assertTrue(IntegrationReadiness.forType("trigger.gmail").configured());
+        assertTrue(IntegrationReadiness.forType("email.send").configured());
     }
 
     @Test

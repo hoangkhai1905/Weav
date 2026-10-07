@@ -338,6 +338,7 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
             case SCHEDULE -> ExecutionTriggerType.SCHEDULE;
             case WEBHOOK -> ExecutionTriggerType.WEBHOOK;
             case TELEGRAM -> ExecutionTriggerType.TELEGRAM;
+            case GMAIL -> ExecutionTriggerType.GMAIL;
         };
     }
 

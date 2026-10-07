@@ -16,22 +16,29 @@ class GoogleOAuthScopePolicyTest {
     private final GoogleOAuthScopePolicy policy = new GoogleOAuthScopePolicy();
 
     @Test
-    void gmailRequestsIdentityMetadataAndSendScopes() {
+    void gmailRequestsIdentityReadonlyAndSendScopes() {
         List<String> scopes = policy.requiredScopes(ConnectionProvider.GMAIL);
 
         assertEquals(List.of(
                 "openid",
                 "email",
-                "https://www.googleapis.com/auth/gmail.metadata",
+                "https://www.googleapis.com/auth/gmail.readonly",
                 "https://www.googleapis.com/auth/gmail.send"), scopes);
-        assertFalse(scopes.stream().anyMatch(scope -> scope.contains("gmail.readonly") || scope.contains("mail.google.com")));
+        assertFalse(scopes.stream().anyMatch(scope -> scope.contains("gmail.metadata") || scope.contains("mail.google.com")));
         assertTrue(policy.containsRequiredScopes(ConnectionProvider.GMAIL, scopes));
+    }
+
+    @Test
+    void gmailGrantFromBeforeReadonlyIsRejectedSoOldConnectionsMustReconnect() {
+        assertFalse(policy.containsRequiredScopes(ConnectionProvider.GMAIL, List.of(
+                "openid", "email", "https://www.googleapis.com/auth/gmail.metadata",
+                "https://www.googleapis.com/auth/gmail.send")));
     }
 
     @Test
     void gmailGrantWithoutSendScopeIsRejectedSoOldConnectionsMustReconnect() {
         assertFalse(policy.containsRequiredScopes(ConnectionProvider.GMAIL, List.of(
-                "openid", "email", "https://www.googleapis.com/auth/gmail.metadata")));
+                "openid", "email", "https://www.googleapis.com/auth/gmail.readonly")));
     }
 
     @Test
@@ -47,11 +54,27 @@ class GoogleOAuthScopePolicyTest {
     }
 
     @Test
+    void calendarAndDriveRequestOnlyIdentityAndTheirOwnNarrowScope() {
+        List<String> calendar = policy.requiredScopes(ConnectionProvider.GOOGLE_CALENDAR);
+        List<String> drive = policy.requiredScopes(ConnectionProvider.GOOGLE_DRIVE);
+
+        assertEquals(List.of("openid", "email", "https://www.googleapis.com/auth/calendar.events"), calendar);
+        assertEquals(List.of("openid", "email", "https://www.googleapis.com/auth/drive.file"), drive);
+        assertTrue(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_CALENDAR, calendar));
+        assertTrue(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_DRIVE, drive));
+        // One provider's grant never satisfies another's.
+        assertFalse(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_CALENDAR, drive));
+        assertFalse(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_DRIVE, calendar));
+        assertFalse(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_DRIVE, List.of(
+                "openid", "email", "https://www.googleapis.com/auth/drive.readonly")));
+    }
+
+    @Test
     void requiredScopeMembershipIsCaseSensitiveAndAllowsIncrementalPriorGrants() {
         List<String> granted = List.of(
                 "openid",
                 "email",
-                "https://www.googleapis.com/auth/gmail.metadata",
+                "https://www.googleapis.com/auth/gmail.readonly",
                 "https://www.googleapis.com/auth/gmail.send",
                 "https://www.googleapis.com/auth/drive.file");
 
@@ -65,10 +88,14 @@ class GoogleOAuthScopePolicyTest {
         String userinfoEmail = "https://www.googleapis.com/auth/userinfo.email";
 
         assertTrue(policy.containsRequiredScopes(ConnectionProvider.GMAIL, List.of(
-                "openid", userinfoEmail, "https://www.googleapis.com/auth/gmail.metadata",
+                "openid", userinfoEmail, "https://www.googleapis.com/auth/gmail.readonly",
                 "https://www.googleapis.com/auth/gmail.send")));
         assertTrue(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_SHEETS, List.of(
                 "openid", userinfoEmail, "https://www.googleapis.com/auth/spreadsheets")));
+        assertTrue(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_CALENDAR, List.of(
+                "openid", userinfoEmail, "https://www.googleapis.com/auth/calendar.events")));
+        assertTrue(policy.containsRequiredScopes(ConnectionProvider.GOOGLE_DRIVE, List.of(
+                "openid", userinfoEmail, "https://www.googleapis.com/auth/drive.file")));
     }
 
     @Test

@@ -11,6 +11,7 @@ import { WorkspaceModule } from './workspace/workspace.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { HealthModule } from './health/health.module';
 import { WorkflowModule } from './workflow/workflow.module';
+import { AssistantModule } from './assistant/assistant.module';
 
 function loadGatewayConfiguration(): Record<string, unknown> {
   const gateway = validateGatewayEnvironment(process.env);
@@ -23,7 +24,6 @@ function loadGatewayConfiguration(): Record<string, unknown> {
     WORKSPACE_SERVICE_URL: gateway.upstreams.workspace,
     WORKFLOW_SERVICE_URL: gateway.upstreams.workflow,
     AI_SERVICE_URL: gateway.upstreams.ai,
-    BOT_SERVICE_URL: gateway.upstreams.bot,
     NOTIFICATION_SERVICE_URL: gateway.upstreams.notification,
     OCR_SERVICE_URL: gateway.upstreams.ocr,
     JWT_ISSUER: gateway.jwt.issuer,
@@ -49,6 +49,7 @@ function loadGatewayConfiguration(): Record<string, unknown> {
     IdentityModule,
     WorkspaceModule,
     WorkflowModule,
+    AssistantModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -80,13 +80,31 @@ function hasBadUrl(value: unknown, key = ''): boolean {
 
 interface IntentGraph {
   nodes: { id: string; type: string; config: Record<string, unknown> }[];
-  edges: { from: string; to: string }[];
+  edges: { from: string; to: string; port?: string }[];
+}
+
+/** Port rules by source node type: condition -> true/false, switch -> one of its cases or "default", others -> none. */
+function portProblem(
+  source: IntentGraph['nodes'][number],
+  port: string | undefined,
+): boolean {
+  if (source.type === 'logic.condition')
+    return port !== 'true' && port !== 'false';
+  if (source.type === 'logic.switch') {
+    const cases = source.config.cases;
+    return (
+      port === undefined ||
+      !(port === 'default' || (Array.isArray(cases) && cases.includes(port)))
+    );
+  }
+  return port !== undefined;
 }
 
 /** AI-3: structural + safety rules the field-level schema cannot express. */
 function checkGraph(intent: IntentGraph, ctx: z.RefinementCtx): void {
   const fail = (message: string) => ctx.addIssue({ code: 'custom', message });
   const ids = new Set(intent.nodes.map((n) => n.id));
+  const byId = new Map(intent.nodes.map((n) => [n.id, n]));
   const outgoing = new Map<string, string[]>(
     intent.nodes.map((n) => [n.id, []]),
   );
@@ -94,6 +112,8 @@ function checkGraph(intent: IntentGraph, ctx: z.RefinementCtx): void {
   for (const e of intent.edges) {
     if (!ids.has(e.from) || !ids.has(e.to))
       return fail('edge references an unknown node');
+    if (portProblem(byId.get(e.from)!, e.port))
+      return fail('edge port does not match its source node');
     outgoing.get(e.from)!.push(e.to);
     indegree.set(e.to, indegree.get(e.to)! + 1);
   }
@@ -145,7 +165,7 @@ export function generationResultSchema(capabilities: Capability[]) {
           z.object({
             from: nodeId,
             to: nodeId,
-            port: z.enum(['true', 'false']).optional(),
+            port: codePoints(64).optional(),
           }),
         )
         .min(1)

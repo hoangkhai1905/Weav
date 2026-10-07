@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/trigger.telegram",
+  "title": "Telegram message",
+  "description": "Starts the workflow when the connected Telegram bot receives a text message. Needs a Telegram bot connection.",
+  "x-weav-node": {
+    "type": "trigger.telegram",
+    "category": "trigger",
+    "label": "Telegram message",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "connectionId": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Telegram bot connection",
+      "description": "Telegram bot connection (token from @BotFather). Only one active workflow can use a bot at a time.",
+      "x-weav-connection": {
+        "provider": "TELEGRAM"
+      }
+    }
+  },
+  "required": [
+    "connectionId"
+  ],
+  "additionalProperties": false
+}

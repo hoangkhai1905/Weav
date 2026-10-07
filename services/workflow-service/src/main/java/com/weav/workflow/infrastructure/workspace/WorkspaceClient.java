@@ -3,6 +3,7 @@ package com.weav.workflow.infrastructure.workspace;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Ticker;
+import com.weav.workflow.application.port.out.ConnectionReconnectRequiredException;
 import com.weav.workflow.application.port.out.ResolvedConnection;
 import com.weav.workflow.application.port.out.WorkspaceAccessPort;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
@@ -47,7 +48,8 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
     private static final String INTERNAL_PREFIX = "/internal/workspaces/";
     private static final int MAX_RESPONSE_BYTES = 16 * 1024;
 
-    private static final Set<String> PROVIDERS = Set.of("TELEGRAM", "HTTP", "GMAIL", "GOOGLE_SHEETS");
+    private static final Set<String> PROVIDERS = Set.of("TELEGRAM", "HTTP", "GMAIL", "GOOGLE_SHEETS",
+            "GOOGLE_CALENDAR", "GOOGLE_DRIVE");
     private static final Map<String, Set<String>> AUTH_FIELDS = Map.of(
             "OAUTH2", Set.of("accessToken"),
             "TOKEN", Set.of("token"),
@@ -216,6 +218,9 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
         ResponseEnvelope response = send("resolve", HttpMethod.POST, path, null, started, "connection:resolve", workspaceId, connectionId);
         if (isDenied(response.statusCode())) {
             throw new ForbiddenException();
+        }
+        if (response.statusCode() == 422 && isReconnectRequired(response.body())) {
+            throw new ConnectionReconnectRequiredException();
         }
         if (response.statusCode() != 200
                 || !isJson(response.contentType())
@@ -461,6 +466,15 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
         return Arrays.stream(cacheControl.split(","))
                 .map(String::trim)
                 .anyMatch("no-store"::equalsIgnoreCase);
+    }
+
+    /** Additive Workspace error code on the 422 resolve response: the stored Google grant must be redone. */
+    private boolean isReconnectRequired(byte[] body) {
+        try {
+            return ConnectionReconnectRequiredException.CODE.equals(textField(parseObject(body), "code"));
+        } catch (RuntimeException exception) {
+            return false;
+        }
     }
 
     private boolean isDenied(int statusCode) {

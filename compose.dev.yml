@@ -258,6 +258,7 @@ services:
       dockerfile: Dockerfile.dev
       additional_contexts:
         contracts: ./packages/contracts
+        workflow-schema: ./packages/workflow-schema
 
     ports:
       - "127.0.0.1:8083:8080"
@@ -293,6 +294,10 @@ services:
       WORKFLOW_EXECUTION_INPUT_MAX_DEPTH: ${WORKFLOW_EXECUTION_INPUT_MAX_DEPTH:-32}
       WORKFLOW_WEBHOOK_RATE_LIMIT_REQUESTS_PER_WINDOW: ${WORKFLOW_WEBHOOK_RATE_LIMIT_REQUESTS_PER_WINDOW:-6000}
       WORKFLOW_WEBHOOK_RATE_LIMIT_WINDOW: ${WORKFLOW_WEBHOOK_RATE_LIMIT_WINDOW:-1m}
+      # Public HTTPS base URL of the gateway (a tunnel in dev); empty keeps trigger.telegram unavailable
+      WORKFLOW_PUBLIC_BASE_URL: ${WORKFLOW_PUBLIC_BASE_URL:-}
+      # Call timeout for Telegram setWebhook/deleteWebhook (they run inside the publish transaction)
+      WORKFLOW_TELEGRAM_CONTROL_TIMEOUT: ${WORKFLOW_TELEGRAM_CONTROL_TIMEOUT:-10s}
       WORKFLOW_EXECUTION_OUTBOX_BATCH_SIZE: ${WORKFLOW_EXECUTION_OUTBOX_BATCH_SIZE:-50}
       WORKFLOW_EXECUTION_OUTBOX_POLL_INTERVAL: ${WORKFLOW_EXECUTION_OUTBOX_POLL_INTERVAL:-1000}
       WORKFLOW_EXECUTION_OUTBOX_INITIAL_DELAY: ${WORKFLOW_EXECUTION_OUTBOX_INITIAL_DELAY:-1000}
@@ -342,6 +347,18 @@ services:
       WORKFLOW_HTTP_MAX_REQUEST_BYTES: ${WORKFLOW_HTTP_MAX_REQUEST_BYTES:-1048576}
       WORKFLOW_HTTP_MAX_RESPONSE_BYTES: ${WORKFLOW_HTTP_MAX_RESPONSE_BYTES:-1048576}
       WORKFLOW_HTTP_MAX_HEADER_BYTES: ${WORKFLOW_HTTP_MAX_HEADER_BYTES:-65536}
+
+      WORKFLOW_FILES_S3_ENDPOINT: ${WORKFLOW_FILES_S3_ENDPOINT:-}
+      WORKFLOW_FILES_S3_REGION: ${WORKFLOW_FILES_S3_REGION:-auto}
+      WORKFLOW_FILES_S3_BUCKET: ${WORKFLOW_FILES_S3_BUCKET:-}
+      WORKFLOW_FILES_S3_ACCESS_KEY_ID: ${WORKFLOW_FILES_S3_ACCESS_KEY_ID:-}
+      WORKFLOW_FILES_S3_SECRET_ACCESS_KEY: ${WORKFLOW_FILES_S3_SECRET_ACCESS_KEY:-}
+      WORKFLOW_FILES_S3_PATH_STYLE_ACCESS: ${WORKFLOW_FILES_S3_PATH_STYLE_ACCESS:-true}
+      WORKFLOW_FILES_S3_KEY_PREFIX: ${WORKFLOW_FILES_S3_KEY_PREFIX:-workflow-files}
+      WORKFLOW_FILES_RETENTION: ${WORKFLOW_FILES_RETENTION:-7d}
+      WORKFLOW_FILES_MAX_FILE_BYTES: ${WORKFLOW_FILES_MAX_FILE_BYTES:-10485760}
+      WORKFLOW_FILES_MAX_ATTACHMENTS: ${WORKFLOW_FILES_MAX_ATTACHMENTS:-5}
+      WORKFLOW_FILES_MAX_EMAIL_BYTES: ${WORKFLOW_FILES_MAX_EMAIL_BYTES:-20971520}
 
       # OCR remains closed until separately approved contract and runtime gates are proven.
       WORKFLOW_OCR_ENABLED: ${WORKFLOW_OCR_ENABLED:-false}
@@ -432,6 +449,36 @@ services:
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       AI_SERVICE_JWKS_FILE: /run/weav-keys/workflow-service.jwks.json
       AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-60000}
+      # Assistant spike: off by default. Needs identity on RS256 (JWT_ACCESS_ALG=RS256) so its JWKS can verify user tokens.
+      AI_ASSISTANT_ENABLED: ${AI_ASSISTANT_ENABLED:-false}
+      AI_WORKFLOW_API_URL: ${AI_WORKFLOW_API_URL:-http://workflow-service:8080}
+      AI_WORKSPACE_API_URL: ${AI_WORKSPACE_API_URL:-http://workspace-service:8080}
+      AI_ASSISTANT_MAX_TOKENS: ${AI_ASSISTANT_MAX_TOKENS:-1024}
+      AI_ASSISTANT_MAX_CONCURRENT: ${AI_ASSISTANT_MAX_CONCURRENT:-4}
+      AI_ASSISTANT_RATE_LIMIT_PER_MINUTE: ${AI_ASSISTANT_RATE_LIMIT_PER_MINUTE:-20}
+      AI_ASSISTANT_WORKSPACE_RATE_LIMIT_PER_MINUTE: ${AI_ASSISTANT_WORKSPACE_RATE_LIMIT_PER_MINUTE:-60}
+      # History routes per user per minute, separate from the chat limit.
+      AI_ASSISTANT_HISTORY_RATE_LIMIT_PER_MINUTE: ${AI_ASSISTANT_HISTORY_RATE_LIMIT_PER_MINUTE:-120}
+      AI_ASSISTANT_DAILY_USER_LIMIT: ${AI_ASSISTANT_DAILY_USER_LIMIT:-50}
+      AI_ASSISTANT_DAILY_WORKSPACE_LIMIT: ${AI_ASSISTANT_DAILY_WORKSPACE_LIMIT:-200}
+      AI_ASSISTANT_HISTORY_MESSAGES: ${AI_ASSISTANT_HISTORY_MESSAGES:-20}
+      AI_ASSISTANT_HISTORY_CHARS: ${AI_ASSISTANT_HISTORY_CHARS:-24000}
+      # Cached identity keys may verify this long past their TTL when the JWKS is unreachable.
+      AI_JWKS_MAX_STALE_MS: ${AI_JWKS_MAX_STALE_MS:-3600000}
+      # Assistant storage (Neon ai_db, schema ai). Required when AI_ASSISTANT_ENABLED=true (startup fails without DB_HOST/NAME/USERNAME/PASSWORD).
+      DB_HOST: ${AI_DB_HOST:-}
+      DB_PORT: ${AI_DB_PORT:-5432}
+      DB_NAME: ${AI_DB_NAME:-ai_db}
+      DB_USERNAME: ${AI_DB_USERNAME:-}
+      DB_PASSWORD: ${AI_DB_PASSWORD:-}
+      DB_SSL_MODE: ${AI_DB_SSL_MODE:-require}
+      DB_SCHEMA: ai
+      AI_ASSISTANT_RETENTION_DAYS: ${AI_ASSISTANT_RETENTION_DAYS:-30}
+      AI_ASSISTANT_USAGE_RETENTION_DAYS: ${AI_ASSISTANT_USAGE_RETENTION_DAYS:-90}
+      JWT_JWKS_URI: ${JWT_JWKS_URI:-http://identity-service:8080/.well-known/jwks.json}
+      JWT_ISSUER: ${JWT_ISSUER:-weav-identity}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-weav-api}
+      JWT_CLOCK_SKEW: ${JWT_CLOCK_SKEW:-30s}
     volumes:
       # Only the public JWKS; a missing folder just leaves AI not-ready.
       - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/public:/run/weav-keys:ro
@@ -448,8 +495,7 @@ services:
   api-gateway:
     profiles: ["app"]
     restart: unless-stopped
-    # `nest start --watch` peaks around 650 MiB while compiling; 384m crash-looped with OOM.
-    mem_limit: 768m
+    mem_limit: 1g  # nest start --watch OOMs at 384m
 
     build:
       context: .
@@ -477,12 +523,12 @@ services:
       WORKFLOW_SERVICE_URL: http://workflow-service:8080
       AI_SERVICE_URL: http://ai-service:3000
       OCR_SERVICE_URL: http://ocr-service:8000
-      BOT_SERVICE_URL: http://bot-service:3000
       NOTIFICATION_SERVICE_URL: http://notification-service:3000
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8081,http://127.0.0.1:8081}
       OCR_ALLOW_UNAUTHENTICATED_DEV: ${OCR_ALLOW_UNAUTHENTICATED_DEV:-false}
       GATEWAY_TRUST_PROXY_HOPS: ${GATEWAY_TRUST_PROXY_HOPS:-0}
       GATEWAY_WEBHOOK_RATE_LIMIT: ${GATEWAY_WEBHOOK_RATE_LIMIT:-60}
+      GATEWAY_ASSISTANT_RATE_LIMIT: ${GATEWAY_ASSISTANT_RATE_LIMIT:-20}
       GATEWAY_THROTTLER_REDIS_URL: ${GATEWAY_THROTTLER_REDIS_URL:-${VALKEY_URL:-}}
 
     networks:
@@ -500,59 +546,12 @@ services:
 
 
   # ==================================================
-  # Bot - NestJS
-  # ==================================================
-  bot-service:
-    profiles: ["app"]
-    restart: unless-stopped
-    mem_limit: 384m
-
-    build:
-      context: .
-      dockerfile: services/bot-service/Dockerfile.dev
-
-    environment:
-      APP_ENV: ${APP_ENV:-development}
-
-      # Neon PostgreSQL pooled connection
-      DB_HOST: ${BOT_DB_HOST}
-      DB_PORT: ${BOT_DB_PORT:-5432}
-      DB_NAME: ${BOT_DB_NAME}
-      DB_USERNAME: ${BOT_DB_USERNAME}
-      DB_PASSWORD: ${BOT_DB_PASSWORD}
-      DB_SSL_MODE: ${BOT_DB_SSL_MODE:-require}
-      DB_SCHEMA: bot
-
-      # RabbitMQ
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
-
-      # Workflow Service
-      WORKFLOW_SERVICE_URL: http://workflow-service:8080
-
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
-
-
-
-  # ==================================================
   # Notification Service - NestJS
   # ==================================================
   notification-service:
     profiles: ["app"]
     restart: unless-stopped
-    # `nest start --watch` settles around 680 MiB here; 512m crash-looped with OOM.
-    mem_limit: 1g
+    mem_limit: 1g  # nest start --watch OOMs at 512m
 
     build:
       context: .

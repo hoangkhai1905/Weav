@@ -180,6 +180,93 @@ describe('workflow gateway routes', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  describe('telegram webhook ingress', () => {
+    const key = 'T'.repeat(32);
+    const secret = 'telegram_secret-token_0123456789';
+
+    it('forwards only the Telegram secret header, never Authorization', async () => {
+      const request = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), {
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/v1/webhooks/telegram/${key}`,
+        headers: {
+          authorization: 'Bearer client-token-must-not-leak',
+          cookie: 'private',
+          'x-webhook-secret': 'not-for-telegram-route',
+          'x-telegram-bot-api-secret-token': secret,
+        },
+        payload: { update_id: 1, message: { text: 'hi' } },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(request).toHaveBeenCalledWith(
+        `http://workflow.internal:8080/webhooks/telegram/${key}`,
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ update_id: 1, message: { text: 'hi' } }),
+        }),
+      );
+      const headers = (
+        request.mock.calls[0][1] as { headers: Record<string, string> }
+      ).headers;
+      expect(headers['x-telegram-bot-api-secret-token']).toBe(secret);
+      expect(headers.authorization).toBeUndefined();
+      expect(headers.cookie).toBeUndefined();
+      expect(headers['x-webhook-secret']).toBeUndefined();
+    });
+
+    it('rejects a malformed key or secret token before upstream access', async () => {
+      const request = jest.spyOn(globalThis, 'fetch');
+
+      const badKey = await app.inject({
+        method: 'POST',
+        url: '/api/v1/webhooks/telegram/short',
+        payload: {},
+      });
+      for (const token of ['bad token', 'a'.repeat(257), 'semi;colon']) {
+        const badSecret = await app.inject({
+          method: 'POST',
+          url: `/api/v1/webhooks/telegram/${key}`,
+          headers: { 'x-telegram-bot-api-secret-token': token },
+          payload: {},
+        });
+        expect(badSecret.statusCode).toBe(400);
+      }
+      const form = await app.inject({
+        method: 'POST',
+        url: `/api/v1/webhooks/telegram/${key}`,
+        headers: { 'content-type': 'text/plain' },
+        payload: 'x',
+      });
+
+      expect(badKey.statusCode).toBe(400);
+      expect(form.statusCode).toBe(415);
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('passes the generic upstream not-found through unchanged', async () => {
+      jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ error: { code: 'WEBHOOK_NOT_FOUND' } }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/v1/webhooks/telegram/${key}`,
+        payload: { update_id: 1 },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+  });
+
   it('sanitizes upstream failures', async () => {
     jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('private-url'));
 

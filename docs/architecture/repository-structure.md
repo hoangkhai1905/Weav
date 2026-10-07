@@ -24,8 +24,7 @@ weav/
 │   ├── auth-service/
 │   ├── workflow-service/
 │   ├── ai-service/
-│   ├── ocr-service/
-│   └── bot-service/
+│   └── ocr-service/
 ├── packages/
 │   ├── contracts/
 │   ├── workflow-schema/

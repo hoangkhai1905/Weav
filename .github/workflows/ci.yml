@@ -54,9 +54,6 @@ jobs:
             ai-service:
               - *shared
               - 'services/ai-service/**'
-            bot-service:
-              - *shared
-              - 'services/bot-service/**'
             notification-service:
               - *shared
               - 'services/notification-service/**'
@@ -126,10 +123,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile --filter ./services/${{ matrix.service }}
-      # Read-only lint (pnpm lint runs --fix). Non-blocking while dev has pre-existing errors: api-gateway 2, ai-service 140, notification-service 46 (2026-10-03). bot-service is clean, so it blocks.
+      # Read-only lint (pnpm lint runs --fix). Non-blocking for every service while dev has pre-existing errors: api-gateway 2, ai-service 140, notification-service 46 (2026-10-03). Make a service blocking here once it is clean.
       - name: Lint
         working-directory: services/${{ matrix.service }}
-        continue-on-error: ${{ matrix.service != 'bot-service' }}
+        continue-on-error: true
         run: pnpm exec eslint "{src,test}/**/*.ts"
       # Build before tests: notification-service's build runs `prisma generate`, which its tests need.
       - name: Build

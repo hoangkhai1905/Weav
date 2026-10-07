@@ -1,12 +1,12 @@
 # Workflow Service
 
-> Status: V1 core (drafts, publish, versions, manual/webhook/schedule runs, monitoring, notification events, AI generation endpoint) Implemented; Telegram trigger, Telegram send node, workflow delete, and Agent Runtime Planned or fail-closed. Owner: K. Last verified: 2026-09-30 against `dev`.
+> Status: V1 core (drafts, publish, versions, manual/webhook/schedule runs, monitoring, notification events, AI generation endpoint) Implemented; workflow delete and Agent Runtime Planned or fail-closed. The Telegram trigger and `telegram.send_message` node are Implemented (2026-10-04, see `docs/work_logs/K/workflow/telegram-nodes.md`). Owner: K. Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 
 Workflow Service (Spring Boot, Java) is the core domain. It owns the canonical `WorkflowDefinition` (nodes, edges, ports, data mappings, triggers), drafts and immutable published versions, definition validation, trigger registrations (manual, webhook, schedule), durable execution admission, the background worker that runs the node graph (worker and Agent Runtime live inside this service, not as separate services), node executors, run monitoring, the AI generation use case (`WorkflowIntent` to deterministic compile to `WorkflowDefinition` to validator), and workflow notification events.
 
-Not responsible for: users/sessions (Identity), workspaces, membership, permissions, connections and credential storage (Workspace; Workflow only asks it to authorize/resolve), LLM reasoning (AI Service, reasoning only), OCR processing (OCR Service), Telegram linking and bot chat (Bot Service), rendering notifications (Notification Service), public ingress/rate limiting/edge auth (API Gateway, owned by the partner).
+Not responsible for: users/sessions (Identity), workspaces, membership, permissions, connections and credential storage (Workspace; Workflow only asks it to authorize/resolve), LLM reasoning (AI Service, reasoning only), OCR processing (OCR Service), Telegram bot accounts (a workspace connection), rendering notifications (Notification Service), public ingress/rate limiting/edge auth (API Gateway, owned by the partner).
 
 ## Use cases covered
 
@@ -22,8 +22,8 @@ Not responsible for: users/sessions (Identity), workspaces, membership, permissi
 | UC018 | Run workflow manually | Implemented | `POST .../executions` (`WORKFLOW_RUN`), 202 with `QUEUED`. Execution needs the worker enabled. |
 | UC019 | Monitor executions | Implemented | List/detail projections (`WORKFLOW_MONITOR`), sanitized, paged logs. |
 | UC021 | Trigger via webhook | Implemented | `POST /webhooks/{endpointKey}` with `X-Webhook-Secret`; public ingress via Gateway (Gateway side owned by partner). |
-| UC022 | Trigger via Telegram | Planned | `trigger.telegram` exists in the catalog and DB enum but `TelegramTriggerIngress.unconfigured()` throws; publish marks it `DEPENDENCY_NOT_CONFIGURED`. |
-| UC024 | Interact via Telegram bot | Planned | Bot-side; Workflow exposes list/status/run only via the user-facing API, no bot-specific endpoint. |
+| UC022 | Trigger via Telegram | Implemented | `trigger.telegram` needs a `TELEGRAM` connection and `WORKFLOW_PUBLIC_BASE_URL` (https; otherwise it publishes disabled with `DEPENDENCY_NOT_CONFIGURED`). Publish and resume call Bot API `setWebhook` with a random `secret_token` (only its hash is stored); pause and a superseding republish call `deleteWebhook`. Ingress is `POST /webhooks/telegram/{endpointKey}` (header `X-Telegram-Bot-Api-Secret-Token`, `telegram:<update_id>` idempotency). One bot serves one active workflow (`TELEGRAM_BOT_IN_USE`); registration failures return `TELEGRAM_WEBHOOK_REGISTRATION_FAILED` (502) and publish nothing. |
+| UC024 | Interact via Telegram bot | Implemented (reduced) | A `trigger.telegram` message plus a `telegram.send_message` reply is the interaction; there is no chat command surface. |
 | UC028 | Monitor all executions (admin) | Planned | No system-admin, cross-workspace endpoint found; only workspace-scoped monitoring. |
 | UC020 | Receive result notifications | Partial | Producer side Implemented (outbox to RabbitMQ); consumer is Notification. |
 
@@ -38,7 +38,7 @@ Not responsible for: users/sessions (Identity), workspaces, membership, permissi
 | BR06 | Runs reference a published `workflow_version_id`. Manual needs `WORKFLOW_RUN` and `PUBLISHED` status; paused workflows disable trigger registrations; resume continues at the next future schedule slot without replaying paused slots. |
 | BR07 | Nodes run in dependency order with bounded concurrency; node state, attempts, and sanitized logs are persisted; failures are recorded per node and execution. Delivery is at-least-once for read-only nodes and at-most-once-or-`OUTCOME_UNKNOWN` for side-effecting nodes (see Non-functional requirements: Execution semantics). |
 | BR08 | Generation returns a proposal (`ready` / needs connections / invalid) and persists nothing; publishing and running remain separate authorized calls. AI/OCR nodes run only inside published workflows. |
-| BR09 | Webhook/Telegram triggers are admitted only for an active, non-paused, current registration; all mismatches return the same generic 404. Telegram linking is Bot's concern. |
+| BR09 | Webhook/Telegram triggers are admitted only for an active, non-paused, current registration; all mismatches return the same generic 404. A Telegram trigger also needs the matching connection to stay valid. |
 
 Component rules: max 200 nodes, 1,000 edges, 1 MiB definition, JSON depth 32 (`DefinitionValidator`); condition operators `eq ne gt gte lt lte`; Sheets ops `read append update`; HTTP methods GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS; workflow states `DRAFT`, `PUBLISHED`, `PAUSED`; execution states `QUEUED`, `RUNNING`, `WAITING`, `SUCCESS`, `FAILED`, `CANCELLED`.
 

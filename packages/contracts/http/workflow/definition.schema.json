@@ -57,12 +57,18 @@
             "http.request",
             "email.send",
             "google.sheets",
+            "google.calendar",
+            "google.drive",
             "telegram.send_message",
             "logic.condition",
             "ai.extract",
             "ai.classify",
             "ai.summarize",
-            "ocr.extract"
+            "ocr.extract",
+            "logic.switch",
+            "data.set",
+            "ai.generate",
+            "trigger.gmail"
           ]
         },
         "config": {
@@ -128,10 +134,7 @@
           "if": {
             "properties": {
               "type": {
-                "enum": [
-                  "trigger.webhook",
-                  "trigger.telegram"
-                ]
+                "const": "trigger.webhook"
               }
             },
             "required": [
@@ -143,6 +146,31 @@
               "config": {
                 "type": "object",
                 "maxProperties": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "trigger.telegram"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -221,11 +249,76 @@
                       }
                     ]
                   },
+                  "cc": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  },
+                  "bcc": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  },
+                  "replyTo": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  },
                   "subject": {
                     "type": "string"
                   },
                   "body": {
                     "type": "string"
+                  },
+                  "bodyType": {
+                    "type": "string",
+                    "enum": [
+                      "text",
+                      "html"
+                    ]
+                  },
+                  "senderName": {
+                    "type": "string"
+                  },
+                  "replyToMessageId": {
+                    "type": "string"
+                  },
+                  "attachments": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "object"
+                        }
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -257,7 +350,8 @@
                     "enum": [
                       "read",
                       "append",
-                      "update"
+                      "update",
+                      "lookup"
                     ]
                   },
                   "spreadsheetId": {
@@ -266,7 +360,176 @@
                   "range": {
                     "type": "string"
                   },
-                  "values": {}
+                  "values": {},
+                  "lookupColumn": {
+                    "type": "string"
+                  },
+                  "lookupValue": {},
+                  "limit": {
+                    "oneOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "valueInputOption": {
+                    "type": "string",
+                    "enum": [
+                      "RAW",
+                      "USER_ENTERED"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "google.calendar"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "calendarId": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "location": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "string"
+                  },
+                  "end": {
+                    "type": "string"
+                  },
+                  "timeZone": {
+                    "type": "string"
+                  },
+                  "attendees": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "sendInvitations": {
+                    "type": "boolean"
+                  },
+                  "operation": {
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "list"
+                    ]
+                  },
+                  "timeMin": {
+                    "type": "string",
+                    "description": "list: window start (RFC 3339 date-time with offset, or a date). A date without a time means midnight UTC; an offset date-time is recommended."
+                  },
+                  "timeMax": {
+                    "type": "string",
+                    "description": "list: window end, after timeMin. A date without a time means midnight UTC; an offset date-time is recommended."
+                  },
+                  "maxResults": {
+                    "oneOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "query": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "google.drive"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "operation": {
+                    "type": "string",
+                    "enum": [
+                      "upload",
+                      "list"
+                    ]
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "file": {
+                    "oneOf": [
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  },
+                  "folderId": {
+                    "type": "string"
+                  },
+                  "nameContains": {
+                    "type": "string"
+                  },
+                  "pageSize": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
                 },
                 "additionalProperties": false
               }
@@ -289,11 +552,50 @@
               "config": {
                 "type": "object",
                 "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
                   "chatId": {
-                    "type": "string"
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
                   },
                   "text": {
                     "type": "string"
+                  },
+                  "parseMode": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "HTML",
+                      "MarkdownV2"
+                    ]
+                  },
+                  "disableNotification": {
+                    "oneOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "replyToMessageId": {
+                    "oneOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -329,7 +631,38 @@
                       "lte"
                     ]
                   },
-                  "right": {}
+                  "right": {},
+                  "combinator": {
+                    "type": "string",
+                    "enum": [
+                      "and",
+                      "or"
+                    ]
+                  },
+                  "conditions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "left": {},
+                        "operator": {
+                          "type": "string",
+                          "enum": [
+                            "eq",
+                            "ne",
+                            "gt",
+                            "gte",
+                            "lt",
+                            "lte"
+                          ]
+                        },
+                        "right": {}
+                      },
+                      "additionalProperties": false
+                    }
+                  }
                 },
                 "additionalProperties": false
               }
@@ -469,6 +802,131 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "logic.switch"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "value": {},
+                  "cases": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "data.set"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "fields": {
+                    "type": "object",
+                    "maxProperties": 100
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ai.generate"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  },
+                  "maxLength": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "trigger.gmail"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "query": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "pollIntervalMinutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1440
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
         }
       ]
     },
@@ -500,11 +958,8 @@
             "string",
             "null"
           ],
-          "enum": [
-            "true",
-            "false",
-            null
-          ]
+          "minLength": 1,
+          "maxLength": 64
         }
       },
       "additionalProperties": false

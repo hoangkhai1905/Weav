@@ -151,6 +151,85 @@ class ExecutionRunnerTest {
         }
     }
 
+    private static Map<String, Object> multiCondition(Object operatorMapping) {
+        Map<String, Object> first = new java.util.LinkedHashMap<>();
+        first.put("left", "{{ trigger.input.a }}");
+        first.put("operator", operatorMapping);
+        first.put("right", 3);
+        Map<String, Object> second = new java.util.LinkedHashMap<>();
+        second.put("left", "x");
+        second.put("operator", "eq");
+        second.put("right", "x");
+        return Map.of("combinator", "and", "conditions", List.of(first, second));
+    }
+
+    @Test
+    void multiConditionWithMappedLeftAndOperatorResolvesAndSelectsThePort() {
+        for (Map.Entry<Object, String> expected : Map.<Object, String>of(5, "true", 1, "false").entrySet()) {
+            WorkflowDefinition definition = definition(
+                    List.of(node("condition", "logic.condition", multiCondition("{{ trigger.input.op }}")),
+                            node("yes", "http.request", Map.of()), node("no", "http.request", Map.of())),
+                    List.of(edge("root-condition", "root", "condition", null),
+                            edge("c-yes", "condition", "yes", "true"), edge("c-no", "condition", "no", "false")));
+            try (Harness harness = harness(definition, Map.of("a", expected.getKey(), "op", "gt"),
+                    List.of(executor("http.request", (context, config) -> new NodeExecutor.Result(Map.of(), null))), 1,
+                    eligibleAt -> CompletableFuture.completedFuture(null))) {
+                harness.runner.run(harness.lease);
+
+                assertEquals(ExecutionStatus.SUCCESS, harness.state.snapshot().status(), harness.state::summary);
+                assertEquals(Map.of("value", expected.getValue().equals("true")),
+                        harness.state.snapshot().nodes().get("condition").getOutput());
+                String chosen = expected.getValue().equals("true") ? "yes" : "no";
+                String other = chosen.equals("yes") ? "no" : "yes";
+                assertEquals(NodeExecutionStatus.SUCCESS, harness.state.snapshot().nodes().get(chosen).getStatus());
+                assertEquals(NodeExecutionStatus.SKIPPED, harness.state.snapshot().nodes().get(other).getStatus());
+            }
+        }
+    }
+
+    @Test
+    void aResolvedBadConditionOperatorIsAConfigurationErrorInBothForms() {
+        Map<String, Object> single = Map.of("left", 1, "operator", "{{ trigger.input.op }}", "right", 1);
+        for (Map<String, Object> config : List.of(single, multiCondition("{{ trigger.input.op }}"))) {
+            WorkflowDefinition definition = definition(List.of(node("condition", "logic.condition", config)),
+                    List.of(edge("root-condition", "root", "condition", null)));
+            try (Harness harness = harness(definition, Map.of("a", 5, "op", "bad"), List.of(), 1,
+                    eligibleAt -> CompletableFuture.completedFuture(null))) {
+                harness.runner.run(harness.lease);
+
+                assertEquals(ExecutionStatus.FAILED, harness.state.snapshot().status(), harness.state::summary);
+                assertEquals("CONFIGURATION_ERROR",
+                        harness.state.snapshot().nodes().get("condition").getError().get("code"));
+            }
+        }
+    }
+
+    @Test
+    void numericTelegramChatIdMappedFromTriggerInputPassesConfigurationRevalidation() {
+        AtomicReference<Map<String, Object>> resolvedConfig = new AtomicReference<>();
+        NodeExecutor send = executor("telegram.send_message", (context, config) -> {
+            resolvedConfig.set(config);
+            return new NodeExecutor.Result(Map.of("sent", true), null);
+        });
+        WorkflowDefinition definition = definition(
+                List.of(node("send", "telegram.send_message", Map.of(
+                        "connectionId", UUID.randomUUID().toString(),
+                        "chatId", "{{ trigger.input.message.chat.id }}",
+                        "text", "Echo: {{ trigger.input.message.text }}"))),
+                List.of(edge("root-send", "root", "send", null)));
+        Map<String, Object> update = Map.of("message", Map.of(
+                "chat", Map.of("id", -1001234567890L), "text", "hi"));
+
+        try (Harness harness = harness(definition, update, List.of(send), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.runner.run(harness.lease);
+
+            assertEquals(ExecutionStatus.SUCCESS, harness.state.snapshot().status(), harness.state::summary);
+            assertEquals(-1001234567890L, resolvedConfig.get().get("chatId"));
+            assertEquals("Echo: hi", resolvedConfig.get().get("text"));
+        }
+    }
+
     @Test
     void failsClosedForMissingAdaptersAndStoresOnlySanitizedTerminalErrors() {
         WorkflowDefinition definition = definition(
@@ -199,6 +278,222 @@ class ExecutionRunnerTest {
                     throw new NodeExecutor.Failure("AUTHENTICATION_REJECTED",
                             "The provider rejected the configured credentials.", false);
                 }), "AUTHENTICATION_REJECTED", 1);
+    }
+
+    @Test
+    void switchRoutesToTheMatchingCaseAndSkipsTheOtherBranches() {
+        AtomicReference<String> ran = new AtomicReference<>("");
+        NodeExecutor action = executor("http.request", (context, config) -> {
+            ran.updateAndGet(value -> value + context.nodeId() + ";");
+            return new NodeExecutor.Result(Map.of("ok", true), null);
+        });
+        WorkflowDefinition definition = switchDefinition("{{ trigger.input.plan }}");
+
+        // a mapped number matches the case written as text
+        try (Harness harness = harness(definition, Map.of("plan", 2), List.of(action), 2,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.runner.run(harness.lease);
+
+            assertEquals(ExecutionStatus.SUCCESS, harness.state.snapshot().status(), harness.state::summary);
+            assertEquals("two;", ran.get());
+            assertEquals(Map.of("value", 2, "port", "2"), harness.state.snapshot().nodes().get("switch").getOutput());
+            assertEquals(NodeExecutionStatus.SUCCESS, harness.state.snapshot().nodes().get("two").getStatus());
+            assertEquals(NodeExecutionStatus.SKIPPED, harness.state.snapshot().nodes().get("one").getStatus());
+            assertEquals(NodeExecutionStatus.SKIPPED, harness.state.snapshot().nodes().get("other").getStatus());
+        }
+    }
+
+    @Test
+    void switchTakesTheDefaultPortWhenNothingMatches() {
+        AtomicReference<String> ran = new AtomicReference<>("");
+        NodeExecutor action = executor("http.request", (context, config) -> {
+            ran.updateAndGet(value -> value + context.nodeId() + ";");
+            return new NodeExecutor.Result(Map.of("ok", true), null);
+        });
+
+        for (Object plan : List.of("gold", 3, 2.5)) {
+            ran.set("");
+            try (Harness harness = harness(switchDefinition("{{ trigger.input.plan }}"), Map.of("plan", plan),
+                    List.of(action), 2, eligibleAt -> CompletableFuture.completedFuture(null))) {
+                harness.runner.run(harness.lease);
+
+                assertEquals(ExecutionStatus.SUCCESS, harness.state.snapshot().status(), harness.state::summary);
+                assertEquals("other;", ran.get(), String.valueOf(plan));
+                assertEquals("default", harness.state.snapshot().nodes().get("switch").getOutput().get("port"));
+            }
+        }
+    }
+
+    @Test
+    void dataSetOutputFeedsADownstreamMappingIncludingNestedValues() {
+        AtomicReference<Map<String, Object>> seen = new AtomicReference<>();
+        NodeExecutor action = executor("http.request", (context, config) -> {
+            seen.set(config);
+            return new NodeExecutor.Result(Map.of("ok", true), null);
+        });
+        WorkflowDefinition definition = definition(
+                List.of(
+                        node("shape", "data.set", Map.of("fields", Map.of(
+                                "name", "{{ trigger.input.user.first }}",
+                                "count", "{{ trigger.input.count }}",
+                                "nested", Map.of("tags", List.of("{{ trigger.input.user.first }}", "fixed"))))),
+                        node("send", "http.request", Map.of(
+                                "body", "{{ nodes.shape.output.nested }}",
+                                "headers", Map.of("n", "{{ nodes.shape.output.name }}")))),
+                List.of(edge("root-shape", "root", "shape", null), edge("shape-send", "shape", "send", null)));
+
+        try (Harness harness = harness(definition, Map.of("user", Map.of("first", "Ada"), "count", 7),
+                List.of(action), 1, eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.runner.run(harness.lease);
+
+            assertEquals(ExecutionStatus.SUCCESS, harness.state.snapshot().status(), harness.state::summary);
+            assertEquals(Map.of("name", "Ada", "count", 7, "nested", Map.of("tags", List.of("Ada", "fixed"))),
+                    harness.state.snapshot().nodes().get("shape").getOutput());
+            assertEquals(Map.of("tags", List.of("Ada", "fixed")), seen.get().get("body"));
+            assertEquals(Map.of("n", "Ada"), seen.get().get("headers"));
+        }
+    }
+
+    @Test
+    void mappedNumbersAndBooleansAreCoercedToTextForStringOnlyFields() {
+        // 12.0 and 1e20 must not keep a decimal point or exponent; 2.5 keeps its fraction.
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("integer", 12);
+        input.put("whole", 12.0);
+        input.put("big", 1e20);
+        input.put("decimal", 2.5);
+        input.put("flag", true);
+        input.put("off", false);
+        for (Map.Entry<String, String> expected : Map.of("integer", "12", "whole", "12", "big",
+                "100000000000000000000", "decimal", "2.5", "flag", "true", "off", "false").entrySet()) {
+            AtomicReference<Map<String, Object>> resolved = new AtomicReference<>();
+            NodeExecutor email = executor("email.send", (context, config) -> {
+                resolved.set(config);
+                return new NodeExecutor.Result(Map.of("sent", true), null);
+            });
+            WorkflowDefinition definition = definition(
+                    List.of(node("mail", "email.send", Map.of(
+                            "connectionId", UUID.randomUUID().toString(), "to", "a@example.test",
+                            "subject", "{{ trigger.input." + expected.getKey() + " }}",
+                            "body", "{{ trigger.input." + expected.getKey() + " }}"))),
+                    List.of(edge("root-mail", "root", "mail", null)));
+
+            try (Harness harness = harness(definition, input, List.of(email), 1,
+                    eligibleAt -> CompletableFuture.completedFuture(null))) {
+                harness.runner.run(harness.lease);
+
+                assertEquals(ExecutionStatus.SUCCESS, harness.state.snapshot().status(),
+                        expected.getKey() + " " + harness.state.summary());
+                assertEquals(expected.getValue(), resolved.get().get("subject"), expected.getKey());
+                assertEquals(expected.getValue(), resolved.get().get("body"), expected.getKey());
+            }
+        }
+    }
+
+    @Test
+    void anObjectMappedIntoAStringFieldStillFailsWithConfigurationError() {
+        WorkflowDefinition definition = definition(
+                List.of(node("action", "email.send", Map.of(
+                        "connectionId", UUID.randomUUID().toString(), "to", "a@example.test",
+                        "subject", "{{ trigger.input.user }}", "body", "x"))),
+                List.of(edge("root-action", "root", "action", null)));
+
+        try (Harness harness = harness(definition, Map.of("user", Map.of("first", "Ada")),
+                List.of(executor("email.send", (context, config) -> new NodeExecutor.Result(Map.of(), null))), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.runner.run(harness.lease);
+
+            assertEquals(ExecutionStatus.FAILED, harness.state.snapshot().status(), harness.state::summary);
+            assertEquals("CONFIGURATION_ERROR",
+                    harness.state.snapshot().nodes().get("action").getError().get("code"));
+        }
+    }
+
+    @Test
+    void twoSwitchPortsFeedingOneJoinStillRunTheJoin() {
+        AtomicReference<String> ran = new AtomicReference<>("");
+        NodeExecutor action = executor("http.request", (context, config) -> {
+            ran.updateAndGet(value -> value + context.nodeId() + ";");
+            return new NodeExecutor.Result(Map.of("ok", true), null);
+        });
+        WorkflowDefinition definition = definition(
+                List.of(node("switch", "logic.switch", Map.of("value", "{{ trigger.input.plan }}",
+                                "cases", List.of("a", "b"))),
+                        node("join", "http.request", Map.of())),
+                List.of(edge("root-switch", "root", "switch", null),
+                        edge("switch-join-a", "switch", "join", "a"),
+                        edge("switch-join-b", "switch", "join", "b")));
+
+        try (Harness harness = harness(definition, Map.of("plan", "b"), List.of(action), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.runner.run(harness.lease);
+
+            assertEquals(ExecutionStatus.SUCCESS, harness.state.snapshot().status(), harness.state::summary);
+            assertEquals("join;", ran.get());
+        }
+    }
+
+    @Test
+    void negativeAndNonIntegralNumbersAreCoercedToText() {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("negative", -5);
+        input.put("negativeDecimal", -2.75);
+        input.put("exact", new java.math.BigDecimal("0.10"));
+        for (Map.Entry<String, String> expected : Map.of("negative", "-5", "negativeDecimal", "-2.75",
+                "exact", "0.1").entrySet()) {
+            AtomicReference<Map<String, Object>> resolved = new AtomicReference<>();
+            NodeExecutor email = executor("email.send", (context, config) -> {
+                resolved.set(config);
+                return new NodeExecutor.Result(Map.of("sent", true), null);
+            });
+            WorkflowDefinition definition = definition(
+                    List.of(node("mail", "email.send", Map.of(
+                            "connectionId", UUID.randomUUID().toString(), "to", "a@example.test",
+                            "subject", "{{ trigger.input." + expected.getKey() + " }}", "body", "x"))),
+                    List.of(edge("root-mail", "root", "mail", null)));
+
+            try (Harness harness = harness(definition, input, List.of(email), 1,
+                    eligibleAt -> CompletableFuture.completedFuture(null))) {
+                harness.runner.run(harness.lease);
+
+                assertEquals(ExecutionStatus.SUCCESS, harness.state.snapshot().status(),
+                        expected.getKey() + " " + harness.state.summary());
+                assertEquals(expected.getValue(), resolved.get().get("subject"), expected.getKey());
+            }
+        }
+    }
+
+    @Test
+    void dataSetFieldsMappedToAnEmptyOrNonObjectValueFailWithConfigurationError() {
+        for (Object bad : List.of(Map.of(), 5, "text", List.of("a"))) {
+            WorkflowDefinition definition = definition(
+                    List.of(node("shape", "data.set", Map.of("fields", "{{ trigger.input.fields }}"))),
+                    List.of(edge("root-shape", "root", "shape", null)));
+
+            try (Harness harness = harness(definition, Map.of("fields", bad), List.of(), 1,
+                    eligibleAt -> CompletableFuture.completedFuture(null))) {
+                harness.runner.run(harness.lease);
+
+                assertEquals(ExecutionStatus.FAILED, harness.state.snapshot().status(), harness.state::summary);
+                assertEquals("CONFIGURATION_ERROR",
+                        harness.state.snapshot().nodes().get("shape").getError().get("code"), String.valueOf(bad));
+                assertEquals(1, harness.state.snapshot().nodes().get("shape").getAttemptCount());
+            }
+        }
+    }
+
+    private static WorkflowDefinition switchDefinition(String value) {
+        return definition(
+                List.of(
+                        node("switch", "logic.switch", Map.of("value", value, "cases", List.of("1", "2"))),
+                        node("one", "http.request", Map.of()),
+                        node("two", "http.request", Map.of()),
+                        node("other", "http.request", Map.of())),
+                List.of(
+                        edge("root-switch", "root", "switch", null),
+                        edge("switch-one", "switch", "one", "1"),
+                        edge("switch-two", "switch", "two", "2"),
+                        edge("switch-other", "switch", "other", "default")));
     }
 
     private void assertSingleNonRetryableFailure(WorkflowDefinition definition, NodeExecutor executor,

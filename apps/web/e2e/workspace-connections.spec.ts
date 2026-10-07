@@ -7,6 +7,10 @@ const CONNECTION_GMAIL_ID = "20000000-0000-4000-8000-000000000001";
 const CONNECTION_SHEETS_ID = "20000000-0000-4000-8000-000000000002";
 const CONNECTION_TELEGRAM_ID = "20000000-0000-4000-8000-000000000003";
 const CONNECTION_HTTP_ID = "20000000-0000-4000-8000-000000000004";
+const CONNECTION_DRIVE_ID = "20000000-0000-4000-8000-000000000005";
+const CONNECTION_DRIVE_DISABLED_ID = "20000000-0000-4000-8000-000000000006";
+const CONNECTION_DRIVE_LOCKED_ID = "20000000-0000-4000-8000-000000000007";
+const CONNECTION_CALENDAR_ID = "20000000-0000-4000-8000-000000000008";
 const ACCESS_TOKEN = "connection-adapter-token";
 const PENDING_OAUTH_CONTEXT_KEY = "weav.workspaceConnectionOAuth.pending";
 
@@ -56,7 +60,13 @@ async function openRowMenu(page: Page, id: string) {
 
 function connection(
   id: string,
-  provider: "TELEGRAM" | "HTTP" | "GMAIL" | "GOOGLE_SHEETS",
+  provider:
+    | "TELEGRAM"
+    | "HTTP"
+    | "GMAIL"
+    | "GOOGLE_SHEETS"
+    | "GOOGLE_CALENDAR"
+    | "GOOGLE_DRIVE",
   workspaceId = WORKSPACE_ID,
   status: "DISABLED" | "ACTIVE" | "INVALID" = "DISABLED",
   canManage = true,
@@ -70,7 +80,11 @@ function connection(
         ? "Work Gmail"
         : provider === "GOOGLE_SHEETS"
           ? "Project Sheets"
-          : `${provider} integration`,
+          : provider === "GOOGLE_DRIVE"
+            ? "Team Drive"
+            : provider === "GOOGLE_CALENDAR"
+              ? "Team Calendar"
+              : `${provider} integration`,
     provider,
     authType: "OAUTH2",
     status,
@@ -550,6 +564,111 @@ test.describe("workspace connection API adapter", () => {
     await expect(page.getByTestId("connections-workspace-name")).toHaveText(
       "Alpha workspace",
     );
+  });
+
+  test("create stores a Telegram bot token through the credential endpoint, verifies it and shows a Test action", async ({
+    page,
+  }) => {
+    await installAuthFixture(page);
+    const TOKEN = "123456:TEST-token";
+    const telegram = (status: "DISABLED" | "ACTIVE", hasCredential: boolean) => ({
+      ...connection(CONNECTION_TELEGRAM_ID, "TELEGRAM", WORKSPACE_ID, status),
+      name: "Support bot",
+      authType: "TOKEN",
+      hasCredential,
+    });
+    let connections: unknown[] = [];
+    const calls: string[] = [];
+    let createBody: unknown;
+    let credentialBody: unknown;
+    let testCalls = 0;
+    await page.route("**/api/v1/workspaces/*/connections", async (route) => {
+      if (route.request().method() === "GET") return fulfillJson(route, connections);
+      calls.push("create");
+      createBody = route.request().postDataJSON();
+      connections = [telegram("DISABLED", false)];
+      return fulfillJson(route, connections[0], 201);
+    });
+    await page.route(
+      `**/api/v1/workspaces/*/connections/${CONNECTION_TELEGRAM_ID}/credential`,
+      (route) => {
+        calls.push("credential");
+        credentialBody = route.request().postDataJSON();
+        connections = [telegram("DISABLED", true)];
+        return fulfillJson(route, connections[0]);
+      },
+    );
+    await page.route(
+      `**/api/v1/workspaces/*/connections/${CONNECTION_TELEGRAM_ID}/test`,
+      (route) => {
+        calls.push("test");
+        testCalls += 1;
+        connections = [telegram("ACTIVE", true)];
+        return fulfillJson(route, { outcome: "VERIFIED" });
+      },
+    );
+    await gotoAuthenticatedConnections(page);
+    await page.getByTestId("connections-create-open").click();
+    await page.getByTestId("connection-create-name").fill("Support bot");
+    await expect(page.getByTestId("connection-create-token")).toHaveCount(0);
+    await page.getByTestId("connection-create-provider").selectOption("TELEGRAM");
+    const tokenInput = page.getByTestId("connection-create-token");
+    await expect(tokenInput).toHaveAttribute("type", "password");
+    await expect(tokenInput).toHaveAttribute("autocomplete", "off");
+    await tokenInput.fill(TOKEN);
+    await page.getByTestId("connection-create-submit").click();
+
+    const row = page.getByTestId(`connection-row-${CONNECTION_TELEGRAM_ID}`);
+    await expect(row).toContainText("TELEGRAM");
+    await expect(
+      page.getByTestId(`connection-status-${CONNECTION_TELEGRAM_ID}`),
+    ).toHaveAttribute("data-status", "ACTIVE");
+    expect(createBody).toEqual({ name: "Support bot", provider: "TELEGRAM", authType: "TOKEN" });
+    expect(credentialBody).toEqual({ payload: { token: TOKEN } });
+    expect(calls).toEqual(["create", "credential", "test"]);
+    await expect(page.getByTestId(`connection-oauth-${CONNECTION_TELEGRAM_ID}`)).toHaveCount(0);
+    await expect(page.getByText(TOKEN)).toHaveCount(0);
+
+    // The row's Test action verifies the stored token again.
+    await row.getByTestId(`connection-test-${CONNECTION_TELEGRAM_ID}`).click();
+    await expect.poll(() => testCalls).toBe(2);
+  });
+
+  test("Telegram create without a token is blocked and a failed token save removes the empty connection", async ({
+    page,
+  }) => {
+    await installAuthFixture(page);
+    const removed: string[] = [];
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      route.request().method() === "GET"
+        ? fulfillJson(route, [])
+        : fulfillJson(route, { ...connection(CONNECTION_TELEGRAM_ID, "TELEGRAM"), authType: "TOKEN" }, 201),
+    );
+    await page.route(
+      `**/api/v1/workspaces/*/connections/${CONNECTION_TELEGRAM_ID}**`,
+      (route) => {
+        if (route.request().method() === "DELETE") {
+          removed.push(CONNECTION_TELEGRAM_ID);
+          return route.fulfill({ status: 204, body: "" });
+        }
+        return fulfillJson(route, { error: { code: "BAD_REQUEST", message: "bad" } }, 400);
+      },
+    );
+    await gotoAuthenticatedConnections(page);
+    await page.getByTestId("connections-create-open").click();
+    await page.getByTestId("connection-create-name").fill("Support bot");
+    await page.getByTestId("connection-create-provider").selectOption("TELEGRAM");
+    await page.getByTestId("connection-create-token").fill("   ");
+    await page.getByTestId("connection-create-submit").click();
+    await expect(page.getByTestId("connection-create-error")).toHaveText("Enter the Telegram bot token.");
+    expect(removed).toEqual([]);
+
+    await page.getByTestId("connection-create-token").fill("123456:TEST-token");
+    await page.getByTestId("connection-create-submit").click();
+    await expect(page.getByTestId("connection-create-error")).toBeVisible();
+    expect(removed).toEqual([CONNECTION_TELEGRAM_ID]);
+    // The token is cleared after a submit attempt.
+    await expect(page.getByTestId("connection-create-token")).toHaveValue("");
   });
 
   test("Connect Google starts Workspace OAuth and stores only safe pending context", async ({
@@ -1646,5 +1765,626 @@ test.describe("workflow builder connection readiness", () => {
     await expect(page).toHaveURL(new RegExp(`/workflows/${WORKFLOW_ID}[?]step=sheets$`));
     await expect(page.getByTestId("google-connection")).toHaveValue(NEW_SHEETS_ID);
     await expect(page.locator(sheetsNode)).toHaveAttribute("data-readiness", "ready");
+  });
+});
+
+test.describe("workflow builder Week 4 node fields", () => {
+  const WORKFLOW_ID = "30000000-0000-4000-8000-000000000004";
+  const node = (type: string) => `[data-testid="workflow-node"][data-node-type="${type}"]`;
+  type Configs = Record<string, Record<string, unknown>>;
+  const TYPES: Record<string, string> = {
+    sheets: "google.sheets",
+    email: "email.send",
+    condition: "logic.condition",
+    telegram: "telegram.send_message",
+  };
+
+  const detail = (configs: Configs) => ({
+    workflowId: WORKFLOW_ID,
+    name: "Week 4 fields",
+    status: "DRAFT",
+    schemaVersion: "1.0",
+    currentVersionId: null,
+    createdAt: "2026-08-01T00:00:00Z",
+    updatedAt: "2026-08-01T00:00:00Z",
+    definition: {
+      schemaVersion: "1.0",
+      nodes: [
+        { id: "manual", type: "trigger.manual", config: {} },
+        ...Object.entries(TYPES).map(([id, type]) => ({ id, type, config: configs[id] })),
+      ],
+      edges: Object.keys(TYPES).map((id) => ({ id: `manual-${id}`, source: "manual", target: id })),
+      variables: {},
+    },
+    editorState: {
+      nodes: Object.fromEntries(
+        ["manual", ...Object.keys(TYPES)].map((id, index) => [id, { name: id, position: { x: index === 0 ? 0 : 320, y: index * 140 } }]),
+      ),
+    },
+  });
+
+  async function openBuilder(page: Page, configs: Configs) {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, [
+        connection(CONNECTION_SHEETS_ID, "GOOGLE_SHEETS", WORKSPACE_ID, "ACTIVE"),
+        connection(CONNECTION_GMAIL_ID, "GMAIL", WORKSPACE_ID, "ACTIVE"),
+        connection(CONNECTION_TELEGRAM_ID, "TELEGRAM", WORKSPACE_ID, "ACTIVE"),
+      ]),
+    );
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/draft") && route.request().method() === "PUT") {
+        const body = route.request().postDataJSON() as { definition: { nodes: Array<{ id: string; config: Record<string, unknown> }> } };
+        for (const item of body.definition.nodes) configs[item.id] = item.config;
+        return fulfillJson(route, detail(configs));
+      }
+      if (url.pathname.endsWith(`/workflows/${WORKFLOW_ID}`)) return fulfillJson(route, detail(configs));
+      return fulfillJson(route, pageResult([]));
+    });
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+  }
+
+  const baseConfigs = (): Configs => ({
+    sheets: { connectionId: CONNECTION_SHEETS_ID, operation: "read", spreadsheetId: "sheet-1", range: "A1:D50" },
+    email: { connectionId: CONNECTION_GMAIL_ID, to: "team@example.test", subject: "Weekly", body: "Hi" },
+    condition: { left: "{{ trigger.input.total }}", operator: "eq", right: "1" },
+    telegram: { chatId: "", text: "" },
+  });
+
+  async function saveDraft(page: Page) {
+    const saved = page.waitForResponse((response) => response.request().method() === "PUT" && response.url().endsWith("/draft"));
+    await page.getByTestId("workflow-save-inspector").click();
+    await saved;
+  }
+
+  test("Sheets lookup needs a column and a value and saves only lookup fields", async ({ page }) => {
+    const configs = baseConfigs();
+    await openBuilder(page, configs);
+
+    await page.locator(node("google.sheets")).click();
+    await page.locator("#google-operation").selectOption("lookup");
+    await expect(page.locator(node("google.sheets"))).toHaveAttribute("data-readiness", "not-configured");
+    await expect(page.getByTestId("google-row-editor")).toHaveCount(0);
+    await page.getByLabel("Lookup column").fill("B");
+    await page.getByLabel("Value to find").fill("{{ trigger.input.email }}");
+    await page.getByLabel("Maximum rows").fill("5");
+    await expect(page.locator(node("google.sheets"))).toHaveAttribute("data-readiness", "ready");
+
+    await saveDraft(page);
+    expect(configs.sheets).toEqual({
+      connectionId: CONNECTION_SHEETS_ID,
+      operation: "lookup",
+      spreadsheetId: "sheet-1",
+      range: "A1:D50",
+      lookupColumn: "B",
+      lookupValue: "{{ trigger.input.email }}",
+      limit: 5,
+    });
+  });
+
+  test("email cc, HTML body, sender name and attachments are saved in the Workflow Service shape", async ({ page }) => {
+    const configs = baseConfigs();
+    await openBuilder(page, configs);
+
+    await page.locator(node("email.send")).click();
+    await page.getByLabel("Body format").selectOption("html");
+    await page.getByLabel("Cc", { exact: true }).fill("a@example.test, b@example.test");
+    await page.getByTestId("attachment-add").click();
+    // The source select is narrow so the URL input keeps usable width inside the 400px inspector.
+    expect((await page.getByTestId("attachment-source").boundingBox())!.width).toBeGreaterThan(150);
+    await page.getByTestId("attachment-source").fill("https://files.example.test/report.pdf");
+    await page.getByTestId("attachment-filename").fill("report.pdf");
+    await page.getByTestId("attachment-add").click();
+    await page.getByLabel("Source of file 2").selectOption("fileId");
+    await page.getByTestId("attachment-source").nth(1).fill("{{ trigger.input.attachments[0].fileId }}");
+    await page.getByTestId("email-advanced").locator("summary").click();
+    await page.getByLabel("Sender name").fill("Weav bot");
+    await expect(page.locator(node("email.send"))).toHaveAttribute("data-readiness", "ready");
+
+    await saveDraft(page);
+    expect(configs.email).toEqual({
+      connectionId: CONNECTION_GMAIL_ID,
+      to: "team@example.test",
+      subject: "Weekly",
+      body: "Hi",
+      bodyType: "html",
+      cc: "a@example.test, b@example.test",
+      attachments: [
+        { url: "https://files.example.test/report.pdf", filename: "report.pdf" },
+        { fileId: "{{ trigger.input.attachments[0].fileId }}" },
+      ],
+      senderName: "Weav bot",
+    });
+
+    // A mapping replaces the list; at most five files can be listed.
+    await page.getByTestId("attachments-mode").selectOption("mapping");
+    await page.getByTestId("attachments-mapping").fill("{{ trigger.input.attachments }}");
+    await saveDraft(page);
+    expect(configs.email.attachments).toBe("{{ trigger.input.attachments }}");
+    await page.getByTestId("attachments-mode").selectOption("list");
+    for (let i = 0; i < 5; i += 1) await page.getByTestId("attachment-add").click();
+    await expect(page.getByTestId("attachment-add")).toBeDisabled();
+  });
+
+  test("a condition switches to AND/OR form without mixing keys and saves numeric ordering operands", async ({ page }) => {
+    const configs = baseConfigs();
+    await openBuilder(page, configs);
+
+    await page.locator(node("logic.condition")).click();
+    await page.getByTestId("condition-mode-multi").click();
+    await expect(page.getByTestId("condition-row")).toHaveCount(1);
+    await page.getByTestId("condition-combinator").selectOption("or");
+    await page.getByTestId("condition-add").click();
+    await expect(page.locator(node("logic.condition"))).toHaveAttribute("data-readiness", "not-configured");
+    await page.getByTestId("condition-left").nth(1).fill("{{ trigger.input.amount }}");
+    await page.getByTestId("condition-operator").nth(1).selectOption("gt");
+    await page.getByTestId("condition-right").nth(1).fill("500");
+    await expect(page.locator(node("logic.condition"))).toHaveAttribute("data-readiness", "ready");
+
+    await saveDraft(page);
+    expect(configs.condition).toEqual({
+      combinator: "or",
+      conditions: [
+        { left: "{{ trigger.input.total }}", operator: "eq", right: "1" },
+        { left: "{{ trigger.input.amount }}", operator: "gt", right: 500 },
+      ],
+    });
+
+    // Back to one condition keeps the first one and drops the multi keys.
+    await page.getByTestId("condition-mode-single").click();
+    await saveDraft(page);
+    expect(configs.condition).toEqual({ left: "{{ trigger.input.total }}", operator: "eq", right: "1" });
+  });
+
+  test("Telegram send picks a bot connection and saves its new options", async ({ page }) => {
+    const configs = baseConfigs();
+    await openBuilder(page, configs);
+
+    await page.locator(node("telegram.send_message")).click();
+    await expect(page.getByTestId("integration-readiness")).toContainText("select a Telegram bot connection");
+    await page.getByLabel("Telegram bot connection").selectOption(CONNECTION_TELEGRAM_ID);
+    await page.locator("#telegram-chat-id").fill("-100123");
+    await page.locator("#telegram-text").fill("<b>Hi</b>");
+    await page.getByLabel("Parse mode").selectOption("HTML");
+    await page.getByLabel("Send silently").check();
+    await page.getByLabel("Reply to message ID").fill("42");
+    await expect(page.locator(node("telegram.send_message"))).toHaveAttribute("data-readiness", "ready");
+    await expect(page.getByTestId("integration-readiness")).toHaveCount(0);
+
+    await saveDraft(page);
+    expect(configs.telegram).toEqual({
+      connectionId: CONNECTION_TELEGRAM_ID,
+      chatId: "-100123",
+      text: "<b>Hi</b>",
+      parseMode: "HTML",
+      disableNotification: true,
+      replyToMessageId: 42,
+    });
+  });
+});
+
+test.describe("workflow builder Week 4 new nodes", () => {
+  const WORKFLOW_ID = "30000000-0000-4000-8000-000000000005";
+  const node = (type: string) => `[data-testid="workflow-node"][data-node-type="${type}"]`;
+  type Cfg = Record<string, unknown>;
+  type NodeSpec = { id: string; type: string; config: Cfg };
+  type Edge = { id: string; source: string; target: string; sourcePort?: string };
+  type Definition = { nodes: NodeSpec[]; edges: Edge[] };
+
+  const driveConnections = () => [
+    connection(CONNECTION_DRIVE_ID, "GOOGLE_DRIVE", WORKSPACE_ID, "ACTIVE"),
+    connection(CONNECTION_DRIVE_DISABLED_ID, "GOOGLE_DRIVE", WORKSPACE_ID, "DISABLED"),
+    { ...connection(CONNECTION_DRIVE_LOCKED_ID, "GOOGLE_DRIVE", WORKSPACE_ID, "ACTIVE"), canAttach: false },
+    connection(CONNECTION_CALENDAR_ID, "GOOGLE_CALENDAR", WORKSPACE_ID, "ACTIVE"),
+    connection(CONNECTION_GMAIL_ID, "GMAIL", WORKSPACE_ID, "ACTIVE"),
+  ];
+
+  /** Opens the builder on a workflow made of `specs`; the returned state holds the last PUT /draft definition. */
+  async function openBuilder(page: Page, specs: NodeSpec[], edges: Edge[] = []) {
+    const state: { saved?: Definition } = {};
+    const detail = (definition: Definition) => ({
+      workflowId: WORKFLOW_ID,
+      name: "Week 4 new nodes",
+      status: "DRAFT",
+      schemaVersion: "1.0",
+      currentVersionId: null,
+      createdAt: "2026-08-01T00:00:00Z",
+      updatedAt: "2026-08-01T00:00:00Z",
+      definition: { schemaVersion: "1.0", ...definition, variables: {} },
+      editorState: {
+        nodes: Object.fromEntries(
+          definition.nodes.map((item, index) => [item.id, { name: item.id, position: { x: index * 340, y: (index % 2) * 160 } }]),
+        ),
+      },
+    });
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) => fulfillJson(route, driveConnections()));
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/draft") && route.request().method() === "PUT") {
+        state.saved = (route.request().postDataJSON() as { definition: Definition }).definition;
+        return fulfillJson(route, detail(state.saved));
+      }
+      if (url.pathname.endsWith(`/workflows/${WORKFLOW_ID}`)) return fulfillJson(route, detail({ nodes: specs, edges }));
+      return fulfillJson(route, pageResult([]));
+    });
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+    return state;
+  }
+
+  async function saveDraft(page: Page) {
+    const saved = page.waitForResponse((response) => response.request().method() === "PUT" && response.url().endsWith("/draft"));
+    await page.getByTestId("workflow-save-inspector").click();
+    await saved;
+  }
+
+  const savedConfig = (state: { saved?: Definition }, id: string) => state.saved?.nodes.find((item) => item.id === id)?.config;
+
+  test("Google Drive lists only attachable ACTIVE Drive connections and validates upload content", async ({ page }) => {
+    const state = await openBuilder(page, [
+      { id: "manual", type: "trigger.manual", config: {} },
+      { id: "drive", type: "google.drive", config: { connectionId: CONNECTION_DRIVE_ID, operation: "upload", content: "hello" } },
+    ], [{ id: "manual-drive", source: "manual", target: "drive" }]);
+    const drive = page.locator(node("google.drive"));
+
+    await drive.click();
+    const options = await page.getByTestId("field-connectionId").locator("option").evaluateAll((items) => items.map((item) => item.getAttribute("value")));
+    expect(options).toEqual(["", CONNECTION_DRIVE_ID]);
+    await expect(drive).toHaveAttribute("data-readiness", "not-configured");
+
+    await page.getByTestId("field-name").fill("notes.txt");
+    await expect(drive).toHaveAttribute("data-readiness", "ready");
+
+    await page.getByTestId("field-file").fill("{{ trigger.input.file }}");
+    await expect(drive).toHaveAttribute("data-readiness", "not-configured");
+    await page.getByTestId("field-file").fill("");
+    await expect(drive).toHaveAttribute("data-readiness", "ready");
+
+    await saveDraft(page);
+    expect(savedConfig(state, "drive")).toEqual({ connectionId: CONNECTION_DRIVE_ID, operation: "upload", content: "hello", name: "notes.txt" });
+
+    // Friendly option names; the saved value stays the raw enum.
+    await expect(page.getByTestId("field-operation")).toContainText("Upload a file");
+    await expect(page.getByTestId("field-operation")).toContainText("List files");
+    await page.getByTestId("field-operation").selectOption("list");
+    await expect(page.getByTestId("field-folderId")).toBeVisible();
+    await expect(page.getByTestId("field-nameContains")).toBeVisible();
+    await expect(page.getByTestId("field-content")).toHaveCount(0);
+    await page.getByTestId("field-folderId").fill("folder-1");
+    await page.getByTestId("field-nameContains").fill("report");
+    await page.getByTestId("field-pageSize").fill("20");
+    await expect(drive).toHaveAttribute("data-readiness", "ready");
+    await saveDraft(page);
+    expect(savedConfig(state, "drive")).toMatchObject({
+      connectionId: CONNECTION_DRIVE_ID,
+      operation: "list",
+      folderId: "folder-1",
+      nameContains: "report",
+      pageSize: 20,
+    });
+  });
+
+  test("Google Calendar create needs title, start and end; list needs nothing", async ({ page }) => {
+    const state = await openBuilder(page, [
+      { id: "manual", type: "trigger.manual", config: {} },
+      { id: "calendar", type: "google.calendar", config: { connectionId: CONNECTION_CALENDAR_ID, operation: "create" } },
+    ], [{ id: "manual-calendar", source: "manual", target: "calendar" }]);
+    const calendar = page.locator(node("google.calendar"));
+
+    await calendar.click();
+    await expect(calendar).toHaveAttribute("data-readiness", "not-configured");
+    await page.getByTestId("field-summary").fill("Kickoff");
+    await page.getByTestId("field-start").fill("2026-10-07T09:00:00+07:00");
+    await expect(calendar).toHaveAttribute("data-readiness", "not-configured");
+    await page.getByTestId("field-end").fill("2026-10-07T10:00:00+07:00");
+    await expect(calendar).toHaveAttribute("data-readiness", "ready");
+    await page.getByTestId("field-attendees").fill("a@x.test, b@x.test");
+    await page.getByTestId("field-sendInvitations").check();
+
+    await saveDraft(page);
+    expect(savedConfig(state, "calendar")).toEqual({
+      connectionId: CONNECTION_CALENDAR_ID,
+      operation: "create",
+      summary: "Kickoff",
+      start: "2026-10-07T09:00:00+07:00",
+      end: "2026-10-07T10:00:00+07:00",
+      attendees: ["a@x.test", "b@x.test"],
+      sendInvitations: true,
+    });
+
+    await page.getByTestId("field-operation").selectOption("list");
+    await expect(page.getByTestId("field-summary")).toHaveCount(0);
+    await page.getByTestId("field-maxResults").fill("5");
+    await expect(calendar).toHaveAttribute("data-readiness", "ready");
+    await saveDraft(page);
+    expect(savedConfig(state, "calendar")).toMatchObject({ operation: "list", maxResults: 5 });
+  });
+
+  test("Gmail trigger saves its connection, query and numeric poll interval", async ({ page }) => {
+    const state = await openBuilder(page, [{ id: "gmail", type: "trigger.gmail", config: {} }]);
+    const gmail = page.locator(node("trigger.gmail"));
+
+    await gmail.click();
+    await expect(gmail).toHaveAttribute("data-readiness", "not-configured");
+    await page.getByTestId("field-connectionId").selectOption(CONNECTION_GMAIL_ID);
+    await page.getByTestId("field-query").fill("from:boss@x.test has:attachment");
+    await page.getByTestId("field-pollIntervalMinutes").fill("15");
+    await expect(gmail).toHaveAttribute("data-readiness", "ready");
+
+    await saveDraft(page);
+    expect(savedConfig(state, "gmail")).toEqual({
+      connectionId: CONNECTION_GMAIL_ID,
+      query: "from:boss@x.test has:attachment",
+      pollIntervalMinutes: 15,
+    });
+  });
+
+  test("AI generate needs a prompt and saves instructions and a numeric max length", async ({ page }) => {
+    const state = await openBuilder(page, [
+      { id: "manual", type: "trigger.manual", config: {} },
+      { id: "ai", type: "ai.generate", config: { prompt: "" } },
+    ], [{ id: "manual-ai", source: "manual", target: "ai" }]);
+    const ai = page.locator(node("ai.generate"));
+
+    await ai.click();
+    await expect(ai).toHaveAttribute("data-readiness", "not-configured");
+    await page.getByTestId("field-prompt").fill("Summarize {{ trigger.input.text }}");
+    await expect(ai).toHaveAttribute("data-readiness", "ready");
+    await page.getByTestId("field-instructions").fill("Be brief");
+    await page.getByTestId("field-maxLength").fill("300");
+
+    await saveDraft(page);
+    expect(savedConfig(state, "ai")).toEqual({
+      prompt: "Summarize {{ trigger.input.text }}",
+      instructions: "Be brief",
+      maxLength: 300,
+    });
+  });
+
+  test("Switch exposes one port per case plus Default, rejects bad cases and prunes removed ports", async ({ page }) => {
+    const state = await openBuilder(page, [
+      { id: "manual", type: "trigger.manual", config: {} },
+      { id: "switch", type: "logic.switch", config: { value: "{{ trigger.input.status }}", cases: ["paid", "refunded"] } },
+      { id: "after-refund", type: "data.set", config: { fields: { a: "1" } } },
+      { id: "after-default", type: "data.set", config: { fields: { b: "2" } } },
+    ], [
+      { id: "manual-switch", source: "manual", target: "switch" },
+      { id: "switch-refund", source: "switch", target: "after-refund", sourcePort: "refunded" },
+      { id: "switch-default", source: "switch", target: "after-default", sourcePort: "default" },
+    ]);
+    const sw = page.locator(node("logic.switch"));
+
+    await expect(sw).toHaveAttribute("data-readiness", "ready");
+    await expect(page.getByTestId("condition-port-label-paid")).toHaveText("paid");
+    await expect(page.getByTestId("condition-port-label-refunded")).toHaveText("refunded");
+    await expect(page.getByTestId("condition-port-label-default")).toHaveText("Default");
+    await expect(page.getByTestId("condition-source-paid")).toHaveCount(1);
+
+    await sw.click();
+    // "default" is reserved and a duplicate is rejected; each shows an alert and blocks readiness.
+    await page.getByTestId("switch-add").click();
+    await page.getByLabel("Case 3", { exact: true }).fill("default");
+    await expect(page.getByRole("alert")).toContainText("reserved");
+    await expect(sw).toHaveAttribute("data-readiness", "not-configured");
+    await page.getByLabel("Case 3", { exact: true }).fill("paid");
+    await expect(page.getByRole("alert")).toContainText("Duplicate");
+    await expect(sw).toHaveAttribute("data-readiness", "not-configured");
+    await page.getByLabel("Remove case 3").click();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(sw).toHaveAttribute("data-readiness", "ready");
+
+    // Removing "refunded" drops its edge from the canvas; the default edge stays.
+    await page.getByLabel("Remove case 2").click();
+    await expect(page.getByTestId("condition-port-label-refunded")).toHaveCount(0);
+    await saveDraft(page);
+    expect(savedConfig(state, "switch")).toEqual({ value: "{{ trigger.input.status }}", cases: ["paid"] });
+    const edges = state.saved?.edges ?? [];
+    expect(edges.find((edge) => edge.target === "after-refund")).toBeUndefined();
+    expect(edges.find((edge) => edge.target === "after-default")).toMatchObject({ source: "switch", sourcePort: "default" });
+    expect(edges.find((edge) => edge.target === "switch")).toBeDefined();
+  });
+
+  test("data.set saves named fields, flags a repeated name, supports a mapping and needs content", async ({ page }) => {
+    const state = await openBuilder(page, [
+      { id: "manual", type: "trigger.manual", config: {} },
+      { id: "set", type: "data.set", config: { fields: {} } },
+    ], [{ id: "manual-set", source: "manual", target: "set" }]);
+    const set = page.locator(node("data.set"));
+
+    await set.click();
+    await expect(set).toHaveAttribute("data-readiness", "not-configured");
+    await page.getByTestId("data-set-add").click();
+    await page.getByLabel("Field 1 name").fill("email");
+    await page.getByLabel("Value type of field 1").selectOption("mapping");
+    await page.getByLabel("Field 1 value").fill("{{ trigger.input.email }}");
+    await page.getByTestId("data-set-add").click();
+    await page.getByLabel("Field 2 name").fill("plan");
+    await page.getByLabel("Field 2 value").fill("pro");
+    await expect(set).toHaveAttribute("data-readiness", "ready");
+    await saveDraft(page);
+    expect(savedConfig(state, "set")).toEqual({ fields: { email: "{{ trigger.input.email }}", plan: "pro" } });
+
+    // Number is saved as a JSON number and Yes/No as a boolean; a text value that looks numeric stays text.
+    await page.getByTestId("data-set-add").click();
+    await page.getByLabel("Field 3 name").fill("count");
+    await page.getByLabel("Value type of field 3").selectOption("number");
+    await page.getByLabel("Field 3 value").fill("42");
+    await page.getByTestId("data-set-add").click();
+    await page.getByLabel("Field 4 name").fill("active");
+    await page.getByLabel("Value type of field 4").selectOption("boolean");
+    await page.getByLabel("Field 4 value").selectOption("false");
+    await page.getByTestId("data-set-add").click();
+    await page.getByLabel("Field 5 name").fill("code");
+    await page.getByLabel("Field 5 value").fill("007");
+    await saveDraft(page);
+    expect(savedConfig(state, "set")).toEqual({
+      fields: { email: "{{ trigger.input.email }}", plan: "pro", count: 42, active: false, code: "007" },
+    });
+
+    // An invalid number shows a friendly error and is left out of the saved fields until fixed.
+    await page.getByLabel("Field 3 value").fill("forty");
+    await expect(page.getByRole("alert")).toContainText("Enter a number");
+    await saveDraft(page);
+    expect(savedConfig(state, "set")).toEqual({
+      fields: { email: "{{ trigger.input.email }}", plan: "pro", active: false, code: "007" },
+    });
+    await page.getByLabel("Field 3 value").fill("3.5");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await saveDraft(page);
+    expect((savedConfig(state, "set") as { fields: Record<string, unknown> }).fields.count).toBe(3.5);
+    for (let i = 0; i < 3; i += 1) await page.getByLabel("Remove field 3").click();
+
+    await page.getByLabel("Field 2 name").fill("email");
+    await expect(page.getByRole("alert")).toContainText("Duplicate");
+    await page.getByLabel("Field 2 name").fill("plan");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+
+    await page.getByTestId("data-set-mode").selectOption("mapping");
+    await page.getByTestId("data-set-mapping").fill("{{ nodes.lookup.output.rows[0] }}");
+    await expect(set).toHaveAttribute("data-readiness", "ready");
+    await saveDraft(page);
+    expect(savedConfig(state, "set")).toEqual({ fields: "{{ nodes.lookup.output.rows[0] }}" });
+
+    await page.getByTestId("data-set-mapping").fill("");
+    await expect(set).toHaveAttribute("data-readiness", "not-configured");
+    await page.getByTestId("data-set-mode").selectOption("list");
+    await page.getByLabel("Remove field 1").click();
+    await page.getByLabel("Remove field 1").click();
+    await expect(page.getByTestId("data-set-key")).toHaveCount(0);
+    await expect(set).toHaveAttribute("data-readiness", "not-configured");
+  });
+
+  test("data.set infers the value type of an existing config and keeps advanced values unchanged", async ({ page }) => {
+    const nested = { a: [1, 2], b: { c: true } };
+    const state = await openBuilder(page, [
+      { id: "manual", type: "trigger.manual", config: {} },
+      { id: "set", type: "data.set", config: { fields: { name: "Ann", age: 30, vip: true, email: "{{ trigger.input.email }}", extra: nested } } },
+    ], [{ id: "manual-set", source: "manual", target: "set" }]);
+
+    await page.locator(node("data.set")).click();
+    const types = page.getByTestId("data-set-type");
+    await expect(types).toHaveCount(4);
+    await expect(types.nth(0)).toHaveValue("text");
+    await expect(types.nth(1)).toHaveValue("number");
+    await expect(types.nth(2)).toHaveValue("boolean");
+    await expect(types.nth(3)).toHaveValue("mapping");
+    await expect(page.getByLabel("Field 2 value")).toHaveValue("30");
+    await expect(page.getByLabel("Field 3 value")).toHaveValue("true");
+    await expect(page.getByTestId("data-set-advanced")).toHaveText("Advanced value, kept as is.");
+
+    await page.getByLabel("Field 1 value").fill("Bob");
+    await saveDraft(page);
+    expect(savedConfig(state, "set")).toEqual({
+      fields: { name: "Bob", age: 30, vip: true, email: "{{ trigger.input.email }}", extra: nested },
+    });
+  });
+
+  test("Connections page offers Google Calendar and Drive and lists them without a parse error", async ({ page }) => {
+    await installAuthFixture(page);
+    let createBody: { provider?: string } = {};
+    let items = driveConnections();
+    await page.route("**/api/v1/workspaces/*/connections", async (route) => {
+      if (route.request().method() === "POST") {
+        createBody = route.request().postDataJSON() as { provider?: string };
+        const created = connection(CONNECTION_DRIVE_ID, "GOOGLE_DRIVE");
+        items = [created];
+        return fulfillJson(route, created, 201);
+      }
+      return fulfillJson(route, items);
+    });
+    await gotoAuthenticatedConnections(page);
+    await expect(page.getByTestId(`connection-row-${CONNECTION_DRIVE_ID}`)).toContainText("Team Drive");
+    await expect(page.getByTestId(`connection-row-${CONNECTION_CALENDAR_ID}`)).toContainText("Team Calendar");
+    await expect(page.getByText(/invalid connection response/i)).toHaveCount(0);
+
+    await page.getByTestId("connections-create-open").click();
+    const providers = await page.getByTestId("connection-create-provider").locator("option").evaluateAll((list) => list.map((item) => item.getAttribute("value")));
+    expect(providers).toEqual(expect.arrayContaining(["GOOGLE_CALENDAR", "GOOGLE_DRIVE"]));
+    await page.getByTestId("connection-create-name").fill("Team Drive");
+    await page.getByTestId("connection-create-provider").selectOption("GOOGLE_DRIVE");
+    await page.getByTestId("connection-create-submit").click();
+    await expect(page.getByTestId(`connection-status-${CONNECTION_DRIVE_ID}`)).toHaveAttribute("data-status", "DISABLED");
+    expect(createBody.provider).toBe("GOOGLE_DRIVE");
+  });
+
+  test("the add-step palette offers the six new nodes", async ({ page }) => {
+    await openBuilder(page, [{ id: "manual", type: "trigger.manual", config: {} }]);
+    await page.getByTestId("workflow-add-step").click();
+    for (const type of ["trigger.gmail", "google.drive", "google.calendar", "ai.generate", "logic.switch", "data.set"]) {
+      await expect(page.locator(`[data-testid="workflow-palette-item"][data-node-type="${type}"]`)).toHaveCount(1);
+    }
+  });
+});
+
+test.describe("workflow builder Telegram trigger", () => {
+  const WORKFLOW_ID = "30000000-0000-4000-8000-000000000006";
+  const TG_ACTIVE_ID = "20000000-0000-4000-8000-000000000031";
+  const TG_DISABLED_ID = "20000000-0000-4000-8000-000000000032";
+  const TG_LOCKED_ID = "20000000-0000-4000-8000-000000000033";
+  const triggerNode = '[data-testid="workflow-node"][data-node-type="trigger.telegram"]';
+  let config: Record<string, unknown>;
+
+  const detail = () => ({
+    workflowId: WORKFLOW_ID,
+    name: "Telegram trigger",
+    status: "DRAFT",
+    schemaVersion: "1.0",
+    currentVersionId: null,
+    createdAt: "2026-08-01T00:00:00Z",
+    updatedAt: "2026-08-01T00:00:00Z",
+    definition: {
+      schemaVersion: "1.0",
+      nodes: [{ id: "tg", type: "trigger.telegram", config }],
+      edges: [],
+      variables: {},
+    },
+    editorState: { nodes: { tg: { name: "tg", position: { x: 0, y: 0 } } } },
+  });
+
+  test("lists only ACTIVE attachable Telegram bots, gates readiness on the choice and saves it", async ({ page }) => {
+    config = {};
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, [
+        { ...connection(TG_ACTIVE_ID, "TELEGRAM", WORKSPACE_ID, "ACTIVE"), name: "Support bot" },
+        { ...connection(TG_DISABLED_ID, "TELEGRAM", WORKSPACE_ID, "DISABLED"), name: "Disabled bot" },
+        { ...connection(TG_LOCKED_ID, "TELEGRAM", WORKSPACE_ID, "ACTIVE"), name: "Locked bot", canAttach: false },
+        connection(CONNECTION_GMAIL_ID, "GMAIL", WORKSPACE_ID, "ACTIVE"),
+      ]),
+    );
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/draft") && route.request().method() === "PUT") {
+        config = (route.request().postDataJSON() as { definition: { nodes: Array<{ config: Record<string, unknown> }> } })
+          .definition.nodes[0].config;
+        return fulfillJson(route, detail());
+      }
+      if (url.pathname.endsWith(`/workflows/${WORKFLOW_ID}`)) return fulfillJson(route, detail());
+      return fulfillJson(route, pageResult([]));
+    });
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+
+    await page.locator(triggerNode).click();
+    await expect(page.locator(triggerNode)).toHaveAttribute("data-readiness", "not-configured");
+    await expect(page.getByTestId("integration-readiness")).toContainText("select a Telegram bot connection");
+    await expect(page.getByTestId("publish-blocker-summary")).toContainText("select a Telegram bot connection");
+    await expect(page.getByTestId("telegram-trigger-hint")).toContainText("WORKFLOW_PUBLIC_BASE_URL");
+    await expect(page.getByTestId("add-connection-TELEGRAM")).toHaveAttribute("href", "/workspace/connections");
+
+    const select = page.getByLabel("Telegram bot connection");
+    await expect(select.locator("option")).toHaveCount(2);
+    await expect(select).toContainText("Support bot");
+    await expect(select).not.toContainText("Disabled bot");
+    await expect(select).not.toContainText("Locked bot");
+    await select.selectOption(TG_ACTIVE_ID);
+    await expect(page.locator(triggerNode)).toHaveAttribute("data-readiness", "ready");
+    await expect(page.getByTestId("integration-readiness")).toHaveCount(0);
+    await expect(page.getByTestId("publish-blocker-summary")).toHaveCount(0);
+
+    const saved = page.waitForResponse((response) => response.request().method() === "PUT" && response.url().endsWith("/draft"));
+    await page.getByTestId("workflow-save-inspector").click();
+    await saved;
+    expect(config).toEqual({ connectionId: TG_ACTIVE_ID });
   });
 });

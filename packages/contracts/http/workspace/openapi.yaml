@@ -906,7 +906,10 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     InvalidState:
-      description: Resource state does not allow the requested operation.
+      description: >-
+        Resource state does not allow the requested operation. For the internal resolve route the
+        additive code CONNECTION_RECONNECT_REQUIRED means the stored Google authorization is missing
+        required scopes or was rejected; the user must reconnect the connection.
       content:
         application/json:
           schema:
@@ -1067,7 +1070,7 @@ components:
           format: date-time
     ConnectionProvider:
       type: string
-      enum: [TELEGRAM, HTTP, GMAIL, GOOGLE_SHEETS]
+      enum: [TELEGRAM, HTTP, GMAIL, GOOGLE_SHEETS, GOOGLE_CALENDAR, GOOGLE_DRIVE]
     ConnectionAuthType:
       type: string
       enum: [NONE, TOKEN, API_KEY, BASIC, OAUTH2]

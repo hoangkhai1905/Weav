@@ -1,0 +1,164 @@
+openapi: 3.1.0
+info:
+  title: Weav API Gateway Assistant API
+  version: 1.0.0
+  description: >-
+    Gateway-scoped contract for the AI assistant routes. Kept apart from
+    openapi.yaml, which is pinned to the twenty Workspace operations by a
+    gateway e2e test. Request and item schemas are shared with the AI service
+    contract; gateway errors use the same envelope as openapi.yaml.
+servers:
+  - url: http://localhost:3000
+    description: Local API Gateway
+tags:
+  - name: Assistant
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/assistant/chat:
+    post:
+      tags: [Assistant]
+      operationId: gatewayAssistantChat
+      summary: Chat with the workflow assistant (server-sent events)
+      description: >-
+        Requires the caller's access token, which the gateway forwards to the
+        AI service. Body limit 256 KiB, deadline 75 s, per-user `assistant`
+        rate limit. Without `conversationId` a new conversation is created;
+        with one it must belong to the caller and to `workspaceId`. The
+        response is an unbuffered, uncompressed `text/event-stream` of
+        `event: <name>` / `data: <json>` frames, in this order:
+        `conversation` {conversationId} (always first); then any of `delta`
+        {text}, `tool_call` {name, arguments}, `tool_result` {name, ok} and
+        `draft` {name, definition, layout}; then exactly one terminal event,
+        `done` {} or `error` {code, message}. Errors before the stream starts
+        are normal JSON gateway errors (upstream text is never relayed).
+        A `draft` is a proposal only: the assistant never saves anything. The
+        client MUST show it to the user and may persist it only through the
+        normal workflow create/save API after the user confirms.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../ai/openapi.yaml#/components/schemas/AssistantChatRequest"
+      responses:
+        "200":
+          description: Server-sent event stream.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "404": { $ref: "#/components/responses/GatewayAssistantError" }
+        "413": { $ref: "#/components/responses/GatewayAssistantError" }
+        "429": { $ref: "#/components/responses/GatewayAssistantError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+  /api/v1/assistant/conversations:
+    get:
+      tags: [Assistant]
+      operationId: gatewayAssistantListConversations
+      summary: List the caller's assistant conversations in a workspace, newest first
+      description: >-
+        Only `workspaceId`, `limit` and `before` are forwarded; other query
+        parameters are dropped. Page forward with `before` = the last item's
+        `updatedAt`. Conversations are private to the user who created them.
+      parameters:
+        - { name: workspaceId, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: before, in: query, schema: { type: string, format: date-time } }
+      responses:
+        "200":
+          description: Conversations ordered by `updatedAt` descending.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "../ai/openapi.yaml#/components/schemas/AssistantConversation"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "429": { $ref: "#/components/responses/GatewayAssistantError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+  /api/v1/assistant/conversations/{conversationId}/messages:
+    get:
+      tags: [Assistant]
+      operationId: gatewayAssistantListMessages
+      summary: Messages of one conversation (oldest first, latest 100)
+      parameters:
+        - { name: conversationId, in: path, required: true, description: "Must be a uuid; a malformed id is rejected by the gateway with 400 (an unknown or foreign uuid is 404).", schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The conversation and its messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversationId, workspaceId, title, messages]
+                properties:
+                  conversationId: { type: string, format: uuid }
+                  workspaceId: { type: string, format: uuid }
+                  title: { type: string }
+                  messages:
+                    type: array
+                    maxItems: 100
+                    items:
+                      $ref: "../ai/openapi.yaml#/components/schemas/AssistantMessage"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "404": { $ref: "#/components/responses/GatewayAssistantError" }
+        "429": { $ref: "#/components/responses/GatewayAssistantError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+  /api/v1/assistant/conversations/{conversationId}:
+    delete:
+      tags: [Assistant]
+      operationId: gatewayAssistantDeleteConversation
+      summary: Delete one of the caller's conversations
+      parameters:
+        - { name: conversationId, in: path, required: true, description: "Must be a uuid; a malformed id is rejected by the gateway with 400 (an unknown or foreign uuid is 404).", schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "404": { $ref: "#/components/responses/GatewayAssistantError" }
+        "429": { $ref: "#/components/responses/GatewayAssistantError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    GatewayBadRequest:
+      $ref: "openapi.yaml#/components/responses/GatewayBadRequest"
+    GatewayUnauthorized:
+      $ref: "openapi.yaml#/components/responses/GatewayUnauthorized"
+    GatewayBadGateway:
+      $ref: "openapi.yaml#/components/responses/GatewayBadGateway"
+    GatewayUnavailable:
+      $ref: "openapi.yaml#/components/responses/GatewayUnavailable"
+    GatewayAssistantError:
+      description: >-
+        Mapped assistant failure (404 conversation or workspace not found for
+        the caller, 413 body too large, 429 rate limit or daily quota). The
+        upstream message is never relayed. For 4xx the `error.code` is the
+        upstream code when it is one of INVALID_REQUEST, UNAUTHENTICATED,
+        NOT_FOUND, PAYLOAD_TOO_LARGE, AI_BUSY or AI_QUOTA_EXCEEDED, with a
+        gateway-owned message; otherwise it is the generic gateway code for
+        the status. Clients can therefore tell a 429 `AI_BUSY` (retry shortly)
+        from a 429 `AI_QUOTA_EXCEEDED` (daily quota used up); a 429 from the
+        gateway's own rate limiter carries `TOO_MANY_REQUESTS`. 5xx always use
+        the generic gateway envelope (for example 503 `SERVICE_UNAVAILABLE`,
+        also when the assistant is not configured).
+      content:
+        application/json:
+          schema:
+            $ref: "openapi.yaml#/components/schemas/GatewayErrorResponse"

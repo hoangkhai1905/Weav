@@ -6,6 +6,7 @@ import { LoaderCircle, MoreHorizontal, Plus, RefreshCw, X } from "lucide-react";
 import {
   ConnectionApiError,
   connectionApi,
+  GOOGLE_PROVIDERS,
   type ConnectionResponse,
   type ConnectionStatus,
   type GoogleProvider,
@@ -237,7 +238,7 @@ function ConnectionRow({
   isWorking: boolean;
 }) {
   const isGoogleOAuth =
-    (connection.provider === "GMAIL" || connection.provider === "GOOGLE_SHEETS") && connection.authType === "OAUTH2";
+    (GOOGLE_PROVIDERS as readonly string[]).includes(connection.provider) && connection.authType === "OAUTH2";
   // Primary contextual action: (re)authorize a Google connection that needs it, otherwise verify it.
   const primaryIsOAuth = isGoogleOAuth && (connection.status !== "ACTIVE" || !connection.hasCredential);
   return (
@@ -384,7 +385,7 @@ export function CreateConnectionDialog({
   onCreated,
 }: {
   workspaceId: string;
-  initialProvider?: GoogleProvider;
+  initialProvider?: GoogleProvider | "TELEGRAM";
   submitLabel?: string;
   pendingLabel?: string;
   onClose: () => void;
@@ -394,7 +395,9 @@ export function CreateConnectionDialog({
   const { t } = useI18nStore();
   const createConnection = useCreateConnection();
   const [name, setName] = useState("");
-  const [provider, setProvider] = useState<GoogleProvider>(initialProvider);
+  const [provider, setProvider] = useState<GoogleProvider | "TELEGRAM">(initialProvider);
+  const [token, setToken] = useState("");
+  const isTelegram = provider === "TELEGRAM";
   const [createError, setCreateError] = useState("");
   const [isFinishing, setIsFinishing] = useState(false);
   const busy = createConnection.isPending || isFinishing;
@@ -406,6 +409,10 @@ export function CreateConnectionDialog({
       setCreateError(t("connections.create.validation"));
       return;
     }
+    if (isTelegram && (!token.trim() || token.length > 4096)) {
+      setCreateError(t("connections.create.token_validation"));
+      return;
+    }
     if (busy) return;
 
     const mutationSession = captureNotificationSession();
@@ -413,7 +420,9 @@ export function CreateConnectionDialog({
     try {
       const connection = await createConnection.mutateAsync({
         workspaceId,
-        input: { name: normalizedName, provider, authType: "OAUTH2" },
+        input: provider === "TELEGRAM"
+          ? { name: normalizedName, provider, authType: "TOKEN", token: token.trim() }
+          : { name: normalizedName, provider, authType: "OAUTH2" },
       });
       if (!isCurrentNotificationSession(mutationSession)) return;
       showSuccessToast("toast.connection.created", mutationSession);
@@ -422,6 +431,7 @@ export function CreateConnectionDialog({
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) setCreateError(getErrorMessage(error, t));
     } finally {
+      setToken("");
       setIsFinishing(false);
     }
   };
@@ -489,14 +499,46 @@ export function CreateConnectionDialog({
               data-testid="connection-create-provider"
               value={provider}
               onChange={(event) =>
-                setProvider(event.target.value as GoogleProvider)
+                setProvider(event.target.value as GoogleProvider | "TELEGRAM")
               }
               className={fieldCls}
             >
               <option value="GMAIL">Gmail</option>
               <option value="GOOGLE_SHEETS">Google Sheets</option>
+              <option value="GOOGLE_CALENDAR">Google Calendar</option>
+              <option value="GOOGLE_DRIVE">Google Drive</option>
+              <option value="TELEGRAM">{t("connections.create.telegram_option")}</option>
             </select>
           </div>
+          {isTelegram && (
+            <div>
+              <label
+                htmlFor="connection-create-token"
+                className="mb-1.5 block text-xs font-medium text-text-2"
+              >
+                {t("connections.create.token")}
+              </label>
+              <input
+                id="connection-create-token"
+                data-testid="connection-create-token"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                required
+                maxLength={4096}
+                value={token}
+                onChange={(event) => {
+                  setToken(event.target.value);
+                  setCreateError("");
+                }}
+                aria-describedby="connection-create-token-hint"
+                className={fieldCls}
+              />
+              <p id="connection-create-token-hint" className="mt-1 text-[11px] text-muted-foreground">
+                {t("connections.create.token_hint")}
+              </p>
+            </div>
+          )}
           {createError && (
             <p
               data-testid="connection-create-error"

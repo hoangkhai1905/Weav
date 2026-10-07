@@ -126,7 +126,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function apiBaseUrl(): string {
+export function apiBaseUrl(): string {
   return (
     import.meta.env.VITE_API_GATEWAY_URL ||
     import.meta.env.VITE_API_BASE_URL ||
@@ -432,6 +432,31 @@ export const workflowV1Api = {
     const workflow = await this.getWorkflow(created.workflowId, activeWorkspaceId);
     if (!workflow) throw new WorkflowApiError(502, tr('msg.created_workflow_could_not_be_loaded'));
     return workflow;
+  },
+
+  /** Creates a draft workflow holding a ready-made definition + layout (e.g. an assistant proposal); returns its id. */
+  async createWorkflowFromDefinition(
+    input: { name: string; definition: unknown; layout: Record<string, unknown> },
+    workspaceId?: string,
+  ): Promise<string> {
+    const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
+    const base = `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows`;
+    const { workflowId } = await request<{ workflowId: string }>(base, {
+      method: 'POST',
+      body: JSON.stringify({ name: input.name }),
+    });
+    const { nodes } = definitionToCanvas(input.definition, input.layout);
+    await request<unknown>(`${base}/${encodeURIComponent(workflowId)}/draft`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        name: input.name,
+        definition: input.definition,
+        editorState: {
+          nodes: Object.fromEntries(nodes.map((node) => [node.id, { name: node.name, position: node.position ?? { x: 250, y: 150 } }])),
+        },
+      }),
+    });
+    return workflowId;
   },
 
   async updateWorkflow(id: string, updates: Partial<WorkflowDefinition>, workspaceId?: string): Promise<WorkflowDefinition> {

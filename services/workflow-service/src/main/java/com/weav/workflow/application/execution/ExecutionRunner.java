@@ -7,6 +7,7 @@ import com.weav.workflow.application.port.out.RetryWaitPort;
 import com.weav.workflow.domain.definition.DefinitionValidator;
 import com.weav.workflow.domain.definition.JsonValues;
 import com.weav.workflow.domain.definition.NodeCatalog;
+import com.weav.workflow.domain.definition.NodeConfigSchema;
 import com.weav.workflow.domain.definition.NodeSideEffects;
 import com.weav.workflow.domain.definition.ValidationIssue;
 import com.weav.workflow.domain.definition.WorkflowDefinition;
@@ -366,11 +367,15 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
                 new MappingContext(runtime.snapshot.input(), outputs, runtime.snapshot.definition().variables()),
                 definitionNode.id(), "config");
         if (!(resolved instanceof Map<?, ?> map)) {
+            LOGGER.warn("Node configuration rejected (execution {}, node {}): resolved config is not an object",
+                    runtime.executionId, definitionNode.id());
             throw new ConfigurationFailure();
         }
         Map<String, Object> config = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : map.entrySet()) {
             if (!(entry.getKey() instanceof String key)) {
+                LOGGER.warn("Node configuration rejected (execution {}, node {}): config key is not a string",
+                        runtime.executionId, definitionNode.id());
                 throw new ConfigurationFailure();
             }
             config.put(key, entry.getValue());
@@ -380,11 +385,24 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
                 config.put(field, definitionNode.config().get(field));
             }
         }
+        // Mapped numbers and booleans become text where the field is string-only (e.g. a numeric id into a
+        // subject). ponytail: top-level fields only; array items and nested objects are not coerced.
+        NodeConfigSchema schema = NodeCatalog.schema(definitionNode.type());
+        for (String field : schema == null ? Set.<String>of() : schema.stringOnlyFields()) {
+            if (config.get(field) instanceof Number || config.get(field) instanceof Boolean) {
+                config.put(field, JsonValues.scalarText(config.get(field)));
+            }
+        }
         WorkflowDefinition single = new WorkflowDefinition("1.0",
                 List.of(new WorkflowDefinition.Node(definitionNode.id(), definitionNode.type(), config)),
                 List.of(), Map.of());
         List<ValidationIssue> issues = new DefinitionValidator().validateDraft(single);
         if (!issues.isEmpty()) {
+            // Codes and field paths only: never config values, which may carry user data.
+            LOGGER.warn("Node configuration rejected (execution {}, node {}, type {}, catalog size {}, issues {})",
+                    runtime.executionId, definitionNode.id(), definitionNode.type(),
+                    NodeCatalog.supportedTypes().size(),
+                    issues.stream().map(issue -> issue.code() + "@" + issue.field()).toList());
             throw new ConfigurationFailure();
         }
         return JsonValues.freezeMap(config);
@@ -680,7 +698,10 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
 
     private WorkflowDefinition.Node definitionNode(WorkflowDefinition definition, String nodeId) {
         return definition.nodes().stream().filter(node -> node != null && nodeId.equals(node.id())).findFirst()
-                .orElseThrow(() -> new ConfigurationFailure());
+                .orElseThrow(() -> {
+                    LOGGER.warn("Node {} not found in the definition", nodeId);
+                    return new ConfigurationFailure();
+                });
     }
 
     private static NodeExecution copyNode(NodeExecution source, NodeExecutionStatus status,

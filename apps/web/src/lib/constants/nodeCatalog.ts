@@ -34,7 +34,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'trigger.telegram',
     title: 'Telegram Bot Event',
-    description: 'Telegram trigger; Bot Service contract is not available yet.',
+    description: "Starts the workflow when the workspace's Telegram bot receives a text message.",
     category: 'trigger',
     iconName: 'Send',
     defaultConfig: {},
@@ -54,7 +54,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'email.send',
     title: 'Send Email (Gmail)',
-    description: 'Send a plain-text email from an authorized Gmail connection.',
+    description: 'Send an email (text or HTML, cc/bcc, attachments) from an authorized Gmail connection.',
     category: 'action',
     iconName: 'Mail',
     defaultConfig: { to: '', subject: '', body: '' },
@@ -64,7 +64,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'google.sheets',
     title: 'Google Sheets',
-    description: 'Read or write spreadsheet data using an authorized Workspace connection.',
+    description: 'Read, write or look up spreadsheet rows using an authorized Workspace connection.',
     category: 'action',
     iconName: 'FileSpreadsheet',
     defaultConfig: {
@@ -80,7 +80,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'telegram.send_message',
     title: 'Telegram Send Message',
-    description: 'Telegram sending is unavailable until the Bot/provider contract is implemented.',
+    description: "Send a message through the workspace's Telegram bot.",
     category: 'action',
     iconName: 'Send',
     defaultConfig: { chatId: '', text: '' },
@@ -90,7 +90,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'logic.condition',
     title: 'If / Condition',
-    description: 'Evaluate a declarative JSON predicate and route through true or false.',
+    description: 'Compare values (one condition or several combined with AND/OR) and route through true or false.',
     category: 'logic',
     iconName: 'GitBranch',
     defaultConfig: { left: '', operator: 'eq', right: '' },
@@ -132,6 +132,68 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
     outputs: [{ name: 'summary', type: 'string' }],
   },
   {
+    type: 'trigger.gmail',
+    title: 'New Gmail email',
+    description: 'Start the workflow when a Gmail search finds a new email.',
+    category: 'trigger',
+    iconName: 'Inbox',
+    defaultConfig: { pollIntervalMinutes: 5 },
+    inputs: [],
+    outputs: [{ name: 'input', type: 'object' }],
+  },
+  {
+    type: 'google.drive',
+    title: 'Google Drive',
+    description: 'Upload a file to or list files in Google Drive.',
+    category: 'action',
+    iconName: 'HardDrive',
+    defaultConfig: { operation: 'upload' },
+    inputs: [{ name: 'data', type: 'any' }],
+    outputs: [{ name: 'result', type: 'object' }],
+  },
+  {
+    type: 'google.calendar',
+    title: 'Google Calendar',
+    description: 'Create or list Google Calendar events.',
+    category: 'action',
+    iconName: 'CalendarDays',
+    defaultConfig: { operation: 'create' },
+    inputs: [{ name: 'data', type: 'any' }],
+    outputs: [{ name: 'result', type: 'object' }],
+  },
+  {
+    type: 'logic.switch',
+    title: 'Switch',
+    description: 'Route to the branch whose case equals the value, else default.',
+    category: 'logic',
+    iconName: 'Split',
+    defaultConfig: { value: '', cases: [] },
+    inputs: [{ name: 'value', type: 'any' }],
+    outputs: [],
+    // The case ports come from config.cases (nodeSourcePorts); "default" always exists.
+    sourcePorts: [{ id: 'default', label: 'Default' }],
+  },
+  {
+    type: 'data.set',
+    title: 'Set data',
+    description: 'Build named values from literals and mappings for later steps.',
+    category: 'logic',
+    iconName: 'Braces',
+    defaultConfig: { fields: {} },
+    inputs: [{ name: 'data', type: 'any' }],
+    outputs: [{ name: 'fields', type: 'object' }],
+  },
+  {
+    type: 'ai.generate',
+    title: 'Generate text with AI',
+    description: 'Write text from a prompt and optional instructions.',
+    category: 'ai',
+    iconName: 'WandSparkles',
+    defaultConfig: { prompt: '' },
+    inputs: [{ name: 'prompt', type: 'string' }],
+    outputs: [{ name: 'text', type: 'string' }],
+  },
+  {
     type: 'ocr.extract',
     title: 'OCR Text Extract',
     description: 'Workflow OCR execution is unavailable until service and artifact prerequisites are verified.',
@@ -148,3 +210,12 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
     ],
   },
 ];
+
+/** Output ports of a step: logic.switch has one per case plus "default"; others use the catalog. */
+export const nodeSourcePorts = (type: string, config: Record<string, unknown>): Array<{ id: string; label: string }> | undefined => {
+  if (type === 'logic.switch') {
+    const cases = Array.isArray(config.cases) ? config.cases.filter((item): item is string => typeof item === 'string' && item.trim() !== '' && item !== 'default') : [];
+    return [...new Set(cases)].map((item) => ({ id: item, label: item })).concat({ id: 'default', label: 'Default' });
+  }
+  return NODE_CATALOG.find((item) => item.type === type)?.sourcePorts;
+};

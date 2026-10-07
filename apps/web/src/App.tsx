@@ -9,6 +9,7 @@ import { WorkflowsPage } from './pages/WorkflowsPage';
 import { CreateWorkflowPage } from './pages/CreateWorkflowPage';
 import { WorkflowBuilderPage } from './pages/WorkflowBuilderPage';
 import { AiGeneratorPage } from './pages/AiGeneratorPage';
+import { AssistantPage } from './pages/AssistantPage';
 import { LiveWorkflowExecutionsPage } from './pages/LiveWorkflowExecutionsPage';
 import { LiveExecutionDetailPage } from './pages/LiveExecutionDetailPage';
 import { ConnectionsPage } from './pages/ConnectionsPage';
@@ -83,6 +84,8 @@ export function App() {
         {/* AI Generator */}
         <Route path="/ai" element={<Navigate to="/ai/workflow-generator" replace />} />
         <Route path="/ai/workflow-generator" element={<AiGeneratorPage />} />
+
+        <Route path="/assistant" element={<AssistantPage />} />
 
         {/* Telegram */}
         <Route path="/telegram" element={<TelegramPage />} />

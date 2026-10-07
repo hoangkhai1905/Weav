@@ -98,9 +98,9 @@ test.describe('Vietnamese and English web localization', () => {
     await expect(page.getByTestId('workspace-tab-connections')).toHaveText('Kết nối');
     await page.getByTestId('connections-create-open').click();
     const dialog = page.getByTestId('connection-create-dialog');
-    await expect(dialog.getByRole('heading', { name: 'Thêm kết nối Google' })).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'Thêm kết nối', exact: true })).toBeVisible();
     await expect(dialog.getByLabel('Tên kết nối')).toBeVisible();
-    await expect(dialog.getByLabel('Dịch vụ Google')).toBeVisible();
+    await expect(dialog.getByLabel('Dịch vụ', { exact: true })).toBeVisible();
     await expect(dialog).not.toContainText('connections.create.');
   });
 

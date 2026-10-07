@@ -76,8 +76,9 @@ public class WorkflowGenerationService {
             default -> invalidIntent();
         };
     }
-    private static List<Map<String,Object>> capabilities() {
-        return NodeCatalog.supportedTypes().stream().sorted().filter(t -> IntegrationReadiness.forType(t).configured())
+    static List<Map<String,Object>> capabilities() {
+        return NodeCatalog.supportedTypes().stream().sorted()
+                .filter(t -> IntegrationReadiness.forType(t).configured())
                 .map(t -> Map.<String,Object>of("type", t, "configFields", NodeCatalog.configFields(t).stream()
                         .filter(f -> !f.equals("connectionId") && !f.equals("schemaDescription")).sorted().toList())).toList();
     }

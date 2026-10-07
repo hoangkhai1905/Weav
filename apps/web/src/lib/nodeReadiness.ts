@@ -18,10 +18,43 @@ export interface NodeReadinessBadge {
 
 const NOT_CONFIGURED: NodeReadinessBadge = { state: 'not-configured', label: 'Not configured', labelKey: 'builder.readiness.not_configured' };
 
-// Fields the Workflow Service requires before publication (DefinitionValidator), besides connectionId.
-const CONNECTION_NODE_FIELDS: Record<string, string[]> = {
-  'google.sheets': ['spreadsheetId', 'range'],
-  'email.send': ['to', 'subject'],
+const isBlank = (value: unknown) => !String(value ?? '').trim();
+
+// Fields the Workflow Service requires before publication (DefinitionValidator and the executors),
+// besides connectionId, for the steps that use a workspace connection.
+const CONNECTION_NODE_FIELDS: Record<string, (config: Record<string, unknown>) => string[]> = {
+  'google.sheets': () => ['spreadsheetId', 'range'],
+  'email.send': () => ['to', 'subject'],
+  'telegram.send_message': () => ['chatId', 'text'],
+  'trigger.telegram': () => [],
+  'trigger.gmail': () => [],
+  // Upload with `content` needs a name; with `file` the name defaults to the file's own.
+  'google.drive': (config) => ['operation', ...(config.operation === 'upload' && !isBlank(config.content) ? ['name'] : [])],
+  'google.calendar': (config) => (isBlank(config.operation) || config.operation === 'create' ? ['summary', 'start', 'end'] : []),
+};
+
+// logic.switch and data.set mirror DefinitionValidator.validateSwitchCases / validateDataSetFields.
+const isSwitchComplete = (config: Record<string, unknown>): boolean => {
+  const cases = config.cases;
+  return config.value !== undefined && !isBlank(config.value) && Array.isArray(cases) && cases.length >= 1 && cases.length <= 20
+    && cases.every((item) => typeof item === 'string' && item.trim() !== '' && item !== 'default' && item.length <= 64 && !item.includes('{{'))
+    && new Set(cases).size === cases.length;
+};
+
+const isDataSetComplete = (config: Record<string, unknown>): boolean => {
+  const fields = config.fields;
+  if (typeof fields === 'string') return fields.includes('{{');
+  return typeof fields === 'object' && fields !== null && !Array.isArray(fields) && Object.keys(fields).length > 0 && Object.keys(fields).length <= 100
+    && Object.keys(fields).every((key) => key.trim() !== '');
+};
+
+/** logic.condition: single {left, operator, right} or multi {combinator, conditions[1..10]} (DefinitionValidator). */
+export const isConditionComplete = (config: Record<string, unknown>): boolean => {
+  if (config.conditions === undefined && config.combinator === undefined) return !isBlank(config.left) && !isBlank(config.right);
+  const conditions = config.conditions;
+  return (config.combinator === 'and' || config.combinator === 'or')
+    && Array.isArray(conditions) && conditions.length >= 1 && conditions.length <= 10
+    && conditions.every((item: { left?: unknown; operator?: unknown; right?: unknown }) => !isBlank(item?.left) && !isBlank(item?.operator) && !isBlank(item?.right));
 };
 
 /**
@@ -35,19 +68,20 @@ export const getNodeReadinessBadge = (
 ): NodeReadinessBadge => {
   if (!SUPPORTED_NODE_TYPES.has(nodeType)) return { state: 'unsupported', label: 'Unsupported', labelKey: 'builder.readiness.unsupported' };
   if (nodeType === 'trigger.webhook') return { state: 'draft', label: 'Not published', labelKey: 'builder.readiness.not_published' };
-  if (
-    nodeType === 'trigger.telegram' ||
-    nodeType === 'telegram.send_message' ||
-    nodeType === 'ocr.extract'
-  ) {
+  if (nodeType === 'ocr.extract') {
     return { state: 'unavailable', label: 'Unavailable', labelKey: 'builder.readiness.unavailable' };
   }
-  const connectionFields = CONNECTION_NODE_FIELDS[nodeType];
+  const connectionFields = CONNECTION_NODE_FIELDS[nodeType]?.(config);
   if (connectionFields) {
     const connectionId = String(config.connectionId ?? '').trim();
-    if (!connectionId || connectionFields.some((field) => !String(config[field] ?? '').trim())) return NOT_CONFIGURED;
+    if (!connectionId || connectionFields.some((field) => isBlank(config[field]))) return NOT_CONFIGURED;
+    // Drive uploads take `content` or `file`, never both (CONFIGURATION_ERROR).
+    if (nodeType === 'google.drive' && !isBlank(config.content) && !isBlank(config.file)) return NOT_CONFIGURED;
+    const operation = String(config.operation ?? 'read');
+    // Lookup needs a column and a value (DefinitionValidator.validateSheetsLookup).
+    if (nodeType === 'google.sheets' && operation === 'lookup' && (isBlank(config.lookupColumn) || isBlank(config.lookupValue))) return NOT_CONFIGURED;
     // Append/update write `values`, a JSON array of rows (GoogleSheetsNodeExecutor.parseValues).
-    if (nodeType === 'google.sheets' && String(config.operation ?? 'read') !== 'read'
+    if (nodeType === 'google.sheets' && (operation === 'append' || operation === 'update')
       && !(Array.isArray(config.values) && config.values.every(Array.isArray)
         && (config.values[0] as unknown[] | undefined)?.some((cell) => String(cell ?? '').trim()))) {
       return NOT_CONFIGURED;
@@ -56,7 +90,12 @@ export const getNodeReadinessBadge = (
       return { state: 'authorization-required', label: 'Authorization required', labelKey: 'builder.readiness.authorization_required' };
     }
   }
-  if (nodeType === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
+  if ((nodeType === 'logic.switch' && !isSwitchComplete(config))
+    || (nodeType === 'data.set' && !isDataSetComplete(config))
+    || (nodeType === 'ai.generate' && isBlank(config.prompt))) {
+    return NOT_CONFIGURED;
+  }
+  if (nodeType === 'logic.condition' && !isConditionComplete(config)) {
     return { state: 'not-configured', label: 'Not configured', labelKey: 'builder.readiness.not_configured' };
   }
   if (nodeType === 'trigger.schedule') {

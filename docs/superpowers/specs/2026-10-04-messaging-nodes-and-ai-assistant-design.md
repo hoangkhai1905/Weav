@@ -84,7 +84,7 @@ The riskiest parts are `flow.loop`/`flow.delay` (engine state and recovery) and 
 
 Thesis deadline: 15 weeks from 2026-08-10, i.e. **2026-11-23**. Feature freeze **2026-11-01**; the remaining weeks are for bug fixes, thesis writing and demo rehearsal.
 
-- **In:** node config JSON Schema; Telegram trigger + send (remove bot-service); `google.calendar`, `google.drive`, `trigger.gmail`; `logic.switch`, `data.set`; `ai.generate`; AI assistant MVP; email node polish (details from K after the FE work).
+- **In:** node config JSON Schema; Telegram trigger + send (remove bot-service); `google.calendar`, `google.drive`, `trigger.gmail`; `logic.switch`, `data.set`; `ai.generate`; AI assistant MVP; email node polish (details: `2026-10-06-email-attachments-design.md`).
 - **Deferred:** Discord and Slack nodes (K, if time is left), `flow.loop`, `flow.delay`, `ai.translate`.
 - **Fallback if behind:** first reduce the assistant (no persisted history, read-only tools + the generation tool), then drop `trigger.gmail`.
 
@@ -92,8 +92,8 @@ Thesis deadline: 15 weeks from 2026-08-10, i.e. **2026-11-23**. Feature freeze *
 | --- | --- |
 | 1 (Oct 5–11) | Node config JSON Schema; Telegram trigger + send; remove bot-service; in parallel: Google Calendar + Drive |
 | 2 (Oct 12–18) | `logic.switch`, `data.set`, `ai.generate`; `trigger.gmail` (polling); assistant tool-calling prototype with DeepSeek |
-| 3 (Oct 19–25) | AI assistant MVP |
-| 4 (Oct 26–Nov 1) | Integrate with the FE, email node polish, real-provider end-to-end journey, demo deployment |
+| 3 (Oct 19–25) | AI assistant MVP (done early, 2026-10-06; see `docs/work_logs/K/ai-service/assistant-mvp.md`) |
+| 4 (Oct 26–Nov 1) | Email node polish + attachments, polish of the other nodes, real-provider end-to-end journey, demo deployment (`2026-10-06-email-attachments-design.md`). FE integration is the FE owner's work (decided 2026-10-06); backend hands over contracts only |
 | 5–7 (Nov 2–23) | Bug fixes only, thesis writing, demo rehearsal |
 
 ## Suggested order (original proposal)

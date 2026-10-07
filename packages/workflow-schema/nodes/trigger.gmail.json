@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/trigger.gmail",
+  "title": "New Gmail email",
+  "description": "Starts the workflow for each new email in the connected Gmail account, checked by polling. Attachments are stored as files and listed in attachments (filename, mimeType, size, fileId, skipped). Needs a Gmail connection that granted read access (reconnect older connections).",
+  "x-weav-node": {
+    "type": "trigger.gmail",
+    "category": "trigger",
+    "label": "New Gmail email",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "connectionId": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Gmail connection",
+      "description": "Gmail connection whose mailbox is watched. Reconnect it if it was created before read access was added.",
+      "x-weav-connection": {
+        "provider": "GMAIL"
+      }
+    },
+    "query": {
+      "type": "string",
+      "maxLength": 500,
+      "title": "Search filter",
+      "description": "Optional Gmail search syntax (for example: from:billing@example.com is:unread). Only matching new emails start a run."
+    },
+    "pollIntervalMinutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1440,
+      "default": 5,
+      "title": "Check every (minutes)",
+      "description": "How often Weav checks for new email. Defaults to 5."
+    }
+  },
+  "required": [
+    "connectionId"
+  ],
+  "additionalProperties": false
+}

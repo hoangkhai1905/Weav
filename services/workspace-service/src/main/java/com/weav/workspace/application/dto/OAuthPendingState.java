@@ -26,7 +26,7 @@ public record OAuthPendingState(
         Objects.requireNonNull(workspaceId, "workspaceId must not be null");
         Objects.requireNonNull(connectionId, "connectionId must not be null");
         Objects.requireNonNull(userId, "userId must not be null");
-        if (provider != ConnectionProvider.GMAIL && provider != ConnectionProvider.GOOGLE_SHEETS) {
+        if (provider == null || !provider.isGoogleOAuth()) {
             throw new IllegalArgumentException("OAuth provider is not supported");
         }
         if (codeVerifier != null && !VERIFIER_SHAPE.matcher(codeVerifier).matches()) {

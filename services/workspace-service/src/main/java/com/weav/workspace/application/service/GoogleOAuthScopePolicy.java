@@ -9,7 +9,10 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-/** Exact, provider-specific V1 Google OAuth scope allow-list. */
+/**
+ * Exact, provider-specific V1 Google OAuth scope allow-list. Gmail asks for gmail.readonly (superset of
+ * metadata) and never gmail.metadata: with it in the token Gmail rejects format=full and q= searches.
+ */
 public final class GoogleOAuthScopePolicy {
 
     private static final String EMAIL_SCOPE = "email";
@@ -17,12 +20,20 @@ public final class GoogleOAuthScopePolicy {
     private static final List<String> GMAIL_SCOPES = List.of(
             "openid",
             EMAIL_SCOPE,
-            "https://www.googleapis.com/auth/gmail.metadata",
+            "https://www.googleapis.com/auth/gmail.readonly",
             "https://www.googleapis.com/auth/gmail.send");
     private static final List<String> SHEETS_SCOPES = List.of(
             "openid",
             EMAIL_SCOPE,
             "https://www.googleapis.com/auth/spreadsheets");
+    private static final List<String> CALENDAR_SCOPES = List.of(
+            "openid",
+            EMAIL_SCOPE,
+            "https://www.googleapis.com/auth/calendar.events");
+    private static final List<String> DRIVE_SCOPES = List.of(
+            "openid",
+            EMAIL_SCOPE,
+            "https://www.googleapis.com/auth/drive.file");
 
     public List<String> requiredScopes(ConnectionProvider provider) {
         if (provider == ConnectionProvider.GMAIL) {
@@ -30,6 +41,12 @@ public final class GoogleOAuthScopePolicy {
         }
         if (provider == ConnectionProvider.GOOGLE_SHEETS) {
             return SHEETS_SCOPES;
+        }
+        if (provider == ConnectionProvider.GOOGLE_CALENDAR) {
+            return CALENDAR_SCOPES;
+        }
+        if (provider == ConnectionProvider.GOOGLE_DRIVE) {
+            return DRIVE_SCOPES;
         }
         throw new BadRequestException("Google OAuth provider is not supported");
     }

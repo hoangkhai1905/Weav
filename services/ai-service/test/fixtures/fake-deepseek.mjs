@@ -56,6 +56,7 @@ function operationOf(system) {
   if (text.includes('classify')) return 'classify';
   if (text.includes('summarize')) return 'summarize';
   if (text.includes('design automation workflows')) return 'generate';
+  if (text.includes('writing task')) return 'prompt';
   return 'unknown';
 }
 
@@ -124,6 +125,8 @@ const server = createServer(async (request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' }).end(envelope(JSON.stringify({ category: categories[0], confidence: 0.9 })));
   } else if (operation === 'summarize') {
     response.writeHead(200, { 'content-type': 'application/json' }).end(envelope(JSON.stringify({ summary: 'Tóm tắt 👍' })));
+  } else if (operation === 'prompt') {
+    response.writeHead(200, { 'content-type': 'application/json' }).end(envelope(JSON.stringify({ text: `Echo: ${user.prompt ?? ''}` })));
   } else {
     response.writeHead(422, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'unknown operation' }));
   }

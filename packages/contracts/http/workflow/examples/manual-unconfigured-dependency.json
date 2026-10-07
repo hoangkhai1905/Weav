@@ -8,10 +8,10 @@
     },
     {
       "id": "dependency",
-      "type": "telegram.send_message",
+      "type": "ai.summarize",
       "config": {
-        "chatId": "workflow-v1-dependency-test",
-        "text": "The unsupported Telegram adapter must fail closed without sending."
+        "inputText": "The AI adapter is not configured, so this node must fail closed without calling anything.",
+        "maxLength": 200
       }
     }
   ],

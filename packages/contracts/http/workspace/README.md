@@ -59,8 +59,8 @@ belong in the write-only credential route. Google OAuth redirect and frontend
 return URLs are server-configured. The callback consumes Redis-backed one-time state, and
 redirects only to the configured frontend URL with an allow-listed outcome.
 Invalid state has no trusted connection identifier, so its failure redirect
-omits `connectionId`. Workspace requests only the Gmail metadata or Sheets
-scopes documented by the service and never grants Gmail send or broad Drive
+omits `connectionId`. Workspace requests only the Gmail read and send or Sheets
+scopes documented by the service and never grants broad Drive
 access.
 
 Workflow-facing `/internal/workspaces/{workspaceId}/connections/{connectionId}`

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/logic.condition",
+  "title": "Condition",
+  "description": "Compares two values (or several conditions combined with and/or) and continues along the true or false branch.",
+  "x-weav-node": {
+    "type": "logic.condition",
+    "category": "logic",
+    "label": "Condition",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "left": {
+      "title": "Left value",
+      "description": "First value to compare.",
+      "x-weav-template": true
+    },
+    "operator": {
+      "type": "string",
+      "title": "Operator",
+      "description": "Comparison: eq, ne, gt, gte, lt or lte. Ordering operators need numbers.",
+      "x-weav-template": true,
+      "enum": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte"
+      ]
+    },
+    "right": {
+      "title": "Right value",
+      "description": "Second value to compare.",
+      "x-weav-template": true
+    },
+    "combinator": {
+      "title": "Combinator",
+      "description": "Multi-condition form: and (all must hold) or or (any may hold). Use with conditions instead of left/operator/right.",
+      "type": "string",
+      "enum": [
+        "and",
+        "or"
+      ]
+    },
+    "conditions": {
+      "title": "Conditions",
+      "description": "Multi-condition form: 1 to 10 objects {left, operator, right}, combined with the combinator. Exclusive with left/operator/right.",
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "minItems": 1
+    }
+  },
+  "required": [],
+  "additionalProperties": false,
+  "x-weav-mutually-exclusive": [
+    [
+      "left",
+      "conditions"
+    ],
+    [
+      "operator",
+      "conditions"
+    ],
+    [
+      "right",
+      "conditions"
+    ]
+  ]
+}

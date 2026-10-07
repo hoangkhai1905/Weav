@@ -4,6 +4,7 @@ import {
   ExceptionFilter,
   HttpException,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { AiError, AiErrorCode } from '../../domain/errors';
@@ -26,7 +27,12 @@ export class AiExceptionFilter implements ExceptionFilter {
     const error =
       exception instanceof AiError
         ? exception
-        : new AiError(this.codeFor(exception));
+        : new AiError(
+            // Only an unmatched route (e.g. assistant flag off) is a 404; the rest keep their mapping.
+            exception instanceof NotFoundException
+              ? 'NOT_FOUND'
+              : this.codeFor(exception),
+          );
     if (error.code === 'INTERNAL_ERROR')
       this.logger.error({
         errorClass: (exception as Error)?.constructor?.name,

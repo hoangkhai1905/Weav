@@ -18,6 +18,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -198,6 +199,169 @@ class GoogleSheetsNodeExecutorTest {
         }
     }
 
+    @Test
+    void appendAndUpdateSendRawUnlessUserEnteredIsRequested() {
+        for (String operation : List.of("append", "update")) {
+            FakeGoogleSheetsClient old = new FakeGoogleSheetsClient();
+            new GoogleSheetsNodeExecutor(old, workspaceWithToken())
+                    .execute(context(1), config(operation, List.of(List.of("a"))));
+            assertNull(old.valueInputOption, "an old config takes the unchanged four-argument path");
+
+            for (String option : List.of("RAW", "USER_ENTERED")) {
+                FakeGoogleSheetsClient sheets = new FakeGoogleSheetsClient();
+                Map<String, Object> config = config(operation, List.of(List.of("=1+1")));
+                config.put("valueInputOption", option);
+                new GoogleSheetsNodeExecutor(sheets, workspaceWithToken()).execute(context(1), config);
+                assertEquals(option, sheets.valueInputOption, operation);
+            }
+            FakeGoogleSheetsClient sheets = new FakeGoogleSheetsClient();
+            Map<String, Object> bad = config(operation, List.of(List.of("a")));
+            bad.put("valueInputOption", "FORMULA");
+            assertConfigurationFailure(new GoogleSheetsNodeExecutor(sheets, workspaceWithToken()), bad);
+            assertEquals(0, sheets.appendCalls + sheets.updateCalls);
+        }
+    }
+
+    private static FakeWorkspace workspaceWithToken() {
+        return new FakeWorkspace(new ResolvedConnection(
+                "GOOGLE_SHEETS", "OAUTH2", Map.of("accessToken", ACCESS_TOKEN)));
+    }
+
+    private static Map<String, Object> lookupConfig(String column, Object value) {
+        Map<String, Object> config = config("lookup", null);
+        config.put("range", "Sheet1!A2:C");
+        config.put("lookupColumn", column);
+        config.put("lookupValue", value);
+        return config;
+    }
+
+    private static NodeExecutor.Result lookup(Map<String, Object> read, Map<String, Object> config) {
+        FakeGoogleSheetsClient sheets = new FakeGoogleSheetsClient();
+        sheets.readResult = read;
+        FakeWorkspace workspace = new FakeWorkspace(new ResolvedConnection(
+                "GOOGLE_SHEETS", "OAUTH2", Map.of("accessToken", ACCESS_TOKEN)));
+        NodeExecutor.Result result = new GoogleSheetsNodeExecutor(sheets, workspace).execute(context(1), config);
+        assertEquals(1, sheets.readCalls);
+        assertEquals(0, sheets.appendCalls + sheets.updateCalls);
+        return result;
+    }
+
+    @Test
+    void lookupReturnsMatchingRowsWithTheirSheetRowNumbers() {
+        Map<String, Object> read = Map.of("range", "Sheet1!A2:C4", "majorDimension", "ROWS", "values", List.of(
+                List.of("ada", "paid", "10"), List.of("bob", "open", "20"), List.of("cy", "paid")));
+
+        Map<?, ?> output = lookup(read, lookupConfig("B", "paid")).output();
+
+        assertEquals(2, output.get("count"));
+        assertEquals(false, output.get("truncated"));
+        assertEquals("Sheet1!A2:C4", output.get("range"));
+        List<?> rows = (List<?>) output.get("rows");
+        assertEquals(Map.of("row", 2, "values", List.of("ada", "paid", "10")), rows.get(0));
+        assertEquals(Map.of("row", 4, "values", List.of("cy", "paid")), rows.get(1));
+    }
+
+    @Test
+    void lookupHonoursTheRangeStartColumnAndMatchesNumbersByDisplayedText() {
+        Map<String, Object> read = Map.of("range", "'My Sheet'!C5:D6", "values", List.of(
+                List.of("x", "y"), List.of("7", "z")));
+
+        Map<?, ?> output = lookup(read, lookupConfig("c", 7)).output();
+
+        assertEquals(1, output.get("count"));
+        assertEquals(6, ((Map<?, ?>) ((List<?>) output.get("rows")).getFirst()).get("row"));
+        // Column B lies left of a range that starts at C.
+        FakeGoogleSheetsClient sheets = new FakeGoogleSheetsClient();
+        sheets.readResult = read;
+        assertConfigurationFailure(new GoogleSheetsNodeExecutor(sheets, new FakeWorkspace(new ResolvedConnection(
+                "GOOGLE_SHEETS", "OAUTH2", Map.of("accessToken", ACCESS_TOKEN)))), lookupConfig("B", "x"));
+    }
+
+    @Test
+    void lookupLimitDefaultsToTenCapsAtOneHundredAndReportsTruncation() {
+        List<List<Object>> rows = new ArrayList<>();
+        for (int i = 0; i < 150; i++) {
+            rows.add(List.of("hit"));
+        }
+        Map<String, Object> read = Map.of("range", "Sheet1!A1:A150", "values", rows);
+
+        Map<?, ?> byDefault = lookup(read, lookupConfig("A", "hit")).output();
+        assertEquals(10, byDefault.get("count"));
+        assertEquals(true, byDefault.get("truncated"));
+
+        Map<String, Object> capped = lookupConfig("A", "hit");
+        capped.put("limit", 100);
+        Map<?, ?> hundred = lookup(read, capped).output();
+        assertEquals(100, hundred.get("count"));
+        assertEquals(true, hundred.get("truncated"));
+
+        Map<String, Object> exact = lookupConfig("A", "hit");
+        exact.put("limit", 100);
+        Map<?, ?> fewRows = lookup(Map.of("range", "Sheet1!A1:A3", "values", List.of(
+                List.of("hit"), List.of("no"), List.of("hit"))), exact).output();
+        assertEquals(2, fewRows.get("count"));
+        assertEquals(false, fewRows.get("truncated"));
+
+        FakeGoogleSheetsClient sheets = new FakeGoogleSheetsClient();
+        FakeWorkspace workspace = new FakeWorkspace(new ResolvedConnection(
+                "GOOGLE_SHEETS", "OAUTH2", Map.of("accessToken", ACCESS_TOKEN)));
+        for (Object limit : List.of(0, 101, -1, 1.5d, "abc")) {
+            Map<String, Object> bad = lookupConfig("A", "hit");
+            bad.put("limit", limit);
+            assertConfigurationFailure(new GoogleSheetsNodeExecutor(sheets, workspace), bad);
+        }
+        assertEquals(0, sheets.readCalls);
+    }
+
+    @Test
+    void lookupWithoutAMatchOrWithBadInputIsEmptyOrAConfigurationFailure() {
+        Map<?, ?> none = lookup(Map.of("range", "Sheet1!A1:A1", "values", List.of(List.of("a"))),
+                lookupConfig("A", "zzz")).output();
+        assertEquals(0, none.get("count"));
+        assertEquals(List.of(), none.get("rows"));
+        assertEquals(0, ((Map<?, ?>) lookup(Map.of("range", "Sheet1!A1:A1"), lookupConfig("A", "a")).output())
+                .get("count"));
+
+        FakeGoogleSheetsClient sheets = new FakeGoogleSheetsClient();
+        FakeWorkspace workspace = new FakeWorkspace(new ResolvedConnection(
+                "GOOGLE_SHEETS", "OAUTH2", Map.of("accessToken", ACCESS_TOKEN)));
+        GoogleSheetsNodeExecutor executor = new GoogleSheetsNodeExecutor(sheets, workspace);
+        assertConfigurationFailure(executor, lookupConfig("1", "a"));
+        assertConfigurationFailure(executor, lookupConfig("", "a"));
+        assertConfigurationFailure(executor, lookupConfig("A", ""));
+        assertConfigurationFailure(executor, lookupConfig("A", List.of("a")));
+        Map<String, Object> noValue = lookupConfig("A", "a");
+        noValue.remove("lookupValue");
+        assertConfigurationFailure(executor, noValue);
+        assertEquals(0, sheets.readCalls);
+    }
+
+    @Test
+    void booleanLookupValueMatchesCheckboxCellsIgnoringCase() {
+        Map<String, Object> read = Map.of("range", "Sheet1!A1:A3", "values", List.of(
+                List.of("TRUE"), List.of("FALSE"), List.of("true")));
+
+        assertEquals(2, lookup(read, lookupConfig("A", true)).output().get("count"));
+        assertEquals(1, lookup(read, lookupConfig("A", false)).output().get("count"));
+        // Text stays an exact match.
+        assertEquals(0, lookup(Map.of("range", "Sheet1!A1:A1", "values", List.of(List.of("Paid"))),
+                lookupConfig("A", "paid")).output().get("count"));
+    }
+
+    @Test
+    void readStillReturnsTheRawProviderPayloadUnchanged() {
+        FakeGoogleSheetsClient sheets = new FakeGoogleSheetsClient();
+        sheets.readResult = Map.of("range", "Sheet1!A1:B1", "values", List.of(List.of("p", "q")));
+        FakeWorkspace workspace = new FakeWorkspace(new ResolvedConnection(
+                "GOOGLE_SHEETS", "OAUTH2", Map.of("accessToken", ACCESS_TOKEN)));
+        Map<String, Object> config = config("read", null);
+        config.put("lookupColumn", "A"); // ignored for read
+
+        Map<?, ?> output = new GoogleSheetsNodeExecutor(sheets, workspace).execute(context(1), config).output();
+
+        assertEquals(Map.of("range", "Sheet1!A1:B1", "values", List.of(List.of("p", "q"))), output);
+    }
+
     private static void assertConfigurationFailure(GoogleSheetsNodeExecutor executor, Map<String, Object> config) {
         NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
                 () -> executor.execute(context(1), config));
@@ -206,7 +370,7 @@ class GoogleSheetsNodeExecutorTest {
     }
 
     private static Map<String, Object> config(String operation, List<List<Object>> values) {
-        var config = new java.util.LinkedHashMap<String, Object>();
+        Map<String, Object> config = new java.util.LinkedHashMap<>();
         config.put("connectionId", CONNECTION_ID.toString());
         config.put("operation", operation);
         config.put("spreadsheetId", "sheet-id");
@@ -236,6 +400,7 @@ class GoogleSheetsNodeExecutorTest {
         private int readCalls;
         private int appendCalls;
         private int updateCalls;
+        private String valueInputOption;
         private Map<String, Object> readResult = Map.of("values", List.of());
         private NodeExecutor.Failure readFailure;
 
@@ -269,6 +434,20 @@ class GoogleSheetsNodeExecutorTest {
             this.values = values;
             capture(spreadsheetId, range, connection);
             return Map.of("updatedRange", range);
+        }
+
+        @Override
+        public Map<String, Object> append(String spreadsheetId, String range, List<List<Object>> values,
+                String valueInputOption, ResolvedConnection connection) {
+            this.valueInputOption = valueInputOption;
+            return append(spreadsheetId, range, values, connection);
+        }
+
+        @Override
+        public Map<String, Object> update(String spreadsheetId, String range, List<List<Object>> values,
+                String valueInputOption, ResolvedConnection connection) {
+            this.valueInputOption = valueInputOption;
+            return update(spreadsheetId, range, values, connection);
         }
 
         private void capture(String spreadsheetId, String range, ResolvedConnection connection) {

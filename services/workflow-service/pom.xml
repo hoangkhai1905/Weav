@@ -31,8 +31,16 @@
 		<resilience4j.version>2.3.0</resilience4j.version>
 		<org.mapstruct.version>1.6.3</org.mapstruct.version>
 		<httpclient5.version>5.6.1</httpclient5.version>
+		<!-- Keep 2.29.x: R2 rejects the default CRC32 request checksums of SDK >= 2.30 unless
+		     requestChecksumCalculation(WHEN_REQUIRED) is set. -->
+		<software.amazon.awssdk.version>2.29.45</software.amazon.awssdk.version>
 	</properties>
 	<dependencies>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>${software.amazon.awssdk.version}</version>
+		</dependency>
 		<dependency>
 			<groupId>io.github.resilience4j</groupId>
 			<artifactId>resilience4j-circuitbreaker</artifactId>
@@ -178,6 +186,19 @@
 	</dependencies>
 
 	<build>
+		<resources>
+			<resource>
+				<directory>src/main/resources</directory>
+			</resource>
+			<!-- Node config schemas shared with the frontend (packages/workflow-schema). -->
+			<resource>
+				<directory>../../packages/workflow-schema/nodes</directory>
+				<targetPath>workflow-schema/nodes</targetPath>
+				<includes>
+					<include>*.json</include>
+				</includes>
+			</resource>
+		</resources>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>

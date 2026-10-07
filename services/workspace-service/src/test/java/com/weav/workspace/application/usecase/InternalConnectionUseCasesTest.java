@@ -15,6 +15,7 @@ import com.weav.workspace.domain.exception.AuthenticationRejectedException;
 import com.weav.workspace.domain.exception.BadRequestException;
 import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.domain.exception.ForbiddenException;
+import com.weav.workspace.domain.exception.ConnectionReconnectRequiredException;
 import com.weav.workspace.domain.exception.InvalidStateException;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
 import com.weav.workspace.domain.model.Connection;
@@ -63,7 +64,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 class InternalConnectionUseCasesTest {
 
-    private static final String GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.metadata";
+    private static final String GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
     private static final String GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
     private static final String SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
     private static final String EMAIL_ALIAS = "https://www.googleapis.com/auth/userinfo.email";
@@ -145,7 +146,7 @@ class InternalConnectionUseCasesTest {
                 .isInstanceOf(InvalidStateException.class)
                 .hasMessage("Connection is not active");
         assertThatThrownBy(() -> resolveConnection.execute(workspace.getId(), invalid.getId()))
-                .isInstanceOf(InvalidStateException.class)
+                .isInstanceOf(ConnectionReconnectRequiredException.class)
                 .hasMessage("Connection is not active");
         assertThatThrownBy(() -> resolveConnection.execute(workspace.getId(), missingCredential.getId()))
                 .isInstanceOf(InvalidStateException.class)
@@ -196,6 +197,23 @@ class InternalConnectionUseCasesTest {
                 .containsEntry("password", "synthetic-password");
         assertThat(telegramResolved.toString()).doesNotContain("synthetic-telegram-token");
         assertThat(basicResolved.toString()).doesNotContain("synthetic-user", "synthetic-password");
+    }
+
+    @Test
+    void gmailConnectionGrantedBeforeReadonlyFailsWithReconnectRequiredCode() {
+        UUID ownerId = UUID.randomUUID();
+        Workspace workspace = createWorkspace(ownerId);
+        Connection connection = createConnection(
+                workspace, ownerId, ConnectionProvider.GMAIL, ConnectionAuthType.OAUTH2,
+                ConnectionStatus.ACTIVE, Map.of());
+        saveGoogleCredential(connection, OLD_ACCESS_TOKEN, OLD_REFRESH_TOKEN,
+                List.of("openid", "email", "https://www.googleapis.com/auth/gmail.metadata", GMAIL_SEND_SCOPE),
+                clock.instant().plusSeconds(60));
+
+        assertThatThrownBy(() -> resolveConnection.execute(workspace.getId(), connection.getId()))
+                .isInstanceOf(ConnectionReconnectRequiredException.class)
+                .extracting("code").isEqualTo("CONNECTION_RECONNECT_REQUIRED");
+        assertThat(googleOAuth.refreshCalls.get()).isZero();
     }
 
     @Test

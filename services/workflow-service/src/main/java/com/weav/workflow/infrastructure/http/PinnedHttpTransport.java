@@ -56,7 +56,22 @@ public class PinnedHttpTransport {
     private static final Pattern HEADER_NAME = Pattern.compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$");
     private static final String GOOGLE_SHEETS_HOST = "sheets.googleapis.com";
     private static final String GMAIL_HOST = "gmail.googleapis.com";
+    private static final String GOOGLE_API_HOST = "www.googleapis.com";
+    private static final Pattern GOOGLE_CALENDAR_EVENTS_PATH = Pattern.compile("^/calendar/v3/calendars/[^/]+/events$");
     private static final String GMAIL_SEND_PATH = "/gmail/v1/users/me/messages/send";
+    private static final String GMAIL_PROFILE_PATH = "/gmail/v1/users/me/profile";
+    private static final String GMAIL_UPLOAD_SEND_PATH = "/upload/gmail/v1/users/me/messages/send";
+    private static final Pattern GMAIL_ATTACHMENT_PATH = Pattern.compile(
+            "^/gmail/v1/users/me/messages/[0-9A-Fa-f]{1,32}/attachments/[A-Za-z0-9_-]{1,2048}$");
+    private static final Pattern GMAIL_THREAD_ID = Pattern.compile("[A-Za-z0-9]{1,64}");
+    private static final String DRIVE_UPLOAD_PATH = "/upload/drive/v3/files";
+    /** Hard ceiling for any per-call byte cap; the default caps stay at 1 MiB. */
+    public static final int MAX_CALL_BYTES = 32 * 1024 * 1024;
+    private static final String GMAIL_MESSAGES_PATH = "/gmail/v1/users/me/messages";
+    private static final Pattern GMAIL_MESSAGE_PATH = Pattern.compile("^/gmail/v1/users/me/messages/[0-9A-Fa-f]{1,32}$");
+    private static final String TELEGRAM_HOST = "api.telegram.org";
+    private static final Set<String> TELEGRAM_METHODS = Set.of("sendMessage", "setWebhook", "deleteWebhook");
+    private static final Pattern TELEGRAM_PATH = Pattern.compile("/bot[0-9]{1,20}:[A-Za-z0-9_-]{1,128}/[A-Za-z]{1,32}");
     private static final Set<String> FORBIDDEN_HEADERS = Set.of(
             "host", "content-length", "transfer-encoding", "connection", "proxy-connection",
             "keep-alive", "te", "trailer", "upgrade", "authorization", "proxy-authorization",
@@ -181,6 +196,178 @@ public class PinnedHttpTransport {
     }
 
     /**
+     * Reads Gmail messages for the polling trigger: GET on the messages list or on one message id (a single hex
+     * segment). The query goes in {@code query}, never in the URI; DNS is approved and pinned here.
+     */
+    public HttpResponse executeGmailGetWithBearerToken(URI uri, Object query, String accessToken) {
+        validateGmailReadUri(uri);
+        if (accessToken == null || accessToken.isBlank() || accessToken.length() > 16 * 1024
+                || accessToken.codePoints().anyMatch(Character::isISOControl)) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Gmail authentication configuration is invalid.", false);
+        }
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "GET", Map.of(),
+                Map.of("Authorization", "Bearer " + accessToken), query, null);
+    }
+
+    /**
+     * Reads the authenticated account's Gmail profile (GET {@code users/me/profile}); the node uses only its
+     * {@code emailAddress}. The URI is fixed and validated here; DNS is approved and pinned.
+     */
+    public HttpResponse executeGmailProfileGetWithBearerToken(URI uri, String accessToken) {
+        validateGmailProfileUri(uri);
+        requireBearerToken(accessToken, "Gmail");
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "GET", Map.of(),
+                Map.of("Authorization", "Bearer " + accessToken), null, null);
+    }
+
+    /**
+     * Calls one Telegram Bot API method. The endpoint is fixed to api.telegram.org over HTTPS; the bot
+     * token is part of the Bot API path (there is no auth header), so the URI is never logged or echoed
+     * in a failure. DNS is approved and pinned here immediately before the request is sent.
+     */
+    public HttpResponse executeTelegramBotApi(URI uri, Object body, Duration timeout) {
+        validateTelegramUri(uri);
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "POST", Map.of(), Map.of(), null, body,
+                timeout == null ? callTimeout : timeout);
+    }
+
+    /**
+     * Executes a Google Calendar or Drive API call with Workspace-owned OAuth credentials. The host is fixed to
+     * {@code www.googleapis.com} and the path to the Calendar events and Drive files endpoints. {@code body} is
+     * JSON-serialized unless it is a {@link RawBody}.
+     */
+    public HttpResponse executeGoogleApiWithBearerToken(
+            URI uri,
+            String method,
+            Object query,
+            Object body,
+            String accessToken) {
+        return executeGoogleApiWithBearerToken(uri, method, query, body, accessToken, maxRequestBytes);
+    }
+
+    /**
+     * Same as the five-argument form, but a POST to the Drive upload endpoint may send up to
+     * {@code uploadMaxRequestBytes} (at most {@link #MAX_CALL_BYTES}); every other endpoint keeps the default cap.
+     */
+    public HttpResponse executeGoogleApiWithBearerToken(
+            URI uri,
+            String method,
+            Object query,
+            Object body,
+            String accessToken,
+            int uploadMaxRequestBytes) {
+        validateGoogleApiUri(uri, method);
+        requireBearerToken(accessToken, "Google");
+        int requestCap = DRIVE_UPLOAD_PATH.equals(uri.getRawPath())
+                ? boundedCap(uploadMaxRequestBytes) : maxRequestBytes;
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, method, Map.of(),
+                Map.of("Authorization", "Bearer " + accessToken), query, body, callTimeout,
+                requestCap, maxResponseBytes, false);
+    }
+
+    /**
+     * Sends one Gmail message as a raw RFC 822 upload. {@code uri} is the upload send URL with
+     * {@code ?uploadType=media} (body {@code message/rfc822}) or {@code ?uploadType=multipart} (body
+     * {@code multipart/related}, see {@link #gmailMultipartRelated}); {@code maxRequestBytes} is this call's request
+     * cap (at most {@link #MAX_CALL_BYTES}).
+     */
+    public HttpResponse executeGmailUploadSendWithBearerToken(
+            URI uri, RawBody body, String accessToken, int maxRequestBytes) {
+        String uploadType = validateGmailUploadSendUri(uri);
+        boolean media = "media".equals(uploadType);
+        if (body == null || body.bytes() == null || body.bytes().length == 0 || body.contentType() == null
+                || !(media ? body.contentType().equalsIgnoreCase("message/rfc822")
+                : body.contentType().toLowerCase(Locale.ROOT).startsWith("multipart/related"))) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID", "The Gmail upload body is invalid.", false);
+        }
+        requireBearerToken(accessToken, "Gmail");
+        int requestCap = boundedCap(maxRequestBytes);
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "POST", Map.of(),
+                Map.of("Authorization", "Bearer " + accessToken), null, body, callTimeout,
+                requestCap, maxResponseBytes, false);
+    }
+
+    /**
+     * Builds the {@code multipart/related} body for {@code uploadType=multipart}: a JSON part carrying
+     * {@code threadId} (reply in thread) and the {@code message/rfc822} part.
+     */
+    public static RawBody gmailMultipartRelated(String threadId, byte[] rfc822) {
+        if (threadId == null || !GMAIL_THREAD_ID.matcher(threadId).matches() || rfc822 == null) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID", "The Gmail thread id is invalid.", false);
+        }
+        String boundary = "weav_" + java.util.UUID.randomUUID().toString().replace("-", "");
+        byte[] head = ("--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{\"threadId\":\""
+                + threadId + "\"}\r\n--" + boundary + "\r\nContent-Type: message/rfc822\r\n\r\n")
+                .getBytes(StandardCharsets.UTF_8);
+        byte[] tail = ("\r\n--" + boundary + "--").getBytes(StandardCharsets.UTF_8);
+        byte[] out = new byte[head.length + rfc822.length + tail.length];
+        System.arraycopy(head, 0, out, 0, head.length);
+        System.arraycopy(rfc822, 0, out, head.length, rfc822.length);
+        System.arraycopy(tail, 0, out, head.length + rfc822.length, tail.length);
+        return new RawBody(out, "multipart/related; boundary=" + boundary);
+    }
+
+    /**
+     * Reads one Gmail message attachment (GET {@code .../messages/{id}/attachments/{attachmentId}}). The JSON
+     * response carries the data as base64url, so {@code maxResponseBytes} must allow about 4/3 of the file size.
+     */
+    public HttpResponse executeGmailAttachmentGetWithBearerToken(URI uri, String accessToken, int maxResponseBytes) {
+        validateGmailAttachmentUri(uri);
+        requireBearerToken(accessToken, "Gmail");
+        int responseCap = boundedCap(maxResponseBytes);
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "GET", Map.of(),
+                Map.of("Authorization", "Bearer " + accessToken), null, null, callTimeout,
+                maxRequestBytes, responseCap, false);
+    }
+
+    /** Result of {@link #downloadPublicFile}: raw bytes, the media type without parameters and a sanitized filename. */
+    public record Download(int status, byte[] bytes, String contentType, String filename) {
+    }
+
+    /**
+     * Downloads a public URL as bytes: GET only, no credentials, through the same SSRF target policy, DNS pinning
+     * and no-redirect rule as {@code http.request}. A non-2xx status is a failure. {@code contentType} and
+     * {@code filename} may be null when the server did not send them.
+     */
+    public Download downloadPublicFile(URI uri, int maxResponseBytes) {
+        int responseCap = boundedCap(maxResponseBytes);
+        return download(targetPolicy.approve(uri), responseCap);
+    }
+
+    Download download(OutboundTargetPolicy.ApprovedTarget target, int responseCap) {
+        HttpResponse response = executeWithAuthentication(target, "GET", Map.of(), Map.of(), null, null, callTimeout,
+                maxRequestBytes, responseCap, true);
+        int status = response.status();
+        if (status < 200 || status >= 300) {
+            boolean transientStatus = status == 408 || status == 429 || status >= 500;
+            throw new NodeExecutor.Failure(
+                    status >= 300 && status < 400 ? "HTTP_REDIRECT_REJECTED"
+                            : transientStatus ? "HTTP_DEPENDENCY_UNAVAILABLE" : "HTTP_BUSINESS_REJECTED",
+                    "The file download was rejected with HTTP status " + status + ".", transientStatus);
+        }
+        String contentType = headerValue(response.headers(), "content-type");
+        if (contentType != null) {
+            int parameters = contentType.indexOf(';');
+            contentType = (parameters < 0 ? contentType : contentType.substring(0, parameters)).strip();
+            contentType = contentType.isEmpty() ? null : contentType;
+        }
+        byte[] bytes = response.data() instanceof byte[] raw ? raw : new byte[0];
+        return new Download(status, bytes, contentType,
+                dispositionFilename(headerValue(response.headers(), "content-disposition")));
+    }
+
+    /** A pre-encoded request body sent as is with its own content type (for example multipart/related). */
+    public record RawBody(byte[] bytes, String contentType) {
+    }
+
+    /**
      * Package-scoped authentication entry point. User supplied headers are
      * validated separately from the short-lived headers created by the node
      * executor, so credential-bearing values cannot be smuggled through node
@@ -193,13 +380,39 @@ public class PinnedHttpTransport {
             Map<String, String> authenticationHeaders,
             Object query,
             Object body) {
+        return executeWithAuthentication(target, method, headers, authenticationHeaders, query, body, callTimeout);
+    }
+
+    private HttpResponse executeWithAuthentication(
+            OutboundTargetPolicy.ApprovedTarget target,
+            String method,
+            Map<String, String> headers,
+            Map<String, String> authenticationHeaders,
+            Object query,
+            Object body,
+            Duration callTimeout) {
+        return executeWithAuthentication(target, method, headers, authenticationHeaders, query, body, callTimeout,
+                maxRequestBytes, maxResponseBytes, false);
+    }
+
+    HttpResponse executeWithAuthentication(
+            OutboundTargetPolicy.ApprovedTarget target,
+            String method,
+            Map<String, String> headers,
+            Map<String, String> authenticationHeaders,
+            Object query,
+            Object body,
+            Duration callTimeout,
+            int maxRequestBytes,
+            int maxResponseBytes,
+            boolean binaryResponse) {
         Objects.requireNonNull(target, "target must not be null");
         String normalizedMethod = normalizeMethod(method);
         Map<String, String> safeHeaders = validateHeaders(headers);
         Map<String, String> safeAuthenticationHeaders = validateAuthenticationHeaders(authenticationHeaders);
         Map<String, String> requestHeaders = mergeHeaders(safeHeaders, safeAuthenticationHeaders);
         URI requestUri = withQuery(target.original(), query);
-        byte[] bodyBytes = serializeBody(body);
+        byte[] bodyBytes = serializeBody(body, maxRequestBytes);
         if (bodyBytes.length > maxRequestBytes) {
             throw new NodeExecutor.Failure("HTTP_REQUEST_TOO_LARGE",
                     "The HTTP request body exceeds the supported size.", false);
@@ -240,7 +453,8 @@ public class PinnedHttpTransport {
         request.setHeader("Connection", "close");
         requestHeaders.forEach(request::setHeader);
         if (body != null) {
-            request.setEntity(new ByteArrayEntity(bodyBytes, ContentType.APPLICATION_JSON));
+            request.setEntity(new ByteArrayEntity(bodyBytes, body instanceof RawBody raw
+                    ? ContentType.parse(raw.contentType()) : ContentType.APPLICATION_JSON));
         }
         AtomicBoolean deadlineExpired = new AtomicBoolean();
 
@@ -269,8 +483,8 @@ public class PinnedHttpTransport {
                     Set<String> activeRequestSecrets = Set.copyOf(safeAuthenticationHeaders.values());
                     HeaderSnapshot responseHeaders = readHeaders(response.getHeaders(), activeRequestSecrets);
                     HttpEntity entity = response.getEntity();
-                    byte[] responseBody = entity == null ? new byte[0] : readBounded(entity);
-                    Object data = decode(entity, responseBody);
+                    byte[] responseBody = entity == null ? new byte[0] : readBounded(entity, maxResponseBytes);
+                    Object data = binaryResponse ? responseBody : decode(entity, responseBody);
                     if (deadlineExpired.get()) {
                         throw timeoutFailure();
                     }
@@ -388,9 +602,12 @@ public class PinnedHttpTransport {
         return Map.copyOf(merged);
     }
 
-    private byte[] serializeBody(Object body) {
+    private byte[] serializeBody(Object body, int maxRequestBytes) {
         if (body == null) {
             return new byte[0];
+        }
+        if (body instanceof RawBody raw) {
+            return raw.bytes();
         }
         BoundedByteArrayOutputStream output = new BoundedByteArrayOutputStream(maxRequestBytes);
         try {
@@ -422,7 +639,13 @@ public class PinnedHttpTransport {
                 }
                 addQueryValue(builder, key, entry.getValue());
             }
-            URI result = builder.build();
+            URI built = builder.build();
+            // URIBuilder re-encodes the path; keep the caller's raw path (for example %2F in an id) as is.
+            URI result = built.getRawPath() != null && built.getRawPath().equals(original.getRawPath())
+                    ? built
+                    : URI.create(original.getScheme() + "://" + original.getRawAuthority() + original.getRawPath()
+                    + (built.getRawQuery() == null ? "" : "?" + built.getRawQuery())
+                    + (built.getRawFragment() == null ? "" : "#" + built.getRawFragment()));
             if (result.toString().length() > maxRequestBytes) {
                 throw new NodeExecutor.Failure("HTTP_REQUEST_TOO_LARGE",
                         "The HTTP request exceeds the supported size.", false);
@@ -491,6 +714,152 @@ public class PinnedHttpTransport {
         }
     }
 
+    /** Only the three fixed Calendar/Drive endpoints, each with its one method; no traversal or smuggled slashes. */
+    void validateGoogleApiUri(URI uri, String method) {
+        String path = uri == null ? null : uri.getRawPath();
+        String verb = method == null ? "" : method.toUpperCase(Locale.ROOT);
+        boolean allowedShape = path != null && (
+                "POST".equals(verb) && (GOOGLE_CALENDAR_EVENTS_PATH.matcher(path).matches()
+                        || DRIVE_UPLOAD_PATH.equals(path))
+                || "GET".equals(verb) && (GOOGLE_CALENDAR_EVENTS_PATH.matcher(path).matches()
+                        || "/drive/v3/files".equals(path)));
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(GOOGLE_API_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawFragment() != null
+                || !allowedShape
+                || hasUnsafePathSequence(path)) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Google destination is invalid.", false);
+        }
+    }
+
+    private static boolean hasUnsafePathSequence(String path) {
+        String lower = path.toLowerCase(Locale.ROOT);
+        if (path.contains("..") || path.contains("/./") || path.contains("//") || path.endsWith("/.")
+                || lower.contains("%2e") || lower.contains("%5c") || path.contains("\\")) {
+            return true;
+        }
+        // An encoded slash is only legitimate inside the calendarId segment.
+        String checked = GOOGLE_CALENDAR_EVENTS_PATH.matcher(path).matches()
+                ? path.substring("/calendar/v3/calendars/".length(), path.length() - "/events".length())
+                : null;
+        String rest = checked == null ? lower : lower.replace(checked.toLowerCase(Locale.ROOT), "");
+        return rest.contains("%2f");
+    }
+
+    private void requireBearerToken(String accessToken, String provider) {
+        if (accessToken == null || accessToken.isBlank() || accessToken.length() > 16 * 1024
+                || accessToken.codePoints().anyMatch(Character::isISOControl)) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The " + provider + " authentication configuration is invalid.", false);
+        }
+    }
+
+    private static int boundedCap(int cap) {
+        if (cap < 1 || cap > MAX_CALL_BYTES) {
+            throw new IllegalArgumentException("byte cap must be between 1 and " + MAX_CALL_BYTES);
+        }
+        return cap;
+    }
+
+    /** Returns the exact {@code uploadType} ("media" or "multipart") of a valid Gmail upload send URI. */
+    String validateGmailUploadSendUri(URI uri) {
+        String query = uri == null ? null : uri.getRawQuery();
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(GMAIL_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawFragment() != null
+                || !GMAIL_UPLOAD_SEND_PATH.equals(uri.getRawPath())
+                || !("uploadType=media".equals(query) || "uploadType=multipart".equals(query))) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Gmail destination is invalid.", false);
+        }
+        return query.substring("uploadType=".length());
+    }
+
+    void validateGmailProfileUri(URI uri) {
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(GMAIL_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || !GMAIL_PROFILE_PATH.equals(uri.getRawPath())) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Gmail destination is invalid.", false);
+        }
+    }
+
+    void validateGmailAttachmentUri(URI uri) {
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(GMAIL_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || uri.getRawPath() == null
+                || !GMAIL_ATTACHMENT_PATH.matcher(uri.getRawPath()).matches()) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Gmail destination is invalid.", false);
+        }
+    }
+
+    private static String headerValue(Map<String, String> headers, String name) {
+        return headers.entrySet().stream()
+                .filter(entry -> entry.getKey().equalsIgnoreCase(name))
+                .map(Map.Entry::getValue).findFirst().orElse(null);
+    }
+
+    private static final Pattern DISPOSITION_FILENAME_STAR = Pattern.compile(
+            "filename\\*\\s*=\\s*[Uu][Tt][Ff]-8''([^;\\s]+)");
+    private static final Pattern DISPOSITION_FILENAME = Pattern.compile(
+            "filename\\s*=\\s*(?:\"([^\"]*)\"|([^;\\s]+))");
+
+    /** Filename from a Content-Disposition value, without path separators or control characters; null if none. */
+    static String dispositionFilename(String disposition) {
+        if (disposition == null) {
+            return null;
+        }
+        String raw = null;
+        java.util.regex.Matcher star = DISPOSITION_FILENAME_STAR.matcher(disposition);
+        if (star.find()) {
+            try {
+                raw = java.net.URLDecoder.decode(star.group(1).replace("+", "%2B"), StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException ignored) {
+                raw = null;
+            }
+        }
+        if (raw == null) {
+            java.util.regex.Matcher plain = DISPOSITION_FILENAME.matcher(disposition);
+            if (plain.find()) {
+                raw = plain.group(1) != null ? plain.group(1) : plain.group(2);
+            }
+        }
+        if (raw == null) {
+            return null;
+        }
+        return com.weav.workflow.application.port.out.WorkflowFileStore.safeFilename(raw);
+    }
+
     private void validateGmailSendUri(URI uri) {
         if (uri == null
                 || !uri.isAbsolute()
@@ -505,6 +874,44 @@ public class PinnedHttpTransport {
                 || !GMAIL_SEND_PATH.equals(uri.getRawPath())) {
             throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
                     "The Gmail destination is invalid.", false);
+        }
+    }
+
+    void validateGmailReadUri(URI uri) {
+        String path = uri == null ? null : uri.getRawPath();
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(GMAIL_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || path == null
+                || !(GMAIL_MESSAGES_PATH.equals(path) || GMAIL_MESSAGE_PATH.matcher(path).matches())) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Gmail destination is invalid.", false);
+        }
+    }
+
+    private void validateTelegramUri(URI uri) {
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(TELEGRAM_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || uri.getRawPath() == null
+                || !TELEGRAM_PATH.matcher(uri.getRawPath()).matches()
+                || !TELEGRAM_METHODS.contains(uri.getRawPath().substring(uri.getRawPath().lastIndexOf('/') + 1))) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Telegram destination is invalid.", false);
         }
     }
 
@@ -558,12 +965,16 @@ public class PinnedHttpTransport {
         return executor;
     }
 
-    private byte[] readBounded(HttpEntity entity) throws IOException {
+    private byte[] readBounded(HttpEntity entity, int maxResponseBytes) throws IOException {
         long contentLength = entity.getContentLength();
         if (contentLength > maxResponseBytes) {
             throw new ResponseTooLargeException();
         }
         try (InputStream input = entity.getContent()) {
+            if (contentLength >= 0) {
+                // Known length within the cap (larger is rejected above): read into an exact-size array.
+                return input.readNBytes((int) contentLength);
+            }
             ByteArrayOutputStream output = new ByteArrayOutputStream(
                     (int) Math.min(Math.max(contentLength, 0), maxResponseBytes));
             byte[] buffer = new byte[8192];

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/trigger.manual",
+  "title": "Manual trigger",
+  "description": "Starts the workflow when a person presses the run button.",
+  "x-weav-node": {
+    "type": "trigger.manual",
+    "category": "trigger",
+    "label": "Manual trigger",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "buttonLabel": {
+      "type": "string",
+      "title": "Button label",
+      "description": "Text shown on the run button.",
+      "x-weav-template": true
+    }
+  },
+  "required": [],
+  "additionalProperties": false
+}

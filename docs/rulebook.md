@@ -14,7 +14,7 @@ Weav automates and monitors work processes, in the style of Zapier or n8n, for w
 | Actor | Can do |
 | --- | --- |
 | Unauthenticated user | Register, sign in, recover password |
-| Authenticated user | Create and list workspaces, build and run workflows in workspaces they belong to, link Telegram |
+| Authenticated user | Create and list workspaces, build and run workflows in workspaces they belong to, connect their own Telegram bot |
 | Workspace Member | Everything an authenticated user can do inside the workspace; publish only if granted publish permission |
 | Workspace Owner | All member rights, plus managing the workspace, members, publish permission, and connections; publishing, pausing, and resuming workflows |
 | System Admin | List users, lock or unlock accounts, list all workspaces, monitor all executions |
@@ -34,7 +34,7 @@ IDs follow the thesis (§3.2.1). Every spec states which rules its component enf
 | BR06 | A published workflow runs manually or from configured triggers (schedule, webhook, Telegram). A paused workflow accepts no new automatic triggers until it is resumed. Every run references a published version and records its status. | Workflow |
 | BR07 | Nodes execute in dependency order. Inputs come from the trigger payload or from upstream outputs through data mappings. If an input cannot be resolved, a required connection is unusable, or a node errors, the failure is recorded. | Workflow |
 | BR08 | AI generation only proposes a workflow for the user to review and edit. AI never publishes or runs workflows. AI nodes and OCR run only inside validly configured, published workflows. | Workflow, AI |
-| BR09 | Users must link Telegram before using the bot or Telegram notifications. Webhook and Telegram triggers are processed only when they match a configured trigger of an active workflow. | Bot, Workflow, Notification |
+| BR09 | A Telegram trigger or send node needs a workspace `TELEGRAM` connection (the user's own bot token); one bot serves one active workflow at a time. Webhook and Telegram triggers are processed only when they match a configured trigger of an active workflow. | Workspace, Workflow |
 
 ## 3. Use cases and owners
 
@@ -49,14 +49,14 @@ The thesis says 32 use cases but lists 28; the 28 listed are authoritative. Stat
 | UC015–UC019 | Publish, pause/resume, delete, run manually, monitor executions | Workflow | [workflow-service](specs/services/workflow-service.md) |
 | UC020 | Receive result notifications | Notification | [notification-service](specs/services/notification-service.md) |
 | UC021 | Trigger via webhook | Workflow (ingress via Gateway) | [workflow-service](specs/services/workflow-service.md), [api-gateway](specs/services/api-gateway.md) |
-| UC022–UC024 | Trigger via Telegram, link Telegram, use the bot | Bot + Workflow | [bot-service](specs/services/bot-service.md) |
+| UC022–UC024 | Trigger via Telegram, connect a Telegram bot, use the bot | Workspace + Workflow | The workspace's own bot is a `TELEGRAM` connection ([workspace-service](specs/services/workspace-service.md)); `trigger.telegram` starts a run from a message to that bot and `telegram.send_message` replies ([workflow-service](specs/services/workflow-service.md), [api-gateway](specs/services/api-gateway.md)) |
 | UC025–UC026 | List users, lock/unlock accounts | Identity | [identity-service](specs/services/identity-service.md) |
 | UC027 | List all workspaces | Workspace | [workspace-service](specs/services/workspace-service.md) |
 | UC028 | Monitor all executions | Workflow | [workflow-service](specs/services/workflow-service.md) |
 
 Web and mobile implement the client side; see [web](specs/apps/web.md) and [mobile](specs/apps/mobile.md). Mobile covers everything web does except designing workflows, with monitoring as its focus. Web and mobile (including web admin) are owned by T for now and shared later.
 
-One capability is outside the thesis table: **group notifications**, where a workspace links a Telegram group and workflows post to it (Bot, extends UC020).
+One capability is outside the thesis table: **group notifications**, where a workflow posts to a Telegram group through a `telegram.send_message` node using the workspace's bot connection (extends UC020). There is no separate bot service; it was replaced by these nodes (decided 2026-10-04).
 
 ## 4. Architecture rules
 
@@ -72,7 +72,6 @@ Owners: K = Nguyễn Hoàng Khải, T = partner (same letters as the `docs/work_
 | Workflow | Spring Boot | K | Core domain: definitions, versions, validation, triggers, executions. The Background Worker and the (deferred) Agent Runtime live inside it, not as separate services. |
 | AI | NestJS | K | Reasoning only: workflow generation and `ai.extract` / `ai.classify` / `ai.summarize`. Private, never on the public edge. |
 | OCR | FastAPI | T | Document text and table extraction |
-| Bot | NestJS | TBD | Telegram as a workflow channel: chat linking (users and workspace groups), Telegram triggers, sending to linked groups. Not a second client; mobile covers monitoring and control. |
 | Notification | NestJS | T | Consumes workflow events, stores the inbox, delivers notifications |
 
 ### Communication

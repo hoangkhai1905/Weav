@@ -13,11 +13,14 @@ public final class WebhookRequestPath {
 
     public static boolean isWebhookIngress(HttpServletRequest request) {
         return "POST".equalsIgnoreCase(request.getMethod())
-                && path(request).matches("/webhooks/[^/]+/?");
+                && path(request).matches("/webhooks/(telegram/)?[^/]+/?");
     }
 
     public static String sanitizedPath(HttpServletRequest request) {
         String path = path(request);
+        if (path.startsWith("/webhooks/telegram/")) {
+            return "/webhooks/telegram/{endpointKey}";
+        }
         return path.startsWith("/webhooks/") ? "/webhooks/{endpointKey}" : request.getRequestURI();
     }
 

@@ -56,12 +56,14 @@ public final class WorkflowPersistenceMapper {
 
     public WorkflowTriggerJpaEntity toEntity(WorkflowTrigger trigger) {
         Objects.requireNonNull(trigger, "trigger must not be null");
-        return new WorkflowTriggerJpaEntity(trigger.getId(), trigger.getWorkflowId(), trigger.getWorkflowVersionId(),
+        WorkflowTriggerJpaEntity entity = new WorkflowTriggerJpaEntity(trigger.getId(), trigger.getWorkflowId(), trigger.getWorkflowVersionId(),
                 trigger.getTriggerNodeId(), trigger.getType(), trigger.getStatus(),
                 objectMapper.valueToTree(trigger.getConfig()), trigger.getEndpointKey(), trigger.getSecretHash(),
                 trigger.getNextRunAt(), trigger.getLastTriggeredAt(),
                 trigger.getLastError().isEmpty() ? null : objectMapper.valueToTree(trigger.getLastError()),
-                trigger.getCreatedAt(), trigger.getUpdatedAt());
+                trigger.getPollCursor(), trigger.getCreatedAt(), trigger.getUpdatedAt());
+        entity.setPollCursorMessageId(trigger.getPollCursorMessageId());
+        return entity;
     }
 
     public Workflow toDomain(WorkflowJpaEntity entity) {
@@ -104,7 +106,8 @@ public final class WorkflowPersistenceMapper {
         return new WorkflowTrigger(entity.getId(), entity.getWorkflowId(), entity.getWorkflowVersionId(),
                 entity.getTriggerNodeId(), entity.getType(), entity.getStatus(), objectMap(entity.getConfig()),
                 entity.getEndpointKey(), entity.getSecretHash(), entity.getNextRunAt(), entity.getLastTriggeredAt(),
-                objectMap(entity.getLastError()), entity.getCreatedAt(), entity.getUpdatedAt());
+                objectMap(entity.getLastError()), entity.getPollCursor(), entity.getCreatedAt(),
+                entity.getUpdatedAt()).withPollCursorMessageId(entity.getPollCursorMessageId());
     }
 
     public JsonNode toJsonNode(Object value) {

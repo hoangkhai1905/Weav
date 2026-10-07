@@ -65,6 +65,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessWrapper'
+  /v1/prompt:
+    post:
+      operationId: prompt
+      summary: Complete a free-form prompt as plain text within a code-point limit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromptEnvelope'
+      responses:
+        '200':
+          description: Generated text with truncation flag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessWrapper'
   /v1/generate:
     post:
       operationId: generate
@@ -82,6 +99,111 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuccessWrapper'
+  /v1/assistant/chat:
+    post:
+      operationId: assistantChat
+      summary: Chat with the workflow assistant (SSE stream)
+      description: >-
+        Called with a user access token (the gateway exposes it as
+        `/api/v1/assistant/chat`). Without `conversationId` a new conversation
+        is created; with one it must belong to the caller and to `workspaceId`.
+        Errors before the stream starts are JSON `ErrorBody`: 400
+        INVALID_REQUEST, 401 UNAUTHENTICATED, 404 NOT_FOUND, 429 AI_BUSY or
+        AI_QUOTA_EXCEEDED, 503 AI_NOT_CONFIGURED. The stream is
+        `event: <name>` / `data: <json>` frames, in order:
+        `conversation` {conversationId} (always first); then any of `delta`
+        {text}, `tool_call` {name, arguments}, `tool_result` {name, ok},
+        `draft` {name, definition, layout} (a workflow draft for the user to
+        review and save; never saved by the assistant); then exactly one of
+        `done` {} or `error` {code, message} (e.g. AI_TIMEOUT, AI_UNAVAILABLE).
+      security:
+        - UserBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssistantChatRequest'
+      responses:
+        '200':
+          description: Server-sent event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400': {$ref: '#/components/responses/AssistantError'}
+        '401': {$ref: '#/components/responses/AssistantError'}
+        '404': {$ref: '#/components/responses/AssistantError'}
+        '429': {$ref: '#/components/responses/AssistantError'}
+        '503': {$ref: '#/components/responses/AssistantError'}
+  /v1/assistant/conversations:
+    get:
+      operationId: assistantListConversations
+      summary: List the caller's conversations in a workspace, newest first
+      security:
+        - UserBearer: []
+      parameters:
+        - {name: workspaceId, in: query, required: true, schema: {type: string, format: uuid}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+        - name: before
+          in: query
+          description: ISO-8601 cursor; pass the last item's updatedAt for the next page.
+          schema: {type: string, format: date-time}
+      responses:
+        '200':
+          description: Conversations ordered by updatedAt descending
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssistantConversation'
+        '400': {$ref: '#/components/responses/AssistantError'}
+        '401': {$ref: '#/components/responses/AssistantError'}
+  /v1/assistant/conversations/{conversationId}/messages:
+    get:
+      operationId: assistantListMessages
+      summary: Messages of one conversation (oldest first, latest 100)
+      security:
+        - UserBearer: []
+      parameters:
+        - {name: conversationId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Conversation with its messages
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [conversationId, workspaceId, title, messages]
+                properties:
+                  conversationId: {type: string, format: uuid}
+                  workspaceId: {type: string, format: uuid}
+                  title: {type: string}
+                  messages:
+                    type: array
+                    maxItems: 100
+                    items:
+                      $ref: '#/components/schemas/AssistantMessage'
+        '401': {$ref: '#/components/responses/AssistantError'}
+        '404': {$ref: '#/components/responses/AssistantError'}
+  /v1/assistant/conversations/{conversationId}:
+    delete:
+      operationId: assistantDeleteConversation
+      summary: Delete one of the caller's conversations
+      security:
+        - UserBearer: []
+      parameters:
+        - {name: conversationId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204':
+          description: Deleted
+        '401': {$ref: '#/components/responses/AssistantError'}
+        '404': {$ref: '#/components/responses/AssistantError'}
   /health/live:
     get:
       operationId: live
@@ -119,7 +241,25 @@ paths:
               schema:
                 type: object
 components:
+  responses:
+    AssistantError:
+      description: >-
+        Error envelope. At the AI service, missing, foreign or malformed ids are
+        404 NOT_FOUND (never 403); the API Gateway rejects a malformed path id
+        with 400 before calling it. Codes also include NOT_FOUND, AI_QUOTA_EXCEEDED and
+        AI_UNAVAILABLE.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
   securitySchemes:
+    UserBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        Identity RS256 user access token. Distinct from ServiceJwt; history is
+        per user.
     ServiceJwt:
       type: http
       scheme: bearer
@@ -133,6 +273,30 @@ components:
         only), iat/exp within a 120 s lifetime. Execution mode additionally
         requires execution_id and node_execution_id.
   schemas:
+    AssistantChatRequest:
+      type: object
+      additionalProperties: false
+      required: [workspaceId, message]
+      properties:
+        workspaceId: {type: string, format: uuid}
+        conversationId: {type: string, format: uuid}
+        message: {type: string, minLength: 1, maxLength: 4000}
+        timezone: {type: string, minLength: 1, maxLength: 64, description: IANA zone}
+    AssistantConversation:
+      type: object
+      required: [conversationId, title, createdAt, updatedAt]
+      properties:
+        conversationId: {type: string, format: uuid}
+        title: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    AssistantMessage:
+      type: object
+      required: [role, content, createdAt]
+      properties:
+        role: {type: string, enum: [user, assistant]}
+        content: {type: string}
+        createdAt: {type: string, format: date-time}
     BaseEnvelope:
       type: object
       required: [requestId, workspaceId, operation]
@@ -200,6 +364,28 @@ components:
               type: integer
               minimum: 1
               maximum: 5000
+    PromptEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/BaseEnvelope'
+        - type: object
+          required: [operation, prompt]
+          properties:
+            operation:
+              const: prompt
+            prompt:
+              type: string
+              minLength: 1
+              maxLength: 50000
+              description: Must not be blank.
+            instructions:
+              type: string
+              minLength: 1
+              maxLength: 2000
+            maxLength:
+              type: integer
+              minimum: 1
+              maximum: 5000
+              default: 1000
     GenerateEnvelope:
       allOf:
         - $ref: '#/components/schemas/BaseEnvelope'
@@ -256,7 +442,8 @@ components:
               type: string
               enum: [INVALID_REQUEST, UNAUTHENTICATED, FORBIDDEN, PAYLOAD_TOO_LARGE,
                 AI_SCHEMA_INVALID, AI_BUSY, AI_NOT_CONFIGURED, AI_PROVIDER_UNAVAILABLE,
-                AI_PROVIDER_AUTH, AI_OUTPUT_INVALID, AI_TIMEOUT, INTERNAL_ERROR]
+                AI_PROVIDER_AUTH, AI_OUTPUT_INVALID, AI_TIMEOUT, INTERNAL_ERROR,
+                NOT_FOUND, AI_QUOTA_EXCEEDED, AI_UNAVAILABLE]
               description: >-
                 Error table (spec §4): 400 INVALID_REQUEST, 401 UNAUTHENTICATED,
                 403 FORBIDDEN, 413 PAYLOAD_TOO_LARGE, 422 AI_SCHEMA_INVALID,

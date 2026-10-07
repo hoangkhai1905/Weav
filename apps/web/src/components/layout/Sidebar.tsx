@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  Bot,
   GitFork,
   HelpCircle,
   LayoutDashboard,
@@ -40,6 +41,7 @@ const MAIN_NAV_ITEMS: NavItem[] = [
     icon: Sparkles,
     testId: "sidebar-ai-promo",
   },
+  { translationKey: "nav.assistant", path: "/assistant", icon: Bot, testId: "sidebar-assistant" },
 ];
 
 const BOTTOM_NAV_ITEMS: NavItem[] = [

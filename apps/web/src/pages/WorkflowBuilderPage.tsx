@@ -43,6 +43,12 @@ import {
   Plus,
   Undo2,
   Redo2,
+  Inbox,
+  HardDrive,
+  CalendarDays,
+  Split,
+  Braces,
+  WandSparkles,
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
@@ -61,8 +67,13 @@ import { CreateConnectionDialog } from './ConnectionsPage';
 import { storeOAuthPendingContext } from '../lib/oauthPending';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
-import { NODE_CATALOG } from '../lib/constants/nodeCatalog';
-import { getNodeReadinessBadge } from '../lib/nodeReadiness';
+import { NODE_CATALOG, nodeSourcePorts } from '../lib/constants/nodeCatalog';
+import { getNodeReadinessBadge, isConditionComplete } from '../lib/nodeReadiness';
+import { SchemaField } from '../components/builder/SchemaField';
+import { ConditionEditor } from '../components/builder/ConditionEditor';
+import { AttachmentsEditor } from '../components/builder/AttachmentsEditor';
+import { SwitchEditor } from '../components/builder/SwitchEditor';
+import { DataSetEditor } from '../components/builder/DataSetEditor';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
 import { definitionToCanvas, type GenerationResponse } from '../api/workflow-v1.api';
@@ -93,6 +104,12 @@ const PALETTE_PRESENTATION: Record<
   'ai.classify': { nameKey: 'builder.node.ai_classify', descKey: 'builder.node.ai_classify_desc', icon: Tags },
   'ai.summarize': { nameKey: 'builder.node.ai_summarize', descKey: 'builder.node.ai_summarize_desc', icon: FileText },
   'ocr.extract': { nameKey: 'builder.node.ocr', descKey: 'builder.node.ocr_desc', icon: Scan },
+  'trigger.gmail': { nameKey: 'builder.node.gmail_trigger', descKey: 'builder.node.gmail_trigger_desc', icon: Inbox },
+  'google.drive': { nameKey: 'builder.node.google_drive', descKey: 'builder.node.google_drive_desc', icon: HardDrive },
+  'google.calendar': { nameKey: 'builder.node.google_calendar', descKey: 'builder.node.google_calendar_desc', icon: CalendarDays },
+  'logic.switch': { nameKey: 'builder.node.switch', descKey: 'builder.node.switch_desc', icon: Split },
+  'data.set': { nameKey: 'builder.node.data_set', descKey: 'builder.node.data_set_desc', icon: Braces },
+  'ai.generate': { nameKey: 'builder.node.ai_generate', descKey: 'builder.node.ai_generate_desc', icon: WandSparkles },
 };
 
 const PALETTE_CATEGORY_KEYS = {
@@ -141,14 +158,50 @@ const columnLetter = (index: number): string => (index < 26 ? '' : columnLetter(
 const addConnectionButtonCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 const PORT_LABEL_ROOM = 80;
 
-const CONDITION_OPERATORS = [
-  { value: 'eq', labelKey: 'builder.cfg.op_eq' },
-  { value: 'ne', labelKey: 'builder.cfg.op_ne' },
-  { value: 'gt', labelKey: 'builder.cfg.op_gt' },
-  { value: 'gte', labelKey: 'builder.cfg.op_gte' },
-  { value: 'lt', labelKey: 'builder.cfg.op_lt' },
-  { value: 'lte', labelKey: 'builder.cfg.op_lte' },
-] as const;
+// Readiness messages of the connection-backed steps: [select connection, authorize, fill fields].
+const CONNECTION_STEP_MESSAGES: Record<string, [string, string, string]> = {
+  'google.sheets': ['builder.cfg.msg_sheets_select', 'builder.cfg.msg_sheets_auth', 'builder.cfg.msg_sheets_fields'],
+  'email.send': ['builder.cfg.msg_gmail_select', 'builder.cfg.msg_gmail_auth', 'builder.cfg.msg_email_fields'],
+  'telegram.send_message': ['builder.cfg.msg_tg_select', 'builder.cfg.msg_tg_auth', 'builder.cfg.msg_tg_fields'],
+  'trigger.telegram': ['builder.cfg.msg_tg_select', 'builder.cfg.msg_tg_auth', 'builder.cfg.msg_tg_select'],
+  'trigger.gmail': ['builder.cfg.msg_gmail_select', 'builder.cfg.msg_gmail_auth', 'builder.cfg.msg_gmail_select'],
+  'google.drive': ['builder.cfg.msg_drive_select', 'builder.cfg.msg_drive_auth', 'builder.cfg.msg_drive_fields'],
+  'google.calendar': ['builder.cfg.msg_calendar_select', 'builder.cfg.msg_calendar_auth', 'builder.cfg.msg_calendar_fields'],
+};
+const PROVIDER_NAMES: Record<GoogleProvider | 'TELEGRAM', string> = {
+  TELEGRAM: 'Telegram',
+  GMAIL: 'Gmail',
+  GOOGLE_SHEETS: 'Google Sheets',
+  GOOGLE_CALENDAR: 'Google Calendar',
+  GOOGLE_DRIVE: 'Google Drive',
+};
+
+// Readiness message of the steps without a connection that the badge marks as not configured.
+const FIELD_STEP_MESSAGES: Record<string, string> = {
+  'logic.switch': 'builder.cfg.msg_switch',
+  'data.set': 'builder.cfg.msg_data_set',
+  'ai.generate': 'builder.cfg.msg_ai_generate',
+};
+
+// Steps whose inspector is rendered from packages/workflow-schema (SchemaField), per operation.
+// trigger.telegram has no other field; it needs the workspace's Telegram bot connection.
+const SCHEMA_FORMS: Record<string, { provider?: GoogleProvider | 'TELEGRAM'; fields: (config: Record<string, unknown>) => string[]; multiline?: string[] }> = {
+  'trigger.telegram': { provider: 'TELEGRAM', fields: () => [] },
+  'trigger.gmail': { provider: 'GMAIL', fields: () => ['query', 'pollIntervalMinutes'] },
+  'google.drive': {
+    provider: 'GOOGLE_DRIVE',
+    fields: (config) => ['operation', ...(config.operation === 'list' ? ['folderId', 'nameContains', 'pageSize'] : ['file', 'content', 'name', 'mimeType', 'folderId'])],
+    multiline: ['content'],
+  },
+  'google.calendar': {
+    provider: 'GOOGLE_CALENDAR',
+    fields: (config) => ['operation', 'calendarId', ...(config.operation === 'list'
+      ? ['timeMin', 'timeMax', 'maxResults', 'query']
+      : ['summary', 'start', 'end', 'timeZone', 'description', 'location', 'attendees', 'sendInvitations'])],
+    multiline: ['description'],
+  },
+  'ai.generate': { fields: () => ['prompt', 'instructions', 'maxLength'], multiline: ['prompt', 'instructions'] },
+};
 
 const getNodeReadinessMessage = (
   type: string,
@@ -158,18 +211,20 @@ const getNodeReadinessMessage = (
 ): string | undefined => {
   if (!SUPPORTED_NODE_TYPES.has(type)) return t('builder.cfg.msg_unsupported').replace('{type}', type);
   if (type === 'trigger.webhook') return t('builder.cfg.msg_webhook');
-  if (type === 'google.sheets' || type === 'email.send') {
+  const connectionMessages = CONNECTION_STEP_MESSAGES[type];
+  if (connectionMessages) {
     // Same verdict as the step badge, so badge, inspector warning and publish blocker never disagree.
     const state = getNodeReadinessBadge(type, config, attachableConnectionIds).state;
-    const sheets = type === 'google.sheets';
+    const [selectKey, authKey, fieldsKey] = connectionMessages;
     if (state === 'ready') return undefined;
-    if (state === 'authorization-required') return t(sheets ? 'builder.cfg.msg_sheets_auth' : 'builder.cfg.msg_gmail_auth');
-    if (!String(config.connectionId ?? '').trim()) return t(sheets ? 'builder.cfg.msg_sheets_select' : 'builder.cfg.msg_gmail_select');
-    return t(sheets ? 'builder.cfg.msg_sheets_fields' : 'builder.cfg.msg_email_fields');
+    if (state === 'authorization-required') return t(authKey);
+    if (!String(config.connectionId ?? '').trim()) return t(selectKey);
+    return t(fieldsKey);
   }
-  if (type === 'trigger.telegram') return t('builder.cfg.msg_tg_trigger');
-  if (type === 'telegram.send_message') return t('builder.cfg.msg_tg_send');
-  if (type === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
+  if (FIELD_STEP_MESSAGES[type]) {
+    return getNodeReadinessBadge(type, config).state === 'ready' ? undefined : t(FIELD_STEP_MESSAGES[type]);
+  }
+  if (type === 'logic.condition' && !isConditionComplete(config)) {
     return t('builder.cfg.msg_condition');
   }
   if (type === 'trigger.schedule') {
@@ -203,7 +258,7 @@ const getPublishBlockers = (nodes: Node[], edges: Edge[], t: (key: string) => st
       blockers.add(t('builder.blocker.unsupported_type').replace('{type}', type || t('builder.blocker.missing_type')));
       continue;
     }
-    if (type === 'logic.condition' && (!String(config.left ?? '').trim() || !String(config.right ?? '').trim())) {
+    if (type === 'logic.condition' && !isConditionComplete(config)) {
       blockers.add(t('builder.blocker.condition'));
     }
     if (type === 'trigger.schedule') {
@@ -215,11 +270,11 @@ const getPublishBlockers = (nodes: Node[], edges: Edge[], t: (key: string) => st
     if (type === 'http.request' && !String(config.url ?? '').trim()) {
       blockers.add(t('builder.blocker.http'));
     }
-    if (type === 'google.sheets' || type === 'email.send') {
+    if (CONNECTION_STEP_MESSAGES[type] || FIELD_STEP_MESSAGES[type]) {
       const message = getNodeReadinessMessage(type, config, t, attachableConnectionIds);
       if (message) blockers.add(message);
     }
-    if (type === 'trigger.telegram' || type === 'telegram.send_message' || type === 'ocr.extract') {
+    if (type === 'ocr.extract') {
       blockers.add(getNodeReadinessMessage(type, config, t) ?? t('builder.blocker.not_configured').replace('{type}', type));
     }
     if (type === 'ocr.extract') {
@@ -271,6 +326,31 @@ export const WorkflowBuilderPage: React.FC = () => {
     ),
     [workspaceConnections],
   );
+  const telegramConnections = useMemo(
+    () => (workspaceConnections ?? []).filter(
+      (connection) => connection.provider === 'TELEGRAM' && connection.status === 'ACTIVE' && connection.canAttach,
+    ),
+    [workspaceConnections],
+  );
+  // Schema-rendered field bound to the selected step's config (see components/builder/SchemaField).
+  const configField = (name: string, connections?: { id: string; name: string }[], multiline?: boolean) => (
+    <SchemaField
+      key={name}
+      nodeType={selectedNodeType}
+      name={name}
+      value={selectedNodeConfig[name]}
+      onChange={(value) => updateSelectedNodeConfig({ [name]: value })}
+      connections={connections}
+      multiline={multiline}
+    />
+  );
+  const selectedSchemaForm = SCHEMA_FORMS[selectedNodeType];
+  // Edges leave a switch by case name; drop the ones whose case was removed or renamed (INVALID_SOURCE_PORT).
+  const updateSwitchCases = (cases: string[]) => {
+    updateSelectedNodeConfig({ cases });
+    setEdges((eds) => eds.filter((edge) => edge.source !== selectedNodeId || !edge.sourceHandle
+      || edge.sourceHandle === 'default' || cases.includes(edge.sourceHandle)));
+  };
   const unsupportedNodeTypes = useMemo(
     () => [...new Set(nodes.map((node) => String(node.data?.nodeType ?? '')).filter((type) => !SUPPORTED_NODE_TYPES.has(type)))],
     [nodes]
@@ -1030,7 +1110,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     const anchorType = String(anchor?.data?.nodeType ?? '');
     const linkFromAnchor = Boolean(anchor)
       && !type.startsWith('trigger.')
-      && !NODE_CATALOG.find((item) => item.type === anchorType)?.sourcePorts
+      && !nodeSourcePorts(anchorType, (anchor?.data?.config ?? {}) as Record<string, unknown>)
       && !edges.some((edge) => edge.source === anchor?.id);
     const newNode: Node = {
       id: newNodeId,
@@ -1640,44 +1720,53 @@ export const WorkflowBuilderPage: React.FC = () => {
                     {JSON.stringify(selectedNodeConfig, null, 2)}
                   </pre>
                 </div>
-              ) : selectedNodeType === 'logic.condition' ? (
-                <div data-testid="condition-config" className="space-y-3">
-                  <div>
-                    <label htmlFor="condition-left" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_left')}</label>
-                    <input
-                      id="condition-left"
-                      data-testid="condition-left"
-                      value={String(selectedNodeConfig.left ?? '')}
-                      placeholder="{{ trigger.input.email }}"
-                      onChange={(event) => updateSelectedNodeConfig({ left: event.target.value })}
-                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="condition-operator" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_operator')}</label>
-                    <select
-                      id="condition-operator"
-                      data-testid="condition-operator"
-                      value={String(selectedNodeConfig.operator ?? 'eq')}
-                      onChange={(event) => updateSelectedNodeConfig({ operator: event.target.value })}
-                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                    >
-                      {CONDITION_OPERATORS.map((operator) => <option key={operator.value} value={operator.value}>{t(operator.labelKey)}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="condition-right" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_right')}</label>
-                    <input
-                      id="condition-right"
-                      data-testid="condition-right"
-                      value={String(selectedNodeConfig.right ?? '')}
-                      placeholder="500 or {{ variables.threshold }}"
-                      onChange={(event) => updateSelectedNodeConfig({ right: event.target.value })}
-                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                  <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.cond_hint')}</p>
+              ) : selectedSchemaForm ? (
+                <div data-testid="schema-config" className="space-y-3">
+                  {selectedSchemaForm.provider && (() => {
+                    const provider = selectedSchemaForm.provider;
+                    const options = (workspaceConnections ?? []).filter(
+                      (connection) => connection.provider === provider && connection.status === 'ACTIVE' && connection.canAttach,
+                    );
+                    return (
+                      <div>
+                        {configField('connectionId', options)}
+                        {provider === 'TELEGRAM' ? (
+                          <>
+                            {!isLoadingConnections && options.length === 0 && (
+                              <p className="mt-1 text-[10px] text-muted-foreground">{t('builder.cfg.no_telegram')}</p>
+                            )}
+                            <Link to="/workspace/connections" data-testid="add-connection-TELEGRAM" className={addConnectionButtonCls}>
+                              <Plus size={12} aria-hidden="true" />{t('builder.cfg.connect_telegram')}
+                            </Link>
+                          </>
+                        ) : (
+                          <>
+                        {!isLoadingConnections && options.length === 0 && (
+                          <p className="mt-1 text-[10px] text-muted-foreground">
+                            {t('builder.cfg.no_provider_connection').replace('{provider}', PROVIDER_NAMES[provider])}{' '}
+                            <Link to="/workspace/connections" className="text-run underline">{t('builder.cfg.sheets_link')}</Link>.
+                          </p>
+                        )}
+                        {activeWorkspaceId && workflow && (
+                          <button type="button" data-testid={`add-connection-${provider}`} onClick={() => selectedNodeId && setAddConnectionFor({ provider, nodeId: selectedNodeId })} className={addConnectionButtonCls}>
+                            <Plus size={12} aria-hidden="true" />{t('builder.cfg.add_provider_connection').replace('{provider}', PROVIDER_NAMES[provider])}
+                          </button>
+                        )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  {selectedSchemaForm.fields(selectedNodeConfig).map((name) => configField(name, undefined, selectedSchemaForm.multiline?.includes(name)))}
+                  {selectedNodeType === 'trigger.telegram' && <p data-testid="telegram-trigger-hint" className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.telegram_trigger_hint')}</p>}
+                  {selectedNodeType === 'google.drive' && <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.drive_hint')}</p>}
                 </div>
+              ) : selectedNodeType === 'logic.switch' ? (
+                <SwitchEditor config={selectedNodeConfig} onChange={updateSelectedNodeConfig} onCasesChange={updateSwitchCases} />
+              ) : selectedNodeType === 'data.set' ? (
+                <DataSetEditor key={selectedNodeId} value={selectedNodeConfig.fields} onChange={(fields) => updateSelectedNodeConfig({ fields })} />
+              ) : selectedNodeType === 'logic.condition' ? (
+                <ConditionEditor config={selectedNodeConfig} onChange={updateSelectedNodeConfig} />
               ) : selectedNodeType === 'trigger.schedule' ? (
                 <div data-testid="schedule-config" className="space-y-3">
                   <div>
@@ -1720,12 +1809,16 @@ export const WorkflowBuilderPage: React.FC = () => {
                     className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                   />
                 </div>
-              ) : selectedNodeType === 'trigger.telegram' ? (
-                <div data-testid="telegram-trigger-config" className="rounded border border-warn/30 bg-warn-bg p-3 text-[11px] leading-relaxed text-warn">
-                  {t('builder.cfg.telegram_trigger_body')}
-                </div>
               ) : selectedNodeType === 'telegram.send_message' ? (
                 <div data-testid="telegram-send-config" className="space-y-3">
+                  <div>
+                    {configField('connectionId', telegramConnections)}
+                    {!isLoadingConnections && telegramConnections.length === 0 && (
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        {t('builder.cfg.no_telegram')} <Link to="/workspace/connections" className="text-run underline">{t('builder.cfg.connect_telegram')}</Link> {t('builder.cfg.connect_first')}
+                      </p>
+                    )}
+                  </div>
                   <div>
                     <label htmlFor="telegram-chat-id" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.chat_id')}</label>
                     <input id="telegram-chat-id" value={String(selectedNodeConfig.chatId ?? '')} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
@@ -1734,6 +1827,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <label htmlFor="telegram-text" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.message')}</label>
                     <textarea id="telegram-text" rows={3} value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
+                  {['parseMode', 'disableNotification', 'replyToMessageId'].map((name) => configField(name))}
                 </div>
               ) : selectedNodeType === 'http.request' ? (
                 <div data-testid="http-request-config" className="space-y-3">
@@ -1798,6 +1892,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <label htmlFor="email-body" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.body')}</label>
                     <textarea id="email-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
+                  {['bodyType', 'cc', 'bcc'].map((name) => configField(name))}
+                  <AttachmentsEditor value={selectedNodeConfig.attachments} onChange={(attachments) => updateSelectedNodeConfig({ attachments })} />
+                  <details data-testid="email-advanced" className="group rounded-md border border-border">
+                    <summary className="cursor-pointer select-none px-2.5 py-1.5 text-[11px] font-medium text-text-2 hover:text-foreground">{t('builder.cfg.advanced_options')}</summary>
+                    <div className="space-y-3 border-t border-border p-2.5">
+                      {['senderName', 'replyTo', 'replyToMessageId'].map((name) => configField(name))}
+                    </div>
+                  </details>
                 </div>
               ) : selectedNodeType.startsWith('ai.') ? (
                 <div data-testid="ai-config" className="space-y-3">
@@ -2099,6 +2201,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           <option value="read">{t('builder.google.operation.read')}</option>
                           <option value="append">{t('builder.google.operation.append')}</option>
                           <option value="update">{t('builder.google.operation.update')}</option>
+                          <option value="lookup">{t('builder.google.operation.lookup')}</option>
                         </>
                       ) : (
                         <>
@@ -2138,11 +2241,15 @@ export const WorkflowBuilderPage: React.FC = () => {
                           className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                         />
                         <p id="google-range-hint" className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                          {t(`builder.google.range_hint_${googleOperation === 'append' || googleOperation === 'update' ? googleOperation : 'read'}`)}
+                          {t(`builder.google.range_hint_${['append', 'update', 'lookup'].includes(googleOperation) ? googleOperation : 'read'}`)}
                         </p>
                       </div>
 
-                      {googleOperation !== 'read' && (
+                      {googleOperation === 'lookup' && ['lookupColumn', 'lookupValue', 'limit'].map((name) => configField(name))}
+
+                      {(googleOperation === 'append' || googleOperation === 'update') && configField('valueInputOption')}
+
+                      {(googleOperation === 'append' || googleOperation === 'update') && (
                         <fieldset data-testid="google-row-editor">
                           <legend className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.google.values')}</legend>
                           <div className="space-y-1.5">

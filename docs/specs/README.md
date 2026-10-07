@@ -10,7 +10,7 @@ One spec per service and app, describing the **V1 target** and marking each capa
 | Workflow | Spring Boot | [services/workflow-service.md](services/workflow-service.md) |
 | AI | NestJS | [services/ai-service.md](services/ai-service.md) |
 | OCR | FastAPI | [services/ocr-service.md](services/ocr-service.md) |
-| Bot | NestJS | [services/bot-service.md](services/bot-service.md) |
+| Bot (removed) | n/a | [services/bot-service.md](services/bot-service.md) (superseded by Telegram nodes in Workflow) |
 | Notification | NestJS | [services/notification-service.md](services/notification-service.md) |
 | Web | React + Vite | [apps/web.md](apps/web.md) |
 | Mobile | React Native + Expo | [apps/mobile.md](apps/mobile.md) |
