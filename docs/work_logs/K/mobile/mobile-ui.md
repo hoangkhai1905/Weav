@@ -59,3 +59,14 @@ Chưa kiểm tra: chạy app thật với gateway (Expo Web/thiết bị); strea
 - `findWorkflowIdForExecution` chỉ dò 50 workflow đầu; execution của workflow ngoài nhóm đó không mở được từ notification.
 - Chưa có API nối cho tạo/lưu nháp/publish/xóa workflow (AI Generator "Lưu nháp" vẫn chỉ điều hướng).
 - Bước 5 (design tokens, component nền) và bước 6 (thiết kế lại từng màn, màn Assistant) chưa làm.
+
+---
+
+## Bước 5: design tokens và component nền (commit "feat(mobile): design tokens and base UI components")
+
+- Một nguồn token: `src/constants/palette.ts` (màu light/dark thuần dữ liệu, test được bằng Node) + `src/constants/theme.ts` (re-export, thêm `Radius`, `Typography`, `MinTouch`, giữ `Colors/Fonts/Spacing`). `useThemeColors` giữ nguyên toàn bộ khóa cũ (không sửa caller), thêm `onPrimary`, `skeleton`, `overlay`, `tones`. Màu `primary` đổi từ tím sang xanh dương (không dùng tím/gradient).
+- Bảng màu trạng thái: 5 tone (neutral/info/warning/success/danger). `status.ts` (thuần): `statusInfo()` -> {tone, icon lucide, labelKey}, `formatDuration`, `shortId`, `truncateJson`. 15 trạng thái (execution/node/workflow/connection) + UNKNOWN; nhãn thân thiện vi/en (`status.*`, `ui.*`, `ui.error.<code>`).
+- Component mới trong `src/components/ui/`: StatusBadge (viết lại: icon + nhãn i18n), ListItem, EmptyState, ErrorState (thông điệp theo `ApiError.code`, requestId nhỏ, nút thử lại), Skeleton (reduced-motion), Sheet (RN Modal), NodeTimeline, JsonViewer, OfflineBanner (`@react-native-community/netinfo` đã cài).
+- Test: `status.test.cjs`, `palette.contrast.test.cjs` (tương phản >= 4.5 cả light/dark cho chữ trạng thái, chữ thường, nút primary).
+- Kiểm tra: `npx tsc --noEmit -p .` sạch; `node --test` 132 pass (trước 125); `expo export --platform web` (mock) bundle OK; chưa chụp màn hình hay duyệt bằng mắt.
+- Rủi ro: `useThemeColors` impact CRITICAL (20 caller) nhưng shape giữ nguyên, chỉ đổi giá trị màu. Component mới chưa màn hình nào dùng (bước 6); OfflineBanner chưa gắn vào layout.
