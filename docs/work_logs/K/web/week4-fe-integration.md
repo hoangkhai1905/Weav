@@ -111,6 +111,15 @@ Kiểm tra:
 - Stack thật: phải bật đủ điều kiện cho trợ lý: sinh khóa dịch vụ `node scripts/ai-dev-keys.mjs` (tmp/service-keys/public|private), khóa identity `node scripts/identity-dev-keys.mjs`, tạo lại workflow-service, workspace-service, ai-service, identity-service (identity trước đó chạy HS256 dù `.env` đặt RS256; JWKS rỗng → ai-service từ chối mọi token, Gateway trả 401). Sau đó user đăng nhập lại để có token RS256. Kết quả: GET conversations 200, chat 200 stream được, chip "Đang xem danh sách quy trình", trả lời đúng số workflow; lịch sử mở được (GET messages 200); xóa hội thoại 204. Lượt tạo workflow: trợ lý trả `INVALID_INTENT` rồi báo workspace không có kết nối Gmail nên không có thẻ draft (do môi trường; e2e đã phủ). Dùng 3 lượt DeepSeek.
 - Còn mở: DeepSeek trả markdown (`**đậm**`, backtick) nên hiện ký tự thô vì đã chọn text thuần; có thể xử lý bằng cách render tối thiểu (đậm/code) không dùng thư viện hoặc dặn model trả text thuần — cần user quyết.
 
+## 6d. Kết nối Telegram + trigger Telegram (2026-10-07)
+
+Subagent Sonnet làm, agent chính duyệt và commit.
+- Trang Connections tạo được kết nối TELEGRAM theo hợp đồng workspace-service: `POST .../connections` `{name, provider: TELEGRAM, authType: TOKEN}` (DISABLED) → `PUT .../connections/{id}/credential` `{payload: {token}}` → `POST .../test` (getMe; VERIFIED → ACTIVE, AUTH_INVALID → INVALID). Ô token `type=password`, `autocomplete=off`, xóa sau khi gửi, không lưu hay log. Lưu token lỗi thì xóa kết nối rỗng vừa tạo. Hàng Telegram có nút Test, không có nút OAuth Google.
+- Builder: `trigger.telegram` bỏ trạng thái "Chưa khả dụng"; inspector theo `SCHEMA_FORMS` (chọn kết nối TELEGRAM ACTIVE, link sang Connections, gợi ý cần `WORKFLOW_PUBLIC_BASE_URL` HTTPS công khai và một bot chỉ phục vụ một workflow đang bật); readiness cần `connectionId`. Bỏ các chuỗi "Bot Service" cũ (vi + en).
+- Giả định chờ user xác nhận: (1) tự Test token ngay sau khi lưu (gọi Telegram lúc tạo); (2) lưu token lỗi thì xóa kết nối vừa tạo; (3) inspector chỉ có link sang Connections, không có hộp tạo bot ngay trong builder; (4) hộp "thêm kết nối" trong builder vẫn chỉ có provider Google.
+- Kiểm tra: tsc, eslint (chỉ lỗi có sẵn ở WorkflowBuilderPage), `pnpm build`, `git diff --check` qua. e2e `workspace-connections` + `assistant`: 64/66 (2 lỗi 401 có sẵn). `localization`: 3 lỗi có sẵn. `workflow-catalog-v1`: 6 lỗi có sẵn; test "catalog matches exactly..." từng fail do phần (b) thêm 6 node mà danh sách mong đợi chưa cập nhật (regression của (b), đã sửa: danh sách = 19 node của `packages/workflow-schema`).
+- Chưa kiểm stack thật (cần token bot thật do user nhập và URL công khai).
+
 ## 7. Hướng dẫn cho agent tiếp theo
 
 1. `git status`: phải đang ở `feat/week4-fe-integration`, worktree sạch (trừ `examples/` không thuộc dự án). Kiểm `git log -1` là merge commit "Merge branch 'dev' into feat/week4-fe-integration".
@@ -126,7 +135,7 @@ Kiểm tra:
 - Nút "Tạo bằng AI": user chọn nối vào luồng thật (tạo bản nháp rồi mở builder với `GenerateWorkflowPanel` bật sẵn), làm sau. `/ai/workflow-generator` (`AiGeneratorPage`) hiện chỉ là demo `setTimeout`.
 - Volume tạm `weav-m2-tmp` (cache Maven) còn; hook chặn agent xóa volume, user tự chạy `docker volume rm weav-m2-tmp` khi không cần.
 - Stack dev đã build lại bằng code đã gộp (2026-10-07); identity dev chạy RS256, khóa dev trong `tmp/service-keys/` (identity, public, private).
-- Trang Connections chưa tạo được kết nối Telegram (cần token bot) nên `telegram.send_message` chưa dùng thật được; `data.set` lưu mọi giá trị dạng chuỗi.
+- `data.set` lưu mọi giá trị dạng chuỗi; câu trả lời trợ lý hiện ký tự markdown thô (chờ user quyết).
 - Stash `stash@{0}` (`codex/web-session-renewal`) là bản làm dở cũ của tính năng giữ đăng nhập; tính năng đã xong bằng cách khác (xem `web-session-renewal.md`), stash để nguyên.
 
 ## 9. Kết thúc phiên

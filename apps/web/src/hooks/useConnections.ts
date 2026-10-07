@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   connectionApi,
   type CreateGoogleConnectionRequest,
+  type CreateTelegramConnectionRequest,
 } from "../api/connection.api";
 import { getStoredAuthToken } from "../api/ocr.api";
 import { useAuthStore } from "../store/useAuthStore";
@@ -103,7 +104,7 @@ export function useCreateConnection() {
     mutationFn: ({
       workspaceId,
       input,
-    }: WorkspaceMutationVariables & { input: CreateGoogleConnectionRequest }) =>
+    }: WorkspaceMutationVariables & { input: CreateGoogleConnectionRequest | CreateTelegramConnectionRequest }) =>
       connectionApi.create(workspaceId, input),
     onSuccess: async (_connection, { workspaceId }) => {
       if (!userId) return;

@@ -26,6 +26,7 @@ const CONNECTION_NODE_FIELDS: Record<string, (config: Record<string, unknown>) =
   'google.sheets': () => ['spreadsheetId', 'range'],
   'email.send': () => ['to', 'subject'],
   'telegram.send_message': () => ['chatId', 'text'],
+  'trigger.telegram': () => [],
   'trigger.gmail': () => [],
   // Upload with `content` needs a name; with `file` the name defaults to the file's own.
   'google.drive': (config) => ['operation', ...(config.operation === 'upload' && !isBlank(config.content) ? ['name'] : [])],
@@ -67,10 +68,7 @@ export const getNodeReadinessBadge = (
 ): NodeReadinessBadge => {
   if (!SUPPORTED_NODE_TYPES.has(nodeType)) return { state: 'unsupported', label: 'Unsupported', labelKey: 'builder.readiness.unsupported' };
   if (nodeType === 'trigger.webhook') return { state: 'draft', label: 'Not published', labelKey: 'builder.readiness.not_published' };
-  if (
-    nodeType === 'trigger.telegram' ||
-    nodeType === 'ocr.extract'
-  ) {
+  if (nodeType === 'ocr.extract') {
     return { state: 'unavailable', label: 'Unavailable', labelKey: 'builder.readiness.unavailable' };
   }
   const connectionFields = CONNECTION_NODE_FIELDS[nodeType]?.(config);

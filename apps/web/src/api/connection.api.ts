@@ -38,6 +38,14 @@ export interface CreateGoogleConnectionRequest {
   authType: "OAUTH2";
 }
 
+export interface CreateTelegramConnectionRequest {
+  name: string;
+  provider: "TELEGRAM";
+  authType: "TOKEN";
+  /** Bot token from @BotFather; write-only, sent once to the credential endpoint and never kept. */
+  token: string;
+}
+
 export type ConnectionTestResponse = { outcome: "VERIFIED" | "AUTH_INVALID" };
 export type OAuthStartResponse = { authorizationUrl: string };
 
@@ -302,7 +310,7 @@ export const connectionApi = {
 
   async create(
     workspaceId: string,
-    input: CreateGoogleConnectionRequest,
+    input: CreateGoogleConnectionRequest | CreateTelegramConnectionRequest,
   ): Promise<ConnectionResponse> {
     const value = await request<unknown>({
       method: "POST",
@@ -310,10 +318,36 @@ export const connectionApi = {
       data: {
         name: normalizedName(input.name),
         provider: input.provider,
-        authType: "OAUTH2",
+        authType: input.authType,
       },
     });
-    return parseConnection(value);
+    const created = parseConnection(value);
+    if (input.provider !== "TELEGRAM") return created;
+    // The connection is created DISABLED without a credential: store the token, then verify it
+    // (VERIFIED activates the connection). A failed save removes the empty shell again.
+    try {
+      await connectionApi.saveCredential(workspaceId, created.id, { token: input.token });
+    } catch (error) {
+      await connectionApi.remove(workspaceId, created.id).catch(() => undefined);
+      throw error;
+    }
+    // A failed verification leaves the row DISABLED/INVALID; the row's Test action retries it.
+    await connectionApi.test(workspaceId, created.id).catch(() => undefined);
+    return created;
+  },
+
+  async saveCredential(
+    workspaceId: string,
+    connectionId: string,
+    payload: { token: string },
+  ): Promise<ConnectionResponse> {
+    return parseConnection(
+      await request<unknown>({
+        method: "PUT",
+        url: `${itemPath(workspaceId, connectionId)}/credential`,
+        data: { payload },
+      }),
+    );
   },
 
   async get(

@@ -29,6 +29,13 @@ const V1_NODE_TYPES = [
   'ai.classify',
   'ai.summarize',
   'ocr.extract',
+  // Week 4 nodes; the catalog now covers every packages/workflow-schema node.
+  'trigger.gmail',
+  'google.drive',
+  'google.calendar',
+  'logic.switch',
+  'data.set',
+  'ai.generate',
 ].sort();
 
 const runtimeErrors = new WeakMap<Page, string[]>();
@@ -59,7 +66,7 @@ test('catalog matches exactly the Workflow V1 node set and contract defaults', a
     return NODE_CATALOG;
   });
   expect(catalog.map((item) => item.type).sort()).toEqual(V1_NODE_TYPES);
-  expect(catalog).toHaveLength(13);
+  expect(catalog).toHaveLength(V1_NODE_TYPES.length);
 
   const schedule = catalog.find((item) => item.type === 'trigger.schedule');
   expect(schedule?.defaultConfig).toEqual({ cron: '0 0 9 * * *', timezone: 'Asia/Ho_Chi_Minh' });
@@ -221,7 +228,7 @@ test('unconfigured integrations remain visible and cannot be published as ready'
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
 
   await page.locator('[data-node-type="trigger.telegram"]').click();
-  await expect(page.getByTestId('integration-readiness')).toContainText('Bot Service trigger contract');
+  await expect(page.getByTestId('integration-readiness')).toContainText('select a Telegram bot connection');
   await expect(page.getByTestId('workflow-publish')).toBeDisabled();
 });
 

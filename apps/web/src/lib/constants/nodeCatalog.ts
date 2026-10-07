@@ -34,7 +34,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'trigger.telegram',
     title: 'Telegram Bot Event',
-    description: 'Telegram trigger; Bot Service contract is not available yet.',
+    description: "Starts the workflow when the workspace's Telegram bot receives a text message.",
     category: 'trigger',
     iconName: 'Send',
     defaultConfig: {},

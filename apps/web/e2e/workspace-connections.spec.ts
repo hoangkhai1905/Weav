@@ -566,6 +566,111 @@ test.describe("workspace connection API adapter", () => {
     );
   });
 
+  test("create stores a Telegram bot token through the credential endpoint, verifies it and shows a Test action", async ({
+    page,
+  }) => {
+    await installAuthFixture(page);
+    const TOKEN = "123456:TEST-token";
+    const telegram = (status: "DISABLED" | "ACTIVE", hasCredential: boolean) => ({
+      ...connection(CONNECTION_TELEGRAM_ID, "TELEGRAM", WORKSPACE_ID, status),
+      name: "Support bot",
+      authType: "TOKEN",
+      hasCredential,
+    });
+    let connections: unknown[] = [];
+    const calls: string[] = [];
+    let createBody: unknown;
+    let credentialBody: unknown;
+    let testCalls = 0;
+    await page.route("**/api/v1/workspaces/*/connections", async (route) => {
+      if (route.request().method() === "GET") return fulfillJson(route, connections);
+      calls.push("create");
+      createBody = route.request().postDataJSON();
+      connections = [telegram("DISABLED", false)];
+      return fulfillJson(route, connections[0], 201);
+    });
+    await page.route(
+      `**/api/v1/workspaces/*/connections/${CONNECTION_TELEGRAM_ID}/credential`,
+      (route) => {
+        calls.push("credential");
+        credentialBody = route.request().postDataJSON();
+        connections = [telegram("DISABLED", true)];
+        return fulfillJson(route, connections[0]);
+      },
+    );
+    await page.route(
+      `**/api/v1/workspaces/*/connections/${CONNECTION_TELEGRAM_ID}/test`,
+      (route) => {
+        calls.push("test");
+        testCalls += 1;
+        connections = [telegram("ACTIVE", true)];
+        return fulfillJson(route, { outcome: "VERIFIED" });
+      },
+    );
+    await gotoAuthenticatedConnections(page);
+    await page.getByTestId("connections-create-open").click();
+    await page.getByTestId("connection-create-name").fill("Support bot");
+    await expect(page.getByTestId("connection-create-token")).toHaveCount(0);
+    await page.getByTestId("connection-create-provider").selectOption("TELEGRAM");
+    const tokenInput = page.getByTestId("connection-create-token");
+    await expect(tokenInput).toHaveAttribute("type", "password");
+    await expect(tokenInput).toHaveAttribute("autocomplete", "off");
+    await tokenInput.fill(TOKEN);
+    await page.getByTestId("connection-create-submit").click();
+
+    const row = page.getByTestId(`connection-row-${CONNECTION_TELEGRAM_ID}`);
+    await expect(row).toContainText("TELEGRAM");
+    await expect(
+      page.getByTestId(`connection-status-${CONNECTION_TELEGRAM_ID}`),
+    ).toHaveAttribute("data-status", "ACTIVE");
+    expect(createBody).toEqual({ name: "Support bot", provider: "TELEGRAM", authType: "TOKEN" });
+    expect(credentialBody).toEqual({ payload: { token: TOKEN } });
+    expect(calls).toEqual(["create", "credential", "test"]);
+    await expect(page.getByTestId(`connection-oauth-${CONNECTION_TELEGRAM_ID}`)).toHaveCount(0);
+    await expect(page.getByText(TOKEN)).toHaveCount(0);
+
+    // The row's Test action verifies the stored token again.
+    await row.getByTestId(`connection-test-${CONNECTION_TELEGRAM_ID}`).click();
+    await expect.poll(() => testCalls).toBe(2);
+  });
+
+  test("Telegram create without a token is blocked and a failed token save removes the empty connection", async ({
+    page,
+  }) => {
+    await installAuthFixture(page);
+    const removed: string[] = [];
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      route.request().method() === "GET"
+        ? fulfillJson(route, [])
+        : fulfillJson(route, { ...connection(CONNECTION_TELEGRAM_ID, "TELEGRAM"), authType: "TOKEN" }, 201),
+    );
+    await page.route(
+      `**/api/v1/workspaces/*/connections/${CONNECTION_TELEGRAM_ID}**`,
+      (route) => {
+        if (route.request().method() === "DELETE") {
+          removed.push(CONNECTION_TELEGRAM_ID);
+          return route.fulfill({ status: 204, body: "" });
+        }
+        return fulfillJson(route, { error: { code: "BAD_REQUEST", message: "bad" } }, 400);
+      },
+    );
+    await gotoAuthenticatedConnections(page);
+    await page.getByTestId("connections-create-open").click();
+    await page.getByTestId("connection-create-name").fill("Support bot");
+    await page.getByTestId("connection-create-provider").selectOption("TELEGRAM");
+    await page.getByTestId("connection-create-token").fill("   ");
+    await page.getByTestId("connection-create-submit").click();
+    await expect(page.getByTestId("connection-create-error")).toHaveText("Enter the Telegram bot token.");
+    expect(removed).toEqual([]);
+
+    await page.getByTestId("connection-create-token").fill("123456:TEST-token");
+    await page.getByTestId("connection-create-submit").click();
+    await expect(page.getByTestId("connection-create-error")).toBeVisible();
+    expect(removed).toEqual([CONNECTION_TELEGRAM_ID]);
+    // The token is cleared after a submit attempt.
+    await expect(page.getByTestId("connection-create-token")).toHaveValue("");
+  });
+
   test("Connect Google starts Workspace OAuth and stores only safe pending context", async ({
     page,
   }) => {
@@ -2150,5 +2255,77 @@ test.describe("workflow builder Week 4 new nodes", () => {
     for (const type of ["trigger.gmail", "google.drive", "google.calendar", "ai.generate", "logic.switch", "data.set"]) {
       await expect(page.locator(`[data-testid="workflow-palette-item"][data-node-type="${type}"]`)).toHaveCount(1);
     }
+  });
+});
+
+test.describe("workflow builder Telegram trigger", () => {
+  const WORKFLOW_ID = "30000000-0000-4000-8000-000000000006";
+  const TG_ACTIVE_ID = "20000000-0000-4000-8000-000000000031";
+  const TG_DISABLED_ID = "20000000-0000-4000-8000-000000000032";
+  const TG_LOCKED_ID = "20000000-0000-4000-8000-000000000033";
+  const triggerNode = '[data-testid="workflow-node"][data-node-type="trigger.telegram"]';
+  let config: Record<string, unknown>;
+
+  const detail = () => ({
+    workflowId: WORKFLOW_ID,
+    name: "Telegram trigger",
+    status: "DRAFT",
+    schemaVersion: "1.0",
+    currentVersionId: null,
+    createdAt: "2026-08-01T00:00:00Z",
+    updatedAt: "2026-08-01T00:00:00Z",
+    definition: {
+      schemaVersion: "1.0",
+      nodes: [{ id: "tg", type: "trigger.telegram", config }],
+      edges: [],
+      variables: {},
+    },
+    editorState: { nodes: { tg: { name: "tg", position: { x: 0, y: 0 } } } },
+  });
+
+  test("lists only ACTIVE attachable Telegram bots, gates readiness on the choice and saves it", async ({ page }) => {
+    config = {};
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, [
+        { ...connection(TG_ACTIVE_ID, "TELEGRAM", WORKSPACE_ID, "ACTIVE"), name: "Support bot" },
+        { ...connection(TG_DISABLED_ID, "TELEGRAM", WORKSPACE_ID, "DISABLED"), name: "Disabled bot" },
+        { ...connection(TG_LOCKED_ID, "TELEGRAM", WORKSPACE_ID, "ACTIVE"), name: "Locked bot", canAttach: false },
+        connection(CONNECTION_GMAIL_ID, "GMAIL", WORKSPACE_ID, "ACTIVE"),
+      ]),
+    );
+    await page.route(`**/api/v1/workspaces/*/workflows/${WORKFLOW_ID}**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/draft") && route.request().method() === "PUT") {
+        config = (route.request().postDataJSON() as { definition: { nodes: Array<{ config: Record<string, unknown> }> } })
+          .definition.nodes[0].config;
+        return fulfillJson(route, detail());
+      }
+      if (url.pathname.endsWith(`/workflows/${WORKFLOW_ID}`)) return fulfillJson(route, detail());
+      return fulfillJson(route, pageResult([]));
+    });
+    await gotoAuthenticatedPath(page, `/workflows/${WORKFLOW_ID}/builder`);
+
+    await page.locator(triggerNode).click();
+    await expect(page.locator(triggerNode)).toHaveAttribute("data-readiness", "not-configured");
+    await expect(page.getByTestId("integration-readiness")).toContainText("select a Telegram bot connection");
+    await expect(page.getByTestId("publish-blocker-summary")).toContainText("select a Telegram bot connection");
+    await expect(page.getByTestId("telegram-trigger-hint")).toContainText("WORKFLOW_PUBLIC_BASE_URL");
+    await expect(page.getByTestId("add-connection-TELEGRAM")).toHaveAttribute("href", "/workspace/connections");
+
+    const select = page.getByLabel("Telegram bot connection");
+    await expect(select.locator("option")).toHaveCount(2);
+    await expect(select).toContainText("Support bot");
+    await expect(select).not.toContainText("Disabled bot");
+    await expect(select).not.toContainText("Locked bot");
+    await select.selectOption(TG_ACTIVE_ID);
+    await expect(page.locator(triggerNode)).toHaveAttribute("data-readiness", "ready");
+    await expect(page.getByTestId("integration-readiness")).toHaveCount(0);
+    await expect(page.getByTestId("publish-blocker-summary")).toHaveCount(0);
+
+    const saved = page.waitForResponse((response) => response.request().method() === "PUT" && response.url().endsWith("/draft"));
+    await page.getByTestId("workflow-save-inspector").click();
+    await saved;
+    expect(config).toEqual({ connectionId: TG_ACTIVE_ID });
   });
 });

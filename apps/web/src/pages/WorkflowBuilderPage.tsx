@@ -163,11 +163,13 @@ const CONNECTION_STEP_MESSAGES: Record<string, [string, string, string]> = {
   'google.sheets': ['builder.cfg.msg_sheets_select', 'builder.cfg.msg_sheets_auth', 'builder.cfg.msg_sheets_fields'],
   'email.send': ['builder.cfg.msg_gmail_select', 'builder.cfg.msg_gmail_auth', 'builder.cfg.msg_email_fields'],
   'telegram.send_message': ['builder.cfg.msg_tg_select', 'builder.cfg.msg_tg_auth', 'builder.cfg.msg_tg_fields'],
+  'trigger.telegram': ['builder.cfg.msg_tg_select', 'builder.cfg.msg_tg_auth', 'builder.cfg.msg_tg_select'],
   'trigger.gmail': ['builder.cfg.msg_gmail_select', 'builder.cfg.msg_gmail_auth', 'builder.cfg.msg_gmail_select'],
   'google.drive': ['builder.cfg.msg_drive_select', 'builder.cfg.msg_drive_auth', 'builder.cfg.msg_drive_fields'],
   'google.calendar': ['builder.cfg.msg_calendar_select', 'builder.cfg.msg_calendar_auth', 'builder.cfg.msg_calendar_fields'],
 };
-const PROVIDER_NAMES: Record<GoogleProvider, string> = {
+const PROVIDER_NAMES: Record<GoogleProvider | 'TELEGRAM', string> = {
+  TELEGRAM: 'Telegram',
   GMAIL: 'Gmail',
   GOOGLE_SHEETS: 'Google Sheets',
   GOOGLE_CALENDAR: 'Google Calendar',
@@ -182,7 +184,9 @@ const FIELD_STEP_MESSAGES: Record<string, string> = {
 };
 
 // Steps whose inspector is rendered from packages/workflow-schema (SchemaField), per operation.
-const SCHEMA_FORMS: Record<string, { provider?: GoogleProvider; fields: (config: Record<string, unknown>) => string[]; multiline?: string[] }> = {
+// trigger.telegram has no other field; it needs the workspace's Telegram bot connection.
+const SCHEMA_FORMS: Record<string, { provider?: GoogleProvider | 'TELEGRAM'; fields: (config: Record<string, unknown>) => string[]; multiline?: string[] }> = {
+  'trigger.telegram': { provider: 'TELEGRAM', fields: () => [] },
   'trigger.gmail': { provider: 'GMAIL', fields: () => ['query', 'pollIntervalMinutes'] },
   'google.drive': {
     provider: 'GOOGLE_DRIVE',
@@ -220,7 +224,6 @@ const getNodeReadinessMessage = (
   if (FIELD_STEP_MESSAGES[type]) {
     return getNodeReadinessBadge(type, config).state === 'ready' ? undefined : t(FIELD_STEP_MESSAGES[type]);
   }
-  if (type === 'trigger.telegram') return t('builder.cfg.msg_tg_trigger');
   if (type === 'logic.condition' && !isConditionComplete(config)) {
     return t('builder.cfg.msg_condition');
   }
@@ -271,7 +274,7 @@ const getPublishBlockers = (nodes: Node[], edges: Edge[], t: (key: string) => st
       const message = getNodeReadinessMessage(type, config, t, attachableConnectionIds);
       if (message) blockers.add(message);
     }
-    if (type === 'trigger.telegram' || type === 'ocr.extract') {
+    if (type === 'ocr.extract') {
       blockers.add(getNodeReadinessMessage(type, config, t) ?? t('builder.blocker.not_configured').replace('{type}', type));
     }
     if (type === 'ocr.extract') {
@@ -1727,6 +1730,17 @@ export const WorkflowBuilderPage: React.FC = () => {
                     return (
                       <div>
                         {configField('connectionId', options)}
+                        {provider === 'TELEGRAM' ? (
+                          <>
+                            {!isLoadingConnections && options.length === 0 && (
+                              <p className="mt-1 text-[10px] text-muted-foreground">{t('builder.cfg.no_telegram')}</p>
+                            )}
+                            <Link to="/workspace/connections" data-testid="add-connection-TELEGRAM" className={addConnectionButtonCls}>
+                              <Plus size={12} aria-hidden="true" />{t('builder.cfg.connect_telegram')}
+                            </Link>
+                          </>
+                        ) : (
+                          <>
                         {!isLoadingConnections && options.length === 0 && (
                           <p className="mt-1 text-[10px] text-muted-foreground">
                             {t('builder.cfg.no_provider_connection').replace('{provider}', PROVIDER_NAMES[provider])}{' '}
@@ -1738,10 +1752,13 @@ export const WorkflowBuilderPage: React.FC = () => {
                             <Plus size={12} aria-hidden="true" />{t('builder.cfg.add_provider_connection').replace('{provider}', PROVIDER_NAMES[provider])}
                           </button>
                         )}
+                          </>
+                        )}
                       </div>
                     );
                   })()}
                   {selectedSchemaForm.fields(selectedNodeConfig).map((name) => configField(name, undefined, selectedSchemaForm.multiline?.includes(name)))}
+                  {selectedNodeType === 'trigger.telegram' && <p data-testid="telegram-trigger-hint" className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.telegram_trigger_hint')}</p>}
                   {selectedNodeType === 'google.drive' && <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.drive_hint')}</p>}
                 </div>
               ) : selectedNodeType === 'logic.switch' ? (
@@ -1791,10 +1808,6 @@ export const WorkflowBuilderPage: React.FC = () => {
                     onChange={(event) => updateSelectedNodeConfig({ buttonLabel: event.target.value })}
                     className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                   />
-                </div>
-              ) : selectedNodeType === 'trigger.telegram' ? (
-                <div data-testid="telegram-trigger-config" className="rounded border border-warn/30 bg-warn-bg p-3 text-[11px] leading-relaxed text-warn">
-                  {t('builder.cfg.telegram_trigger_body')}
                 </div>
               ) : selectedNodeType === 'telegram.send_message' ? (
                 <div data-testid="telegram-send-config" className="space-y-3">
