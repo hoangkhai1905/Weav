@@ -178,7 +178,7 @@ test.describe('web change-password HTTP integration', () => {
     await fillPasswordForm(page);
     await page.getByTestId('change-password-button').click();
 
-    await expect(page.getByTestId('password-error')).toHaveText('Invalid credentials or expired session.');
+    await expect(page.getByTestId('password-error')).toHaveText('The current password is incorrect.');
     await expect(passwordField(page, 'Current password')).toHaveValue('current-password');
     await expect(passwordField(page, 'New password')).toHaveValue('new-password');
     await expect(passwordField(page, 'Confirm new password')).toHaveValue('new-password');

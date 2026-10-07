@@ -117,7 +117,11 @@ let sessionRefreshToken: string | null = null;
 
 class AuthApiError extends Error {
   readonly status: number;
-  constructor(status: number) {
+  /** Gateway/Identity error code (e.g. VALIDATION_ERROR), when the response carried one. */
+  readonly code: string | null;
+  /** Server-side field errors from `error.details[]`, keyed by field name. */
+  readonly fieldErrors: Record<string, string>;
+  constructor(status: number, code: string | null = null, fieldErrors: Record<string, string> = {}) {
     const messages: Record<number, string> = {
       400: tr('msg.please_check_your_email_password_and_display'),
       401: tr('msg.invalid_credentials_or_expired_session'),
@@ -128,7 +132,34 @@ class AuthApiError extends Error {
     };
     super(messages[status] ?? tr('msg.sign_in_service_unavailable_please_try_again'));
     this.status = status;
+    this.code = code;
+    this.fieldErrors = fieldErrors;
   }
+}
+
+export function getAuthApiErrorCode(error: unknown): string | null {
+  return error instanceof AuthApiError ? error.code : null;
+}
+
+export function getAuthApiFieldErrors(error: unknown): Record<string, string> {
+  return error instanceof AuthApiError ? error.fieldErrors : {};
+}
+
+/** Reads `{ error: { code, details: [{ field, message }] } }` from the response only (never the request: passwords). */
+function parseErrorBody(error: unknown): { code: string | null; fieldErrors: Record<string, string> } {
+  const body = axios.isAxiosError(error)
+    ? (error.response?.data as { error?: { code?: unknown; details?: unknown } } | undefined)
+    : undefined;
+  const code = typeof body?.error?.code === 'string' ? body.error.code : null;
+  const fieldErrors: Record<string, string> = {};
+  if (Array.isArray(body?.error?.details)) {
+    for (const detail of body.error.details as Array<{ field?: unknown; message?: unknown }>) {
+      if (typeof detail?.field === 'string' && typeof detail.message === 'string' && !(detail.field in fieldErrors)) {
+        fieldErrors[detail.field] = detail.message;
+      }
+    }
+  }
+  return { code, fieldErrors };
 }
 
 export function getAuthApiErrorStatus(error: unknown): number | null {
@@ -140,8 +171,11 @@ async function request<T>(client: typeof apiClient, config: AxiosRequestConfig):
     return (await client.request<T>(config)).data;
   } catch (error) {
     // No raw Axios errors: they contain passwords and authorization headers.
+    const { code, fieldErrors } = parseErrorBody(error);
     throw new AuthApiError(
       axios.isAxiosError(error) ? (error.response?.status ?? 0) : 0,
+      code,
+      fieldErrors,
     );
   }
 }
@@ -165,6 +199,9 @@ function authenticatedAuthRequest<T>(config: AxiosRequestConfig): Promise<T> {
     },
   });
 }
+
+/** Authenticated call through the API Gateway, for sibling API modules (admin). */
+export const gatewayRequest = authenticatedAuthRequest;
 
 function authenticatedOAuthRequest<T>(config: AxiosRequestConfig): Promise<T> {
   return oauthRequest<T>({
@@ -537,6 +574,28 @@ export const authApi = {
       url: '/api/auth/change-password',
       data: { currentPassword, newPassword },
     });
+  },
+
+  /** PUT /api/users/me/avatar (multipart field "file"; JPEG/PNG/WebP, max 2 MiB). */
+  async uploadAvatar(file: File): Promise<UserProfile> {
+    const form = new FormData();
+    form.append('file', file);
+    return mapIdentityUser(await authenticatedAuthRequest<IdentityUser>({
+      method: 'PUT',
+      url: '/api/users/me/avatar',
+      data: form,
+      timeout: 30000,
+    }));
+  },
+
+  async deleteAvatar(): Promise<void> {
+    await authenticatedAuthRequest<void>({ method: 'DELETE', url: '/api/users/me/avatar' });
+  },
+
+  /** Short-lived signed URL of the current avatar. */
+  async getAvatarUrl(): Promise<string> {
+    const result = await authenticatedAuthRequest<{ url: string }>({ method: 'GET', url: '/api/users/me/avatar' });
+    return result.url;
   },
 
   async listSessions(page = 0, size = 20): Promise<OAuthSessionPage> {

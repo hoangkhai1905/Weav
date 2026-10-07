@@ -18,6 +18,7 @@ import { TelegramPage } from './pages/TelegramPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
+import { AdminUsersPage } from './pages/AdminUsersPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { Toaster } from 'sonner';
 import { useEffect } from 'react';
@@ -95,6 +96,7 @@ export function App() {
         <Route path="/settings/profile" element={<SettingsPage />} />
         <Route path="/settings/security" element={<SettingsPage />} />
         <Route path="/help" element={<HelpPage />} />
+        <Route path="/admin/users" element={<AdminUsersPage />} />
       </Route>
 
       {/* Catch-all Fallback */}
