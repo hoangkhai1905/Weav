@@ -142,10 +142,12 @@ test('schedule and webhook inspectors use system-managed V1 inputs', async ({ pa
 
   await addNode(page, 'trigger.schedule');
   const schedule = page.getByTestId('workflow-inspector');
-  await expect(schedule.getByTestId('schedule-cron')).toHaveValue('0 0 9 * * *');
+  await expect(schedule.getByTestId('schedule-repeat')).toHaveValue('daily');
+  await expect(schedule.getByTestId('schedule-time')).toHaveValue('09:00');
   await expect(schedule.getByTestId('schedule-timezone')).toHaveValue('Asia/Ho_Chi_Minh');
+  await schedule.getByTestId('schedule-repeat').selectOption('advanced');
   await schedule.getByTestId('schedule-cron').fill('0 15 8 * * MON-FRI');
-  await schedule.getByTestId('schedule-timezone').fill('Asia/Ho_Chi_Minh');
+  await schedule.getByTestId('schedule-timezone').selectOption('Asia/Ho_Chi_Minh');
 
   await page.getByTestId('rf__node-node-webhook').getByTestId('workflow-node').click();
   const webhook = page.getByTestId('workflow-inspector');
