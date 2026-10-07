@@ -133,11 +133,17 @@ class WorkflowGenerationServiceTest {
     }
 
     @Test void otherAiFailuresBecomeAiUnavailable() {
-        for (String code : List.of("AI_OUTPUT_INVALID", "DEPENDENCY_NOT_CONFIGURED")) {
+        for (String code : List.of("DEPENDENCY_NOT_CONFIGURED", "AI_PROVIDER_UNAVAILABLE")) {
             FakeAi ai = new FakeAi(new NodeExecutor.Failure(code, "failure", false));
             assertThrows(AiUnavailableException.class, () -> service(ai, new Connections(), () -> true)
                     .generate(UUID.randomUUID(), UUID.randomUUID(), "x", null, Map.of()));
         }
+    }
+
+    @Test void unusableModelOutputBecomesInvalidIntentNotUnavailable() {
+        FakeAi ai = new FakeAi(new NodeExecutor.Failure("AI_OUTPUT_INVALID", "failure", false));
+        assertEquals(Map.of("status", "unsupported", "reasons", List.of(Map.of("code", "INVALID_INTENT"))),
+                service(ai, new Connections(), () -> true).generate(UUID.randomUUID(), UUID.randomUUID(), "x", null, Map.of()));
     }
 
     @Test void sixthCallWithinAMinuteIsRateLimitedPerUserAndWorkspace() {

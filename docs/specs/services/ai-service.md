@@ -99,7 +99,7 @@ Names and defaults from [ai-config.ts](../../../services/ai-service/src/config/a
 | `AI_PROVIDER` | `deepseek` | Only value supported |
 | `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` | unset | Both required for readiness |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Provider URL |
-| `DEEPSEEK_MAX_TOKENS` | 4096 | 256-8192 |
+| `DEEPSEEK_MAX_TOKENS` | 8192 | 256-8192 |
 | `AI_SERVICE_JWKS_FILE` | unset (compose: `/run/weav-keys/workflow-service.jwks.json`) | JWKS path; unreadable keeps service not-ready |
 | `AI_REQUEST_TIMEOUT_MS` | 60000 | 1000-120000, deadline starts before body parsing |
 | `AI_MAX_CONCURRENCY` | 4 | Global in-flight cap (1-64), not set in compose |

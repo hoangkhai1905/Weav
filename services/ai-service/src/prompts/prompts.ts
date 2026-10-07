@@ -25,6 +25,7 @@ logic.condition is either {"left","operator","right"} or {"combinator":"and"|"or
 trigger.schedule.cron has exactly 6 space-separated fields: second minute hour day-of-month month day-of-week (08:00 daily is "0 0 8 * * *").
 Every workflow has exactly one trigger.manual node; a trigger.schedule or trigger.webhook is added alongside it, and every trigger has an edge to the first step.
 Only set optional config fields (such as http.request headers) that the request asks for.
+email.send needs "to", "subject" and "body"; when the request does not give the subject or the body, ask (needs_input VALUE, field "<nodeId>.config.subject" or "<nodeId>.config.body") instead of leaving it out.
 Edge ports: a logic.condition edge needs "port":"true" or "false". logic.switch config is {"value":template,"cases":[strings]} with 1-20 unique literal cases (non-blank, at most 64 characters, not "default", no "{{"); give it one outgoing edge per case with "port":"<case>" (exactly a listed case) and optionally one "port":"default" edge. Edges from any other node have no port.
 Return exactly one of:
 {"status":"ready","intent":{"name":string,"nodes":[{"id":"^[a-z][a-z0-9_]{0,31}$","type":string,"config":object}],"edges":[{"from":id,"to":id,"port"?:string}]}}

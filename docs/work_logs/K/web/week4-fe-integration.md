@@ -136,6 +136,16 @@ User chọn: (1) hiển thị tối thiểu in đậm + code; (2) thêm chọn k
 - Kiểm tra: tsc, eslint, build, diff --check qua. `ai-generator` + `assistant` + `workspace-connections`: 74 qua, 2 lỗi 401 có sẵn. `localization` 3 và `workflow-catalog-v1` 6 lỗi có sẵn, không thêm. Một số test chạy song song thỉnh thoảng chập chờn ("badge, inspector warning...", "a condition switches...", "a step added from the palette..."), chạy riêng đều qua — nên xem lại (giảm worker hoặc chờ ổn định).
 - Chưa kiểm stack thật cho hai phần này.
 
+## 6g. Sửa lỗi "Tạo bằng AI" trên stack thật (2026-10-07)
+
+User báo lỗi "Dịch vụ quy trình tạm thời không khả dụng." khi bấm Tạo. Nguyên nhân:
+1. Web hủy request sau 15 giây (`AbortSignal.timeout(15_000)` cho mọi request trong `workflow-v1.api.ts`), lần sinh mất 18,6 s → `ERR_ABORTED`. Sửa: riêng `generateWorkflow` timeout 85 s (trên giới hạn Gateway 80 s, workflow-service 65 s, ai-service 60 s); hết giờ phía client báo 504 "AI mất quá lâu".
+2. ai-service trả `AI_OUTPUT_INVALID`: nhiều khả năng DeepSeek dùng hết `max_tokens` 4096 cho phần suy luận ẩn nên `finish_reason != stop`. Sửa: mặc định `DEEPSEEK_MAX_TOKENS` 8192 (`ai-config.ts`, có test, cập nhật `docs/specs/services/ai-service.md`). Chưa chứng minh bằng một lần fail thật.
+3. workflow-service đổi `AI_OUTPUT_INVALID` từ 503 "tạm thời không khả dụng" sang kết quả `unsupported`/`INVALID_INTENT` sẵn có (không đổi hợp đồng); câu hiển thị "AI chưa tạo được quy trình này, hãy diễn đạt lại".
+4. Prompt ai-service: dặn model hỏi lại khi thiếu tiêu đề/nội dung email thay vì bỏ trống.
+- Kiểm tra: ai-service 203 test qua + build; `WorkflowGenerationServiceTest` qua (JDK 25 trong container); web tsc/eslint/build, `ai-generator.spec.ts` 3/3. Stack thật (đã build lại ai-service, workflow-service): prompt mẫu không có nội dung email → panel báo thiếu `send_email.config.body` (đúng hành vi nhưng câu chữ kỹ thuật). Dùng 4 lượt DeepSeek.
+- Còn mở (cần user quyết): câu báo thiếu trường còn kỹ thuật; đề xuất `IntentCompiler` đổi `REQUIRED_FIELD_MISSING` thành câu hỏi `needs_input` cho người dùng điền.
+
 ## 7. Hướng dẫn cho agent tiếp theo
 
 1. `git status`: phải đang ở `feat/week4-fe-integration`, worktree sạch (trừ `examples/` không thuộc dự án). Kiểm `git log -1` là merge commit "Merge branch 'dev' into feat/week4-fe-integration".

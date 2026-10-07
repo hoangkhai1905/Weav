@@ -1814,7 +1814,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "ai.reason.CAPABILITY_UNAVAILABLE": "Tính năng này hiện không khả dụng.",
     "ai.reason.OUT_OF_SCOPE": "Yêu cầu này nằm ngoài phạm vi hỗ trợ.",
     "ai.reason.AMBIGUOUS_REQUEST": "Yêu cầu này chưa rõ ràng.",
-    "ai.reason.INVALID_INTENT": "Không thể hiểu được ý định.",
+    "ai.reason.INVALID_INTENT": "AI chưa dựng được quy trình này. Hãy thử mô tả lại rõ hơn.",
   },
   EN: {
     // Navigation
@@ -3622,6 +3622,6 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "ai.reason.CAPABILITY_UNAVAILABLE": "This capability is unavailable.",
     "ai.reason.OUT_OF_SCOPE": "This request is out of scope.",
     "ai.reason.AMBIGUOUS_REQUEST": "The request is ambiguous.",
-    "ai.reason.INVALID_INTENT": "The intent could not be understood.",
+    "ai.reason.INVALID_INTENT": "AI could not build this workflow. Try rephrasing it.",
   },
 };

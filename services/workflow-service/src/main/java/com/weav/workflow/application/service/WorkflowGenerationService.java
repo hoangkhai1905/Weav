@@ -60,6 +60,8 @@ public class WorkflowGenerationService {
         catch (NodeExecutor.Failure failure) {
             if ("AI_QUOTA_EXCEEDED".equals(failure.code())) throw new AiQuotaExceededException();
             if ("AI_TIMEOUT".equals(failure.code()) || "TIMEOUT".equals(failure.code())) throw new AiTimeoutException();
+            // The model answered, but not with a usable workflow: tell the user to rephrase, not "unavailable".
+            if ("AI_OUTPUT_INVALID".equals(failure.code())) return invalidIntent();
             throw new AiUnavailableException();
         }
         return switch (String.valueOf(result.get("status"))) {

@@ -158,6 +158,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 }
 
+const REQUEST_TIMEOUT_MS = 15_000;
+// Above the gateway's 80 s generate limit (workflow-service 65 s, ai-service 60 s), so the server answers first.
+const GENERATE_TIMEOUT_MS = 85_000;
+
 async function requestOnce<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Authorization', `Bearer ${authToken()}`);
@@ -169,12 +173,14 @@ async function requestOnce<T>(path: string, init: RequestInit = {}): Promise<T> 
     response = await fetch(`${apiBaseUrl()}${path}`, {
       ...init,
       headers,
-      signal: init.signal ?? AbortSignal.timeout(15_000),
+      signal: init.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       redirect: 'error',
       cache: 'no-store',
     });
-  } catch {
-    throw new WorkflowApiError(0, tr('msg.workflow_service_is_temporarily_unavailable'));
+  } catch (error) {
+    // A client-side timeout is reported as 504 so callers (e.g. AI generation) can say "took too long".
+    const timedOut = error instanceof DOMException && error.name === 'TimeoutError';
+    throw new WorkflowApiError(timedOut ? 504 : 0, tr('msg.workflow_service_is_temporarily_unavailable'));
   }
 
   if (response.status === 204) return undefined as T;
@@ -511,6 +517,7 @@ export const workflowV1Api = {
     return request<GenerationResponse>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/workflows/generate`, {
       method: 'POST',
       body: JSON.stringify(input),
+      signal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),
     });
   },
 
