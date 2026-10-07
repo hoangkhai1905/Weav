@@ -471,23 +471,8 @@ test.describe('AI workflow generator focus', () => {
     await expect(page.getByTestId('ai-generator-page')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Create with AI', exact: true })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'What should this workflow do?' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Generate workflow', exact: true })).toBeVisible();
-    await expect(page.getByText('Natural Language to Pipeline AST', { exact: true })).toHaveCount(0);
-    await expect(page.getByText(/Engine: WEAV Synthesizer/, { exact: false })).toHaveCount(0);
-    await expect(page.getByText('Workflow preview', { exact: true })).toBeVisible();
-    await expect(page.getByText('5 steps ready', { exact: true })).toBeVisible();
-    await expect(page.getByText(/Graph ID:/, { exact: false })).toHaveCount(0);
-    await expect(page.getByTestId('technical-details')).not.toHaveAttribute('open', '');
-    await expect(page.getByText(/All 5 node interfaces match/, { exact: false })).toHaveCount(0);
-  });
-
-  test('shows progress feedback and animated flow cues while generating', async ({ page }) => {
-    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
-    await page.goto('/ai/workflow-generator');
-
-    await page.getByRole('button', { name: 'Generate workflow', exact: true }).click();
-    await expect(page.getByTestId('generation-status')).toContainText('Building your workflow');
-    await expect(page.getByTestId('preview-flow-dot')).toHaveCount(4);
+    await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled();
+    await expect(page.getByTestId('workflow-preview')).toHaveCount(0);
   });
 });
 

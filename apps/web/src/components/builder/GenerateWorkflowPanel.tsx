@@ -12,15 +12,17 @@ interface GenerateWorkflowPanelProps {
   open: boolean;
   onClose: () => void;
   onReady: (result: ReadyResult) => void;
+  /** Prefills the description (e.g. handed over from the Create with AI page). */
+  initialPrompt?: string;
 }
 
-export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkflowPanelProps) {
+export function GenerateWorkflowPanel({ open, onClose, onReady, initialPrompt = '' }: GenerateWorkflowPanelProps) {
   const { t } = useI18nStore();
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const promptId = useId();
   const sheetsConnectionId = useId();
   const emailConnectionId = useId();
-  const [prompt, setPrompt] = useState('');
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [sheetsConnection, setSheetsConnection] = useState('');
   const [emailConnection, setEmailConnection] = useState('');
   const [connections, setConnections] = useState<ConnectionResponse[]>([]);

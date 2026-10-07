@@ -129,6 +129,13 @@ User chọn: (1) hiển thị tối thiểu in đậm + code; (2) thêm chọn k
 - Kiểm tra: tsc, eslint, `pnpm build`, `git diff --check` qua. e2e `assistant` + `workspace-connections`: 66 qua, 2 lỗi 401 có sẵn. Test "a step added from the palette..." từng fail một lần khi chạy song song, chạy riêng 3/3 qua (chập chờn).
 - Gợi ý ngày giờ Calendar và nhãn MIME của Drive: đã viết lại bằng lời thường (vi + en, có ví dụ ngày giờ Việt Nam, "Loại tệp (không bắt buộc)" kèm ví dụ); thêm gợi ý múi giờ và "Đến thời điểm". Week 4 e2e 13/13.
 
+## 6f. Ô chọn lịch và "Tạo bằng AI" thật (2026-10-07)
+
+- Ô chọn lịch (`components/builder/SchedulePicker.tsx`, `lib/schedule.ts`, commit `0e52fda`): thay ô cron + múi giờ thô bằng "Mỗi N phút / Mỗi N giờ / Hằng ngày / Các ngày trong tuần / Hằng tháng / Nâng cao (cron)", chọn giờ, múi giờ có tên dễ hiểu + "Khác…", câu tóm tắt ("Chạy lúc 09:00 mỗi ngày (giờ Việt Nam)"). Cron không nhận dạng được mở ở Nâng cao và giữ nguyên. Backend chỉ yêu cầu cron Spring 6 trường hợp lệ + múi giờ IANA (không có khoảng tối thiểu). 5 e2e mới qua.
+- "Tạo bằng AI" (`AiGeneratorPage.tsx`): bỏ demo `setTimeout`; người dùng mô tả bằng lời → tạo workflow nháp mới (`workflowApi.createWorkflow`, tên = 60 ký tự đầu) → mở builder, truyền mô tả qua router state (không qua URL), builder mở sẵn `GenerateWorkflowPanel` với mô tả điền sẵn rồi xóa state (tải lại không mở lại). Không tự chạy: người dùng bấm "Tạo" để chọn kết nối trước và không tốn quota ngoài ý muốn. Chế độ mock: nút bị vô hiệu kèm ghi chú. Xóa khoảng 190 dòng key `ai_gen.*` không còn dùng. e2e `ai-generator.spec.ts` 3/3; đã sửa các test cũ của trang demo (`localization`, `workflow-ui`).
+- Kiểm tra: tsc, eslint, build, diff --check qua. `ai-generator` + `assistant` + `workspace-connections`: 74 qua, 2 lỗi 401 có sẵn. `localization` 3 và `workflow-catalog-v1` 6 lỗi có sẵn, không thêm. Một số test chạy song song thỉnh thoảng chập chờn ("badge, inspector warning...", "a condition switches...", "a step added from the palette..."), chạy riêng đều qua — nên xem lại (giảm worker hoặc chờ ổn định).
+- Chưa kiểm stack thật cho hai phần này.
+
 ## 7. Hướng dẫn cho agent tiếp theo
 
 1. `git status`: phải đang ở `feat/week4-fe-integration`, worktree sạch (trừ `examples/` không thuộc dự án). Kiểm `git log -1` là merge commit "Merge branch 'dev' into feat/week4-fe-integration".
@@ -141,7 +148,7 @@ User chọn: (1) hiển thị tối thiểu in đậm + code; (2) thêm chọn k
 
 ## 8. Việc khác còn mở (từ các phiên trước)
 
-- Nút "Tạo bằng AI": user chọn nối vào luồng thật (tạo bản nháp rồi mở builder với `GenerateWorkflowPanel` bật sẵn), làm sau. `/ai/workflow-generator` (`AiGeneratorPage`) hiện chỉ là demo `setTimeout`.
+- Nút "Tạo bằng AI": đã nối luồng thật (mục 6f).
 - Volume tạm `weav-m2-tmp` (cache Maven) còn; hook chặn agent xóa volume, user tự chạy `docker volume rm weav-m2-tmp` khi không cần.
 - Stack dev đã build lại bằng code đã gộp (2026-10-07); identity dev chạy RS256, khóa dev trong `tmp/service-keys/` (identity, public, private).
 - Stash `stash@{0}` (`codex/web-session-renewal`) là bản làm dở cũ của tính năng giữ đăng nhập; tính năng đã xong bằng cách khác (xem `web-session-renewal.md`), stash để nguyên.
