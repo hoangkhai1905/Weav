@@ -194,8 +194,11 @@ test.describe("run history (stubbed backend)", () => {
     await install(page, { status: () => "FAILED", nodes: () => nodes, detailCalls: () => {} });
 
     await open(page);
-    await expect(page.getByRole("alert").filter({ hasText: "To: The 'to' field" })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "To: This step is not configured correctly" })).toBeVisible();
     await expect(page.getByTestId("step-error-field")).toContainText("To");
+    // The raw server message stays available in the details view.
+    await expect(page.getByTestId("step-error-message")).toContainText("not configured correctly");
+    await expect(page.getByText("The 'to' field is not a valid email address.")).toBeVisible();
     // The failed step is selected by default, not the skipped one.
     await expect(page.getByTestId("execution-step-row").filter({ hasText: "Send email" })).toHaveAttribute("aria-pressed", "true");
   });

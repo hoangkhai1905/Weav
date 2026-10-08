@@ -78,7 +78,7 @@ test.describe('honest pages', () => {
     await page.getByRole('button', { name: 'Generate workflow', exact: true }).click();
 
     // needs_input: the recipient defaults to the signed-in user's email and the connection is a select.
-    await expect(page.getByLabel(/A required value is missing/)).toHaveValue(userEmail);
+    await expect(page.getByLabel(/Which address should the email go to/)).toHaveValue(userEmail);
     await expect(page.getByRole('button', { name: 'Send answers' })).toBeDisabled();
     await page.getByLabel(/Pick a connection for this step/).selectOption({ label: 'Work Gmail' });
     await page.getByRole('button', { name: 'Send answers' }).click();

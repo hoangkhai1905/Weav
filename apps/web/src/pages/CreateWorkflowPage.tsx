@@ -16,6 +16,7 @@ import { captureNotificationSession, isCurrentNotificationSession } from '../lib
 import { showSuccessToast } from '../lib/feedback/toast';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 import { NODE_SCHEMAS } from '../lib/nodeSchemas';
+import { nodeLabel } from '../lib/nodeLabels';
 import { WORKFLOW_TEMPLATES, templateToDraft, type TemplateCategory, type WorkflowTemplate } from '../lib/templates';
 
 const CATEGORY_FILTERS: Array<{ id: 'all' | TemplateCategory; key: string }> = [
@@ -348,7 +349,7 @@ export const CreateWorkflowPage: React.FC = () => {
                       <React.Fragment key={node.id}>
                         <div className="flex min-w-0 items-center gap-1 rounded-md border border-border bg-card px-1.5 py-1">
                           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${nodeDot(node.type)}`} />
-                          <span className="max-w-[64px] truncate">{NODE_SCHEMAS[node.type]?.title ?? node.type}</span>
+                          <span className="max-w-[64px] truncate">{nodeLabel(node.type, t)}</span>
                         </div>
                         {i < tpl.nodes.length - 1 && <span aria-hidden="true" className="h-px min-w-2 flex-1 bg-border" />}
                       </React.Fragment>
@@ -361,6 +362,8 @@ export const CreateWorkflowPage: React.FC = () => {
                     {tpl.nodes.length} {t('create.steps')}
                   </span>
                   <button
+                    type="button"
+                    aria-label={`${t('create.use_template')}: ${copy.name}`}
                     onClick={() => void handleUseTemplate(tpl)}
                     disabled={isCreating}
                     className="flex h-8 items-center gap-1 rounded-lg bg-muted px-3 text-xs font-medium text-foreground transition-colors hover:bg-primary hover:text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"

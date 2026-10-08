@@ -86,3 +86,21 @@ export function errorField(raw: string | undefined): string | null {
     return null;
   }
 }
+
+/** Localised explanation of a stored node error (JSON text) by its `code`; null when there is no code. The raw message stays in the details view. */
+export function friendlyErrorMessage(raw: string | undefined, t: (key: string) => string): string | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const { code, message } = parsed as { code?: unknown; message?: unknown };
+    if (typeof code !== 'string') return null;
+    // The engine words a missing reference as "... refers to a value that is missing."
+    const name = code === 'MAPPING_ERROR' && typeof message === 'string' && message.includes('is missing') ? 'MAPPING_MISSING' : code;
+    const key = `runs.err.${name}`;
+    const text = t(key);
+    return text === key ? null : text;
+  } catch {
+    return null;
+  }
+}
