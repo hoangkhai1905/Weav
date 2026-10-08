@@ -54,7 +54,16 @@ test.describe('Vietnamese and English web localization', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ items: [], page: 0, size: 20, totalElements: 0, totalPages: 0 }),
+        body: JSON.stringify({
+          items: [{
+            id: '00000000-0000-4000-8000-000000000001',
+            name: 'Localization workspace',
+            createdBy: '10000000-0000-4000-8000-000000000001',
+            createdAt: '2026-08-01T00:00:00Z',
+            updatedAt: '2026-08-01T00:00:00Z',
+          }],
+          page: 0, size: 20, totalElements: 1, totalPages: 1,
+        }),
       });
     });
   });
@@ -147,8 +156,8 @@ test.describe('Vietnamese and English web localization', () => {
     await expect(page.getByText('Từ mẫu', { exact: true })).toBeVisible();
 
     await page.goto('/help');
-    await expect(page.getByText('Hướng dẫn sử dụng và tài liệu tham khảo node của WEAV V1.', { exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Mở hướng dẫn', exact: true })).toBeVisible();
+    await expect(page.getByText('Hướng dẫn sử dụng Weav: tự động hóa công việc bằng cách nối các bước thành một quy trình.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Bắt đầu nhanh', exact: true })).toBeVisible();
   });
 
   test('keeps every existing web screen in its selected locale', async ({ page }) => {
@@ -167,10 +176,10 @@ test.describe('Vietnamese and English web localization', () => {
       { path: '/notifications', vi: 'Thông báo', en: 'Notifications' },
       { path: '/settings/profile', vi: 'Cài đặt', en: 'Settings' },
       { path: '/ai/workflow-generator', vi: 'Tạo bằng AI', en: 'Create with AI' },
-      { path: '/telegram', vi: 'Tích hợp Telegram Bot', en: 'Telegram Bot Integration' },
+      { path: '/telegram', vi: 'Kết nối bot Telegram', en: 'Connect a Telegram bot' },
       { path: '/help', vi: 'Trợ giúp & Tài liệu', en: 'Help & Docs' },
     ];
-    const leakedKey = /\b(?:common|nav|topbar|dashboard|workflows|workspace|connections|executions|execution_detail|settings|auth|forgot|help|telegram|notif|builder|ai_gen|status)\.[a-z][a-z0-9_.]*/gi;
+    const leakedKey = /\b(?:common|nav|topbar|dashboard|workflows|workspace|connections|executions|execution_detail|settings|auth|forgot|help|hp|telegram|notif|builder|ai_gen|status)\.[a-z][a-z0-9_.]*/gi;
     const technicalIdentifiers = new Set([
       'telegram.send', 'trigger.manual', 'trigger.webhook', 'ai.extract', 'email.send',
       'sheets.append', 'logic.condition', 'logic.filter', 'google.sheets', 'google.docs',
@@ -215,11 +224,6 @@ test.describe('Vietnamese and English web localization', () => {
           await expect(page.locator('body')).toContainText('Bản đồ thu nhỏ');
           await expect(page.locator('body')).not.toContainText('Mini Map');
         }
-        if (screen.path === '/telegram') {
-          await expect(page.locator('body')).toContainText(
-            locale === 'VI' ? 'Đã chạy lệnh /run wf-001 bởi @truong_dev.' : 'Command /run wf-001 executed by @truong_dev.'
-          );
-        }
         const bodyText = await page.locator('body').innerText();
         const exposedKey = Array.from(bodyText.matchAll(leakedKey), (match) => match[0]).find((match) => !technicalIdentifiers.has(match));
         expect(exposedKey, `${locale} ${screen.path} exposes ${exposedKey ?? 'a translation key'}`).toBeUndefined();
@@ -256,24 +260,15 @@ test.describe('Vietnamese and English web localization', () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test('localizes AI workflow prompt and generated-flow labels in Vietnamese and English', async ({ page }, testInfo) => {
+  test('localizes the AI generator prompt, examples and actions in Vietnamese and English', async ({ page }) => {
     for (const locale of ['VI', 'EN'] as const) {
       await page.addInitScript((selectedLocale) => (globalThis as unknown as BrowserContext).localStorage.setItem('weav_lang_v1', selectedLocale), locale);
       await page.goto('/ai/workflow-generator');
 
-      const prompt = page.getByLabel(locale === 'VI' ? 'Quy trình này cần làm gì?' : 'What should this workflow do?');
-      await expect(prompt).toHaveValue(locale === 'VI' ? /Khi nhận được đơn hàng mới/ : /When a new order arrives/);
-      await expect(page.getByText(locale === 'VI' ? 'Cổng điều kiện' : 'Conditional gate', { exact: true })).toBeVisible();
-      await page.getByTestId('technical-details').locator('summary').click();
-      await expect(page.getByText(locale === 'VI' ? 'Liên kết biến' : 'Variable bindings', { exact: true })).toBeVisible();
-      await expect(page.getByText(locale === 'VI' ? 'Không phát hiện rò rỉ thông tin bí mật' : 'Zero secret leakages detected')).toBeVisible();
-      await expect(page.getByText(locale === 'VI' ? 'Định nghĩa quy trình đã tổng hợp' : 'Synthesized Workflow Definition', { exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: locale === 'VI' ? 'Sao chép JSON' : 'Copy JSON' })).toBeVisible();
-      await expect(page.getByText(locale === 'VI' ? 'Hợp lệ theo RFC 8259' : 'Valid RFC 8259', { exact: true })).toBeVisible();
-      await expect(page.getByText(locale === 'VI' ? 'KÍCH HOẠT' : 'TRIGGER', { exact: true })).toBeVisible();
-      await expect(page.getByText(locale === 'VI' ? 'CSDL' : 'DATABASE', { exact: true })).toBeVisible();
-      await expect(page.getByText(locale === 'VI' ? 'AI TẠO' : 'SYNTHESIZED', { exact: true })).toBeVisible();
-      await page.screenshot({ path: testInfo.outputPath(`ai-generator-${locale.toLowerCase()}.png`), fullPage: true });
+      await expect(page.getByLabel(locale === 'VI' ? 'Quy trình này cần làm gì?' : 'What should this workflow do?')).toBeVisible();
+      await expect(page.getByRole('button', { name: locale === 'VI' ? 'Tạo quy trình' : 'Generate workflow', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: locale === 'VI' ? 'Bot Telegram tự động trả lời' : 'Telegram auto-reply bot', exact: true })).toBeVisible();
+      await expect(page.locator('body')).not.toContainText(/hp.ai./);
     }
   });
 });

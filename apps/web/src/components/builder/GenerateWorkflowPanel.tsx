@@ -1,17 +1,13 @@
 import { useEffect, useId, useState } from 'react';
 import { connectionApi, type ConnectionResponse } from '../../api/connection.api';
-import { workflowApi } from '../../api/workflow.api';
-import { WorkflowApiError, type GenerationResponse } from '../../api/workflow-v1.api';
+import { useWorkflowGeneration, type ReadyGeneration } from '../ai/useWorkflowGeneration';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
-import { tr } from '../../lib/i18n/tr';
-
-type ReadyResult = Extract<GenerationResponse, { status: 'ready' }>;
 
 interface GenerateWorkflowPanelProps {
   open: boolean;
   onClose: () => void;
-  onReady: (result: ReadyResult) => void;
+  onReady: (result: ReadyGeneration) => void;
 }
 
 export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkflowPanelProps) {
@@ -24,14 +20,11 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
   const [sheetsConnection, setSheetsConnection] = useState('');
   const [emailConnection, setEmailConnection] = useState('');
   const [connections, setConnections] = useState<ConnectionResponse[]>([]);
-  const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<GenerationResponse | null>(null);
+  const { isPending, error, result, generate, reset } = useWorkflowGeneration();
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    setError(null);
-    setResult(null);
+    reset();
     setConnections([]);
   }
 
@@ -56,39 +49,14 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
 
   const handleGenerate = async () => {
     if (isPending || !prompt.trim()) return;
-    setIsPending(true);
-    setError(null);
-    setResult(null);
-    try {
-      const generated = await workflowApi.generateWorkflow({
-        prompt: prompt.trim(),
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        ...((sheetsConnection || emailConnection)
-          ? {
-              connections: {
-                ...(sheetsConnection ? { 'google.sheets': sheetsConnection } : {}),
-                ...(emailConnection ? { 'email.send': emailConnection } : {}),
-              },
-            }
-          : {}),
-      });
-      if (generated.status === 'ready') {
-        onReady(generated);
-        return;
-      }
-      setResult(generated);
-    } catch (unknown) {
-      if (unknown instanceof WorkflowApiError) {
-        if (unknown.status === 429) setError(tr('msg.too_many_requests_wait_a_minute'));
-        else if (unknown.status === 503) setError(tr('msg.ai_is_unavailable_right_now'));
-        else if (unknown.status === 504) setError(tr('msg.ai_took_too_long_try_a_shorter'));
-        else setError(unknown.message);
-      } else {
-        setError(unknown instanceof Error ? unknown.message : tr('msg.the_workflow_request_could_not_be_completed'));
-      }
-    } finally {
-      setIsPending(false);
-    }
+    const generated = await generate({
+      prompt: prompt.trim(),
+      connections: {
+        ...(sheetsConnection ? { 'google.sheets': sheetsConnection } : {}),
+        ...(emailConnection ? { 'email.send': emailConnection } : {}),
+      },
+    });
+    if (generated?.status === 'ready') onReady(generated);
   };
 
   return (
