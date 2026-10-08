@@ -146,3 +146,31 @@ Environment notes: this PC's clock is ~17 s behind real time (#21; Neon is corre
 - K's Google account: spreadsheet `1CLP...0EI` ("Untitled spreadsheet"), Drive files `weav-qa.txt` and `weav-qa.pdf`, calendar event "Weav QA (1 lookup rows)" on 2026-10-08 09:00, test emails with subjects "Weav QA email.send" and "weav-qa-trigger test 1".
 - Telegram bot token was pasted in chat: rotate it in @BotFather after Week 5.
 - Gmail trigger workflow `e2a41382` polls every minute: pause it when the stack stays up.
+- Week 5 Phase 4 browser pass (2026-10-08) added: workflows `a03efe7b` (Gmail -> Drive -> reply template, PUBLISHED, polls `subject:weav-qa-w5 has:attachment` every minute: pause after the #58 live run), `f9ef4d1e` (AI-generated daily weather email, draft, do not publish), `cb5aad73` ("QA W5 webhook only", draft); run `717da4a6`.
+
+## 8. Week 5 fix status (Phase 4, 2026-10-08)
+
+All four lanes reviewed, committed and merged into `week5` (A 139f7d7, B 2e693c0, C 3a3443a, D ae16a17). Merged checks: web build + `tsc -p tsconfig.app.json` clean, 41/41 new Week 5 Playwright specs, workflow-service `mvnw verify` 836/836, ai-service 207, notification-service 102 + 19 e2e. "Live" = re-checked in the browser on merged `week5` against the real stack; "spec" = covered by stubbed Playwright / unit tests only.
+
+| Lane | Fixed | Live | Spec only |
+| --- | --- | --- | --- |
+| W5-A builder | #16-#20, #23-#27, #42, #44-#46, #55-#57, S1-S11 | #16, #17 (picker lists trigger + upstream outputs incl. fromEmail/fromName), #20 (workspace name), #23 (webhook-only draft PUT 200), #25 (delete button), #26 (name prompt), S6 | the rest; S12 partial (6-field count only, Spring cron not mirrored) |
+| W5-B honest pages | #1, #3, #4, #11 (partial, see N1), #15, #33-#37, #39 | #1/#33 (Telegram page lists QA bot, no /api/telegram), #4, #15 (template -> POST 201 + PUT draft 200, 3 steps, real ids), #34, #35/#36 (real generate, needs_input defaulted to the user's email, connection question, draft created), #39 | #3, #37 |
+| W5-C account | #2, #5-#8, #11 part, #12-#14, #29-#31, #38, #40, #47, #48 | #2 (inline password rule, no request), #5 (real 404 USER_NOT_FOUND -> "Không có tài khoản nào với email này"), #6, #7, #8, #11 part, #12 (UI), #13, #38 (non-admin redirected), #48 | #14, #29-#31, #40, #47 |
+| W5-D backend + runs | #21, #28, #32, #41, #43, #51, #52, #58, #59, #60, #61 (+ D1) | D1 (publish without manual trigger 200; "Chạy" on a Gmail-only workflow runs from the Gmail trigger, recorded "Thủ công"), #21 (4.8 s, not 0 ms), #41, #51 ("Không chạy"), #52 (run page updated without refresh), #59 (MAPPING_ERROR names `file`), #61 (list shows Gmail/Telegram) | #28, #32, #58 (live Gmail reply pending K's test mail), #60 |
+
+Still open: #9 invite by email (Week 7), #10 workspace delete/leave/transfer (not scheduled), #54 ~1 s idle between steps (not addressed), #62 WebSocket (stretch D4 b). Plan change 2026-10-08: shared user templates are the first item of W6-C.
+
+New findings from the Phase 4 browser pass (small, fix before `week5` -> `dev`):
+
+| # | Where | Issue |
+| --- | --- | --- |
+| N1 | `/workflows/new` | "8 hơn 30 mẫu" (old fake count next to the real one); "Mô tả nhanh" placeholder mentions Stripe/PostgreSQL/Slack; marketing chips ("Lược đồ đã xác minh", "hệ thống dữ liệu và kỹ thuật hiện đại", "tạo node, mã") |
+| N2 | Template cards | Step labels in English in VI mode ("Send Telegram message", "New Gmail email"); "Dùng mẫu" is not a button in the accessibility tree |
+| N3 | `/register` | Invented claims ("Thời gian hoạt động 99,9%", "Tốc độ gấp 10 lần", "React Flow 12"); submit button has no accessible name |
+| N4 | Settings, Members | "Identity" jargon in subtitles ("Quản lý hồ sơ Identity", "người dùng Identity hiện có", ...) |
+| N5 | Connections | Raw provider codes (`GOOGLE_SHEETS`, `GOOGLE_DRIVE`) as card labels |
+| N6 | Run detail | Field label and message for MAPPING_ERROR / CONFIGURATION_ERROR shown raw in English ("file: The 'file' field refers to a value that is missing.") |
+| N7 | AI generator | needs_input question labels are technical ("Thiếu một giá trị bắt buộc. (send_email.config.to)", "(Send email)") |
+| N8 | AI generator | Generated workflow name and step labels in English for a Vietnamese prompt |
+| N9 | Run history | Breadcrumb shows the workflow UUID until the name loads |
