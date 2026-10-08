@@ -68,7 +68,7 @@ public final class AuthRateLimitFilter extends OncePerRequestFilter {
                 case "/auth/logout" -> AuthRateLimiter.Scope.LOGOUT_IP;
                 case "/auth/refresh" -> AuthRateLimiter.Scope.REFRESH_IP;
                 case "/auth/oauth/google/start" -> AuthRateLimiter.Scope.OAUTH_START_IP;
-                case "/auth/oauth/exchange" -> AuthRateLimiter.Scope.OAUTH_EXCHANGE_IP;
+                case "/auth/oauth/exchange", "/auth/oauth/mobile/exchange" -> AuthRateLimiter.Scope.OAUTH_EXCHANGE_IP;
                 case "/auth/web/refresh" -> AuthRateLimiter.Scope.OAUTH_WEB_REFRESH_IP;
                 case "/auth/web/logout" -> AuthRateLimiter.Scope.OAUTH_WEB_LOGOUT_IP;
                 case "/users/me/oauth/google/link" -> AuthRateLimiter.Scope.OAUTH_LINK_START_IP;
@@ -79,6 +79,7 @@ public final class AuthRateLimitFilter extends OncePerRequestFilter {
                     : null;
             case "GET" -> switch (request.getServletPath()) {
                 case "/auth/oauth/google/callback" -> AuthRateLimiter.Scope.OAUTH_CALLBACK_IP;
+                case "/auth/oauth/google/mobile/start" -> AuthRateLimiter.Scope.OAUTH_START_IP;
                 case "/auth/web/csrf" -> AuthRateLimiter.Scope.OAUTH_CSRF_IP;
                 default -> null;
             };

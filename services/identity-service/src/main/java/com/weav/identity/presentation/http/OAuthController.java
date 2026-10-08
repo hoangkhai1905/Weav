@@ -2,7 +2,9 @@ package com.weav.identity.presentation.http;
 
 import com.weav.identity.application.dto.OAuthCallbackCommand;
 import com.weav.identity.application.dto.OAuthCallbackResult;
+import com.weav.identity.application.dto.OAuthClientRegistration;
 import com.weav.identity.application.dto.OAuthExchangeResult;
+import com.weav.identity.application.dto.OAuthStartCommand;
 import com.weav.identity.application.dto.OAuthStartResult;
 import com.weav.identity.application.dto.RefreshTokenCommand;
 import com.weav.identity.application.dto.TokenPairResult;
@@ -10,6 +12,7 @@ import com.weav.identity.application.usecase.LoginUseCase;
 import com.weav.identity.application.usecase.LogoutUseCase;
 import com.weav.identity.application.usecase.OAuthFlowCoordinator;
 import com.weav.identity.application.usecase.RefreshSessionUseCase;
+import com.weav.identity.domain.exception.InvalidOAuthClientException;
 import com.weav.identity.domain.exception.OAuthCallbackInvalidException;
 import com.weav.identity.domain.exception.UnauthorizedException;
 import com.weav.identity.infrastructure.config.OAuthEnabledCondition;
@@ -18,14 +21,18 @@ import com.weav.identity.application.validation.AuthInputPolicy;
 import com.weav.identity.infrastructure.security.AuthRateLimiter;
 import com.weav.identity.presentation.http.request.LoginRequest;
 import com.weav.identity.presentation.http.request.OAuthExchangeRequest;
+import com.weav.identity.presentation.http.request.OAuthMobileExchangeRequest;
 import com.weav.identity.presentation.http.request.OAuthStartRequest;
 import com.weav.identity.presentation.http.response.OAuthCsrfResponse;
 import com.weav.identity.presentation.http.response.OAuthLinkExchangeResponse;
 import com.weav.identity.presentation.http.response.OAuthLoginExchangeResponse;
 import com.weav.identity.presentation.http.response.OAuthStartResponse;
+import com.weav.identity.presentation.http.response.TokenResponse;
 import com.weav.identity.presentation.http.mapper.UserPresentationMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Conditional;
 import org.springframework.http.CacheControl;
@@ -93,6 +100,7 @@ public final class OAuthController {
             HttpServletRequest httpRequest
     ) {
         webProtection.requireAllowedOrigin(httpRequest);
+        requireWebClient(request.clientId());
         String csrfToken = webProtection.issueCsrfToken();
         OAuthStartResult result = coordinator.startLogin(request.toCommand());
         return ResponseEntity.ok()
@@ -101,6 +109,29 @@ public final class OAuthController {
                 .header(HttpHeaders.SET_COOKIE, webProtection.correlationCookie(result.transactionId()).toString())
                 .header(HttpHeaders.SET_COOKIE, webProtection.csrfCookie(csrfToken).toString())
                 .body(new OAuthStartResponse(result.transactionId(), result.authorizationUrl(), csrfToken));
+    }
+
+    /**
+     * Mobile sign-in start. The app opens this URL in the system browser (an in-app auth session) so the
+     * correlation cookie lands in the browser that later receives Google's callback. There is no page, so
+     * no Origin or CSRF check applies; the PKCE challenge is the only caller-supplied value.
+     */
+    @GetMapping("/oauth/google/mobile/start")
+    public ResponseEntity<Void> startMobileLogin(
+            @RequestParam @NotBlank @Pattern(regexp = "^[A-Za-z0-9_-]{43}$") String codeChallenge,
+            @RequestParam @NotBlank @Pattern(regexp = "^S256$") String codeChallengeMethod
+    ) {
+        OAuthStartResult result = coordinator.startLogin(new OAuthStartCommand(
+                OAuthClientRegistration.MOBILE,
+                OAuthClientRegistration.MOBILE,
+                codeChallenge,
+                codeChallengeMethod));
+        return ResponseEntity.status(HttpStatus.SEE_OTHER)
+                .location(result.authorizationUrl())
+                .cacheControl(CacheControl.noStore())
+                .header(REFERRER_POLICY_HEADER, REFERRER_POLICY_VALUE)
+                .header(HttpHeaders.SET_COOKIE, webProtection.correlationCookie(result.transactionId()).toString())
+                .build();
     }
 
     @GetMapping("/oauth/google/callback")
@@ -156,6 +187,7 @@ public final class OAuthController {
             HttpServletRequest httpRequest
     ) {
         webProtection.requireOriginAndCsrf(httpRequest);
+        requireWebClient(request.clientId());
         if (jwt == null && hasAuthorizationHeader(httpRequest)) {
             throw new UnauthorizedException("Authentication failed");
         }
@@ -191,6 +223,26 @@ public final class OAuthController {
                 .cacheControl(CacheControl.noStore())
                 .header(REFERRER_POLICY_HEADER, REFERRER_POLICY_VALUE)
                 .body(new OAuthLinkExchangeResponse("LINKED", result.linked()));
+    }
+
+    /**
+     * Mobile LOGIN exchange (LINK stays web-only). Same one-use handoff, PKCE S256 and failure cap as the web
+     * exchange, bound to client {@code mobile}. The session comes back in the body exactly like
+     * {@code POST /auth/login}: there is no browser, so no cookies and no CSRF.
+     */
+    @PostMapping("/oauth/mobile/exchange")
+    public ResponseEntity<TokenResponse> mobileExchange(
+            @Valid @RequestBody OAuthMobileExchangeRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        OAuthExchangeResult result = coordinator.exchangeLogin(
+                request.toCommand(),
+                truncate(httpRequest.getHeader("User-Agent"), MAX_USER_AGENT_LENGTH),
+                truncate(httpRequest.getRemoteAddr(), MAX_IP_ADDRESS_LENGTH));
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .header(REFERRER_POLICY_HEADER, REFERRER_POLICY_VALUE)
+                .body(userPresentationMapper.toResponse(result.login()));
     }
 
     @GetMapping("/web/csrf")
@@ -271,6 +323,13 @@ public final class OAuthController {
             case INVALID -> throw new OAuthCallbackInvalidException();
         }
         return builder.build().encode().toUri();
+    }
+
+    /** The Origin/CSRF web transport serves only the web registration; mobile has its own routes. */
+    private static void requireWebClient(String clientId) {
+        if (!OAuthClientRegistration.WEB.equals(clientId)) {
+            throw new InvalidOAuthClientException();
+        }
     }
 
     private static boolean hasAuthorizationHeader(HttpServletRequest request) {

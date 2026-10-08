@@ -16,6 +16,7 @@ import com.weav.identity.application.port.out.OAuthProviderClient;
 import com.weav.identity.application.port.out.OAuthTransactionStore;
 import com.weav.identity.application.validation.OAuthFingerprintPolicy;
 import com.weav.identity.application.validation.OAuthProtocolPolicy;
+import com.weav.identity.domain.exception.DependencyUnavailableException;
 import com.weav.identity.domain.exception.OAuthHandoffInvalidException;
 import com.weav.identity.domain.valueobject.OAuthProvider;
 import com.weav.identity.infrastructure.authstate.HmacKeyedFingerprint;
@@ -48,6 +49,7 @@ class OAuthFlowCoordinatorTest {
     private static final String RETURN_TARGET_ID = "web";
     private static final URI PROVIDER_CALLBACK = URI.create("http://identity.test/auth/oauth/google/callback");
     private static final URI RETURN_TARGET = URI.create("http://web.test/auth/callback");
+    private static final URI MOBILE_RETURN_TARGET = URI.create("weav://auth/callback");
     private static final String HMAC_SECRET = "01234567890123456789012345678901";
     private static final String VERIFIER = "client-verifier-012345678901234567890123456789012";
     private static final Instant NOW = Instant.parse("2026-09-10T00:00:00Z");
@@ -250,6 +252,87 @@ class OAuthFlowCoordinatorTest {
     }
 
     @Test
+    void mobileClientStartsAndCompletesWithTheDeepLinkTarget() {
+        OAuthFlowCoordinator mobile = coordinatorWithMobile();
+        when(transactionStore.start(any())).thenReturn(new OAuthTransactionStore.TransactionReceipt(true, 600));
+
+        OAuthStartResult start = mobile.startLogin(mobileStartCommand());
+
+        assertEquals(MOBILE_RETURN_TARGET, start.returnTargetUri());
+        var startCaptor = org.mockito.ArgumentCaptor.forClass(OAuthTransactionStore.Transaction.class);
+        verify(transactionStore).start(startCaptor.capture());
+        assertEquals("mobile", startCaptor.getValue().clientId());
+        assertEquals("mobile", startCaptor.getValue().returnTargetId());
+
+        OAuthTransactionStore.Transaction transaction = mobileLoginTransaction(token(80));
+        when(transactionStore.consumeCallback(any())).thenReturn(new OAuthTransactionStore.CallbackConsumeResult(
+                OAuthTransactionStore.CallbackStatus.CONSUMED, transaction));
+        OAuthCallbackResult cancelled = mobile.callback(OAuthCallbackCommand.cancelled(
+                transaction.transactionId(), new OAuthSecret(token(81))));
+        assertEquals(MOBILE_RETURN_TARGET, cancelled.returnTargetUri());
+        // The web-only coordinator cannot resolve a mobile transaction: no redirect data at all.
+        assertEquals(OAuthCallbackResult.Status.INVALID, coordinator.callback(OAuthCallbackCommand.cancelled(
+                transaction.transactionId(), new OAuthSecret(token(81)))).status());
+    }
+
+    @Test
+    void mobileExchangeBindsTheHandoffToTheMobileClient() {
+        OAuthFlowCoordinator mobile = coordinatorWithMobile();
+        OAuthTransactionStore.Transaction transaction = mobileLoginTransaction(token(82));
+        OAuthTransactionStore.Handoff handoff = handoff(transaction,
+                new OAuthProviderClient.ProviderIdentity(OAuthProvider.GOOGLE, "subject", null, false, null, NOW));
+        when(transactionStore.consumeHandoff(any())).thenReturn(new OAuthTransactionStore.HandoffConsumeResult(
+                OAuthTransactionStore.HandoffStatus.CONSUMED, handoff));
+        when(loginUseCase.execute(handoff, null, null)).thenReturn(
+                new com.weav.identity.application.dto.TokenPairResult("a", "r", "Bearer", 60, NOW, null));
+
+        mobile.exchangeLogin(exchangeCommand(transaction, handoff));
+
+        var bindingCaptor = org.mockito.ArgumentCaptor.forClass(OAuthTransactionStore.HandoffBinding.class);
+        verify(transactionStore).consumeHandoff(bindingCaptor.capture());
+        assertEquals("mobile", bindingCaptor.getValue().clientId());
+        assertEquals("mobile", bindingCaptor.getValue().returnTargetId());
+    }
+
+    @Test
+    void mobileClientBehavesLikeADisabledFlowWhenNotConfigured() {
+        // The default fixture registers only the web client.
+        assertThrows(DependencyUnavailableException.class, () -> coordinator.startLogin(mobileStartCommand()));
+        OAuthTransactionStore.Transaction transaction = mobileLoginTransaction(token(83));
+        OAuthTransactionStore.Handoff handoff = handoff(transaction,
+                new OAuthProviderClient.ProviderIdentity(OAuthProvider.GOOGLE, "subject", null, false, null, NOW));
+        assertThrows(DependencyUnavailableException.class,
+                () -> coordinator.exchangeLogin(exchangeCommand(transaction, handoff)));
+        verify(transactionStore, never()).start(any());
+        verify(transactionStore, never()).consumeHandoff(any());
+        verify(loginUseCase, never()).execute(any(), any(), any());
+    }
+
+    @Test
+    void unknownClientIdIsRejectedAsAnInvalidClient() {
+        OAuthStartCommand other = new OAuthStartCommand("other", "other",
+                OAuthProtocolPolicy.challengeForVerifier(VERIFIER), OAuthProtocolPolicy.S256);
+
+        assertThrows(com.weav.identity.domain.exception.InvalidOAuthClientException.class,
+                () -> coordinatorWithMobile().startLogin(other));
+    }
+
+    @Test
+    void linkingStaysWebOnlyEvenWhenTheMobileClientIsConfigured() {
+        OAuthFlowCoordinator mobile = coordinatorWithMobile();
+        OAuthTransactionStore.Transaction transaction = mobileLoginTransaction(token(84));
+        OAuthTransactionStore.Handoff handoff = handoff(transaction,
+                new OAuthProviderClient.ProviderIdentity(OAuthProvider.GOOGLE, "subject", null, false, null, NOW));
+
+        assertThrows(com.weav.identity.domain.exception.InvalidOAuthClientException.class,
+                () -> mobile.startLink(USER_ID, SESSION_ID, "password", mobileStartCommand()));
+        assertThrows(com.weav.identity.domain.exception.InvalidOAuthClientException.class,
+                () -> mobile.exchangeLink(USER_ID, SESSION_ID, exchangeCommand(transaction, handoff)));
+        verify(linkUseCase, never()).initiate(any(), any(), any());
+        verify(transactionStore, never()).consumeHandoff(any());
+    }
+
+    @Test
     void allCoordinatorResultStringsRedactProtocolSecrets() {
         OAuthStartResult start = new OAuthStartResult(token(70),
                 URI.create("https://provider.test/auth?state=raw-state&nonce=raw-nonce"), RETURN_TARGET);
@@ -263,6 +346,59 @@ class OAuthFlowCoordinatorTest {
         assertFalse(callback.toString().contains("raw-handoff"));
         assertFalse(exchange.toString().contains("raw-access"));
         assertFalse(exchange.toString().contains("raw-refresh"));
+    }
+
+    private OAuthFlowCoordinator coordinatorWithMobile() {
+        OAuthClientRegistration mobileRegistration = new OAuthClientRegistration(
+                "mobile",
+                "mobile",
+                OAuthProvider.GOOGLE,
+                "google-client",
+                PROVIDER_CALLBACK,
+                MOBILE_RETURN_TARGET,
+                Set.of());
+        OAuthConfiguration withMobile = OAuthConfiguration.enabled(
+                registration,
+                java.util.Optional.of(mobileRegistration),
+                OAuthConfiguration.GOOGLE_ISSUER_URI,
+                new OAuthSecret("provider-secret"),
+                Duration.ofMinutes(10),
+                Duration.ofSeconds(60),
+                Duration.ofMinutes(10),
+                Duration.ofSeconds(5),
+                5,
+                OAuthConfiguration.CookiePolicy.defaults(),
+                Set.of());
+        return new OAuthFlowCoordinator(
+                withMobile,
+                providerClient,
+                transactionStore,
+                fingerprint,
+                new java.security.SecureRandom(),
+                linkUseCase,
+                loginUseCase);
+    }
+
+    private OAuthStartCommand mobileStartCommand() {
+        return new OAuthStartCommand("mobile", "mobile",
+                OAuthProtocolPolicy.challengeForVerifier(VERIFIER), OAuthProtocolPolicy.S256);
+    }
+
+    private OAuthTransactionStore.Transaction mobileLoginTransaction(String transactionId) {
+        OAuthTransactionStore.Transaction web = loginTransaction(transactionId);
+        return new OAuthTransactionStore.Transaction(
+                transactionId,
+                OAuthTransactionStore.Intent.LOGIN,
+                "mobile",
+                "mobile",
+                web.providerStateFingerprint(),
+                web.nonceFingerprint(),
+                web.providerCodeVerifier(),
+                web.handoffCodeChallenge(),
+                null,
+                null,
+                null,
+                Duration.ofMinutes(10));
     }
 
     private OAuthStartCommand startCommand() {
