@@ -81,6 +81,8 @@ Diacritics cause only ~6% of errors. Most errors are digits, punctuation and spa
 
 Notebook pitfalls found: in Colab `uv pip` without `-p .venv` installs into `/usr`; `uv run`/`uv sync` reinstall the CPU wheel; `!cmd &` keeps a cell running and queues later cells (use `subprocess.Popen`).
 
+ONNX CPU spike (details and table in the handoff, Finding 4): converted det + vi rec with paddle2onnx 2.1.0; `PaddleOCR(engine="onnxruntime")` matches production Paddle on 240/240 lines (CER 2.97% both), A4 page 17.3 s -> 7.0 s, peak RSS 1364 -> 1145 MB, install ~1.4 -> ~0.75 GB; short-line latency unchanged; `enable_mkldnn=True` crashes on paddle 3.3 PIR models. Scripts and raw JSON stayed in the session scratch folder (not committed).
+
 ## 6. Risks and blockers
 
 | Level  | Issue | Next step |
@@ -93,5 +95,5 @@ Notebook pitfalls found: in Colab `uv pip` without `-p .venv` installs into `/us
 
 1. Done: Gateway unit 114/114, e2e 117/117, build OK; eslint has 3 pre-existing errors in `notifications.module.ts` and `workflow.module.ts` (untouched).
 2. Done: GPU install applied and re-measured (table above).
-3. Send the handoff to the partner; re-test table diacritics and the crash case when they respond.
+3. Send the handoff (Findings 2-4) to the partner; re-test table diacritics and the crash case when they respond.
 4. Never commit the tunnel URL, ngrok token or `.env` values.

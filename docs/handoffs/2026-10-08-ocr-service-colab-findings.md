@@ -77,6 +77,40 @@ ngrok returned `503` "invalid or incomplete HTTP response"; afterwards the backe
 **Acceptance.** The same request on a CPU runtime either succeeds or returns a documented error
 (`504 OCR_TIMEOUT` or `503 OCR_BUSY`) within 90 s, and the process stays up and answers `/health` afterwards.
 
+## Finding 4 - Proposal: run text det/rec on ONNX Runtime (CPU, measured spike)
+
+Goal: run OCR on a CPU service instead of Colab. Spike on a laptop, `python:3.12-slim`, `--cpus 4 --memory 4g`, 4 threads everywhere, paddlepaddle 3.3.0 / paddleocr 3.7.0 / paddlex 3.7.2 (from `uv.lock`), onnxruntime 1.30.0, paddle2onnx 2.1.0. Production models (`PP-OCRv5_mobile_det`, `pp-ocrv6-medium-rec-vietnamese`). Same 240-line synthetic Vietnamese set as the accuracy benchmark, rendered once so every engine saw identical bytes.
+
+Conversion (works on the PIR `inference.json` directly; opset 14; det 4.6 MB, rec 60 MB):
+
+```
+paddle2onnx --model_dir <models>/PP-OCRv5_mobile_det --model_filename inference.json --params_filename inference.pdiparams --save_file det.onnx --opset_version 14
+paddle2onnx --model_dir <models>/pp-ocrv6-medium-rec-vietnamese --model_filename inference.json --params_filename inference.pdiparams --save_file rec.onnx --opset_version 14
+```
+
+Tensor parity Paddle vs ONNX: rec max prob diff 8e-5 (argmax never differs), det max diff 3e-4.
+
+| Variant | CER | Word acc | Exact | Line p50 | A4 page (25 lines) | Peak RSS | site-packages |
+| ------- | --- | -------- | ----- | -------- | ------------------ | -------- | ------------- |
+| A: production Paddle CPU (`enable_mkldnn=False`) | 2.97% | 90.5% | 124/240 | 361 ms | 17.3 s | 1364 MB | ~1.4 GB |
+| B: Paddle CPU `enable_mkldnn=True` | fails: `ConvertPirAttribute2RuntimeAttribute not support` on first predict | | | | | | |
+| D: `PaddleOCR(..., engine="onnxruntime")` on the converted models, no paddlepaddle installed | 2.97% | 90.5% | 124/240 | 396 ms | 7.0 s | 1145 MB | ~0.75 GB |
+| C2: rapidocr + onnxruntime with a PaddleX-style crop override | 2.97% | 90.5% | 124/240 | 401 ms | 7.5 s | 687 MB | 335 MB |
+| C1: rapidocr stock glue | 3.24% | 89.3% | 113/240 | 443 ms | - | 692 MB | 335 MB |
+
+- D and C2 match A on all 240 predictions (0.00 pp CER). C1 differs only because rapidocr crops boxes differently from PaddleX (`minAreaRect` on int32 points); do not ship it without the crop override.
+- ONNX is 2.2-2.7x faster on a full page (detection ~3.5x faster), starts 2-10x faster and uses less memory. It is **not** faster on a single short line (recognition ~300-400 ms per crop in both runtimes).
+- Timing is from a shared laptop (absolute numbers moved 2-3x between sessions); ratios come from interleaved paired runs.
+- The Vietnamese rec model doubles characters even on clean renders ("Tài kKhoản", "Bằng chưữ"), identical in A and D; a large share of the CER is the model, not the runtime.
+
+Requested (partner decision):
+
+1. Convert det + vi/en rec once offline with the commands above and ship them as `inference.onnx` + the original `inference.yml` per model folder.
+2. Lowest-effort integration: add `engine="onnxruntime"` (+ `engine_config` threads) to the existing `PaddleOCR(...)` call in `paddle_ocr_engine_adapter.py` (~line 645); PaddleX keeps all pre/post-processing.
+3. Keep tables/layout (PP-StructureV3) on Paddle for now; they were not converted or measured. The image only drops paddlepaddle once tables move too or run in a separate worker.
+4. Acceptance: regression test comparing ONNX vs Paddle output on a fixed image set (0 differing strings), plus a run on real scanned documents.
+5. Optional latency lever to evaluate: rec minimum padded width 320 instead of 640 (p50 345 -> 217 ms on short field crops in the spike, but 18/120 strings changed).
+
 ## Gateway side (ours, done on `fix/gateway-ocr-timeout`)
 
 The Gateway previously aborted every OCR call after a hard-coded 10 s, so each Colab request returned
