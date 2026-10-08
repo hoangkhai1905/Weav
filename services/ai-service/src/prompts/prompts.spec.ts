@@ -15,6 +15,8 @@ describe('GENERATE_SYSTEM', () => {
     '{{trigger.input.attachments}}',
     'replyToMessageId',
     'attachments[0]',
+    'same language as the request',
+    'node ids stay ASCII snake_case',
   ])('documents %s', (fragment) => {
     expect(GENERATE_SYSTEM).toContain(fragment);
   });

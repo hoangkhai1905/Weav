@@ -281,6 +281,63 @@ class ExecutionRunnerTest {
     }
 
     @Test
+    void aConfigurationFailureStoresTheFailingFieldInTheNodeError() {
+        WorkflowDefinition definition = definition(
+                List.of(node("action", "http.request", Map.of("method", "GET", "url", "https://example.test"))),
+                List.of(edge("root-action", "root", "action", null)));
+        NodeExecutor failing = executor("http.request", (context, config) -> {
+            throw NodeExecutor.Failure.invalidField("to", "is not a valid email address.");
+        });
+        try (Harness harness = harness(definition, Map.of(), List.of(failing), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.runner.run(harness.lease);
+
+            Map<String, Object> error = harness.state.snapshot().nodes().get("action").getError();
+            assertEquals("CONFIGURATION_ERROR", error.get("code"));
+            assertEquals("The 'to' field is not a valid email address.", error.get("message"));
+            assertEquals(Map.of("field", "to"), error.get("details"));
+        }
+    }
+
+    @Test
+    void aMissingMappedValueNamesTheFieldInTheMappingError() {
+        WorkflowDefinition definition = definition(
+                List.of(node("action", "http.request", Map.of(
+                        "method", "GET", "url", "https://example.test",
+                        "body", "{{ trigger.input.body.x }}"))),
+                List.of(edge("root-action", "root", "action", null)));
+        NodeExecutor never = executor("http.request",
+                (context, config) -> new NodeExecutor.Result(Map.of("unexpected", true), null));
+        try (Harness harness = harness(definition, Map.of(), List.of(never), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.runner.run(harness.lease);
+
+            Map<String, Object> error = harness.state.snapshot().nodes().get("action").getError();
+            assertEquals("MAPPING_ERROR", error.get("code"));
+            assertEquals("The 'body' field refers to a value that is missing.", error.get("message"));
+            assertEquals(Map.of("field", "body"), error.get("details"));
+        }
+    }
+
+    @Test
+    void aMissingMappedRecipientNamesTheToFieldOfEmailSend() {
+        WorkflowDefinition definition = definition(
+                List.of(node("action", "email.send", Map.of(
+                        "to", "{{ trigger.input.fromEmail }}", "subject", "Re", "body", "x"))),
+                List.of(edge("root-action", "root", "action", null)));
+        NodeExecutor never = executor("email.send",
+                (context, config) -> new NodeExecutor.Result(Map.of("unexpected", true), null));
+        try (Harness harness = harness(definition, Map.of("from", "x"), List.of(never), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.runner.run(harness.lease);
+
+            Map<String, Object> error = harness.state.snapshot().nodes().get("action").getError();
+            assertEquals("The 'to' field refers to a value that is missing.", error.get("message"));
+            assertEquals(Map.of("field", "to"), error.get("details"));
+        }
+    }
+
+    @Test
     void switchRoutesToTheMatchingCaseAndSkipsTheOtherBranches() {
         AtomicReference<String> ran = new AtomicReference<>("");
         NodeExecutor action = executor("http.request", (context, config) -> {

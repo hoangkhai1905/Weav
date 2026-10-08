@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -87,14 +88,58 @@ class GmailNodeExecutorTest {
         for (Map<String, Object> invalid : List.of(
                 missingConnection, mappedConnection, headerInjection, blankSubject, tooManyRecipients, hugeBody,
                 config("not-an-address"), config("a@example.test\r\nBcc: x@example.test"),
-                config("Name <a@example.test>"), config(""), config("a@example.test,"))) {
+                config("Name <a@example.test"), config("Name <a@example.test> junk"), config(""),
+                config("a@example.test,"), config("Name <a@example.test\r\nBcc: x@example.test>"))) {
             NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
                     () -> executor.execute(context(), invalid));
             assertEquals("CONFIGURATION_ERROR", failure.code());
             assertFalse(failure.retryable());
+            assertNotNull(failure.field());
         }
         assertEquals(0, workspace.resolveCalls);
         assertEquals(0, gmail.sendCalls);
+    }
+
+    @Test
+    void invalidRecipientNamesTheFieldButNotTheValue() {
+        GmailNodeExecutor executor = new GmailNodeExecutor(new FakeGmailClient(), new FakeWorkspace(), resolver());
+        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                () -> executor.execute(context(), config("secret-not-an-address")));
+        assertEquals("to", failure.field());
+        assertEquals("The 'to' field is not a valid email address.", failure.safeMessage());
+    }
+
+    @Test
+    void acceptsMailboxFormsAndKeepsOnlyTheAddress() {
+        FakeGmailClient gmail = new FakeGmailClient();
+        GmailNodeExecutor executor = new GmailNodeExecutor(gmail, new FakeWorkspace(), resolver());
+        executor.execute(context(), config("\"Doe, Jane\" <jane@example.test>, Bob <bob@example.test>, c@example.test"));
+        assertEquals(List.of("jane@example.test", "bob@example.test", "c@example.test"), gmail.recipients);
+    }
+
+    @Test
+    void parsesEdgeCaseMailboxes() {
+        assertEquals(List.of("c@d.e"), GmailNodeExecutor.parseRecipients("to", "\"a \\\" b\" <c@d.e>"));
+        assertEquals(List.of("c@d.e"), GmailNodeExecutor.parseRecipients("to", "\"a <x> b\" <c@d.e>"));
+        assertEquals(List.of("a+tag@b.co"), GmailNodeExecutor.parseRecipients("to", "a+tag@b.co"));
+        for (String invalid : List.of("a@b.c,,d@e.f", "a@b.c,", ",a@b.c")) {
+            NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                    () -> GmailNodeExecutor.parseRecipients("to", invalid));
+            assertEquals("to", failure.field());
+        }
+    }
+
+    @Test
+    void moreThanTheRecipientLimitIsRejectedWithTheRange() {
+        String eleven = java.util.stream.IntStream.rangeClosed(1, 11)
+                .mapToObj(index -> "u" + index + "@example.test").collect(java.util.stream.Collectors.joining(","));
+        NodeExecutor.Failure asText = assertThrows(NodeExecutor.Failure.class,
+                () -> GmailNodeExecutor.parseRecipients("to", eleven));
+        assertTrue(asText.safeMessage().contains("between 1 and 10"));
+        NodeExecutor.Failure asList = assertThrows(NodeExecutor.Failure.class,
+                () -> GmailNodeExecutor.parseRecipients("cc", List.of(eleven.split(","))));
+        assertTrue(asList.safeMessage().contains("between 1 and 10"));
+        assertEquals("cc", asList.field());
     }
 
     @Test

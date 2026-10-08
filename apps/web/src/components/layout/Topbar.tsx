@@ -14,6 +14,7 @@ const getTopbarPageKey = (pathname: string) => {
   if (pathname.startsWith('/workspace/settings')) return 'workspace.tab.settings';
   if (pathname.startsWith('/workspace')) return 'nav.workspace';
   if (pathname.startsWith('/ai')) return 'nav.ai_generator';
+  if (pathname.startsWith('/assistant')) return 'nav.assistant';
   if (pathname.startsWith('/telegram')) return 'nav.telegram';
   if (pathname.startsWith('/notifications')) return 'nav.notifications';
   if (pathname.startsWith('/settings')) return 'nav.settings';

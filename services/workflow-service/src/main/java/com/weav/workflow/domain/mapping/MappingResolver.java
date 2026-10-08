@@ -129,7 +129,7 @@ public final class MappingResolver {
             case VARIABLES -> context.variables();
             case NODE_OUTPUT -> {
                 if (!context.outputs().containsKey(expression.nodeId())) {
-                    throw error(destinationNodeId, destinationField, "The referenced output is unavailable.");
+                    throw new MappingException(destinationNodeId, destinationField, "The referenced output is unavailable.", true);
                 }
                 yield context.outputs().get(expression.nodeId());
             }
@@ -141,7 +141,7 @@ public final class MappingResolver {
             } else if (current instanceof List<?> array && listIndex(segment) >= 0 && listIndex(segment) < array.size()) {
                 current = array.get(listIndex(segment));
             } else {
-                throw error(destinationNodeId, destinationField, "The referenced property is unavailable.");
+                throw new MappingException(destinationNodeId, destinationField, "The referenced property is unavailable.", true);
             }
         }
         return current;

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
+  Camera,
   CheckCircle2,
   KeyRound,
   Languages,
@@ -13,8 +15,9 @@ import {
   Settings2,
   Shield,
   User,
+  Users,
 } from 'lucide-react';
-import { authApi, getAuthApiErrorStatus, isAuthMockMode, type IdentitySessionView, type OAuthAccountMetadata } from '../api/auth.api';
+import { accessTokenExpiresSoon, authApi, getAuthApiErrorStatus, isAuthMockMode, type IdentitySessionView, type OAuthAccountMetadata } from '../api/auth.api';
 import { ConfirmButton } from '../components/common/ConfirmButton';
 import { useAuthStore } from '../store/useAuthStore';
 import { useI18nStore } from '../store/useI18nStore';
@@ -58,6 +61,26 @@ function formatDate(value: string | null | undefined, language: 'VI' | 'EN'): st
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString(language === 'VI' ? 'vi-VN' : 'en-US');
+}
+
+const AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+
+/** "Chrome trên Windows" from a raw user agent; falls back to the raw string. */
+function describeDevice(userAgent: string | null, translate: (key: string) => string): string {
+  if (!userAgent) return translate('settings.unknown_device');
+  const browser = /Edg\//.test(userAgent) ? 'Edge'
+    : /OPR\/|Opera/.test(userAgent) ? 'Opera'
+    : /Firefox\//.test(userAgent) ? 'Firefox'
+    : /Chrome\//.test(userAgent) ? 'Chrome'
+    : /Safari\//.test(userAgent) ? 'Safari' : null;
+  const os = /Windows/.test(userAgent) ? 'Windows'
+    : /Android/.test(userAgent) ? 'Android'
+    : /iPhone|iPad|iOS/.test(userAgent) ? 'iOS'
+    : /Mac OS X|Macintosh/.test(userAgent) ? 'macOS'
+    : /Linux/.test(userAgent) ? 'Linux' : null;
+  if (!browser && !os) return userAgent;
+  return [browser ?? translate('w5c.browser'), os && `${translate('w5c.on')} ${os}`].filter(Boolean).join(' ');
 }
 
 function ErrorText({ children }: { children: string }) {
@@ -120,6 +143,14 @@ export function SettingsPage() {
   const [sessionRefreshKey, setSessionRefreshKey] = useState(0);
   const sessionMutationSequence = useRef(0);
   const sessionMutationRef = useRef<{ id: number; userId: string; token: string | null } | null>(null);
+
+  const [avatarState, setAvatarState] = useState<{ key: string; url: string } | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+  const avatarKey = user?.avatar ?? null;
+  const hasAvatar = !!avatarKey;
+  // The signed URL belongs to one storage key: a replaced avatar never shows the old URL.
+  const avatarUrl = avatarState && avatarState.key === avatarKey ? avatarState.url : null;
 
   const [oauthAccounts, setOauthAccounts] = useState<OAuthAccountMetadata[]>([]);
   const [oauthError, setOauthError] = useState('');
@@ -216,6 +247,41 @@ export function SettingsPage() {
     };
   }, [currentUserId, isAuthenticated, requestedSessionPage, sessionRefreshKey, t]);
 
+  useEffect(() => {
+    if (isAuthMockMode || !hasAvatar) return;
+    let active = true;
+    authApi.getAvatarUrl().then((url) => { if (active && avatarKey) setAvatarState({ key: avatarKey, url }); }, () => undefined);
+    return () => { active = false; };
+  }, [hasAvatar, avatarKey, currentUserId]);
+
+  const changeAvatar = async (file: File | undefined) => {
+    if (!file) return;
+    setAvatarError('');
+    if (!AVATAR_TYPES.includes(file.type)) { setAvatarError(t('w5c.avatar_type')); return; }
+    if (file.size > AVATAR_MAX_BYTES) { setAvatarError(t('w5c.avatar_size')); return; }
+    setAvatarBusy(true);
+    try {
+      setUser(await authApi.uploadAvatar(file));
+    } catch (error) {
+      setAvatarError(getAuthApiErrorStatus(error) === 400 ? t('w5c.avatar_invalid') : t('w5c.avatar_failed'));
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    setAvatarError('');
+    setAvatarBusy(true);
+    try {
+      await authApi.deleteAvatar();
+      if (user) setUser({ ...user, avatar: null });
+    } catch {
+      setAvatarError(t('w5c.avatar_failed'));
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
   const handleSaveProfile = async () => {
     const currentUser = user;
     if (!currentUser || profileLoading) return;
@@ -271,6 +337,20 @@ export function SettingsPage() {
       return;
     }
 
+    passwordRequestInFlight.current = true;
+    setChangingPassword(true);
+    // A 401 from change-password is ambiguous (wrong password or dead session): renew a nearly expired token first.
+    const storedToken = getStoredAuthToken();
+    if (storedToken && accessTokenExpiresSoon(storedToken) && authApi.canRefresh()) {
+      const renewed = await useAuthStore.getState().handleUnauthorized();
+      if (!renewed) {
+        passwordRequestInFlight.current = false;
+        setChangingPassword(false);
+        setPasswordError(t('settings.sessions_auth_error'));
+        return;
+      }
+    }
+
     const requestUserId = currentUser.id;
     const requestToken = getStoredAuthToken();
     const mutationSession = captureNotificationSession();
@@ -281,8 +361,6 @@ export function SettingsPage() {
         && getStoredAuthToken() === requestToken;
     };
 
-    passwordRequestInFlight.current = true;
-    setChangingPassword(true);
     try {
       await authApi.changePassword(currentPassword, newPassword);
       if (!isCurrentRequest()) return;
@@ -294,7 +372,27 @@ export function SettingsPage() {
       logout();
     } catch (error) {
       if (isCurrentRequest()) {
-        setPasswordError(error instanceof Error ? error.message : t('settings.password_error'));
+        const status = getAuthApiErrorStatus(error);
+        if (status === 401) {
+          // Identity uses 401 for a wrong current password and for a revoked session: probe the session (never retry the POST).
+          let sessionAlive: boolean | null;
+          try {
+            sessionAlive = (await authApi.getCurrentUser()) !== null;
+          } catch {
+            sessionAlive = null;
+          }
+          if (sessionAlive === false) {
+            void useAuthStore.getState().handleUnauthorized();
+            setPasswordError(t('settings.sessions_auth_error'));
+          } else if (sessionAlive && getStoredAuthToken() === requestToken) {
+            setPasswordError(t('w5c.current_password_wrong'));
+          } else {
+            setPasswordError(t('settings.password_error'));
+          }
+        } else {
+          setPasswordError(status === 400 ? t('settings.password_length')
+            : error instanceof Error ? error.message : t('settings.password_error'));
+        }
       }
     } finally {
       passwordRequestInFlight.current = false;
@@ -513,6 +611,24 @@ export function SettingsPage() {
         </div>
 
         <div className="mt-5 max-w-lg space-y-4">
+          {!isAuthMockMode && (
+            <div className="flex items-center gap-4">
+              <span className="flex size-16 items-center justify-center overflow-hidden rounded-full border border-border bg-subtle text-muted-foreground">
+                {hasAvatar && avatarUrl ? <img data-testid="avatar-image" src={avatarUrl} alt={t('w5c.avatar')} className="size-full object-cover" /> : <User size={26} aria-hidden="true" />}
+              </span>
+              <div className="space-y-1">
+                <div className="flex gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-run/30 px-3 py-2 text-xs font-semibold text-run hover:bg-run-bg">
+                    <Camera size={14} aria-hidden="true" />{avatarBusy ? t('settings.saving') : t('w5c.avatar_change')}
+                    <input data-testid="avatar-input" type="file" accept={AVATAR_TYPES.join(',')} className="sr-only" disabled={avatarBusy} onChange={(event) => { void changeAvatar(event.target.files?.[0]); event.target.value = ''; }} />
+                  </label>
+                  {hasAvatar && <button type="button" data-testid="avatar-remove" onClick={() => void removeAvatar()} disabled={avatarBusy} className="rounded-xl px-3 py-2 text-xs font-semibold text-err hover:bg-err-bg disabled:opacity-60">{t('w5c.avatar_remove')}</button>}
+                </div>
+                <p className="text-[11px] text-muted-foreground">{t('w5c.avatar_hint')}</p>
+                {avatarError && <p role="alert" data-testid="avatar-error" className="text-xs font-medium text-err">{avatarError}</p>}
+              </div>
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-xs font-semibold text-text-2" htmlFor="profile-name">{t('auth.full_name')}</label>
             <input id="profile-name" type="text" value={name} onChange={(event) => setProfileDraft({ userId: currentUserId, value: event.target.value, dirty: true })} maxLength={MAX_PROFILE_NAME_LENGTH} disabled={profileLoading || savingProfile} className="w-full rounded-xl border border-border bg-subtle px-3.5 py-2.5 text-xs text-foreground outline-none transition-colors focus:border-run/30 focus:ring-2 focus:ring-run/30 disabled:cursor-not-allowed disabled:opacity-60" />
@@ -523,6 +639,7 @@ export function SettingsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span>{t('settings.role')}: <strong className="text-text-2">{roleLabel}</strong></span>
+            {user?.systemRole === 'ADMIN' && <Link to="/admin/users" data-testid="admin-users-link" className="inline-flex items-center gap-1 font-semibold text-run hover:underline"><Users size={13} aria-hidden="true" />{t('w5c.admin_users')}</Link>}
             <span>{t('settings.email')}: <strong className={user?.emailVerifiedAt ? 'text-ok' : 'text-warn'}>{user?.emailVerifiedAt ? t('settings.verified') : t('settings.unverified')}</strong></span>
           </div>
           {profileLoading && <p data-testid="profile-loading" className="text-xs font-medium text-muted-foreground" aria-live="polite">{t('settings.loading')}</p>}
@@ -553,7 +670,7 @@ export function SettingsPage() {
           <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-bold text-foreground">{t('settings.active_sessions')}</h3><p className="mt-1 text-xs text-muted-foreground">{t('settings.active_sessions_desc')}</p></div><ConfirmButton dataTestId="revoke-all-sessions-button" onConfirm={revokeAllSessions} title={t('settings.revoke_all_title')} description={t('settings.revoke_all_desc')} confirmText={t('settings.confirm')} cancelText={t('settings.cancel')} disabled={sessionsLoading || currentSessionAction !== null || isAuthMockMode} className="inline-flex items-center gap-1.5 rounded-xl border border-err-border px-3 py-2 text-xs font-semibold text-err hover:bg-err-bg disabled:opacity-50"><LogOut size={14} />{currentSessionAction === 'all' ? t('settings.revoking') : t('settings.revoke_all')}</ConfirmButton></div>
           {sessionsLoading && <div data-testid="sessions-loading" className="mt-4 flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle size={14} className="animate-spin" />{t('settings.loading_sessions')}</div>}
           {!sessionsLoading && visibleSessions.length === 0 && !visibleSessionsError && <p data-testid="sessions-empty" className="mt-4 text-xs text-muted-foreground">{t('settings.no_sessions')}</p>}
-          <div className="mt-4 space-y-2">{visibleSessions.map((session) => <div key={session.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border px-3 py-3"><div className="flex min-w-0 items-center gap-2.5"><MonitorSmartphone size={16} className="shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="truncate text-xs font-semibold text-foreground">{session.userAgent || t('settings.unknown_device')} {session.current && <span className="ml-1 text-ok">({t('settings.current')})</span>}</p><p className="text-[11px] text-muted-foreground">{t('settings.last_used')} {formatDate(session.lastUsedAt, language)} · {t('settings.expires')} {formatDate(session.expiresAt, language)}</p></div></div><ConfirmButton dataTestId={`session-revoke-button-${session.id}`} onConfirm={() => revokeSession(session)} title={t('settings.revoke_session_title')} description={t('settings.revoke_session_desc')} confirmText={t('settings.confirm')} cancelText={t('settings.cancel')} disabled={sessionsLoading || currentSessionAction !== null || isAuthMockMode} className="rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-err hover:bg-err-bg disabled:opacity-50">{currentSessionAction === session.id ? t('settings.revoking') : t('settings.revoke')}</ConfirmButton></div>)}</div>
+          <div className="mt-4 space-y-2">{visibleSessions.map((session) => <div key={session.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border px-3 py-3"><div className="flex min-w-0 items-center gap-2.5"><MonitorSmartphone size={16} className="shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="truncate text-xs font-semibold text-foreground">{describeDevice(session.userAgent, t)} {session.current && <span className="ml-1 text-ok">({t('settings.current')})</span>}</p><p className="text-[11px] text-muted-foreground">{t('settings.last_used')} {formatDate(session.lastUsedAt, language)} · {t('settings.expires')} {formatDate(session.expiresAt, language)}</p></div></div><ConfirmButton dataTestId={`session-revoke-button-${session.id}`} onConfirm={() => revokeSession(session)} title={t('settings.revoke_session_title')} description={t('settings.revoke_session_desc')} confirmText={t('settings.confirm')} cancelText={t('settings.cancel')} disabled={sessionsLoading || currentSessionAction !== null || isAuthMockMode} className="rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-err hover:bg-err-bg disabled:opacity-50">{currentSessionAction === session.id ? t('settings.revoking') : t('settings.revoke')}</ConfirmButton></div>)}</div>
           {visibleSessionPageInfo.totalPages > 1 && <div data-testid="sessions-pagination" className="mt-4 flex items-center justify-between gap-3 text-xs text-muted-foreground"><button data-testid="sessions-previous-page" aria-label={t('settings.previous_page')} onClick={() => goToSessionPage(requestedSessionPage - 1)} disabled={sessionsLoading || currentSessionAction !== null || requestedSessionPage <= 0} className="rounded-lg border border-border px-2.5 py-1.5 font-semibold hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50">{t('settings.previous_page')}</button><span>{t('settings.session_page')} {requestedSessionPage + 1} / {visibleSessionPageInfo.totalPages}</span><button data-testid="sessions-next-page" aria-label={t('settings.next_page')} onClick={() => goToSessionPage(requestedSessionPage + 1)} disabled={sessionsLoading || currentSessionAction !== null || requestedSessionPage >= visibleSessionPageInfo.totalPages - 1} className="rounded-lg border border-border px-2.5 py-1.5 font-semibold hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-50">{t('settings.next_page')}</button></div>}
           {visibleSessionsError && <div data-testid="sessions-error" className="mt-3 flex flex-wrap items-center gap-3"><ErrorText>{visibleSessionsError}</ErrorText><button data-testid="sessions-retry" onClick={retrySessions} disabled={sessionsLoading || currentSessionAction !== null || isAuthMockMode} className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold text-run hover:bg-run-bg disabled:cursor-not-allowed disabled:opacity-50">{t('settings.retry_sessions')}</button></div>}
         </div>

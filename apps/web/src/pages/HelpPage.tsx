@@ -1,66 +1,93 @@
-import { motion, useReducedMotion } from 'framer-motion';
-import { HelpCircle, BookOpen, ExternalLink, Code, ArrowUpRight, CircleHelp } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { HelpCircle } from 'lucide-react';
 import { useI18nStore } from '../store/useI18nStore';
-import { buttonPress, pageVariants, reducedMotionVariants, staggerItem } from '../lib/motion';
+
+const TRIGGERS = ['manual', 'schedule', 'webhook', 'telegram', 'gmail'] as const;
+const NODES = ['http', 'email', 'sheets', 'drive', 'calendar', 'telegram', 'set', 'condition', 'switch', 'ai'] as const;
+const EXAMPLES = ['telegram', 'sheets', 'condition'] as const;
+
+const section = 'space-y-3 rounded-2xl border border-border bg-card p-5';
+const code = 'rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground';
 
 export function HelpPage() {
   const { t } = useI18nStore();
-  const prefersReducedMotion = useReducedMotion();
-  const pageMotion = prefersReducedMotion ? reducedMotionVariants : pageVariants;
-  const itemMotion = prefersReducedMotion ? reducedMotionVariants : staggerItem;
 
   return (
-    <motion.div data-testid="help-page" className="mx-auto max-w-5xl space-y-6 pb-10" initial="initial" animate="animate" variants={pageMotion}>
-      <motion.div variants={itemMotion}>
+    <div data-testid="help-page" className="mx-auto max-w-4xl space-y-5 pb-10">
+      <div>
         <div className="flex items-center gap-2">
           <span className="flex size-8 items-center justify-center rounded-lg border border-run/30 bg-run-bg text-run"><HelpCircle size={17} aria-hidden="true" /></span>
           <h1 className="text-xl font-bold text-foreground">{t('nav.help')}</h1>
         </div>
-        <p className="mt-1 max-w-2xl text-xs text-text-2">{t('help.subtitle')}</p>
-      </motion.div>
+        <p className="mt-1 max-w-2xl text-xs text-text-2">{t('hp.help.subtitle')}</p>
+        <p className="mt-2 flex flex-wrap gap-3 text-xs font-semibold text-run">
+          <Link to="/workflows/new#templates-list" className="hover:underline">{t('hp.help.link_templates')}</Link>
+          <Link to="/ai/workflow-generator" className="hover:underline">{t('hp.help.link_ai')}</Link>
+          <Link to="/connections" className="hover:underline">{t('hp.help.link_connections')}</Link>
+        </p>
+      </div>
 
-      <motion.div variants={itemMotion} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <motion.article variants={itemMotion} whileHover={prefersReducedMotion ? undefined : { y: -2, transition: { duration: 0.15 } }} className="group rounded-2xl border border-border bg-card p-6 transition-colors">
-          <div className="flex items-start justify-between"><span className="flex size-10 items-center justify-center rounded-xl bg-run-bg text-run"><BookOpen size={20} aria-hidden="true" /></span><ArrowUpRight size={16} className="text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" /></div>
-          <h2 className="mt-5 text-sm font-bold text-foreground">{t('help.frontend_title')}</h2>
-          <p className="mt-2 text-xs leading-5 text-text-2">{t('help.frontend_description')}</p>
-          <motion.a
-            href="file:///d:/End/Weav/docs/development/FRONTEND_GUIDE.md"
-            target="_blank"
-            rel="noreferrer"
-            variants={buttonPress}
-            whileHover="hover"
-            whileTap="tap"
-            className="mt-5 inline-flex items-center gap-1.5 rounded-lg text-xs font-bold text-run outline-none transition-colors hover:text-run focus-visible:ring-2 focus-visible:ring-run/30"
-          >
-            <span>{t('help.open_guide')}</span>
-            <ExternalLink size={13} />
-          </motion.a>
-        </motion.article>
+      <section aria-labelledby="help-start" className={section}>
+        <h2 id="help-start" className="text-sm font-bold text-foreground">{t('hp.help.start_title')}</h2>
+        <ol className="list-decimal space-y-1 pl-5 text-xs leading-5 text-text-2">
+          {[1, 2, 3, 4].map((step) => <li key={step}>{t(`hp.help.start.${step}`)}</li>)}
+        </ol>
+      </section>
 
-        <motion.article variants={itemMotion} whileHover={prefersReducedMotion ? undefined : { y: -2, transition: { duration: 0.15 } }} className="group rounded-2xl border border-border bg-card p-6 transition-colors">
-          <div className="flex items-start justify-between"><span className="flex size-10 items-center justify-center rounded-xl bg-ok-bg text-ok"><Code size={20} aria-hidden="true" /></span><ArrowUpRight size={16} className="text-muted-foreground transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" /></div>
-          <h2 className="mt-5 text-sm font-bold text-foreground">{t('help.specification_title')}</h2>
-          <p className="mt-2 text-xs leading-5 text-text-2">{t('help.specification_description')}</p>
-          <motion.a
-            href="file:///d:/End/Weav/apps/RULE.md"
-            target="_blank"
-            rel="noreferrer"
-            variants={buttonPress}
-            whileHover="hover"
-            whileTap="tap"
-            className="mt-5 inline-flex items-center gap-1.5 rounded-lg text-xs font-bold text-ok outline-none transition-colors hover:text-ok focus-visible:ring-2 focus-visible:ring-ok/30"
-          >
-            <span>{t('help.open_specification')}</span>
-            <ExternalLink size={13} />
-          </motion.a>
-        </motion.article>
-      </motion.div>
+      <section aria-labelledby="help-triggers" className={section}>
+        <h2 id="help-triggers" className="text-sm font-bold text-foreground">{t('hp.help.triggers_title')}</h2>
+        <p className="text-xs text-text-2">{t('hp.help.triggers_intro')}</p>
+        <dl className="space-y-2 text-xs leading-5">
+          {TRIGGERS.map((key) => (
+            <div key={key}>
+              <dt className="font-semibold text-foreground">{t(`hp.help.trigger.${key}.name`)}</dt>
+              <dd className="text-text-2">{t(`hp.help.trigger.${key}.text`)}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
 
-      <motion.section variants={itemMotion} className="flex items-start gap-3 rounded-2xl border border-run/30 bg-run-bg p-4">
-        <CircleHelp size={17} className="mt-0.5 shrink-0 text-run" aria-hidden="true" />
-        <div><h2 className="text-xs font-bold text-run">{t('help.starting_point')}</h2><p className="mt-1 text-xs leading-5 text-run">{t('help.starting_point_description')}</p></div>
-      </motion.section>
-    </motion.div>
+      <section aria-labelledby="help-nodes" className={section}>
+        <h2 id="help-nodes" className="text-sm font-bold text-foreground">{t('hp.help.nodes_title')}</h2>
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-xs leading-5 md:grid-cols-2">
+          {NODES.map((key) => (
+            <div key={key}>
+              <dt className="font-semibold text-foreground">{t(`hp.help.node.${key}.name`)}</dt>
+              <dd className="text-text-2">{t(`hp.help.node.${key}.text`)}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <section aria-labelledby="help-syntax" className={section}>
+        <h2 id="help-syntax" className="text-sm font-bold text-foreground">{t('hp.help.syntax_title')}</h2>
+        <p className="text-xs leading-5 text-text-2">{t('hp.help.syntax_intro')}</p>
+        <ul className="space-y-2 text-xs leading-5 text-text-2">
+          <li><code className={code}>{'{{ trigger.input.name }}'}</code> {t('hp.help.syntax.trigger')}</li>
+          <li><code className={code}>{'{{ nodes.fetch_data.output.data }}'}</code> {t('hp.help.syntax.node')}</li>
+          <li><code className={code}>{'{{ trigger.input.attachments[0] }}'}</code> {t('hp.help.syntax.index')}</li>
+          <li><code className={code}>{'Xin chào {{ trigger.input.name }}!'}</code> {t('hp.help.syntax.text')}</li>
+        </ul>
+        <p className="text-[11px] text-muted-foreground">{t('hp.help.syntax_note')}</p>
+      </section>
+
+      <section aria-labelledby="help-examples" className={section}>
+        <h2 id="help-examples" className="text-sm font-bold text-foreground">{t('hp.help.examples_title')}</h2>
+        <div className="space-y-4">
+          {EXAMPLES.map((key) => (
+            <article key={key} className="rounded-xl border border-border bg-subtle p-4">
+              <h3 className="text-xs font-bold text-foreground">{t(`hp.help.example.${key}.title`)}</h3>
+              <p className="mt-1 text-xs leading-5 text-text-2">{t(`hp.help.example.${key}.steps`)}</p>
+              <p className="mt-1 font-mono text-[11px] leading-5 text-foreground">{t(`hp.help.example.${key}.code`)}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section aria-labelledby="help-publish" className={section}>
+        <h2 id="help-publish" className="text-sm font-bold text-foreground">{t('hp.help.publish_title')}</h2>
+        <p className="text-xs leading-5 text-text-2">{t('hp.help.publish_text')}</p>
+      </section>
+    </div>
   );
 }

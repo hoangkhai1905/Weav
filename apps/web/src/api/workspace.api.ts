@@ -97,6 +97,9 @@ interface PageResult<T> {
 }
 
 interface ApiErrorEnvelope {
+  /** workspace-service answers with a flat body: { code, message, requestId }. */
+  code?: string;
+  message?: string;
   error?: {
     code?: string;
     message?: string;
@@ -206,8 +209,8 @@ async function requestWorkspace<T>(config: AxiosRequestConfig, retried = false):
 
     throw new WorkspaceApiError(
       status,
-      envelope?.error?.code ?? fallback.code,
-      envelope?.error?.message ?? fallback.message,
+      envelope?.error?.code ?? (typeof envelope?.code === 'string' ? envelope.code : undefined) ?? fallback.code,
+      envelope?.error?.message ?? (typeof envelope?.message === 'string' ? envelope.message : undefined) ?? fallback.message,
       envelope?.error?.retryable ?? fallback.retryable,
       envelope?.requestId,
     );

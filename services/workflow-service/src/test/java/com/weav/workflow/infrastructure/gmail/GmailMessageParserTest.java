@@ -49,7 +49,7 @@ class GmailMessageParserTest {
 
         assertEquals("18c0ffee00000001", parsed.id());
         assertEquals(Instant.ofEpochMilli(1790000000123L), parsed.internalDate());
-        assertEquals(List.of("messageId", "threadId", "from", "to", "cc", "subject", "date", "snippet", "body",
+        assertEquals(List.of("messageId", "threadId", "from", "fromEmail", "fromName", "to", "cc", "subject", "date", "snippet", "body",
                 "bodyTruncated", "bodyOmitted", "labelIds", "attachments"), List.copyOf(parsed.input().keySet()));
         assertEquals("Ada <ada@example.test>", parsed.input().get("from"));
         assertEquals("me@example.test", parsed.input().get("to"));
@@ -321,5 +321,26 @@ class GmailMessageParserTest {
         assertEquals(List.of(), omitted.input().get("attachments"));
         assertEquals(List.of(), omitted.attachments());
         assertEquals(List.of(), listed(part("text/plain", "plain")));
+    }
+
+    @Test
+    void senderSplitsDisplayNameFromAddress() {
+        assertEquals(List.of("Ada", "ada@example.test"), List.of(GmailMessageParser.sender("Ada <ada@example.test>")));
+        assertEquals(List.of("Doe, Jane", "j@example.test"),
+                List.of(GmailMessageParser.sender("\"Doe, Jane\" <j@example.test>")));
+        assertEquals(List.of("", "bare@example.test"), List.of(GmailMessageParser.sender("bare@example.test")));
+        assertEquals(List.of("", ""), List.of(GmailMessageParser.sender("")));
+        // escaped quote inside the quoted name
+        assertEquals(List.of("A \"B\" C", "c@d.e"), List.of(GmailMessageParser.sender("\"A \\\"B\\\" C\" <c@d.e>")));
+        // lenient fallback: junk after the address group, name taken from the text before it
+        assertEquals(List.of("Ada", "ada@example.test"), List.of(GmailMessageParser.sender("Ada <ada@example.test> (work)")));
+        assertEquals(List.of("", "not-an-address"), List.of(GmailMessageParser.sender("<not-an-address>")));
+        // a second <...> group outside quotes is ambiguous: keep the whole header, no name
+        assertEquals(List.of("", "Ada <ada@x.com> (<evil@y.com>)"),
+                List.of(GmailMessageParser.sender("Ada <ada@x.com> (<evil@y.com>)")));
+        var input = GmailMessageParser.parse(message(headers(part("text/plain", "x"),
+                "From", "\"Ada L\" <ada@example.test>"))).orElseThrow().input();
+        assertEquals("ada@example.test", input.get("fromEmail"));
+        assertEquals("Ada L", input.get("fromName"));
     }
 }

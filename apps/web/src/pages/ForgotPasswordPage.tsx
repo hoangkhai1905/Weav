@@ -48,6 +48,34 @@ function recoveryErrorMessage(error: unknown, phase: RecoveryPhase, t: (key: str
   return t('forgot.error.failed');
 }
 
+const RESUME_KEY = 'weav_forgot_challenge_v1';
+
+interface StoredChallenge { challengeId: string; email: string; expiresAt: number }
+
+// Only the challenge reference is kept (never the code or a password), so a reload can resume the verify step.
+function readStoredChallenge(): StoredChallenge | null {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(RESUME_KEY) ?? 'null') as Partial<StoredChallenge> | null;
+    if (value && typeof value.challengeId === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value.challengeId)
+      && typeof value.email === 'string' && typeof value.expiresAt === 'number' && value.expiresAt > Date.now()) {
+      return value as StoredChallenge;
+    }
+    sessionStorage.removeItem(RESUME_KEY);
+  } catch {
+    // sessionStorage unavailable: resume is simply not offered.
+  }
+  return null;
+}
+
+function storeChallenge(challenge: StoredChallenge | null): void {
+  try {
+    if (challenge) sessionStorage.setItem(RESUME_KEY, JSON.stringify(challenge));
+    else sessionStorage.removeItem(RESUME_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 export function ForgotPasswordPage() {
   const navigate = useNavigate();
   const { t } = useI18nStore();
@@ -61,6 +89,7 @@ export function ForgotPasswordPage() {
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [resumable, setResumable] = useState(readStoredChallenge);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const mountedRef = useRef(true);
@@ -111,6 +140,9 @@ export function ForgotPasswordPage() {
         if (isCurrentOperation(operation)) throw new RecoveryProtocolError();
         return;
       }
+      const stored = { challengeId: receipt.challengeId, email: normalizedEmail, expiresAt: Date.now() + receipt.expiresIn * 1000 };
+      storeChallenge(stored);
+      setResumable(stored);
       setEmail(normalizedEmail);
       setStep('verify');
       setChallengeId(receipt.challengeId);
@@ -167,6 +199,8 @@ export function ForgotPasswordPage() {
       phase = 'reset';
       await authApi.resetPassword(verification.resetToken, newPassword);
       if (!isCurrentOperation(operation)) return;
+      storeChallenge(null);
+      setResumable(null);
       showSuccessToast('toast.password.reset');
       setCode('');
       setNewPassword('');
@@ -182,9 +216,20 @@ export function ForgotPasswordPage() {
     }
   };
 
+  const resumeChallenge = () => {
+    if (!resumable) return;
+    setEmail(resumable.email);
+    setChallengeId(resumable.challengeId);
+    setExpiresIn(Math.max(1, Math.round((resumable.expiresAt - Date.now()) / 1000)));
+    setStep('verify');
+    setError('');
+  };
+
   const startOver = () => {
     if (loading) return;
     operationRef.current += 1;
+    storeChallenge(null);
+    setResumable(null);
     setStep('request');
     setChallengeId('');
     setExpiresIn(null);
@@ -210,6 +255,7 @@ export function ForgotPasswordPage() {
             <label className="block text-xs font-semibold text-text-2" htmlFor="reset-email">{t('forgot.email')}</label>
             <div className="flex items-center gap-2 rounded-xl border border-border bg-subtle px-3.5"><Mail size={15} className="text-muted-foreground" /><input id="reset-email" aria-label={t('forgot.email')} type="email" required value={email} onChange={(event) => setEmail(event.target.value)} className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none" /></div>
             <button data-testid="request-reset-button" type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.request_code')}</button>
+            {resumable && <button data-testid="resume-reset-button" type="button" onClick={resumeChallenge} className="w-full text-center text-xs font-semibold text-run hover:underline">{t('w5c.have_code')}</button>}
           </form>
         ) : (
           <form onSubmit={(event) => void resetPassword(event)} className="mt-6 space-y-4">

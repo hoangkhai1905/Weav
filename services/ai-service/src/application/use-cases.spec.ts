@@ -315,7 +315,7 @@ describe('generate', () => {
       },
     ],
     [
-      'no manual trigger',
+      'no trigger',
       {
         ...ready,
         intent: {

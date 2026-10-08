@@ -9,6 +9,14 @@ import type { ListQuery } from '../domain/notification';
 import { InboxRepository } from '../domain/inbox';
 import { notificationEventV2Schema } from '../domain/notification-event';
 
+// An actor's own workflow lifecycle actions are not news to them: no inbox row (failures and others' actions stay).
+const OWN_ACTION_EVENTS = new Set([
+  'workflow.created',
+  'workflow.published',
+  'workflow.paused',
+  'workflow.resumed',
+]);
+
 @Injectable()
 export class Notifications {
   constructor(
@@ -22,6 +30,14 @@ export class Notifications {
       'schemaVersion' in value
     ) {
       const event = notificationEventV2Schema.parse(value);
+      if (
+        OWN_ACTION_EVENTS.has(event.eventType) &&
+        event.actorUserId !== null &&
+        event.recipientUserIds.every(
+          (id) => id.toLowerCase() === event.actorUserId?.toLowerCase(),
+        )
+      )
+        return;
       await this.inboxRepository.ingest(event);
       return;
     }
