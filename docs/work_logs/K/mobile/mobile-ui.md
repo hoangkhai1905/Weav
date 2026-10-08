@@ -217,3 +217,12 @@ Lý do: người dùng thấy giao diện cũ "xấu quá", trông như do AI l�
 - Mobile: `ui.store.ts` `themeMode` mặc định `'light'` (trước là `'system'`). Giá trị này không được lưu (không persist), nên chỉ đổi mặc định; Sáng / Tối / Theo điện thoại vẫn chọn được ở Cá nhân. Test mới `ui.store.test.cjs` (tổng 181).
 - Web: `apps/web/src/store/useUIStore.ts` mặc định `'light'` khi chưa có `weav_theme_v1` trong localStorage; lựa chọn đã lưu vẫn được giữ. Kiểm bằng `vite preview` + Playwright (trình duyệt ưu tiên tối): không lưu -> class `light`; đã lưu `dark` -> `dark`. `tsc --noEmit` sạch, `pnpm build` thành công.
 - Dọn dẹp: đã dừng Expo, xóa `tmp/mobile-polish/`. Còn lại trên backend: 3 tài khoản thử `mobilepolish…@example.test` (không có API xóa tài khoản), 2 trong số đó có workspace/quy trình thử dở dang do script seed lỗi giữa chừng; quy trình thử "Gửi báo giá cho khách mới" đã xóa trong lúc kiểm.
+
+### Commit 4: `fix(mobile): no refetch of a deleted published workflow; accent focus ring on inputs`
+- Tự kiểm trong Browser pane (stack thật, tài khoản `merge-check-20261008@example.test`): xóa quy trình **đã xuất bản** vẫn còn 1 GET 404 sau DELETE. Nguyên nhân: Trang chủ kiểm điều kiện kích hoạt bằng `useQueries` theo danh sách `['workflows', ws]` còn cũ, nên tạo lại query chi tiết vừa bị xóa. Sửa: `useDeleteWorkflow` lọc quy trình khỏi danh sách trong cache trước khi xóa query. Kiểm lại: DELETE 204, không còn request nào sau đó.
+- Ô nhập (`TextInput` thô ở 5 file) dùng viền focus cam mặc định của trình duyệt; đổi sang `outlineColor: colors.primary` (giữ vòng focus cho trợ năng).
+- Web: kiểm trong Browser pane, trình duyệt ưu tiên tối + chưa lưu lựa chọn -> `class="light"`.
+- Lưu ý kiểm thử: khi cửa sổ Claude bị che (`visibilityState: hidden`), Chrome dừng animation/rAF nên sheet và chuyển màn bị kẹt; không phải lỗi app.
+
+### Để sau
+- Đăng nhập Google trên mobile: luồng hiện có chỉ cho web (gọi thẳng identity-service :8082, kiểm Origin + cookie + CSRF, quay về `/auth/callback` của web; gateway chưa có route). Cần client OAuth cho mobile (PKCE + deep link `weav://auth/callback`) + route gateway + `expo-auth-session`. Người dùng quyết định để sau (2026-10-08).
