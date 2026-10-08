@@ -177,3 +177,20 @@ Chưa kiểm tra: chạy app thật với gateway (Expo Web/thiết bị); strea
 - `features/profile/avatar.utils.ts` (`checkAvatarImage`): kiểm loại (mime hoặc đuôi file) và kích thước trước khi gửi; có test. Ảnh chọn bằng `launchImageLibraryAsync` (cắt vuông 1:1, quality 0.5 để thường dưới 2 MB). Bộ chọn ảnh hệ thống không cần quyền thư viện nên không xin quyền trước (xin trên Android sẽ hiện hộp thoại thừa); nếu bộ chọn báo lỗi quyền thì hiện câu hướng dẫn vào Cài đặt.
 - Màn Cá nhân: nút "Chọn/Đổi ảnh đại diện", giữ nút xóa, bỏ dòng "tải trên web". Sau khi tải xong làm mới profile + signed URL. Lỗi 400 từ server -> "Weav không đọc được ảnh này".
 - Chưa kiểm trên thiết bị/giả lập thật (không có), chỉ kiểm tsc, test đơn vị, và hợp đồng server bằng script Node (FormData, field `file`).
+
+---
+
+## Giờ thông báo lệch ~9 giờ: điều tra (commit "test(mobile): lock time display to the device zone")
+
+Kết luận: **không phải lỗi mã**. Đồng hồ máy ảo Docker Desktop (WSL2) đã chạy chậm ~9 giờ so với máy thật trong buổi làm lane C, nên mọi mốc giờ do backend đóng dấu (`Instant.now()`, Prisma `now()`) đều sớm ~9 giờ.
+
+Bằng chứng:
+- Dữ liệu thật sau khi Docker khởi động lại (container start 2026-10-08T02:24:02Z): tạo workspace/workflow/chạy workflow bằng tài khoản thử, `GET /api/v2/notifications` trả `occurredAt` dạng UTC `...Z` đúng với đồng hồ máy (`03:08:01.520Z` khi máy 10:08 giờ địa phương); lượt chạy trả `createdAt` micro-giây `Z`. Cột Neon là `TIMESTAMPTZ(3)`, Neon `now()` khớp máy; container và máy thật lệch 0 giây.
+- Mọi producer đều ghi UTC: `WorkflowNotificationOutboxAdapter.java:164` (`OffsetDateTime.ofInstant(..., UTC)`), `WorkspaceNotificationRecorder.java:89`, `ConnectionNotificationRecorder.java:98`, `IdentitySecurityNotificationRecorder.java:31` (`UTC_INSTANT.format(clock.instant())`); `notification-service` parse `new Date(event.occurredAt)` và trả `toISOString()`. Không có `LocalDateTime`, múi giờ JVM hay múi giờ session DB nào tham gia (container `TZ` rỗng, UTC).
+- Mobile: `time.ts` chỉ `new Date(iso)` rồi `date-fns`; `groupByDay` theo ngày lịch của máy. Web: `new Date(...).toLocaleString(...)` (`NotificationsPage.tsx:166`). Cả hai đúng, nên web cũng chịu cùng lỗi môi trường chứ không có lỗi riêng.
+- Dấu vết: tài khoản lane C đăng ký lúc `2026-10-07T17:50:38Z` (tên email là `Date.now()` của máy thật) nhưng sự kiện `workspace.created` đầu tiên của nó lưu `occurred_at = 2026-10-07 08:57:35Z`, `workspace.member_added` (thành viên đăng ký `17:53:17Z`) lưu `08:59:05Z`: chênh hằng số ~8h55 suốt buổi, đúng với "lệch ~9 giờ" (bộ ba mốc trễ `created_at` - `occurred_at` khác là do sự kiện bị giữ rồi giao dồn, chênh không tròn giờ nên không liên quan múi giờ).
+- Hàng đã lưu trong lúc lệch vẫn sai ~9 giờ (không chạy SQL sửa, chỉ báo cáo): các hàng của lane C trong `notification.notification_inbox`, `created_at` từ `2026-10-07 08:57` tới `09:47` UTC. Đồng hồ Docker hiện đã đúng (kiểm bằng `date -u` trong container so với máy thật).
+
+Cách tránh: nếu giờ thông báo/lượt chạy lệch hằng số vài giờ sau khi laptop ngủ, so `docker exec <container> date -u` với `date -u` trên máy; lệch thì khởi động lại Docker Desktop (hoặc `wsl --shutdown`) rồi chạy lại stack.
+
+Kiểm tra: `src/features/common/time.test.cjs` (mới, đặt `TZ=Asia/Ho_Chi_Minh`) khóa việc hiển thị: `...Z` -> giờ +7, phần giây 6/9 chữ số, tương đối là hiệu thuần, nhóm ngày theo ngày lịch của máy. Chạy lại trên Expo Web (`:5173`, `timezoneId: Asia/Ho_Chi_Minh`) với thông báo mới tạo: hiện "4 phút trước", đúng. Tài khoản thử (`mobilefix...@example.com`, không có API xóa tài khoản) và không gian "Time debug" còn lại; đã xóa quy trình thử và ảnh đại diện thử.

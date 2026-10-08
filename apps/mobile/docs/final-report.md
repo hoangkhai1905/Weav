@@ -34,7 +34,7 @@ Lỗi/chỗ lạ tìm thấy ở gateway:
 - Ba dạng error envelope khác nhau; một số lỗi (ví dụ test connection HTTP cấu hình sai) trả `{code,message,requestId}` không bọc `error`.
 - `definition` thật khác brief (`edges.source/target`, `connectionId` trong `config`, nhãn node ở `editorState`).
 - Kết nối mới tạo ở trạng thái DISABLED; test đạt mới thành ACTIVE.
-- Giờ `occurredAt` của thông báo hiển thị lệch khoảng 9 giờ so với giờ máy (chưa tìm nguyên nhân).
+- Giờ thông báo lệch ~9 giờ (đã điều tra, không phải lỗi mã): xem mục "Giờ thông báo lệch ~9 giờ" trong `docs/work_logs/K/mobile/mobile-ui.md`. Nguyên nhân là đồng hồ của máy ảo Docker Desktop (WSL2) chạy chậm ~9 giờ so với máy thật (sau khi laptop ngủ); khởi động lại Docker thì hết. App và backend đã kiểm: giờ thông báo mới tạo hiển thị đúng giờ địa phương.
 
 ## 3. Quyết định thiết kế chính
 
