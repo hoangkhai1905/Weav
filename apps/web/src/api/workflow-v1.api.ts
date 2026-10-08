@@ -7,14 +7,18 @@ const PAGE_SIZE = 100;
 
 export class WorkflowApiError extends Error {
   readonly status: number;
+  /** Validation details of a 400 (`field` + "CODE: message"); empty for other errors. */
+  readonly details: Array<{ field?: string; message?: string }>;
 
   constructor(
     status: number,
     message: string,
+    details: Array<{ field?: string; message?: string }> = [],
   ) {
     super(message);
     this.name = 'WorkflowApiError';
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -201,7 +205,13 @@ async function requestOnce<T>(path: string, init: RequestInit = {}): Promise<T> 
     const firstDetail = response.status === 400 && Array.isArray(envelope?.details) && isRecord(envelope.details[0])
       ? envelope.details[0].message
       : undefined;
-    throw new WorkflowApiError(response.status, typeof firstDetail === 'string' && firstDetail ? `${message}: ${firstDetail}` : message);
+    const details = response.status === 400 && Array.isArray(envelope?.details)
+      ? envelope.details.filter(isRecord).map((item) => ({
+        ...(typeof item.field === 'string' ? { field: item.field } : {}),
+        ...(typeof item.message === 'string' ? { message: item.message } : {}),
+      }))
+      : [];
+    throw new WorkflowApiError(response.status, typeof firstDetail === 'string' && firstDetail ? `${message}: ${firstDetail}` : message, details);
   }
 
   return payload as T;
@@ -469,6 +479,15 @@ export const workflowV1Api = {
       { method: 'PUT', body: JSON.stringify(serializeWorkflowDraft(merged)) },
     );
     return mapDetail(saved, activeWorkspaceId);
+  },
+
+  /**
+   * Renames on its own: the server has no rename endpoint, so this re-sends the last SAVED draft (fresh copy,
+   * never the unsaved canvas) with the new name. A canvas that fails validation cannot lose the rename.
+   */
+  async renameWorkflow(id: string, name: string, workspaceId?: string): Promise<WorkflowDefinition> {
+    detailCache.clear();
+    return this.updateWorkflow(id, { name }, workspaceId);
   },
 
   async publishWorkflow(id: string, workspaceId?: string): Promise<WorkflowPublication> {

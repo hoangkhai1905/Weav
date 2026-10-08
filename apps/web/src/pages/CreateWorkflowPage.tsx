@@ -149,6 +149,7 @@ export const CreateWorkflowPage: React.FC = () => {
   const [aiPrompt, setAiPrompt] = useState<string>('');
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [blankName, setBlankName] = useState<string>('');
 
   const handleStartBlank = async () => {
     const mutationSession = captureNotificationSession();
@@ -156,7 +157,7 @@ export const CreateWorkflowPage: React.FC = () => {
     setCreateError(null);
     try {
       const newWf = await workflowApi.createWorkflow({
-        name: 'Untitled Automation Pipeline',
+        name: blankName.trim() || t('create.blank_default_name'),
         description: 'Custom blank workflow created from canvas editor.',
       });
       if (!isCurrentNotificationSession(mutationSession)) return;
@@ -317,7 +318,18 @@ export const CreateWorkflowPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="mt-5">
+          <div className="mt-5 space-y-2">
+            <label htmlFor="blank-workflow-name" className="block text-[11px] font-medium text-text-2">{t('create.blank_name')}</label>
+            <input
+              id="blank-workflow-name"
+              data-testid="blank-workflow-name"
+              value={blankName}
+              maxLength={100}
+              placeholder={t('create.blank_default_name')}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setBlankName(e.target.value)}
+              className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+            />
             <button
               onClick={(e) => {
                 e.stopPropagation();

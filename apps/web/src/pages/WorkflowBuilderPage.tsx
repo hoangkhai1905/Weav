@@ -67,16 +67,22 @@ import { CreateConnectionDialog } from './ConnectionsPage';
 import { storeOAuthPendingContext } from '../lib/oauthPending';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
-import { NODE_CATALOG, nodeSourcePorts } from '../lib/constants/nodeCatalog';
+import { NODE_CATALOG, nextNodeId, nodeSourcePorts } from '../lib/constants/nodeCatalog';
 import { getNodeReadinessBadge, isConditionComplete } from '../lib/nodeReadiness';
 import { SchemaField } from '../components/builder/SchemaField';
 import { ConditionEditor } from '../components/builder/ConditionEditor';
 import { AttachmentsEditor } from '../components/builder/AttachmentsEditor';
 import { SwitchEditor } from '../components/builder/SwitchEditor';
 import { DataSetEditor } from '../components/builder/DataSetEditor';
+import { CommaListInput } from '../components/builder/CommaListInput';
+import { KeyValueEditor } from '../components/builder/KeyValueEditor';
+import { definitionBlockers } from '../lib/publishBlockers';
+import { VariablePicker } from '../components/builder/VariablePicker';
+import { upstreamGroups, useFieldTarget } from '../lib/variablePaths';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
-import { definitionToCanvas, type GenerationResponse } from '../api/workflow-v1.api';
+import { definitionToCanvas, WorkflowApiError, type GenerationResponse } from '../api/workflow-v1.api';
+import { describeIssues, type WorkflowIssue } from '../lib/publishErrors';
 import { workflowToReactFlow, reactFlowToWorkflow } from '../lib/mappers/workflowMapper';
 import type { WorkflowDefinition } from '../types/workflow.types';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
@@ -137,11 +143,11 @@ const catalogDefaultConfig = (type: string): Record<string, unknown> => ({
 // Keep the former starter canvas only for explicit mock/demo mode. Live workflows
 // always use the nodes returned by Workflow Service.
 const INITIAL_NODES: Node[] = [
-  { id: 'node-manual', type: 'customNode', position: { x: 80, y: 80 }, data: { id: 'manual_trigger_v1', nameKey: 'builder.node.manual', nodeType: 'trigger.manual', status: 'idle', executionTime: '', config: catalogDefaultConfig('trigger.manual') } },
-  { id: 'node-webhook', type: 'customNode', position: { x: 80, y: 300 }, data: { id: 'webhook_inbound_v1', name: 'Webhook Trigger', nameKey: 'builder.node.webhook', nodeType: 'trigger.webhook', status: 'idle', executionTime: '', config: catalogDefaultConfig('trigger.webhook') } },
-  { id: 'node-extract', type: 'customNode', position: { x: 420, y: 180 }, data: { id: 'extract_order_v1', name: 'AI Extract Core', nameKey: 'builder.node.ai_extract', nodeType: 'ai.extract', status: 'idle', executionTime: '', config: catalogDefaultConfig('ai.extract') } },
-  { id: 'node-condition', type: 'customNode', position: { x: 760, y: 180 }, data: { id: 'condition_check_v1', name: 'High Value Check', nameKey: 'builder.node.condition', nodeType: 'logic.condition', status: 'idle', executionTime: '', config: catalogDefaultConfig('logic.condition') } },
-  { id: 'node-notify', type: 'customNode', position: { x: 1100, y: 180 }, data: { id: 'notify_slack_v1', name: 'Notify Priority Queue', nameKey: 'builder.node.email', nodeType: 'email.send', status: 'idle', executionTime: '', config: catalogDefaultConfig('email.send') } },
+  { id: 'node-manual', type: 'customNode', position: { x: 80, y: 80 }, data: { nameKey: 'builder.node.manual', nodeType: 'trigger.manual', status: 'idle', executionTime: '', config: catalogDefaultConfig('trigger.manual') } },
+  { id: 'node-webhook', type: 'customNode', position: { x: 80, y: 300 }, data: { name: 'Webhook Trigger', nameKey: 'builder.node.webhook', nodeType: 'trigger.webhook', status: 'idle', executionTime: '', config: catalogDefaultConfig('trigger.webhook') } },
+  { id: 'node-extract', type: 'customNode', position: { x: 420, y: 180 }, data: { name: 'AI Extract Core', nameKey: 'builder.node.ai_extract', nodeType: 'ai.extract', status: 'idle', executionTime: '', config: catalogDefaultConfig('ai.extract') } },
+  { id: 'node-condition', type: 'customNode', position: { x: 760, y: 180 }, data: { name: 'High Value Check', nameKey: 'builder.node.condition', nodeType: 'logic.condition', status: 'idle', executionTime: '', config: catalogDefaultConfig('logic.condition') } },
+  { id: 'node-notify', type: 'customNode', position: { x: 1100, y: 180 }, data: { name: 'Notify Priority Queue', nameKey: 'builder.node.email', nodeType: 'email.send', status: 'idle', executionTime: '', config: catalogDefaultConfig('email.send') } },
 ];
 
 const INITIAL_EDGES: Edge[] = [
@@ -277,12 +283,8 @@ const getPublishBlockers = (nodes: Node[], edges: Edge[], t: (key: string) => st
     if (type === 'ocr.extract') {
       blockers.add(getNodeReadinessMessage(type, config, t) ?? t('builder.blocker.not_configured').replace('{type}', type));
     }
-    if (type === 'ocr.extract') {
-      const hasArtifactId = Boolean(String(config.artifactId ?? '').trim());
-      const hasFileUrl = Boolean(String(config.fileUrl ?? '').trim());
-      if (hasArtifactId === hasFileUrl) blockers.add('OCR requires exactly one of artifactId or fileUrl');
-    }
   }
+  definitionBlockers(nodes, edges, t).forEach((blocker) => blockers.add(blocker));
   return [...blockers];
 };
 
@@ -301,7 +303,6 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [section, setSection] = useState<'editor' | 'settings'>(searchParams.get('tab') === 'settings' ? 'settings' : 'editor');
   const prefersReducedMotion = useReducedMotion();
-  const nodeSequenceRef = useRef(INITIAL_NODES.length);
   const logSequenceRef = useRef(0);
   const executionTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const inspectorRef = useRef<HTMLElement | null>(null);
@@ -313,6 +314,9 @@ export const WorkflowBuilderPage: React.FC = () => {
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const selectedNodeType = String(selectedNode?.data?.nodeType ?? '');
   const selectedNodeConfig = (selectedNode?.data?.config ?? {}) as Record<string, unknown>;
+  // Highest number handed out per id prefix in this workflow, so a deleted step's id is not reused.
+  const idMarks = useRef<{ workflowId?: string; marks: Record<string, number> }>({ marks: {} });
+  const fieldTarget = useFieldTarget(selectedNodeId);
   const { data: workspaceConnections, isLoading: isLoadingConnections } = useConnections();
   const gmailConnections = useMemo(
     () => (workspaceConnections ?? []).filter(
@@ -326,6 +330,12 @@ export const WorkflowBuilderPage: React.FC = () => {
     ),
     [workspaceConnections],
   );
+  const httpConnections = useMemo(
+    () => (workspaceConnections ?? []).filter(
+      (connection) => connection.provider === 'HTTP' && connection.status === 'ACTIVE' && connection.canAttach,
+    ),
+    [workspaceConnections],
+  );
   const telegramConnections = useMemo(
     () => (workspaceConnections ?? []).filter(
       (connection) => connection.provider === 'TELEGRAM' && connection.status === 'ACTIVE' && connection.canAttach,
@@ -335,7 +345,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   // Schema-rendered field bound to the selected step's config (see components/builder/SchemaField).
   const configField = (name: string, connections?: { id: string; name: string }[], multiline?: boolean) => (
     <SchemaField
-      key={name}
+      key={`${selectedNodeId}:${name}`}
       nodeType={selectedNodeType}
       name={name}
       value={selectedNodeConfig[name]}
@@ -370,8 +380,12 @@ export const WorkflowBuilderPage: React.FC = () => {
   const googleOperation = String(selectedNodeConfig.operation ?? 'read');
   // Sheets writes edit the first row of `values` cell by cell; any further rows are kept as they are.
   const sheetsValues = Array.isArray(selectedNodeConfig.values) ? (selectedNodeConfig.values as unknown[][]) : [];
-  const sheetsRow = Array.isArray(sheetsValues[0]) && sheetsValues[0].length > 0 ? sheetsValues[0].map((cell) => String(cell ?? '')) : [''];
-  const setSheetsRow = (row: string[]) => updateSelectedNodeConfig({ values: [row, ...sheetsValues.slice(1)] });
+  // Rows keep their cell types; only a cell the user edits becomes text.
+  const sheetsRows: unknown[][] = sheetsValues.length > 0 && sheetsValues.every(Array.isArray)
+    ? sheetsValues.map((row) => (row.length > 0 ? row : ['']))
+    : [['']];
+  const setSheetsRows = (rows: unknown[][]) => updateSelectedNodeConfig({ values: rows });
+  const sheetsValuesMapping = typeof selectedNodeConfig.values === 'string' ? selectedNodeConfig.values : null;
   const sheetsStartColumn = /^(?:.*!)?\$?([A-Za-z]+)/.exec(String(selectedNodeConfig.range ?? ''))?.[1]?.toUpperCase() ?? 'A';
   const sheetsColumn = (offset: number) => columnLetter(columnIndex(sheetsStartColumn) + offset);
 
@@ -403,6 +417,8 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(true);
   const [isSavingWorkflow, setIsSavingWorkflow] = useState(false);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
+  // Validation issues of the last rejected save/publish, kept together with the message they belong to.
+  const [issueState, setIssueState] = useState<{ message: string; issues: WorkflowIssue[] } | null>(null);
   const [publishedWebhooks, setPublishedWebhooks] = useState<WebhookProvisioning[]>([]);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null);
@@ -541,8 +557,12 @@ export const WorkflowBuilderPage: React.FC = () => {
   }, [workflowId, setNodes, setEdges]);
 
   // `nodesOverride`: nodes just passed to setNodes, which this render's closure has not seen yet.
+  const renameRef = useRef<Promise<void> | null>(null);
+  const failedTitleRef = useRef<string | null>(null);
+  const skipCommitRef = useRef(false);
   const saveDraft = useCallback(async (nodesOverride?: Node[]) => {
     if (!workflow) throw new Error(tr('msg.workflow_is_not_loaded'));
+    await renameRef.current; // never overlap a rename PUT
     const draft = reactFlowToWorkflow(nodesOverride ?? nodes, edges,{ ...workflow, name: workflowTitle, description: workflowDescription });
     const saved = await workflowApi.updateWorkflow(workflow.id, draft);
     setWorkflow(saved);
@@ -552,6 +572,48 @@ export const WorkflowBuilderPage: React.FC = () => {
     setIsSaved(true);
     return saved;
   }, [edges, nodes, setWorkflow, setWorkflowTitle, setIsSaved, workflow, workflowTitle, workflowDescription, queryClient]);
+
+  /** Shows a failed save/publish; validation details become Vietnamese per-step issues and the first step is selected. */
+  const reportWorkflowError = (error: unknown, fallbackKey: string) => {
+    if (error instanceof WorkflowApiError && error.details.length > 0) {
+      const issues = describeIssues(error.details, t);
+      const message = t('builder.err.summary');
+      setIssueState({ message, issues });
+      setWorkflowError(message);
+      const first = issues.find((issue) => issue.nodeId && nodes.some((node) => node.id === issue.nodeId));
+      if (first?.nodeId) focusNode(first.nodeId);
+      return;
+    }
+    setIssueState(null);
+    setWorkflowError(error instanceof Error ? error.message : tr(fallbackKey));
+  };
+
+  // The header name is saved on its own (blur / Enter), so a draft that fails validation cannot lose it (#27, #45).
+  // Only a clean canvas renames on its own: a dirty one sends the name with its next save, and a save/publish
+  // waits for a rename in flight (renameRef), so the two PUTs can never cross and overwrite the new canvas.
+  const commitTitle = async (force = false) => {
+    if (skipCommitRef.current) { skipCommitRef.current = false; return; }
+    if (!workflow || isSavingWorkflow || renameRef.current || !isSaved) return;
+    const name = workflowTitle.trim();
+    if (name === '') { setWorkflowTitle(workflow.name); return; }
+    if (name === workflow.name || (!force && name === failedTitleRef.current)) return;
+    const run = (async () => {
+      try {
+        const renamed = await workflowApi.renameWorkflow(workflow.id, name);
+        failedTitleRef.current = null;
+        setWorkflow((current) => (current ? { ...current, name: renamed.name, updatedAt: renamed.updatedAt } : current));
+        setWorkflowTitle(renamed.name);
+        void invalidateWorkflowQueries(queryClient);
+      } catch (error) {
+        failedTitleRef.current = name; // do not show the same error again on every blur
+        setIsSaved(false); // the name stays in the box and goes out with the next save
+        reportWorkflowError(error, 'msg.draft_could_not_be_saved');
+      }
+    })();
+    renameRef.current = run;
+    await run;
+    renameRef.current = null;
+  };
 
   const handleSaveDraft = async () => {
     setWorkflowError(null);
@@ -564,7 +626,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       }
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
-        setWorkflowError(error instanceof Error ? error.message : tr('msg.draft_could_not_be_saved'));
+        reportWorkflowError(error, 'msg.draft_could_not_be_saved');
       }
     } finally {
       setIsSavingWorkflow(false);
@@ -577,6 +639,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     setPublishedWebhooks([]);
     setIsSavingWorkflow(true);
     try {
+      await renameRef.current;
       const saved = isSaved ? workflow : await saveDraft();
       if (!saved) throw new Error(tr('msg.workflow_is_not_loaded'));
       const publication = await workflowApi.publishWorkflow(saved.id);
@@ -590,7 +653,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       return true;
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
-        setWorkflowError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_published'));
+        reportWorkflowError(error, 'msg.workflow_could_not_be_published');
       }
       return false;
     } finally {
@@ -678,8 +741,23 @@ export const WorkflowBuilderPage: React.FC = () => {
     [activeEdgeId, edges, prefersReducedMotion, t]
   );
 
+  // Steps named by the last rejected save/publish get a red outline until the message is replaced.
+  const renderedNodes = useMemo(() => {
+    const flagged = new Set(issueState && workflowError === issueState.message ? issueState.issues.flatMap((issue) => (issue.nodeId ? [issue.nodeId] : [])) : []);
+    return flagged.size === 0 ? nodes : nodes.map((node) => (flagged.has(node.id) ? { ...node, className: 'rounded-lg ring-2 ring-err' } : node));
+  }, [nodes, issueState, workflowError]);
+
+  // A trigger starts the workflow: nothing may connect into it (TRIGGER_HAS_INCOMING_EDGE), nor into itself.
+  const canConnect = useCallback(
+    (params: { source: string; target: string }) =>
+      params.source !== params.target
+      && !String(nodes.find((node) => node.id === params.target)?.data?.nodeType ?? '').startsWith('trigger.'),
+    [nodes],
+  );
+
   const onConnect = useCallback(
     (params: Connection) => {
+      if (!canConnect(params)) return;
       setIsSaved(false);
       setEdges((eds) =>
         addEdge({
@@ -690,7 +768,7 @@ export const WorkflowBuilderPage: React.FC = () => {
         }, eds)
       );
     },
-    [setEdges, setIsSaved]
+    [canConnect, setEdges, setIsSaved]
   );
 
   const handleEdgesChange = useCallback(
@@ -882,6 +960,12 @@ export const WorkflowBuilderPage: React.FC = () => {
     },
     [closeInspector]
   );
+
+  const focusNode = (id: string) => {
+    setInspectorOpen(true);
+    setSelectedNodeId(id);
+    setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, selected: n.id === id } })));
+  };
 
   const onNodeClick = (_: React.MouseEvent, node: Node) => {
     setInspectorOpen(true);
@@ -1094,14 +1178,9 @@ export const WorkflowBuilderPage: React.FC = () => {
   };
 
   const handleAddCatalogItem = (type: string, name: string, nameKey: string) => {
-    const usedIds = new Set(nodes.map((node) => node.id));
-    let sequence = nodeSequenceRef.current;
-    let newNodeId = '';
-    do {
-      sequence += 1;
-      newNodeId = `node-${sequence}`;
-    } while (usedIds.has(newNodeId));
-    nodeSequenceRef.current = sequence;
+    if (idMarks.current.workflowId !== workflow?.id) idMarks.current = { workflowId: workflow?.id, marks: {} };
+    // The id is what templates reference (`nodes.<id>.output...`) and what the draft saves: readable and unique.
+    const newNodeId = nextNodeId(type, new Set(nodes.map((node) => node.id)), idMarks.current.marks);
     const catalogItem = NODE_CATALOG.find((item) => item.type === type);
     // "Add step" continues the flow: place it right of the selected (else right-most) step and link it
     // when that step has a single output that is still free, so the new step is reachable on publish.
@@ -1117,9 +1196,8 @@ export const WorkflowBuilderPage: React.FC = () => {
       type: 'customNode',
       position: anchor
         ? { x: anchor.position.x + 340, y: anchor.position.y }
-        : { x: 80, y: 80 + (sequence % 3) * 40 },
+        : { x: 80, y: 80 + (nodes.length % 3) * 40 },
       data: {
-        id: `${type.replace('.', '_')}_v1`,
         name,
         nameKey,
         nodeType: type,
@@ -1160,7 +1238,7 @@ export const WorkflowBuilderPage: React.FC = () => {
 
   const handleGenerateReady = (result: Extract<GenerationResponse, { status: 'ready' }>) => {
     const hasBeyondTrigger = nodes.length > 1
-      || (nodes.length === 1 && String(nodes[0].data?.nodeType ?? '') !== 'trigger.manual');
+      || (nodes.length === 1 && !String(nodes[0].data?.nodeType ?? '').startsWith('trigger.'));
     if (hasBeyondTrigger && !window.confirm(tr('msg.replace_the_current_canvas'))) return;
     const canvas = definitionToCanvas(result.definition, result.layout);
     const flow = workflowToReactFlow({
@@ -1169,7 +1247,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       name: result.name,
       status: 'DRAFT',
       version: 1,
-      triggerType: 'trigger.manual',
+      triggerType: canvas.nodes.find((node) => node.type.startsWith('trigger.'))?.type ?? 'trigger.manual',
       nodes: canvas.nodes,
       edges: canvas.edges,
       createdAt: workflow?.createdAt ?? new Date().toISOString(),
@@ -1228,18 +1306,20 @@ export const WorkflowBuilderPage: React.FC = () => {
             aria-label={t('builder.back_to_workflows')}
           >
             <ArrowLeft size={14} aria-hidden="true" />
-            <span className="hidden lg:inline">{t('nav.workflows')}</span>
+            <span className="hidden xl:inline">{t('nav.workflows')}</span>
           </Link>
-          <span aria-hidden="true" className="hidden shrink-0 text-muted-foreground lg:inline">/</span>
+          <span aria-hidden="true" className="hidden shrink-0 text-muted-foreground xl:inline">/</span>
           <input
             data-testid="workflow-title"
             aria-label={t('builder.workflow_name')}
             type="text"
             value={workflowTitle}
             disabled={isLoadingWorkflow || isSavingWorkflow || !workflow}
-            onChange={(e) => {
-              setWorkflowTitle(e.target.value);
-              setIsSaved(false);
+            onChange={(e) => { failedTitleRef.current = null; setWorkflowTitle(e.target.value); }}
+            onBlur={() => void commitTitle()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); void commitTitle(true); e.currentTarget.blur(); }
+              if (e.key === 'Escape' && workflow) { skipCommitRef.current = true; setWorkflowTitle(workflow.name); e.currentTarget.blur(); }
             }}
             title={workflowTitle}
             className="h-7 min-w-[72px] flex-1 truncate rounded-md border border-transparent bg-transparent px-1.5 text-sm font-semibold text-foreground transition-colors hover:border-border focus:border-primary focus:bg-card focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
@@ -1254,15 +1334,15 @@ export const WorkflowBuilderPage: React.FC = () => {
           )}
           <span
             data-testid="builder-workspace-context"
-            title={t('builder.workspace_context').replace('{workspace}', activeWorkspaceId ?? t('builder.workspace_not_selected'))}
+            title={t('builder.workspace_context').replace('{workspace}', activeWorkspace?.name ?? t('builder.workspace_not_selected'))}
             className="sr-only"
           >
-            {t('builder.workspace_context').replace('{workspace}', activeWorkspaceId ?? t('builder.workspace_not_selected'))}
+            {t('builder.workspace_context').replace('{workspace}', activeWorkspace?.name ?? t('builder.workspace_not_selected'))}
           </span>
         </div>
 
         {/* Editor / Executions tabs */}
-        <nav aria-label={t('builder.workflow_sections')} className="hidden h-12 shrink-0 items-stretch gap-5 whitespace-nowrap md:flex">
+        <nav aria-label={t('builder.workflow_sections')} className="hidden h-12 shrink-0 items-stretch gap-3 whitespace-nowrap md:flex xl:gap-5">
           <button
             type="button"
             data-testid="workflow-tab-editor"
@@ -1331,7 +1411,7 @@ export const WorkflowBuilderPage: React.FC = () => {
               <span aria-hidden="true" className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full p-0.5 transition-colors ${workflow.status === 'PUBLISHED' ? 'justify-end bg-ok' : 'justify-start bg-border-strong'}`}>
                 <span className="h-3.5 w-3.5 rounded-full bg-white" />
               </span>
-              <span className="hidden lg:inline">{workflow.status === 'PUBLISHED' ? t('builder.active.on') : t('builder.active.off')}</span>
+              <span className="hidden xl:inline">{workflow.status === 'PUBLISHED' ? t('builder.active.on') : t('builder.active.off')}</span>
             </button>
           )}
           {workflow?.status === 'PUBLISHED' && (
@@ -1371,7 +1451,22 @@ export const WorkflowBuilderPage: React.FC = () => {
       </header>
 
       {isLoadingWorkflow && <div role="status" className="shrink-0 border-b border-border bg-card px-3 py-1.5 text-xs text-text-2">{t('builder.loading')}</div>}
-      {workflowError && <div role="alert" data-testid="workflow-builder-error" className="shrink-0 border-b border-err-border bg-err-bg px-3 py-1.5 text-xs text-err">{workflowError}</div>}
+      {workflowError && (
+        <div role="alert" data-testid="workflow-builder-error" className="shrink-0 border-b border-err-border bg-err-bg px-3 py-1.5 text-xs text-err">
+          {workflowError}
+          {issueState && issueState.message === workflowError && (
+            <ul data-testid="workflow-issue-list" className="mt-1 list-disc space-y-0.5 pl-4">
+              {issueState.issues.map((issue, index) => (
+                <li key={index}>
+                  {issue.nodeId && nodes.some((node) => node.id === issue.nodeId) ? (
+                    <button type="button" onClick={() => focusNode(issue.nodeId as string)} className="text-left underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{issue.text}</button>
+                  ) : issue.text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {publishedWebhooks.length > 0 && (
         <section aria-label={t('builder.webhook_credentials_label')} className="shrink-0 space-y-2 border-b border-warn/30 bg-warn-bg px-3 py-2 text-xs text-foreground">
           <div className="flex items-center justify-between gap-3">
@@ -1445,11 +1540,13 @@ export const WorkflowBuilderPage: React.FC = () => {
         <main ref={canvasRef} data-testid="workflow-canvas" className="relative h-full flex-1 overflow-hidden bg-background">
           <ReactFlow
             ariaLabelConfig={ariaLabelConfig}
-            nodes={nodes}
+            nodes={renderedNodes}
             edges={renderedEdges}
             onNodesChange={handleNodesChange}
             onEdgesChange={handleEdgesChange}
             onConnect={onConnect}
+            isValidConnection={canConnect}
+            deleteKeyCode={['Backspace', 'Delete']}
             onNodeClick={onNodeClick}
             onNodeDragStart={() => {
               draggingRef.current = true;
@@ -1582,7 +1679,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                 aria-modal="true"
                 aria-label={t('builder.add_step')}
                 data-testid="workflow-palette"
-                className="relative flex max-h-[min(480px,70%)] w-[480px] max-w-[calc(100%-24px)] flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-pop"
+                className="nokey relative flex max-h-[min(480px,70%)] w-[480px] max-w-[calc(100%-24px)] flex-col overflow-hidden rounded-lg border border-border bg-popover shadow-pop"
               >
                 <div className="flex items-center gap-2 border-b border-border px-3">
                   <Search size={14} aria-hidden="true" className="text-muted-foreground" />
@@ -1630,6 +1727,9 @@ export const WorkflowBuilderPage: React.FC = () => {
                                 <ItemIcon size={14} />
                               </span>
                               <span className="truncate text-[13px] font-medium text-foreground">{item.nameKey ? t(item.nameKey) : item.title}</span>
+                              {getNodeReadinessBadge(item.type, {}).state === 'unavailable' && (
+                                <span data-testid="palette-unavailable" className="shrink-0 rounded bg-warn-bg px-1.5 py-0.5 text-[10px] font-medium text-warn">{t('builder.readiness.unavailable')}</span>
+                              )}
                               <span className="ml-auto hidden max-w-[45%] truncate text-xs text-muted-foreground sm:block">{item.descKey ? t(item.descKey) : item.description}</span>
                             </button>
                           );
@@ -1654,7 +1754,7 @@ export const WorkflowBuilderPage: React.FC = () => {
           animate={{ opacity: 1, x: 0 }}
           exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: 16 }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.24, ease: [0.16, 1, 0.3, 1] }}
-          className="absolute inset-y-0 right-0 z-10 flex w-[400px] max-w-full flex-col border-l border-border bg-card shadow-pop"
+          className="nokey absolute inset-y-0 right-0 z-10 flex w-[400px] max-w-full flex-col border-l border-border bg-card shadow-pop"
         >
           {/* Inspector Header */}
           <div className="flex items-center justify-between gap-2 border-b border-border p-3.5">
@@ -1664,9 +1764,19 @@ export const WorkflowBuilderPage: React.FC = () => {
                   ? t(String(selectedNode.data.nameKey))
                   : (selectedNode.data.name as string) || t('builder.step_inspector')}
               </span>
-              <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                {(selectedNode.data.id as string) || selectedNodeType}
+              <span data-testid="inspector-node-id" title={t('builder.node_id')} className="min-w-0 truncate rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                {selectedNode.id}
               </span>
+              <button
+                type="button"
+                data-testid="inspector-node-id-copy"
+                aria-label={t('builder.node_id.copy')}
+                title={t('builder.node_id.copy')}
+                onClick={() => { void navigator.clipboard?.writeText(selectedNode.id).catch(() => undefined); }}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Copy size={12} aria-hidden="true" />
+              </button>
             </div>
             <span className={selectedNodeReadiness?.state === 'ready'
               ? 'shrink-0 rounded bg-ok-bg px-1.5 py-0.5 text-[11px] font-medium text-ok'
@@ -1709,7 +1819,14 @@ export const WorkflowBuilderPage: React.FC = () => {
           </div>
 
           {/* Inspector Body Content */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
+          <div className="flex-1 overflow-y-auto p-3 space-y-4 text-xs" onFocusCapture={fieldTarget.onFocusCapture}>
+            {inspectorTab === 'config' && !isUnsupportedNode && !selectedNodeType.startsWith('trigger.') && selectedNodeId && (
+              <VariablePicker
+                key={selectedNodeId}
+                groups={upstreamGroups(nodes, edges, selectedNodeId, t('builder.var.trigger'))}
+                insert={fieldTarget.insert}
+              />
+            )}
             {inspectorTab === 'config' && (
               isUnsupportedNode ? (
                 <div data-testid="unsupported-node-config" className="space-y-3">
@@ -1834,7 +1951,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                   <div>
                     <label htmlFor="http-method" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.method')}</label>
                     <select id="http-method" value={String(selectedNodeConfig.method ?? 'GET')} onChange={(event) => updateSelectedNodeConfig({ method: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary">
-                      {['GET', 'POST', 'PUT', 'DELETE'].map((method) => <option key={method}>{method}</option>)}
+                      {['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map((method) => <option key={method}>{method}</option>)}
                     </select>
                   </div>
                   <div>
@@ -1845,6 +1962,9 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <label htmlFor="http-body" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.body')}</label>
                     <textarea id="http-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} placeholder={t('builder.cfg.body_placeholder')} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
+                  <KeyValueEditor key={`headers-${selectedNodeId}`} label={t('builder.cfg.http_headers')} testId="http-headers" value={selectedNodeConfig.headers} onChange={(headers) => updateSelectedNodeConfig({ headers })} />
+                  <KeyValueEditor key={`query-${selectedNodeId}`} label={t('builder.cfg.http_query')} testId="http-query" value={selectedNodeConfig.query} onChange={(query) => updateSelectedNodeConfig({ query })} />
+                  {configField('connectionId', httpConnections)}
                   <p className="text-[10px] text-muted-foreground">{t('builder.cfg.http_hint')}</p>
                 </div>
               ) : selectedNodeType === 'email.send' ? (
@@ -1914,18 +2034,20 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <label htmlFor="ai-input-text" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.input_text')}</label>
                         <input id="ai-input-text" value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                       </div>
+                      {configField('instructions', undefined, true)}
                     </div>
                   )}
                   {selectedNodeType === 'ai.classify' && (
-                    <div>
-                      <label htmlFor="ai-categories" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.categories')}</label>
-                      <input id="ai-categories" value={Array.isArray(selectedNodeConfig.categories) ? selectedNodeConfig.categories.join(', ') : ''} onChange={(event) => updateSelectedNodeConfig({ categories: event.target.value.split(',').map((value) => value.trim()).filter(Boolean) })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    <div className="space-y-3">
+                      {configField('content', undefined, true)}
+                      <CommaListInput key={selectedNodeId} id="ai-categories" label={t('builder.cfg.categories')} value={selectedNodeConfig.categories} onChange={(categories) => updateSelectedNodeConfig({ categories })} />
                     </div>
                   )}
                   {selectedNodeType === 'ai.summarize' && (
-                    <div>
-                      <label htmlFor="ai-max-length" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.max_length')}</label>
-                      <input id="ai-max-length" type="number" min="1" value={String(selectedNodeConfig.maxLength ?? 200)} onChange={(event) => updateSelectedNodeConfig({ maxLength: Number(event.target.value) })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    <div className="space-y-3">
+                      {configField('inputText', undefined, true)}
+                      {/* Whole numbers 1..5000 are saved as numbers, a {{ }} mapping stays text, empty is omitted, anything else is flagged and not saved. */}
+                      {configField('maxLength')}
                     </div>
                   )}
                 </div>
@@ -1949,7 +2071,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         id="ocr-artifact-id"
                         data-testid="ocr-artifact-id"
                         value={String(selectedNodeConfig.artifactId ?? '')}
-                        onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value, fileUrl: '' })}
+                        onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value || undefined, fileUrl: undefined })}
                         className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
                     </div>
@@ -1959,7 +2081,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         id="ocr-file-url"
                         data-testid="ocr-file-url"
                         value={String(selectedNodeConfig.fileUrl ?? '')}
-                        onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value, artifactId: '' })}
+                        onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value || undefined, artifactId: undefined })}
                         placeholder="https://..."
                         className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                       />
@@ -2249,29 +2371,53 @@ export const WorkflowBuilderPage: React.FC = () => {
 
                       {(googleOperation === 'append' || googleOperation === 'update') && configField('valueInputOption')}
 
-                      {(googleOperation === 'append' || googleOperation === 'update') && (
+                      {(googleOperation === 'append' || googleOperation === 'update') && sheetsValuesMapping !== null && (
+                        <div data-testid="google-values-mapping" className="space-y-1">
+                          <p className="text-[11px] font-medium text-text-2">{t('builder.google.values_mapping')}</p>
+                          <code className="block truncate rounded border border-border bg-subtle px-2 py-1.5 font-mono text-[10px] text-muted-foreground">{sheetsValuesMapping}</code>
+                        </div>
+                      )}
+
+                      {(googleOperation === 'append' || googleOperation === 'update') && sheetsValuesMapping === null && (
                         <fieldset data-testid="google-row-editor">
                           <legend className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.google.values')}</legend>
-                          <div className="space-y-1.5">
+                          {sheetsRows.map((sheetsRow, rowIndex) => (
+                          <div key={rowIndex} data-testid="google-row" className="space-y-1.5 border-t border-border pt-1.5 first:border-t-0 first:pt-0">
+                            {sheetsRows.length > 1 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-semibold text-text-2">{t('builder.google.row').replace('{n}', String(rowIndex + 1))}</span>
+                                <button
+                                  type="button"
+                                  data-testid="google-remove-row"
+                                  onClick={() => setSheetsRows(sheetsRows.filter((_, i) => i !== rowIndex))}
+                                  aria-label={t('builder.google.remove_row').replace('{n}', String(rowIndex + 1))}
+                                  title={t('builder.google.remove_row').replace('{n}', String(rowIndex + 1))}
+                                  className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                >
+                                  <X size={12} aria-hidden="true" />
+                                </button>
+                              </div>
+                            )}
                             {sheetsRow.map((cell, index) => {
                               const column = sheetsColumn(index);
+                              const setRow = (row: unknown[]) => setSheetsRows(sheetsRows.map((current, i) => (i === rowIndex ? row : current)));
                               return (
                                 <div key={index} className="flex items-center gap-1.5">
-                                  <label htmlFor={`google-cell-${index}`} className="w-14 shrink-0 text-[11px] text-text-2">
+                                  <label htmlFor={`google-cell-${rowIndex}-${index}`} className="w-14 shrink-0 text-[11px] text-text-2">
                                     {t('builder.google.cell').replace('{col}', column)}
                                   </label>
                                   <input
-                                    id={`google-cell-${index}`}
+                                    id={`google-cell-${rowIndex}-${index}`}
                                     data-testid="google-cell"
                                     type="text"
-                                    value={cell}
-                                    placeholder={index === 0 ? t('builder.google.cell_placeholder') : ''}
-                                    onChange={(event) => setSheetsRow(sheetsRow.map((value, i) => (i === index ? event.target.value : value)))}
+                                    value={String(cell ?? '')}
+                                    placeholder={index === 0 && rowIndex === 0 ? t('builder.google.cell_placeholder') : ''}
+                                    onChange={(event) => setRow(sheetsRow.map((value, i) => (i === index ? event.target.value : value)))}
                                     className="min-w-0 flex-1 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                                   />
                                   <button
                                     type="button"
-                                    onClick={() => setSheetsRow(sheetsRow.filter((_, i) => i !== index))}
+                                    onClick={() => setRow(sheetsRow.filter((_, i) => i !== index))}
                                     disabled={sheetsRow.length === 1}
                                     aria-label={t('builder.google.remove_cell').replace('{col}', column)}
                                     title={t('builder.google.remove_cell').replace('{col}', column)}
@@ -2282,9 +2428,13 @@ export const WorkflowBuilderPage: React.FC = () => {
                                 </div>
                               );
                             })}
+                            <button type="button" data-testid="google-add-cell" onClick={() => setSheetsRows(sheetsRows.map((current, i) => (i === rowIndex ? [...current, ''] : current)))} className={addConnectionButtonCls}>
+                              <Plus size={12} aria-hidden="true" />{t('builder.google.add_cell')}
+                            </button>
                           </div>
-                          <button type="button" data-testid="google-add-cell" onClick={() => setSheetsRow([...sheetsRow, ''])} className={addConnectionButtonCls}>
-                            <Plus size={12} aria-hidden="true" />{t('builder.google.add_cell')}
+                          ))}
+                          <button type="button" data-testid="google-add-row" onClick={() => setSheetsRows([...sheetsRows, ['']])} className={addConnectionButtonCls}>
+                            <Plus size={12} aria-hidden="true" />{t('builder.google.add_row')}
                           </button>
                           <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{t('builder.google.values_hint')}</p>
                         </fieldset>
