@@ -386,6 +386,34 @@ The Colab tunnel is temporary and should only receive non-sensitive test
 documents. If the notebook restarts, update the local `.env` URL and recreate
 the Gateway container.
 
+The overlay also sets `GATEWAY_OCR_TIMEOUT_MS=95000` for the Gateway (the OCR
+contract allows up to 90 s per document; outside this overlay the default is
+10000). Override it with `GATEWAY_OCR_TIMEOUT_MS` in the local `.env`. With the
+short default, slow Colab requests fail with `503 OCR_BUSY`.
+
+**Use the GPU.** `uv sync` installs the CPU `paddlepaddle`, so a T4 runtime
+still runs OCR on CPU (cold call about 65 s, text-only about 9 s, tables about
+43 s). Install the GPU build into the uv `.venv` that uvicorn uses, not the
+system Python, from `services/ocr-service` in the notebook:
+
+```bash
+uv pip uninstall -p .venv paddlepaddle
+uv pip install -p .venv paddlepaddle-gpu==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu130/
+.venv/bin/python -c "import paddle; print(paddle.device.get_device())"  # expect gpu:0
+```
+
+In Colab, `uv pip` without `-p .venv` targets the system Python (`/usr`), not the service venv.
+Restart uvicorn with `.venv/bin/uvicorn` (or `uv run --no-sync uvicorn`); plain `uv run` and
+`uv sync` re-sync the lockfile and reinstall the CPU package. The service sets no device, so PaddleOCR uses the GPU
+automatically.
+
+**Reading the service log.** The notebook starts uvicorn with its output in
+`/content/ocr-service.log`. If requests return `503`/`502` through the tunnel,
+run `!tail -n 100 /content/ocr-service.log` in a notebook cell before
+restarting; it shows crashes, out-of-memory kills, and model-load errors.
+Review it before pasting it anywhere. Known OCR-service issues found with this
+setup are in `docs/handoffs/2026-10-08-ocr-service-colab-findings.md`.
+
 For direct Maven startup, inject the same names into the process environment through the local shell or secret manager before starting `services/identity-service`; do not pass secret values on the command line or commit `.env`.
 
 The Identity-local OpenAPI contract is published at `packages/contracts/http/auth/openapi.yaml`. Version 1.1 adds the M1 contract target for profile display-name updates, self-service session listing/revocation, revoke-all, and local password change. These additions are contract-first: do not treat them as runtime-ready until the matching M1 implementation and HTTP tests pass. OTP/recovery, admin, avatar, Gateway, and mobile operations remain deferred; the M3 Google OAuth web transport still requires real-provider/browser acceptance.
