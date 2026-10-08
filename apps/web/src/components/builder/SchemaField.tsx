@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { NODE_SCHEMAS, schemaTypes } from '../../lib/nodeSchemas';
+import { toLocalInput, withLocalOffset } from '../../lib/localOffset';
 
 // The executors reject more than this even where the schema has no maximum.
 const INTEGER_CAP: Record<string, number> = { maxLength: 5000 };
@@ -37,7 +38,10 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
   const hint = t(`${key}_hint`) === `${key}_hint` ? undefined : t(`${key}_hint`);
   const id = `field-${nodeType}-${name}`.replace(/\./g, '-');
   const types = schemaTypes(property);
-  const text = Array.isArray(value) ? value.join(', ') : String(value ?? '');
+  // An object value (for example a file reference) is shown as JSON, never as "[object Object]".
+  const text = Array.isArray(value) ? value.join(', ') : typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '');
+  // "none" is itself the no-value choice, so the blank default option would be a duplicate (#46).
+  const hasNone = Boolean(property.enum?.includes('none'));
 
   if (types.includes('boolean')) {
     return (
@@ -55,8 +59,8 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
     const optionLabel = (option: string) => (t(`${key}.${option}`) === `${key}.${option}` ? option : t(`${key}.${option}`));
     const options = property.enum?.map((option) => ({ id: option, name: optionLabel(option) })) ?? connections ?? [];
     control = (
-      <select id={id} data-testid={`field-${name}`} value={text} onChange={(event) => onChange(event.target.value || undefined)} className={inputCls}>
-        <option value="">{t(property.enum ? 'builder.field.default' : 'builder.field.select_connection')}</option>
+      <select id={id} data-testid={`field-${name}`} value={hasNone && !text ? 'none' : text} onChange={(event) => onChange(hasNone && event.target.value === 'none' ? undefined : event.target.value || undefined)} className={inputCls}>
+        {!hasNone && <option value="">{t(property.enum ? 'builder.field.default' : 'builder.field.select_connection')}</option>}
         {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
         {text && !options.some((option) => option.id === text) && <option value={text}>{property.enum ? text : t('builder.cfg.unavailable_connection')}</option>}
       </select>
@@ -122,10 +126,23 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
     );
   }
 
+  const isCalendarTime = nodeType === 'google.calendar' && (name === 'start' || name === 'end');
   return (
     <div>
       <label htmlFor={id} className="mb-1 block text-[11px] font-medium text-text-2">{label}</label>
-      {control}
+      {isCalendarTime ? (
+        <div className="flex items-start gap-1.5">
+          <div className="min-w-0 flex-1">{control}</div>
+          <input
+            type="datetime-local"
+            data-testid={`field-${name}-picker`}
+            aria-label={t('builder.field.calendar_pick').replace('{field}', label)}
+            value={toLocalInput(text)}
+            onChange={(event) => onChange(event.target.value ? withLocalOffset(event.target.value) : undefined)}
+            className={`${inputCls} w-auto shrink-0`}
+          />
+        </div>
+      ) : control}
       {hint && <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{hint}</p>}
     </div>
   );

@@ -48,7 +48,7 @@ export function App() {
   }, [initTheme]);
   return (
     <>
-      <Toaster position="top-right" richColors closeButton containerAriaLabel={t('toast.region')} />
+      <Toaster position="top-right" offset={{ top: 64, right: 16 }} richColors closeButton containerAriaLabel={t('toast.region')} />
       <Routes>
       {/* Auth Routes */}
       <Route path="/login" element={<LoginPage />} />

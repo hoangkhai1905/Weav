@@ -140,3 +140,151 @@ test('step ids are not reused after a number was handed out', async ({ page }) =
   });
   expect(ids).toEqual(['http_2', 'http_3']);
 });
+
+test('a rejected publish names the step and the field in plain language and outlines the step', async ({ page }) => {
+  await stubBackend(page);
+  await page.goto(`/workflows/${workflowId}/builder`);
+  await expect(page.getByTestId('workflow-title')).toHaveValue('Builder correctness');
+  await addNode(page, 'http.request');
+  await page.locator('#http-url').fill('https://example.test/ok');
+  await page.getByTestId('workflow-node-delete').first().waitFor();
+  await page.route(`${base}/publish`, (route) => json(route, {
+    error: {
+      code: 'VALIDATION_ERROR',
+      message: 'Workflow definition is invalid',
+      details: [{ field: 'nodes[http_1].config.url', message: 'INVALID_URL: The request URL must be an absolute HTTP URL.' }],
+    },
+  }, 400));
+  await page.getByTestId('workflow-publish').click();
+  const banner = page.getByTestId('workflow-builder-error');
+  await expect(banner).toContainText('Step http_1 · url');
+  await expect(banner).toContainText('full http/https address');
+  await expect(banner).not.toContainText('Workflow definition is invalid');
+  await expect(page.getByTestId('inspector-node-id')).toHaveText('http_1');
+  await expect(page.getByTestId('rf__node-http_1')).toHaveClass(/ring-err/);
+});
+
+test('Delete removes the selected step and nothing connects into a trigger', async ({ page }) => {
+  const backend = await stubBackend(page);
+  await page.goto(`/workflows/${workflowId}/builder`);
+  await expect(page.getByTestId('workflow-title')).toHaveValue('Builder correctness');
+
+  await addNode(page, 'http.request');
+  await expect(page.getByTestId('rf__node-http_1')).toBeVisible();
+  // A trigger added while a step is selected must not be linked after it.
+  await addNode(page, 'trigger.webhook');
+  await expect(page.getByTestId('rf__node-webhook_1')).toBeVisible();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => backend.drafts.length).toBe(1);
+  const saved = backend.drafts[0] as unknown as { definition: { edges: Array<{ source: string; target: string }> } };
+  expect(saved.definition.edges.some((edge) => edge.target === 'webhook_1')).toBe(false);
+
+  await page.getByTestId('rf__node-http_1').getByTestId('workflow-node').click();
+  await page.keyboard.press('Delete');
+  await expect(page.getByTestId('rf__node-http_1')).toHaveCount(0);
+
+  await page.getByTestId('rf__node-webhook_1').getByTestId('workflow-node').click();
+  await page.getByTestId('workflow-node-delete').click();
+  await expect(page.getByTestId('rf__node-webhook_1')).toHaveCount(0);
+});
+
+test('the header name is saved on its own, from the last saved draft', async ({ page }) => {
+  const backend = await stubBackend(page);
+  await page.goto(`/workflows/${workflowId}/builder`);
+  await expect(page.getByTestId('workflow-title')).toHaveValue('Builder correctness');
+  await page.getByTestId('workflow-title').fill('Tên mới');
+  await page.getByTestId('workflow-title').press('Enter');
+  await expect.poll(() => backend.drafts.length).toBe(1);
+  const body = backend.drafts[0] as unknown as { name: string; definition: Definition };
+  expect(body.name).toBe('Tên mới');
+  expect(body.definition.nodes.map((node) => node.id)).toEqual(['manual']);
+});
+
+test('publish is blocked for ordering conditions without numbers and needs no manual trigger', async ({ page }) => {
+  await stubBackend(page);
+  await page.route(base, (route) => json(route, {
+    ...draft(),
+    definition: { schemaVersion: '1.0', nodes: [{ id: 'hook', type: 'trigger.webhook', config: {} }], edges: [], variables: {} },
+    editorState: { nodes: { hook: { name: 'Webhook', position: { x: 100, y: 120 } } } },
+  }));
+  await page.goto(`/workflows/${workflowId}/builder`);
+  await expect(page.getByTestId('workflow-title')).toHaveValue('Builder correctness');
+  await expect(page.getByTestId('workflow-publish')).toBeEnabled(); // a webhook alone is a valid start
+
+  await addNode(page, 'logic.condition');
+  await page.getByTestId('condition-left').fill('{{ trigger.input.total }}');
+  await page.getByTestId('condition-operator').selectOption('gt');
+  await page.getByTestId('condition-right').fill('abc');
+  await expect(page.getByTestId('workflow-publish')).toBeDisabled();
+  await expect(page.getByTestId('publish-blocker-summary')).toContainText('need a number');
+  await page.getByTestId('condition-right').fill('100');
+  await expect(page.getByTestId('workflow-publish')).toBeEnabled();
+});
+
+test('calendar date-time picker, one "no formatting" option and several sheet rows', async ({ page }) => {
+  const backend = await stubBackend(page);
+  await page.goto(`/workflows/${workflowId}/builder`);
+  await expect(page.getByTestId('workflow-title')).toHaveValue('Builder correctness');
+
+  await addNode(page, 'google.calendar');
+  await page.getByTestId('field-start-picker').fill('2026-10-05T09:00');
+  await expect(page.getByTestId('field-start')).toHaveValue(/^2026-10-05T09:00:00[+-]\d\d:\d\d$/);
+
+  await addNode(page, 'telegram.send_message');
+  const parseMode = page.getByTestId('field-parseMode');
+  await expect(parseMode.locator('option')).toHaveText(['No formatting', 'HTML', 'MarkdownV2']);
+
+  await addNode(page, 'google.sheets');
+  await page.locator('#google-operation').selectOption('append');
+  await page.getByTestId('google-cell').first().fill('a');
+  await page.getByTestId('google-add-row').click();
+  await page.getByTestId('google-cell').nth(1).fill('b');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => backend.drafts.length).toBe(1);
+  const sheets = backend.drafts[0].definition.nodes.find((node) => node.type === 'google.sheets');
+  expect(sheets?.config.values).toEqual([['a'], ['b']]);
+});
+
+test('a save started while a rename is in flight still lands last with the new canvas', async ({ page }) => {
+  const backend = await stubBackend(page);
+  let first = true;
+  await page.route(`${base}/draft`, async (route) => {
+    if (first) { first = false; await new Promise((resolve) => setTimeout(resolve, 700)); }
+    await route.fallback();
+  });
+  await page.goto(`/workflows/${workflowId}/builder`);
+  await expect(page.getByTestId('workflow-title')).toHaveValue('Builder correctness');
+
+  await page.getByTestId('workflow-title').fill('Tên mới');
+  await page.getByTestId('workflow-title').press('Enter'); // clean canvas: rename PUT starts, held back 700ms
+  await addNode(page, 'http.request'); // dirty canvas while the rename is still in flight
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => backend.drafts.length).toBe(2);
+
+  const last = backend.drafts[1] as unknown as { name: string; definition: Definition };
+  expect(last.name).toBe('Tên mới');
+  expect(last.definition.nodes.map((node) => node.id)).toEqual(['manual', 'http_1']);
+});
+
+test.describe('calendar times in another time zone', () => {
+  test.use({ timezoneId: 'Asia/Ho_Chi_Minh' });
+  test('the picker shows the same instant in browser time and writes the right offset', async ({ page }) => {
+    await stubBackend(page);
+    await page.route(base, (route) => json(route, {
+      ...draft(),
+      definition: {
+        schemaVersion: '1.0',
+        nodes: [{ id: 'manual', type: 'trigger.manual', config: {} }, { id: 'cal', type: 'google.calendar', config: { operation: 'create', start: '2026-10-05T02:00:00Z' } }],
+        edges: [{ id: 'e1', source: 'manual', target: 'cal' }],
+        variables: {},
+      },
+      editorState: { nodes: { manual: { name: 'Manual', position: { x: 100, y: 120 } }, cal: { name: 'Calendar', position: { x: 440, y: 120 } } } },
+    }));
+    await page.goto(`/workflows/${workflowId}/builder`);
+    await page.getByTestId('rf__node-cal').getByTestId('workflow-node').click();
+    await expect(page.getByTestId('field-start-picker')).toHaveValue('2026-10-05T09:00'); // 02:00Z is 09:00 at +07:00
+    await expect(page.getByTestId('field-start')).toHaveValue('2026-10-05T02:00:00Z'); // stored value untouched
+    await page.getByTestId('field-start-picker').fill('2026-10-05T10:00');
+    await expect(page.getByTestId('field-start')).toHaveValue('2026-10-05T10:00:00+07:00');
+  });
+});

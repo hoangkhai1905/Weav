@@ -1,6 +1,6 @@
 import React, { memo, useEffect } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import { Handle, Position, useReactFlow, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import {
   Play,
   Clock,
@@ -17,6 +17,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
+  Trash2,
   XCircle,
   GitBranch,
   Filter,
@@ -91,6 +92,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
   // Two ports keep the original true/false spacing; more (switch cases) grow the card and spread evenly.
   const portCount = sourcePorts?.length ?? 0;
   const updateNodeInternals = useUpdateNodeInternals();
+  const { deleteElements } = useReactFlow();
   const portKey = JSON.stringify(sourcePorts?.map((port) => port.id) ?? []);
   // Switch ports follow config.cases; React Flow must re-measure handles when they change.
   useEffect(() => { updateNodeInternals(id); }, [id, portKey, updateNodeInternals]);
@@ -195,6 +197,23 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
       className={`relative w-[232px] select-none rounded-lg border bg-card py-2.5 pl-[15px] pr-3 transition-[border-color,box-shadow] duration-150 ${borderStyle}`}
     >
       <span aria-hidden="true" className={`pointer-events-none absolute -bottom-px -left-px -top-px w-[3px] rounded-l-lg ${stripeClass}`} />
+      {isNodeSelected && (
+        <button
+          type="button"
+          data-testid="workflow-node-delete"
+          aria-label={t('builder.node.delete').replace('{id}', id)}
+          title={t('builder.node.delete').replace('{id}', id)}
+          onClick={(event) => {
+            event.stopPropagation();
+            // The button disappears with the node: hand focus to the canvas instead of <body>.
+            const flow = event.currentTarget.closest<HTMLElement>('.react-flow');
+            void deleteElements({ nodes: [{ id }] }).then(() => { flow?.setAttribute('tabindex', '-1'); flow?.focus(); });
+          }}
+          className="nodrag absolute -right-2 -top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-border-strong bg-card text-muted-foreground shadow-sm hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Trash2 size={12} aria-hidden="true" />
+        </button>
+      )}
       {/* Target Handle (Left) */}
       {!isTrigger && (
         <Handle
