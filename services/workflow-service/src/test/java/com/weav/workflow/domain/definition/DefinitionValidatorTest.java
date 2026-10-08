@@ -120,9 +120,9 @@ class DefinitionValidatorTest {
                                 node("webhook", "trigger.webhook", Map.of())),
                         List.of(edge("e1", "manual", "request"), edge("e2", "request", "webhook"))),
                         "TRIGGER_HAS_INCOMING_EDGE"),
-                Arguments.of("missing manual root", definition(
-                        List.of(node("webhook", "trigger.webhook", Map.of())), List.of()),
-                        "MANUAL_TRIGGER_REQUIRED"),
+                Arguments.of("no trigger at all", definition(
+                        List.of(node("request", "http.request", httpConfig())), List.of()),
+                        "TRIGGER_REQUIRED"),
                 Arguments.of("multiple manual roots", definition(
                         List.of(manual("manual1"), manual("manual2")), List.of()),
                         "MULTIPLE_MANUAL_TRIGGERS"),
@@ -135,6 +135,16 @@ class DefinitionValidatorTest {
                         "INVALID_SOURCE_PORT"),
                 Arguments.of("invalid schema version", new WorkflowDefinition("2.0", List.of(manual("manual")),
                         List.of(), Map.of()), "INVALID_SCHEMA_VERSION"));
+    }
+
+    @Test
+    void publishDoesNotRequireAManualTrigger() {
+        var graph = definition(List.of(node("webhook", "trigger.webhook", Map.of()),
+                node("request", "http.request", httpConfig())), List.of(edge("e1", "webhook", "request")));
+
+        assertTrue(validator.validatePublish(graph).stream()
+                .noneMatch(issue -> issue.code().contains("TRIGGER_REQUIRED") || issue.code().contains("MANUAL")),
+                () -> String.valueOf(validator.validatePublish(graph)));
     }
 
     @ParameterizedTest

@@ -87,6 +87,24 @@ class ExecutionLeaseTest {
         }
     }
 
+    @Autowired
+    private tools.jackson.databind.ObjectMapper objectMapper;
+
+    @Test
+    void startedAtComesFromTheInjectedClockNotTheDatabaseClock() {
+        Fixture fixture = fixture("QUEUED", "root", "{}", 0, false);
+        Instant fixed = Instant.parse("2031-05-06T07:08:09Z");
+        var adapter = new com.weav.workflow.infrastructure.persistence.repository.ExecutionStateAdapter(
+                jdbc, objectMapper, "workflow", event -> { }, 5,
+                java.time.Clock.fixed(fixed, java.time.ZoneOffset.UTC));
+
+        adapter.claim(fixture.executionId(), "worker-a", Duration.ofSeconds(30)).orElseThrow();
+
+        assertEquals(fixed, jdbc.queryForObject(
+                "select started_at from workflow.workflow_executions where id = ?",
+                java.sql.Timestamp.class, fixture.executionId()).toInstant());
+    }
+
     @Test
     void liveLeaseRenewsLoadsAndReleasesUsingPersistedFencingToken() {
         Fixture fixture = fixture("QUEUED", "root", "[1,null,{\"source\":\"webhook\"}]", 0, false);

@@ -185,3 +185,30 @@ describe('generationResultSchema nested configs', () => {
     expect(graph([{ url: 'http://localhost/a.pdf' }]).success).toBe(false);
   });
 });
+
+describe('generationResultSchema triggers', () => {
+  const withSchedule = generationResultSchema([
+    { type: 'trigger.schedule', configFields: ['cron'] },
+    { type: 'http.request', configFields: ['method', 'url'] },
+  ]);
+  const body = (nodes: unknown[], edges: { from: string; to: string }[]) =>
+    withSchedule.safeParse({
+      status: 'ready',
+      intent: { name: 'W', nodes, edges },
+    });
+
+  it('accepts a workflow whose only trigger is not manual', () => {
+    const trigger = {
+      id: 'tick',
+      type: 'trigger.schedule',
+      config: { cron: '0 0 8 * * *' },
+    };
+    expect(
+      body([trigger, http('one')], [{ from: 'tick', to: 'one' }]).success,
+    ).toBe(true);
+  });
+
+  it('rejects a workflow with no trigger', () => {
+    expect(body([http('one')], []).success).toBe(false);
+  });
+});

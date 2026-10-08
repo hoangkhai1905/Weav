@@ -573,8 +573,10 @@ public final class DefinitionValidator {
             Map<String, WorkflowDefinition.Node> nodesById,
             int manualTriggers,
             List<ValidationIssue> issues) {
-        if (manualTriggers == 0) {
-            add(issues, null, "nodes", "MANUAL_TRIGGER_REQUIRED", "A published definition requires one manual trigger.");
+        // The manual trigger is optional: a manual run of a workflow without one starts at its first trigger.
+        if (manualTriggers == 0 && nodesById.values().stream()
+                .noneMatch(node -> node.type() != null && node.type().startsWith("trigger."))) {
+            add(issues, null, "nodes", "TRIGGER_REQUIRED", "A published definition requires at least one trigger.");
         } else if (manualTriggers > 1) {
             add(issues, null, "nodes", "MULTIPLE_MANUAL_TRIGGERS", "A published definition permits one manual trigger.");
         }

@@ -75,7 +75,11 @@ public final class GmailMessageParser {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("messageId", id);
         input.put("threadId", message.get("threadId") instanceof String thread ? clean(thread) : "");
-        input.put("from", header(headers, "from"));
+        String from = header(headers, "from");
+        String[] sender = sender(from);
+        input.put("from", from);
+        input.put("fromEmail", sender[1]);
+        input.put("fromName", sender[0]);
         input.put("to", header(headers, "to"));
         input.put("cc", header(headers, "cc"));
         input.put("subject", header(headers, "subject"));
@@ -87,6 +91,19 @@ public final class GmailMessageParser {
         input.put("labelIds", labels(message.get("labelIds")));
         input.put("attachments", attachments.stream().map(AttachmentPart::metadata).toList());
         return Optional.of(new Parsed(id, internalDate, input, attachments));
+    }
+
+    /** {display name or "", bare address} of a From header ({@code addr}, {@code Name <addr>}, {@code "Name" <addr>}). */
+    static String[] sender(String from) {
+        java.util.regex.Matcher m = GmailNodeExecutor.MAILBOX.matcher(from.trim());
+        if (!m.matches()) {
+            return new String[] {"", from.trim()};
+        }
+        String name = m.group(1).trim();
+        if (name.length() >= 2 && name.startsWith("\"") && name.endsWith("\"")) {
+            name = name.substring(1, name.length() - 1).replaceAll("\\\\(.)", "$1");
+        }
+        return new String[] {name.trim(), m.group(2).trim()};
     }
 
     /**

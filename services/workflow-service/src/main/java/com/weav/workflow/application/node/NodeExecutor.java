@@ -52,6 +52,7 @@ public interface NodeExecutor {
         private final String safeMessage;
         private final boolean retryable;
         private final boolean requestNotSent;
+        private String field;
 
         public Failure(String code, String safeMessage, boolean retryable) {
             this(code, safeMessage, retryable, false);
@@ -71,6 +72,21 @@ public interface NodeExecutor {
             this.code = code;
             this.safeMessage = sanitize(safeMessage);
             this.retryable = retryable;
+        }
+
+        /** A non-retryable CONFIGURATION_ERROR that names the offending config field (never its value). */
+        public static Failure invalidField(String field, String reason) {
+            return new Failure("CONFIGURATION_ERROR", "The '" + field + "' field " + reason, false, false, field);
+        }
+
+        private Failure(String code, String safeMessage, boolean retryable, boolean requestNotSent, String field) {
+            this(code, safeMessage, retryable, requestNotSent);
+            this.field = field;
+        }
+
+        /** Config field behind a CONFIGURATION_ERROR, or null. */
+        public String field() {
+            return field;
         }
 
         public String code() {

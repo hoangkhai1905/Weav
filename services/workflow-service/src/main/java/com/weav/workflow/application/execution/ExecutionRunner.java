@@ -217,7 +217,7 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
                     NodeExecutor.Failure nodeFailure = completion.outcome().failure();
                     if (!shouldRetry(runtime, completion.nodeId(), nodeFailure)) {
                         failureSeen = true;
-                        failure = error(nodeFailure.code(), nodeFailure.safeMessage());
+                        failure = error(nodeFailure);
                         runtime.error = failure;
                     }
                 }
@@ -434,7 +434,7 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
         }
 
         NodeExecutor.Failure failure = completion.outcome().failure();
-        Map<String, Object> error = error(failure.code(), failure.safeMessage());
+        Map<String, Object> error = error(failure);
         attempt.fail(error, now);
         boolean retry = shouldRetry(runtime, node.getNodeId(), failure);
         NodeExecutionStatus status = retry ? NodeExecutionStatus.WAITING : NodeExecutionStatus.FAILED;
@@ -723,6 +723,17 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
         runtime.nodes.values().stream().filter(node -> node.getStatus() == NodeExecutionStatus.SUCCESS)
                 .forEach(node -> outputs.put(node.getNodeId(), node.getOutput()));
         return outputs;
+    }
+
+    /** Node failure as stored error: {code, message} plus details.field when the config field is known. */
+    private static Map<String, Object> error(NodeExecutor.Failure failure) {
+        Map<String, Object> base = error(failure.code(), failure.safeMessage());
+        if (failure.field() == null) {
+            return base;
+        }
+        Map<String, Object> withDetails = new LinkedHashMap<>(base);
+        withDetails.put("details", Map.of("field", failure.field()));
+        return Map.copyOf(withDetails);
     }
 
     private static Map<String, Object> error(String code, String message) {
