@@ -155,6 +155,22 @@ public class WorkflowRepositoryAdapter implements WorkflowRepository {
         return Optional.of(mapper.toDomain(locked));
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<UUID> findIdsByWorkspaceAndStatus(
+            UUID workspaceId, com.weav.workflow.domain.valueobject.WorkflowStatus status) {
+        Objects.requireNonNull(workspaceId, "workspaceId must not be null");
+        Objects.requireNonNull(status, "status must not be null");
+        return entityManager.createQuery(
+                        "select workflow.id from WorkflowJpaEntity workflow "
+                                + "where workflow.workspaceId = :workspaceId and workflow.deletedAt is null "
+                                + "and workflow.status = :status order by workflow.createdAt, workflow.id",
+                        UUID.class)
+                .setParameter("workspaceId", workspaceId)
+                .setParameter("status", status)
+                .getResultList();
+    }
+
     private int checkedOffset(int page, int size) {
         if (page < 0 || size < 1 || size > 100) {
             throw new IllegalArgumentException("Workflow page bounds are invalid");

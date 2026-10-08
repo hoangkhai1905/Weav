@@ -100,6 +100,7 @@ const v2EventTypes = [
   'workspace.member_removed',
   'workspace.member_permissions_updated',
   'workspace.member_left',
+  'workspace.deleted',
   'connection.connected',
   'connection.disabled',
   'connection.invalid',

@@ -162,7 +162,8 @@ class ConnectionUseCasesPersistenceIntegrationTest {
                 providerPolicy,
                 configPolicy,
                 viewAssembler,
-                transactionRunner);
+                transactionRunner,
+                WorkspaceNotificationTestFixtures.unlocked());
 
         assertThrows(ConnectionNameAlreadyExistsException.class, () -> useCase.execute(
                 new CreateConnectionCommand(

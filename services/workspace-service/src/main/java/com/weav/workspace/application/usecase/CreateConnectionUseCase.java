@@ -3,6 +3,7 @@ package com.weav.workspace.application.usecase;
 import com.weav.workspace.application.dto.ConnectionResponse;
 import com.weav.workspace.application.dto.CreateConnectionCommand;
 import com.weav.workspace.application.port.out.TransactionRunner;
+import com.weav.workspace.application.port.out.WorkspaceMutationLock;
 import com.weav.workspace.application.service.ConnectionConfigPolicy;
 import com.weav.workspace.application.service.ConnectionProviderPolicy;
 import com.weav.workspace.application.service.ConnectionViewAssembler;
@@ -29,6 +30,7 @@ public final class CreateConnectionUseCase {
     private final ConnectionConfigPolicy configPolicy;
     private final ConnectionViewAssembler viewAssembler;
     private final TransactionRunner transactionRunner;
+    private final WorkspaceMutationLock mutationLock;
 
     public CreateConnectionUseCase(
             ConnectionRepository connectionRepository,
@@ -37,7 +39,8 @@ public final class CreateConnectionUseCase {
             ConnectionProviderPolicy providerPolicy,
             ConnectionConfigPolicy configPolicy,
             ConnectionViewAssembler viewAssembler,
-            TransactionRunner transactionRunner) {
+            TransactionRunner transactionRunner,
+            WorkspaceMutationLock mutationLock) {
         this.connectionRepository = Objects.requireNonNull(connectionRepository);
         this.membershipRepository = Objects.requireNonNull(membershipRepository);
         this.credentialRepository = Objects.requireNonNull(credentialRepository);
@@ -45,6 +48,7 @@ public final class CreateConnectionUseCase {
         this.configPolicy = Objects.requireNonNull(configPolicy);
         this.viewAssembler = Objects.requireNonNull(viewAssembler);
         this.transactionRunner = Objects.requireNonNull(transactionRunner);
+        this.mutationLock = Objects.requireNonNull(mutationLock);
     }
 
     public ConnectionResponse execute(CreateConnectionCommand command) {
@@ -53,6 +57,8 @@ public final class CreateConnectionUseCase {
     }
 
     private ConnectionResponse createInTransaction(CreateConnectionCommand command) {
+        // Same as every other mutation: serialises with a workspace delete, which re-reads membership under it.
+        mutationLock.lock(command.workspaceId());
         Membership membership = requireMembership(command);
         providerPolicy.validate(command.provider(), command.authType());
         String normalizedName = normalizeName(command.name());

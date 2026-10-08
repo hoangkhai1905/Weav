@@ -94,6 +94,12 @@ const catalogCases: CatalogCase[] = [
     targetKind: 'WORKSPACE',
   },
   {
+    eventType: 'workspace.deleted',
+    category: 'WORKSPACE',
+    severity: 'WARNING',
+    targetKind: 'NONE',
+  },
+  {
     eventType: 'connection.connected',
     category: 'CONNECTION',
     severity: 'SUCCESS',
@@ -260,7 +266,7 @@ describe('notification catalog', () => {
     expect(() => require('./notification-catalog')).not.toThrow();
   });
 
-  it('renders both locales with the specified metadata and target for all 19 event types', () => {
+  it('renders both locales with the specified metadata and target for all 20 event types', () => {
     for (const spec of catalogCases) {
       const event = eventOf(spec.eventType);
       for (const locale of ['vi', 'en']) {

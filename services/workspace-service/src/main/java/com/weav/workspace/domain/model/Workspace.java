@@ -1,5 +1,7 @@
 package com.weav.workspace.domain.model;
 
+import com.weav.workspace.domain.valueobject.WorkspaceStatus;
+
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Objects;
@@ -14,6 +16,9 @@ public class Workspace {
     private final UUID createdBy;
     private final Instant createdAt;
     private Instant updatedAt;
+    private WorkspaceStatus status = WorkspaceStatus.ACTIVE;
+    private Instant deletedAt;
+    private UUID deletedBy;
 
     public Workspace(UUID id, String name, UUID createdBy, Instant createdAt, Instant updatedAt) {
         this(id, name, normalizeName(name), createdBy, createdAt, updatedAt);
@@ -34,6 +39,22 @@ public class Workspace {
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
     }
 
+    public Workspace(
+            UUID id,
+            String name,
+            String nameNormalized,
+            UUID createdBy,
+            Instant createdAt,
+            Instant updatedAt,
+            WorkspaceStatus status,
+            Instant deletedAt,
+            UUID deletedBy) {
+        this(id, name, nameNormalized, createdBy, createdAt, updatedAt);
+        this.status = Objects.requireNonNull(status, "status must not be null");
+        this.deletedAt = deletedAt;
+        this.deletedBy = deletedBy;
+    }
+
     public static Workspace createNew(String name, UUID createdBy) {
         Instant now = Instant.now();
         return new Workspace(UUID.randomUUID(), name, createdBy, now, now);
@@ -43,6 +64,13 @@ public class Workspace {
         this.name = normalizeDisplayName(name);
         this.nameNormalized = normalizeName(this.name);
         this.updatedAt = Instant.now();
+    }
+
+    public void markDeleted(UUID actor, Instant now) {
+        this.status = WorkspaceStatus.DELETED;
+        this.deletedBy = Objects.requireNonNull(actor, "actor must not be null");
+        this.deletedAt = Objects.requireNonNull(now, "now must not be null");
+        this.updatedAt = now;
     }
 
     public static String normalizeDisplayName(String name) {
@@ -81,4 +109,7 @@ public class Workspace {
     public UUID getCreatedBy() { return createdBy; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public WorkspaceStatus getStatus() { return status; }
+    public Instant getDeletedAt() { return deletedAt; }
+    public UUID getDeletedBy() { return deletedBy; }
 }

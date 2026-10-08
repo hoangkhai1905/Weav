@@ -55,6 +55,7 @@ public class SecurityConfig {
     private static final String WEBHOOK_PATH = "/webhooks/*";
     private static final String TELEGRAM_WEBHOOK_PATH = "/webhooks/telegram/*";
     private static final String INTERNAL_USAGE_PATH = "/internal/workspaces/*/connections/*/usage";
+    private static final String INTERNAL_PAUSE_ALL_PATH = "/internal/workspaces/*/pause-all";
 
     @Bean
     public SecurityFilterChain securityFilterChain(
@@ -70,6 +71,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/actuator/health", "/actuator/health/**", "/actuator/prometheus").permitAll()
                         .requestMatchers(HttpMethod.HEAD, INTERNAL_USAGE_PATH).denyAll()
                         .requestMatchers(HttpMethod.GET, INTERNAL_USAGE_PATH).permitAll()
+                        // permitAll is safe: InternalServiceKeyFilter rejects any call without the service key first.
+                        .requestMatchers(HttpMethod.POST, INTERNAL_PAUSE_ALL_PATH).permitAll()
                         .requestMatchers(HttpMethod.POST, WEBHOOK_PATH, TELEGRAM_WEBHOOK_PATH).permitAll()
                         .anyRequest().authenticated())
                 .httpBasic(AbstractHttpConfigurer::disable)

@@ -24,5 +24,8 @@ public interface ConnectionRepository {
             String normalizedName,
             UUID excludingConnectionId);
 
+    /** Marks every connection of the workspace DISABLED in one statement (workspace delete); returns the rows changed. */
+    int disableAllByWorkspaceId(UUID workspaceId);
+
     void delete(Connection connection);
 }

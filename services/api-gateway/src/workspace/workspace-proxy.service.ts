@@ -20,6 +20,8 @@ type WorkspaceMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 export interface WorkspaceForwardOptions {
   body?: unknown;
   query?: Record<string, string | number | boolean>;
+  /** Upstream deadline; defaults to 10 s. Workspace delete waits for the Workflow Service to pause workflows. */
+  timeoutMs?: number;
 }
 
 async function readUpstreamResponseBody(
@@ -146,7 +148,11 @@ export class WorkspaceProxyService {
       this.config.get<string>('WORKSPACE_SERVICE_URL') ??
       'http://workspace-service:8080';
     const targetUrl = `${base.replace(/\/+$/, '')}${targetPath}`;
-    const abortHandle = createUpstreamAbortHandle(context, reply, 10_000);
+    const abortHandle = createUpstreamAbortHandle(
+      context,
+      reply,
+      options.timeoutMs ?? 10_000,
+    );
 
     try {
       const response = await fetch(targetUrl, {

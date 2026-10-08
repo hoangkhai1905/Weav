@@ -1,6 +1,7 @@
 package com.weav.workspace.infrastructure.persistence.repository;
 
 import com.weav.workspace.domain.valueobject.MembershipRole;
+import com.weav.workspace.domain.valueobject.WorkspaceStatus;
 import com.weav.workspace.infrastructure.persistence.entity.MembershipJpaEntity;
 import com.weav.workspace.infrastructure.persistence.entity.WorkspaceJpaEntity;
 import org.springframework.data.domain.Page;
@@ -11,15 +12,19 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface SpringDataWorkspaceRepository
         extends JpaRepository<WorkspaceJpaEntity, UUID>, JpaSpecificationExecutor<WorkspaceJpaEntity> {
 
+    Optional<WorkspaceJpaEntity> findByIdAndStatus(UUID id, WorkspaceStatus status);
+
     @Query(value = "select workspace as workspace, membership.role as role "
             + "from WorkspaceJpaEntity workspace "
             + "join MembershipJpaEntity membership on membership.workspaceId = workspace.id "
             + "where membership.userId = :userId "
+            + "and workspace.status = com.weav.workspace.domain.valueobject.WorkspaceStatus.ACTIVE "
             + "and (:role is null or membership.role = :role) "
             + "and (:searchPattern is null or "
             + "lower(workspace.nameNormalized) like :searchPattern escape '!')",
@@ -27,6 +32,7 @@ public interface SpringDataWorkspaceRepository
                     + "from WorkspaceJpaEntity workspace "
                     + "join MembershipJpaEntity membership on membership.workspaceId = workspace.id "
                     + "where membership.userId = :userId "
+                    + "and workspace.status = com.weav.workspace.domain.valueobject.WorkspaceStatus.ACTIVE "
                     + "and (:role is null or membership.role = :role) "
                     + "and (:searchPattern is null or "
                     + "lower(workspace.nameNormalized) like :searchPattern escape '!')")
@@ -40,6 +46,7 @@ public interface SpringDataWorkspaceRepository
             + "from WorkspaceJpaEntity workspace "
             + "where workspace.createdBy = :ownerId "
             + "and workspace.nameNormalized = :normalizedName "
+            + "and workspace.status = com.weav.workspace.domain.valueobject.WorkspaceStatus.ACTIVE "
             + "and (:excludeWorkspaceId is null or workspace.id <> :excludeWorkspaceId)")
     boolean existsOwnedNameNormalized(
             @Param("ownerId") UUID ownerId,
@@ -47,6 +54,7 @@ public interface SpringDataWorkspaceRepository
             @Param("excludeWorkspaceId") UUID excludeWorkspaceId);
 
     @Query("select workspace.nameNormalized from WorkspaceJpaEntity workspace "
-            + "where workspace.createdBy = :ownerId")
+            + "where workspace.createdBy = :ownerId "
+            + "and workspace.status = com.weav.workspace.domain.valueobject.WorkspaceStatus.ACTIVE")
     List<String> findNormalizedNamesByOwner(@Param("ownerId") UUID ownerId);
 }

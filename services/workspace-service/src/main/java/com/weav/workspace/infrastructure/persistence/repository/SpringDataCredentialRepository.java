@@ -26,4 +26,9 @@ public interface SpringDataCredentialRepository extends JpaRepository<Credential
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from CredentialJpaEntity credential where credential.connectionId = :connectionId")
     void deleteByConnectionId(@Param("connectionId") UUID connectionId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from CredentialJpaEntity credential where credential.connectionId in "
+            + "(select c.id from ConnectionJpaEntity c where c.workspaceId = :workspaceId)")
+    int deleteAllByWorkspaceId(@Param("workspaceId") UUID workspaceId);
 }

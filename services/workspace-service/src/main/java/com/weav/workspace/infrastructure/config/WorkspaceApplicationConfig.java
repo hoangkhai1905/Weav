@@ -152,6 +152,35 @@ public class WorkspaceApplicationConfig {
                 WorkflowConnectionUsageClient.circuitBreaker(window, failureRate, minimumCalls, openFor, halfOpenPermits));
     }
 
+    /** Pausing every workflow (and unregistering Telegram bots) outlasts the 5 s usage-lookup read timeout. */
+    @Bean("workflowShutdownRestClient")
+    public RestClient workflowShutdownRestClient(
+            WorkflowServiceProperties properties,
+            @Value("${weav.workflow.shutdown-read-timeout:30s}") Duration readTimeout) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(properties.connectTimeout())
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(readTimeout);
+        return RestClient.builder().requestFactory(requestFactory).build();
+    }
+
+    @Bean
+    public com.weav.workspace.application.port.out.WorkflowShutdownPort workflowShutdownPort(
+            @Qualifier("workflowShutdownRestClient") RestClient restClient,
+            WorkflowServiceProperties properties,
+            ObjectMapper objectMapper,
+            @Value("${weav.workflow.circuit-breaker.window-size:20}") int window,
+            @Value("${weav.workflow.circuit-breaker.failure-rate-percent:50}") float failureRate,
+            @Value("${weav.workflow.circuit-breaker.minimum-calls:10}") int minimumCalls,
+            @Value("${weav.workflow.circuit-breaker.open-duration:10s}") Duration openFor,
+            @Value("${weav.workflow.circuit-breaker.half-open-permits:3}") int halfOpenPermits) {
+        return new com.weav.workspace.infrastructure.workflow.WorkflowShutdownClient(
+                restClient, properties, objectMapper,
+                WorkflowConnectionUsageClient.circuitBreaker(window, failureRate, minimumCalls, openFor, halfOpenPermits));
+    }
+
     @Bean("googleOAuthRestClient")
     public RestClient googleOAuthRestClient() {
         HttpClient httpClient = HttpClient.newBuilder()

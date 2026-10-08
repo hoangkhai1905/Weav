@@ -115,6 +115,28 @@ paths:
         "500": { $ref: "#/components/responses/GatewayInternalError" }
         "502": { $ref: "#/components/responses/GatewayBadGateway" }
         "503": { $ref: "#/components/responses/GatewayUnavailable" }
+    delete:
+      tags: [Workspaces]
+      operationId: gatewayDeleteWorkspace
+      summary: Delete an owned workspace (soft delete)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../workspace/openapi.yaml#/components/schemas/DeleteWorkspaceRequest"
+      responses:
+        "204":
+          description: Workspace deleted; no response body.
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404":
+          { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
 
   /api/v1/workspaces/{workspaceId}/connections:
     parameters:

@@ -21,6 +21,7 @@ class WorkspaceContractValidationTest {
             "listMyWorkspaces",
             "getWorkspace",
             "renameWorkspace",
+            "deleteWorkspace",
             "listWorkspaceMembers",
             "addWorkspaceMember",
             "updateWorkspaceMemberPermissions",

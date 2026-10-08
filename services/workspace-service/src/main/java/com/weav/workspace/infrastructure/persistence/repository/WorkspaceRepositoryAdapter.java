@@ -5,6 +5,7 @@ import com.weav.workspace.domain.model.Workspace;
 import com.weav.workspace.domain.model.WorkspaceMembershipView;
 import com.weav.workspace.domain.port.out.WorkspaceRepository;
 import com.weav.workspace.domain.query.WorkspaceListQuery;
+import com.weav.workspace.domain.valueobject.WorkspaceStatus;
 import com.weav.workspace.infrastructure.persistence.mapper.WorkspacePersistenceMapper;
 import com.weav.workspace.infrastructure.persistence.WorkspacePersistenceExceptionTranslator;
 import org.springframework.data.domain.Page;
@@ -45,7 +46,8 @@ public class WorkspaceRepositoryAdapter implements WorkspaceRepository {
 
     @Override
     public Optional<Workspace> findById(UUID workspaceId) {
-        return repository.findById(workspaceId).map(mapper::toDomain);
+        // A soft-deleted workspace is not found anywhere (also on idempotent create replay).
+        return repository.findByIdAndStatus(workspaceId, WorkspaceStatus.ACTIVE).map(mapper::toDomain);
     }
 
     @Override

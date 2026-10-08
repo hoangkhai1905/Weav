@@ -76,6 +76,11 @@ public class ConnectionRepositoryAdapter implements ConnectionRepository {
     }
 
     @Override
+    public int disableAllByWorkspaceId(UUID workspaceId) {
+        return repository.disableAllByWorkspaceId(workspaceId, java.time.Instant.now());
+    }
+
+    @Override
     public void delete(Connection connection) {
         repository.deleteById(connection.getId());
         repository.flush();

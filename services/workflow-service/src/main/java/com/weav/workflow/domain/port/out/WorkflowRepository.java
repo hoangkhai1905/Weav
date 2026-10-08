@@ -23,4 +23,7 @@ public interface WorkflowRepository {
 
     /** As {@link #lockById(UUID)}, but every lock wait in the current transaction fails after {@code lockTimeout}. */
     Optional<Workflow> lockById(UUID workflowId, java.time.Duration lockTimeout);
+
+    /** Ids of the workspace's undeleted workflows in {@code status}, oldest first (workspace shutdown). */
+    List<UUID> findIdsByWorkspaceAndStatus(UUID workspaceId, com.weav.workflow.domain.valueobject.WorkflowStatus status);
 }

@@ -232,6 +232,18 @@ export function renderNotification(
         ),
         { kind: 'WORKSPACE', workspaceId: event.workspaceId },
       );
+    case 'workspace.deleted':
+      return content(
+        'WORKSPACE',
+        'WARNING',
+        localized(locale, 'Không gian làm việc đã bị xóa', 'Workspace deleted'),
+        localized(
+          locale,
+          `Không gian làm việc “${event.data.workspaceName}” đã bị chủ sở hữu xóa. Các quy trình của nó đã dừng.`,
+          `Workspace “${event.data.workspaceName}” was deleted by its owner. Its workflows have been stopped.`,
+        ),
+        { kind: 'NONE' },
+      );
     case 'connection.connected':
       return content(
         'CONNECTION',
