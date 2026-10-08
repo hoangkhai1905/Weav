@@ -276,7 +276,11 @@ export class OcrService {
       ...(duplex ? { duplex } : {}),
     };
 
-    const abortHandle = createUpstreamAbortHandle(request, reply, 10_000);
+    const abortHandle = createUpstreamAbortHandle(
+      request,
+      reply,
+      gateway?.ocr?.timeoutMs ?? 10_000,
+    );
     init.signal = abortHandle.signal;
     const diagnosticStart = performance.now();
     const diagnostic = (phase: string) =>

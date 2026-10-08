@@ -140,6 +140,8 @@ const environmentSchema = z.object({
   OCR_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.ocr),
   CORS_ALLOWED_ORIGINS: z.string().optional(),
   OCR_ALLOW_UNAUTHENTICATED_DEV: booleanEnvironmentSchema,
+  // Upstream deadline for one OCR extraction; raise it for slow remote runtimes (Colab).
+  GATEWAY_OCR_TIMEOUT_MS: positiveIntegerEnvironmentSchema(10_000),
   GATEWAY_GENERAL_RATE_LIMIT: positiveIntegerEnvironmentSchema(120),
   GATEWAY_AUTH_RATE_LIMIT: positiveIntegerEnvironmentSchema(10),
   GATEWAY_OCR_RATE_LIMIT: positiveIntegerEnvironmentSchema(10),
@@ -194,6 +196,7 @@ export interface GatewayConfig {
   };
   ocr: {
     allowUnauthenticatedDev: boolean;
+    timeoutMs: number;
   };
 }
 
@@ -336,6 +339,7 @@ export function validateGatewayEnvironment(
     },
     ocr: {
       allowUnauthenticatedDev: parsed.data.OCR_ALLOW_UNAUTHENTICATED_DEV,
+      timeoutMs: parsed.data.GATEWAY_OCR_TIMEOUT_MS,
     },
   };
 }

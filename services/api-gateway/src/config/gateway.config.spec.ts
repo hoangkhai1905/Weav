@@ -174,6 +174,26 @@ describe('validateGatewayEnvironment', () => {
     expect(config.trustProxyHops).toBe(0);
   });
 
+  it('defaults the OCR upstream timeout to 10s and accepts a longer override', () => {
+    expect(
+      validateGatewayEnvironment(developmentEnvironment()).ocr.timeoutMs,
+    ).toBe(10_000);
+    expect(
+      validateGatewayEnvironment({
+        ...developmentEnvironment(),
+        GATEWAY_OCR_TIMEOUT_MS: '95000',
+      }).ocr.timeoutMs,
+    ).toBe(95_000);
+    for (const invalid of ['0', 'abc']) {
+      expect(() =>
+        validateGatewayEnvironment({
+          ...developmentEnvironment(),
+          GATEWAY_OCR_TIMEOUT_MS: invalid,
+        }),
+      ).toThrow('GATEWAY_OCR_TIMEOUT_MS');
+    }
+  });
+
   it('no longer has a bot upstream and ignores a leftover BOT_SERVICE_URL', () => {
     const config = validateGatewayEnvironment({
       ...developmentEnvironment(),

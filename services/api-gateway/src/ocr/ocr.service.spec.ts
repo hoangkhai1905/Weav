@@ -635,6 +635,48 @@ describe('OcrService (Proxy Boundary)', () => {
     });
   });
 
+  describe('Configurable upstream deadline', () => {
+    it('aborts the upstream call at gateway.ocr.timeoutMs and returns sanitized 503 OCR_BUSY', async () => {
+      mockConfigService.get.mockImplementation((key: string) =>
+        key === 'gateway'
+          ? {
+              appEnv: 'production',
+              upstreams: { ocr: DEFAULT_OCR_URL },
+              ocr: { allowUnauthenticatedDev: false, timeoutMs: 50 },
+            }
+          : undefined,
+      );
+      // Never resolves; only rejects when the gateway deadline aborts the signal.
+      mockFetch.mockImplementationOnce(
+        (_url: string, init: { signal: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            init.signal.addEventListener('abort', () =>
+              reject(new Error('aborted')),
+            );
+          }),
+      );
+
+      const startedAt = Date.now();
+      const res = await service.proxyExtraction(VALID_WORKSPACE_ID, {
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer token',
+        },
+        body: {
+          source: {
+            type: 'artifact',
+            artifactId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+          },
+        },
+      });
+
+      expect(Date.now() - startedAt).toBeLessThan(2000);
+      expect(res.status).toBe(503);
+      expect((res.data as any).error.code).toBe('OCR_BUSY');
+      expect((res.data as any).error.retryable).toBe(true);
+    });
+  });
+
   describe('Workspace ID validation', () => {
     it('should reject request when workspaceId is missing or empty', async () => {
       const req = {
