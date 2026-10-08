@@ -102,15 +102,22 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
         requirePublished(workflow);
         WorkflowVersionJpaEntity version = currentVersion(workflow);
         WorkflowDefinition definition = definition(version);
-        String rootNodeId = definition.nodes().stream()
-                .filter(Objects::nonNull)
-                .filter(node -> "trigger.manual".equals(node.type()))
-                .map(WorkflowDefinition.Node::id)
-                .filter(Objects::nonNull)
-                .findFirst()
-                .orElseThrow(() -> new InvalidStateException("The published workflow has no manual trigger"));
+        // A manual trigger wins; otherwise a manual run starts at the first trigger node in definition order.
+        String rootNodeId = firstTrigger(definition, type -> type.equals("trigger.manual"))
+                .or(() -> firstTrigger(definition, type -> type.startsWith("trigger.")))
+                .orElseThrow(() -> new InvalidStateException("The published workflow has no trigger"));
         return persistAdmission(workflow, version, command, ExecutionTriggerType.MANUAL,
                 null, rootNodeId, null, definition);
+    }
+
+    private static Optional<String> firstTrigger(WorkflowDefinition definition,
+                                                 java.util.function.Predicate<String> type) {
+        return definition.nodes().stream()
+                .filter(Objects::nonNull)
+                .filter(node -> node.type() != null && type.test(node.type()))
+                .map(WorkflowDefinition.Node::id)
+                .filter(Objects::nonNull)
+                .findFirst();
     }
 
     private Admission createAutomatic(Command command) {

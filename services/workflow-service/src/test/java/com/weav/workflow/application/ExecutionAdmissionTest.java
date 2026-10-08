@@ -263,6 +263,26 @@ class ExecutionAdmissionTest {
                 Integer.class, workflow.getId()));
     }
 
+    @Test
+    void manualRunOfAWorkflowWithoutManualTriggerStartsAtItsFirstTriggerAsManual() {
+        UUID workspaceId = UUID.randomUUID();
+        Workflow workflow = draftService.create(new CreateWorkflowCommand(workspaceId, ACTOR_ID, "No manual", null));
+        draftService.save(workspaceId, workflow.getId(), ACTOR_ID, "No manual", null,
+                new WorkflowDefinition("1.0", List.of(
+                        new WorkflowDefinition.Node("hook", "trigger.webhook", Map.of())), List.of(), Map.of()),
+                Map.of());
+        publicationService.publish(workspaceId, workflow.getId(), ACTOR_ID);
+
+        var admission = admissionService.manual(workspaceId, workflow.getId(), ACTOR_ID, Map.of(), "no-manual-01", null);
+
+        assertEquals("hook", jdbc.queryForObject(
+                "select root_node_id from workflow.workflow_executions where id = ?", String.class,
+                admission.executionId()));
+        assertEquals("MANUAL", jdbc.queryForObject(
+                "select trigger_type from workflow.workflow_executions where id = ?", String.class,
+                admission.executionId()));
+    }
+
     private Workflow createDraft(UUID workspaceId, String rootId) {
         Workflow workflow = draftService.create(new CreateWorkflowCommand(workspaceId, ACTOR_ID, "Admission test", null));
         draftService.save(workspaceId, workflow.getId(), ACTOR_ID, "Admission test", null,

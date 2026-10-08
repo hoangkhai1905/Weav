@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { primaryTrigger, triggerTypeLabel } from '../lib/executions/runView';
 import { Copy, Edit3, History, MoreHorizontal, Pause, Play, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
 import type { ExecutionDetail, WorkflowDefinition } from '../types/workflow.types';
 import { workflowApi } from '../api/workflow.api';
@@ -27,6 +28,9 @@ interface RunStats {
   lastStatus?: ExecutionDetail['status'];
   runs7d: number;
   failed7d: number;
+  /** Type of the latest automatic (non-manual) run: proof of a real trigger the list API does not return. */
+  autoTrigger?: string;
+  autoTriggerAt?: number;
 }
 
 interface WorkflowItem {
@@ -36,6 +40,7 @@ interface WorkflowItem {
   description?: string;
   status: WorkflowStatus;
   triggerType: string;
+  triggerTypes?: string[];
   ownerName: string;
   createdAt: string;
   updatedAt: string;
@@ -59,6 +64,10 @@ function computeStats(executions: ExecutionDetail[]): Record<string, RunStats> {
   for (const execution of executions) {
     const startedMs = Date.parse(execution.startedAt);
     const entry = (stats[execution.workflowId] ??= { runs7d: 0, failed7d: 0 });
+    if (execution.triggerType.toUpperCase() !== 'MANUAL' && (entry.autoTriggerAt ?? -1) < (startedMs || 0)) {
+      entry.autoTrigger = execution.triggerType;
+      entry.autoTriggerAt = startedMs || 0;
+    }
     if (Number.isFinite(startedMs)) {
       if (!entry.lastAt || startedMs > Date.parse(entry.lastAt)) {
         entry.lastAt = execution.startedAt;
@@ -112,6 +121,7 @@ export function WorkflowsPage() {
         description: wf.description,
         status: wf.status as WorkflowStatus,
         triggerType: wf.triggerType,
+        ...(wf.triggerTypes ? { triggerTypes: wf.triggerTypes } : {}),
         ownerName: wf.ownerName ?? '',
         createdAt: wf.createdAt,
         updatedAt: wf.updatedAt,
@@ -140,7 +150,7 @@ export function WorkflowsPage() {
     queryFn: () => fetchRecentExecutions(queryClient),
     select: computeStats,
   });
-  const stats: Record<string, RunStats> = statsQuery.data ?? {};
+  const stats = useMemo<Record<string, RunStats>>(() => statsQuery.data ?? {}, [statsQuery.data]);
 
   const handleCreate = async () => {
     setApiError(null);
@@ -233,6 +243,12 @@ export function WorkflowsPage() {
     (wf: WorkflowItem) => wf.status === 'PUBLISHED' && stats[wf.id]?.lastStatus === 'FAILED',
     [stats],
   );
+  // The API's triggerTypes decide (a real trigger beats a legacy manual node); an older API without the field falls
+  // back to the latest automatic run, which proves a real trigger.
+  const triggerOf = useCallback(
+    (wf: WorkflowItem) => (wf.triggerTypes ? primaryTrigger(wf.triggerTypes) ?? wf.triggerType : stats[wf.id]?.autoTrigger ?? wf.triggerType),
+    [stats],
+  );
   const lastRunOf = useCallback((wf: WorkflowItem) => stats[wf.id]?.lastAt ?? wf.lastRunAt, [stats]);
 
   const counts = useMemo(
@@ -247,22 +263,11 @@ export function WorkflowsPage() {
   );
 
   const triggerOptions = useMemo(
-    () => Array.from(new Set(workflowsList.map((w) => w.triggerType).filter(Boolean))).sort(),
-    [workflowsList],
+    () => Array.from(new Set(workflowsList.map(triggerOf).filter(Boolean))).sort(),
+    [workflowsList, triggerOf],
   );
 
-  const triggerLabel = useCallback(
-    (type: string) => {
-      const lower = type.toLowerCase();
-      if (lower.includes('schedule')) return t('workflows.trigger_schedule');
-      if (lower.includes('webhook')) return 'Webhook';
-      if (lower.includes('telegram')) return 'Telegram';
-      if (lower.includes('gmail')) return 'Gmail';
-      if (lower.includes('manual')) return t('workflows.trigger_manual');
-      return type || '—';
-    },
-    [t],
-  );
+  const triggerLabel = useCallback((type: string) => triggerTypeLabel(type, t), [t]);
 
   const errorRate = useCallback(
     (wf: WorkflowItem) => {
@@ -275,8 +280,8 @@ export function WorkflowsPage() {
   const filteredWorkflows = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = workflowsList.filter((wf) => {
-      if (q && !wf.name.toLowerCase().includes(q) && !wf.code.toLowerCase().includes(q) && !triggerLabel(wf.triggerType).toLowerCase().includes(q) && !wf.ownerName.toLowerCase().includes(q)) return false;
-      if (triggerFilter !== 'ALL' && wf.triggerType !== triggerFilter) return false;
+      if (q && !wf.name.toLowerCase().includes(q) && !wf.code.toLowerCase().includes(q) && !triggerLabel(triggerOf(wf)).toLowerCase().includes(q) && !wf.ownerName.toLowerCase().includes(q)) return false;
+      if (triggerFilter !== 'ALL' && triggerOf(wf) !== triggerFilter) return false;
       if (activeTab === 'ACTIVE') return wf.status === 'PUBLISHED';
       if (activeTab === 'ERROR') return isErrored(wf);
       if (activeTab === 'PAUSED') return wf.status === 'PAUSED';
@@ -290,7 +295,7 @@ export function WorkflowsPage() {
       if (sortKey === 'ERROR_RATE') return (errorRate(b) ?? -1) - (errorRate(a) ?? -1);
       return time(lastRunOf(b)) - time(lastRunOf(a)) || time(b.updatedAt) - time(a.updatedAt);
     });
-  }, [workflowsList, search, triggerFilter, activeTab, sortKey, locale, isErrored, errorRate, lastRunOf, triggerLabel]);
+  }, [workflowsList, search, triggerFilter, activeTab, sortKey, locale, isErrored, errorRate, lastRunOf, triggerLabel, triggerOf]);
 
   const selectedVisibleCount = filteredWorkflows.filter((w) => selectedIds.has(w.id)).length;
   const allSelected = filteredWorkflows.length > 0 && selectedVisibleCount === filteredWorkflows.length;
@@ -657,10 +662,10 @@ export function WorkflowsPage() {
                       </Link>
                     </td>
                     <td className={td}>{statusBadge(wf)}</td>
-                    <td className={`${td} text-text-2`} title={triggerLabel(wf.triggerType)}>
+                    <td className={`${td} text-text-2`} title={triggerLabel(triggerOf(wf))}>
                       <span className="inline-flex items-center gap-2">
-                        <WorkflowGlyph triggerType={wf.triggerType} status={wf.status === 'PUBLISHED' ? 'SUCCESS' : wf.status} />
-                        {triggerLabel(wf.triggerType)}
+                        <WorkflowGlyph triggerType={triggerOf(wf)} status={wf.status === 'PUBLISHED' ? 'SUCCESS' : wf.status} />
+                        {triggerLabel(triggerOf(wf))}
                       </span>
                     </td>
                     <td className={td} title={exactTime(lastAt)}>
@@ -707,7 +712,7 @@ export function WorkflowsPage() {
                           onClick={() => setActiveMenuId(activeMenuId === wf.id ? null : wf.id)}
                           className={`${iconBtn} ${activeMenuId === wf.id ? 'bg-muted text-foreground' : ''}`}
                           title={t('workflows.more_actions')}
-                          aria-label={t('workflows.more_actions')}
+                          aria-label={`${t('workflows.more_actions')}: ${wf.name}`}
                           aria-haspopup="menu"
                           aria-expanded={activeMenuId === wf.id}
                         >
@@ -719,6 +724,7 @@ export function WorkflowsPage() {
                         {activeMenuId === wf.id && (
                           <motion.div
                             role="menu"
+                            aria-label={`${t('workflows.more_actions')}: ${wf.name}`}
                             initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0 }}

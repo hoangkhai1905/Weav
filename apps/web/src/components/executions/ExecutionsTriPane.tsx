@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertTriangle, ArrowLeft, Check, LoaderCircle, Minus, Play, RefreshCw, X } from 'lucide-react';
 import { executionApi } from '../../api/execution.api';
@@ -6,6 +6,8 @@ import { workflowApi } from '../../api/workflow.api';
 import type { ExecutionDetail, NodeExecutionResult, WorkflowDefinition } from '../../types/workflow.types';
 import { useI18nStore } from '../../store/useI18nStore';
 import { statusBadgeClass, type StatusTone } from '../common/statusBadgeClass';
+import { failureOf, isLiveStatus, useLivePolling, type TickResult } from '../../lib/executions/useLivePolling';
+import { errorField, errorFieldLabel, orderSteps, stepDidNotRun, triggerTypeLabel } from '../../lib/executions/runView';
 
 type DetailTab = 'input' | 'output' | 'logs';
 
@@ -101,17 +103,28 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
 
   const activeId = selectedExecutionId ?? runs[0]?.id ?? null;
 
-  const loadRuns = useCallback(async () => {
+  // Responses for another workflow/run than the current one (an in-flight poll) must never overwrite the view.
+  const workflowIdRef = useRef(workflowId);
+  const activeIdRef = useRef<string | null>(activeId);
+  useEffect(() => {
+    workflowIdRef.current = workflowId;
+    activeIdRef.current = activeId;
+  });
+
+  const loadRuns = useCallback(async (): Promise<TickResult> => {
     try {
       const [items, definition] = await Promise.all([
         executionApi.getExecutions(workflowId),
         workflowApi.getWorkflow(workflowId),
       ]);
+      if (workflowIdRef.current !== workflowId) return;
       setRuns(items);
       setWorkflow(definition);
       setError(null);
     } catch (cause) {
+      if (workflowIdRef.current !== workflowId) return;
       setError(cause instanceof Error ? cause.message : t('runs.load_error'));
+      return failureOf(cause);
     } finally {
       setLoading(false);
     }
@@ -124,14 +137,17 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
   }, [loadRuns]);
 
   const loadDetail = useCallback(
-    async (id: string, silent: boolean) => {
+    async (id: string, silent: boolean): Promise<TickResult> => {
       if (!silent) setDetailLoading(true);
       try {
         const result = await executionApi.getExecution(id, workflowId);
+        if (activeIdRef.current !== id || workflowIdRef.current !== workflowId) return;
         setDetail(result);
         if (!result) setError(t('runs.not_found'));
       } catch (cause) {
+        if (activeIdRef.current !== id || workflowIdRef.current !== workflowId) return;
         setError(cause instanceof Error ? cause.message : t('runs.load_error'));
+        return failureOf(cause);
       } finally {
         setDetailLoading(false);
       }
@@ -145,28 +161,27 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
     void loadDetail(activeId, false);
   }, [activeId, loadDetail]);
 
-  const live = detail?.status === 'RUNNING' || detail?.status === 'QUEUED';
-  useEffect(() => {
-    if (!live || !activeId) return;
-    const timer = window.setInterval(() => {
-      void loadDetail(activeId, true);
-      void loadRuns();
-    }, 5000);
-    return () => window.clearInterval(timer);
-  }, [live, activeId, loadDetail, loadRuns]);
+  const live = isLiveStatus(detail?.status);
+  const listLive = runs.some((run) => isLiveStatus(run.status));
+  // Every 2 s while the open run or any listed run is queued/running: the list only while a listed run is live, the
+  // detail only while the open run is. One round at a time, backed off on failure, paused in a hidden tab.
+  useLivePolling(live || listLive, async () => {
+    const results = await Promise.all([
+      listLive ? loadRuns() : undefined,
+      live && activeId ? loadDetail(activeId, true) : undefined,
+    ]);
+    if (results.includes('stop')) return 'stop';
+    return !results.includes(false);
+  });
 
   const nodeTypes = useMemo(() => new Map((workflow?.nodes ?? []).map((node) => [node.id, node.type])), [workflow]);
 
-  const steps = useMemo(() => {
-    const list = Object.values(detail?.nodeResults ?? {});
-    // Steps that have not started yet have no startedAt (NaN) and go last instead of breaking the order.
-    const startedAt = (value: string | undefined) => Date.parse(value ?? '') || Number.POSITIVE_INFINITY;
-    return list.sort((a, b) => {
-      const left = startedAt(a.startedAt);
-      const right = startedAt(b.startedAt);
-      return left === right ? 0 : left < right ? -1 : 1;
-    });
-  }, [detail]);
+  const steps = useMemo(
+    () => orderSteps(Object.values(detail?.nodeResults ?? {}), workflow?.nodes ?? [], workflow?.edges ?? []),
+    [detail, workflow],
+  );
+  const runTerminal = !!detail && !isLiveStatus(detail.status);
+  const didNotRun = (step: NodeExecutionResult) => stepDidNotRun(step, runTerminal);
 
   const timeline = useMemo(() => {
     if (!detail) return { start: 0, span: 1 };
@@ -181,7 +196,7 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
 
   const failedStep = steps.find((step) => step.status === 'FAILED');
   const selectedStep: NodeExecutionResult | undefined =
-    steps.find((step) => step.nodeId === selectedStepId) ?? failedStep ?? steps[0];
+    steps.find((step) => step.nodeId === selectedStepId) ?? failedStep ?? steps.find((step) => !didNotRun(step)) ?? steps[0];
 
   const filteredRuns = runs.filter((run) => {
     if (statusFilter !== 'ALL' && run.status !== statusFilter) return false;
@@ -189,6 +204,11 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
     return !q || run.id.toLowerCase().includes(q) || run.triggerType.toLowerCase().includes(q);
   });
   const failedRuns = runs.filter((run) => run.status === 'FAILED').length;
+
+  const fieldPrefix = (raw: string | undefined) => {
+    const field = errorField(raw);
+    return field ? `${errorFieldLabel(field, t)}: ` : '';
+  };
 
   const when = (iso: string) => {
     const ms = Date.parse(iso);
@@ -365,7 +385,7 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
                 <dl className="mt-2.5 flex flex-wrap gap-x-7 gap-y-2 text-xs">
                   <div><dt className="text-muted-foreground">{t('runs.started')}</dt><dd className="mt-0.5 font-mono tabular-nums">{exact(detail.startedAt)}</dd></div>
                   <div><dt className="text-muted-foreground">{t('runs.duration')}</dt><dd className="mt-0.5 font-mono tabular-nums">{formatDuration(detail.durationMs)}</dd></div>
-                  <div><dt className="text-muted-foreground">{t('runs.trigger')}</dt><dd className="mt-0.5">{t(`runs.trigger_type.${detail.triggerType.toLowerCase().replace(/^trigger\./, '')}`)}</dd></div>
+                  <div><dt className="text-muted-foreground">{t('runs.trigger')}</dt><dd className="mt-0.5">{triggerTypeLabel(detail.triggerType, t)}</dd></div>
                   <div className="min-w-0"><dt className="text-muted-foreground">{t('runs.id')}</dt><dd className="mt-0.5 truncate font-mono">{detail.id}</dd></div>
                 </dl>
                 {failedStep && (
@@ -375,7 +395,7 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
                       <strong className="font-semibold text-err">
                         {t('runs.failed_at').replace('{n}', String(steps.indexOf(failedStep) + 1))}
                       </strong>
-                      {failedStep.error ? ` — ${parseError(failedStep.error).message}` : ''}
+                      {failedStep.error ? ` — ${fieldPrefix(failedStep.error)}${parseError(failedStep.error).message}` : ''}
                     </span>
                     <button type="button" onClick={() => { setSelectedStepId(failedStep.nodeId); setTab('output'); }} className="h-6 shrink-0 rounded px-2 text-xs font-medium text-err hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       {t('runs.view_error')}
@@ -394,7 +414,8 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
                 {steps.length === 0 && <p className="px-4 py-8 text-center text-[13px] text-text-2">{t('runs.no_steps')}</p>}
                 {steps.map((step, index) => {
                   const on = step.nodeId === selectedStep?.nodeId;
-                  const tone = runTone(step.status);
+                  const skipped = didNotRun(step);
+                  const tone = skipped ? 'pause' : runTone(step.status);
                   const start = Date.parse(step.startedAt);
                   const left = Number.isFinite(start) ? ((start - timeline.start) / timeline.span) * 100 : 0;
                   const width = step.durationMs !== undefined ? Math.max(0.8, (step.durationMs / timeline.span) * 100) : 0.8;
@@ -410,15 +431,15 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
                       <span className="font-mono text-xs tabular-nums text-muted-foreground">{index + 1}</span>
                       <span className="flex min-w-0 items-center gap-2">
                         <span aria-hidden="true" className={`h-4 w-[3px] shrink-0 rounded-sm ${stripeFor(nodeTypes.get(step.nodeId))}`} />
-                        <StatusIcon status={step.status} />
-                        <span className="min-w-0 truncate"><span className="font-medium">{step.nodeName}</span>{nodeTypes.get(step.nodeId) && <span className="text-muted-foreground"> · {nodeTypes.get(step.nodeId)}</span>}</span>
+                        <StatusIcon status={skipped ? 'SKIPPED' : step.status} />
+                        <span className={`min-w-0 truncate ${skipped ? 'text-muted-foreground' : ''}`}><span className="font-medium">{step.nodeName}</span>{nodeTypes.get(step.nodeId) && <span className="text-muted-foreground"> · {nodeTypes.get(step.nodeId)}</span>}</span>
                       </span>
-                      <span className="text-right font-mono text-xs tabular-nums">{formatDuration(step.durationMs)}</span>
+                      <span className={`text-right text-xs ${skipped ? 'text-muted-foreground' : 'font-mono tabular-nums'}`}>{skipped ? t('runs.step_skipped') : formatDuration(step.durationMs)}</span>
                       <span className="relative h-2 rounded-sm bg-subtle">
-                        <span
+                        {!skipped && <span
                           className={`absolute inset-y-0 rounded-sm ${tone === 'ok' ? 'bg-ok' : tone === 'err' ? 'bg-err' : tone === 'run' ? 'bg-run' : 'bg-muted-foreground'}`}
                           style={{ left: `${Math.min(99, Math.max(0, left))}%`, width: `${Math.min(100 - Math.max(0, left), width)}%` }}
-                        />
+                        />}
                       </span>
                     </button>
                   );
@@ -438,8 +459,12 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
                   <span className="min-w-0 truncate text-sm font-semibold">{t('runs.step')} {steps.indexOf(selectedStep) + 1} · {selectedStep.nodeName}</span>
                 </div>
                 <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className={statusBadgeClass(runTone(selectedStep.status))}>{statusLabel(selectedStep.status)}</span>
-                  <span className="font-mono tabular-nums">{formatDuration(selectedStep.durationMs)}</span>
+                  {didNotRun(selectedStep)
+                    ? <span className={statusBadgeClass('pause')}>{t('runs.step_skipped')}</span>
+                    : <>
+                      <span className={statusBadgeClass(runTone(selectedStep.status))}>{statusLabel(selectedStep.status)}</span>
+                      <span className="font-mono tabular-nums">{formatDuration(selectedStep.durationMs)}</span>
+                    </>}
                   {selectedStep.retryCount > 1 && <span>· {t('runs.attempts').replace('{n}', String(selectedStep.retryCount))}</span>}
                 </div>
                 <div role="tablist" className="mt-2 flex gap-5">
@@ -464,6 +489,12 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
                     {copied ? t('runs.copied') : t('runs.copy')}
                   </button>
                 </div>
+                {stepBody.isError && errorField(selectedStep.error) && (
+                  <p data-testid="step-error-field" className="mb-2 text-xs text-foreground">
+                    <span className="text-muted-foreground">{t('runs.error_field')}: </span>
+                    <strong className="font-medium">{errorFieldLabel(errorField(selectedStep.error) ?? '', t)}</strong>
+                  </p>
+                )}
                 {stepBody.body ? (
                   <pre className={`m-0 overflow-x-auto whitespace-pre-wrap break-words rounded-md border p-3 font-mono text-xs leading-relaxed ${stepBody.isError ? 'border-err-border bg-err-bg text-foreground' : 'border-border bg-subtle text-foreground'}`}>{stepBody.body}</pre>
                 ) : (

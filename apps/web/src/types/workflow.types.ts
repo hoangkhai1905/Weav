@@ -33,6 +33,8 @@ export interface WorkflowDefinition {
   status: WorkflowStatus;
   version: number;
   triggerType: string;
+  /** Trigger node types in definition order, when the API provides them (list summaries do). */
+  triggerTypes?: string[];
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   createdAt: string;
@@ -74,6 +76,8 @@ export interface NodeExecutionResult {
   completedAt?: string;
   durationMs?: number;
   retryCount: number;
+  /** The engine skipped this step (branch not taken, unused trigger). */
+  skipped?: boolean;
   input?: unknown;
   output?: unknown;
   error?: string;

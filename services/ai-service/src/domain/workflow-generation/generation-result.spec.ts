@@ -185,3 +185,71 @@ describe('generationResultSchema nested configs', () => {
     expect(graph([{ url: 'http://localhost/a.pdf' }]).success).toBe(false);
   });
 });
+
+describe('generationResultSchema triggers', () => {
+  const withSchedule = generationResultSchema([
+    { type: 'trigger.schedule', configFields: ['cron'] },
+    { type: 'http.request', configFields: ['method', 'url'] },
+  ]);
+  const body = (nodes: unknown[], edges: { from: string; to: string }[]) =>
+    withSchedule.safeParse({
+      status: 'ready',
+      intent: { name: 'W', nodes, edges },
+    });
+
+  it('accepts a workflow whose only trigger is not manual', () => {
+    const trigger = {
+      id: 'tick',
+      type: 'trigger.schedule',
+      config: { cron: '0 0 8 * * *' },
+    };
+    expect(
+      body([trigger, http('one')], [{ from: 'tick', to: 'one' }]).success,
+    ).toBe(true);
+  });
+
+  const both = generationResultSchema([
+    { type: 'trigger.manual', configFields: [] },
+    { type: 'trigger.webhook', configFields: [] },
+    { type: 'http.request', configFields: ['method', 'url'] },
+  ]);
+  const manual = (id: string) => ({ id, type: 'trigger.manual', config: {} });
+  const hook = { id: 'hook', type: 'trigger.webhook', config: {} };
+  const both_ = (nodes: unknown[], edges: { from: string; to: string }[]) =>
+    both.safeParse({ status: 'ready', intent: { name: 'W', nodes, edges } });
+
+  it('rejects two manual triggers', () => {
+    expect(
+      both_(
+        [manual('m1'), manual('m2'), http('one')],
+        [
+          { from: 'm1', to: 'one' },
+          { from: 'm2', to: 'one' },
+        ],
+      ).success,
+    ).toBe(false);
+  });
+
+  it('accepts a manual trigger next to a webhook when both lead somewhere', () => {
+    expect(
+      both_(
+        [manual('m1'), hook, http('one')],
+        [
+          { from: 'm1', to: 'one' },
+          { from: 'hook', to: 'one' },
+        ],
+      ).success,
+    ).toBe(true);
+  });
+
+  it('rejects a dead manual trigger next to another trigger', () => {
+    expect(
+      both_([manual('m1'), hook, http('one')], [{ from: 'hook', to: 'one' }])
+        .success,
+    ).toBe(false);
+  });
+
+  it('rejects a workflow with no trigger', () => {
+    expect(body([http('one')], []).success).toBe(false);
+  });
+});
