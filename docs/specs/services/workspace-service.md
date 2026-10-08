@@ -101,7 +101,7 @@ Published only (transactional outbox -> RabbitMQ topic exchange `NOTIFICATION_EX
 
 | Event type | Recipients (summary) |
 | --- | --- |
-| `workspace.created`, `workspace.renamed`, `workspace.member_added`, `workspace.member_removed`, `workspace.member_permissions_updated`, `workspace.member_left` | Creator / affected members / owner (see `WorkspaceNotificationRecorder`) |
+| `workspace.created`, `workspace.renamed`, `workspace.member_added`, `workspace.member_removed`, `workspace.member_permissions_updated`, `workspace.member_left`, `workspace.deleted` | Creator / affected members / owner (see `WorkspaceNotificationRecorder`) |
 | `connection.connected` | Acting user only, on a real non-ACTIVE -> ACTIVE transition |
 | `connection.disabled` | Current owner + connection creator, actor removed, empty set suppressed |
 | `connection.invalid` | Same recipients, actor kept; system actor is `null` for internal/refresh invalidations |

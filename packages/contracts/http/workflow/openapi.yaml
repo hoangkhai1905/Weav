@@ -633,6 +633,32 @@ paths:
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /internal/workspaces/{workspaceId}/pause-all:
+    post:
+      tags: [Internal]
+      operationId: pauseAllWorkspaceWorkflows
+      summary: Pause every published workflow of a workspace that is being deleted
+      description: >-
+        Called only by the Workspace Service, just before it soft-deletes the workspace and wipes its
+        credentials (unregistering a Telegram bot needs its credential). Pauses each PUBLISHED workflow
+        and disables its current triggers, like a member pausing it, but without a capability check and
+        without per-workflow workflow.paused notifications. Idempotent and retriable. Executions already
+        admitted are left to finish or fail when they next resolve a connection. Telegram webhook removal
+        is best effort and counted, never fatal.
+      security:
+        - internalServiceKey: []
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Shutdown counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacePauseAllResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -702,6 +728,15 @@ components:
       required: [inUse]
       properties:
         inUse: { type: boolean }
+    WorkspacePauseAllResponse:
+      type: object
+      additionalProperties: false
+      required: [paused, alreadyPaused, failedTelegramUnregister, failed]
+      properties:
+        paused: { type: integer, minimum: 0, description: Workflows paused by this call. }
+        alreadyPaused: { type: integer, minimum: 0, description: Workflows that were already paused. }
+        failedTelegramUnregister: { type: integer, minimum: 0, description: Telegram bots whose webhook could not be removed. }
+        failed: { type: integer, minimum: 0, description: Workflows that could not be paused (logged and skipped; the caller must retry when above 0). }
     CreateWorkflowRequest:
       type: object
       additionalProperties: false

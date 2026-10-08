@@ -172,6 +172,13 @@ const eventVariants = [
     memberData,
   ),
   eventSchema(
+    'workspace.deleted',
+    'workspace-service',
+    'WORKSPACE',
+    uuidSchema,
+    workspaceNameData,
+  ),
+  eventSchema(
     'connection.connected',
     'workspace-service',
     'CONNECTION',

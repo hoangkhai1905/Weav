@@ -130,6 +130,13 @@ const eventCases: EventCase[] = [
     data: { workspaceName: 'Đội vận hành', subjectUserId: ids.actor },
   },
   {
+    eventType: 'workspace.deleted',
+    producer: 'workspace-service',
+    entityKind: 'WORKSPACE',
+    workspaceRequired: true,
+    data: { workspaceName: 'Đội vận hành' },
+  },
+  {
     eventType: 'connection.connected',
     producer: 'workspace-service',
     entityKind: 'CONNECTION',
@@ -236,7 +243,7 @@ describe('notification event v2 schema', () => {
     expect(() => require('./notification-event')).not.toThrow();
   });
 
-  it('accepts all 21 allowlisted event envelopes, including delayed delivery timestamps', () => {
+  it('accepts all 22 allowlisted event envelopes, including delayed delivery timestamps', () => {
     for (const spec of eventCases) {
       expect(schema().safeParse(eventOf(spec.eventType)).success).toBe(true);
     }
@@ -526,7 +533,7 @@ describe('notification event v2 schema', () => {
     );
   });
 
-  it('matches the JSON Schema draft and all 21 event branches to the Zod fixture matrix', () => {
+  it('matches the JSON Schema draft and all 22 event branches to the Zod fixture matrix', () => {
     const schemaDocument = JSON.parse(
       readFileSync(
         resolve(
@@ -580,7 +587,7 @@ describe('notification event v2 schema', () => {
     const branches = schemaDocument.allOf.find((entry: any) =>
       Array.isArray(entry.oneOf),
     )?.oneOf as any[];
-    expect(branches).toHaveLength(21);
+    expect(branches).toHaveLength(22);
     for (const spec of eventCases) {
       const branch = branches.find(
         (candidate) => candidate.properties.eventType.const === spec.eventType,

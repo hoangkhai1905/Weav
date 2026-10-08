@@ -93,6 +93,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "toast.workspace.member_removed": "Đã xóa thành viên khỏi không gian làm việc.",
     "toast.workspace.permission_updated": "Đã cập nhật quyền thành viên.",
     "toast.workspace.left": "Đã rời không gian làm việc.",
+    "toast.workspace.deleted": "Đã xóa không gian làm việc.",
     "toast.connection.created": "Đã tạo kết nối.",
     "toast.connection.updated": "Đã cập nhật kết nối.",
     "toast.connection.verified": "Kết nối đã được xác minh.",
@@ -1786,6 +1787,24 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "workspace.leave_description":
       "Rời “{name}”? Bạn sẽ mất quyền truy cập không gian làm việc và dữ liệu OCR này.",
     "workspace.cancel": "Hủy",
+    "workspace.delete.zone_title": "Vùng nguy hiểm",
+    "workspace.delete.zone_text":
+      "Xóa không gian làm việc này cùng việc dừng toàn bộ quy trình bên trong. Thao tác này không thể hoàn tác từ giao diện.",
+    "workspace.delete.action": "Xóa không gian làm việc",
+    "workspace.delete.confirm_title": "Xóa “{name}”?",
+    "workspace.delete.consequence_workflows":
+      "Mọi quy trình đang chạy sẽ bị tạm dừng và các trigger (lịch, webhook, Telegram, Gmail) sẽ ngừng hoạt động.",
+    "workspace.delete.consequence_connections":
+      "Mọi kết nối và thông tin đăng nhập đã lưu của không gian này sẽ bị xóa.",
+    "workspace.delete.consequence_members":
+      "Tất cả thành viên sẽ mất quyền truy cập và nhận được thông báo.",
+    "workspace.delete.type_prefix": "Nhập tên",
+    "workspace.delete.type_suffix": "để xác nhận.",
+    "workspace.delete.close": "Đóng hộp thoại xóa không gian làm việc",
+    "workspace.delete.error_name":
+      "Tên xác nhận không khớp với không gian làm việc này.",
+    "workspace.delete.error_unavailable":
+      "Chưa thể dừng hết các quy trình nên không gian làm việc chưa bị xóa (một số quy trình có thể đã bị tạm dừng). Vui lòng thử lại; thao tác này an toàn khi lặp lại.",
     "workspace.owner_cannot_leave":
       "Chủ sở hữu không thể rời không gian làm việc; API hiện chưa hỗ trợ chuyển quyền sở hữu.",
     "workspace.no_members":
@@ -2343,6 +2362,7 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "toast.workspace.member_removed": "Workspace member removed.",
     "toast.workspace.permission_updated": "Member permissions updated.",
     "toast.workspace.left": "You left the workspace.",
+    "toast.workspace.deleted": "Workspace deleted.",
     "toast.connection.created": "Connection created.",
     "toast.connection.updated": "Connection updated.",
     "toast.connection.verified": "Connection verified.",
@@ -4033,6 +4053,24 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "workspace.leave_description":
       "Leave “{name}”? You will lose access to this workspace and its OCR context.",
     "workspace.cancel": "Cancel",
+    "workspace.delete.zone_title": "Danger zone",
+    "workspace.delete.zone_text":
+      "Delete this workspace and stop every workflow in it. This cannot be undone from the app.",
+    "workspace.delete.action": "Delete workspace",
+    "workspace.delete.confirm_title": "Delete “{name}”?",
+    "workspace.delete.consequence_workflows":
+      "Every running workflow is paused and its triggers (schedule, webhook, Telegram, Gmail) stop.",
+    "workspace.delete.consequence_connections":
+      "All connections and saved credentials of this workspace are removed.",
+    "workspace.delete.consequence_members":
+      "All members lose access and are notified.",
+    "workspace.delete.type_prefix": "Type",
+    "workspace.delete.type_suffix": "to confirm.",
+    "workspace.delete.close": "Close the delete workspace dialog",
+    "workspace.delete.error_name":
+      "The confirmation does not match this workspace's name.",
+    "workspace.delete.error_unavailable":
+      "Not all workflows could be stopped, so the workspace was not deleted (some workflows may already be paused). Please try again; it is safe to repeat.",
     "workspace.owner_cannot_leave":
       "Owners cannot leave this workspace; ownership transfer is not available in this API.",
     "workspace.no_members": "No members found in this workspace.",

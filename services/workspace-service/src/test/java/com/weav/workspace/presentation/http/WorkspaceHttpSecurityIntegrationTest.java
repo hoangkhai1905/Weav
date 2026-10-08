@@ -18,7 +18,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -75,9 +78,42 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * PostgreSQL and Valkey are supplied by Testcontainers in the test environment.
  */
 @Testcontainers
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, WorkspaceHttpSecurityIntegrationTest.ShutdownFixture.class})
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class WorkspaceHttpSecurityIntegrationTest {
+
+    /** W6-D2: stands in for the Workflow Service pause-all call of DELETE /workspaces/{id}. */
+    @TestConfiguration(proxyBeanMethods = false)
+    static class ShutdownFixture {
+        static final java.util.concurrent.atomic.AtomicInteger CALLS = new java.util.concurrent.atomic.AtomicInteger();
+        static final AtomicBoolean UNAVAILABLE = new AtomicBoolean();
+        /** Makes the outbox append of workspace.deleted fail, i.e. the final delete transaction. */
+        static final AtomicBoolean FAIL_DELETED_EVENT = new AtomicBoolean();
+
+        @Bean
+        @Primary
+        com.weav.workspace.application.port.out.NotificationOutboxPort fixtureOutbox(
+                com.weav.workspace.infrastructure.persistence.notification.JdbcNotificationOutboxAdapter real) {
+            return event -> {
+                if (FAIL_DELETED_EVENT.get() && "workspace.deleted".equals(event.eventType())) {
+                    throw new IllegalStateException("synthetic outbox failure");
+                }
+                real.append(event);
+            };
+        }
+
+        @Bean
+        @Primary
+        com.weav.workspace.application.port.out.WorkflowShutdownPort fixtureWorkflowShutdown() {
+            return workspaceId -> {
+                CALLS.incrementAndGet();
+                if (UNAVAILABLE.get()) {
+                    throw new com.weav.workspace.domain.exception.DependencyUnavailableException();
+                }
+                return new com.weav.workspace.application.port.out.WorkflowShutdownPort.PauseAllResult(0, 0, 0, 0);
+            };
+        }
+    }
 
     private static final String DIRECTORY_KEY = "test-directory-key";
     private static final String WORKSPACE_KEY = "test-workspace-key-0123456789-abcdefghij";
@@ -157,6 +193,9 @@ class WorkspaceHttpSecurityIntegrationTest {
 
     @BeforeEach
     void seedWorkspace() {
+        ShutdownFixture.CALLS.set(0);
+        ShutdownFixture.UNAVAILABLE.set(false);
+        ShutdownFixture.FAIL_DELETED_EVENT.set(false);
         identityAvailable.set(true);
         identityFailureMode.set(IdentityFailureMode.AVAILABLE);
         identityTimeoutRelease.get().countDown();
@@ -424,6 +463,178 @@ class WorkspaceHttpSecurityIntegrationTest {
         assertErrorResponse(memberRename, "FORBIDDEN");
         assertEquals(200, ownerRename.statusCode());
         assertTrue(ownerRename.body().contains("\"name\":\"Renamed over HTTP\""));
+    }
+
+    @Test
+    void deleteIsOwnerOnlyNeedsTheTypedNameAndHidesTheWorkspaceEverywhere() throws Exception {
+        UUID workspaceId = workspace.getId();
+        String path = "/workspaces/" + workspaceId;
+        String name = workspace.getName();
+        UUID connectionId = UUID.randomUUID();
+        jdbcTemplate.update("insert into workspace.connections (id, workspace_id, created_by, name, name_normalized, "
+                + "provider, auth_type, status, config, created_at, updated_at) values "
+                + "(?, ?, ?, 'Bot', 'bot', 'HTTP', 'API_KEY', 'ACTIVE', '{}'::jsonb, now(), now())",
+                connectionId, workspaceId, ownerId);
+        jdbcTemplate.update("insert into workspace.credentials (id, connection_id, encrypted_payload, created_at, "
+                + "updated_at) values (?, ?, ?, now(), now())",
+                UUID.randomUUID(), connectionId, new byte[] {1, 2, 3});
+        assertEquals(200, request("GET", accessPath(memberId), null, WORKSPACE_KEY, null).statusCode());
+        assertTrue(redis.hasKey(authorizationCacheKey(workspaceId, memberId)));
+
+        HttpResponse<String> byMember = request("DELETE", path, memberId, null, "{\"name\":\"" + name + "\"}");
+        HttpResponse<String> wrongName = request("DELETE", path, ownerId, null, "{\"name\":\"nope\"}");
+        HttpResponse<String> blankName = request("DELETE", path, ownerId, null, "{\"name\":\"\"}");
+        HttpResponse<String> outsider = request("DELETE", path, outsiderId, null, "{\"name\":\"" + name + "\"}");
+
+        assertEquals(403, byMember.statusCode());
+        assertEquals(400, wrongName.statusCode());
+        assertEquals(400, blankName.statusCode());
+        assertEquals(404, outsider.statusCode());
+        assertEquals(0, ShutdownFixture.CALLS.get(), "no workflow is touched before the request is authorized");
+
+        HttpResponse<String> deleted = request(
+                "DELETE", path, ownerId, null, "{\"name\":\"" + name.toUpperCase() + "\"}");
+
+        assertEquals(204, deleted.statusCode());
+        assertEquals(2, ShutdownFixture.CALLS.get(), "pause-all before the commit and once more after it");
+        assertEquals(404, request("GET", path, ownerId, null, null).statusCode());
+        assertEquals(404, request("GET", path, memberId, null, null).statusCode());
+        assertFalse(request("GET", "/workspaces?size=100", memberId, null, null).body().contains(workspaceId.toString()));
+        assertFalse(request("GET", "/workspaces?size=100", ownerId, null, null).body().contains(workspaceId.toString()));
+        assertEquals(404, request("GET", accessPath(memberId), null, WORKSPACE_KEY, null).statusCode());
+        assertFalse(redis.hasKey(authorizationCacheKey(workspaceId, memberId)));
+        assertEquals(404, request("POST", "/internal/workspaces/" + workspaceId + "/connections/" + connectionId
+                + "/resolve", null, WORKSPACE_KEY, null).statusCode());
+        assertEquals(404, request("DELETE", path, ownerId, null, "{\"name\":\"" + name + "\"}").statusCode());
+
+        assertEquals("DELETED", jdbcTemplate.queryForObject(
+                "select status from workspace.workspaces where id = ?", String.class, workspaceId));
+        assertEquals(ownerId, jdbcTemplate.queryForObject(
+                "select deleted_by from workspace.workspaces where id = ?", UUID.class, workspaceId));
+        assertEquals("DISABLED", jdbcTemplate.queryForObject(
+                "select status from workspace.connections where id = ?", String.class, connectionId));
+        assertEquals(0, count("select count(*) from workspace.credentials where connection_id = ?", connectionId));
+        List<String> payloads = jdbcTemplate.queryForList(
+                "select payload::text from workspace.notification_outbox where event_type = 'workspace.deleted' "
+                        + "and payload->>'workspaceId' = ?", String.class, workspaceId.toString());
+        assertEquals(1, payloads.size());
+        JsonNode recipients = objectMapper.readTree(payloads.getFirst()).path("recipientUserIds");
+        assertEquals(1, recipients.size());
+        assertEquals(memberId.toString(), recipients.get(0).asText());
+
+        // the name can be used again by the same owner
+        HttpResponse<String> recreated = request("POST", "/workspaces", ownerId, null, "{\"name\":\"" + name + "\"}");
+        assertEquals(201, recreated.statusCode());
+        assertEquals(409, request("POST", "/workspaces", ownerId, null, "{\"name\":\"" + name + "\"}").statusCode());
+    }
+
+    @Test
+    void everyWorkspaceRouteIsNotFoundForMembersAfterTheWorkspaceIsDeleted() throws Exception {
+        UUID workspaceId = workspace.getId();
+        String base = "/workspaces/" + workspaceId;
+        UUID connectionId = UUID.randomUUID();
+        jdbcTemplate.update("insert into workspace.connections (id, workspace_id, created_by, name, name_normalized, "
+                + "provider, auth_type, status, config, created_at, updated_at) values "
+                + "(?, ?, ?, 'Bot', 'bot', 'HTTP', 'API_KEY', 'ACTIVE', '{}'::jsonb, now(), now())",
+                connectionId, workspaceId, ownerId);
+        assertEquals(204, request("DELETE", base, ownerId, null,
+                "{\"name\":\"" + workspace.getName() + "\"}").statusCode());
+
+        String internal = "/internal/workspaces/" + workspaceId + "/connections/" + connectionId;
+        List<List<Object>> routes = List.of(
+                List.of("GET", base + "/members", memberId, "", ""),
+                List.of("GET", base + "/members", ownerId, "", ""),
+                List.of("PATCH", base, ownerId, "", "{\"name\":\"Renamed\"}"),
+                List.of("GET", base + "/connections", memberId, "", ""),
+                List.of("GET", base + "/connections/" + connectionId, ownerId, "", ""),
+                List.of("POST", base + "/connections", ownerId, "",
+                        "{\"name\":\"New\",\"provider\":\"HTTP\",\"authType\":\"NONE\"}"),
+                List.of("DELETE", base + "/members/me", memberId, "", ""),
+                List.of("POST", internal + "/authorize-attachment", ownerId /* ignored */, WORKSPACE_KEY,
+                        "{\"userId\":\"" + ownerId + "\"}"),
+                List.of("POST", internal + "/auth-failure", ownerId /* ignored */, WORKSPACE_KEY,
+                        "{\"failureCode\":\"AUTHENTICATION_REJECTED\"}"),
+                List.of("POST", internal + "/resolve", ownerId /* ignored */, WORKSPACE_KEY, ""));
+        for (List<Object> route : routes) {
+            String key = (String) route.get(3);
+            boolean isInternal = !key.isEmpty();
+            String body = (String) route.get(4);
+            HttpResponse<String> response = request(
+                    (String) route.get(0), (String) route.get(1),
+                    isInternal ? null : (UUID) route.get(2), isInternal ? key : null,
+                    body.isEmpty() ? null : body);
+            assertEquals(404, response.statusCode(), route.get(0) + " " + route.get(1));
+        }
+        assertEquals(0, count("select count(*) from workspace.connections where workspace_id = ? and status = 'ACTIVE'",
+                workspaceId));
+        assertEquals(1, count("select count(*) from workspace.connections where workspace_id = ?", workspaceId));
+    }
+
+    @Test
+    void aFailingFinalTransactionLeavesTheWorkspaceConnectionsAndCredentialsUntouched() throws Exception {
+        UUID workspaceId = workspace.getId();
+        UUID connectionId = UUID.randomUUID();
+        jdbcTemplate.update("insert into workspace.connections (id, workspace_id, created_by, name, name_normalized, "
+                + "provider, auth_type, status, config, created_at, updated_at) values "
+                + "(?, ?, ?, 'Bot', 'bot', 'HTTP', 'API_KEY', 'ACTIVE', '{}'::jsonb, now(), now())",
+                connectionId, workspaceId, ownerId);
+        jdbcTemplate.update("insert into workspace.credentials (id, connection_id, encrypted_payload, created_at, "
+                + "updated_at) values (?, ?, ?, now(), now())", UUID.randomUUID(), connectionId, new byte[] {1, 2, 3});
+        ShutdownFixture.FAIL_DELETED_EVENT.set(true);
+
+        HttpResponse<String> response = request("DELETE", "/workspaces/" + workspaceId, ownerId, null,
+                "{\"name\":\"" + workspace.getName() + "\"}");
+
+        assertTrue(response.statusCode() >= 500, "status " + response.statusCode());
+        assertEquals(1, ShutdownFixture.CALLS.get(), "the post-commit second pause-all must not run after a rollback");
+        assertEquals("ACTIVE", jdbcTemplate.queryForObject(
+                "select status from workspace.workspaces where id = ?", String.class, workspaceId));
+        assertEquals("ACTIVE", jdbcTemplate.queryForObject(
+                "select status from workspace.connections where id = ?", String.class, connectionId));
+        assertEquals(1, count("select count(*) from workspace.credentials where connection_id = ?", connectionId));
+        assertEquals(0, count("select count(*) from workspace.notification_outbox "
+                + "where event_type = 'workspace.deleted' and payload->>'workspaceId' = ?", workspaceId.toString()));
+        assertEquals(200, request("GET", "/workspaces/" + workspaceId, ownerId, null, null).statusCode());
+    }
+
+    @Test
+    void aReplayedIdempotentCreateNeverReturnsTheDeletedWorkspace() throws Exception {
+        String key = "replay-key-" + UUID.randomUUID();
+        HttpResponse<String> created = requestWithIdempotencyKey("POST", "/workspaces", ownerId, key,
+                "{\"name\":\"Replay " + key + "\"}");
+        assertEquals(201, created.statusCode());
+        String id = json(created).path("id").asText();
+        String name = json(created).path("name").asText();
+        assertEquals(204, request("DELETE", "/workspaces/" + id, ownerId, null, "{\"name\":\"" + name + "\"}")
+                .statusCode());
+
+        HttpResponse<String> replay = requestWithIdempotencyKey("POST", "/workspaces", ownerId, key,
+                "{\"name\":\"Replay " + key + "\"}");
+
+        assertFalse(replay.body().contains(id), replay.body());
+        assertTrue(replay.statusCode() >= 400, "status " + replay.statusCode());
+    }
+
+    @Test
+    void deleteAbortsWith503AndChangesNothingWhenWorkflowsCannotBePaused() throws Exception {
+        String path = "/workspaces/" + workspace.getId();
+        ShutdownFixture.UNAVAILABLE.set(true);
+
+        HttpResponse<String> response = request(
+                "DELETE", path, ownerId, null, "{\"name\":\"" + workspace.getName() + "\"}");
+
+        assertEquals(503, response.statusCode());
+        assertErrorResponse(response, "DEPENDENCY_UNAVAILABLE");
+        assertEquals(200, request("GET", path, ownerId, null, null).statusCode());
+        assertEquals("ACTIVE", jdbcTemplate.queryForObject(
+                "select status from workspace.workspaces where id = ?", String.class, workspace.getId()));
+        assertEquals(0, count("select count(*) from workspace.notification_outbox "
+                + "where event_type = 'workspace.deleted' and payload->>'workspaceId' = ?",
+                workspace.getId().toString()));
+
+        ShutdownFixture.UNAVAILABLE.set(false);
+        assertEquals(204, request("DELETE", path, ownerId, null,
+                "{\"name\":\"" + workspace.getName() + "\"}").statusCode());
     }
 
     @Test
@@ -875,6 +1086,18 @@ class WorkspaceHttpSecurityIntegrationTest {
             String body) throws Exception {
         String authorization = subject == null ? null : "Bearer " + signedToken(subject);
         return requestWithRawAuthorization(method, path, authorization, serviceKey, body);
+    }
+
+    private HttpResponse<String> requestWithIdempotencyKey(
+            String method, String path, UUID subject, String idempotencyKey, String body) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/workspace" + path))
+                .timeout(Duration.ofSeconds(10))
+                .header("Authorization", "Bearer " + signedToken(subject))
+                .header("Idempotency-Key", idempotencyKey)
+                .header("Content-Type", "application/json")
+                .method(method, HttpRequest.BodyPublishers.ofString(body));
+        return HTTP.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> requestWithCorrelation(

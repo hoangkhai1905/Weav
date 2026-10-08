@@ -34,6 +34,7 @@
         "workspace.member_removed",
         "workspace.member_permissions_updated",
         "workspace.member_left",
+        "workspace.deleted",
         "connection.connected",
         "connection.disabled",
         "connection.invalid",
@@ -389,6 +390,27 @@
                   "pattern": "\\S"
                 },
                 "subjectUserId": { "type": "string", "format": "uuid" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workspace.deleted" },
+            "producer": { "const": "workspace-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "WORKSPACE" } } },
+            "data": {
+              "type": "object",
+              "required": ["workspaceName"],
+              "properties": {
+                "workspaceName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                }
               },
               "additionalProperties": false
             }

@@ -100,6 +100,7 @@ const v2EventTypes = [
   'workspace.member_removed',
   'workspace.member_permissions_updated',
   'workspace.member_left',
+  'workspace.deleted',
   'connection.connected',
   'connection.disabled',
   'connection.invalid',
@@ -360,7 +361,7 @@ test(
           await until(
             async () => (await repo.unreadCount(e.payload.userId)) === 2,
           );
-          assert.equal(v2EventTypes.length, 19);
+          assert.equal(v2EventTypes.length, 20);
           for (const eventType of v2EventTypes) {
             const v2 = v2EventFor(eventType);
             v2Events.push(v2);

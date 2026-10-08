@@ -3,18 +3,21 @@ package com.weav.workspace.presentation.http;
 import com.weav.workspace.application.dto.CreateWorkspaceCommand;
 import com.weav.workspace.application.dto.WorkspaceResponse;
 import com.weav.workspace.application.usecase.CreateWorkspaceUseCase;
+import com.weav.workspace.application.usecase.DeleteWorkspaceUseCase;
 import com.weav.workspace.application.usecase.GetWorkspaceUseCase;
 import com.weav.workspace.application.usecase.ListWorkspacesUseCase;
 import com.weav.workspace.application.usecase.RenameWorkspaceUseCase;
 import com.weav.workspace.domain.model.PageResult;
 import com.weav.workspace.infrastructure.security.JwtActor;
 import com.weav.workspace.presentation.http.request.CreateWorkspaceRequest;
+import com.weav.workspace.presentation.http.request.DeleteWorkspaceRequest;
 import com.weav.workspace.presentation.http.request.RenameWorkspaceRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,16 +38,19 @@ public final class WorkspaceController {
     private final ListWorkspacesUseCase listWorkspaces;
     private final GetWorkspaceUseCase getWorkspace;
     private final RenameWorkspaceUseCase renameWorkspace;
+    private final DeleteWorkspaceUseCase deleteWorkspace;
 
     public WorkspaceController(
             CreateWorkspaceUseCase createWorkspace,
             ListWorkspacesUseCase listWorkspaces,
             GetWorkspaceUseCase getWorkspace,
-            RenameWorkspaceUseCase renameWorkspace) {
+            RenameWorkspaceUseCase renameWorkspace,
+            DeleteWorkspaceUseCase deleteWorkspace) {
         this.createWorkspace = createWorkspace;
         this.listWorkspaces = listWorkspaces;
         this.getWorkspace = getWorkspace;
         this.renameWorkspace = renameWorkspace;
+        this.deleteWorkspace = deleteWorkspace;
     }
 
     @PostMapping
@@ -84,5 +90,15 @@ public final class WorkspaceController {
             @PathVariable UUID workspaceId,
             @Valid @RequestBody RenameWorkspaceRequest request) {
         return renameWorkspace.execute(JwtActor.userId(jwt), workspaceId, request.name());
+    }
+
+    /** Owner only; the body carries the workspace name as the typed confirmation. */
+    @DeleteMapping("/{workspaceId}")
+    public ResponseEntity<Void> delete(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID workspaceId,
+            @Valid @RequestBody DeleteWorkspaceRequest request) {
+        deleteWorkspace.execute(JwtActor.userId(jwt), workspaceId, request.name());
+        return ResponseEntity.noContent().build();
     }
 }

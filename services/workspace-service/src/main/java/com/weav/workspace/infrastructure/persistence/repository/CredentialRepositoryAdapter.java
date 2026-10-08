@@ -52,6 +52,11 @@ public class CredentialRepositoryAdapter implements CredentialRepository {
         repository.deleteByConnectionId(connectionId);
     }
 
+    @Override
+    public int deleteAllByWorkspaceId(UUID workspaceId) {
+        return repository.deleteAllByWorkspaceId(workspaceId);
+    }
+
     private Credential toDomain(CredentialJpaEntity entity) {
         return new Credential(
                 entity.getId(),

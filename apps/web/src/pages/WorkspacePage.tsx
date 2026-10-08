@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
@@ -27,6 +27,7 @@ import { useWorkspaceStore } from '../store/useWorkspaceStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { ConfirmButton } from '../components/common/ConfirmButton';
+import { TypedConfirmDialog } from '../components/common/TypedConfirmDialog';
 import { buttonPress, pageVariants, reducedMotionVariants, staggerContainer, staggerItem } from '../lib/motion';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
 import { showSuccessToast } from '../lib/feedback/toast';
@@ -189,6 +190,10 @@ export function WorkspacePage() {
   const [createError, setCreateError] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameError, setRenameError] = useState('');
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const pageMotion = prefersReducedMotion ? reducedMotionVariants : pageVariants;
   const listMotion = prefersReducedMotion ? reducedMotionVariants : staggerContainer;
@@ -416,6 +421,45 @@ export function WorkspacePage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!activeWorkspace || currentMember?.role !== 'OWNER' || !userId || isDeleting) return;
+    const mutationUserId = userId;
+    const workspaceId = activeWorkspace.id;
+    const mutationSession = captureNotificationSession();
+    setIsDeleting(true);
+    setDeleteError('');
+    try {
+      await workspaceApi.deleteWorkspace(workspaceId, activeWorkspace.name);
+      if (!isCurrentUser(mutationUserId) || !isCurrentNotificationSession(mutationSession)) return;
+      // Close first so the dialog never shows the next workspace's name once the store switches.
+      setDeleteOpen(false);
+      showSuccessToast('toast.workspace.deleted', mutationSession);
+      queryClient.removeQueries({ queryKey: workspaceKeys.members(mutationUserId, workspaceId) });
+      queryClient.removeQueries({ queryKey: workspaceKeys.detail(mutationUserId, workspaceId) });
+      removeWorkspace(workspaceId);
+      await queryClient.invalidateQueries({ queryKey: workspaceKeys.list(mutationUserId) });
+      navigate('/workspace');
+    } catch (error) {
+      if (isCurrentUser(mutationUserId) && isCurrentNotificationSession(mutationSession)) {
+        if (error instanceof WorkspaceApiError && error.status === 404) {
+          // Already gone (deleted elsewhere): behave as if the delete succeeded.
+          setDeleteOpen(false);
+          removeWorkspace(workspaceId, getWorkspaceErrorMessage(error, t));
+          await queryClient.invalidateQueries({ queryKey: workspaceKeys.list(mutationUserId) });
+        } else if (error instanceof WorkspaceApiError && error.status === 400) {
+          setDeleteError(t('workspace.delete.error_name'));
+        } else if (error instanceof WorkspaceApiError && error.status === 503) {
+          setDeleteError(t('workspace.delete.error_unavailable'));
+        } else {
+          setDeleteError(getWorkspaceErrorMessage(error, t));
+        }
+      }
+    } finally {
+      setDeleteOpen(false);
+      setIsDeleting(false);
+    }
+  };
+
   const handleLeave = async () => {
     if (!activeWorkspaceId || currentMember?.role !== 'MEMBER' || memberMutationKey) return;
     const mutationUserId = userId;
@@ -610,6 +654,51 @@ export function WorkspacePage() {
                 error={renameError}
                 onSubmit={(name) => void handleRename(name)}
               />
+          </motion.section>
+          )}
+          {tab === 'settings' && currentMember?.role === 'OWNER' && (
+          <motion.section
+            variants={itemMotion}
+            data-testid="workspace-danger-zone"
+            aria-labelledby="workspace-danger-title"
+            className="rounded-2xl border border-err-border bg-card p-5"
+          >
+            <h2 id="workspace-danger-title" className="text-sm font-bold text-err">{t('workspace.delete.zone_title')}</h2>
+            <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-text-2">{t('workspace.delete.zone_text')}</p>
+              <button
+                type="button"
+                data-testid="workspace-delete-open"
+                disabled={isDeleting}
+                onClick={() => { setDeleteError(''); setDeleteOpen(true); }}
+                className="inline-flex shrink-0 items-center justify-center rounded-xl border border-err-border bg-err-bg px-3.5 py-2 text-xs font-bold text-err transition-colors hover:bg-err-bg disabled:cursor-wait disabled:opacity-60"
+              >
+                {t('workspace.delete.action')}
+              </button>
+            </div>
+            {deleteError && <p data-testid="workspace-delete-error" className="mt-2 text-xs text-err" role="alert">{deleteError}</p>}
+            <TypedConfirmDialog
+              isOpen={deleteOpen}
+              title={t('workspace.delete.confirm_title').replace('{name}', activeWorkspace.name)}
+              consequences={[
+                t('workspace.delete.consequence_workflows'),
+                t('workspace.delete.consequence_connections'),
+                t('workspace.delete.consequence_members'),
+              ]}
+              phrase={activeWorkspace.name}
+              phraseLabel={
+                <>
+                  {t('workspace.delete.type_prefix')} <span className="font-mono text-foreground">{activeWorkspace.name}</span>{' '}
+                  {t('workspace.delete.type_suffix')}
+                </>
+              }
+              confirmText={t('workspace.delete.action')}
+              cancelText={t('workspace.cancel')}
+              closeLabel={t('workspace.delete.close')}
+              loading={isDeleting}
+              onClose={() => setDeleteOpen(false)}
+              onConfirm={handleDelete}
+            />
           </motion.section>
           )}
           {tab === 'members' && (

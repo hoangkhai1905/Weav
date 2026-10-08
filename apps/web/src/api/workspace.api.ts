@@ -505,4 +505,26 @@ export const workspaceApi = {
     const members = getStorage<WorkspaceMember[]>(STORAGE_KEYS.MEMBERS, []);
     setStorage(STORAGE_KEYS.MEMBERS, members.filter((member) => member.id !== currentUserId));
   },
+
+  /** Owner only. `name` is the typed confirmation; the server compares it with the stored name. */
+  async deleteWorkspace(workspaceId: string, name: string): Promise<void> {
+    if (!isWorkspaceMockMode) {
+      await requestWorkspace<void>({
+        method: 'DELETE',
+        url: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}`,
+        data: { name },
+        // The server first pauses every workflow, which can take longer than the default 10 s.
+        timeout: 40000,
+      });
+      return;
+    }
+
+    await delay(200);
+    const workspace = mockWorkspaces.find((item) => item.id === workspaceId);
+    if (!workspace) throw new WorkspaceApiError(404, 'WORKSPACE_NOT_FOUND', tr('msg.workspace_not_found'));
+    if (workspace.name.trim().toLowerCase() !== name.trim().toLowerCase()) {
+      throw new WorkspaceApiError(400, 'INVALID_REQUEST', tr('msg.please_check_the_workspace_details_and_try'));
+    }
+    mockWorkspaces = mockWorkspaces.filter((item) => item.id !== workspaceId);
+  },
 };
