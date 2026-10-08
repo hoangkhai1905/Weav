@@ -39,6 +39,14 @@ type AuthMode = 'none' | 'optional' | 'required';
 // Identity accepts 2 MiB avatars; allow multipart framing overhead on top.
 const AVATAR_MAX_REQUEST_BYTES = 2 * 1024 * 1024 + 64 * 1024;
 const uuidSchema = z.string().uuid();
+// Mobile Google sign-in exchange: same formats Identity enforces (43-char handles, RFC 7636 verifier).
+const mobileOAuthExchangeSchema = z
+  .object({
+    transactionId: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    handoffCode: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    codeVerifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/),
+  })
+  .strict();
 
 function isAsyncIterable(value: unknown): boolean {
   return (
@@ -388,6 +396,26 @@ export class IdentityAuthProxyController {
     @Body() body: unknown,
   ) {
     return this.proxy.forward(req, reply, '/auth/logout', body);
+  }
+
+  // Only the exchange goes through the gateway: the browser legs (mobile start, callback) stay on Identity.
+  @Post('oauth/mobile/exchange')
+  @AuthPolicy('public')
+  mobileOAuthExchange(
+    @Req() req: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const parsed = mobileOAuthExchangeSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException('Request validation failed');
+    }
+    return this.proxy.forward(
+      req,
+      reply,
+      '/auth/oauth/mobile/exchange',
+      parsed.data,
+    );
   }
 
   @Get('me')

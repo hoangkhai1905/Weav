@@ -54,6 +54,7 @@ services:
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8081/auth/oauth/google/callback}
       OAUTH_WEB_RETURN_TARGET_URI: ${OAUTH_WEB_RETURN_TARGET_URI:-http://localhost:5173/auth/callback}
       OAUTH_WEB_ALLOWED_ORIGIN: ${OAUTH_WEB_ALLOWED_ORIGIN:-http://localhost:5173}
+      OAUTH_MOBILE_RETURN_TARGET_URI: ${OAUTH_MOBILE_RETURN_TARGET_URI:-}
 
       # Valkey OTP state
       VALKEY_URL: ${VALKEY_URL}

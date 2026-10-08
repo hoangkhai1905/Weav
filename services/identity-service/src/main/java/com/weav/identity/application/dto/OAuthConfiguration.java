@@ -2,6 +2,8 @@ package com.weav.identity.application.dto;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -13,7 +15,7 @@ import java.util.Set;
  */
 public record OAuthConfiguration(
         boolean enabled,
-        Optional<OAuthClientRegistration> webClient,
+        Map<String, OAuthClientRegistration> clients,
         Optional<URI> issuerUri,
         Optional<OAuthSecret> clientSecret,
         Duration stateTtl,
@@ -33,7 +35,12 @@ public record OAuthConfiguration(
     public static final URI GOOGLE_ISSUER_URI = URI.create("https://accounts.google.com");
 
     public OAuthConfiguration {
-        webClient = Objects.requireNonNull(webClient, "webClient must not be null");
+        clients = Map.copyOf(Objects.requireNonNull(clients, "clients must not be null"));
+        clients.forEach((id, registration) -> {
+            if (!id.equals(registration.clientId())) {
+                throw new IllegalArgumentException("client registration key must match its clientId");
+            }
+        });
         issuerUri = Objects.requireNonNull(issuerUri, "issuerUri must not be null");
         clientSecret = Objects.requireNonNull(clientSecret, "clientSecret must not be null");
         requirePositive(stateTtl, "stateTtl");
@@ -47,21 +54,35 @@ public record OAuthConfiguration(
         allowedHostedDomains = allowedHostedDomains == null
                 ? Set.of()
                 : Set.copyOf(allowedHostedDomains);
-        if (enabled && (webClient.isEmpty() || issuerUri.isEmpty() || clientSecret.isEmpty())) {
+        if (enabled && (!clients.containsKey(OAuthClientRegistration.WEB)
+                || issuerUri.isEmpty() || clientSecret.isEmpty())) {
             throw new IllegalArgumentException("enabled OAuth configuration is incomplete");
         }
         if (enabled && !GOOGLE_ISSUER_URI.equals(issuerUri.orElseThrow())) {
             throw new IllegalArgumentException("Google OAuth issuer must be https://accounts.google.com");
         }
-        if (!enabled && (webClient.isPresent() || issuerUri.isPresent() || clientSecret.isPresent())) {
+        if (!enabled && (!clients.isEmpty() || issuerUri.isPresent() || clientSecret.isPresent())) {
             throw new IllegalArgumentException("disabled OAuth configuration must not contain provider values");
         }
+    }
+
+    /** The registration for a logical client id ({@code web} or {@code mobile}), if configured. */
+    public Optional<OAuthClientRegistration> client(String clientId) {
+        return Optional.ofNullable(clients.get(clientId));
+    }
+
+    public Optional<OAuthClientRegistration> webClient() {
+        return client(OAuthClientRegistration.WEB);
+    }
+
+    public Optional<OAuthClientRegistration> mobileClient() {
+        return client(OAuthClientRegistration.MOBILE);
     }
 
     public static OAuthConfiguration disabled() {
         return new OAuthConfiguration(
                 false,
-                Optional.empty(),
+                Map.of(),
                 Optional.empty(),
                 Optional.empty(),
                 Duration.ofMinutes(10),
@@ -86,9 +107,39 @@ public record OAuthConfiguration(
             CookiePolicy cookies,
             Set<String> allowedHostedDomains
     ) {
+        return enabled(
+                webClient,
+                Optional.empty(),
+                issuerUri,
+                clientSecret,
+                stateTtl,
+                handoffTtl,
+                csrfTtl,
+                providerTimeout,
+                maxHandoffProofFailures,
+                cookies,
+                allowedHostedDomains);
+    }
+
+    public static OAuthConfiguration enabled(
+            OAuthClientRegistration webClient,
+            Optional<OAuthClientRegistration> mobileClient,
+            URI issuerUri,
+            OAuthSecret clientSecret,
+            Duration stateTtl,
+            Duration handoffTtl,
+            Duration csrfTtl,
+            Duration providerTimeout,
+            int maxHandoffProofFailures,
+            CookiePolicy cookies,
+            Set<String> allowedHostedDomains
+    ) {
+        Map<String, OAuthClientRegistration> clients = new LinkedHashMap<>();
+        clients.put(webClient.clientId(), webClient);
+        mobileClient.ifPresent(mobile -> clients.put(mobile.clientId(), mobile));
         return new OAuthConfiguration(
                 true,
-                Optional.of(webClient),
+                clients,
                 Optional.of(issuerUri),
                 Optional.of(clientSecret),
                 stateTtl,
@@ -104,7 +155,7 @@ public record OAuthConfiguration(
     @Override
     public String toString() {
         return "OAuthConfiguration[enabled=" + enabled
-                + ", webClient=" + webClient.map(OAuthClientRegistration::clientId).orElse("<disabled>")
+                + ", clients=" + (clients.isEmpty() ? "<disabled>" : clients.keySet().stream().sorted().toList())
                 + ", issuerUri=" + issuerUri.map(URI::toString).orElse("<disabled>")
                 + ", clientSecret=<redacted>"
                 + ", stateTtl=" + stateTtl
