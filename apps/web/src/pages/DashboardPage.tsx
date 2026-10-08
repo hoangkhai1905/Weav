@@ -2,27 +2,21 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Plus, Play, RotateCw, Sparkles, ArrowRight, Activity, ShoppingCart, ArrowLeftRight, Headphones, Cloud } from 'lucide-react';
-import type { ExecutionDetail, WorkflowDefinition } from '../types/workflow.types';
+import type { WorkflowDefinition } from '../types/workflow.types';
 import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
 import { WorkflowActivityChart } from '../components/dashboard/WorkflowActivityChart';
 import { LiveExecutionPanel } from '../components/dashboard/LiveExecutionPanel';
 import { useI18nStore } from '../store/useI18nStore';
 import { tr } from '../lib/i18n/tr';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchRecentExecutions, fetchWorkflowList, workflowRunStatsKey } from '../lib/queries/workflows';
-import { statusBadgeClass, type StatusTone } from '../components/common/statusBadgeClass';
+import { fetchWorkflowList } from '../lib/queries/workflows';
+import { monitoringApi } from '../api/monitoring.api';
+import { runTone } from '../lib/monitoring/format';
+import { useWorkspaceStore } from '../store/useWorkspaceStore';
+import { statusBadgeClass } from '../components/common/statusBadgeClass';
 import { formatRelativeTime } from '../lib/relativeTime';
 import { FirstWorkspaceCard } from '../components/onboarding/FirstWorkspaceCard';
 import { useWorkspaceListContext } from '../hooks/useWorkspace';
-
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-
-function runTone(status: ExecutionDetail['status']): StatusTone {
-  if (status === 'SUCCESS') return 'ok';
-  if (status === 'FAILED') return 'err';
-  if (status === 'RUNNING' || status === 'QUEUED') return 'run';
-  return 'pause';
-}
 
 interface HttpDashboardContentProps {
   workflows: WorkflowDefinition[];
@@ -111,7 +105,7 @@ function DashboardQuickActions({ prefersReducedMotion }: DashboardQuickActionsPr
         </Link>
 
         <Link
-          to="/workflows"
+          to="/executions"
           className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-ok-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-run/30"
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-ok-bg text-ok transition-transform duration-200 group-hover:-translate-y-0.5">
@@ -135,28 +129,30 @@ function HttpDashboardContent({ workflows, isLoading, error, actionError, onRetr
   const locale = language === 'VI' ? 'vi-VN' : 'en-US';
   const publishedCount = workflows.filter((workflow) => workflow.status === 'PUBLISHED').length;
 
-  // Shares the Workflows page's cached runs (same key), so visiting both costs no extra requests.
-  const queryClient = useQueryClient();
-  const runsQuery = useQuery({
-    queryKey: workflowRunStatsKey(),
-    enabled: !isLoading && !error && workflows.some((workflow) => workflow.status !== 'DRAFT'),
-    staleTime: 60_000,
+  // Run numbers come from the workspace monitoring endpoints (one summary + one short recent-runs page), not from a
+  // per-workflow fan-out.
+  const workspaceId = useWorkspaceStore((state) => state.activeWorkspaceId) ?? 'active';
+  const summaryQuery = useQuery({
+    queryKey: ['monitoring', 'summary', workspaceId, 7],
+    enabled: !isLoading && !error,
+    staleTime: 30_000,
     retry: false,
-    queryFn: () => fetchRecentExecutions(queryClient),
-    select: (runs) => {
-      const weekAgo = Date.now() - WEEK_MS;
-      const lastWeek = runs.filter((run) => Date.parse(run.startedAt) >= weekAgo);
-      return {
-        runs7d: lastWeek.length,
-        failed7d: lastWeek.filter((run) => run.status === 'FAILED').length,
-        recent: [...runs].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)).slice(0, 6),
-      };
-    },
+    queryFn: () => monitoringApi.getSummary(7),
   });
-  const { runs7d = 0, failed7d = 0, recent: recentRuns = [] } = runsQuery.data ?? {};
-  const statValue = (value: string) => (runsQuery.isLoading ? '…' : runsQuery.isError ? '—' : value);
-  const failureRate = runs7d
-    ? `${((failed7d / runs7d) * 100).toLocaleString(locale, { maximumFractionDigits: 1 })}%`
+  const recentQuery = useQuery({
+    queryKey: ['monitoring', 'runs', workspaceId, 'dashboard'],
+    enabled: !isLoading && !error,
+    staleTime: 30_000,
+    retry: false,
+    queryFn: () => monitoringApi.listRuns({ page: 0, size: 6 }),
+  });
+  const runs7d = summaryQuery.data?.runs.total ?? 0;
+  const failed7d = summaryQuery.data?.runs.failed ?? 0;
+  const finished7d = (summaryQuery.data?.runs.success ?? 0) + failed7d;
+  const recentRuns = recentQuery.data?.items ?? [];
+  const statValue = (value: string) => (summaryQuery.isLoading ? '…' : summaryQuery.isError ? '—' : value);
+  const failureRate = finished7d
+    ? `${((failed7d / finished7d) * 100).toLocaleString(locale, { maximumFractionDigits: 1 })}%`
     : '—';
 
   if (isLoading) {
@@ -262,28 +258,29 @@ function HttpDashboardContent({ workflows, isLoading, error, actionError, onRetr
       )}
 
       <div data-testid="dashboard-recent-runs" className="overflow-hidden rounded-lg border border-border bg-card shadow-2xs">
-        <div className="border-b border-border px-4 py-3">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-sm font-bold text-foreground">{t('dashboard.recent_runs')}</h2>
+          <Link to="/executions" className="text-xs font-semibold text-run">{t('dashboard.monitoring_link')}</Link>
         </div>
-        {runsQuery.isError ? (
+        {recentQuery.isError ? (
           <p className="p-6 text-sm text-muted-foreground">{t('dashboard.execution_data_unavailable')}</p>
-        ) : runsQuery.isLoading ? (
+        ) : recentQuery.isLoading ? (
           <p className="p-6 text-sm text-muted-foreground">{t('dashboard.real_data_loading')}</p>
         ) : recentRuns.length === 0 ? (
           <p className="p-6 text-sm text-muted-foreground">{t('dashboard.no_runs_yet')}</p>
         ) : (
           <ul className="divide-y divide-border">
             {recentRuns.map((run) => (
-              <li key={run.id}>
+              <li key={run.executionId}>
                 <Link
-                  to={`/workflows/${encodeURIComponent(run.workflowId)}/executions?run=${encodeURIComponent(run.id)}`}
+                  to={`/workflows/${encodeURIComponent(run.workflowId)}/executions?run=${encodeURIComponent(run.executionId)}`}
                   aria-label={`${t('dashboard.view_run')}: ${run.workflowName}`}
                   className="flex items-center gap-3 px-4 py-2.5 text-xs transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 >
-                  <span className={`${statusBadgeClass(runTone(run.status))} shrink-0`}>{t(`status.${run.status.toLowerCase()}`)}</span>
+                  <span className={`${statusBadgeClass(runTone(run.status))} shrink-0`}>{t(`monitoring.status.${run.status.toLowerCase()}`)}</span>
                   <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{run.workflowName}</span>
-                  <time dateTime={run.startedAt} title={new Date(run.startedAt).toLocaleString(locale)} className="shrink-0 tabular-nums text-muted-foreground">
-                    {formatRelativeTime(run.startedAt, locale)}
+                  <time dateTime={run.startedAt ?? run.createdAt} title={new Date(run.startedAt ?? run.createdAt).toLocaleString(locale)} className="shrink-0 tabular-nums text-muted-foreground">
+                    {formatRelativeTime(run.startedAt ?? run.createdAt, locale)}
                   </time>
                 </Link>
               </li>

@@ -34,4 +34,37 @@ class OAuthUriPolicyTest {
         assertEquals("https://app.example.com:8443", OAuthUriPolicy.originOf(
                 URI.create("https://app.example.com:8443/auth/callback")));
     }
+
+    @Test
+    void mobileReturnTargetAcceptsOnlyTheWeavScheme() {
+        URI target = OAuthUriPolicy.requireMobileReturnTarget("weav://auth/callback", "mobileReturn");
+
+        assertEquals("weav", target.getScheme());
+        assertEquals("/callback", target.getPath());
+        assertEquals("weav://auth/callback",
+                OAuthUriPolicy.requireMobileReturnTarget("WEAV://auth/callback", "mobileReturn").toString());
+        for (String rejected : new String[] {
+                "https://app.example.com/auth/callback",
+                "http://localhost:5173/auth/callback",
+                "mobile://auth/callback",
+                "javascript:alert(1)",
+                "data:text/html,x",
+                "weav://user:pw@auth/callback",
+                "weav://auth/callback?x=1",
+                "weav://auth/callback#frag",
+                "weav://*/callback",
+                "weav://auth",
+                "weav:auth/callback",
+                "/callback",
+                " "}) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> OAuthUriPolicy.requireMobileReturnTarget(rejected, "mobileReturn"), rejected);
+        }
+    }
+
+    @Test
+    void webRedirectRulesStillRejectTheCustomScheme() {
+        assertThrows(IllegalArgumentException.class,
+                () -> OAuthUriPolicy.requireRedirectUri("weav://auth/callback", "redirectUri"));
+    }
 }

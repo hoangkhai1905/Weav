@@ -14,6 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -37,6 +38,7 @@ public class OAuthProperties {
     private int maxHandoffProofFailures = 5;
     private GoogleProperties google = new GoogleProperties();
     private WebProperties web = new WebProperties();
+    private MobileProperties mobile = new MobileProperties();
 
     public String getEnabled() {
         return enabled;
@@ -102,6 +104,14 @@ public class OAuthProperties {
         this.web = Objects.requireNonNull(web, "web must not be null");
     }
 
+    public MobileProperties getMobile() {
+        return mobile;
+    }
+
+    public void setMobile(MobileProperties mobile) {
+        this.mobile = Objects.requireNonNull(mobile, "mobile must not be null");
+    }
+
     public boolean isEnabled() {
         String configured = enabled == null ? "" : enabled.trim();
         if ("false".equalsIgnoreCase(configured)) {
@@ -158,16 +168,28 @@ public class OAuthProperties {
 
         Set<String> hostedDomains = canonicalHostedDomains(google.allowedHostedDomains);
         OAuthClientRegistration registration = new OAuthClientRegistration(
-                "web",
-                "web",
+                OAuthClientRegistration.WEB,
+                OAuthClientRegistration.WEB,
                 OAuthProvider.GOOGLE,
                 google.clientId,
                 callbackUri,
                 returnTargetUri,
                 allowedOrigins
         );
+        // Blank mobile return target = mobile sign-in disabled (the web flow is unaffected).
+        Optional<OAuthClientRegistration> mobileRegistration = hasText(mobile.returnTargetUri)
+                ? Optional.of(new OAuthClientRegistration(
+                        OAuthClientRegistration.MOBILE,
+                        OAuthClientRegistration.MOBILE,
+                        OAuthProvider.GOOGLE,
+                        google.clientId,
+                        callbackUri,
+                        OAuthUriPolicy.requireMobileReturnTarget(mobile.returnTargetUri.strip(), "mobile.returnTargetUri"),
+                        Set.of()))
+                : Optional.empty();
         return OAuthConfiguration.enabled(
                 registration,
+                mobileRegistration,
                 issuerUri,
                 new OAuthSecret(google.clientSecret),
                 stateTtl,
@@ -188,7 +210,26 @@ public class OAuthProperties {
                 + ", csrfTtl=" + csrfTtl
                 + ", providerTimeout=" + providerTimeout
                 + ", maxHandoffProofFailures=" + maxHandoffProofFailures
-                + ", google=<redacted>, web=" + web + "]";
+                + ", google=<redacted>, web=" + web + ", mobile=" + mobile + "]";
+    }
+
+    /** Mobile app client: a blank return target keeps mobile sign-in disabled. */
+    public static final class MobileProperties {
+
+        private String returnTargetUri;
+
+        public String getReturnTargetUri() {
+            return returnTargetUri;
+        }
+
+        public void setReturnTargetUri(String returnTargetUri) {
+            this.returnTargetUri = returnTargetUri;
+        }
+
+        @Override
+        public String toString() {
+            return "MobileProperties[returnTargetUri=<redacted>]";
+        }
     }
 
     public static final class GoogleProperties {

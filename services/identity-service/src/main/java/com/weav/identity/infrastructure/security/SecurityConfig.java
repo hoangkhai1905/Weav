@@ -53,11 +53,13 @@ public class SecurityConfig {
                         .requestMatchers(
                                 HttpMethod.POST,
                                 "/auth/oauth/google/start",
-                                "/auth/oauth/exchange"
+                                "/auth/oauth/exchange",
+                                "/auth/oauth/mobile/exchange"
                         ).permitAll()
                         .requestMatchers(
                                 HttpMethod.GET,
                                 "/auth/oauth/google/callback",
+                                "/auth/oauth/google/mobile/start",
                                 "/auth/web/csrf",
                                 "/.well-known/jwks.json"
                         ).permitAll()

@@ -202,6 +202,54 @@ class AuthRateLimitFilterTest {
         assertEquals(40, downstreamCalls.get());
     }
 
+    @Test
+    void mobileExchangeUsesTheOAuthExchangeScopeSharedWithTheWebExchange() throws Exception {
+        AtomicInteger downstreamCalls = new AtomicInteger();
+        FilterChain chain = countingChain(downstreamCalls);
+
+        // OAUTH_EXCHANGE_IP allows 30 per minute per address; 20 mobile + 10 web spend the same bucket.
+        for (int attempt = 0; attempt < 20; attempt++) {
+            filter.doFilter(request("POST", "/auth/oauth/mobile/exchange", REMOTE_ADDRESS),
+                    new MockHttpServletResponse(), chain);
+        }
+        for (int attempt = 0; attempt < 10; attempt++) {
+            filter.doFilter(request("POST", "/auth/oauth/exchange", REMOTE_ADDRESS),
+                    new MockHttpServletResponse(), chain);
+        }
+        MockHttpServletResponse denied = new MockHttpServletResponse();
+        filter.doFilter(request("POST", "/auth/oauth/mobile/exchange", REMOTE_ADDRESS), denied, chain);
+
+        assertEquals(429, denied.getStatus());
+        assertRetryAfterNear(denied, 60);
+        assertEquals("no-referrer", denied.getHeader("Referrer-Policy"));
+        assertEquals(30, downstreamCalls.get());
+    }
+
+    @Test
+    void mobileStartIsRateLimitedAsAGetInTheOAuthStartScopeSharedWithTheWebStart() throws Exception {
+        AtomicInteger downstreamCalls = new AtomicInteger();
+        FilterChain chain = countingChain(downstreamCalls);
+
+        // OAUTH_START_IP allows 10 per 15 minutes per address; 5 mobile + 5 web spend the same bucket.
+        for (int attempt = 0; attempt < 5; attempt++) {
+            filter.doFilter(request("GET", "/auth/oauth/google/mobile/start", REMOTE_ADDRESS),
+                    new MockHttpServletResponse(), chain);
+            filter.doFilter(request("POST", "/auth/oauth/google/start", REMOTE_ADDRESS),
+                    new MockHttpServletResponse(), chain);
+        }
+        MockHttpServletResponse denied = new MockHttpServletResponse();
+        filter.doFilter(request("GET", "/auth/oauth/google/mobile/start", REMOTE_ADDRESS), denied, chain);
+
+        assertEquals(429, denied.getStatus());
+        assertRetryAfterNear(denied, 900);
+        assertEquals(10, downstreamCalls.get());
+
+        // A different address has its own bucket.
+        MockHttpServletResponse other = new MockHttpServletResponse();
+        filter.doFilter(request("GET", "/auth/oauth/google/mobile/start", "203.0.113.77"), other, chain);
+        assertEquals(200, other.getStatus());
+    }
+
     private void assertDeniedAfter(String path, int limit, String retryAfter, FilterChain chain) throws Exception {
         for (int attempt = 0; attempt < limit; attempt++) {
             filter.doFilter(request("POST", path, REMOTE_ADDRESS), new MockHttpServletResponse(), chain);

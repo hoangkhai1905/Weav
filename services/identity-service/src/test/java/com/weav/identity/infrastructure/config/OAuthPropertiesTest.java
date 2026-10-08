@@ -7,6 +7,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import java.time.Duration;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -225,6 +226,84 @@ class OAuthPropertiesTest {
         properties.getGoogle().setClientSecret("provider-secret-é");
 
         assertThrows(IllegalArgumentException.class, properties::validateAndBuild);
+    }
+
+    @Test
+    void mobileClientIsDisabledWhenTheReturnTargetIsBlankOrAbsent() {
+        OAuthProperties absent = validProperties();
+        assertTrue(absent.validateAndBuild().mobileClient().isEmpty());
+        assertTrue(absent.validateAndBuild().webClient().isPresent());
+
+        OAuthProperties blank = validProperties();
+        blank.getMobile().setReturnTargetUri("  ");
+        assertTrue(blank.validateAndBuild().mobileClient().isEmpty());
+    }
+
+    @Test
+    void mobileReturnTargetIsStrippedAndItsSchemeLowercased() {
+        for (String configured : List.of(" weav://auth/callback ", "WEAV://auth/callback", "\tWeav://auth/callback\n")) {
+            OAuthProperties properties = validProperties();
+            properties.getMobile().setReturnTargetUri(configured);
+
+            assertEquals("weav://auth/callback",
+                    properties.validateAndBuild().mobileClient().orElseThrow().returnTargetUri().toString(),
+                    configured);
+        }
+    }
+
+    @Test
+    void mobileClientRegistersTheCustomSchemeReturnTargetNextToTheWebClient() {
+        OAuthProperties properties = validProperties();
+        properties.getMobile().setReturnTargetUri("weav://auth/callback");
+
+        OAuthConfiguration configuration = properties.validateAndBuild();
+
+        var mobile = configuration.mobileClient().orElseThrow();
+        assertEquals("mobile", mobile.clientId());
+        assertEquals("mobile", mobile.returnTargetId());
+        assertEquals("weav://auth/callback", mobile.returnTargetUri().toString());
+        assertTrue(mobile.allowedOrigins().isEmpty());
+        // Same Google client and backend callback as the web registration.
+        var web = configuration.webClient().orElseThrow();
+        assertEquals(web.providerClientId(), mobile.providerClientId());
+        assertEquals(web.providerCallbackUri(), mobile.providerCallbackUri());
+        assertEquals("https://app.example.com/auth/callback", web.returnTargetUri().toString());
+        assertFalse(properties.toString().contains("weav://"));
+    }
+
+    @Test
+    void mobileReturnTargetWithAnotherSchemeOrExtraPartsFailsClosed() {
+        for (String rejected : List.of(
+                "https://app.example.com/auth/callback", "mobile://auth/callback", "weav://auth/callback?a=b")) {
+            OAuthProperties properties = validProperties();
+            properties.getMobile().setReturnTargetUri(rejected);
+            assertThrows(IllegalArgumentException.class, properties::validateAndBuild, rejected);
+        }
+    }
+
+    @Test
+    void springBindingMapsTheMobileReturnTargetAndKeepsItDisabledWhenEmpty() {
+        String[] base = {
+                "weav.oauth.enabled=true",
+                "weav.oauth.google.client-id=google-client-id.apps.googleusercontent.com",
+                "weav.oauth.google.client-secret=provider-secret-value",
+                "weav.oauth.google.issuer-uri=https://accounts.google.com",
+                "weav.oauth.google.redirect-uri=http://localhost:8081/auth/oauth/google/callback",
+                "weav.oauth.web.return-target-uri=http://localhost:5173/auth/callback",
+                "weav.oauth.web.allowed-origins[0]=http://localhost:5173"};
+        new ApplicationContextRunner()
+                .withUserConfiguration(OAuthApplicationConfig.class)
+                .withPropertyValues(base)
+                .withPropertyValues("weav.oauth.mobile.return-target-uri=weav://auth/callback")
+                .run(context -> assertTrue(context.getBean(OAuthConfiguration.class).mobileClient().isPresent()));
+        new ApplicationContextRunner()
+                .withUserConfiguration(OAuthApplicationConfig.class)
+                .withPropertyValues(base)
+                .withPropertyValues("weav.oauth.mobile.return-target-uri=")
+                .run(context -> {
+                    assertTrue(context.getStartupFailure() == null);
+                    assertTrue(context.getBean(OAuthConfiguration.class).mobileClient().isEmpty());
+                });
     }
 
     private static OAuthProperties validProperties() {

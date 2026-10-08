@@ -86,8 +86,10 @@ test.describe('navigation structure', () => {
     await expect(page).toHaveURL(/\/workspace\/connections\?oauth=success&connectionId=abc/);
     await expect(page.getByTestId('connections-page')).toBeVisible();
 
+    // /executions is the monitoring overview now (W6-A), no longer a redirect to /workflows.
     await page.goto('/executions');
-    await expect(page).toHaveURL(/\/workflows$/);
+    await expect(page).toHaveURL(/\/executions$/);
+    await expect(page.getByTestId('monitoring-summary').or(page.getByTestId('monitoring-summary-error'))).toBeVisible();
 
     await page.goto(`/executions/${executionId}?workflowId=${workflowId}`);
     await expect(page).toHaveURL(new RegExp(`/workflows/${workflowId}/executions\\?run=${executionId}`));

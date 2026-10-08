@@ -66,6 +66,7 @@ class GoogleOAuthHttpIntegrationTest {
 
     private static final String ORIGIN = "https://web.test";
     private static final String RETURN_TARGET = "https://web.test/auth/callback";
+    private static final String MOBILE_RETURN_TARGET = "weav://auth/callback";
     private static final String PASSWORD = "correct-horse-battery-staple";
     private static final String HMAC_SECRET = "identity-http-oauth-hmac-secret-012345678901234567";
     private static final String REFERRER_POLICY_VALUE = "no-referrer";
@@ -113,6 +114,7 @@ class GoogleOAuthHttpIntegrationTest {
                 "http://127.0.0.1/auth/oauth/google/callback");
         registry.add("weav.oauth.web.return-target-uri", () -> RETURN_TARGET);
         registry.add("weav.oauth.web.allowed-origins[0]", () -> ORIGIN);
+        registry.add("weav.oauth.mobile.return-target-uri", () -> MOBILE_RETURN_TARGET);
     }
 
     @BeforeEach
@@ -137,8 +139,10 @@ class GoogleOAuthHttpIntegrationTest {
                 .collect(Collectors.toSet());
         assertEquals(Set.of(
                 "/auth/oauth/google/start",
+                        "/auth/oauth/google/mobile/start",
                         "/auth/oauth/google/callback",
                         "/auth/oauth/exchange",
+                        "/auth/oauth/mobile/exchange",
                         "/auth/web/csrf",
                         "/auth/web/login",
                         "/auth/web/refresh",
@@ -197,6 +201,204 @@ class GoogleOAuthHttpIntegrationTest {
         assertTrue(refreshHeader.contains("Secure"));
         assertTrue(refreshHeader.contains("SameSite=Lax"));
         assertFalse(refreshCookie.isBlank());
+    }
+
+    @Test
+    void mobileLoginFlowReturnsTheSessionInTheBodyWithoutCookies() throws Exception {
+        String verifier = verifier("mobile-flow");
+        HttpResponse<String> start = mobileStart(OAuthProtocolPolicy.challengeForVerifier(verifier), "S256");
+        assertEquals(303, start.statusCode());
+        assertEquals("no-store", start.headers().firstValue("Cache-Control").orElseThrow());
+        String correlation = setCookie(start, OAuthWebProtection.CORRELATION_COOKIE);
+        assertTrue(correlation.contains("HttpOnly") && correlation.contains("Secure")
+                && correlation.contains("SameSite=Lax") && correlation.contains("Path=/auth"));
+        assertTrue(start.headers().allValues("Set-Cookie").stream()
+                .noneMatch(value -> value.startsWith(OAuthWebProtection.CSRF_COOKIE + "=")));
+        URI authorizationUrl = URI.create(start.headers().firstValue("Location").orElseThrow());
+        Map<String, String> authorizationQuery = query(authorizationUrl);
+        assertEquals(OAuthProtocolPolicy.challengeForVerifier(verifier).length(), 43);
+        OAuthFlow flow = new OAuthFlow(verifier, null, authorizationQuery.get("state"),
+                authorizationQuery.get("nonce"), null, null,
+                cookie(start, OAuthWebProtection.CORRELATION_COOKIE), null);
+        PROVIDER.setIdentity(flow.nonce(), "http-subject-mobile", "mobile-login@gmail.com", true, Instant.now());
+
+        HttpResponse<String> callback = callback(flow, flow.correlationCookie(), "provider-code", null);
+        assertEquals(303, callback.statusCode());
+        URI location = URI.create(callback.headers().firstValue("Location").orElseThrow());
+        assertEquals("weav", location.getScheme());
+        assertEquals("auth", location.getHost());
+        assertEquals("/callback", location.getPath());
+        assertFalse(callback.headers().firstValue("Location").orElseThrow().contains("provider-code"));
+        assertTrue(callback.headers().allValues("Set-Cookie").stream()
+                .anyMatch(value -> value.startsWith(OAuthWebProtection.CORRELATION_COOKIE + "=")
+                        && value.contains("Max-Age=0")));
+        assertEquals(0, count("identity.user_sessions"));
+
+        OAuthFlow completed = new OAuthFlow(verifier, queryValue(location, "transaction_id"), flow.state(),
+                flow.nonce(), null, null, flow.correlationCookie(), queryValue(location, "handoff_code"));
+        HttpResponse<String> exchange = mobileExchange(completed, verifier);
+        assertEquals(200, exchange.statusCode());
+        assertEquals("no-store", exchange.headers().firstValue("Cache-Control").orElseThrow());
+        assertTrue(exchange.headers().allValues("Set-Cookie").isEmpty());
+        JsonNode body = objectMapper.readTree(exchange.body());
+        assertFalse(body.get("accessToken").asText().isBlank());
+        assertFalse(body.get("refreshToken").asText().isBlank());
+        assertEquals("Bearer", body.get("tokenType").asText());
+        assertTrue(body.get("expiresIn").asLong() > 0);
+        assertEquals("mobile-login@gmail.com", body.get("user").get("email").asText());
+        assertEquals(1, count("identity.users"));
+        assertEquals(1, count("identity.oauth_accounts"));
+        assertEquals(1, count("identity.user_sessions"));
+        assertEquals(200, get("/users/me", body.get("accessToken").asText(), Map.of()).statusCode());
+
+        // The body refresh token is a normal session token: the password-login refresh route accepts it.
+        HttpResponse<String> refreshed = post("/auth/refresh",
+                Map.of("refreshToken", body.get("refreshToken").asText()), Map.of());
+        assertEquals(200, refreshed.statusCode());
+        assertEquals(1, count("identity.user_sessions"));
+    }
+
+    @Test
+    void mobileExchangeRejectsWrongVerifierReuseAndCrossClientHandoffs() throws Exception {
+        String verifier = verifier("mobile-reject");
+        OAuthFlow mobile = completeMobileCallback(verifier, "reject");
+
+        HttpResponse<String> wrongVerifier = mobileExchange(mobile, verifier("zz-wrong-proof"));
+        assertEquals(401, wrongVerifier.statusCode());
+        assertEquals("OAUTH_HANDOFF_INVALID", objectMapper.readTree(wrongVerifier.body())
+                .get("error").get("code").asText());
+        assertEquals(0, count("identity.users"));
+
+        // A mobile handoff is not accepted by the web exchange, whatever client id the caller claims.
+        OAuthFlow webSession = bootstrapCsrf();
+        Map<String, String> webHeaders = Map.of(
+                "Origin", ORIGIN,
+                "Cookie", webSession.csrfCookie(),
+                OAuthWebProtection.CSRF_HEADER, webSession.csrfToken());
+        Map<String, String> asWeb = exchangeBody(mobile, verifier);
+        assertEquals(401, post("/auth/oauth/exchange", asWeb, webHeaders).statusCode());
+        Map<String, String> asMobile = new HashMap<>(asWeb);
+        asMobile.put("clientId", "mobile");
+        asMobile.put("returnTargetId", "mobile");
+        HttpResponse<String> mobileOnWeb = post("/auth/oauth/exchange", asMobile, webHeaders);
+        assertEquals(400, mobileOnWeb.statusCode());
+        assertEquals("INVALID_OAUTH_CLIENT", objectMapper.readTree(mobileOnWeb.body())
+                .get("error").get("code").asText());
+        assertEquals(0, count("identity.users"));
+
+        // None of the rejections burned the handoff (wrong proof is counted, not consumed).
+        HttpResponse<String> valid = mobileExchange(mobile, verifier);
+        assertEquals(200, valid.statusCode());
+        assertEquals(1, count("identity.user_sessions"));
+
+        HttpResponse<String> reused = mobileExchange(mobile, verifier);
+        assertEquals(401, reused.statusCode());
+        assertEquals(1, count("identity.user_sessions"));
+    }
+
+    @Test
+    void fiveWrongMobileVerifiersBurnTheHandoff() throws Exception {
+        String verifier = verifier("mobile-burn");
+        OAuthFlow mobile = completeMobileCallback(verifier, "burn");
+
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            HttpResponse<String> wrong = mobileExchange(mobile, verifier("zz-wrong-proof"));
+            assertEquals(401, wrong.statusCode(), "attempt " + attempt);
+            assertEquals("OAUTH_HANDOFF_INVALID", objectMapper.readTree(wrong.body())
+                    .get("error").get("code").asText());
+        }
+
+        HttpResponse<String> correctButBurned = mobileExchange(mobile, verifier);
+        assertEquals(401, correctButBurned.statusCode());
+        assertEquals("OAUTH_HANDOFF_INVALID", objectMapper.readTree(correctButBurned.body())
+                .get("error").get("code").asText());
+        assertEquals(0, count("identity.users"));
+        assertEquals(0, count("identity.user_sessions"));
+    }
+
+    @Test
+    void mobileCallbackCancellationRedirectsToTheDeepLinkWithoutAHandoff() throws Exception {
+        HttpResponse<String> start = mobileStart(
+                OAuthProtocolPolicy.challengeForVerifier(verifier("mobile-cancel")), "S256");
+        assertEquals(303, start.statusCode());
+        Map<String, String> authorizationQuery = query(URI.create(start.headers().firstValue("Location").orElseThrow()));
+        OAuthFlow flow = new OAuthFlow(verifier("mobile-cancel"), null, authorizationQuery.get("state"),
+                authorizationQuery.get("nonce"), null, null,
+                cookie(start, OAuthWebProtection.CORRELATION_COOKIE), null);
+
+        HttpResponse<String> cancelled = callback(flow, flow.correlationCookie(), null, "access_denied");
+
+        assertEquals(303, cancelled.statusCode());
+        URI location = URI.create(cancelled.headers().firstValue("Location").orElseThrow());
+        assertEquals("weav", location.getScheme());
+        assertEquals("auth", location.getHost());
+        assertEquals("/callback", location.getPath());
+        assertEquals("cancelled", queryValue(location, "oauth_error"));
+        assertEquals(43, queryValue(location, "transaction_id").length());
+        assertNull(queryValue(location, "handoff_code"));
+        assertEquals(0, count("identity.users"));
+        // The state is consumed: replaying the cancellation gives the generic 400 without a redirect.
+        HttpResponse<String> replay = callback(flow, flow.correlationCookie(), null, "access_denied");
+        assertEquals(400, replay.statusCode());
+        assertNull(replay.headers().firstValue("Location").orElse(null));
+    }
+
+    @Test
+    void webHandoffIsRejectedByTheMobileExchangeAndWebStartCannotSelectMobile() throws Exception {
+        String verifier = verifier("web-on-mobile");
+        OAuthFlow web = startLogin(verifier);
+        PROVIDER.setIdentity(web.nonce(), "http-subject-web-on-mobile", "web-on-mobile@gmail.com", true,
+                Instant.now());
+        String location = callback(web, web.correlationCookie(), "provider-code", null)
+                .headers().firstValue("Location").orElseThrow();
+        assertTrue(location.startsWith(RETURN_TARGET));
+        OAuthFlow completed = web.withHandoff(queryValue(URI.create(location), "handoff_code"));
+
+        HttpResponse<String> webOnMobile = mobileExchange(completed, verifier);
+        assertEquals(401, webOnMobile.statusCode());
+        assertEquals(0, count("identity.users"));
+        assertEquals(200, exchange(completed, verifier, null, completed.csrfCookie()).statusCode());
+
+        HttpResponse<String> selectMobile = post(
+                "/auth/oauth/google/start",
+                Map.of("clientId", "mobile", "returnTargetId", "mobile",
+                        "codeChallenge", OAuthProtocolPolicy.challengeForVerifier(verifier),
+                        "codeChallengeMethod", "S256"),
+                Map.of("Origin", ORIGIN));
+        assertEquals(400, selectMobile.statusCode());
+        assertEquals("INVALID_OAUTH_CLIENT", objectMapper.readTree(selectMobile.body())
+                .get("error").get("code").asText());
+    }
+
+    @Test
+    void mobileStartRejectsMalformedChallengeAndMethodWithoutACookie() throws Exception {
+        String valid = OAuthProtocolPolicy.challengeForVerifier(verifier("mobile-challenge"));
+        for (String[] bad : new String[][] {
+                {valid.substring(1), "S256"},
+                {valid + "A", "S256"},
+                {valid.substring(1) + "+", "S256"},
+                {valid, "plain"},
+                {valid, "s256"},
+                {valid, ""}}) {
+            HttpResponse<String> response = mobileStart(bad[0], bad[1]);
+            assertEquals(400, response.statusCode(), bad[0] + "/" + bad[1]);
+            assertEquals("VALIDATION_ERROR", objectMapper.readTree(response.body())
+                    .get("error").get("code").asText());
+            assertTrue(response.headers().allValues("Set-Cookie").isEmpty());
+            assertNull(response.headers().firstValue("Location").orElse(null));
+        }
+        HttpResponse<String> missing = send("GET", "/auth/oauth/google/mobile/start", null, Map.of());
+        assertEquals(400, missing.statusCode());
+        assertTrue(missing.headers().allValues("Set-Cookie").isEmpty());
+    }
+
+    @Test
+    void mobileExchangeValidatesTheBodyBeforeTouchingTheHandoff() throws Exception {
+        HttpResponse<String> response = post("/auth/oauth/mobile/exchange",
+                Map.of("transactionId", "short", "handoffCode", "short", "codeVerifier", "short"), Map.of());
+        assertEquals(400, response.statusCode());
+        assertEquals("VALIDATION_ERROR", objectMapper.readTree(response.body()).get("error").get("code").asText());
+        assertEquals(0, count("identity.users"));
     }
 
     @Test
@@ -794,6 +996,42 @@ class GoogleOAuthHttpIntegrationTest {
                 Map.of("Origin", ORIGIN));
         assertEquals(200, response.statusCode());
         return flowFromStart(response, verifier);
+    }
+
+    private HttpResponse<String> mobileStart(String codeChallenge, String method) throws Exception {
+        String path = "/auth/oauth/google/mobile/start?codeChallenge="
+                + URLEncoder.encode(codeChallenge, StandardCharsets.UTF_8)
+                + "&codeChallengeMethod=" + URLEncoder.encode(method, StandardCharsets.UTF_8);
+        HttpResponse<String> response = send("GET", path, null, Map.of());
+        assertOAuthReferrerPolicy(path, response);
+        return response;
+    }
+
+    /** Drives the mobile start and the provider callback; returns the flow carrying the handoff code. */
+    private OAuthFlow completeMobileCallback(String verifier, String seed) throws Exception {
+        HttpResponse<String> start = mobileStart(OAuthProtocolPolicy.challengeForVerifier(verifier), "S256");
+        assertEquals(303, start.statusCode());
+        Map<String, String> authorizationQuery = query(URI.create(start.headers().firstValue("Location").orElseThrow()));
+        OAuthFlow flow = new OAuthFlow(verifier, null, authorizationQuery.get("state"),
+                authorizationQuery.get("nonce"), null, null,
+                cookie(start, OAuthWebProtection.CORRELATION_COOKIE), null);
+        PROVIDER.setIdentity(flow.nonce(), "http-subject-mobile-" + seed, "mobile-" + seed + "@gmail.com", true,
+                Instant.now());
+        URI location = URI.create(callback(flow, flow.correlationCookie(), "provider-code", null)
+                .headers().firstValue("Location").orElseThrow());
+        assertEquals("weav", location.getScheme());
+        return new OAuthFlow(verifier, queryValue(location, "transaction_id"), flow.state(), flow.nonce(),
+                null, null, flow.correlationCookie(), queryValue(location, "handoff_code"));
+    }
+
+    private HttpResponse<String> mobileExchange(OAuthFlow flow, String verifier) throws Exception {
+        return post(
+                "/auth/oauth/mobile/exchange",
+                Map.of(
+                        "transactionId", flow.transactionId(),
+                        "handoffCode", flow.handoffCode(),
+                        "codeVerifier", verifier),
+                Map.of());
     }
 
     private OAuthFlow flowFromStart(HttpResponse<String> response, String verifier) throws Exception {

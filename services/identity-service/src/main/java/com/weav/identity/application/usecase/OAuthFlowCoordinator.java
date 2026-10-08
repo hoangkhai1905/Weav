@@ -91,6 +91,7 @@ public final class OAuthFlowCoordinator {
     ) {
         requireAuthenticatedIdentity(authenticatedUserId, authenticatedSessionId);
         Registration registration = registration(command);
+        requireWebForLink(registration);
         LinkGoogleAccountUseCase.LinkBinding binding = linkUseCase.initiate(
                 authenticatedUserId, authenticatedSessionId, currentPassword);
         return start(OAuthTransactionStore.Intent.LINK, binding, command, registration);
@@ -197,6 +198,7 @@ public final class OAuthFlowCoordinator {
     ) {
         requireAuthenticatedIdentity(authenticatedUserId, authenticatedSessionId);
         Registration registration = registration(command.clientId(), command.returnTargetId());
+        requireWebForLink(registration);
         OAuthTransactionStore.Handoff handoff = consumeHandoff(
                 command, OAuthTransactionStore.Intent.LINK, registration);
         return OAuthExchangeResult.linked(linkUseCase.complete(
@@ -316,14 +318,27 @@ public final class OAuthFlowCoordinator {
 
     private Registration registration(String clientId, String returnTargetId) {
         requireEnabled();
-        OAuthClientRegistration clientRegistration = configuration.webClient()
-                .orElseThrow(DependencyUnavailableException::new);
-        if (!clientRegistration.clientId().equals(clientId)
-                || !clientRegistration.returnTargetId().equals(returnTargetId)
+        OAuthClientRegistration clientRegistration = configuration.clients().get(clientId);
+        if (clientRegistration == null) {
+            // A known client that is not configured (mobile with an empty return target) behaves like a
+            // disabled flow; any other id is a bad client selection.
+            if (OAuthClientRegistration.MOBILE.equals(clientId)) {
+                throw new DependencyUnavailableException();
+            }
+            throw new InvalidOAuthClientException();
+        }
+        if (!clientRegistration.returnTargetId().equals(returnTargetId)
                 || clientRegistration.provider() != OAuthProvider.GOOGLE) {
             throw new InvalidOAuthClientException();
         }
         return new Registration(clientRegistration);
+    }
+
+    /** Linking needs the current password and the CSRF-protected web session, so it is web-only. */
+    private static void requireWebForLink(Registration registration) {
+        if (!OAuthClientRegistration.WEB.equals(registration.clientRegistration().clientId())) {
+            throw new InvalidOAuthClientException();
+        }
     }
 
     private void requireEnabled() {

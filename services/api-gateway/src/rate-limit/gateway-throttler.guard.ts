@@ -33,6 +33,7 @@ const PUBLIC_AUTH_MUTATION_PATHS = new Set([
   '/api/auth/otp/verify',
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
+  '/api/auth/oauth/mobile/exchange',
 ]);
 
 export interface GatewayRateLimitRequest extends RequestContextCarrier {

@@ -26,6 +26,8 @@
         "workflow.resumed",
         "workflow.completed",
         "workflow.failed",
+        "monitoring.alert.consecutive_failures",
+        "monitoring.alert.long_running",
         "workspace.created",
         "workspace.renamed",
         "workspace.member_added",
@@ -199,6 +201,65 @@
                   "pattern": "\\S"
                 },
                 "workflowId": { "type": "string", "format": "uuid" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "monitoring.alert.consecutive_failures" },
+            "producer": { "const": "workflow-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "EXECUTION" } } },
+            "data": {
+              "type": "object",
+              "required": ["ruleName", "workflowName", "workflowId", "failureCount"],
+              "properties": {
+                "ruleName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                },
+                "workflowName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                },
+                "workflowId": { "type": "string", "format": "uuid" },
+                "failureCount": { "type": "string", "pattern": "^[0-9]{1,9}$" }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "monitoring.alert.long_running" },
+            "producer": { "const": "workflow-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "EXECUTION" } } },
+            "data": {
+              "type": "object",
+              "required": ["ruleName", "workflowName", "workflowId", "durationSeconds", "thresholdSeconds"],
+              "properties": {
+                "ruleName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                },
+                "workflowName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                },
+                "workflowId": { "type": "string", "format": "uuid" },
+                "durationSeconds": { "type": "string", "pattern": "^[0-9]{1,9}$" },
+                "thresholdSeconds": { "type": "string", "pattern": "^[0-9]{1,9}$" }
               },
               "additionalProperties": false
             }
