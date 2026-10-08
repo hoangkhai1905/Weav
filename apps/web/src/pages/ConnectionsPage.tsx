@@ -62,6 +62,15 @@ function getOAuthNoticeKey(state: unknown): string | null {
   return typeof key === "string" && allowedKeys.has(key) ? key : null;
 }
 
+const PROVIDER_LABELS: Record<string, string> = {
+  GMAIL: "Gmail",
+  GOOGLE_SHEETS: "Google Sheets",
+  GOOGLE_CALENDAR: "Google Calendar",
+  GOOGLE_DRIVE: "Google Drive",
+  TELEGRAM: "Telegram",
+  HTTP: "HTTP",
+};
+
 const STATUS_KEYS: Record<ConnectionStatus, string> = {
   DISABLED: "connections.status.disabled",
   ACTIVE: "connections.status.active",
@@ -254,7 +263,7 @@ function ConnectionRow({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-text-2">
-            {connection.provider}
+            {PROVIDER_LABELS[connection.provider] ?? connection.provider}
           </span>
           <h2 className="truncate text-[13px] font-medium text-foreground">
             {connection.name}

@@ -24,6 +24,7 @@ trigger.gmail input: messageId, threadId, from (raw header), fromEmail (bare add
 logic.condition is either {"left","operator","right"} or {"combinator":"and"|"or","conditions":[{"left","operator","right"}]} with 1-10 conditions; its ports stay "true"/"false".
 trigger.schedule.cron has exactly 6 space-separated fields: second minute hour day-of-month month day-of-week (08:00 daily is "0 0 8 * * *").
 Every workflow has at least one trigger node, and every trigger has an edge to the first step. Use the trigger the request describes (trigger.schedule, trigger.webhook, trigger.telegram, trigger.gmail) and do not add a trigger.manual next to it; use trigger.manual only when the request is run by hand or names no other trigger (never more than one).
+Write intent.name in the same language as the request (a Vietnamese request gets a Vietnamese name); node ids stay ASCII snake_case.
 Only set optional config fields (such as http.request headers) that the request asks for.
 Edge ports: a logic.condition edge needs "port":"true" or "false". logic.switch config is {"value":template,"cases":[strings]} with 1-20 unique literal cases (non-blank, at most 64 characters, not "default", no "{{"); give it one outgoing edge per case with "port":"<case>" (exactly a listed case) and optionally one "port":"default" edge. Edges from any other node have no port.
 Return exactly one of:

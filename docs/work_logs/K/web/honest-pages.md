@@ -44,3 +44,23 @@ Lỗi còn lại đều có trong baseline: ai-builder x2, dashboard-real-data "
 - Chưa chạy trên stack thật: cần kiểm tra thủ công (xem báo cáo lane).
 - Mẫu Gmail cần `fromEmail` của lane A; nếu chưa có, bước trả lời sẽ lỗi lúc chạy.
 - `chatId`, `spreadsheetId`, `to` để trống trong mẫu: người dùng điền trong builder trước khi publish.
+
+## Polish (N1-N9)
+
+Lane W5-polish, nhánh `feat/w5-polish` (từ `week5` 27ecd89). Tất cả copy qua i18n VI + EN.
+
+| Mục | Thay đổi |
+| --- | --- |
+| N1 | `create.recipes` chỉ còn "mẫu" (đếm thật `8 mẫu`); placeholder "Mô tả nhanh" dùng Gmail/Drive/Telegram; bỏ chip/đoạn quảng cáo không đúng (`schema_verified` -> "Chỉnh sửa được", `beta` -> "Mới", `any_payload` -> "Thêm từng bước", mô tả mẫu/AI viết lại trung thực) |
+| N2 | Tên bước trong thẻ mẫu dùng nhãn node đã dịch (`lib/nodeLabels.ts`, cùng key `builder.node.*` với palette); nút "Dùng mẫu" có `type="button"` và `aria-label` kèm tên mẫu |
+| N3 | `AnimatedWorkflowShowcase` (dùng chung Login/Register): bỏ "99,9%", "gấp 10 lần", "React Flow 12"; thay bằng Gmail/Google/Telegram, lịch sử chạy, tạo bằng AI; nút submit Register có `aria-label` |
+| N4 | Bỏ "Identity" khỏi chuỗi hiển thị (VI + EN), dùng "tài khoản" |
+| N5 | `PROVIDER_LABELS` trong `ConnectionsPage.tsx` (Gmail, Google Sheets, ..., Telegram, HTTP) |
+| N6 | `friendlyErrorMessage()` (`lib/executions/runView.ts`): thông báo theo `code` (`runs.err.*`; MAPPING_ERROR "thiếu giá trị" nhận biết qua `is missing` trong message) + nhãn trường `runs.field.*` mở rộng; banner dùng thông báo thân thiện, JSON thô vẫn nằm trong khung chi tiết |
+| N7 | Câu hỏi needs_input: recipient / URL / lịch / múi giờ / "Cần thêm thông tin cho bước <node>: <trường>"; CONNECTION dùng nhãn node đã dịch |
+| N8 | `GENERATE_SYSTEM`: `intent.name` cùng ngôn ngữ với yêu cầu; id node vẫn ASCII snake_case. Tên từng bước do workflow-service dựng từ node id nên không đổi ở đây (xem rủi ro) |
+| N9 | Tiêu đề lịch sử chạy hiện "Quy trình" thay vì UUID khi chưa tải tên |
+
+Lệnh: `tsc --noEmit -p tsconfig.app.json` sạch; `pnpm --dir apps/web build` ok; ai-service `test` 209 pass + `build` ok; Playwright (port 4180) 6 spec: baseline 3 lỗi localization (có sẵn), sau sửa không lỗi mới (executions-live + honest-pages cập nhật assertion cho copy mới). eslint: lỗi `react-hooks/refs` có sẵn ở `AiGeneratorPage.tsx` dòng "createDraft" (không do lane này).
+
+Rủi ro: tên bước do AI sinh vẫn tiếng Anh vì `intent.nodes` chỉ có `id` (backend suy ra tên); cần sửa ở workflow-service nếu muốn. Câu hỏi VALUE với id node dạng `send_email.config.to` không dịch được tên node (chỉ nhận biết kiểu node khi field bắt đầu bằng type như `email.send.`).

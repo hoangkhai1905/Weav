@@ -7,7 +7,7 @@ import type { ExecutionDetail, NodeExecutionResult, WorkflowDefinition } from '.
 import { useI18nStore } from '../../store/useI18nStore';
 import { statusBadgeClass, type StatusTone } from '../common/statusBadgeClass';
 import { failureOf, isLiveStatus, useLivePolling, type TickResult } from '../../lib/executions/useLivePolling';
-import { errorField, errorFieldLabel, orderSteps, stepDidNotRun, triggerTypeLabel } from '../../lib/executions/runView';
+import { errorField, errorFieldLabel, friendlyErrorMessage, orderSteps, stepDidNotRun, triggerTypeLabel } from '../../lib/executions/runView';
 
 type DetailTab = 'input' | 'output' | 'logs';
 
@@ -281,7 +281,7 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
           <span className="hidden sm:inline">{t('nav.workflows')}</span>
         </Link>
         <span aria-hidden="true" className="text-muted-foreground">/</span>
-        <h1 className="min-w-0 truncate text-sm font-semibold text-foreground">{workflow?.name ?? workflowId}</h1>
+        <h1 className="min-w-0 truncate text-sm font-semibold text-foreground">{workflow?.name ?? t('nav.workflows')}</h1>
         <nav aria-label={t('builder.workflow_sections')} className="ml-4 flex h-12 shrink-0 items-stretch gap-5 whitespace-nowrap">
           <Link
             to={`/workflows/${encodeURIComponent(workflowId)}/builder`}
@@ -395,7 +395,7 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
                       <strong className="font-semibold text-err">
                         {t('runs.failed_at').replace('{n}', String(steps.indexOf(failedStep) + 1))}
                       </strong>
-                      {failedStep.error ? ` — ${fieldPrefix(failedStep.error)}${parseError(failedStep.error).message}` : ''}
+                      {failedStep.error ? ` — ${fieldPrefix(failedStep.error)}${friendlyErrorMessage(failedStep.error, t) ?? parseError(failedStep.error).message}` : ''}
                     </span>
                     <button type="button" onClick={() => { setSelectedStepId(failedStep.nodeId); setTab('output'); }} className="h-6 shrink-0 rounded px-2 text-xs font-medium text-err hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       {t('runs.view_error')}
@@ -494,6 +494,9 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
                     <span className="text-muted-foreground">{t('runs.error_field')}: </span>
                     <strong className="font-medium">{errorFieldLabel(errorField(selectedStep.error) ?? '', t)}</strong>
                   </p>
+                )}
+                {stepBody.isError && friendlyErrorMessage(selectedStep.error, t) && (
+                  <p data-testid="step-error-message" className="mb-2 text-xs font-medium text-foreground">{friendlyErrorMessage(selectedStep.error, t)}</p>
                 )}
                 {stepBody.body ? (
                   <pre className={`m-0 overflow-x-auto whitespace-pre-wrap break-words rounded-md border p-3 font-mono text-xs leading-relaxed ${stepBody.isError ? 'border-err-border bg-err-bg text-foreground' : 'border-border bg-subtle text-foreground'}`}>{stepBody.body}</pre>

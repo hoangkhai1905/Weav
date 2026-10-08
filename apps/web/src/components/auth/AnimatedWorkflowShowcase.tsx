@@ -151,20 +151,20 @@ export function AnimatedWorkflowShowcase() {
       <div className="relative z-10 grid grid-cols-3 gap-2 pt-2">
         <div className="p-2.5 bg-card/70 border border-border rounded-xl text-center">
           <Layers size={16} className="mx-auto mb-1 text-run" />
-          <span className="block text-[11px] font-bold text-foreground">React Flow 12</span>
-          <span className="text-[9px] text-muted-foreground">{t('auth.showcase.drag_canvas')}</span>
+          <span className="block text-[11px] font-bold text-foreground">{t('auth.showcase.drag_canvas')}</span>
+          <span className="text-[9px] text-muted-foreground">{t('auth.showcase.nodes_hint')}</span>
         </div>
 
         <div className="p-2.5 bg-card/70 border border-border rounded-xl text-center">
           <CheckCircle2 size={16} className="mx-auto mb-1 text-ok" />
-          <span className="block text-[11px] font-bold text-foreground">{t('auth.showcase.uptime')}</span>
-          <span className="text-[9px] text-muted-foreground">{t('auth.showcase.reliable_execution')}</span>
+          <span className="block text-[11px] font-bold text-foreground">{t('auth.showcase.run_history')}</span>
+          <span className="text-[9px] text-muted-foreground">{t('auth.showcase.run_history_hint')}</span>
         </div>
 
         <div className="p-2.5 bg-card/70 border border-border rounded-xl text-center">
           <Zap size={16} className="mx-auto mb-1 text-warn" />
-          <span className="block text-[11px] font-bold text-foreground">{t('auth.showcase.speed')}</span>
-          <span className="text-[9px] text-muted-foreground">{t('auth.showcase.ai_automation')}</span>
+          <span className="block text-[11px] font-bold text-foreground">{t('auth.showcase.ai_generate')}</span>
+          <span className="text-[9px] text-muted-foreground">{t('auth.showcase.ai_generate_hint')}</span>
         </div>
       </div>
     </div>

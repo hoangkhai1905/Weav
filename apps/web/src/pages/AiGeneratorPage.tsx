@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Loader2, Sparkles } from 'lucide-react';
 import { connectionApi, type ConnectionProvider, type ConnectionResponse } from '../api/connection.api';
@@ -7,6 +7,8 @@ import { useWorkflowGeneration, type ReadyGeneration } from '../components/ai/us
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 import { showSuccessToast } from '../lib/feedback/toast';
 import { NODE_SCHEMAS } from '../lib/nodeSchemas';
+import { NODE_NAME_KEYS, nodeLabel } from '../lib/nodeLabels';
+import { errorFieldLabel } from '../lib/executions/runView';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
 import { useAuthStore } from '../store/useAuthStore';
 import { useI18nStore } from '../store/useI18nStore';
@@ -24,6 +26,12 @@ const PROVIDER_BY_NODE: Record<string, ConnectionProvider> = {
   'telegram.send_message': 'TELEGRAM',
   'trigger.telegram': 'TELEGRAM',
   'http.request': 'HTTP',
+};
+
+/** "email.send.to" / "send_email.config.to" -> the node type when the field names one, plus the config key. */
+const splitQuestionField = (field: string) => {
+  const type = Object.keys(NODE_NAME_KEYS).find((candidate) => field === candidate || field.startsWith(`${candidate}.`));
+  return { type, key: field.split('.').pop() ?? field };
 };
 
 const STARTER_KEYS = ['gmail_drive', 'webhook_sheets', 'schedule_telegram', 'telegram_reply'] as const;
@@ -56,6 +64,7 @@ export function AiGeneratorPage() {
   const [draftError, setDraftError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const mounted = useRef(true);
+  const isMounted = useCallback(() => mounted.current, []);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
@@ -129,16 +138,16 @@ export function AiGeneratorPage() {
         definition: ready.definition,
         layout: ready.layout,
       });
-      if (!mounted.current || !isCurrentNotificationSession(session)) return;
+      if (!isMounted() || !isCurrentNotificationSession(session)) return;
       showSuccessToast('toast.workflow.created', session);
       refreshNotifications(session);
       navigate(`/workflows/${workflowId}/builder`);
     } catch (unknown) {
-      if (mounted.current && isCurrentNotificationSession(session)) {
+      if (isMounted() && isCurrentNotificationSession(session)) {
         setDraftError(unknown instanceof Error ? unknown.message : t('hp.ai.draft_failed'));
       }
     } finally {
-      if (mounted.current) setIsSaving(false);
+      if (isMounted()) setIsSaving(false);
     }
   };
 
@@ -151,12 +160,28 @@ export function AiGeneratorPage() {
       <p className="text-xs text-text-2">{t('hp.ai.needs_input_hint')}</p>
       <ul className="space-y-3">
         {questions.map((question, index) => {
-          const label = t(`ai.question.${question.code}`);
+          const { type: questionType, key: configKey } = splitQuestionField(question.field);
+          const fill = (template: string, values: Record<string, string>) =>
+            template.replace(/\{(\w+)\}/g, (_, name: string) => values[name] ?? '');
+          const label = question.code === 'VALUE'
+            ? RECIPIENT_FIELD.test(configKey)
+              ? t('ai.question.recipient')
+              : questionType
+                ? fill(t('ai.question.value_in_step'), { node: nodeLabel(questionType, t), field: errorFieldLabel(configKey, t) })
+                : fill(t('ai.question.value_field'), { field: errorFieldLabel(configKey, t) })
+            : t(`ai.question.${question.code}`);
+          const labelOf = (item: Question) => {
+            const split = splitQuestionField(item.field);
+            return item.code === 'VALUE' && RECIPIENT_FIELD.test(split.key) ? t('ai.question.recipient') : item.code;
+          };
+          // Two questions that read the same (for example to and cc) get their field name appended.
+          const ambiguous = question.code === 'VALUE' && RECIPIENT_FIELD.test(configKey)
+            && questions.some((other, i) => i !== index && labelOf(other) === labelOf(question));
           const controlId = `${promptId}-q-${index}`;
           if (question.code === 'CONNECTION') {
             const provider = PROVIDER_BY_NODE[question.field];
             const options = connections.filter((item) => item.provider === provider && item.status === 'ACTIVE');
-            const nodeTitle = NODE_SCHEMAS[question.field]?.title ?? question.field;
+            const nodeTitle = nodeLabel(question.field, t);
             return (
               <li key={`${question.code}-${question.field}-${index}`}>
                 <label htmlFor={controlId} className="mb-1 block text-xs font-medium text-foreground">
@@ -182,7 +207,7 @@ export function AiGeneratorPage() {
           return (
             <li key={`${question.code}-${question.field}-${index}`}>
               <label htmlFor={controlId} className="mb-1 block text-xs font-medium text-foreground">
-                {label} <span className="font-mono text-muted-foreground">({question.field})</span>
+                {label}{ambiguous ? <span className="text-muted-foreground"> ({errorFieldLabel(configKey, t)})</span> : null}
               </label>
               <input
                 id={controlId}
@@ -221,7 +246,7 @@ export function AiGeneratorPage() {
             <li key={node.id} className="flex items-center gap-2 rounded-md border border-border bg-subtle px-3 py-2 text-sm">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-text-2">{index + 1}</span>
               <span className="min-w-0 flex-1 truncate font-medium text-foreground">{node.name}</span>
-              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{NODE_SCHEMAS[node.type]?.title ?? node.type}</span>
+              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">{nodeLabel(node.type, t)}</span>
             </li>
           ))}
         </ol>
