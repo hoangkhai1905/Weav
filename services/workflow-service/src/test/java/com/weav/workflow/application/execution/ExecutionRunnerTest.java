@@ -320,6 +320,24 @@ class ExecutionRunnerTest {
     }
 
     @Test
+    void aMissingMappedRecipientNamesTheToFieldOfEmailSend() {
+        WorkflowDefinition definition = definition(
+                List.of(node("action", "email.send", Map.of(
+                        "to", "{{ trigger.input.fromEmail }}", "subject", "Re", "body", "x"))),
+                List.of(edge("root-action", "root", "action", null)));
+        NodeExecutor never = executor("email.send",
+                (context, config) -> new NodeExecutor.Result(Map.of("unexpected", true), null));
+        try (Harness harness = harness(definition, Map.of("from", "x"), List.of(never), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.runner.run(harness.lease);
+
+            Map<String, Object> error = harness.state.snapshot().nodes().get("action").getError();
+            assertEquals("The 'to' field refers to a value that is missing.", error.get("message"));
+            assertEquals(Map.of("field", "to"), error.get("details"));
+        }
+    }
+
+    @Test
     void switchRoutesToTheMatchingCaseAndSkipsTheOtherBranches() {
         AtomicReference<String> ran = new AtomicReference<>("");
         NodeExecutor action = executor("http.request", (context, config) -> {

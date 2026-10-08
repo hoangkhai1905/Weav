@@ -64,7 +64,8 @@ class GmailAdmissionPersistenceTest {
                 ("body" + nul + "x &#0; end").getBytes(StandardCharsets.UTF_8));
         Map<String, Object> raw = Map.of("id", "abc123", "internalDate", Long.toString(Instant.now().toEpochMilli()),
                 "snippet", "s" + nul, "payload", Map.of("mimeType", "text/plain", "filename", "",
-                        "headers", List.of(Map.of("name", "Subject", "value", "Hi" + nul)),
+                        "headers", List.of(Map.of("name", "Subject", "value", "Hi" + nul),
+                                Map.of("name", "From", "value", "Ada <ada@example.test>")),
                         "body", Map.of("data", data)));
         var parsed = GmailMessageParser.parse(raw).orElseThrow();
 
@@ -74,5 +75,10 @@ class GmailAdmissionPersistenceTest {
                 Integer.class, triggerId));
         assertTrue(jdbc.queryForObject("select input::text from workflow.workflow_executions where trigger_id = ?",
                 String.class, triggerId).contains("bodyx &#0; end"));
+        // the stored run input keeps the parsed sender keys that {{ trigger.input.fromEmail }} reads
+        String stored = jdbc.queryForObject("select input::text from workflow.workflow_executions where trigger_id = ?",
+                String.class, triggerId);
+        assertTrue(stored.contains("\"fromEmail\": \"ada@example.test\""), "fromEmail missing from stored input");
+        assertTrue(stored.contains("\"fromName\": \"Ada\""), "fromName missing from stored input");
     }
 }
