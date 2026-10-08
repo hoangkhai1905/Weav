@@ -31,7 +31,7 @@ public final class GmailNodeExecutor implements NodeExecutor {
     private static final int MAX_SENDER_NAME_LENGTH = 100;
     private static final Pattern MESSAGE_ID = Pattern.compile("[0-9A-Fa-f]{1,32}");
     // ponytail: pragmatic address shape check; Gmail performs full RFC 5322 validation.
-    private static final Pattern ADDRESS = Pattern.compile("[^@\\s,;<>\"()\\[\\]]+@[^@\\s,;<>\"()\\[\\]]+\\.[^@\\s,;<>\"()\\[\\]]+");
+    static final Pattern ADDRESS = Pattern.compile("[^@\\s,;<>\"()\\[\\]]+@[^@\\s,;<>\"()\\[\\]]+\\.[^@\\s,;<>\"()\\[\\]]+");
 
     /** {@code Name <addr>} or {@code "Quoted Name" <addr>}: group 2 is the address. */
     static final Pattern MAILBOX = Pattern.compile("(?s)(\"(?:[^\"\\\\]|\\\\.)*\"|[^<>\"]*)\\s*<([^<>]*)>");
@@ -182,7 +182,7 @@ public final class GmailNodeExecutor implements NodeExecutor {
         if (value instanceof String text) {
             candidates.addAll(splitMailboxes(text));
         } else if (value instanceof List<?> list) {
-            candidates.addAll(list);
+            candidates.addAll(list.stream().limit(MAX_RECIPIENTS + 1L).toList());
         } else {
             throw NodeExecutor.Failure.invalidField(field, "must be an email address or a list of addresses.");
         }
@@ -201,6 +201,9 @@ public final class GmailNodeExecutor implements NodeExecutor {
                 throw NodeExecutor.Failure.invalidField(field, "is not a valid email address.");
             }
             recipients.add(address);
+            if (recipients.size() > MAX_RECIPIENTS) {
+                break; // rejected below; no need to validate the rest
+            }
         }
         if (recipients.isEmpty() || recipients.size() > MAX_RECIPIENTS) {
             throw NodeExecutor.Failure.invalidField(field, "must have between 1 and " + MAX_RECIPIENTS + " addresses.");
@@ -229,6 +232,9 @@ public final class GmailNodeExecutor implements NodeExecutor {
             } else if (c == ',' && !quoted && !angle) {
                 parts.add(current.toString());
                 current.setLength(0);
+                if (parts.size() > MAX_RECIPIENTS) {
+                    return parts; // more than allowed: the caller rejects it
+                }
                 continue;
             }
             current.append(c);

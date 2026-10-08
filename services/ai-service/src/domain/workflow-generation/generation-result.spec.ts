@@ -208,6 +208,47 @@ describe('generationResultSchema triggers', () => {
     ).toBe(true);
   });
 
+  const both = generationResultSchema([
+    { type: 'trigger.manual', configFields: [] },
+    { type: 'trigger.webhook', configFields: [] },
+    { type: 'http.request', configFields: ['method', 'url'] },
+  ]);
+  const manual = (id: string) => ({ id, type: 'trigger.manual', config: {} });
+  const hook = { id: 'hook', type: 'trigger.webhook', config: {} };
+  const both_ = (nodes: unknown[], edges: { from: string; to: string }[]) =>
+    both.safeParse({ status: 'ready', intent: { name: 'W', nodes, edges } });
+
+  it('rejects two manual triggers', () => {
+    expect(
+      both_(
+        [manual('m1'), manual('m2'), http('one')],
+        [
+          { from: 'm1', to: 'one' },
+          { from: 'm2', to: 'one' },
+        ],
+      ).success,
+    ).toBe(false);
+  });
+
+  it('accepts a manual trigger next to a webhook when both lead somewhere', () => {
+    expect(
+      both_(
+        [manual('m1'), hook, http('one')],
+        [
+          { from: 'm1', to: 'one' },
+          { from: 'hook', to: 'one' },
+        ],
+      ).success,
+    ).toBe(true);
+  });
+
+  it('rejects a dead manual trigger next to another trigger', () => {
+    expect(
+      both_([manual('m1'), hook, http('one')], [{ from: 'hook', to: 'one' }])
+        .success,
+    ).toBe(false);
+  });
+
   it('rejects a workflow with no trigger', () => {
     expect(body([http('one')], []).success).toBe(false);
   });

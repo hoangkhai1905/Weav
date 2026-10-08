@@ -105,6 +105,29 @@ class ExecutionLeaseTest {
                 java.sql.Timestamp.class, fixture.executionId()).toInstant());
     }
 
+    private static final String WEBHOOK_DEFINITION = """
+            {"schemaVersion":"1.0","nodes":[
+              {"id":"hook","type":"trigger.webhook","config":{}},
+              {"id":"done","type":"action.telegram","config":{}}],
+             "edges":[{"id":"hook-done","source":"hook","target":"done"}],"variables":{}}
+            """;
+
+    @Test
+    void aManualRunRootedAtANonManualTriggerCanBeClaimed() {
+        Fixture fixture = fixture(WEBHOOK_DEFINITION, "MANUAL", "QUEUED", "hook", "{}", 0, false);
+
+        assertTrue(executions.claim(fixture.executionId(), "worker-a", Duration.ofSeconds(30)).isPresent());
+    }
+
+    @Test
+    void anAutomaticRunStillNeedsItsExactRootTypeAndAManualRunNeedsATriggerRoot() {
+        Fixture wrongType = fixture(WEBHOOK_DEFINITION, "TELEGRAM", "QUEUED", "hook", "{}", 0, false);
+        assertTrue(executions.claim(wrongType.executionId(), "worker-a", Duration.ofSeconds(30)).isEmpty());
+
+        Fixture notATrigger = fixture(DEFINITION, "MANUAL", "QUEUED", "done", "{}", 0, false);
+        assertTrue(executions.claim(notATrigger.executionId(), "worker-a", Duration.ofSeconds(30)).isEmpty());
+    }
+
     @Test
     void liveLeaseRenewsLoadsAndReleasesUsingPersistedFencingToken() {
         Fixture fixture = fixture("QUEUED", "root", "[1,null,{\"source\":\"webhook\"}]", 0, false);
@@ -378,6 +401,11 @@ class ExecutionLeaseTest {
     }
 
     private Fixture fixture(String status, String root, String inputJson, long token, boolean takeover) {
+        return fixture(DEFINITION, "MANUAL", status, root, inputJson, token, takeover);
+    }
+
+    private Fixture fixture(String definition, String triggerType, String status, String root, String inputJson,
+                            long token, boolean takeover) {
         UUID workspaceId = UUID.randomUUID();
         UUID workflowId = UUID.randomUUID();
         UUID versionId = UUID.randomUUID();
@@ -390,22 +418,22 @@ class ExecutionLeaseTest {
         jdbc.update("insert into workflow.workflows "
                         + "(id, workspace_id, name, status, schema_version, draft_definition, created_by) "
                         + "values (?, ?, 'Lease fixture', 'PUBLISHED', '1.0', cast(? as jsonb), ?)",
-                workflowId, workspaceId, DEFINITION, actorId);
+                workflowId, workspaceId, definition, actorId);
         jdbc.update("insert into workflow.workflow_versions "
                         + "(id, workflow_id, version_number, definition, schema_version, published_by) "
                         + "values (?, ?, 1, cast(? as jsonb), '1.0', ?)",
-                versionId, workflowId, DEFINITION, actorId);
+                versionId, workflowId, definition, actorId);
         jdbc.update("update workflow.workflows set current_version_id = ? where id = ?", versionId, workflowId);
         jdbc.update("insert into workflow.workflow_executions "
                         + "(id, workflow_id, workflow_version_id, status, trigger_type, triggered_by, root_node_id, "
                         + "input, edge_states, lease_owner, lease_token, lease_until, started_at, created_at) "
-                        + "values (?, ?, ?, ?, 'MANUAL', ?, ?, cast(? as jsonb), "
+                        + "values (?, ?, ?, ?, ?, ?, ?, cast(? as jsonb), "
                         + "cast('{\"root-done\":\"ACTIVE\",\"root-skipped\":\"INACTIVE\","
                         + "\"root-running\":\"ACTIVE\"}' as jsonb), ?, ?, "
                         + (takeover ? "CURRENT_TIMESTAMP - INTERVAL '1 second'" : "null") + ", "
                         + ("RUNNING".equals(status) ? "CURRENT_TIMESTAMP - INTERVAL '10 seconds'" : "null") + ", "
                         + "CURRENT_TIMESTAMP - INTERVAL '10 minutes')",
-                executionId, workflowId, versionId, status, actorId, root, inputJson,
+                executionId, workflowId, versionId, status, triggerType, actorId, root, inputJson,
                 takeover ? "worker-old" : null, token);
 
         insertNode(executionId, rootNodeId, "root", "trigger.manual", "PENDING", 0, null, null, null);

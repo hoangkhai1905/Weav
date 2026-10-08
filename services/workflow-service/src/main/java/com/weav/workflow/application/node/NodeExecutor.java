@@ -52,10 +52,10 @@ public interface NodeExecutor {
         private final String safeMessage;
         private final boolean retryable;
         private final boolean requestNotSent;
-        private String field;
+        private final String field;
 
         public Failure(String code, String safeMessage, boolean retryable) {
-            this(code, safeMessage, retryable, false);
+            this(code, safeMessage, retryable, false, null);
         }
 
         /**
@@ -64,14 +64,20 @@ public interface NodeExecutor {
          *                       side-effecting node may be retried safely.
          */
         public Failure(String code, String safeMessage, boolean retryable, boolean requestNotSent) {
+            this(code, safeMessage, retryable, requestNotSent, null);
+        }
+
+        /** Canonical constructor; {@code field} is the config field behind the failure, or null. */
+        private Failure(String code, String safeMessage, boolean retryable, boolean requestNotSent, String field) {
             super(sanitize(safeMessage));
-            this.requestNotSent = requestNotSent;
             if (code == null || code.isBlank() || code.length() > 128) {
                 throw new IllegalArgumentException("Failure code must be nonblank and at most 128 characters");
             }
             this.code = code;
             this.safeMessage = sanitize(safeMessage);
             this.retryable = retryable;
+            this.requestNotSent = requestNotSent;
+            this.field = field;
         }
 
         /** A non-retryable CONFIGURATION_ERROR that names the offending config field (never its value). */
@@ -79,9 +85,9 @@ public interface NodeExecutor {
             return new Failure("CONFIGURATION_ERROR", "The '" + field + "' field " + reason, false, false, field);
         }
 
-        private Failure(String code, String safeMessage, boolean retryable, boolean requestNotSent, String field) {
-            this(code, safeMessage, retryable, requestNotSent);
-            this.field = field;
+        /** A non-retryable failure with an explicit code that names the field (never its value). */
+        public static Failure forField(String code, String field, String message) {
+            return new Failure(code, message, false, false, field);
         }
 
         /** Config field behind a CONFIGURATION_ERROR, or null. */

@@ -1,5 +1,6 @@
 import type { WorkflowDefinition, WorkflowEdge, WorkflowNode, WorkflowStatus } from '../types/workflow.types';
 import { tr } from '../lib/i18n/tr';
+import { primaryTrigger } from '../lib/executions/runView';
 import { useAuthStore } from '../store/useAuthStore';
 
 const ACTIVE_WORKSPACE_KEY = 'weav_active_workspace_id';
@@ -46,6 +47,8 @@ interface WorkflowSummaryV1 {
   createdAt?: string;
   updatedAt?: string;
   publishedAt?: string | null;
+  /** Node types of every trigger node, in definition order. */
+  triggerTypes?: string[];
 }
 
 interface WorkflowDetailV1 extends WorkflowSummaryV1 {
@@ -321,7 +324,8 @@ function mapSummary(summary: WorkflowSummaryV1, workspaceId: string): WorkflowDe
     description: typeof summary.description === 'string' ? summary.description : undefined,
     status: safeStatus(summary.status),
     version: 1,
-    triggerType: 'trigger.manual',
+    triggerType: primaryTrigger(summary.triggerTypes) ?? 'trigger.manual',
+    ...(Array.isArray(summary.triggerTypes) ? { triggerTypes: summary.triggerTypes } : {}),
     nodes: [],
     edges: [],
     createdAt: safeString(summary.createdAt),
@@ -336,10 +340,11 @@ function mapDetail(detail: WorkflowDetailV1, workspaceId: string): WorkflowDefin
   const editorState = isRecord(detail.editorState) ? detail.editorState : {};
   const editorNodes = isRecord(editorState.nodes) ? editorState.nodes : {};
   const { nodes, edges } = definitionToCanvas(detail.definition, editorNodes);
-  const trigger = nodes.find((node) => node.type.startsWith('trigger.'));
+  const triggerTypes = nodes.filter((node) => node.type.startsWith('trigger.')).map((node) => node.type);
   return {
     ...workflow,
-    triggerType: trigger?.type ?? 'trigger.manual',
+    triggerType: primaryTrigger(triggerTypes) ?? 'trigger.manual',
+    triggerTypes,
     nodes,
     edges,
   };

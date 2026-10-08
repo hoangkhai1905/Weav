@@ -330,6 +330,14 @@ class GmailMessageParserTest {
                 List.of(GmailMessageParser.sender("\"Doe, Jane\" <j@example.test>")));
         assertEquals(List.of("", "bare@example.test"), List.of(GmailMessageParser.sender("bare@example.test")));
         assertEquals(List.of("", ""), List.of(GmailMessageParser.sender("")));
+        // escaped quote inside the quoted name
+        assertEquals(List.of("A \"B\" C", "c@d.e"), List.of(GmailMessageParser.sender("\"A \\\"B\\\" C\" <c@d.e>")));
+        // lenient fallback: junk after the address group, name taken from the text before it
+        assertEquals(List.of("Ada", "ada@example.test"), List.of(GmailMessageParser.sender("Ada <ada@example.test> (work)")));
+        assertEquals(List.of("", "not-an-address"), List.of(GmailMessageParser.sender("<not-an-address>")));
+        // a second <...> group outside quotes is ambiguous: keep the whole header, no name
+        assertEquals(List.of("", "Ada <ada@x.com> (<evil@y.com>)"),
+                List.of(GmailMessageParser.sender("Ada <ada@x.com> (<evil@y.com>)")));
         var input = GmailMessageParser.parse(message(headers(part("text/plain", "x"),
                 "From", "\"Ada L\" <ada@example.test>"))).orElseThrow().input();
         assertEquals("ada@example.test", input.get("fromEmail"));

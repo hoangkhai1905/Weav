@@ -6,15 +6,26 @@ public final class MappingException extends RuntimeException {
 
     private final String nodeId;
     private final String field;
+    private final boolean missingValue;
 
     public MappingException(String message) {
         this(null, null, message);
     }
 
     public MappingException(String nodeId, String field, String message) {
+        this(nodeId, field, message, false);
+    }
+
+    /** @param missingValue true when the referenced output or property does not exist (as opposed to a bad expression) */
+    public MappingException(String nodeId, String field, String message, boolean missingValue) {
         super(message);
         this.nodeId = nodeId;
         this.field = field;
+        this.missingValue = missingValue;
+    }
+
+    public boolean missingValue() {
+        return missingValue;
     }
 
     public String code() {
@@ -41,6 +52,6 @@ public final class MappingException extends RuntimeException {
         return new MappingException(
                 nodeId == null ? destinationNodeId : nodeId,
                 field == null ? destinationField : field,
-                getMessage());
+                getMessage(), missingValue);
     }
 }

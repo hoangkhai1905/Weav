@@ -118,6 +118,31 @@ class GmailNodeExecutorTest {
     }
 
     @Test
+    void parsesEdgeCaseMailboxes() {
+        assertEquals(List.of("c@d.e"), GmailNodeExecutor.parseRecipients("to", "\"a \\\" b\" <c@d.e>"));
+        assertEquals(List.of("c@d.e"), GmailNodeExecutor.parseRecipients("to", "\"a <x> b\" <c@d.e>"));
+        assertEquals(List.of("a+tag@b.co"), GmailNodeExecutor.parseRecipients("to", "a+tag@b.co"));
+        for (String invalid : List.of("a@b.c,,d@e.f", "a@b.c,", ",a@b.c")) {
+            NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                    () -> GmailNodeExecutor.parseRecipients("to", invalid));
+            assertEquals("to", failure.field());
+        }
+    }
+
+    @Test
+    void moreThanTheRecipientLimitIsRejectedWithTheRange() {
+        String eleven = java.util.stream.IntStream.rangeClosed(1, 11)
+                .mapToObj(index -> "u" + index + "@example.test").collect(java.util.stream.Collectors.joining(","));
+        NodeExecutor.Failure asText = assertThrows(NodeExecutor.Failure.class,
+                () -> GmailNodeExecutor.parseRecipients("to", eleven));
+        assertTrue(asText.safeMessage().contains("between 1 and 10"));
+        NodeExecutor.Failure asList = assertThrows(NodeExecutor.Failure.class,
+                () -> GmailNodeExecutor.parseRecipients("cc", List.of(eleven.split(","))));
+        assertTrue(asList.safeMessage().contains("between 1 and 10"));
+        assertEquals("cc", asList.field());
+    }
+
+    @Test
     void authenticationRejectionIsReportedAndConnectionIsClosed() {
         FakeGmailClient gmail = new FakeGmailClient();
         gmail.failure = new NodeExecutor.Failure("AUTHENTICATION_REJECTED", "Rejected.", false);

@@ -123,6 +123,14 @@ function checkGraph(intent: IntentGraph, ctx: z.RefinementCtx): void {
     triggers.filter((n) => n.type === 'trigger.manual').length > 1
   )
     return fail('a trigger is required (at most one manual trigger)');
+  // A manual trigger next to another trigger that leads nowhere is a dead node.
+  if (
+    triggers.length > 1 &&
+    triggers.some(
+      (n) => n.type === 'trigger.manual' && outgoing.get(n.id)!.length === 0,
+    )
+  )
+    return fail('a manual trigger next to another trigger needs an edge');
   const queue = [...indegree].filter(([, d]) => d === 0).map(([id]) => id);
   let visited = 0;
   while (queue.length) {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { fetchWorkflowList } from '../lib/queries/workflows';
@@ -10,6 +10,8 @@ import type { ExecutionDetail, WorkflowDefinition } from '../types/workflow.type
 import { useI18nStore } from '../store/useI18nStore';
 import { statusBadgeClass, type StatusTone } from '../components/common/statusBadgeClass';
 import { appLocale, tr } from '../lib/i18n/tr';
+import { failureOf, isLiveStatus, useLivePolling, type TickResult } from '../lib/executions/useLivePolling';
+import { triggerTypeLabel } from '../lib/executions/runView';
 
 type StatusFilter = 'ALL' | ExecutionDetail['status'];
 
@@ -62,7 +64,9 @@ function LiveGlobalExecutionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const refresh = useCallback(async (silent = false) => {
+  const lastFullRefresh = useRef(0);
+
+  const refresh = useCallback(async (silent = false): Promise<TickResult> => {
     if (isWorkflowMockMode) return;
     if (silent) setRefreshing(true);
     else setLoading(true);
@@ -74,8 +78,10 @@ function LiveGlobalExecutionsPage() {
       ]);
       setExecutions(items);
       setWorkflows(workflowItems);
+      lastFullRefresh.current = Date.now();
     } catch (cause) {
       setError(errorMessage(cause));
+      return failureOf(cause);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -86,11 +92,21 @@ function LiveGlobalExecutionsPage() {
     void refresh();
   }, [refresh]);
 
-  useEffect(() => {
-    if (!workflowId) return;
-    const timer = window.setInterval(() => void refresh(true), 5000);
-    return () => window.clearInterval(timer);
-  }, [refresh, workflowId]);
+  // Every 10 s while any listed run is queued/running. A refresh of every workflow costs 1 + N requests, so a poll
+  // only refetches the workflows that have a live run, and falls back to the full refresh at most every 30 s.
+  const anyLive = executions.some((execution) => isLiveStatus(execution.status));
+  useLivePolling(anyLive, async () => {
+    if (Date.now() - lastFullRefresh.current >= 30_000) return refresh(true);
+    const liveIds = [...new Set(executions.filter((execution) => isLiveStatus(execution.status)).map((execution) => execution.workflowId))];
+    try {
+      const fresh = (await Promise.all(liveIds.map((id) => executionApi.getExecutions(id)))).flat();
+      setExecutions((current) => [...current.filter((execution) => !liveIds.includes(execution.workflowId)), ...fresh]
+        .sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt)));
+      return true;
+    } catch (cause) {
+      return failureOf(cause);
+    }
+  }, 10_000);
 
   const filtered = useMemo(() => executions.filter((execution) => {
     if (status !== 'ALL' && execution.status !== status) return false;
@@ -180,12 +196,10 @@ function LiveGlobalExecutionsPage() {
               : tr('msg.up_to_the_100_latest_runs_per')}
           </span>
         )}
-        {workflowId && (
-          <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Clock3 size={13} aria-hidden="true" />
-            {isVietnamese ? 'Tự làm mới mỗi 5 giây.' : tr('msg.auto_refreshes_every_5_seconds')}
-          </span>
-        )}
+        <span className={`${workflowId ? 'ml-auto ' : ''}inline-flex items-center gap-1.5 text-xs text-muted-foreground`}>
+          <Clock3 size={13} aria-hidden="true" />
+          {t('runs.auto_refresh')}
+        </span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
@@ -207,7 +221,7 @@ function LiveGlobalExecutionsPage() {
                 <td className={td}><span className={statusBadgeClass(statusTone(execution.status))}>{statusLabel(execution.status, isVietnamese)}</span></td>
                 <td className={`${td} font-mono text-xs text-text-2`}>{execution.id}</td>
                 <td className={`${td} max-w-[280px] overflow-hidden text-ellipsis font-medium text-foreground`} title={execution.workflowName}>{execution.workflowName}</td>
-                <td className={`${td} text-text-2`}>{t(`runs.trigger_type.${execution.triggerType.toLowerCase()}`)}</td>
+                <td className={`${td} text-text-2`}>{triggerTypeLabel(execution.triggerType, t)}</td>
                 <td className={`${td} tabular-nums text-text-2`}>{formatDate(execution.startedAt)}</td>
                 <td className={`${td} text-right font-mono text-xs tabular-nums text-text-2`}>{duration(execution)}</td>
                 <td className={`${td} text-right`}>

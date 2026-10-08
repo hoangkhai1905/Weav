@@ -116,6 +116,7 @@ function detailToExecution(
       ...(finish ? { completedAt: finish } : {}),
       ...(durationMs !== undefined ? { durationMs } : {}),
       retryCount: node.attemptCount,
+      ...(node.status === 'SKIPPED' || node.status === 'CANCELLED' ? { skipped: true } : {}),
       ...(node.output !== null ? { output: node.output } : {}),
       ...(error ? { error } : {}),
     };

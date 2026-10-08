@@ -38,7 +38,7 @@ New error codes (non-retryable): `ATTACHMENT_LIMIT_EXCEEDED`, `ATTACHMENT_TOO_LA
 
 ## trigger.gmail
 
-Config unchanged (`connectionId` required, `query` max 500, `pollIntervalMinutes` 1-1440 default 5). Run input (`{{ trigger.input.<field> }}`): `messageId`, `threadId`, `from`, `to`, `cc`, `subject`, `date`, `snippet`, `body`, `bodyTruncated`, `bodyOmitted`, `labelIds`, and new `attachments`: `[{filename, mimeType, size, fileId?, skipped?}]` (always present, possibly empty). `skipped` is `limit` | `too_large` | `not_stored` | `error`; a skipped item has no `fileId`. Needs a connection with read access (reconnect older ones: `CONNECTION_RECONNECT_REQUIRED`).
+Config unchanged (`connectionId` required, `query` max 500, `pollIntervalMinutes` 1-1440 default 5). Run input (`{{ trigger.input.<field> }}`): `messageId`, `threadId`, `from` (raw header), `fromEmail` (bare address), `fromName` (display name or `""`), `to`, `cc`, `subject`, `date`, `snippet`, `body`, `bodyTruncated`, `bodyOmitted`, `labelIds`, and new `attachments`: `[{filename, mimeType, size, fileId?, skipped?}]` (always present, possibly empty). `skipped` is `limit` | `too_large` | `not_stored` | `error`; a skipped item has no `fileId`. Needs a connection with read access (reconnect older ones: `CONNECTION_RECONNECT_REQUIRED`).
 
 ## google.drive
 

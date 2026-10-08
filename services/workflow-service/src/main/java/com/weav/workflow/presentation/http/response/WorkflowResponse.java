@@ -89,11 +89,29 @@ public record WorkflowResponse(
 
     public record Summary(UUID workflowId, String name, String description, WorkflowStatus status,
                           String schemaVersion, UUID currentVersionId, Instant createdAt,
-                          Instant updatedAt, Instant publishedAt) {
+                          Instant updatedAt, Instant publishedAt, List<String> triggerTypes) {
+        public Summary {
+            triggerTypes = List.copyOf(triggerTypes);
+        }
+
         public static Summary from(Workflow workflow) {
             return new Summary(workflow.getId(), workflow.getName(), workflow.getDescription(),
                     workflow.getStatus(), workflow.getSchemaVersion(), workflow.getCurrentVersionId(),
-                    workflow.getCreatedAt(), workflow.getUpdatedAt(), workflow.getPublishedAt());
+                    workflow.getCreatedAt(), workflow.getUpdatedAt(), workflow.getPublishedAt(),
+                    triggerTypes(workflow.getDraftDefinition()));
+        }
+
+        /** Node types of every trigger node (type starting "trigger.") in definition order. */
+        static List<String> triggerTypes(Map<String, Object> definition) {
+            if (definition == null || !(definition.get("nodes") instanceof List<?> nodes)) {
+                return List.of();
+            }
+            return nodes.stream()
+                    .filter(node -> node instanceof Map<?, ?>)
+                    .map(node -> ((Map<?, ?>) node).get("type"))
+                    .filter(type -> type instanceof String text && text.startsWith("trigger."))
+                    .map(String.class::cast)
+                    .toList();
         }
     }
 

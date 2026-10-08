@@ -348,7 +348,7 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
             return new NodeCompletion(nodeId, prepared.attempt(), outcome);
         } catch (MappingException exception) {
             return NodeCompletion.failure(nodeId, prepared.attempt(), NodeAttemptRunner.Outcome.failure(
-                    new NodeExecutor.Failure("MAPPING_ERROR", "The node mapping could not be resolved.", false)));
+                    mappingFailure(exception)));
         } catch (ConfigurationFailure exception) {
             return NodeCompletion.failure(nodeId, prepared.attempt(), NodeAttemptRunner.Outcome.failure(
                     new NodeExecutor.Failure("CONFIGURATION_ERROR", "The node configuration is invalid.", false)));
@@ -358,14 +358,31 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
         }
     }
 
+    /** MAPPING_ERROR naming the failing config field and, for a missing reference, saying so (never a value). */
+    private static NodeExecutor.Failure mappingFailure(MappingException exception) {
+        String field = exception.field();
+        if (field == null || field.isBlank() || field.length() > 128) {
+            return new NodeExecutor.Failure("MAPPING_ERROR", "The node mapping could not be resolved.", false);
+        }
+        return NodeExecutor.Failure.forField("MAPPING_ERROR", field, exception.missingValue()
+                ? "The '" + field + "' field refers to a value that is missing."
+                : "The '" + field + "' field has an invalid mapping.");
+    }
+
     private Map<String, Object> resolveConfig(RuntimeState runtime, WorkflowDefinition.Node definitionNode,
                                               Map<String, Object> outputs) {
         Set<String> staticFields = NodeCatalog.staticFields(definitionNode.type());
         Map<String, Object> mapped = new LinkedHashMap<>(definitionNode.config());
         staticFields.forEach(mapped::remove);
-        Object resolved = mappingResolver.resolve(mapped,
-                new MappingContext(runtime.snapshot.input(), outputs, runtime.snapshot.definition().variables()),
-                definitionNode.id(), "config");
+        MappingContext mappingContext =
+                new MappingContext(runtime.snapshot.input(), outputs, runtime.snapshot.definition().variables());
+        // Resolved field by field so a mapping failure can name the config field it came from.
+        Map<String, Object> resolvedFields = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : mapped.entrySet()) {
+            resolvedFields.put(entry.getKey(), mappingResolver.resolve(
+                    entry.getValue(), mappingContext, definitionNode.id(), entry.getKey()));
+        }
+        Object resolved = resolvedFields;
         if (!(resolved instanceof Map<?, ?> map)) {
             LOGGER.warn("Node configuration rejected (execution {}, node {}): resolved config is not an object",
                     runtime.executionId, definitionNode.id());
