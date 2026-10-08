@@ -1,4 +1,5 @@
 import type { AuthRepository } from '../domain/auth/auth.types';
+import type { AccountRepository } from '../domain/auth/account.types';
 import type { WorkflowRepository } from '../domain/workflow/workflow.types';
 import type { ExecutionRepository } from '../domain/execution/execution.types';
 import type { WorkspaceRepository } from '../domain/workspace/workspace.types';
@@ -15,6 +16,7 @@ import { HttpExecutionRepository } from './http/http-execution.repository';
 import { HttpConnectionRepository } from './http/http-connection.repository';
 import { HttpAiRepository } from './http/http-ai.repository';
 import { HttpAssistantRepository } from './http/http-assistant.repository';
+import { HttpAccountRepository } from './http/http-account.repository';
 
 import { MockWorkspaceRepository } from './mock/mock-workspace.repository';
 import { HttpWorkspaceRepository } from './http/http-workspace.repository';
@@ -44,3 +46,8 @@ export const executionRepository: ExecutionRepository = new HttpExecutionReposit
 export const connectionRepository: ConnectionRepository = new HttpConnectionRepository();
 export const aiRepository: AIRepository = new HttpAiRepository();
 export const assistantRepository: AssistantRepository = new HttpAssistantRepository();
+
+// Avatar and linked Google accounts exist only on the real gateway (mock mode shows neither).
+export const accountRepository: AccountRepository = isMockMode
+  ? { getAvatarUrl: async () => null, deleteAvatar: async () => undefined, listOAuthAccounts: async () => [] }
+  : new HttpAccountRepository();

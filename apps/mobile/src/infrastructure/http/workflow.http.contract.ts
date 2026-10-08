@@ -18,13 +18,13 @@ export function isValidIdempotencyKey(value: unknown): value is string {
  * A new key per click. The gateway silently DROPS a malformed key (the run would
  * then not be idempotent), so the key is validated here instead.
  */
-export function newIdempotencyKey(): string {
+export function newIdempotencyKey(prefix = 'run'): string {
   const bytes = new Uint8Array(16);
   for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  return `run:${hex}`;
+  return `${prefix}:${hex}`;
 }
 
 export function workspaceWorkflowsPath(workspaceId: string): string {

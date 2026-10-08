@@ -1,17 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, ArrowRight, Eye, EyeOff, Lock, Mail, RefreshCw, ShieldCheck } from 'lucide-react-native';
+import { ArrowLeft, KeyRound, Lock, Mail, RefreshCw, Send } from 'lucide-react-native';
 import { authRepository } from '../../infrastructure/repository-factory';
 import { expireAuthSession } from '../../features/auth/auth-session.runtime';
 import {
@@ -20,25 +10,29 @@ import {
   type PasswordRecoveryValidationErrors,
   validatePasswordRecovery,
 } from '../../features/auth/password-recovery.utils';
+import { localizeValidation } from '../../features/common/validation-copy';
 import { useAuthStore } from '../../stores/auth.store';
-import { useUIStore } from '../../stores/ui.store';
 import { useThemeColors } from '../../hooks/useThemeColors';
-import { Logo } from '../../components/common/Logo';
-import { AnimatedNodeVisual } from '../../components/common/AnimatedNodeVisual';
+import { useTranslation } from '../../hooks/useTranslation';
+import { AuthShell } from '../../components/ui/AuthShell';
+import { TextField } from '../../components/ui/TextField';
+import { Button } from '../../components/ui/Button';
 import { captureAuthSessionScope, isAuthSessionScopeCurrent } from '../../features/auth/auth-session.scope';
 import { showMilestoneToast } from '../../features/feedback/milestone-toast';
+import { MinTouch, Spacing, Typography } from '../../constants/theme';
 
-function getRecoveryErrorMessage(error: unknown): string {
-  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') {
-    return error.message;
-  }
-  return 'Password recovery service unavailable. Please try again.';
+/** Friendly message key from the HTTP status only; raw backend text is never shown. */
+function recoveryErrorKey(error: unknown, verifying: boolean): string {
+  const status = (error as { status?: number } | null)?.status;
+  if (status === 429) return 'au.forgot.err.429';
+  if (verifying && (status === 400 || status === 401)) return 'au.forgot.err.code';
+  return 'au.forgot.err.generic';
 }
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
   const colors = useThemeColors();
-  const showToast = useUIStore((state) => state.showToast);
+  const { t } = useTranslation();
   const mounted = useRef(true);
   const flowGeneration = useRef(0);
   const submissionGate = useRef(createPasswordRecoverySubmissionGate());
@@ -48,8 +42,6 @@ export default function ForgotPasswordScreen() {
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [retryAvailableAt, setRetryAvailableAt] = useState<number | null>(null);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [grantConsumed, setGrantConsumed] = useState(false);
@@ -115,9 +107,9 @@ export default function ForgotPasswordScreen() {
       setConfirmPassword('');
       setGrantConsumed(false);
       setRetryAvailableAt(Date.now() + receipt.retryAfter * 1000);
-      setMessage(`Request accepted. If the account is eligible, enter the code from your email within ${receipt.expiresIn} seconds.`);
+      setMessage(t('au.forgot.sent').replace('{n}', String(receipt.expiresIn)));
     } catch (requestError: unknown) {
-      if (isCurrentFlow(generation)) setError(getRecoveryErrorMessage(requestError));
+      if (isCurrentFlow(generation)) setError(t(recoveryErrorKey(requestError, false)));
     } finally {
       if (isCurrentFlow(generation)) setIsPending(false);
       submissionGate.current.finish();
@@ -130,7 +122,7 @@ export default function ForgotPasswordScreen() {
     const resetErrors = { ...errors, email: undefined };
     if (Object.values(resetErrors).some(Boolean) || !challengeId || grantConsumed) {
       setValidationErrors(resetErrors);
-      setError(grantConsumed ? 'This reset attempt is no longer valid. Request a new code.' : null);
+      setError(grantConsumed ? t('au.forgot.err.used') : null);
       submissionGate.current.finish();
       return;
     }
@@ -148,7 +140,6 @@ export default function ForgotPasswordScreen() {
       verified = true;
       await authRepository.resetPassword(verification.resetToken, newPassword);
       if (!isCurrentFlow(generation)) return;
-
       const current = useAuthStore.getState();
       if (capturedScope) {
         if (!isAuthSessionScopeCurrent(capturedScope)) return;
@@ -165,163 +156,123 @@ export default function ForgotPasswordScreen() {
     } catch (resetError: unknown) {
       if (!isCurrentFlow(generation)) return;
       if (verified) setGrantConsumed(true);
-      setError(getRecoveryErrorMessage(resetError));
+      setError(t(recoveryErrorKey(resetError, true)));
     } finally {
       if (isCurrentFlow(generation)) setIsPending(false);
       submissionGate.current.finish();
     }
   };
 
+  const resendDisabled = isPending || cooldownRemaining > 0;
+  const resendLabel = cooldownRemaining > 0 ? t('au.forgot.resendIn').replace('{n}', String(cooldownRemaining)) : t('au.forgot.resend');
+
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={[styles.container, { backgroundColor: colors.bg }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.brandHeader}>
-          <Logo size="md" showSubtitle={true} />
-          <View style={styles.nodeVisualWrapper}><AnimatedNodeVisual size={40} /></View>
-        </View>
+    <AuthShell
+      title={t('au.forgot.title')}
+      subtitle={challengeId ? t('au.forgot.subtitleCode') : t('au.forgot.subtitle')}
+    >
+      <Pressable
+        accessibilityRole="link"
+        accessibilityLabel={t('au.back')}
+        onPress={() => router.replace('/(auth)/login')}
+        style={styles.back}
+      >
+        <ArrowLeft color={colors.textMuted} size={16} />
+        <Text style={[Typography.label, { color: colors.textMuted }]}>{t('au.back')}</Text>
+      </Pressable>
 
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Pressable onPress={() => router.replace('/(auth)/login')} style={styles.backButton}>
-            <ArrowLeft color={colors.textMuted} size={15} />
-            <Text style={[styles.backText, { color: colors.textMuted }]}>Back to sign in</Text>
-          </Pressable>
-
-          <View style={styles.headingRow}>
-            <View style={[styles.iconBox, { backgroundColor: colors.primaryBg }]}>
-              <ShieldCheck color={colors.primary} size={22} />
-            </View>
-            <View style={styles.headingCopy}>
-              <Text style={[styles.title, { color: colors.text }]}>Reset your password</Text>
-              <Text style={[styles.subtitle, { color: colors.textMuted }]}>Use the verification code from your email.</Text>
-            </View>
+      {!challengeId ? (
+        <>
+          <TextField
+              testID="password-recovery-email"
+              label={t('au.email')}
+              icon={Mail}
+              value={email}
+              onChangeText={(value) => { setEmail(value); setValidationErrors({}); setError(null); }}
+              error={localizeValidation(validationErrors.email)}
+              placeholder={t('au.emailPlaceholder')}
+              keyboardType="email-address"
+              autoComplete="email"
+              textContentType="emailAddress"
+            />
+          <View testID="password-recovery-request">
+            <Button
+              label={t('au.forgot.sendCode')}
+              icon={<Send size={18} color={colors.onPrimary} />}
+              busy={isPending}
+              onPress={() => { void handleRequestCode(); }}
+            />
           </View>
+        </>
+      ) : (
+        <>
+          <TextField
+            testID="password-recovery-code"
+            label={t('au.code')}
+            icon={KeyRound}
+            value={code}
+            onChangeText={(value) => { setCode(value.replace(/\D/g, '').slice(0, 6)); setValidationErrors((current) => ({ ...current, code: undefined })); setError(null); }}
+            error={localizeValidation(validationErrors.code)}
+            placeholder={t('au.codePlaceholder')}
+            keyboardType="number-pad"
+            maxLength={6}
+            autoComplete="one-time-code"
+            textContentType="oneTimeCode"
+          />
+          <TextField
+            testID="password-recovery-new"
+            label={t('au.newPassword')}
+            icon={Lock}
+            secure
+            value={newPassword}
+            onChangeText={(value) => { setNewPassword(value); setValidationErrors((current) => ({ ...current, newPassword: undefined })); setError(null); }}
+            error={localizeValidation(validationErrors.newPassword)}
+            hint={t('au.passwordHint')}
+            autoComplete="new-password"
+            textContentType="newPassword"
+          />
+          <TextField
+            testID="password-recovery-confirm"
+            label={t('au.confirmPassword')}
+            icon={Lock}
+            secure
+            value={confirmPassword}
+            onChangeText={(value) => { setConfirmPassword(value); setValidationErrors((current) => ({ ...current, confirmPassword: undefined })); setError(null); }}
+            error={localizeValidation(validationErrors.confirmPassword)}
+            autoComplete="new-password"
+            textContentType="newPassword"
+          />
+          <View testID="password-recovery-submit">
+            <Button
+              label={t('au.forgot.reset')}
+              icon={<KeyRound size={18} color={colors.onPrimary} />}
+              busy={isPending}
+              disabled={grantConsumed}
+              onPress={() => { void handleResetPassword(); }}
+            />
+          </View>
+          <View testID="password-recovery-resend">
+            <Button
+              variant="secondary"
+              label={resendLabel}
+              icon={<RefreshCw size={18} color={colors.text} />}
+              disabled={resendDisabled}
+              onPress={() => { void handleRequestCode(); }}
+            />
+          </View>
+        </>
+      )}
 
-          {!challengeId ? (
-            <View style={styles.form}>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: colors.textSubtle }]}>Email address</Text>
-                <View style={[styles.inputWrapper, { backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong }]}>
-                  <Mail color={colors.textSubtle} size={18} />
-                  <TextInput
-                    testID="password-recovery-email"
-                    value={email}
-                    onChangeText={(value) => { setEmail(value); setValidationErrors({}); setError(null); }}
-                    placeholder="name@company.com"
-                    placeholderTextColor={colors.textSubtle}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="email-address"
-                    style={[styles.input, { color: colors.text }]}
-                  />
-                </View>
-                {validationErrors.email && <Text testID="password-recovery-email-error" style={[styles.inlineError, { color: colors.danger }]}>{validationErrors.email}</Text>}
-              </View>
-
-              <Pressable testID="password-recovery-request" disabled={isPending} onPress={() => { void handleRequestCode(); }} style={[styles.ctaButton, { backgroundColor: colors.primary }, isPending && styles.disabledButton]}>
-                {isPending ? <ActivityIndicator color="#ffffff" /> : <><Text style={styles.ctaText}>Send reset code</Text><ArrowRight color="#ffffff" size={16} /></>}
-              </Pressable>
-            </View>
-          ) : (
-            <View style={styles.form}>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: colors.textSubtle }]}>Verification code</Text>
-                <TextInput
-                  testID="password-recovery-code"
-                  value={code}
-                  onChangeText={(value) => { setCode(value.replace(/\D/g, '').slice(0, 6)); setValidationErrors((current) => ({ ...current, code: undefined })); setError(null); }}
-                  placeholder="6-digit code"
-                  placeholderTextColor={colors.textSubtle}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  style={[styles.inputStandalone, { color: colors.text, backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong }]}
-                />
-                {validationErrors.code && <Text testID="password-recovery-code-error" style={[styles.inlineError, { color: colors.danger }]}>{validationErrors.code}</Text>}
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: colors.textSubtle }]}>New password</Text>
-                <View style={[styles.inputWrapper, { backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong }]}>
-                  <Lock color={colors.textSubtle} size={18} />
-                  <TextInput
-                    testID="password-recovery-new"
-                    value={newPassword}
-                    onChangeText={(value) => { setNewPassword(value); setValidationErrors((current) => ({ ...current, newPassword: undefined })); setError(null); }}
-                    placeholder="••••••••"
-                    placeholderTextColor={colors.textSubtle}
-                    secureTextEntry={!showNewPassword}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={[styles.input, { color: colors.text }]}
-                  />
-                  <Pressable onPress={() => setShowNewPassword((value) => !value)} style={styles.eyeButton}>{showNewPassword ? <EyeOff color={colors.textSubtle} size={18} /> : <Eye color={colors.textSubtle} size={18} />}</Pressable>
-                </View>
-                {validationErrors.newPassword && <Text testID="password-recovery-new-error" style={[styles.inlineError, { color: colors.danger }]}>{validationErrors.newPassword}</Text>}
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: colors.textSubtle }]}>Confirm new password</Text>
-                <View style={[styles.inputWrapper, { backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong }]}>
-                  <Lock color={colors.textSubtle} size={18} />
-                  <TextInput
-                    testID="password-recovery-confirm"
-                    value={confirmPassword}
-                    onChangeText={(value) => { setConfirmPassword(value); setValidationErrors((current) => ({ ...current, confirmPassword: undefined })); setError(null); }}
-                    placeholder="••••••••"
-                    placeholderTextColor={colors.textSubtle}
-                    secureTextEntry={!showConfirmPassword}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    style={[styles.input, { color: colors.text }]}
-                  />
-                  <Pressable onPress={() => setShowConfirmPassword((value) => !value)} style={styles.eyeButton}>{showConfirmPassword ? <EyeOff color={colors.textSubtle} size={18} /> : <Eye color={colors.textSubtle} size={18} />}</Pressable>
-                </View>
-                {validationErrors.confirmPassword && <Text testID="password-recovery-confirm-error" style={[styles.inlineError, { color: colors.danger }]}>{validationErrors.confirmPassword}</Text>}
-              </View>
-
-              <Pressable testID="password-recovery-submit" disabled={isPending || grantConsumed} onPress={() => { void handleResetPassword(); }} style={[styles.ctaButton, { backgroundColor: colors.primary }, (isPending || grantConsumed) && styles.disabledButton]}>
-                {isPending ? <ActivityIndicator color="#ffffff" /> : <><Text style={styles.ctaText}>Reset password</Text><ArrowRight color="#ffffff" size={16} /></>}
-              </Pressable>
-
-              <Pressable testID="password-recovery-resend" disabled={isPending || cooldownRemaining > 0} onPress={() => { void handleRequestCode(); }} style={[styles.secondaryButton, { borderColor: colors.primary }, (isPending || cooldownRemaining > 0) && styles.disabledButton]}>
-                <RefreshCw color={colors.primary} size={15} />
-                <Text style={[styles.secondaryText, { color: colors.primary }]}>{cooldownRemaining > 0 ? `Request a new code in ${cooldownRemaining}s` : 'Request a new code'}</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {message && <Text testID="password-recovery-message" style={[styles.message, { color: colors.success }]}>{message}</Text>}
-          {error && <Text testID="password-recovery-error" style={[styles.inlineError, { color: colors.danger }]}>{error}</Text>}
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      {message ? (
+        <Text testID="password-recovery-message" style={[Typography.caption, { color: colors.success }]}>{message}</Text>
+      ) : null}
+      {error ? (
+        <Text testID="password-recovery-error" accessibilityRole="alert" style={[Typography.caption, { color: colors.danger }]}>{error}</Text>
+      ) : null}
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  scrollContent: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 24, gap: 16 },
-  brandHeader: { alignItems: 'center', gap: 10 },
-  nodeVisualWrapper: { marginVertical: 2 },
-  card: { width: '100%', maxWidth: 520, alignSelf: 'center', borderRadius: 24, borderWidth: 1, padding: 24, gap: 18 },
-  backButton: { flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingVertical: 3 },
-  backText: { fontSize: 12, fontWeight: '700' },
-  headingRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconBox: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  headingCopy: { flex: 1, gap: 3 },
-  title: { fontSize: 20, fontWeight: '900' },
-  subtitle: { fontSize: 12, lineHeight: 17 },
-  form: { gap: 14 },
-  inputGroup: { gap: 5 },
-  label: { fontSize: 11, fontWeight: '700' },
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, height: 52, gap: 10 },
-  input: { flex: 1, fontSize: 13, height: '100%' },
-  inputStandalone: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, height: 52, fontSize: 13 },
-  eyeButton: { padding: 4 },
-  inlineError: { fontSize: 12, lineHeight: 17 },
-  message: { fontSize: 12, lineHeight: 17 },
-  ctaButton: { borderRadius: 12, height: 52, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  ctaText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
-  secondaryButton: { borderWidth: 1, borderRadius: 12, height: 44, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 7 },
-  secondaryText: { fontSize: 12, fontWeight: '800' },
-  disabledButton: { opacity: 0.55 },
+  back: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one, alignSelf: 'flex-start', minHeight: MinTouch },
 });

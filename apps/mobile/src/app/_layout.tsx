@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ToastContainer } from '../components/ui/ToastContainer';
+import { useThemeColors } from '../hooks/useThemeColors';
 import {
   useWorkspace,
   useWorkspaceSessionCleanup,
@@ -31,12 +32,13 @@ function WorkspaceRuntimeBoundary() {
 }
 
 export default function RootLayout() {
+  const colors = useThemeColors();
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <WorkspaceRuntimeBoundary />
-        <StatusBar style="light" />
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#090d16' } }}>
+        <StatusBar style={colors.isDark ? 'light' : 'dark'} />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(app)" />
         </Stack>

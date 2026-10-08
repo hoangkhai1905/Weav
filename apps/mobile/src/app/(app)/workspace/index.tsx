@@ -1,46 +1,83 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, Building2, RefreshCw } from 'lucide-react-native';
+import { Building2, Check, LogOut, Plus, Search, UserPlus } from 'lucide-react-native';
 import { useWorkspace } from '../../../features/workspace/hooks/useWorkspace';
+import { useSwitchWorkspace } from '../../../features/workspace/hooks/useSwitchWorkspace';
 import {
-  canSubmitWorkspaceMutation,
   canManageWorkspaceMember,
   createWorkspaceInput,
   isWorkspaceMemberMutationScopeCurrent,
-  isWorkspaceMutationScopeCurrent,
   validateMemberEmail,
   validateWorkspaceName,
 } from '../../../features/workspace/workspace.mutations';
+import { MemberCard } from '../../../features/workspace/components/MemberCard';
+import { normalizeSearch } from '../../../features/workflows/workflow.filter';
+import { friendlyErrorMessage } from '../../../features/common/friendly-error';
+import { localizeValidation } from '../../../features/common/validation-copy';
 import type { WorkspaceMember } from '../../../domain/workspace/workspace.types';
+import { Button } from '../../../components/ui/Button';
+import { ConfirmSheet } from '../../../components/ui/ConfirmSheet';
+import { EmptyState } from '../../../components/ui/EmptyState';
+import { ErrorState } from '../../../components/ui/ErrorState';
+import { ListSkeleton } from '../../../components/ui/ListSkeleton';
+import { ScreenHeader } from '../../../components/ui/ScreenHeader';
+import { Sheet } from '../../../components/ui/Sheet';
+import { TextField } from '../../../components/ui/TextField';
+import type { ApiError } from '../../../domain/common/error.types';
+import { MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
 import { useThemeColors } from '../../../hooks/useThemeColors';
+import { useTranslation } from '../../../hooks/useTranslation';
 import { useAuthStore } from '../../../stores/auth.store';
+import { useUIStore } from '../../../stores/ui.store';
 import { useWorkspaceStore } from '../../../stores/workspace.store';
 
-function messageFor(error: unknown, fallback: string): string {
-  const candidate = error as { message?: string } | null;
-  return candidate?.message || fallback;
+type Confirmation = { kind: 'remove'; member: WorkspaceMember } | { kind: 'leave' } | null;
+
+/** Identifies "this user, this session, this workspace" so a late answer never touches another one. */
+function captureScope() {
+  const auth = useAuthStore.getState();
+  return {
+    userId: auth.user?.id ?? null,
+    generation: auth.sessionGeneration,
+    workspaceId: useWorkspaceStore.getState().activeWorkspaceId,
+  };
+}
+
+function scopeIsCurrent(scope: ReturnType<typeof captureScope>): boolean {
+  const auth = useAuthStore.getState();
+  return (
+    scope.userId !== null &&
+    scope.workspaceId !== null &&
+    auth.sessionGeneration === scope.generation &&
+    isWorkspaceMemberMutationScopeCurrent(
+      scope.userId,
+      scope.workspaceId,
+      auth.user?.id ?? null,
+      useWorkspaceStore.getState().activeWorkspaceId,
+      auth.isAuthenticated,
+    )
+  );
 }
 
 export default function WorkspaceScreen() {
   const router = useRouter();
   const colors = useThemeColors();
+  const { t } = useTranslation();
+  const showToast = useUIStore((s) => s.showToast);
+  const switchWorkspace = useSwitchWorkspace();
   const {
     workspaces,
     activeWorkspace,
     activeWorkspaceId,
     members,
     isLoadingWorkspace,
-    isLoadingDetail,
     isLoadingMembers,
     workspaceError,
-    detailError,
     membersError,
     workspaceAccessError,
-    selectWorkspace,
     retryWorkspace,
-    retryDetail,
     retryMembers,
     createWorkspaceMutation,
     renameWorkspaceMutation,
@@ -49,613 +86,413 @@ export default function WorkspaceScreen() {
     removeMemberMutation,
     leaveWorkspaceMutation,
   } = useWorkspace();
-  const sessionUserId = useAuthStore((state) => state.user?.id ?? null);
-  const sessionGeneration = useAuthStore((state) => state.sessionGeneration);
+  const sessionUserId = useAuthStore((s) => s.user?.id ?? null);
+
+  const [createOpen, setCreateOpen] = React.useState(false);
+  const [inviteOpen, setInviteOpen] = React.useState(false);
   const [createName, setCreateName] = React.useState('');
-  const [createError, setCreateError] = React.useState<string | null>(null);
   const [renameName, setRenameName] = React.useState('');
-  const [renameError, setRenameError] = React.useState<string | null>(null);
   const [memberEmail, setMemberEmail] = React.useState('');
-  const [memberError, setMemberError] = React.useState<string | null>(null);
-  const [memberActionError, setMemberActionError] = React.useState<string | null>(null);
-  const [confirmation, setConfirmation] = React.useState<
-    { kind: 'remove'; member: WorkspaceMember } | { kind: 'leave'; member: WorkspaceMember } | null
-  >(null);
-  const createSubmissionRef = React.useRef(false);
-  const renameSubmissionRef = React.useRef(false);
-  const memberSubmissionRef = React.useRef(false);
+  const [search, setSearch] = React.useState('');
+  const [createError, setCreateError] = React.useState<string | null>(null);
+  const [renameError, setRenameError] = React.useState<string | null>(null);
+  const [inviteError, setInviteError] = React.useState<string | null>(null);
+  const [confirmation, setConfirmation] = React.useState<Confirmation>(null);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const busyRef = React.useRef(false);
 
   React.useEffect(() => {
     setRenameName(activeWorkspace?.name ?? '');
     setRenameError(null);
     setMemberEmail('');
-    setMemberError(null);
-    setMemberActionError(null);
+    setInviteError(null);
+    setSearch('');
     setConfirmation(null);
   }, [activeWorkspace?.id, sessionUserId]);
 
-  const currentMember = members.find((member) => member.id === sessionUserId);
-  const canManageMembers = canManageWorkspaceMember(currentMember);
+  const me = members.find((m) => m.id === sessionUserId);
+  const isOwner = canManageWorkspaceMember(me);
+  const membersBusy =
+    updateMemberPermissionsMutation.isPending || removeMemberMutation.isPending || leaveWorkspaceMutation.isPending;
+
+  const visibleMembers = React.useMemo(() => {
+    const q = normalizeSearch(search);
+    if (!q) return members;
+    return members.filter((m) => normalizeSearch(`${m.name} ${m.email}`).includes(q));
+  }, [members, search]);
+
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace('/(app)/(tabs)'));
+
+  /** One request at a time; reports failure only if the user and workspace are still the same. */
+  const guarded = async (run: () => Promise<void>, onError: (message: string) => void) => {
+    if (busyRef.current) return;
+    const scope = captureScope();
+    if (!scope.userId || !scope.workspaceId) return;
+    busyRef.current = true;
+    try {
+      await run();
+    } catch (error) {
+      if (scopeIsCurrent(scope)) onError(friendlyErrorMessage(error));
+    } finally {
+      busyRef.current = false;
+    }
+  };
 
   const handleCreate = async () => {
-    if (!canSubmitWorkspaceMutation(createWorkspaceMutation.isPending, createSubmissionRef.current)) return;
-
-    const validationError = validateWorkspaceName(createName, false);
-    if (validationError) {
-      setCreateError(validationError);
-      return;
-    }
-
-    const mutationUserId = useAuthStore.getState().user?.id ?? null;
-    if (!mutationUserId || !useAuthStore.getState().isAuthenticated) {
-      setCreateError('Please sign in again before creating a workspace.');
-      return;
-    }
-
-    createSubmissionRef.current = true;
+    const invalid = validateWorkspaceName(createName, false);
+    if (invalid) return setCreateError(localizeValidation(invalid));
     setCreateError(null);
-
+    if (busyRef.current || createWorkspaceMutation.isPending) return;
+    busyRef.current = true;
     try {
       await createWorkspaceMutation.mutateAsync(createWorkspaceInput(createName));
-      const auth = useAuthStore.getState();
-      if (auth.sessionGeneration !== sessionGeneration || !isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated)) {
-        return;
-      }
       setCreateName('');
+      setCreateOpen(false);
     } catch (error) {
-      const auth = useAuthStore.getState();
-      if (auth.sessionGeneration === sessionGeneration && isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated)) {
-        setCreateError(messageFor(error, 'Unable to create this workspace.'));
-      }
+      setCreateError(friendlyErrorMessage(error));
     } finally {
-      createSubmissionRef.current = false;
+      busyRef.current = false;
     }
   };
 
-  const handleRename = async () => {
-    if (!activeWorkspaceId || !canSubmitWorkspaceMutation(renameWorkspaceMutation.isPending, renameSubmissionRef.current)) return;
+  const handleRename = () =>
+    guarded(
+      async () => {
+        const invalid = validateWorkspaceName(renameName, true);
+        if (invalid) {
+          setRenameError(localizeValidation(invalid));
+          return;
+        }
+        setRenameError(null);
+        const renamed = await renameWorkspaceMutation.mutateAsync({
+          workspaceId: activeWorkspaceId as string,
+          input: { name: renameName.trim() },
+        });
+        setRenameName(renamed.name);
+      },
+      setRenameError,
+    );
 
-    const validationError = validateWorkspaceName(renameName, true);
-    if (validationError) {
-      setRenameError(validationError);
-      return;
-    }
+  const handleInvite = () =>
+    guarded(
+      async () => {
+        const invalid = validateMemberEmail(memberEmail);
+        if (invalid) {
+          setInviteError(localizeValidation(invalid));
+          return;
+        }
+        setInviteError(null);
+        await addMemberMutation.mutateAsync({ email: memberEmail.trim() });
+        setMemberEmail('');
+        setInviteOpen(false);
+      },
+      setInviteError,
+    );
 
-    const mutationUserId = useAuthStore.getState().user?.id ?? null;
-    const mutationWorkspaceId = activeWorkspaceId;
-    if (!mutationUserId || !useAuthStore.getState().isAuthenticated) {
-      setRenameError('Please sign in again before renaming a workspace.');
-      return;
-    }
+  const handleToggle = (member: WorkspaceMember, field: 'canPublishWorkflow' | 'canManageWorkflowState') =>
+    guarded(
+      async () => {
+        await updateMemberPermissionsMutation.mutateAsync({
+          workspaceId: activeWorkspaceId as string,
+          userId: member.id,
+          input: {
+            canPublishWorkflow: field === 'canPublishWorkflow' ? !member.canPublishWorkflow : member.canPublishWorkflow,
+            canManageWorkflowState:
+              field === 'canManageWorkflowState' ? !member.canManageWorkflowState : member.canManageWorkflowState,
+          },
+        });
+      },
+      (message) => showToast({ type: 'error', title: t('ws.toast.permFailed'), message }),
+    );
 
-    renameSubmissionRef.current = true;
-    setRenameError(null);
-
-    try {
-      const renamed = await renameWorkspaceMutation.mutateAsync({
-        workspaceId: mutationWorkspaceId,
-        input: { name: renameName.trim() },
-      });
-      const auth = useAuthStore.getState();
-      if (auth.sessionGeneration !== sessionGeneration || !isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated)) {
-        return;
-      }
-      setRenameName(renamed.name);
-    } catch (error) {
-      const auth = useAuthStore.getState();
-      if (auth.sessionGeneration === sessionGeneration && isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated)) {
-        setRenameError(messageFor(error, 'Unable to rename this workspace.'));
-      }
-    } finally {
-      renameSubmissionRef.current = false;
-    }
-  };
-
-  const handleAddMember = async () => {
-    if (!activeWorkspaceId || !canManageMembers || memberSubmissionRef.current || addMemberMutation.isPending) return;
-    const validationError = validateMemberEmail(memberEmail);
-    if (validationError) {
-      setMemberError(validationError);
-      return;
-    }
-    const mutationUserId = useAuthStore.getState().user?.id ?? null;
-    const mutationWorkspaceId = activeWorkspaceId;
-    if (!mutationUserId || !useAuthStore.getState().isAuthenticated) {
-      setMemberError('Please sign in again before adding a member.');
-      return;
-    }
-
-    memberSubmissionRef.current = true;
-    setMemberError(null);
-    try {
-      await addMemberMutation.mutateAsync({ email: memberEmail.trim() });
-      const auth = useAuthStore.getState();
-      if (auth.sessionGeneration !== sessionGeneration || !isWorkspaceMemberMutationScopeCurrent(
-        mutationUserId,
-        mutationWorkspaceId,
-        auth.user?.id ?? null,
-        useWorkspaceStore.getState().activeWorkspaceId,
-        auth.isAuthenticated,
-      )) return;
-      setMemberEmail('');
-    } catch (error) {
-      const auth = useAuthStore.getState();
-      if (auth.sessionGeneration === sessionGeneration && isWorkspaceMemberMutationScopeCurrent(
-        mutationUserId,
-        mutationWorkspaceId,
-        auth.user?.id ?? null,
-        useWorkspaceStore.getState().activeWorkspaceId,
-        auth.isAuthenticated,
-      )) {
-        setMemberError(messageFor(error, 'Unable to add this member.'));
-      }
-    } finally {
-      memberSubmissionRef.current = false;
-    }
-  };
-
-  const handlePermissionToggle = async (member: WorkspaceMember, field: 'canPublishWorkflow' | 'canManageWorkflowState') => {
-    if (!activeWorkspaceId || !canManageMembers || member.role === 'OWNER' || updateMemberPermissionsMutation.isPending) return;
-    const mutationUserId = useAuthStore.getState().user?.id ?? null;
-    const mutationWorkspaceId = activeWorkspaceId;
-    if (!mutationUserId || !useAuthStore.getState().isAuthenticated) return;
-    setMemberActionError(null);
-    try {
-      await updateMemberPermissionsMutation.mutateAsync({
-        workspaceId: mutationWorkspaceId,
-        userId: member.id,
-        input: {
-          canPublishWorkflow: field === 'canPublishWorkflow' ? !member.canPublishWorkflow : member.canPublishWorkflow,
-          canManageWorkflowState: field === 'canManageWorkflowState' ? !member.canManageWorkflowState : member.canManageWorkflowState,
-        },
-      });
-    } catch (error) {
-      const auth = useAuthStore.getState();
-      if (
-        auth.sessionGeneration === sessionGeneration && isWorkspaceMutationScopeCurrent(mutationUserId, auth.user?.id ?? null, auth.isAuthenticated) &&
-        useWorkspaceStore.getState().activeWorkspaceId === mutationWorkspaceId
-      ) {
-        setMemberActionError(messageFor(error, 'Unable to update member permissions.'));
-      }
-    }
-  };
-
-  const handleConfirmMemberAction = async () => {
-    if (!confirmation || !activeWorkspaceId || memberSubmissionRef.current) return;
+  const handleConfirm = () => {
     const action = confirmation;
-    const mutationUserId = useAuthStore.getState().user?.id ?? null;
-    const mutationWorkspaceId = activeWorkspaceId;
-    if (!mutationUserId || !useAuthStore.getState().isAuthenticated) {
-      setMemberActionError('Please sign in again before changing workspace members.');
-      setConfirmation(null);
-      return;
-    }
-
-    memberSubmissionRef.current = true;
-    setMemberActionError(null);
-    try {
-      if (action.kind === 'remove') {
-        await removeMemberMutation.mutateAsync({ workspaceId: mutationWorkspaceId, userId: action.member.id });
-      } else {
-        await leaveWorkspaceMutation.mutateAsync(mutationWorkspaceId);
-      }
-      const auth = useAuthStore.getState();
-      if (auth.sessionGeneration === sessionGeneration && isWorkspaceMemberMutationScopeCurrent(
-        mutationUserId,
-        mutationWorkspaceId,
-        auth.user?.id ?? null,
-        useWorkspaceStore.getState().activeWorkspaceId,
-        auth.isAuthenticated,
-      )) {
+    if (!action) return;
+    void guarded(
+      async () => {
+        if (action.kind === 'remove') {
+          await removeMemberMutation.mutateAsync({
+            workspaceId: activeWorkspaceId as string,
+            userId: action.member.id,
+          });
+        } else {
+          await leaveWorkspaceMutation.mutateAsync(activeWorkspaceId as string);
+        }
         setConfirmation(null);
-      }
-    } catch (error) {
-      const auth = useAuthStore.getState();
-      if (auth.sessionGeneration === sessionGeneration && isWorkspaceMemberMutationScopeCurrent(
-        mutationUserId,
-        mutationWorkspaceId,
-        auth.user?.id ?? null,
-        useWorkspaceStore.getState().activeWorkspaceId,
-        auth.isAuthenticated,
-      )) {
-        setMemberActionError(messageFor(error, action.kind === 'remove' ? 'Unable to remove this member.' : 'Unable to leave this workspace.'));
-      }
+      },
+      (message) => {
+        setConfirmation(null);
+        showToast({
+          type: 'error',
+          title: t(action.kind === 'remove' ? 'ws.toast.removeFailed' : 'ws.toast.leaveFailed'),
+          message,
+        });
+      },
+    );
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([retryWorkspace(), activeWorkspaceId ? retryMembers() : Promise.resolve()]);
     } finally {
-      memberSubmissionRef.current = false;
+      setRefreshing(false);
     }
   };
 
-  const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/(app)/(tabs)');
-    }
-  };
-
-  const showInitialLoading = isLoadingWorkspace && workspaces.length === 0;
-  const showInitialError = Boolean(workspaceError) && workspaces.length === 0;
-  const showEmpty = !isLoadingWorkspace && !workspaceError && workspaces.length === 0;
+  const showSkeleton = isLoadingWorkspace && workspaces.length === 0;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Pressable
-          style={styles.backBtn}
-          onPress={handleBack}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <ArrowLeft color={colors.text} size={20} />
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Workspaces</Text>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Choose workspace</Text>
-          <Text style={[styles.sectionHint, { color: colors.textSubtle }]}>Only workspaces returned by your account are selectable.</Text>
-        </View>
-
-        {showInitialLoading && (
-          <View testID="workspace-loading" style={[styles.statusCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.statusText, { color: colors.textMuted }]}>Loading workspaces…</Text>
-          </View>
-        )}
-
-        {showInitialError && (
-          <View testID="workspace-error" style={[styles.statusCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.statusText, { color: colors.danger || colors.text }]}>
-              {messageFor(workspaceError, 'Unable to load workspaces.')}
-            </Text>
-            <RetryButton onPress={retryWorkspace} colors={colors} testID="workspace-retry" />
-          </View>
-        )}
-
-        {showEmpty && (
-          <View testID="workspace-empty" style={[styles.statusCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.statusText, { color: colors.textMuted }]}>No workspaces are available for this account.</Text>
-            <RetryButton onPress={retryWorkspace} colors={colors} testID="workspace-empty-retry" />
-          </View>
-        )}
-
-        {workspaces.length > 0 && (
-          <View testID="workspace-list" style={styles.workspaceList}>
-            {workspaces.map((workspace) => {
-              const selected = workspace.id === activeWorkspaceId;
-              return (
-                <Pressable
-                  key={workspace.id}
-                  testID={`workspace-option-${workspace.id}`}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                  onPress={() => selectWorkspace(workspace.id)}
-                  style={[
-                    styles.workspaceOption,
-                    { backgroundColor: colors.card, borderColor: selected ? colors.primary : colors.border },
-                  ]}
-                >
-                  <View style={[styles.iconCircle, { backgroundColor: colors.cardSecondary }]}>
-                    <Building2 color={selected ? colors.primary : colors.textSubtle} size={20} />
-                  </View>
-                  <View style={styles.workspaceOptionText}>
-                    <Text style={[styles.workspaceName, { color: colors.text }]}>{workspace.name}</Text>
-                    <Text style={[styles.workspaceId, { color: colors.textSubtle }]}>{workspace.id}</Text>
-                  </View>
-                  {selected && <Text style={[styles.selectedLabel, { color: colors.primary }]}>Selected</Text>}
-                </Pressable>
-              );
-            })}
-          </View>
-        )}
-
-        {workspaceAccessError && (
-          <View testID="workspace-selection-error" style={[styles.noticeCard, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
-            <Text style={[styles.noticeText, { color: colors.textMuted }]}>{workspaceAccessError}</Text>
-          </View>
-        )}
-
-        <View testID="workspace-mutations" style={[styles.formCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Workspace settings</Text>
-          <Text style={[styles.sectionHint, { color: colors.textSubtle }]}>Create a workspace or rename the selected workspace.</Text>
-
-          <Text style={[styles.formLabel, { color: colors.text }]}>New workspace name (optional)</Text>
-          <TextInput
-            testID="workspace-create-name"
-            value={createName}
-            onChangeText={(value) => {
-              setCreateName(value);
-              setCreateError(null);
-            }}
-            placeholder="Workspace name"
-            placeholderTextColor={colors.textSubtle}
-            maxLength={255}
-            editable={!createWorkspaceMutation.isPending}
-            style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.cardSecondary }]}
-          />
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+      <ScreenHeader
+        title={t('ws.title')}
+        onBack={goBack}
+        trailing={
           <Pressable
-            testID="workspace-create-submit"
-            onPress={handleCreate}
-            disabled={createWorkspaceMutation.isPending}
+            testID="workspace-create-open"
             accessibilityRole="button"
-            style={[styles.formButton, { backgroundColor: colors.primary }, createWorkspaceMutation.isPending && styles.disabledButton]}
+            accessibilityLabel={t('ws.create')}
+            onPress={() => setCreateOpen(true)}
+            style={styles.iconBtn}
           >
-            <Text style={styles.formButtonText}>{createWorkspaceMutation.isPending ? 'Creating…' : 'Create workspace'}</Text>
+            <Plus size={22} color={colors.primary} />
           </Pressable>
-          {createError && <Text testID="workspace-create-error" accessibilityRole="alert" style={[styles.formError, { color: colors.danger || colors.text }]}>{createError}</Text>}
-
-          {activeWorkspace && (
-            <>
-              <Text style={[styles.formLabel, { color: colors.text }]}>Rename selected workspace</Text>
-              <TextInput
-                testID="workspace-rename-name"
-                value={renameName}
-                onChangeText={(value) => {
-                  setRenameName(value);
-                  setRenameError(null);
-                }}
-                placeholder="Workspace name"
-                placeholderTextColor={colors.textSubtle}
-                maxLength={255}
-                editable={!renameWorkspaceMutation.isPending}
-                style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.cardSecondary }]}
-              />
-              <Pressable
-                testID="workspace-rename-submit"
-                onPress={handleRename}
-                disabled={renameWorkspaceMutation.isPending}
-                accessibilityRole="button"
-                style={[styles.formButton, { backgroundColor: colors.primary }, renameWorkspaceMutation.isPending && styles.disabledButton]}
-              >
-                <Text style={styles.formButtonText}>{renameWorkspaceMutation.isPending ? 'Saving…' : 'Save workspace name'}</Text>
-              </Pressable>
-              {renameError && <Text testID="workspace-rename-error" accessibilityRole="alert" style={[styles.formError, { color: colors.danger || colors.text }]}>{renameError}</Text>}
-            </>
-          )}
-        </View>
-
-        {activeWorkspace && (
-          <View testID="workspace-current" style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.wsHeader}>
-              <View style={[styles.iconCircle, { backgroundColor: colors.cardSecondary }]}>
-                <Building2 color={colors.primary} size={22} />
-              </View>
-              <View style={styles.wsTitleGroup}>
-                <Text testID="workspace-current-name" style={[styles.wsName, { color: colors.text }]}>{activeWorkspace.name}</Text>
-                <Text testID="workspace-current-id" style={[styles.wsOwner, { color: colors.textSubtle }]}>{activeWorkspace.id}</Text>
-              </View>
-            </View>
-            {isLoadingDetail && (
-              <Text testID="workspace-detail-loading" style={[styles.statusText, { color: colors.textMuted }]}>Refreshing workspace details…</Text>
-            )}
-            {detailError && (
-              <View testID="workspace-detail-error" style={styles.inlineError}>
-                <Text style={[styles.statusText, { color: colors.danger || colors.text }]}>{messageFor(detailError, 'Unable to load workspace details.')}</Text>
-                <RetryButton onPress={retryDetail} colors={colors} testID="workspace-detail-retry" />
-              </View>
-            )}
-            <View testID="workspace-member-management" style={[styles.webManageBox, { backgroundColor: colors.cardSecondary }]}>
-              <Text style={[styles.webManageText, { color: colors.textMuted }]}>Only the workspace owner can manage members. The server remains the final authority.</Text>
-              {!currentMember && (
-                <Text testID="workspace-member-capability-loading" style={[styles.webManageText, { color: colors.textSubtle }]}>Your member permissions are still loading; management is disabled.</Text>
-              )}
-              {currentMember && currentMember.role === 'MEMBER' && (
-                <Text testID="workspace-member-capability-denied" style={[styles.webManageText, { color: colors.textSubtle }]}>You can view members, but only the owner can change membership.</Text>
-              )}
-              {canManageMembers && (
-                <>
-                  <Text style={[styles.formLabel, { color: colors.text }]}>Add existing user by email</Text>
-                  <TextInput
-                    testID="workspace-member-email"
-                    value={memberEmail}
-                    onChangeText={(value) => {
-                      setMemberEmail(value);
-                      setMemberError(null);
-                    }}
-                    placeholder="Existing account email"
-                    placeholderTextColor={colors.textSubtle}
-                    maxLength={320}
-                    editable={!addMemberMutation.isPending && !memberSubmissionRef.current}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
-                  />
+        }
+      />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+      >
+        {showSkeleton ? (
+          <ListSkeleton rows={3} />
+        ) : workspaceError && workspaces.length === 0 ? (
+          <ErrorState error={workspaceError as unknown as ApiError} onRetry={() => void retryWorkspace()} />
+        ) : workspaces.length === 0 ? (
+          <EmptyState
+            icon={<Building2 size={32} color={colors.textSubtle} />}
+            title={t('ws.empty.title')}
+            description={t('ws.empty.desc')}
+            actionLabel={t('ws.create')}
+            onAction={() => setCreateOpen(true)}
+          />
+        ) : (
+          <>
+            <Text style={[Typography.label, { color: colors.textMuted }]}>{t('ws.pick')}</Text>
+            <View testID="workspace-list" style={styles.list}>
+              {workspaces.map((workspace) => {
+                const selected = workspace.id === activeWorkspaceId;
+                return (
                   <Pressable
-                    testID="workspace-member-add-submit"
-                    onPress={handleAddMember}
-                    disabled={addMemberMutation.isPending || memberSubmissionRef.current}
-                    style={[styles.formButton, { backgroundColor: colors.primary }, (addMemberMutation.isPending || memberSubmissionRef.current) && styles.disabledButton]}
+                    key={workspace.id}
+                    testID={`workspace-option-${workspace.id}`}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={workspace.name}
+                    onPress={() => switchWorkspace(workspace.id)}
+                    style={[
+                      styles.option,
+                      {
+                        backgroundColor: selected ? colors.primaryBg : colors.card,
+                        borderColor: selected ? colors.primary : colors.border,
+                      },
+                    ]}
                   >
-                    <Text style={styles.formButtonText}>{addMemberMutation.isPending ? 'Adding…' : 'Add member'}</Text>
+                    <Building2 size={20} color={selected ? colors.primary : colors.textSubtle} />
+                    <Text style={[Typography.body, styles.optionName, { color: colors.text }]} numberOfLines={1}>
+                      {workspace.name}
+                    </Text>
+                    {selected ? (
+                      <View style={styles.selectedMark}>
+                        <Check size={16} color={colors.primary} />
+                        <Text style={[Typography.caption, { color: colors.primary, fontWeight: '700' }]}>
+                          {t('ws.current')}
+                        </Text>
+                      </View>
+                    ) : null}
                   </Pressable>
-                  {memberError && <Text testID="workspace-member-error" accessibilityRole="alert" style={[styles.formError, { color: colors.danger || colors.text }]}>{memberError}</Text>}
-                </>
-              )}
+                );
+              })}
             </View>
-          </View>
+            {workspaceAccessError ? (
+              <Text accessibilityRole="alert" style={[Typography.caption, { color: colors.warning }]}>
+                {t('ws.unavailable')}
+              </Text>
+            ) : null}
+          </>
         )}
 
-        {activeWorkspaceId && (
-          <View testID="workspace-members-section" style={styles.membersSection}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Workspace members</Text>
-              <Text style={[styles.sectionHint, { color: colors.textSubtle }]}>Members and workflow permissions for the selected workspace.</Text>
+        {activeWorkspace ? (
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>
+              {t('ws.settings')}
+            </Text>
+            {isOwner ? (
+              <>
+                <TextField
+                  testID="workspace-rename-name"
+                  label={t('ws.rename.label')}
+                  value={renameName}
+                  onChangeText={(v) => {
+                    setRenameName(v);
+                    setRenameError(null);
+                  }}
+                  maxLength={255}
+                  autoCapitalize="sentences"
+                  error={renameError}
+                />
+                <Button
+                  label={t('ws.rename.save')}
+                  busy={renameWorkspaceMutation.isPending}
+                  disabled={!renameName.trim() || renameName.trim() === activeWorkspace.name}
+                  onPress={() => void handleRename()}
+                />
+              </>
+            ) : (
+              <Text style={[Typography.body, { color: colors.textMuted }]}>
+                {me ? t('ws.memberNote') : t('ws.permLoading')}
+              </Text>
+            )}
+          </View>
+        ) : null}
+
+        {activeWorkspaceId ? (
+          <View testID="workspace-members-section" style={styles.membersWrap}>
+            <View style={styles.membersHead}>
+              <Text accessibilityRole="header" style={[Typography.title, styles.membersTitle, { color: colors.text }]}>
+                {t('ws.members')} {members.length ? `(${members.length})` : ''}
+              </Text>
+              {isOwner ? (
+                <Button
+                  label={t('ws.invite')}
+                  icon={<UserPlus size={16} color={colors.onPrimary} />}
+                  onPress={() => setInviteOpen(true)}
+                />
+              ) : null}
             </View>
 
-            {memberActionError && (
-              <Text testID="workspace-member-action-error" accessibilityRole="alert" style={[styles.formError, { color: colors.danger || colors.text }]}>{memberActionError}</Text>
-            )}
+            {members.length > 1 ? (
+              <TextField
+                testID="workspace-member-search"
+                label={t('ws.search.label')}
+                placeholder={t('ws.search.placeholder')}
+                icon={Search}
+                value={search}
+                onChangeText={setSearch}
+              />
+            ) : null}
 
-            {isLoadingMembers && (
-              <View testID="workspace-members-loading" style={[styles.statusCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[styles.statusText, { color: colors.textMuted }]}>Loading members…</Text>
-              </View>
-            )}
-
-            {membersError && !isLoadingMembers && (
-              <View testID="workspace-members-error" style={[styles.statusCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[styles.statusText, { color: colors.danger || colors.text }]}>{messageFor(membersError, 'Unable to load workspace members.')}</Text>
-                <RetryButton onPress={retryMembers} colors={colors} testID="workspace-members-retry" />
-              </View>
-            )}
-
-            {!isLoadingMembers && !membersError && members.length === 0 && (
-              <View testID="workspace-members-empty" style={[styles.statusCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[styles.statusText, { color: colors.textMuted }]}>No members found.</Text>
-              </View>
-            )}
-
-            {!isLoadingMembers && !membersError && members.length > 0 && (
-              <View testID="workspace-members-list" style={styles.membersList}>
-                {members.map((member) => (
-                  <View key={member.id} testID={`workspace-member-${member.id}`} style={[styles.memberCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
-                      <Text style={styles.avatarText}>{member.name.slice(0, 2).toUpperCase()}</Text>
-                    </View>
-                    <View style={styles.memberInfo}>
-                      <View style={styles.memberHeader}>
-                        <Text style={[styles.memberName, { color: colors.text }]}>{member.name}</Text>
-                        <View style={[styles.roleBadge, { backgroundColor: colors.cardSecondary }, member.role === 'OWNER' && { backgroundColor: colors.primaryBg, borderColor: colors.primaryBorder, borderWidth: 1 }]}>
-                          <Text style={[styles.roleText, { color: colors.textSubtle }, member.role === 'OWNER' && { color: colors.primary }]}>{member.role}</Text>
-                        </View>
-                      </View>
-                      <Text style={[styles.memberEmail, { color: colors.textSubtle }]}>{member.email}</Text>
-                      <Text style={[styles.memberPermission, { color: colors.primary }]}>Publishing: {member.canPublishWorkflow ? '✓ Allowed' : '✕ Restricted'}</Text>
-                      <Text style={[styles.memberPermission, { color: colors.primary }]}>Workflow state: {member.canManageWorkflowState ? '✓ Allowed' : '✕ Restricted'}</Text>
-                      {canManageMembers && member.role !== 'OWNER' && (
-                        <View testID={`workspace-member-controls-${member.id}`} style={styles.memberControls}>
-                          <Pressable
-                            testID={`workspace-member-publish-${member.id}`}
-                            onPress={() => void handlePermissionToggle(member, 'canPublishWorkflow')}
-                            disabled={updateMemberPermissionsMutation.isPending}
-                            style={[styles.memberActionButton, { borderColor: colors.primary }, updateMemberPermissionsMutation.isPending && styles.disabledButton]}
-                          >
-                            <Text style={[styles.memberActionText, { color: colors.primary }]}>{member.canPublishWorkflow ? 'Disable publish' : 'Allow publish'}</Text>
-                          </Pressable>
-                          <Pressable
-                            testID={`workspace-member-state-${member.id}`}
-                            onPress={() => void handlePermissionToggle(member, 'canManageWorkflowState')}
-                            disabled={updateMemberPermissionsMutation.isPending}
-                            style={[styles.memberActionButton, { borderColor: colors.primary }, updateMemberPermissionsMutation.isPending && styles.disabledButton]}
-                          >
-                            <Text style={[styles.memberActionText, { color: colors.primary }]}>{member.canManageWorkflowState ? 'Disable state' : 'Allow state'}</Text>
-                          </Pressable>
-                          <Pressable
-                            testID={`workspace-member-remove-${member.id}`}
-                            onPress={() => setConfirmation({ kind: 'remove', member })}
-                            disabled={removeMemberMutation.isPending || memberSubmissionRef.current}
-                            style={[styles.memberActionButton, { borderColor: colors.danger }, (removeMemberMutation.isPending || memberSubmissionRef.current) && styles.disabledButton]}
-                          >
-                            <Text style={[styles.memberActionText, { color: colors.danger }]}>Remove</Text>
-                          </Pressable>
-                        </View>
-                      )}
-                    </View>
-                  </View>
+            {isLoadingMembers && members.length === 0 ? (
+              <ListSkeleton rows={3} />
+            ) : membersError && members.length === 0 ? (
+              <ErrorState error={membersError as unknown as ApiError} onRetry={() => void retryMembers()} />
+            ) : members.length === 0 ? (
+              <EmptyState title={t('ws.members.empty')} />
+            ) : visibleMembers.length === 0 ? (
+              <Text style={[Typography.body, { color: colors.textMuted }]}>{t('ws.search.none')}</Text>
+            ) : (
+              <View testID="workspace-members-list" style={styles.list}>
+                {visibleMembers.map((member) => (
+                  <MemberCard
+                    key={member.id}
+                    member={member}
+                    isSelf={member.id === sessionUserId}
+                    canManage={isOwner}
+                    busy={membersBusy}
+                    onTogglePublish={() => void handleToggle(member, 'canPublishWorkflow')}
+                    onToggleState={() => void handleToggle(member, 'canManageWorkflowState')}
+                    onRemove={() => setConfirmation({ kind: 'remove', member })}
+                  />
                 ))}
               </View>
             )}
 
-            {currentMember && (
-              <View testID="workspace-member-self-actions" style={[styles.selfActionBox, { backgroundColor: colors.cardSecondary }]}>
-                <Text style={[styles.webManageText, { color: colors.textMuted }]}>Your role: {currentMember.role}. Leaving removes your access to this workspace.</Text>
-                <Pressable
-                  testID="workspace-member-leave"
-                  onPress={() => setConfirmation({ kind: 'leave', member: currentMember })}
-                  disabled={currentMember.role === 'OWNER' || leaveWorkspaceMutation.isPending || memberSubmissionRef.current}
-                  style={[styles.memberActionButton, { borderColor: currentMember.role === 'OWNER' ? colors.border : colors.danger }, (currentMember.role === 'OWNER' || leaveWorkspaceMutation.isPending || memberSubmissionRef.current) && styles.disabledButton]}
-                >
-                  <Text style={[styles.memberActionText, { color: currentMember.role === 'OWNER' ? colors.textSubtle : colors.danger }]}>{currentMember.role === 'OWNER' ? 'Owner cannot leave' : 'Leave workspace'}</Text>
-                </Pressable>
-              </View>
-            )}
-
-            {confirmation && (
-              <View testID="workspace-member-confirm" style={[styles.confirmBox, { backgroundColor: colors.card, borderColor: colors.danger }]}>
-                <Text style={[styles.confirmText, { color: colors.text }]}>
-                  {confirmation.kind === 'remove'
-                    ? `Remove ${confirmation.member.name} from ${activeWorkspace?.name ?? 'this workspace'}?`
-                    : `Leave ${activeWorkspace?.name ?? 'this workspace'}? You will lose access to its members and workflows.`}
-                </Text>
-                <View style={styles.memberControls}>
-                  <Pressable testID="workspace-member-confirm-cancel" onPress={() => setConfirmation(null)} style={[styles.memberActionButton, { borderColor: colors.border }]}>
-                    <Text style={[styles.memberActionText, { color: colors.textMuted }]}>Cancel</Text>
-                  </Pressable>
-                  <Pressable testID="workspace-member-confirm-submit" onPress={() => void handleConfirmMemberAction()} disabled={memberSubmissionRef.current} style={[styles.memberActionButton, { borderColor: colors.danger }, memberSubmissionRef.current && styles.disabledButton]}>
-                    <Text style={[styles.memberActionText, { color: colors.danger }]}>{memberSubmissionRef.current ? 'Working…' : confirmation.kind === 'remove' ? 'Confirm remove' : 'Confirm leave'}</Text>
-                  </Pressable>
-                </View>
-              </View>
-            )}
+            {me && !isOwner ? (
+              <Button
+                variant="danger"
+                label={t('ws.leave')}
+                icon={<LogOut size={16} color={colors.danger} />}
+                onPress={() => setConfirmation({ kind: 'leave' })}
+              />
+            ) : null}
+            {isOwner ? (
+              <Text style={[Typography.caption, { color: colors.textSubtle }]}>{t('ws.ownerCannotLeave')}</Text>
+            ) : null}
           </View>
-        )}
+        ) : null}
       </ScrollView>
+
+      <Sheet visible={createOpen} onClose={() => setCreateOpen(false)} title={t('ws.create')}>
+        <TextField
+          testID="workspace-create-name"
+          label={t('ws.create.nameLabel')}
+          hint={t('ws.create.nameHint')}
+          value={createName}
+          onChangeText={(v) => {
+            setCreateName(v);
+            setCreateError(null);
+          }}
+          maxLength={255}
+          autoCapitalize="sentences"
+          error={createError}
+        />
+        <Button label={t('ws.create.submit')} busy={createWorkspaceMutation.isPending} onPress={() => void handleCreate()} />
+      </Sheet>
+
+      <Sheet visible={inviteOpen} onClose={() => setInviteOpen(false)} title={t('ws.invite')}>
+        <Text style={[Typography.body, { color: colors.textMuted }]}>{t('ws.invite.desc')}</Text>
+        <TextField
+          testID="workspace-member-email"
+          label={t('ws.invite.emailLabel')}
+          placeholder="ten@congty.com"
+          icon={UserPlus}
+          keyboardType="email-address"
+          maxLength={320}
+          value={memberEmail}
+          onChangeText={(v) => {
+            setMemberEmail(v);
+            setInviteError(null);
+          }}
+          error={inviteError}
+        />
+        <Button label={t('ws.invite.submit')} busy={addMemberMutation.isPending} onPress={() => void handleInvite()} />
+      </Sheet>
+
+      <ConfirmSheet
+        visible={confirmation !== null}
+        title={t(confirmation?.kind === 'leave' ? 'ws.leave.title' : 'ws.remove.title')}
+        message={
+          confirmation?.kind === 'remove'
+            ? t('ws.remove.message').replace('{name}', confirmation.member.name || confirmation.member.email)
+            : t('ws.leave.message').replace('{workspace}', activeWorkspace?.name ?? '')
+        }
+        confirmLabel={t(confirmation?.kind === 'leave' ? 'ws.leave' : 'ws.member.remove')}
+        destructive
+        busy={removeMemberMutation.isPending || leaveWorkspaceMutation.isPending}
+        onConfirm={handleConfirm}
+        onClose={() => setConfirmation(null)}
+      />
     </SafeAreaView>
   );
 }
 
-function RetryButton({ onPress, colors, testID }: { onPress: () => void | Promise<void>; colors: ReturnType<typeof useThemeColors>; testID: string }) {
-  return (
-    <Pressable testID={testID} onPress={onPress} style={[styles.retryButton, { borderColor: colors.primary }]}>
-      <RefreshCw color={colors.primary} size={14} />
-      <Text style={[styles.retryText, { color: colors.primary }]}>Retry</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingTop: 10, paddingBottom: 10, borderBottomWidth: 1 },
-  backBtn: { padding: 6 },
-  headerTitle: { fontSize: 18, fontWeight: '800', marginLeft: 10 },
-  scrollContent: { padding: 18, paddingBottom: 40, gap: 14 },
-  sectionHeader: { gap: 4 },
-  sectionTitle: { fontSize: 16, fontWeight: '800' },
-  sectionHint: { fontSize: 12, lineHeight: 17 },
-  workspaceList: { gap: 10 },
-  workspaceOption: { borderRadius: 16, borderWidth: 1, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  workspaceOptionText: { flex: 1, gap: 3 },
-  workspaceName: { fontSize: 15, fontWeight: '800' },
-  workspaceId: { fontSize: 10 },
-  selectedLabel: { fontSize: 11, fontWeight: '800' },
-  statusCard: { borderRadius: 16, borderWidth: 1, padding: 16, gap: 12 },
-  statusText: { fontSize: 13, lineHeight: 19 },
-  noticeCard: { borderRadius: 12, borderWidth: 1, padding: 12 },
-  noticeText: { fontSize: 12, lineHeight: 18 },
-  retryButton: { alignSelf: 'flex-start', borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  retryText: { fontSize: 12, fontWeight: '800' },
-  card: { borderRadius: 20, borderWidth: 1, padding: 18, gap: 12 },
-  wsHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconCircle: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  wsTitleGroup: { flex: 1 },
-  wsName: { fontSize: 18, fontWeight: '900' },
-  wsOwner: { fontSize: 12, marginTop: 2 },
-  webManageBox: { borderRadius: 12, padding: 12, marginTop: 4 },
-  webManageText: { fontSize: 11, fontStyle: 'italic' },
-  membersSection: { gap: 12 },
-  membersList: { gap: 10 },
-  memberCard: { borderRadius: 16, borderWidth: 1, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatarCircle: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  avatarText: { color: '#ffffff', fontSize: 14, fontWeight: '900' },
-  memberInfo: { flex: 1, gap: 2 },
-  memberHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  memberName: { fontSize: 14, fontWeight: '700' },
-  memberEmail: { fontSize: 11 },
-  memberPermission: { fontSize: 10, marginTop: 2 },
-  memberControls: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  memberActionButton: { borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 7 },
-  memberActionText: { fontSize: 11, fontWeight: '800' },
-  selfActionBox: { borderRadius: 12, padding: 12, gap: 8, marginTop: 4 },
-  confirmBox: { borderRadius: 12, borderWidth: 1, padding: 12, gap: 10, marginTop: 4 },
-  confirmText: { fontSize: 12, lineHeight: 18 },
-  roleBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
-  roleText: { fontSize: 10, fontWeight: '800' },
-  inlineError: { gap: 8 },
-  formCard: { borderRadius: 20, borderWidth: 1, padding: 18, gap: 10 },
-  formLabel: { fontSize: 12, fontWeight: '700', marginTop: 4 },
-  input: { borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
-  formButton: { borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11, alignItems: 'center' },
-  disabledButton: { opacity: 0.6 },
-  formButtonText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
-  formError: { fontSize: 12, lineHeight: 17 },
+  safe: { flex: 1 },
+  content: { gap: Spacing.three, padding: Spacing.three, paddingBottom: Spacing.five },
+  iconBtn: { width: MinTouch, height: MinTouch, alignItems: 'center', justifyContent: 'center' },
+  list: { gap: Spacing.two },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    minHeight: MinTouch,
+    padding: Spacing.three,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+  },
+  optionName: { flex: 1, fontWeight: '600' },
+  selectedMark: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
+  card: { gap: Spacing.three, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.lg },
+  membersWrap: { gap: Spacing.three },
+  membersHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
+  membersTitle: { flexShrink: 1 },
 });

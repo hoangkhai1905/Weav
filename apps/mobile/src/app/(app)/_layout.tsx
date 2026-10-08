@@ -12,8 +12,8 @@ export default function AppLayout() {
 
   if (isHydrating) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator color="#38bdf8" />
+      <View style={[styles.loading, { backgroundColor: colors.bg }]}>
+        <ActivityIndicator color={colors.primary} />
       </View>
     );
   }

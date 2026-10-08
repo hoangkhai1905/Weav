@@ -136,3 +136,33 @@ Chưa kiểm tra: chạy app thật với gateway (Expo Web/thiết bị); strea
 - Tên bước ở câu hỏi VALUE/URL dùng id nút do model đặt (ví dụ "read revenue") khi không khớp loại nút nào.
 - Thanh tab dưới cùng bị cắt nhãn trên web 390x844 (có sẵn từ trước, không thuộc làn B).
 - Chưa kiểm: thiết bị thật, stream từng chunk của `expo/fetch` trên native, Dynamic Type, kéo để làm mới bằng cử chỉ.
+
+---
+
+## Bước 6, làn C: Không gian, Kết nối, Thông báo, Cá nhân, Đăng nhập (commit "feat(mobile): workspace, connections, notifications, profile and auth screens")
+
+- **Không gian làm việc** (`workspace/index.tsx`, `features/workspace/components/MemberCard.tsx`, `useSwitchWorkspace`): chọn/đổi không gian (đổi thì làm mới các query theo workspaceId), tạo mới (sheet; `Idempotency-Key: ws:<hex>` do repo gắn, đã kiểm bằng request), đổi tên (chỉ OWNER), thành viên: tìm kiếm phía client, mời theo email, bật/tắt `canPublishWorkflow`/`canManageWorkflowState`, xóa thành viên và rời không gian (đều có xác nhận). MEMBER chỉ thấy quyền ở dạng chữ. Lỗi workspace-service (USER_NOT_FOUND, USER_ALREADY_MEMBER...) có câu tiếng Việt riêng.
+- **Kết nối**: thẻ có icon theo provider, trạng thái, `hasCredential`, lần kiểm tra cuối, cảnh báo "sắp hết hạn" (<= 7 ngày, `connection.expiry.ts`), kết quả Test (VERIFIED/AUTH_INVALID/DEPENDENCY_FAILURE) ngay trên thẻ, Tắt kết nối (cần `canManage`, có xác nhận). Nút Test hiện cả với kết nối DISABLED vì kết nối mới tạo bắt đầu ở DISABLED và test đạt thì thành ACTIVE. Tạo kết nối ghi rõ là làm trên web.
+- **Thông báo**: nhóm theo ngày (`notification.grouping.ts`), lọc danh mục + chưa đọc, chạm vào thẻ = đánh dấu đã đọc rồi điều hướng theo target (EXECUTION qua màn lookup; NONE ở lại), đọc hết.
+- **Cá nhân**: avatar (hiện ảnh qua signed URL `GET /api/users/me/avatar`, xóa `DELETE`), sửa tên, email, màu giao diện Sáng/Tối/Theo điện thoại (`themeMode`, mặc định theo điện thoại), ngôn ngữ. **Tải ảnh đại diện lên: chưa làm** vì app chưa cài `expo-image-picker` (không thêm dependency); màn ghi rõ "tải ảnh trên web".
+- **Bảo mật** (`/settings`, đích của thông báo SECURITY_SETTINGS): đổi mật khẩu (sheet; thành công thì phải đăng nhập lại), tài khoản Google đã liên kết (chỉ xem), phiên đăng nhập (tên thiết bị suy từ User-Agent, đăng xuất từng phiên, "đăng xuất các thiết bị khác" = liệt kê rồi thu hồi từng phiên không phải hiện tại, vì backend chỉ có "một phiên" hoặc "tất cả kể cả hiện tại").
+- **Đăng nhập / Đăng ký / Quên mật khẩu** (làm bởi agent Sonnet, đã rà lại): dựng lại trên `AuthShell` + `TextField`, bỏ cam kết tím/kính mờ/animation, bỏ tài khoản điền sẵn `truong@example.com` trong login, lỗi theo `details[].field`, câu lỗi chung theo status. `http-auth.repository` giờ giữ `details` + `requestId` của lỗi.
+- Dùng chung: `TextField`, `AuthShell`, `Avatar`, `SwitchRow`, `Button.testID`, `localizeValidation` (dịch các câu validator tiếng Anh mà không đổi test cũ), `StatusBar`/nền theo theme.
+- i18n: `i18n.account.ts`, `i18n.auth.ts` (vi + en, test đủ khóa và test quét khóa dùng trong màn).
+
+### Kiểm tra (làn C)
+
+| Hạng mục | Kết quả |
+| --- | --- |
+| `npx tsc --noEmit -p .` | PASS |
+| `node --test $(find src -name "*.test.cjs")` | 171 pass, 0 fail (trước 154; thêm field-errors, validation-copy, user-agent, connection.expiry, notification.grouping, account.http.contract, i18n.account, i18n.auth) |
+| `git diff --check` | PASS (chỉ cảnh báo CRLF/LF) |
+| Expo Web `:5173` (`EXPO_PUBLIC_API_MODE=http`) + Playwright 390x844 | Đăng ký 2 tài khoản mới; tạo không gian (header Idempotency-Key có), mời thành viên (email lạ -> 404 hiện câu tiếng Việt, email đúng -> 201), đổi quyền (PATCH 200), tìm kiếm, xóa thành viên (204), MEMBER rời không gian (`DELETE members/me` 204); Kết nối: Test cả 3 kết quả, cảnh báo sắp hết hạn; Thông báo; Cá nhân (sửa tên PATCH 200, theme, ngôn ngữ); Bảo mật (đổi mật khẩu sai/đúng, đăng xuất thiết bị khác 17 x DELETE 204, đổi mật khẩu 204 -> về login); Đăng nhập sai mật khẩu; Quên mật khẩu 2 bước (`forgot-password` 202). Console chỉ có cảnh báo deprecate của react-native-web và các 401/404 chủ ý |
+| Demo (brief mục 8, không mock) | đăng nhập -> đổi không gian (phụ rồi quay lại) -> chạy quy trình đã xuất bản (POST executions 202) -> lượt chạy tới SUCCESS sau ~2 s -> thông báo xuất hiện trong inbox -> mở lượt chạy từ thông báo (lookup) -> tạm dừng quy trình (trạng thái "Tạm dừng", nút Tiếp tục) -> AI tạo quy trình: 1 vòng `needs_input` (URL) rồi `ready` -> Lưu bản nháp (POST 201 + PUT draft 200). Lượt chạy FAILED đã kiểm ở làn A |
+| Ảnh chụp | `apps/mobile/docs/screens/` (workspace-*, conn-*, notifications-*, profile-*, security-*, login-*, forgot-*, demo-*; sáng + tối) |
+
+### Dữ liệu thử còn lại / đã dọn
+
+- Tài khoản mới (không có API xóa tài khoản; mật khẩu chỉ nằm trong file tạm đã xóa): `mobile-c-owner-1791395438787@example.test` (chủ "Không gian Lane C" và "Không gian phụ"), `mobile-c-member-1791395597371@example.test` (đã rời không gian). Còn 3 kết nối thử trong "Không gian Lane C" (HTTP, HTTP khóa API, Telegram với token giả). Đã xóa 2 quy trình thử.
+- Phát hiện: test connection trả lỗi dạng `{code,message,requestId}` (không bọc `error`) khi cấu hình HTTP sai; kết nối mới tạo ở trạng thái DISABLED; thời gian thông báo hiển thị lệch ~9 giờ so với giờ máy (chưa tìm nguyên nhân, nghi `occurredAt` của backend, không thuộc làn C); web không giữ phiên sau khi tải lại trang (SecureStore).
+- Chưa kiểm: thiết bị thật, Dynamic Type, tải ảnh đại diện lên, push notification.

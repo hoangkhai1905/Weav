@@ -40,6 +40,7 @@ test('maps the public Identity response without accepting editable metadata', ()
       email: 'ada@example.com',
       name: 'Ada',
       avatar: null,
+      avatarPresent: true,
     },
   );
 });

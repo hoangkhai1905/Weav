@@ -14,6 +14,7 @@ import type {
 import { useAuthStore } from '../../stores/auth.store';
 import { expirePersistedAuthSession } from '../auth/auth-session.persistence';
 import { httpClient, normalizeApiError } from './http-client';
+import { newIdempotencyKey } from './workflow.http.contract';
 import {
   buildMemberListParams,
   buildWorkspaceListParams,
@@ -44,7 +45,7 @@ async function requestWorkspace<T, R>(
   try {
     const response = await httpClient.request<T>({
       ...config,
-      ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+      ...(token ? { headers: { ...config.headers, Authorization: `Bearer ${token}` } } : {}),
     });
     return map(response.data);
   } catch (error) {
@@ -125,8 +126,10 @@ export class HttpWorkspaceRepository implements WorkspaceRepository {
     input: CreateWorkspaceInput,
     signal?: AbortSignal,
   ): Promise<Workspace> {
+    // The gateway drops a malformed key silently, so the key follows [A-Za-z0-9._:-]{8,128}.
+    const request = buildCreateWorkspaceRequest(input, null, signal);
     return requestWorkspace<GatewayWorkspaceResponse, Workspace>(
-      buildCreateWorkspaceRequest(input, null, signal),
+      { ...request, headers: { 'Idempotency-Key': newIdempotencyKey('ws') } },
       mapWorkspaceResponse,
     );
   }

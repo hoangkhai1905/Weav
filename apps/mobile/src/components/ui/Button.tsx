@@ -11,6 +11,7 @@ interface ButtonProps {
   busy?: boolean;
   disabled?: boolean;
   accessibilityHint?: string;
+  testID?: string;
 }
 
 /** Shared 44 pt button for the Home / AI / Assistant screens. */
@@ -22,6 +23,7 @@ export const Button: React.FC<ButtonProps> = ({
   busy = false,
   disabled = false,
   accessibilityHint,
+  testID,
 }) => {
   const colors = useThemeColors();
   const palette = {
@@ -32,6 +34,7 @@ export const Button: React.FC<ButtonProps> = ({
   const inactive = busy || disabled;
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={accessibilityHint}

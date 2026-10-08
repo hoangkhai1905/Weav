@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { aiEn, aiVi } from './i18n.ai';
+import { authEn, authVi } from './i18n.auth';
+import { accountEn, accountVi } from './i18n.account';
 import { workflowsEn, workflowsVi } from './i18n.workflows';
 
 export type Language = 'VI' | 'EN';
@@ -197,6 +199,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'ui.json.empty': 'Không có dữ liệu',
     ...workflowsVi,
     ...aiVi,
+    ...authVi,
+    ...accountVi,
   },
   EN: {
     // Navigation Tabs
@@ -390,6 +394,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'ui.json.empty': 'No data',
     ...workflowsEn,
     ...aiEn,
+    ...authEn,
+    ...accountEn,
   },
 };
 

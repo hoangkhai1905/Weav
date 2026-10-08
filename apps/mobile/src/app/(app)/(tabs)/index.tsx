@@ -16,6 +16,7 @@ import {
 } from 'lucide-react-native';
 import { useAuthStore } from '../../../stores/auth.store';
 import { selectActiveWorkspace, useWorkspaceStore } from '../../../stores/workspace.store';
+import { useSwitchWorkspace } from '../../../features/workspace/hooks/useSwitchWorkspace';
 import { useWorkflowNames } from '../../../features/workflows/hooks/useWorkflows';
 import { useNotificationUnreadCount } from '../../../features/notifications/hooks/useNotifications';
 import { useDashboard, TRIGGER_CHECK_LIMIT } from '../../../features/dashboard/hooks/useDashboard';
@@ -44,7 +45,7 @@ export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspace = useWorkspaceStore(selectActiveWorkspace);
-  const selectWorkspace = useWorkspaceStore((s) => s.selectWorkspace);
+  const selectWorkspace = useSwitchWorkspace();
   const { data: unread = 0 } = useNotificationUnreadCount();
   const names = useWorkflowNames();
   const dash = useDashboard();

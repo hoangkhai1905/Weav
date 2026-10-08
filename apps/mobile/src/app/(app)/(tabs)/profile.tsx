@@ -1,227 +1,222 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Pressable,
-  TextInput,
-  ActivityIndicator,
-} from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Building2, Link2, Settings, LogOut, ChevronRight, Sparkles } from 'lucide-react-native';
-import { useAuthStore } from '../../../stores/auth.store';
-import {
-  selectActiveWorkspace,
-  useWorkspaceStore,
-} from '../../../stores/workspace.store';
-import { useTranslation } from '../../../hooks/useTranslation';
-import { useThemeColors } from '../../../hooks/useThemeColors';
-import { logoutAuthSession } from '../../../features/auth/auth-session.runtime';
+import { Building2, ChevronRight, LogOut, MessageSquare, PlugZap, ShieldCheck, Sparkles } from 'lucide-react-native';
 import { useProfile } from '../../../features/profile/hooks/useProfile';
+import { useAvatarUrl, useDeleteAvatar } from '../../../features/profile/hooks/useAccount';
+import { logoutAuthSession } from '../../../features/auth/auth-session.runtime';
+import { friendlyErrorMessage } from '../../../features/common/friendly-error';
+import { localizeValidation } from '../../../features/common/validation-copy';
+import { Avatar } from '../../../components/ui/Avatar';
+import { Button } from '../../../components/ui/Button';
+import { ConfirmSheet } from '../../../components/ui/ConfirmSheet';
+import { FilterChips, type ChipOption } from '../../../components/ui/FilterChips';
+import { ListItem } from '../../../components/ui/ListItem';
+import { ScreenHeader } from '../../../components/ui/ScreenHeader';
+import { TextField } from '../../../components/ui/TextField';
+import { Radius, Spacing, Typography } from '../../../constants/theme';
+import { useThemeColors } from '../../../hooks/useThemeColors';
+import { useTranslation } from '../../../hooks/useTranslation';
+import type { Language } from '../../../stores/i18n.store';
+import { selectActiveWorkspace, useWorkspaceStore } from '../../../stores/workspace.store';
+import { useAuthStore } from '../../../stores/auth.store';
+import { useUIStore, type ThemeMode } from '../../../stores/ui.store';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const colors = useThemeColors();
-  const { t } = useTranslation();
-  const { user } = useAuthStore();
-  const {
-    profile,
-    displayName,
-    setDisplayName,
-    save,
-    isLoading: isProfileLoading,
-    isSaving: isProfileSaving,
-    loadError,
-    validationError,
-    submitError,
-    retryLoad,
-  } = useProfile();
+  const { t, language, setLanguage } = useTranslation();
+  const user = useAuthStore((s) => s.user);
+  const themeMode = useUIStore((s) => s.themeMode);
+  const setThemeMode = useUIStore((s) => s.setThemeMode);
+  const showToast = useUIStore((s) => s.showToast);
   const activeWorkspace = useWorkspaceStore(selectActiveWorkspace);
-  const displayedUser = profile ?? user;
+  const { profile, displayName, setDisplayName, save, isSaving, loadError, validationError, submitError, retryLoad } =
+    useProfile();
+  const shown = profile ?? user;
+  const avatar = useAvatarUrl(Boolean(shown?.avatarPresent));
+  const deleteAvatar = useDeleteAvatar();
+  const [confirm, setConfirm] = React.useState<'logout' | 'avatar' | null>(null);
+
+  const nameChanged = displayName.trim() !== (shown?.name ?? '');
+  const themeOptions: ChipOption<ThemeMode>[] = [
+    { value: 'light', label: t('prof.theme.light') },
+    { value: 'dark', label: t('prof.theme.dark') },
+    { value: 'system', label: t('prof.theme.system') },
+  ];
+  const languageOptions: ChipOption<Language>[] = [
+    { value: 'VI', label: 'Tiếng Việt' },
+    { value: 'EN', label: 'English' },
+  ];
 
   const handleLogout = () => {
+    setConfirm(null);
     void logoutAuthSession();
     router.replace('/(auth)/login');
   };
 
-  const getInitials = (name?: string) => {
-    if (!name) return 'US';
-    return name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+  const handleDeleteAvatar = async () => {
+    try {
+      await deleteAvatar.mutateAsync();
+      showToast({ type: 'success', title: t('prof.avatar.deleted') });
+    } catch (error) {
+      showToast({ type: 'error', title: t('prof.avatar.deleteFailed'), message: friendlyErrorMessage(error) });
+    } finally {
+      setConfirm(null);
+    }
+  };
+
+  const handleSave = async () => {
+    await save();
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* User Card */}
-        <View style={[styles.userCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
-            <Text style={styles.avatarText}>{getInitials(displayedUser?.name)}</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+      <ScreenHeader title={t('tab.profile')} />
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.identity}>
+            <Avatar name={shown?.name || shown?.email || '?'} size={64} uri={avatar.data} />
+            <View style={styles.identityText}>
+              <Text style={[Typography.title, { color: colors.text }]} numberOfLines={2}>
+                {shown?.name || t('prof.noName')}
+              </Text>
+              <Text selectable style={[Typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
+                {shown?.email ?? '-'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.userInfo}>
-            <Text style={[styles.userName, { color: colors.text }]}>{displayedUser?.name || 'No display name'}</Text>
-            <Text style={[styles.userEmail, { color: colors.textMuted }]}>{displayedUser?.email || '—'}</Text>
-          </View>
+          {shown?.avatarPresent ? (
+            <Button
+              variant="secondary"
+              label={t('prof.avatar.delete')}
+              busy={deleteAvatar.isPending}
+              onPress={() => setConfirm('avatar')}
+            />
+          ) : null}
+          <Text style={[Typography.caption, { color: colors.textSubtle }]}>{t('prof.avatar.webNote')}</Text>
         </View>
 
-        <View style={[styles.profileEditor, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.editorTitle, { color: colors.text }]}>Personal profile</Text>
-          <Text style={[styles.editorHint, { color: colors.textMuted }]}>Only your display name can be changed here.</Text>
-
-          {isProfileLoading && (
-            <View style={styles.inlineRow}>
-              <ActivityIndicator color={colors.primary} size="small" />
-              <Text style={[styles.editorHint, { color: colors.textMuted }]}>Loading profile…</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>
+            {t('prof.info')}
+          </Text>
+          {loadError ? (
+            <View style={styles.inline}>
+              <Text accessibilityRole="alert" style={[Typography.caption, styles.grow, { color: colors.danger }]}>
+                {t('prof.loadFailed')}
+              </Text>
+              <Button variant="secondary" label={t('ui.retry')} onPress={() => void retryLoad()} />
             </View>
-          )}
-
-          {loadError && (
-            <View style={styles.inlineRow}>
-              <Text style={[styles.inlineError, { color: colors.danger }]}>{loadError}</Text>
-              <Pressable onPress={() => void retryLoad()}>
-                <Text style={[styles.retryLink, { color: colors.primary }]}>Retry</Text>
-              </Pressable>
-            </View>
-          )}
-
-          <Text style={[styles.inputLabel, { color: colors.textSubtle }]}>Display name</Text>
-          <TextInput
+          ) : null}
+          <TextField
+            testID="profile-display-name"
+            label={t('prof.name.label')}
             value={displayName}
             onChangeText={setDisplayName}
-            editable={!isProfileSaving}
             maxLength={120}
-            placeholder="Your display name"
-            placeholderTextColor={colors.textSubtle}
-            style={[styles.profileInput, { color: colors.text, borderColor: colors.borderStrong, backgroundColor: colors.bg }]}
-            accessibilityLabel="Display name"
+            autoCapitalize="words"
+            editable={!isSaving}
+            error={localizeValidation(validationError) ?? (submitError ? t('prof.saveFailed') : null)}
           />
-
-          {(validationError || submitError) && (
-            <Text style={[styles.inlineError, { color: colors.danger }]}>{validationError || submitError}</Text>
-          )}
-          <Pressable
-            onPress={() => void save()}
-            disabled={isProfileSaving}
-            style={[styles.saveButton, { backgroundColor: colors.primary }, isProfileSaving && styles.disabledButton]}
-          >
-            {isProfileSaving ? <ActivityIndicator color="#ffffff" size="small" /> : <Text style={styles.saveButtonText}>Save profile</Text>}
-          </Pressable>
+          <TextField label={t('prof.email.label')} value={shown?.email ?? ''} editable={false} hint={t('prof.email.hint')} />
+          <Button
+            label={t('prof.save')}
+            busy={isSaving}
+            disabled={!nameChanged}
+            onPress={() => void handleSave()}
+          />
         </View>
 
-        {/* Current Workspace */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.textSubtle }]}>{t('profile.current_ws')}</Text>
-        </View>
-        <Pressable
-          style={[styles.menuItem, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => router.push('/(app)/workspace')}
-        >
-          <View style={[styles.iconCircle, { backgroundColor: colors.cardSecondary }]}>
-            <Building2 color={colors.primary} size={18} />
-          </View>
-          <View style={styles.menuTextGroup}>
-            <Text style={[styles.menuTitle, { color: colors.text }]}>
-              {activeWorkspace?.name || 'Select a workspace'}
-            </Text>
-            <Text style={[styles.menuSub, { color: colors.textSubtle }]}>
-              {activeWorkspace
-                ? `${activeWorkspace.memberCount ?? '—'} Members`
-                : 'Choose a workspace to continue'}
-            </Text>
-          </View>
-          <ChevronRight color={colors.textSubtle} size={16} />
-        </Pressable>
-
-        {/* App Tools */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.textSubtle }]}>{t('profile.app_tools')}</Text>
-        </View>
-
-        <Pressable
-          style={[styles.menuItem, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => router.push('/(app)/ai/generator')}
-        >
-          <View style={[styles.iconCircle, { backgroundColor: colors.cardSecondary }]}>
-            <Sparkles color={colors.primary} size={18} />
-          </View>
-          <View style={styles.menuTextGroup}>
-            <Text style={[styles.menuTitle, { color: colors.text }]}>{t('profile.ai_gen')}</Text>
-            <Text style={[styles.menuSub, { color: colors.textSubtle }]}>{t('profile.ai_gen_sub')}</Text>
-          </View>
-          <ChevronRight color={colors.textSubtle} size={16} />
-        </Pressable>
-
-        <Pressable
-          style={[styles.menuItem, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => router.push('/(app)/connections')}
-        >
-          <View style={[styles.iconCircle, { backgroundColor: colors.cardSecondary }]}>
-            <Link2 color="#60a5fa" size={18} />
-          </View>
-          <View style={styles.menuTextGroup}>
-            <Text style={[styles.menuTitle, { color: colors.text }]}>{t('profile.conn')}</Text>
-            <Text style={[styles.menuSub, { color: colors.textSubtle }]}>{t('profile.conn_sub')}</Text>
-          </View>
-          <ChevronRight color={colors.textSubtle} size={16} />
-        </Pressable>
-
-        {/* Preferences */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.textSubtle }]}>{t('profile.prefs')}</Text>
+        <Text style={[Typography.label, { color: colors.textMuted }]}>{t('prof.section.work')}</Text>
+        <View style={styles.group}>
+          <ListItem
+            leading={<Building2 size={20} color={colors.primary} />}
+            title={activeWorkspace?.name ?? t('prof.ws.none')}
+            subtitle={t('prof.ws.sub')}
+            trailing={<ChevronRight size={18} color={colors.textSubtle} />}
+            onPress={() => router.push('/(app)/workspace')}
+          />
+          <ListItem
+            leading={<PlugZap size={20} color={colors.primary} />}
+            title={t('prof.conn')}
+            subtitle={t('prof.conn.sub')}
+            trailing={<ChevronRight size={18} color={colors.textSubtle} />}
+            onPress={() => router.push('/(app)/connections')}
+          />
+          <ListItem
+            leading={<Sparkles size={20} color={colors.primary} />}
+            title={t('prof.ai')}
+            subtitle={t('prof.ai.sub')}
+            trailing={<ChevronRight size={18} color={colors.textSubtle} />}
+            onPress={() => router.push('/(app)/ai/generator')}
+          />
+          <ListItem
+            leading={<MessageSquare size={20} color={colors.primary} />}
+            title={t('prof.assistant')}
+            subtitle={t('prof.assistant.sub')}
+            trailing={<ChevronRight size={18} color={colors.textSubtle} />}
+            onPress={() => router.push('/(app)/assistant')}
+          />
         </View>
 
-        <Pressable
-          style={[styles.menuItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+        <Text style={[Typography.label, { color: colors.textMuted }]}>{t('prof.section.look')}</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[Typography.label, { color: colors.text }]}>{t('prof.theme.label')}</Text>
+          <FilterChips options={themeOptions} value={themeMode} onChange={setThemeMode} accessibilityLabel={t('prof.theme.label')} />
+          <Text style={[Typography.label, { color: colors.text }]}>{t('prof.language.label')}</Text>
+          <FilterChips options={languageOptions} value={language} onChange={setLanguage} accessibilityLabel={t('prof.language.label')} />
+        </View>
+
+        <Text style={[Typography.label, { color: colors.textMuted }]}>{t('prof.section.security')}</Text>
+        <ListItem
+          leading={<ShieldCheck size={20} color={colors.primary} />}
+          title={t('prof.security')}
+          subtitle={t('prof.security.sub')}
+          trailing={<ChevronRight size={18} color={colors.textSubtle} />}
           onPress={() => router.push('/(app)/settings')}
-        >
-          <View style={[styles.iconCircle, { backgroundColor: colors.cardSecondary }]}>
-            <Settings color={colors.textMuted} size={18} />
-          </View>
-          <View style={styles.menuTextGroup}>
-            <Text style={[styles.menuTitle, { color: colors.text }]}>{t('profile.settings')}</Text>
-            <Text style={[styles.menuSub, { color: colors.textSubtle }]}>{t('profile.settings_sub')}</Text>
-          </View>
-          <ChevronRight color={colors.textSubtle} size={16} />
-        </Pressable>
+        />
 
-        {/* Logout Button */}
-        <Pressable style={[styles.logoutBtn, { backgroundColor: colors.dangerBg, borderColor: colors.danger }]} onPress={handleLogout}>
-          <LogOut color={colors.danger} size={18} />
-          <Text style={[styles.logoutText, { color: colors.danger }]}>{t('profile.logout')}</Text>
-        </Pressable>
+        <Button
+          variant="danger"
+          label={t('profile.logout')}
+          icon={<LogOut size={16} color={colors.danger} />}
+          onPress={() => setConfirm('logout')}
+        />
+        {deleteAvatar.isPending ? <ActivityIndicator color={colors.primary} /> : null}
       </ScrollView>
+
+      <ConfirmSheet
+        visible={confirm === 'logout'}
+        title={t('prof.logout.title')}
+        message={t('prof.logout.message')}
+        confirmLabel={t('profile.logout')}
+        destructive
+        onConfirm={handleLogout}
+        onClose={() => setConfirm(null)}
+      />
+      <ConfirmSheet
+        visible={confirm === 'avatar'}
+        title={t('prof.avatar.delete')}
+        message={t('prof.avatar.deleteMessage')}
+        confirmLabel={t('prof.avatar.delete')}
+        destructive
+        busy={deleteAvatar.isPending}
+        onConfirm={() => void handleDeleteAvatar()}
+        onClose={() => setConfirm(null)}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  scrollContent: { padding: 18, paddingBottom: 40, gap: 12 },
-  userCard: { borderRadius: 20, borderWidth: 1, padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 8 },
-  avatarCircle: { width: 54, height: 54, borderRadius: 27, justifyContent: 'center', alignItems: 'center' },
-  avatarText: { color: '#ffffff', fontSize: 20, fontWeight: '900' },
-  userInfo: { flex: 1, gap: 2 },
-  userName: { fontSize: 17, fontWeight: '800' },
-  userEmail: { fontSize: 12 },
-  profileEditor: { borderRadius: 16, borderWidth: 1, padding: 14, gap: 10 },
-  editorTitle: { fontSize: 15, fontWeight: '800' },
-  editorHint: { fontSize: 11, lineHeight: 16 },
-  inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  inputLabel: { fontSize: 11, fontWeight: '700', marginTop: 2 },
-  profileInput: { borderRadius: 10, borderWidth: 1, minHeight: 44, paddingHorizontal: 12, fontSize: 14 },
-  inlineError: { fontSize: 12, lineHeight: 17, flexShrink: 1 },
-  retryLink: { fontSize: 12, fontWeight: '800' },
-  saveButton: { minHeight: 42, borderRadius: 10, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 14 },
-  saveButtonText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
-  disabledButton: { opacity: 0.65 },
-  sectionHeader: { marginTop: 8, marginBottom: 2 },
-  sectionTitle: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
-  menuItem: { borderRadius: 16, borderWidth: 1, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconCircle: { width: 38, height: 38, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  menuTextGroup: { flex: 1, gap: 2 },
-  menuTitle: { fontSize: 14, fontWeight: '700' },
-  menuSub: { fontSize: 11 },
-  logoutBtn: { borderRadius: 16, borderWidth: 1, padding: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 16 },
-  logoutText: { fontSize: 14, fontWeight: '700' },
+  safe: { flex: 1 },
+  content: { gap: Spacing.three, padding: Spacing.three, paddingBottom: Spacing.five },
+  card: { gap: Spacing.three, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.lg },
+  identity: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
+  identityText: { flex: 1, gap: Spacing.half },
+  group: { gap: Spacing.two },
+  inline: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  grow: { flex: 1 },
 });

@@ -3,6 +3,8 @@ export interface UserProfile {
   name: string;
   email: string;
   avatar?: string | null;
+  /** True when the account has an uploaded avatar (fetch it with AccountRepository.getAvatarUrl). */
+  avatarPresent?: boolean;
 }
 
 export interface AuthTokens {
@@ -65,4 +67,7 @@ export interface AuthRepositoryError {
   code: string;
   message: string;
   status?: number;
+  /** Backend validation details, [{ field, message }] (see fieldErrorsFromError). */
+  details?: unknown;
+  requestId?: string;
 }

@@ -1,4 +1,5 @@
 import { palette, type ColorPalette } from '../constants/palette';
+import { useColorScheme } from 'react-native';
 import { useUIStore } from '../stores/ui.store';
 
 export interface ThemeColors {
@@ -65,6 +66,8 @@ const LIGHT = toThemeColors(palette.light, false);
 const DARK = toThemeColors(palette.dark, true);
 
 export function useThemeColors(): ThemeColors {
-  const theme = useUIStore((s) => s.theme);
-  return theme === 'dark' ? DARK : LIGHT;
+  const mode = useUIStore((s) => s.themeMode);
+  const system = useColorScheme();
+  const dark = mode === 'system' ? system === 'dark' : mode === 'dark';
+  return dark ? DARK : LIGHT;
 }

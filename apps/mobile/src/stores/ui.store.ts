@@ -7,17 +7,20 @@ interface Toast {
   message?: string;
 }
 
+export type ThemeMode = 'light' | 'dark' | 'system';
+
 interface UIState {
-  theme: 'dark' | 'light';
-  toggleTheme: () => void;
+  /** 'system' follows the phone's appearance (see useThemeColors). */
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
   toasts: Toast[];
   showToast: (toast: Omit<Toast, 'id'>) => void;
   removeToast: (id: string) => void;
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
-  theme: 'dark',
-  toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
+  themeMode: 'system',
+  setThemeMode: (themeMode) => set({ themeMode }),
   toasts: [],
   showToast: (toast) => {
     const id = 'toast-' + Date.now();
