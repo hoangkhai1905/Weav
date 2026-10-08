@@ -65,19 +65,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   toast: {
-    borderRadius: 16,
+    borderRadius: 8,
     borderWidth: 1,
-    borderLeftWidth: 5,
+    borderLeftWidth: 3,
     paddingHorizontal: 16,
     paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 8,
   },
   leftRow: {
     flexDirection: 'row',
@@ -91,11 +86,11 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   title: {
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '600',
   },
   message: {
-    fontSize: 11,
-    lineHeight: 15,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

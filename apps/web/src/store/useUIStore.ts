@@ -34,7 +34,7 @@ const saveSidebarCollapsed = (collapsed: boolean) => {
     // Storage may be unavailable (private mode); the toggle still works for this session.
   }
 };
-const initialTheme: 'dark' | 'light' = (localStorage.getItem(THEME_KEY) as 'dark' | 'light') || 'dark';
+const initialTheme: 'dark' | 'light' = (localStorage.getItem(THEME_KEY) as 'dark' | 'light') || 'light';
 
 export const useUIStore = create<UIState>((set, get) => ({
   sidebarCollapsed: readSidebarCollapsed(),

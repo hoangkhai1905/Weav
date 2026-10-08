@@ -12,7 +12,7 @@ import {
   Link2Off,
   MessageCircle,
   PauseCircle,
-  Sparkles,
+  Plus,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../../stores/auth.store';
 import { selectActiveWorkspace, useWorkspaceStore } from '../../../stores/workspace.store';
@@ -26,6 +26,7 @@ import { durationBetween, formatRelativeTime } from '../../../features/common/ti
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { ErrorState } from '../../../components/ui/ErrorState';
 import { ListItem } from '../../../components/ui/ListItem';
+import { Group, SectionLabel } from '../../../components/ui/Section';
 import { Sheet } from '../../../components/ui/Sheet';
 import { Skeleton } from '../../../components/ui/Skeleton';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
@@ -55,17 +56,18 @@ export default function HomeScreen() {
   const firstName = (user?.name ?? '').trim().split(/\s+/).slice(-1)[0] ?? '';
 
   const header = (
-    <View style={styles.header}>
+    <View style={[styles.header, { backgroundColor: colors.headerBg, borderBottomColor: colors.border }]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={fill(t('dash.workspace.change'), { name: activeWorkspace?.name ?? t('dash.workspace.none') })}
         onPress={() => setPickerOpen(true)}
-        style={[styles.switcher, { backgroundColor: colors.card, borderColor: colors.borderStrong }]}
+        style={styles.switcher}
       >
-        <Building2 size={18} color={colors.primary} />
         <View style={styles.switcherText}>
-          <Text style={[Typography.caption, { color: colors.textMuted }]}>{t('dash.workspace.label')}</Text>
-          <Text numberOfLines={1} style={[Typography.label, { color: colors.text }]}>
+          <Text style={[Typography.section, { color: colors.textSubtle, textTransform: 'uppercase' }]}>
+            {t('dash.workspace.label')}
+          </Text>
+          <Text numberOfLines={1} style={[Typography.title, { color: colors.text }]}>
             {activeWorkspace?.name ?? t('dash.workspace.none')}
           </Text>
         </View>
@@ -75,12 +77,12 @@ export default function HomeScreen() {
         accessibilityRole="button"
         accessibilityLabel={t('dash.notifications')}
         onPress={() => router.navigate('/(app)/(tabs)/notifications')}
-        style={[styles.bell, { backgroundColor: colors.card, borderColor: colors.border }]}
+        style={styles.bell}
       >
         <Bell size={20} color={colors.text} />
         {unread > 0 ? (
           <View style={[styles.badge, { backgroundColor: colors.danger }]}>
-            <Text style={[styles.badgeText, { color: colors.onPrimary }]}>{unread > 9 ? '9+' : unread}</Text>
+            <Text style={[styles.badgeText, { color: colors.card }]}>{unread > 9 ? '9+' : unread}</Text>
           </View>
         ) : null}
       </Pressable>
@@ -101,15 +103,9 @@ export default function HomeScreen() {
               selectWorkspace(w.id);
               setPickerOpen(false);
             }}
-            style={[
-              styles.choice,
-              {
-                backgroundColor: selected ? colors.primaryBg : colors.card,
-                borderColor: selected ? colors.primaryBorder : colors.border,
-              },
-            ]}
+            style={[styles.choice, { borderBottomColor: colors.border, backgroundColor: selected ? colors.cardSecondary : colors.card }]}
           >
-            <Text style={[Typography.body, styles.choiceText, { color: colors.text, fontWeight: selected ? '700' : '400' }]}>
+            <Text style={[Typography.body, styles.choiceText, { color: colors.text, fontWeight: selected ? '600' : '400' }]}>
               {w.name}
             </Text>
             {selected ? <Check size={18} color={colors.primary} /> : null}
@@ -123,7 +119,7 @@ export default function HomeScreen() {
           setPickerOpen(false);
           router.push('/(app)/workspace');
         }}
-        style={[styles.choice, { borderColor: colors.borderStrong, backgroundColor: colors.card }]}
+        style={[styles.choice, { borderBottomColor: colors.border, backgroundColor: colors.card }]}
       >
         <Text style={[Typography.label, styles.choiceText, { color: colors.primary }]}>{t('dash.workspace.manage')}</Text>
         <ChevronRight size={18} color={colors.primary} />
@@ -156,95 +152,90 @@ export default function HomeScreen() {
           <RefreshControl refreshing={dash.isRefetching} onRefresh={() => void dash.refetch()} tintColor={colors.primary} />
         }
       >
-        <Text accessibilityRole="header" style={[Typography.headline, { color: colors.text }]}>
+        <Text accessibilityRole="header" style={[Typography.headline, styles.greeting, { color: colors.text }]}>
           {firstName ? fill(t('dash.greeting'), { name: firstName }) : t('dash.greetingAnon')}
         </Text>
 
-        <View style={styles.shortcuts}>
-          <Shortcut
-            icon={<MessageCircle size={22} color={colors.primary} />}
-            title={t('dash.shortcut.assistant')}
-            subtitle={t('dash.shortcut.assistant.sub')}
-            onPress={() => router.push('/(app)/assistant')}
+        <View style={[styles.stats, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Stat
+            label={t('dash.card.workflows')}
+            value={String(dash.workflowTotal)}
+            caption={fill(t('dash.card.workflows.detail'), {
+              published: byStatus.PUBLISHED,
+              draft: byStatus.DRAFT,
+              paused: byStatus.PAUSED,
+            })}
+            onPress={() => router.navigate('/(app)/(tabs)/workflows')}
           />
-          <Shortcut
-            icon={<Sparkles size={22} color={colors.primary} />}
-            title={t('dash.shortcut.generate')}
-            subtitle={t('dash.shortcut.generate.sub')}
-            onPress={() => router.push('/(app)/ai/generator')}
+          <Stat
+            label={t('dash.card.success')}
+            value={runs.successRate === null ? '-' : `${runs.successRate}%`}
+            caption={
+              runs.successRate === null
+                ? t('dash.card.success.none')
+                : fill(t('dash.card.success.detail'), { n: runs.success + runs.failed })
+            }
+            onPress={() => router.navigate('/(app)/(tabs)/executions')}
+          />
+          <Stat
+            label={t('dash.card.active')}
+            value={String(runs.active)}
+            caption={fill(t('dash.card.runs.detail'), { n: runs.sample })}
+            onPress={() => router.navigate('/(app)/(tabs)/executions')}
+          />
+          <Stat
+            label={t('dash.card.failed')}
+            value={String(runs.failed)}
+            caption={fill(t('dash.card.runs.detail'), { n: runs.sample })}
+            tone={runs.failed > 0 ? 'danger' : 'neutral'}
+            last
+            onPress={() => router.navigate('/(app)/(tabs)/executions')}
           />
         </View>
+        <Text style={[Typography.caption, styles.note, { color: colors.textSubtle }]}>{fill(t('dash.note'), { n: runs.sample })}</Text>
 
-        <Section title={t('dash.overview')}>
-          <View style={styles.grid}>
-            <StatCard
-              label={t('dash.card.workflows')}
-              value={String(dash.workflowTotal)}
-              caption={fill(t('dash.card.workflows.detail'), {
-                published: byStatus.PUBLISHED,
-                draft: byStatus.DRAFT,
-                paused: byStatus.PAUSED,
-              })}
-              onPress={() => router.navigate('/(app)/(tabs)/workflows')}
-            />
-            <StatCard
-              label={t('dash.card.success')}
-              value={runs.successRate === null ? '-' : `${runs.successRate}%`}
-              caption={
-                runs.successRate === null
-                  ? t('dash.card.success.none')
-                  : fill(t('dash.card.success.detail'), { n: runs.success + runs.failed })
-              }
-              tone={runs.successRate === null ? 'neutral' : runs.successRate >= 80 ? 'success' : 'warning'}
-              onPress={() => router.navigate('/(app)/(tabs)/executions')}
-            />
-            <StatCard
-              label={t('dash.card.active')}
-              value={String(runs.active)}
-              caption={fill(t('dash.card.runs.detail'), { n: runs.sample })}
-              tone={runs.active > 0 ? 'info' : 'neutral'}
-              onPress={() => router.navigate('/(app)/(tabs)/executions')}
-            />
-            <StatCard
-              label={t('dash.card.failed')}
-              value={String(runs.failed)}
-              caption={fill(t('dash.card.runs.detail'), { n: runs.sample })}
-              tone={runs.failed > 0 ? 'danger' : 'neutral'}
-              onPress={() => router.navigate('/(app)/(tabs)/executions')}
-            />
-          </View>
-          <Text style={[Typography.caption, { color: colors.textSubtle }]}>{fill(t('dash.note'), { n: runs.sample })}</Text>
-        </Section>
-
-        <Section title={t('dash.attention.title')}>
+        <SectionLabel title={t('dash.attention.title')} />
+        <Group>
           {dash.attention.length === 0 ? (
-            <View style={[styles.ok, { backgroundColor: colors.tones.success.bg, borderColor: colors.tones.success.border }]}>
-              <Check size={18} color={colors.tones.success.fg} />
-              <Text style={[Typography.body, styles.okText, { color: colors.text }]}>{t('dash.attention.none')}</Text>
-            </View>
+            <ListItem
+              leading={<Check size={18} color={colors.tones.success.fg} />}
+              title={t('dash.attention.none')}
+            />
           ) : (
             dash.attention.map((item) => (
               <AttentionRow key={item.key} item={item} nameOf={nameOf} language={language} />
             ))
           )}
-          <Text style={[Typography.caption, { color: colors.textSubtle }]}>
-            {fill(t('dash.attention.note'), { n: TRIGGER_CHECK_LIMIT })}
-          </Text>
-        </Section>
+        </Group>
+        <Text style={[Typography.caption, styles.note, { color: colors.textSubtle }]}>
+          {fill(t('dash.attention.note'), { n: TRIGGER_CHECK_LIMIT })}
+        </Text>
 
-        <Section
+        <SectionLabel
           title={t('dash.runs.title')}
-          action={recent.length > 0 ? { label: t('dash.runs.seeAll'), onPress: () => router.navigate('/(app)/(tabs)/executions') } : undefined}
-        >
-          {recent.length === 0 ? (
-            <EmptyState
-              title={t('dash.runs.empty.title')}
-              description={t('dash.runs.empty.body')}
-              actionLabel={t('dash.runs.empty.action')}
-              onAction={() => router.navigate('/(app)/(tabs)/workflows')}
-            />
-          ) : (
-            recent.map((e) => (
+          trailing={
+            recent.length > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('dash.runs.seeAll')}
+                onPress={() => router.navigate('/(app)/(tabs)/executions')}
+                style={styles.link}
+              >
+                <Text style={[Typography.label, { color: colors.primary }]}>{t('dash.runs.seeAll')}</Text>
+              </Pressable>
+            ) : undefined
+          }
+        />
+        {recent.length === 0 ? (
+          <EmptyState
+            title={t('dash.runs.empty.title')}
+            description={t('dash.runs.empty.body')}
+            actionLabel={t('dash.runs.empty.action')}
+            onAction={() => router.navigate('/(app)/(tabs)/workflows')}
+          />
+        ) : (
+          <Group>
+            {recent.map((e) => (
               <ListItem
                 key={e.executionId}
                 title={nameOf(e.workflowId)}
@@ -254,9 +245,27 @@ export default function HomeScreen() {
                 accessibilityHint={t('exl.item.hint')}
                 onPress={() => router.push(`/(app)/executions/${e.workflowId}/${e.executionId}`)}
               />
-            ))
-          )}
-        </Section>
+            ))}
+          </Group>
+        )}
+
+        <SectionLabel title={t('home.quick_actions')} />
+        <Group>
+          <ListItem
+            leading={<MessageCircle size={20} color={colors.textMuted} />}
+            title={t('dash.shortcut.assistant')}
+            subtitle={t('dash.shortcut.assistant.sub')}
+            trailing={<ChevronRight size={18} color={colors.textSubtle} />}
+            onPress={() => router.push('/(app)/assistant')}
+          />
+          <ListItem
+            leading={<Plus size={20} color={colors.textMuted} />}
+            title={t('dash.shortcut.generate')}
+            subtitle={t('dash.shortcut.generate.sub')}
+            trailing={<ChevronRight size={18} color={colors.textSubtle} />}
+            onPress={() => router.push('/(app)/ai/generator')}
+          />
+        </Group>
       </ScrollView>
     );
   }
@@ -270,72 +279,24 @@ export default function HomeScreen() {
   );
 }
 
-const Section: React.FC<{
-  title: string;
-  action?: { label: string; onPress: () => void };
-  children: React.ReactNode;
-}> = ({ title, action, children }) => {
-  const colors = useThemeColors();
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHead}>
-        <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>
-          {title}
-        </Text>
-        {action ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={action.label} onPress={action.onPress} style={styles.link}>
-            <Text style={[Typography.label, { color: colors.primary }]}>{action.label}</Text>
-          </Pressable>
-        ) : null}
-      </View>
-      {children}
-    </View>
-  );
-};
-
-const Shortcut: React.FC<{ icon: React.ReactNode; title: string; subtitle: string; onPress: () => void }> = ({
-  icon,
-  title,
-  subtitle,
-  onPress,
-}) => {
-  const colors = useThemeColors();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${title}. ${subtitle}`}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.shortcut,
-        { backgroundColor: pressed ? colors.cardSecondary : colors.card, borderColor: colors.border },
-      ]}
-    >
-      {icon}
-      <Text style={[Typography.label, { color: colors.text }]}>{title}</Text>
-      <Text style={[Typography.caption, { color: colors.textMuted }]}>{subtitle}</Text>
-    </Pressable>
-  );
-};
-
-const StatCard: React.FC<{
+const Stat: React.FC<{
   label: string;
   value: string;
   caption: string;
   tone?: StatusTone;
+  last?: boolean;
   onPress: () => void;
-}> = ({ label, value, caption, tone = 'neutral', onPress }) => {
+}> = ({ label, value, caption, tone = 'neutral', last = false, onPress }) => {
   const colors = useThemeColors();
-  const tc = colors.tones[tone];
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${label}: ${value}. ${caption}`}
       onPress={onPress}
-      style={[styles.stat, { backgroundColor: colors.card, borderColor: colors.border }]}
+      style={[styles.stat, !last && { borderRightWidth: 1, borderRightColor: colors.border }]}
     >
-      <Text style={[Typography.caption, { color: colors.textMuted }]}>{label}</Text>
-      <Text style={[styles.statValue, { color: tone === 'neutral' ? colors.text : tc.fg }]}>{value}</Text>
-      <Text style={[Typography.caption, { color: colors.textMuted }]}>{caption}</Text>
+      <Text style={[Typography.number, { color: tone === 'neutral' ? colors.text : colors.tones[tone].fg }]}>{value}</Text>
+      <Text numberOfLines={2} style={[Typography.caption, styles.statLabel, { color: colors.textMuted }]}>{label}</Text>
     </Pressable>
   );
 };
@@ -390,19 +351,7 @@ const HomeSkeleton: React.FC = () => {
   return (
     <View accessible accessibilityRole="progressbar" accessibilityLabel={t('ui.loading')} style={styles.content}>
       <Skeleton width="55%" height={28} />
-      <View style={styles.shortcuts}>
-        <Skeleton height={96} radius={Radius.lg} style={styles.flex} />
-        <Skeleton height={96} radius={Radius.lg} style={styles.flex} />
-      </View>
-      <View style={styles.grid}>
-        {[0, 1, 2, 3].map((i) => (
-          <View key={i} style={[styles.stat, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Skeleton width="50%" height={12} />
-            <Skeleton width="40%" height={30} />
-            <Skeleton width="80%" height={12} />
-          </View>
-        ))}
-      </View>
+      <Skeleton height={76} radius={Radius.md} />
       <Skeleton height={64} radius={Radius.md} />
       <Skeleton height={64} radius={Radius.md} />
     </View>
@@ -411,85 +360,45 @@ const HomeSkeleton: React.FC = () => {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  flex: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-  },
-  switcher: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
+    paddingLeft: Spacing.three,
+    paddingRight: Spacing.two,
+    paddingVertical: Spacing.one,
     minHeight: MinTouch + 8,
-    paddingHorizontal: Spacing.three,
-    borderWidth: 1,
-    borderRadius: Radius.md,
+    borderBottomWidth: 1,
   },
+  switcher: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.two, minHeight: MinTouch },
   switcherText: { flex: 1 },
-  bell: {
-    width: MinTouch + 8,
-    height: MinTouch + 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderRadius: Radius.md,
-  },
+  bell: { width: MinTouch, height: MinTouch, alignItems: 'center', justifyContent: 'center' },
   badge: {
     position: 'absolute',
-    top: 4,
+    top: 6,
     right: 4,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
     paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { fontSize: 10, fontWeight: '800' },
+  badgeText: { fontSize: 10, fontWeight: '700' },
   choice: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
     minHeight: MinTouch,
     paddingHorizontal: Spacing.three,
-    borderWidth: 1,
-    borderRadius: Radius.md,
+    borderBottomWidth: 1,
   },
   choiceText: { flex: 1 },
-  content: { gap: Spacing.four, padding: Spacing.three, paddingBottom: Spacing.six },
-  shortcuts: { flexDirection: 'row', gap: Spacing.two },
-  shortcut: {
-    flex: 1,
-    gap: Spacing.one,
-    minHeight: 96,
-    padding: Spacing.three,
-    borderWidth: 1,
-    borderRadius: Radius.lg,
-  },
-  section: { gap: Spacing.two },
-  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: MinTouch - 8 },
+  content: { paddingBottom: Spacing.six },
+  greeting: { paddingHorizontal: Spacing.three, paddingTop: Spacing.three, paddingBottom: Spacing.three },
+  stats: { flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1 },
+  stat: { flex: 1, gap: Spacing.half, paddingVertical: Spacing.three, paddingHorizontal: Spacing.three, minHeight: MinTouch },
+  statLabel: { fontSize: 12, lineHeight: 16 },
+  note: { paddingHorizontal: Spacing.three, paddingTop: Spacing.two },
   link: { minHeight: MinTouch, justifyContent: 'center' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
-  stat: {
-    flexBasis: '47%',
-    flexGrow: 1,
-    gap: Spacing.one,
-    padding: Spacing.three,
-    borderWidth: 1,
-    borderRadius: Radius.lg,
-  },
-  statValue: { fontSize: 30, lineHeight: 36, fontWeight: '700' },
-  ok: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    padding: Spacing.three,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-  },
-  okText: { flex: 1 },
 });

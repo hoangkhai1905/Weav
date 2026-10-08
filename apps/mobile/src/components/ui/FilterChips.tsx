@@ -38,12 +38,12 @@ export function FilterChips<T extends string>({ options, value, onChange, access
             style={[
               styles.chip,
               {
-                backgroundColor: selected ? colors.primary : colors.card,
-                borderColor: selected ? colors.primary : colors.borderStrong,
+                backgroundColor: selected ? colors.cardSecondary : 'transparent',
+                borderColor: selected ? colors.borderStrong : 'transparent',
               },
             ]}
           >
-            <Text style={[Typography.label, { color: selected ? colors.onPrimary : colors.text }]}>{o.label}</Text>
+            <Text style={[Typography.label, { color: selected ? colors.text : colors.textMuted }]}>{o.label}</Text>
           </Pressable>
         );
       })}
@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
     minHeight: MinTouch,
     paddingHorizontal: Spacing.three,
     justifyContent: 'center',
-    borderRadius: Radius.pill,
+    borderRadius: Radius.sm,
     borderWidth: 1,
   },
 });

@@ -49,6 +49,7 @@ export const RunSheet: React.FC<RunSheetProps> = ({ visible, value, onChange, bu
               fontFamily: Fonts?.mono,
               backgroundColor: colors.cardSecondary,
               borderColor: error ? colors.danger : colors.borderStrong,
+              outlineColor: colors.primary,
             },
           ]}
         />

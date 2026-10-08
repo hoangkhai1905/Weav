@@ -55,7 +55,7 @@ export const MemberCard: React.FC<MemberCardProps> = ({
               : { backgroundColor: colors.cardSecondary, borderColor: colors.border },
           ]}
         >
-          <Text style={[Typography.caption, { color: owner ? colors.primary : colors.textMuted, fontWeight: '700' }]}>
+          <Text style={[Typography.caption, { color: owner ? colors.primary : colors.textMuted, fontWeight: '600' }]}>
             {t(owner ? 'ws.role.owner' : 'ws.role.member')}
           </Text>
         </View>
@@ -105,6 +105,6 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   who: { flex: 1, gap: Spacing.half },
   name: { fontWeight: '600' },
-  role: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.half, borderWidth: 1, borderRadius: Radius.pill },
+  role: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.half, borderWidth: 1, borderRadius: Radius.sm },
   controls: { gap: Spacing.one, paddingTop: Spacing.one },
 });

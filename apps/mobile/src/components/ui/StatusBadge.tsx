@@ -1,52 +1,21 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import {
-  Ban,
-  CircleCheck,
-  CircleDot,
-  CircleX,
-  Circle,
-  Clock,
-  FilePen,
-  Hourglass,
-  Loader,
-  Pause,
-  SkipForward,
-  TriangleAlert,
-  type LucideIcon,
-} from 'lucide-react-native';
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { useTranslation } from '../../hooks/useTranslation';
 import { Radius } from '../../constants/theme';
-import { statusInfo, type StatusIconName } from './status';
-
-const ICONS: Record<StatusIconName, LucideIcon> = {
-  Clock,
-  Loader,
-  Hourglass,
-  CircleCheck,
-  CircleX,
-  Ban,
-  SkipForward,
-  Circle,
-  CircleDot,
-  FilePen,
-  Pause,
-  TriangleAlert,
-};
+import { statusInfo } from './status';
 
 interface StatusBadgeProps {
   status: string;
   size?: 'sm' | 'md';
 }
 
-/** Status is always shown as colour + icon + plain-language label. */
+/** Flat status badge: soft tint, coloured dot and a plain-language label (never colour alone). */
 export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'sm' }) => {
   const colors = useThemeColors();
   const { t } = useTranslation();
   const info = statusInfo(status);
   const tone = colors.tones[info.tone];
-  const Icon = ICONS[info.icon];
   const isSm = size === 'sm';
   const label = t(info.labelKey);
 
@@ -55,13 +24,9 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'sm' })
       accessible
       accessibilityRole="text"
       accessibilityLabel={label}
-      style={[
-        styles.badge,
-        { backgroundColor: tone.bg, borderColor: tone.border },
-        isSm ? styles.sm : styles.md,
-      ]}
+      style={[styles.badge, { backgroundColor: tone.bg }, isSm ? styles.sm : styles.md]}
     >
-      <Icon size={isSm ? 12 : 14} color={tone.fg} />
+      <View style={[styles.dot, { backgroundColor: tone.fg }]} />
       <Text style={[styles.text, { color: tone.fg, fontSize: isSm ? 12 : 13 }]}>{label}</Text>
     </View>
   );
@@ -72,10 +37,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    borderRadius: Radius.pill,
-    borderWidth: 1,
+    borderRadius: Radius.sm,
   },
-  sm: { paddingHorizontal: 8, paddingVertical: 2, gap: 4 },
-  md: { paddingHorizontal: 12, paddingVertical: 4, gap: 6 },
-  text: { fontWeight: '700' },
+  sm: { paddingHorizontal: 8, paddingVertical: 2, gap: 6 },
+  md: { paddingHorizontal: 10, paddingVertical: 4, gap: 6 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  text: { fontWeight: '500' },
 });

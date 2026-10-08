@@ -292,7 +292,7 @@ export default function WorkspaceScreen() {
                     style={[
                       styles.option,
                       {
-                        backgroundColor: selected ? colors.primaryBg : colors.card,
+                        backgroundColor: colors.card,
                         borderColor: selected ? colors.primary : colors.border,
                       },
                     ]}
@@ -304,7 +304,7 @@ export default function WorkspaceScreen() {
                     {selected ? (
                       <View style={styles.selectedMark}>
                         <Check size={16} color={colors.primary} />
-                        <Text style={[Typography.caption, { color: colors.primary, fontWeight: '700' }]}>
+                        <Text style={[Typography.caption, { color: colors.primary, fontWeight: '600' }]}>
                           {t('ws.current')}
                         </Text>
                       </View>

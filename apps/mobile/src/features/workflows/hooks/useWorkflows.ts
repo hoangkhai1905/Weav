@@ -48,10 +48,24 @@ export function useDeleteWorkflow() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => workflowRepository.deleteWorkflow(getActiveWorkspaceId(), id),
-    onSuccess: (_void, id) => {
-      queryClient.removeQueries({ queryKey: ['workflow', getActiveWorkspaceId(), id] });
+    onSuccess: async (_void, id) => {
+      // The workflow is gone: stop in-flight reads and drop its cached reads, so nothing re-fetches it (404).
+      const workspaceId = getActiveWorkspaceId();
+      const keys = [
+        ['workflow', workspaceId, id],
+        ['execution', workspaceId, id],
+        ['executions', workspaceId, 'workflow', id],
+      ];
+      await Promise.all(keys.map((queryKey) => queryClient.cancelQueries({ queryKey })));
+      // Drop it from the cached list first: Home's trigger check (useQueries per workflow) would
+      // otherwise re-create the removed detail query from the stale list and fetch it (404).
+      queryClient.setQueryData<Awaited<ReturnType<typeof workflowRepository.getWorkflows>>>(
+        ['workflows', workspaceId],
+        (page) => page && { ...page, items: page.items.filter((w) => w.workflowId !== id) },
+      );
+      keys.forEach((queryKey) => queryClient.removeQueries({ queryKey }));
       void queryClient.invalidateQueries({ queryKey: ['workflows'] });
-      void queryClient.invalidateQueries({ queryKey: ['executions'] });
+      void queryClient.invalidateQueries({ queryKey: ['executions', workspaceId], exact: true });
     },
   });
 }

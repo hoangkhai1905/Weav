@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { GitFork, Search, Sparkles, X } from 'lucide-react-native';
+import { GitFork, Plus, Search, X } from 'lucide-react-native';
 import { useInfiniteWorkflows } from '../../../features/workflows/hooks/useWorkflows';
 import { filterWorkflows, type WorkflowStatusFilter } from '../../../features/workflows/workflow.filter';
 import { fill } from '../../../features/common/fill';
@@ -62,8 +62,8 @@ export default function WorkflowsScreen() {
   );
 
   const header = (
-    <View style={styles.controls}>
-      <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.borderStrong }]}>
+    <View style={[styles.controls, { borderBottomColor: colors.border }]}>
+      <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <Search size={18} color={colors.textMuted} />
         <TextInput
           value={search}
@@ -74,7 +74,7 @@ export default function WorkflowsScreen() {
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
-          style={[Typography.body, styles.searchInput, { color: colors.text }]}
+          style={[Typography.body, styles.searchInput, { color: colors.text, outlineColor: colors.primary }]}
         />
         {search !== '' ? (
           <Pressable
@@ -133,7 +133,6 @@ export default function WorkflowsScreen() {
         data={visible}
         keyExtractor={(w) => w.workflowId}
         renderItem={renderItem}
-        ItemSeparatorComponent={Separator}
         ListHeaderComponent={header}
         ListFooterComponent={footer}
         ListEmptyComponent={
@@ -169,9 +168,9 @@ export default function WorkflowsScreen() {
             accessibilityRole="button"
             accessibilityLabel={t('wfl.create.ai')}
             onPress={openAi}
-            style={[styles.ai, { backgroundColor: colors.primaryBg, borderColor: colors.primaryBorder }]}
+            style={styles.ai}
           >
-            <Sparkles size={20} color={colors.primary} />
+            <Plus size={22} color={colors.primary} />
           </Pressable>
         }
       />
@@ -180,12 +179,10 @@ export default function WorkflowsScreen() {
   );
 }
 
-const Separator = () => <View style={{ height: Spacing.two }} />;
-
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  list: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.five },
-  controls: { gap: Spacing.two, paddingTop: Spacing.three, paddingBottom: Spacing.three, marginHorizontal: -Spacing.three },
+  list: { paddingBottom: Spacing.five },
+  controls: { gap: Spacing.one, paddingTop: Spacing.three, paddingBottom: Spacing.two, borderBottomWidth: 1 },
   search: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -212,7 +209,5 @@ const styles = StyleSheet.create({
     height: MinTouch,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: Radius.md,
-    borderWidth: 1,
   },
 });

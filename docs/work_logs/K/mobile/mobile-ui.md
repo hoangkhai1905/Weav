@@ -194,3 +194,35 @@ Bằng chứng:
 Cách tránh: nếu giờ thông báo/lượt chạy lệch hằng số vài giờ sau khi laptop ngủ, so `docker exec <container> date -u` với `date -u` trên máy; lệch thì khởi động lại Docker Desktop (hoặc `wsl --shutdown`) rồi chạy lại stack.
 
 Kiểm tra: `src/features/common/time.test.cjs` (mới, đặt `TZ=Asia/Ho_Chi_Minh`) khóa việc hiển thị: `...Z` -> giờ +7, phần giây 6/9 chữ số, tương đối là hiệu thuần, nhóm ngày theo ngày lịch của máy. Chạy lại trên Expo Web (`:5173`, `timezoneId: Asia/Ho_Chi_Minh`) với thông báo mới tạo: hiện "4 phút trước", đúng. Tài khoản thử (`mobilefix...@example.com`, không có API xóa tài khoản) và không gian "Time debug" còn lại; đã xóa quy trình thử và ảnh đại diện thử.
+
+---
+
+## Làm đẹp lại giao diện mobile (nhánh `feature/mobile-polish`)
+
+Lý do: người dùng thấy giao diện cũ "xấu quá", trông như do AI làm (tím/cyan, thẻ to, bo tròn). Hướng đã chọn: tối giản kiểu Linear/Stripe.
+
+### Commit 1: `fix(mobile): node labels, friendly log messages, no refetch after delete`
+- Bước lặp tên: `FlowList` chỉ hiện dòng loại bước khi khác tên hiển thị.
+- Nhật ký lượt chạy: workflow-service chỉ ghi 3 `eventType` (`NODE_SUCCEEDED`, `NODE_RETRY_SCHEDULED`, `NODE_FAILED`, ở `ExecutionRunner.java`). `features/executions/execution-log.copy.ts` ánh xạ sang câu thân thiện vi/en, mã lạ -> câu chung; message gốc, mã và metadata nằm trong "Chi tiết kỹ thuật" (bấm để mở). Test: `execution-log.copy.test.cjs` (+2, tổng 180).
+- Xóa workflow: `useDeleteWorkflow` hủy rồi xóa cache `workflow`/`execution`/`executions…workflow` của quy trình đó; màn chi tiết ngừng đọc (`enabled=false`) khi đang xóa/đã xóa để query bị xóa không tự tải lại. Kiểm trên Expo Web: xóa bản nháp -> không còn request 4xx nào sau DELETE. GitNexus: `useDeleteWorkflow` "not found" (index cũ), grep xác nhận chỉ `workflows/[id].tsx` gọi; `useWorkflowDetail`/`useWorkflowExecutions` chỉ thêm tham số `enabled = true` nên các nơi gọi khác không đổi.
+
+### Commit 2: `feat(mobile): minimal professional visual redesign` (chỉ giao diện, không đổi dữ liệu/luồng)
+- Token (`palette.ts`, `theme.ts`): nền sáng `#fafafa`, bề mặt trắng, viền `#e5e7eb`, chữ `#0a0a0a`/`#52525b`/`#686873`, một màu nhấn `#2563eb`. Tối: xám trung tính (`#0b0b0c`/`#131314`, nhấn `#6b9bff`), bỏ xanh navy. `Radius` 6/8 (pill chỉ cho chấm), không bóng, không gradient. Chữ: tiêu đề 22/600, mục 17/600, nhãn nhóm 12 in hoa mờ, thân 15, phụ 13; `Typography.number` dùng số cùng độ rộng. Test tương phản WCAG AA (`palette.contrast.test.cjs`) vẫn đạt, không phải sửa.
+- Dùng chung: `Button` (chính = nền nhấn; phụ = trắng + viền; nguy hiểm = chữ/viền đỏ), `StatusBadge` (phẳng: nền nhạt + chấm màu + nhãn), `ListItem` (hàng full-width, đường kẻ mảnh), `Section` mới (`SectionLabel`, `Group`), `FilterChips` (bỏ viên thuốc đặc), `ScreenHeader` trắng + đường kẻ, `ConfirmSheet` nguy hiểm không còn khối đỏ, `Toast` bỏ bóng, `Avatar` xám trung tính, `Logo` thành chữ + ô W (bỏ ảnh tím), bỏ `AnimatedNodeVisual` (không ai dùng, ánh tím).
+- Màn hình: Trang chủ (hàng 4 chỉ số, "Cần chú ý", "Lượt chạy gần đây", lối tắt AI là hàng danh sách, bỏ biểu tượng lấp lánh), Quy trình / Lịch sử / Thông báo thành danh sách hàng, chi tiết quy trình + lượt chạy (nhóm có nhãn nhỏ), Cá nhân, Đăng nhập (không còn thẻ), Bảo mật/Không gian/Kết nối (bỏ bong bóng icon, màu icon trung tính), thanh tab trắng + kẻ mảnh, nhãn 11 không bị cắt.
+- Ảnh chụp: thay toàn bộ `apps/mobile/docs/screens/` bằng 29 ảnh mới (sáng + tối các màn chính, 1,1 MB). Ảnh trạng thái riêng (rỗng, lỗi, sheet…) cũ đã xóa vì lỗi thời.
+- Chạy kiểm: Expo Web `:5173` (`EXPO_PUBLIC_API_MODE=http`) + Playwright 390x844, tài khoản thử đăng ký qua API (`mobilepolish1791431820769@example.test` và 2 tài khoản `mobilepolish…` bị seed lỗi giữa chừng; không có API xóa tài khoản; mật khẩu chỉ trong file tạm đã xóa), đi qua mọi màn sáng + tối; console và request không có lỗi. Lưu ý: Metro từng phục vụ bundle cũ (không báo lỗi), phải `expo start --clear` mới thấy thay đổi.
+
+### Commit 3: `feat: light theme by default on web and mobile`
+- Mobile: `ui.store.ts` `themeMode` mặc định `'light'` (trước là `'system'`). Giá trị này không được lưu (không persist), nên chỉ đổi mặc định; Sáng / Tối / Theo điện thoại vẫn chọn được ở Cá nhân. Test mới `ui.store.test.cjs` (tổng 181).
+- Web: `apps/web/src/store/useUIStore.ts` mặc định `'light'` khi chưa có `weav_theme_v1` trong localStorage; lựa chọn đã lưu vẫn được giữ. Kiểm bằng `vite preview` + Playwright (trình duyệt ưu tiên tối): không lưu -> class `light`; đã lưu `dark` -> `dark`. `tsc --noEmit` sạch, `pnpm build` thành công.
+- Dọn dẹp: đã dừng Expo, xóa `tmp/mobile-polish/`. Còn lại trên backend: 3 tài khoản thử `mobilepolish…@example.test` (không có API xóa tài khoản), 2 trong số đó có workspace/quy trình thử dở dang do script seed lỗi giữa chừng; quy trình thử "Gửi báo giá cho khách mới" đã xóa trong lúc kiểm.
+
+### Commit 4: `fix(mobile): no refetch of a deleted published workflow; accent focus ring on inputs`
+- Tự kiểm trong Browser pane (stack thật, tài khoản `merge-check-20261008@example.test`): xóa quy trình **đã xuất bản** vẫn còn 1 GET 404 sau DELETE. Nguyên nhân: Trang chủ kiểm điều kiện kích hoạt bằng `useQueries` theo danh sách `['workflows', ws]` còn cũ, nên tạo lại query chi tiết vừa bị xóa. Sửa: `useDeleteWorkflow` lọc quy trình khỏi danh sách trong cache trước khi xóa query. Kiểm lại: DELETE 204, không còn request nào sau đó.
+- Ô nhập (`TextInput` thô ở 5 file) dùng viền focus cam mặc định của trình duyệt; đổi sang `outlineColor: colors.primary` (giữ vòng focus cho trợ năng).
+- Web: kiểm trong Browser pane, trình duyệt ưu tiên tối + chưa lưu lựa chọn -> `class="light"`.
+- Lưu ý kiểm thử: khi cửa sổ Claude bị che (`visibilityState: hidden`), Chrome dừng animation/rAF nên sheet và chuyển màn bị kẹt; không phải lỗi app.
+
+### Để sau
+- Đăng nhập Google trên mobile: luồng hiện có chỉ cho web (gọi thẳng identity-service :8082, kiểm Origin + cookie + CSRF, quay về `/auth/callback` của web; gateway chưa có route). Cần client OAuth cho mobile (PKCE + deep link `weav://auth/callback`) + route gateway + `expo-auth-session`. Người dùng quyết định để sau (2026-10-08).

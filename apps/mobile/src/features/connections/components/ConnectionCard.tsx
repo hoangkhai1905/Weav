@@ -69,8 +69,8 @@ export const ConnectionCard: React.FC<ConnectionCardProps> = ({ item, testing, r
   return (
     <View testID={`connection-${item.id}`} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.top}>
-        <View style={[styles.icon, { backgroundColor: colors.cardSecondary }]}>
-          <Icon size={20} color={colors.primary} />
+        <View style={styles.icon}>
+          <Icon size={20} color={colors.textMuted} />
         </View>
         <View style={styles.main}>
           <Text style={[Typography.body, styles.name, { color: colors.text }]} numberOfLines={2}>
@@ -129,7 +129,7 @@ export const ConnectionCard: React.FC<ConnectionCardProps> = ({ item, testing, r
 const styles = StyleSheet.create({
   card: { gap: Spacing.two, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.md },
   top: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  icon: { width: 40, height: 40, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
+  icon: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
   main: { flex: 1, gap: Spacing.half },
   name: { fontWeight: '600' },
   facts: { gap: Spacing.half },

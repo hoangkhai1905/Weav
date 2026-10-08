@@ -146,7 +146,7 @@ export default function NotificationsScreen() {
       const label =
         bucket === 'today' ? t('ntf.today') : bucket === 'yesterday' ? t('ntf.yesterday') : format(date, 'dd/MM/yyyy');
       return (
-        <Text accessibilityRole="header" style={[Typography.label, styles.dayHeader, { color: colors.textMuted }]}>
+        <Text accessibilityRole="header" style={[Typography.section, styles.dayHeader, { color: colors.textSubtle }]}>
           {label}
         </Text>
       );
@@ -168,19 +168,14 @@ export default function NotificationsScreen() {
         onPress={() => void handleOpen(item)}
         style={({ pressed }) => [
           styles.card,
-          {
-            backgroundColor: pressed ? colors.cardSecondary : isRead ? colors.card : colors.primaryBg,
-            borderColor: isRead ? colors.border : colors.primaryBorder,
-          },
+          { backgroundColor: pressed ? colors.cardSecondary : colors.card, borderBottomColor: colors.border },
         ]}
       >
-        <View style={[styles.sevIcon, { backgroundColor: tone.bg }]}>
-          <Icon size={18} color={tone.fg} />
-        </View>
+        <Icon size={18} color={tone.fg} />
         <View style={styles.body}>
           <View style={styles.titleRow}>
             {!isRead ? <View style={[styles.dot, { backgroundColor: colors.primary }]} /> : null}
-            <Text style={[Typography.body, styles.title, { color: colors.text }]}>{item.title}</Text>
+            <Text style={[Typography.body, styles.title, { color: colors.text, fontWeight: isRead ? '400' : '600' }]}>{item.title}</Text>
           </View>
           <Text style={[Typography.caption, { color: colors.textMuted }]}>{item.message}</Text>
           <Text style={[Typography.caption, { color: colors.textSubtle }]}>
@@ -302,14 +297,13 @@ const styles = StyleSheet.create({
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, marginHorizontal: Spacing.three, marginBottom: Spacing.two, paddingLeft: Spacing.three, borderRadius: Radius.md },
   bannerText: { flex: 1 },
   bannerBtn: { minHeight: MinTouch, paddingHorizontal: Spacing.three, justifyContent: 'center' },
-  list: { gap: Spacing.two, paddingHorizontal: Spacing.three, paddingBottom: Spacing.five },
-  dayHeader: { paddingTop: Spacing.two },
-  card: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, minHeight: MinTouch, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.md },
-  sevIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  list: { paddingBottom: Spacing.five },
+  dayHeader: { textTransform: 'uppercase', paddingHorizontal: Spacing.three, paddingTop: Spacing.four, paddingBottom: Spacing.two },
+  card: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, minHeight: MinTouch, paddingVertical: 14, paddingHorizontal: Spacing.three, borderBottomWidth: 1 },
   body: { flex: 1, gap: Spacing.half },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  title: { flex: 1, fontWeight: '600' },
+  title: { flex: 1 },
   footer: { alignItems: 'center', gap: Spacing.two, padding: Spacing.three },
   moreBtn: { minHeight: MinTouch, paddingHorizontal: Spacing.four, justifyContent: 'center', borderRadius: Radius.md, borderWidth: 1 },
 });

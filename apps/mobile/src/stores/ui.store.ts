@@ -10,7 +10,7 @@ interface Toast {
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 interface UIState {
-  /** 'system' follows the phone's appearance (see useThemeColors). */
+  /** Light by default; 'system' follows the phone's appearance (see useThemeColors). Not persisted. */
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
   toasts: Toast[];
@@ -19,7 +19,7 @@ interface UIState {
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
-  themeMode: 'system',
+  themeMode: 'light',
   setThemeMode: (themeMode) => set({ themeMode }),
   toasts: [],
   showToast: (toast) => {

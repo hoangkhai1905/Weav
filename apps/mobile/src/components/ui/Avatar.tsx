@@ -35,9 +35,9 @@ export const Avatar: React.FC<AvatarProps> = ({ name, size = 40, uri }) => {
     <View
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
-      style={[styles.fallback, box, { backgroundColor: colors.primary }]}
+      style={[styles.fallback, box, { backgroundColor: colors.cardSecondary, borderWidth: 1, borderColor: colors.border }]}
     >
-      <Text style={{ color: colors.onPrimary, fontSize: size * 0.38, fontWeight: '700' }}>{initialsOf(name)}</Text>
+      <Text style={{ color: colors.textMuted, fontSize: size * 0.38, fontWeight: '600' }}>{initialsOf(name)}</Text>
     </View>
   );
 };

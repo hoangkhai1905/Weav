@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Pause, Play, Rocket, Trash2 } from 'lucide-react-native';
+import { Pause, Play, Upload, Trash2 } from 'lucide-react-native';
 import { useWorkflowDetail } from '../../../features/workflows/hooks/useWorkflowDetail';
 import {
   useDeleteWorkflow,
@@ -26,6 +26,7 @@ import { durationBetween, formatRelativeTime } from '../../../features/common/ti
 import { ConfirmSheet } from '../../../components/ui/ConfirmSheet';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { ErrorState } from '../../../components/ui/ErrorState';
+import { Group, SectionLabel } from '../../../components/ui/Section';
 import { ListItem } from '../../../components/ui/ListItem';
 import { ScreenHeader } from '../../../components/ui/ScreenHeader';
 import { Skeleton } from '../../../components/ui/Skeleton';
@@ -46,14 +47,16 @@ export default function WorkflowDetailScreen() {
   const { t, language } = useTranslation();
   const showToast = useUIStore((s) => s.showToast);
 
-  const detail = useWorkflowDetail(workflowId);
-  const history = useWorkflowExecutions(workflowId);
+  const deleteMutation = useDeleteWorkflow();
+  // Once the delete is under way the workflow is gone: stop reading it so no 404 request fires.
+  const keepReading = !deleteMutation.isPending && !deleteMutation.isSuccess;
+  const detail = useWorkflowDetail(workflowId, keepReading);
+  const history = useWorkflowExecutions(workflowId, keepReading);
   const perms = useWorkflowPermissions();
   const runMutation = useRunWorkflow();
   const pauseMutation = usePauseWorkflow();
   const resumeMutation = useResumeWorkflow();
   const publishMutation = usePublishWorkflow();
-  const deleteMutation = useDeleteWorkflow();
 
   const [showRunModal, setShowRunModal] = useState(false);
   const [payloadInput, setPayloadInput] = useState('');
@@ -139,7 +142,7 @@ export default function WorkflowDetailScreen() {
   let body: React.ReactNode;
   if (detail.isPending) {
     body = (
-      <View style={styles.content}>
+      <View style={styles.skeleton}>
         <Skeleton height={28} width="70%" />
         <Skeleton height={16} width="90%" />
         <Skeleton height={44} />
@@ -170,7 +173,7 @@ export default function WorkflowDetailScreen() {
           />
         }
       >
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Group padded>
           <View style={styles.titleRow}>
             <Text accessibilityRole="header" style={[Typography.headline, styles.name, { color: colors.text }]}>
               {workflow.name}
@@ -187,9 +190,10 @@ export default function WorkflowDetailScreen() {
               ? fill(t('wfd.publishedAt'), { time: formatRelativeTime(workflow.publishedAt, language) })
               : t('wfd.notPublished')}
           </Text>
-        </View>
+        </Group>
 
         <Section title={t('wfd.actions')}>
+          <Group padded>
           <View style={styles.actions}>
             {canRun ? (
               <ActionButton
@@ -202,7 +206,7 @@ export default function WorkflowDetailScreen() {
             {canPublish ? (
               <ActionButton
                 label={t('wfd.publish')}
-                icon={<Rocket size={18} color={colors.onPrimary} />}
+                icon={<Upload size={18} color={colors.onPrimary} />}
                 variant="primary"
                 onPress={() => setConfirmPublish(true)}
               />
@@ -242,20 +246,27 @@ export default function WorkflowDetailScreen() {
           {noPermission ? (
             <Text style={[Typography.caption, { color: colors.textMuted }]}>{t('wfd.noPermission')}</Text>
           ) : null}
+          </Group>
         </Section>
 
         <Section title={t('wfd.triggers')}>
-          <TriggerList triggers={workflow.triggers} workflowStatus={status} />
+          <Group padded>
+            <TriggerList triggers={workflow.triggers} workflowStatus={status} />
+          </Group>
         </Section>
 
         <Section title={t('wfd.flow')}>
-          <FlowList workflow={workflow} />
-          <Text style={[Typography.caption, { color: colors.textSubtle }]}>{t('wfd.flow.note')}</Text>
+          <Group padded>
+            <FlowList workflow={workflow} />
+            <Text style={[Typography.caption, { color: colors.textSubtle }]}>{t('wfd.flow.note')}</Text>
+          </Group>
         </Section>
 
         <Section title={t('wfd.history')}>
           {history.isPending ? (
-            <Skeleton height={64} />
+            <Group padded>
+              <Skeleton height={64} />
+            </Group>
           ) : history.isError ? (
             <ErrorState error={history.error as unknown as ApiError} onRetry={() => void history.refetch()} />
           ) : history.data.items.length === 0 ? (
@@ -266,7 +277,7 @@ export default function WorkflowDetailScreen() {
               onAction={canRun ? () => setShowRunModal(true) : undefined}
             />
           ) : (
-            <View style={styles.history}>
+            <Group>
               {history.data.items.map((e) => (
                 <ListItem
                   key={e.executionId}
@@ -278,7 +289,7 @@ export default function WorkflowDetailScreen() {
                   onPress={() => router.push(`/(app)/executions/${e.workflowId}/${e.executionId}`)}
                 />
               ))}
-            </View>
+            </Group>
           )}
         </Section>
 
@@ -326,12 +337,9 @@ export default function WorkflowDetailScreen() {
 }
 
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => {
-  const colors = useThemeColors();
   return (
-    <View style={styles.section}>
-      <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>
-        {title}
-      </Text>
+    <View>
+      <SectionLabel title={title} />
       {children}
     </View>
   );
@@ -350,7 +358,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({ label, icon, variant, onPre
   const palette = {
     primary: { bg: colors.primary, border: colors.primary, fg: colors.onPrimary },
     secondary: { bg: colors.card, border: colors.borderStrong, fg: colors.text },
-    danger: { bg: colors.dangerBg, border: colors.tones.danger.border, fg: colors.danger },
+    danger: { bg: colors.card, border: colors.tones.danger.border, fg: colors.danger },
   }[variant];
   return (
     <Pressable
@@ -369,11 +377,10 @@ const ActionButton: React.FC<ActionButtonProps> = ({ label, icon, variant, onPre
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  content: { gap: Spacing.four, padding: Spacing.three, paddingBottom: Spacing.six },
-  card: { gap: Spacing.two, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.lg },
+  content: { paddingBottom: Spacing.six },
+  skeleton: { gap: Spacing.three, padding: Spacing.three },
   titleRow: { gap: Spacing.two },
   name: { flexShrink: 1 },
-  section: { gap: Spacing.two },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
   action: {
     flexDirection: 'row',
@@ -385,5 +392,4 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: Radius.md,
   },
-  history: { gap: Spacing.two },
 });

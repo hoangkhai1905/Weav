@@ -62,5 +62,5 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
   text: { fontSize: 13, textAlign: 'center' },
-  link: { fontSize: 14, fontWeight: '700' },
+  link: { fontSize: 14, fontWeight: '600' },
 });

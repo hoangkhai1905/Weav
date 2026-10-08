@@ -112,7 +112,7 @@ export default function RegisterScreen() {
         style={styles.link}
       >
         <Text style={[Typography.body, { color: colors.textMuted }]}>
-          {t('au.haveAccount')} <Text style={{ color: colors.primary, fontWeight: '700' }}>{t('au.signInLink')}</Text>
+          {t('au.haveAccount')} <Text style={{ color: colors.primary, fontWeight: '600' }}>{t('au.signInLink')}</Text>
         </Text>
       </Pressable>
     </AuthShell>

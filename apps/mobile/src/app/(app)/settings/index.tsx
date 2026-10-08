@@ -146,7 +146,7 @@ export default function SecurityScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.cardHead}>
-            <KeyRound size={20} color={colors.primary} />
+            <KeyRound size={20} color={colors.textMuted} />
             <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>
               {t('sec.pw.title')}
             </Text>
@@ -157,7 +157,7 @@ export default function SecurityScreen() {
 
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.cardHead}>
-            <UserRound size={20} color={colors.primary} />
+            <UserRound size={20} color={colors.textMuted} />
             <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>
               {t('sec.linked.title')}
             </Text>
@@ -184,7 +184,7 @@ export default function SecurityScreen() {
 
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.cardHead}>
-            <MonitorSmartphone size={20} color={colors.primary} />
+            <MonitorSmartphone size={20} color={colors.textMuted} />
             <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>
               {t('sec.sessions.title')}
             </Text>
@@ -206,7 +206,7 @@ export default function SecurityScreen() {
                   <View
                     key={session.id}
                     testID={`auth-session-${session.id}`}
-                    style={[styles.session, { borderColor: colors.border, backgroundColor: colors.cardSecondary }]}
+                    style={[styles.session, { borderColor: colors.border, backgroundColor: colors.card }]}
                   >
                     <View style={styles.sessionText}>
                       <Text style={[Typography.body, { color: colors.text, fontWeight: '600' }]}>{name}</Text>
@@ -214,7 +214,7 @@ export default function SecurityScreen() {
                         {t('sec.session.lastUsed')}: {formatRelativeTime(session.lastUsedAt ?? session.createdAt, language)}
                       </Text>
                       {session.current ? (
-                        <Text style={[Typography.caption, { color: colors.success, fontWeight: '700' }]}>
+                        <Text style={[Typography.caption, { color: colors.success, fontWeight: '600' }]}>
                           {t('sec.session.current')}
                         </Text>
                       ) : null}
