@@ -12,6 +12,8 @@ import { orderFlowNodes } from '../../../../features/workflows/workflow-flow';
 import { fill } from '../../../../features/common/fill';
 import { logEventKey } from '../../../../features/executions/execution-log.copy';
 import { durationBetween, formatClock, formatDateTime } from '../../../../features/common/time';
+import { Button } from '../../../../components/ui/Button';
+import { Group, SectionLabel } from '../../../../components/ui/Section';
 import { ErrorState } from '../../../../components/ui/ErrorState';
 import { FilterChips, type ChipOption } from '../../../../components/ui/FilterChips';
 import { JsonViewer } from '../../../../components/ui/JsonViewer';
@@ -98,8 +100,8 @@ export default function ExecutionDetailScreen() {
   let body: React.ReactNode;
   if (query.isPending) {
     body = (
-      <View style={styles.content}>
-        <Skeleton height={120} radius={Radius.lg} />
+      <View style={styles.skeleton}>
+        <Skeleton height={120} radius={Radius.md} />
         <Skeleton height={20} width="50%" />
         <Skeleton height={64} />
         <Skeleton height={64} />
@@ -130,7 +132,7 @@ export default function ExecutionDetailScreen() {
           <RefreshControl refreshing={query.isRefetching && !active} onRefresh={() => void query.refetch()} tintColor={colors.primary} />
         }
       >
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Group padded>
           <View style={styles.headRow}>
             <Pressable
               accessibilityRole="button"
@@ -161,13 +163,10 @@ export default function ExecutionDetailScreen() {
               <Text style={[Typography.caption, { color: colors.textMuted }]}>{t('exd.live')}</Text>
             </View>
           ) : null}
-        </View>
+        </Group>
 
         {execution.status === 'FAILED' ? (
-          <View
-            accessibilityRole="alert"
-            style={[styles.failed, { backgroundColor: colors.dangerBg, borderColor: colors.tones.danger.border }]}
-          >
+          <View accessibilityRole="alert" style={[styles.failed, { backgroundColor: colors.dangerBg }]}>
             <View style={styles.headRow}>
               <TriangleAlert size={18} color={colors.danger} />
               <Text style={[Typography.label, { color: colors.danger }]}>{t('exd.failed.title')}</Text>
@@ -182,43 +181,38 @@ export default function ExecutionDetailScreen() {
 
         {workflow?.status === 'PUBLISHED' ? (
           <View style={styles.rerun}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('exd.rerun')}
+            <Button
+              label={t('exd.rerun')}
               accessibilityHint={t('exd.rerun.hint')}
-              accessibilityState={{ disabled: runMutation.isPending, busy: runMutation.isPending }}
-              disabled={runMutation.isPending}
+              busy={runMutation.isPending}
+              icon={runMutation.isPending ? undefined : <RefreshCw size={16} color={colors.onPrimary} />}
               onPress={() => void handleRerun()}
-              style={[styles.rerunBtn, { backgroundColor: colors.primary, opacity: runMutation.isPending ? 0.6 : 1 }]}
-            >
-              {runMutation.isPending ? (
-                <ActivityIndicator color={colors.onPrimary} />
-              ) : (
-                <RefreshCw size={18} color={colors.onPrimary} />
-              )}
-              <Text style={[Typography.label, { color: colors.onPrimary }]}>{t('exd.rerun')}</Text>
-            </Pressable>
+            />
             <Text style={[Typography.caption, { color: colors.textSubtle }]}>{t('exd.rerun.hint')}</Text>
           </View>
         ) : null}
 
-        <View style={styles.section}>
-          <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>{t('exd.steps')}</Text>
+        <SectionLabel title={t('exd.steps')} />
+        <Group padded>
           <NodeTimeline nodes={timelineItems} />
-        </View>
+        </Group>
 
-        <View style={styles.section}>
-          <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>{t('exd.logs')}</Text>
-          <View style={styles.chipsBleed}>
-            <FilterChips<LevelFilter> options={levelChips} value={level} onChange={setLevel} accessibilityLabel={t('exd.logs.filter')} />
-          </View>
-          {logs.items.length === 0 ? (
-            <Text style={[Typography.body, { color: colors.textMuted }]}>{t('exd.logs.empty')}</Text>
-          ) : shownLogs.length === 0 ? (
-            <Text style={[Typography.body, { color: colors.textMuted }]}>{t('exd.logs.noMatch')}</Text>
-          ) : (
-            shownLogs.map((l) => <LogRow key={l.id} log={l} step={logNode(l.nodeExecutionId)} />)
-          )}
+        <SectionLabel title={t('exd.logs')} />
+        <View style={styles.chipsBleed}>
+          <FilterChips<LevelFilter> options={levelChips} value={level} onChange={setLevel} accessibilityLabel={t('exd.logs.filter')} />
+        </View>
+        {logs.items.length === 0 ? (
+          <Text style={[Typography.body, styles.pad, { color: colors.textMuted }]}>{t('exd.logs.empty')}</Text>
+        ) : shownLogs.length === 0 ? (
+          <Text style={[Typography.body, styles.pad, { color: colors.textMuted }]}>{t('exd.logs.noMatch')}</Text>
+        ) : (
+          <Group>
+            {shownLogs.map((l) => (
+              <LogRow key={l.id} log={l} step={logNode(l.nodeExecutionId)} />
+            ))}
+          </Group>
+        )}
+        <View style={styles.pad}>
           {pages > 1 ? (
             <View style={styles.pager}>
               <PagerButton label={t('exd.logs.prev')} disabled={logPage === 0} onPress={() => setLogPage((p) => Math.max(0, p - 1))} />
@@ -249,10 +243,10 @@ const LogRow: React.FC<{ log: ExecutionLogItem; step: string | null }> = ({ log:
   const tone = colors.tones[l.level === 'ERROR' ? 'danger' : l.level === 'WARN' ? 'warning' : l.level === 'INFO' ? 'info' : 'neutral'];
   const hasMetadata = Object.keys(l.metadata).length > 0;
   return (
-    <View style={[styles.log, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <View style={[styles.log, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
       <View style={styles.logHead}>
-        <View style={[styles.level, { backgroundColor: tone.bg, borderColor: tone.border }]}>
-          <Text style={[Typography.caption, { color: tone.fg, fontWeight: '700' }]}>{t(`log.level.${l.level}`)}</Text>
+        <View style={[styles.level, { backgroundColor: tone.bg }]}>
+          <Text style={[Typography.caption, { color: tone.fg, fontWeight: '500' }]}>{t(`log.level.${l.level}`)}</Text>
         </View>
         <Text style={[Typography.mono, { color: colors.textMuted, fontFamily: Fonts?.mono }]}>{formatClock(l.createdAt)}</Text>
       </View>
@@ -311,30 +305,22 @@ const PagerButton: React.FC<{ label: string; disabled: boolean; onPress: () => v
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  content: { gap: Spacing.four, padding: Spacing.three, paddingBottom: Spacing.six },
-  card: { gap: Spacing.two, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.lg },
+  content: { paddingBottom: Spacing.six },
+  skeleton: { gap: Spacing.three, padding: Spacing.three },
+  pad: { padding: Spacing.three },
   headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
   wfLink: { flex: 1, minHeight: MinTouch, justifyContent: 'center' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.three, paddingTop: Spacing.three, borderTopWidth: 1 },
   info: { width: '47%', gap: Spacing.half },
   live: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  failed: { gap: Spacing.one, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.md },
-  rerun: { gap: Spacing.one },
-  rerunBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.two,
-    minHeight: MinTouch,
-    borderRadius: Radius.md,
-  },
-  section: { gap: Spacing.two },
-  chipsBleed: { marginHorizontal: -Spacing.three },
-  log: { gap: Spacing.one, padding: Spacing.two, borderWidth: 1, borderRadius: Radius.sm },
+  failed: { gap: Spacing.one, margin: Spacing.three, padding: Spacing.three, borderRadius: Radius.sm },
+  rerun: { gap: Spacing.one, padding: Spacing.three },
+  chipsBleed: { paddingBottom: Spacing.two },
+  log: { gap: Spacing.one, paddingVertical: 14, paddingHorizontal: Spacing.three, borderBottomWidth: 1 },
   techToggle: { minHeight: MinTouch, justifyContent: 'center', alignSelf: 'flex-start' },
   tech: { gap: Spacing.one },
   logHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  level: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.pill, borderWidth: 1 },
+  level: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.sm },
   pager: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
   pagerBtn: { minHeight: MinTouch, justifyContent: 'center', paddingHorizontal: Spacing.three, borderRadius: Radius.md, borderWidth: 1 },
 });

@@ -14,7 +14,7 @@ interface ButtonProps {
   testID?: string;
 }
 
-/** Shared 44 pt button for the Home / AI / Assistant screens. */
+/** Shared 44 pt button. Primary = solid accent; secondary = white with a hairline; danger = red text on white. */
 export const Button: React.FC<ButtonProps> = ({
   label,
   onPress,
@@ -29,7 +29,7 @@ export const Button: React.FC<ButtonProps> = ({
   const palette = {
     primary: { bg: colors.primary, border: colors.primary, fg: colors.onPrimary },
     secondary: { bg: colors.card, border: colors.borderStrong, fg: colors.text },
-    danger: { bg: colors.dangerBg, border: colors.tones.danger.border, fg: colors.danger },
+    danger: { bg: colors.card, border: colors.tones.danger.border, fg: colors.danger },
   }[variant];
   const inactive = busy || disabled;
   return (
@@ -41,7 +41,10 @@ export const Button: React.FC<ButtonProps> = ({
       accessibilityState={{ disabled: inactive, busy }}
       disabled={inactive}
       onPress={onPress}
-      style={[styles.btn, { backgroundColor: palette.bg, borderColor: palette.border, opacity: inactive ? 0.55 : 1 }]}
+      style={({ pressed }) => [
+        styles.btn,
+        { backgroundColor: palette.bg, borderColor: palette.border, opacity: inactive ? 0.5 : pressed ? 0.85 : 1 },
+      ]}
     >
       {busy ? <ActivityIndicator color={palette.fg} /> : icon}
       <Text style={[Typography.label, { color: palette.fg }]}>{label}</Text>

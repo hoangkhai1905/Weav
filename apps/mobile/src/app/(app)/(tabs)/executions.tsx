@@ -70,13 +70,13 @@ export default function ExecutionsScreen() {
   };
 
   const header = (
-    <View style={styles.controls}>
+    <View style={[styles.controls, { borderBottomColor: colors.border }]}>
       <FilterChips<StatusFilter> options={chips} value={status} onChange={setStatus} accessibilityLabel={t('exl.filter.status')} />
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${t('exl.filter.workflow')}: ${workflowId ? nameOf(workflowId) : t('exl.filter.allWorkflows')}`}
         onPress={() => setPickerOpen(true)}
-        style={[styles.picker, { backgroundColor: colors.card, borderColor: colors.borderStrong }]}
+        style={[styles.picker, { backgroundColor: colors.card, borderColor: colors.border }]}
       >
         <Text numberOfLines={1} style={[Typography.body, styles.pickerText, { color: colors.text }]}>
           {workflowId ? nameOf(workflowId) : t('exl.filter.allWorkflows')}
@@ -111,7 +111,6 @@ export default function ExecutionsScreen() {
         data={visible}
         keyExtractor={(e) => e.executionId}
         renderItem={renderItem}
-        ItemSeparatorComponent={Separator}
         ListHeaderComponent={header}
         ListFooterComponent={footer}
         ListEmptyComponent={
@@ -180,25 +179,17 @@ const WorkflowChoice: React.FC<{ label: string; selected: boolean; onPress: () =
       accessibilityState={{ selected }}
       accessibilityLabel={label}
       onPress={onPress}
-      style={[
-        styles.choice,
-        {
-          backgroundColor: selected ? colors.primaryBg : colors.card,
-          borderColor: selected ? colors.primaryBorder : colors.border,
-        },
-      ]}
+      style={[styles.choice, { backgroundColor: selected ? colors.cardSecondary : colors.card, borderBottomColor: colors.border }]}
     >
-      <Text style={[Typography.body, { color: colors.text, fontWeight: selected ? '700' : '400' }]}>{label}</Text>
+      <Text style={[Typography.body, { color: colors.text, fontWeight: selected ? '600' : '400' }]}>{label}</Text>
     </Pressable>
   );
 };
 
-const Separator = () => <View style={{ height: Spacing.two }} />;
-
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  list: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.five },
-  controls: { gap: Spacing.two, paddingVertical: Spacing.three, marginHorizontal: -Spacing.three },
+  list: { paddingBottom: Spacing.five },
+  controls: { gap: Spacing.two, paddingVertical: Spacing.three, borderBottomWidth: 1 },
   picker: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -216,7 +207,6 @@ const styles = StyleSheet.create({
     minHeight: MinTouch,
     justifyContent: 'center',
     paddingHorizontal: Spacing.three,
-    borderWidth: 1,
-    borderRadius: Radius.md,
+    borderBottomWidth: 1,
   },
 });

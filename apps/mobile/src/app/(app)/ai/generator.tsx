@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Check, CircleCheck, Lightbulb, Sparkles, TriangleAlert } from 'lucide-react-native';
+import { Check, CircleCheck, Lightbulb, TriangleAlert } from 'lucide-react-native';
 import { useAiGenerator } from '../../../features/ai/hooks/useAiGenerator';
 import { useSaveGeneratedWorkflow } from '../../../features/ai/hooks/useSaveGeneratedWorkflow';
 import { QuestionsForm, initialValues } from '../../../features/ai/components/QuestionsForm';
@@ -188,7 +188,7 @@ export default function AiGeneratorScreen() {
         />
         {formError ? <Text accessibilityRole="alert" style={[Typography.label, { color: colors.danger }]}>{formError}</Text> : null}
         {error ? <ErrorState error={error} onRetry={() => submitAnswers(result)} /> : null}
-        <Button label={t('aig.needs.submit')} icon={<Sparkles size={18} color={colors.onPrimary} />} onPress={() => submitAnswers(result)} />
+        <Button label={t('aig.needs.submit')} onPress={() => submitAnswers(result)} />
         <Button label={t('aig.editPrompt')} variant="secondary" onPress={startOver} />
       </View>
     );
@@ -286,7 +286,7 @@ export default function AiGeneratorScreen() {
         {error ? <ErrorState error={error} onRetry={submitPrompt} /> : null}
         <Button
           label={t('aig.generate')}
-          icon={<Sparkles size={18} color={colors.onPrimary} />}
+
           disabled={!prompt.trim() || tooLong}
           onPress={submitPrompt}
         />

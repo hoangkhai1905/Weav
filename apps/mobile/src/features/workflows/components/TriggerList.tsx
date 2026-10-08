@@ -29,12 +29,12 @@ export const TriggerList: React.FC<TriggerListProps> = ({ triggers, workflowStat
 
   return (
     <View style={styles.list}>
-      {triggers.map((trigger) => {
+      {triggers.map((trigger, index) => {
         const warn = colors.tones.warning;
         return (
           <View
             key={trigger.triggerId}
-            style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+            style={[styles.card, index > 0 && { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: Spacing.three }]}
           >
             <View style={styles.head}>
               <Text style={[Typography.body, styles.type, { color: colors.text }]}>
@@ -57,7 +57,7 @@ export const TriggerList: React.FC<TriggerListProps> = ({ triggers, workflowStat
             {trigger.reasonCode ? (
               <View
                 accessibilityRole="alert"
-                style={[styles.reason, { backgroundColor: warn.bg, borderColor: warn.border }]}
+                style={[styles.reason, { backgroundColor: warn.bg }]}
               >
                 <Text style={[Typography.label, { color: warn.fg }]}>{t(`trigger.reason.${trigger.reasonCode}`)}</Text>
                 <View style={styles.fix}>
@@ -76,11 +76,11 @@ export const TriggerList: React.FC<TriggerListProps> = ({ triggers, workflowStat
 };
 
 const styles = StyleSheet.create({
-  list: { gap: Spacing.two },
-  card: { gap: Spacing.one, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.md },
+  list: { gap: Spacing.three },
+  card: { gap: Spacing.one },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
-  type: { flex: 1, fontWeight: '600' },
-  reason: { gap: Spacing.one, marginTop: Spacing.two, padding: Spacing.two, borderWidth: 1, borderRadius: Radius.sm },
+  type: { flex: 1, fontWeight: '500' },
+  reason: { gap: Spacing.one, marginTop: Spacing.two, padding: Spacing.two, borderRadius: Radius.sm },
   fix: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.one },
   fixText: { flex: 1 },
 });

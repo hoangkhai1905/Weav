@@ -30,7 +30,10 @@ export const ConfirmSheet: React.FC<ConfirmSheetProps> = ({
 }) => {
   const colors = useThemeColors();
   const { t } = useTranslation();
-  const bg = destructive ? colors.tones.danger.fg : colors.primary;
+  // Destructive = red text on white with a red hairline; never a large red block.
+  const bg = destructive ? colors.card : colors.primary;
+  const border = destructive ? colors.tones.danger.border : colors.primary;
+  const fg = destructive ? colors.danger : colors.onPrimary;
   return (
     <Sheet visible={visible} onClose={onClose} title={title}>
       <Text style={[Typography.body, { color: colors.textMuted }]}>{message}</Text>
@@ -50,12 +53,12 @@ export const ConfirmSheet: React.FC<ConfirmSheetProps> = ({
           accessibilityState={{ disabled: busy, busy }}
           disabled={busy}
           onPress={onConfirm}
-          style={[styles.btn, { backgroundColor: bg, borderColor: bg, opacity: busy ? 0.7 : 1 }]}
+          style={[styles.btn, { backgroundColor: bg, borderColor: border, opacity: busy ? 0.7 : 1 }]}
         >
           {busy ? (
-            <ActivityIndicator color={colors.onPrimary} />
+            <ActivityIndicator color={fg} />
           ) : (
-            <Text style={[Typography.label, { color: colors.onPrimary }]}>{confirmLabel}</Text>
+            <Text style={[Typography.label, { color: fg }]}>{confirmLabel}</Text>
           )}
         </Pressable>
       </View>

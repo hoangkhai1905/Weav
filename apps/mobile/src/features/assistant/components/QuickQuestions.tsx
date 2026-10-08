@@ -36,6 +36,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderWidth: 1,
-    borderRadius: Radius.pill,
+    borderRadius: Radius.md,
   },
 });

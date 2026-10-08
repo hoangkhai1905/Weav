@@ -17,7 +17,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({ title, onBack, trail
   const colors = useThemeColors();
   const { t } = useTranslation();
   return (
-    <View style={[styles.bar, { borderBottomColor: colors.border }]}>
+    <View style={[styles.bar, { borderBottomColor: colors.border, backgroundColor: colors.headerBg }]}>
       {onBack ? (
         <Pressable accessibilityRole="button" accessibilityLabel={t('ui.back')} onPress={onBack} style={styles.back}>
           <ArrowLeft size={22} color={colors.text} />

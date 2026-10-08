@@ -3,7 +3,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { Building2, ChevronRight, LogOut, MessageSquare, PlugZap, ShieldCheck, Sparkles } from 'lucide-react-native';
+import { Building2, ChevronRight, LogOut, MessageSquare, PlugZap, ShieldCheck, Plus } from 'lucide-react-native';
 import { useProfile } from '../../../features/profile/hooks/useProfile';
 import { useAvatarUrl, useDeleteAvatar, useUploadAvatar } from '../../../features/profile/hooks/useAccount';
 import { logoutAuthSession } from '../../../features/auth/auth-session.runtime';
@@ -14,6 +14,7 @@ import { Avatar } from '../../../components/ui/Avatar';
 import { Button } from '../../../components/ui/Button';
 import { ConfirmSheet } from '../../../components/ui/ConfirmSheet';
 import { FilterChips, type ChipOption } from '../../../components/ui/FilterChips';
+import { Group, SectionLabel } from '../../../components/ui/Section';
 import { ListItem } from '../../../components/ui/ListItem';
 import { ScreenHeader } from '../../../components/ui/ScreenHeader';
 import { TextField } from '../../../components/ui/TextField';
@@ -121,7 +122,7 @@ export default function ProfileScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={t('tab.profile')} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Group padded>
           <View style={styles.identity}>
             <Avatar name={shown?.name || shown?.email || '?'} size={64} uri={avatar.data} />
             <View style={styles.identityText}>
@@ -149,12 +150,10 @@ export default function ProfileScreen() {
               onPress={() => setConfirm('avatar')}
             />
           ) : null}
-        </View>
+        </Group>
 
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>
-            {t('prof.info')}
-          </Text>
+        <SectionLabel title={t('prof.info')} />
+        <Group padded>
           {loadError ? (
             <View style={styles.inline}>
               <Text accessibilityRole="alert" style={[Typography.caption, styles.grow, { color: colors.danger }]}>
@@ -180,63 +179,71 @@ export default function ProfileScreen() {
             disabled={!nameChanged}
             onPress={() => void handleSave()}
           />
-        </View>
+        </Group>
 
-        <Text style={[Typography.label, { color: colors.textMuted }]}>{t('prof.section.work')}</Text>
-        <View style={styles.group}>
+        <SectionLabel title={t('prof.section.work')} />
+        <Group>
           <ListItem
-            leading={<Building2 size={20} color={colors.primary} />}
+            leading={<Building2 size={20} color={colors.textMuted} />}
             title={activeWorkspace?.name ?? t('prof.ws.none')}
             subtitle={t('prof.ws.sub')}
             trailing={<ChevronRight size={18} color={colors.textSubtle} />}
             onPress={() => router.push('/(app)/workspace')}
           />
           <ListItem
-            leading={<PlugZap size={20} color={colors.primary} />}
+            leading={<PlugZap size={20} color={colors.textMuted} />}
             title={t('prof.conn')}
             subtitle={t('prof.conn.sub')}
             trailing={<ChevronRight size={18} color={colors.textSubtle} />}
             onPress={() => router.push('/(app)/connections')}
           />
           <ListItem
-            leading={<Sparkles size={20} color={colors.primary} />}
+            leading={<Plus size={20} color={colors.textMuted} />}
             title={t('prof.ai')}
             subtitle={t('prof.ai.sub')}
             trailing={<ChevronRight size={18} color={colors.textSubtle} />}
             onPress={() => router.push('/(app)/ai/generator')}
           />
           <ListItem
-            leading={<MessageSquare size={20} color={colors.primary} />}
+            leading={<MessageSquare size={20} color={colors.textMuted} />}
             title={t('prof.assistant')}
             subtitle={t('prof.assistant.sub')}
             trailing={<ChevronRight size={18} color={colors.textSubtle} />}
             onPress={() => router.push('/(app)/assistant')}
           />
-        </View>
+        </Group>
 
-        <Text style={[Typography.label, { color: colors.textMuted }]}>{t('prof.section.look')}</Text>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <SectionLabel title={t('prof.section.look')} />
+        <Group padded>
           <Text style={[Typography.label, { color: colors.text }]}>{t('prof.theme.label')}</Text>
-          <FilterChips options={themeOptions} value={themeMode} onChange={setThemeMode} accessibilityLabel={t('prof.theme.label')} />
+          <View style={styles.chips}>
+            <FilterChips options={themeOptions} value={themeMode} onChange={setThemeMode} accessibilityLabel={t('prof.theme.label')} />
+          </View>
           <Text style={[Typography.label, { color: colors.text }]}>{t('prof.language.label')}</Text>
-          <FilterChips options={languageOptions} value={language} onChange={setLanguage} accessibilityLabel={t('prof.language.label')} />
-        </View>
+          <View style={styles.chips}>
+            <FilterChips options={languageOptions} value={language} onChange={setLanguage} accessibilityLabel={t('prof.language.label')} />
+          </View>
+        </Group>
 
-        <Text style={[Typography.label, { color: colors.textMuted }]}>{t('prof.section.security')}</Text>
+        <SectionLabel title={t('prof.section.security')} />
+        <Group>
         <ListItem
-          leading={<ShieldCheck size={20} color={colors.primary} />}
+          leading={<ShieldCheck size={20} color={colors.textMuted} />}
           title={t('prof.security')}
           subtitle={t('prof.security.sub')}
           trailing={<ChevronRight size={18} color={colors.textSubtle} />}
           onPress={() => router.push('/(app)/settings')}
         />
+        </Group>
 
-        <Button
-          variant="danger"
-          label={t('profile.logout')}
-          icon={<LogOut size={16} color={colors.danger} />}
-          onPress={() => setConfirm('logout')}
-        />
+        <View style={styles.logout}>
+          <Button
+            variant="danger"
+            label={t('profile.logout')}
+            icon={<LogOut size={16} color={colors.danger} />}
+            onPress={() => setConfirm('logout')}
+          />
+        </View>
         {deleteAvatar.isPending ? <ActivityIndicator color={colors.primary} /> : null}
       </ScrollView>
 
@@ -265,11 +272,11 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  content: { gap: Spacing.three, padding: Spacing.three, paddingBottom: Spacing.five },
-  card: { gap: Spacing.three, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.lg },
+  content: { paddingBottom: Spacing.five },
+  chips: { marginHorizontal: -Spacing.three, marginTop: -Spacing.two },
+  logout: { padding: Spacing.three, paddingTop: Spacing.four },
   identity: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
   identityText: { flex: 1, gap: Spacing.half },
-  group: { gap: Spacing.two },
   inline: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   grow: { flex: 1 },
 });

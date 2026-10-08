@@ -2,7 +2,7 @@ import React from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { Logo } from '../common/Logo';
-import { Radius, Spacing, Typography } from '../../constants/theme';
+import { Spacing, Typography } from '../../constants/theme';
 
 interface AuthShellProps {
   title: string;
@@ -10,7 +10,7 @@ interface AuthShellProps {
   children: React.ReactNode;
 }
 
-/** Shared frame of Login / Register / Forgot password: logo, one flat card, no decoration. */
+/** Shared frame of Login / Register / Forgot password: logo, title and the form on the plain page. */
 export const AuthShell: React.FC<AuthShellProps> = ({ title, subtitle, children }) => {
   const colors = useThemeColors();
   return (
@@ -23,7 +23,7 @@ export const AuthShell: React.FC<AuthShellProps> = ({ title, subtitle, children 
           <View style={styles.brand}>
             <Logo size="md" showSubtitle />
           </View>
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.card}>
             <Text accessibilityRole="header" style={[Typography.headline, { color: colors.text }]}>
               {title}
             </Text>
@@ -40,6 +40,6 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: 'center', padding: Spacing.three },
   inner: { width: '100%', maxWidth: 440, alignSelf: 'center', gap: Spacing.four },
-  brand: { alignItems: 'center' },
-  card: { gap: Spacing.three, padding: Spacing.four, borderWidth: 1, borderRadius: Radius.lg },
+  brand: { alignItems: 'flex-start' },
+  card: { gap: Spacing.three },
 });

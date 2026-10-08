@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useThemeColors } from '../../hooks/useThemeColors';
 
 interface LogoProps {
@@ -7,35 +7,30 @@ interface LogoProps {
   showSubtitle?: boolean;
 }
 
+/** Plain wordmark: a small accent square with a W, then the name. No gradients or glow. */
 export const Logo: React.FC<LogoProps> = ({ size = 'md', showSubtitle = true }) => {
   const colors = useThemeColors();
 
-  let imgSize = 36;
+  let box = 32;
   let titleSize = 16;
 
   if (size === 'sm') {
-    imgSize = 28;
+    box = 26;
     titleSize = 14;
   } else if (size === 'lg') {
-    imgSize = 48;
+    box = 44;
     titleSize = 22;
   }
 
   return (
     <View style={styles.container}>
-      <View style={[styles.imgWrapper, { borderColor: colors.primaryBorder }]}>
-        <Image
-          source={require('@/assets/images/logo.png')}
-          style={{ width: imgSize, height: imgSize, borderRadius: 10 }}
-          resizeMode="cover"
-        />
+      <View style={[styles.mark, { width: box, height: box, backgroundColor: colors.primary }]}>
+        <Text style={[styles.markText, { color: colors.onPrimary, fontSize: box * 0.5 }]}>W</Text>
       </View>
 
       <View style={styles.textGroup}>
         <Text style={[styles.title, { color: colors.text, fontSize: titleSize }]}>WEAV</Text>
-        {showSubtitle && (
-          <Text style={[styles.subtitle, { color: colors.textSubtle }]}>AI Workflow Studio</Text>
-        )}
+        {showSubtitle && <Text style={[styles.subtitle, { color: colors.textSubtle }]}>AI Workflow Studio</Text>}
       </View>
     </View>
   );
@@ -47,26 +42,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  imgWrapper: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 2,
-    shadowColor: '#8b5cf6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+  mark: {
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markText: {
+    fontWeight: '700',
   },
   textGroup: {
     justifyContent: 'center',
   },
   title: {
-    fontWeight: '900',
-    letterSpacing: 1,
+    fontWeight: '700',
+    letterSpacing: 1.5,
     lineHeight: 18,
   },
   subtitle: {
-    fontSize: 9,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '500',
     marginTop: 2,
   },
 });

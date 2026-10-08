@@ -3,7 +3,7 @@
  * typography. Raw colour values live in ./palette.ts (pure, testable).
  */
 
-import { Platform } from 'react-native';
+import { Platform, type FontVariant } from 'react-native';
 
 import { palette, type ColorPalette, type StatusTone, type ToneColors } from './palette';
 
@@ -61,15 +61,20 @@ export const Spacing = {
   six: 64,
 } as const;
 
-export const Radius = { sm: 6, md: 10, lg: 16, pill: 999 } as const;
+/** Small, restrained corners: 6 for controls and chips, 8 for surfaces. `pill` is only for dots and avatars. */
+export const Radius = { sm: 6, md: 8, lg: 8, pill: 999 } as const;
 
 /** No fixed heights on text containers: lineHeight scales with Dynamic Type. */
 export const Typography = {
-  caption: { fontSize: 12, lineHeight: 16 },
+  caption: { fontSize: 13, lineHeight: 18 },
   body: { fontSize: 15, lineHeight: 22 },
-  label: { fontSize: 13, lineHeight: 18, fontWeight: '600' as const },
-  title: { fontSize: 18, lineHeight: 24, fontWeight: '700' as const },
-  headline: { fontSize: 22, lineHeight: 28, fontWeight: '700' as const },
+  label: { fontSize: 14, lineHeight: 20, fontWeight: '600' as const },
+  /** Small muted heading above a group of rows; render with textTransform: 'uppercase'. */
+  section: { fontSize: 12, lineHeight: 16, fontWeight: '600' as const, letterSpacing: 0.6 },
+  title: { fontSize: 17, lineHeight: 24, fontWeight: '600' as const },
+  headline: { fontSize: 22, lineHeight: 28, fontWeight: '600' as const, letterSpacing: -0.2 },
+  /** Stats and durations: digits keep one width so columns line up. */
+  number: { fontSize: 24, lineHeight: 30, fontWeight: '600' as const, fontVariant: ['tabular-nums'] as FontVariant[] },
   mono: { fontSize: 13, lineHeight: 19 },
 } as const;
 

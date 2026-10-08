@@ -12,13 +12,13 @@ export const ListSkeleton: React.FC<{ rows?: number }> = ({ rows = 6 }) => {
   return (
     <View accessible accessibilityLabel={t('ui.loading')} accessibilityRole="progressbar" style={styles.wrap}>
       {Array.from({ length: rows }, (_, i) => (
-        <View key={i} style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View key={i} style={[styles.row, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
           <View style={styles.main}>
             <Skeleton width="60%" height={16} />
             <Skeleton width="85%" height={12} />
             <Skeleton width="30%" height={12} />
           </View>
-          <Skeleton width={72} height={22} radius={Radius.pill} />
+          <Skeleton width={72} height={22} radius={Radius.sm} />
         </View>
       ))}
     </View>
@@ -26,14 +26,14 @@ export const ListSkeleton: React.FC<{ rows?: number }> = ({ rows = 6 }) => {
 };
 
 const styles = StyleSheet.create({
-  wrap: { gap: Spacing.two, padding: Spacing.three },
+  wrap: {},
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.three,
-    padding: Spacing.three,
-    borderWidth: 1,
-    borderRadius: Radius.md,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.three,
+    borderBottomWidth: 1,
   },
   main: { flex: 1, gap: Spacing.two },
 });

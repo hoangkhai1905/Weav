@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useThemeColors } from '../../hooks/useThemeColors';
-import { MinTouch, Radius, Spacing, Typography } from '../../constants/theme';
+import { MinTouch, Spacing, Typography } from '../../constants/theme';
 
 interface ListItemProps {
   title: string;
@@ -14,6 +14,7 @@ interface ListItemProps {
   accessibilityHint?: string;
 }
 
+/** Full-width row separated from the next one by a hairline. Put rows inside <Group>. */
 export const ListItem: React.FC<ListItemProps> = ({
   title,
   subtitle,
@@ -45,7 +46,7 @@ export const ListItem: React.FC<ListItemProps> = ({
       {trailing}
     </>
   );
-  const container = [styles.row, { backgroundColor: colors.card, borderColor: colors.border }];
+  const container = [styles.row, { backgroundColor: colors.card, borderBottomColor: colors.border }];
 
   if (!onPress) return <View style={container}>{body}</View>;
   return (
@@ -67,10 +68,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
     minHeight: MinTouch,
-    padding: Spacing.three,
-    borderWidth: 1,
-    borderRadius: Radius.md,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.three,
+    borderBottomWidth: 1,
   },
   main: { flex: 1, gap: Spacing.half },
-  title: { fontWeight: '600' },
+  title: { fontWeight: '500' },
 });

@@ -21,13 +21,14 @@ export default function TabsLayout() {
           backgroundColor: colors.tabBg,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 62,
-          paddingBottom: 8,
-          paddingTop: 8,
+          height: 66,
+          paddingBottom: 10,
+          paddingTop: 6,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: '700',
+          fontSize: 11,
+          lineHeight: 14,
+          fontWeight: '500',
         },
       }}
     >
@@ -60,8 +61,8 @@ export default function TabsLayout() {
             <View style={styles.iconWrapper}>
               <Bell color={color} size={size - 2} />
               {unreadCount > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                <View style={[styles.badge, { backgroundColor: colors.danger }]}>
+                  <Text style={[styles.badgeText, { color: colors.card }]}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
                 </View>
               )}
             </View>
@@ -87,8 +88,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -4,
     right: -8,
-    backgroundColor: '#ef4444',
-    borderRadius: 10,
+    borderRadius: 8,
     minWidth: 16,
     height: 16,
     justifyContent: 'center',
@@ -96,8 +96,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   badgeText: {
-    color: '#ffffff',
     fontSize: 9,
-    fontWeight: '900',
+    fontWeight: '700',
   },
 });

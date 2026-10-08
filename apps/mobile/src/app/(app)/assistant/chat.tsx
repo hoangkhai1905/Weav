@@ -277,5 +277,5 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     fontSize: 15,
   },
-  send: { width: MinTouch, height: MinTouch, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+  send: { width: MinTouch, height: MinTouch, borderRadius: Radius.md, alignItems: 'center', justifyContent: 'center' },
 });

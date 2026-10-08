@@ -107,7 +107,7 @@ export default function LoginScreen() {
         style={styles.link}
       >
         <Text style={[Typography.body, { color: colors.textMuted }]}>
-          {t('au.noAccount')} <Text style={{ color: colors.primary, fontWeight: '700' }}>{t('au.register')}</Text>
+          {t('au.noAccount')} <Text style={{ color: colors.primary, fontWeight: '600' }}>{t('au.register')}</Text>
         </Text>
       </Pressable>
     </AuthShell>
