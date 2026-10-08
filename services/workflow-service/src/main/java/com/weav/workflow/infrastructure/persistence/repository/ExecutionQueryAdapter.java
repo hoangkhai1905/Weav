@@ -261,7 +261,8 @@ public class ExecutionQueryAdapter implements ExecutionQueryPort {
         return "[REDACTED]";
     }
 
-    private String sanitizeString(String value) {
+    /** Shared with {@link MonitoringQueryAdapter} so run-history error text is redacted the same way. */
+    static String sanitizeString(String value) {
         if (value == null) {
             return null;
         }

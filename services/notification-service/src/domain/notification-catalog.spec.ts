@@ -58,6 +58,18 @@ const catalogCases: CatalogCase[] = [
     targetKind: 'EXECUTION',
   },
   {
+    eventType: 'monitoring.alert.consecutive_failures',
+    category: 'WORKFLOW',
+    severity: 'ERROR',
+    targetKind: 'EXECUTION',
+  },
+  {
+    eventType: 'monitoring.alert.long_running',
+    category: 'WORKFLOW',
+    severity: 'WARNING',
+    targetKind: 'EXECUTION',
+  },
+  {
     eventType: 'workspace.created',
     category: 'WORKSPACE',
     severity: 'SUCCESS',
@@ -140,8 +152,11 @@ const catalogCases: CatalogCase[] = [
 function eventOf(eventType: string, overrides: Record<string, unknown> = {}) {
   const workspaceEvent = eventType.startsWith('workspace.');
   const identityEvent = eventType.startsWith('identity.');
+  const alertEvent = eventType.startsWith('monitoring.alert.');
   const workflowExecution =
-    eventType === 'workflow.completed' || eventType === 'workflow.failed';
+    eventType === 'workflow.completed' ||
+    eventType === 'workflow.failed' ||
+    alertEvent;
   const entityKind = identityEvent
     ? 'USER'
     : workflowExecution
@@ -160,26 +175,35 @@ function eventOf(eventType: string, overrides: Record<string, unknown> = {}) {
         : entityKind === 'CONNECTION'
           ? ids.connection
           : ids.workspace;
-  const data: Record<string, unknown> = eventType.startsWith('workflow.')
+  const data: Record<string, unknown> = alertEvent
     ? {
+        ruleName: 'Lỗi liên tiếp',
         workflowName: 'Daily report',
-        ...(workflowExecution ? { workflowId: ids.workflow } : {}),
+        workflowId: ids.workflow,
+        ...(eventType.endsWith('long_running')
+          ? { durationSeconds: '125', thresholdSeconds: '60' }
+          : { failureCount: '3' }),
       }
-    : workspaceEvent
+    : eventType.startsWith('workflow.')
       ? {
-          workspaceName: 'Đội vận hành',
-          ...(eventType.includes('member_')
-            ? {
-                subjectUserId:
-                  eventType === 'workspace.member_left'
-                    ? ids.actor
-                    : ids.recipient,
-              }
-            : {}),
+          workflowName: 'Daily report',
+          ...(workflowExecution ? { workflowId: ids.workflow } : {}),
         }
-      : eventType.startsWith('connection.')
-        ? { connectionName: 'Google Drive' }
-        : {};
+      : workspaceEvent
+        ? {
+            workspaceName: 'Đội vận hành',
+            ...(eventType.includes('member_')
+              ? {
+                  subjectUserId:
+                    eventType === 'workspace.member_left'
+                      ? ids.actor
+                      : ids.recipient,
+                }
+              : {}),
+          }
+        : eventType.startsWith('connection.')
+          ? { connectionName: 'Google Drive' }
+          : {};
 
   return {
     schemaVersion: 2,
@@ -260,7 +284,7 @@ describe('notification catalog', () => {
     expect(() => require('./notification-catalog')).not.toThrow();
   });
 
-  it('renders both locales with the specified metadata and target for all 19 event types', () => {
+  it('renders both locales with the specified metadata and target for all 21 event types', () => {
     for (const spec of catalogCases) {
       const event = eventOf(spec.eventType);
       for (const locale of ['vi', 'en']) {
@@ -288,6 +312,34 @@ describe('notification catalog', () => {
     expect(completedEn.message).toContain('completed successfully');
     expect(failedEn.message).toContain('execution details');
     expect(failedEn.message).not.toContain('raw failure');
+  });
+
+  it('words monitoring alerts with the rule, the workflow and the numbers, and links them to the run', () => {
+    const failuresVi = render()(
+      eventOf('monitoring.alert.consecutive_failures'),
+      'vi',
+    );
+    const failuresEn = render()(
+      eventOf('monitoring.alert.consecutive_failures'),
+      'en',
+    );
+    const slowVi = render()(eventOf('monitoring.alert.long_running'), 'vi');
+    const slowEn = render()(eventOf('monitoring.alert.long_running'), 'en');
+    expect(failuresVi.message).toContain('“Lỗi liên tiếp”');
+    expect(failuresVi.message).toContain('“Daily report”');
+    expect(failuresVi.message).toContain('3 lần liên tiếp');
+    expect(failuresEn.message).toContain('failed 3 times in a row');
+    expect(slowVi.message).toContain('2 phút 5 giây');
+    expect(slowVi.message).toContain('ngưỡng 1 phút');
+    expect(slowEn.message).toContain('2 min 5 s');
+    expect(slowEn.message).toContain('1 min limit');
+    for (const content of [failuresVi, failuresEn, slowVi, slowEn]) {
+      expect(content.target).toEqual({
+        kind: 'EXECUTION',
+        workspaceId: ids.workspace,
+        executionId: ids.execution,
+      });
+    }
   });
 
   it('removes the workspace target after membership removal', () => {

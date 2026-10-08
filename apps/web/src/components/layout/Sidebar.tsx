@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Bell,
+  Activity,
   Bot,
   GitFork,
   HelpCircle,
@@ -36,6 +37,7 @@ const MAIN_NAV_ITEMS: NavItem[] = [
     icon: LayoutDashboard,
   },
   { translationKey: "nav.workflows", path: "/workflows", icon: GitFork },
+  { translationKey: "nav.monitoring", path: "/executions", icon: Activity, testId: "sidebar-monitoring" },
   { translationKey: "nav.workspace", path: "/workspace", icon: Users },
   {
     translationKey: "nav.ai_generator",

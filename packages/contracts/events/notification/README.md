@@ -31,6 +31,8 @@ The `producer` field is an event-family assertion, not publisher authentication.
 | `workflow.resumed`                     | `workflow-service`  | `WORKFLOW`    | `workflowName`                   | WORKFLOW / INFO      | workflow          |
 | `workflow.completed`                   | `workflow-service`  | `EXECUTION`   | `workflowName`, `workflowId`     | WORKFLOW / SUCCESS   | execution         |
 | `workflow.failed`                      | `workflow-service`  | `EXECUTION`   | `workflowName`, `workflowId`     | WORKFLOW / ERROR     | execution         |
+| `monitoring.alert.consecutive_failures` | `workflow-service`  | `EXECUTION`   | `ruleName`, `workflowName`, `workflowId`, `failureCount` | WORKFLOW / ERROR     | execution         |
+| `monitoring.alert.long_running`        | `workflow-service`  | `EXECUTION`   | `ruleName`, `workflowName`, `workflowId`, `durationSeconds`, `thresholdSeconds` | WORKFLOW / WARNING   | execution         |
 | `workspace.created`                    | `workspace-service` | `WORKSPACE`   | `workspaceName`                  | WORKSPACE / SUCCESS  | workspace         |
 | `workspace.renamed`                    | `workspace-service` | `WORKSPACE`   | `workspaceName`                  | WORKSPACE / INFO     | workspace         |
 | `workspace.member_added`               | `workspace-service` | `WORKSPACE`   | `workspaceName`, `subjectUserId` | WORKSPACE / INFO     | workspace         |
@@ -44,6 +46,8 @@ The `producer` field is an event-family assertion, not publisher authentication.
 | `identity.password_reset`              | `identity-service`  | `USER`        | none (`{}`)                      | SECURITY / WARNING   | security settings |
 | `identity.google_linked`               | `identity-service`  | `USER`        | none (`{}`)                      | SECURITY / INFO      | security settings |
 | `identity.google_unlinked`             | `identity-service`  | `USER`        | none (`{}`)                      | SECURITY / WARNING   | security settings |
+
+The two `monitoring.alert.*` events (W6-A) come from alert rules evaluated by Workflow when a run finishes: `entity` is the run that fired the rule, `ruleName` is the user-chosen rule name, and the counts (`failureCount`, `durationSeconds`, `thresholdSeconds`) are digit strings. Like `workflow.failed`, they are sent per recipient with a monitor-access recheck at publish time.
 
 For workflow targets, `workflowId` is `entity.id`; for execution targets, `executionId` is `entity.id` and `workflowId` is in data. Workspace and connection targets use their corresponding entity ID and `workspaceId`. Identity targets contain no IDs.
 

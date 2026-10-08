@@ -21,6 +21,12 @@ public record WorkflowNotificationEvent(
     private static final Set<String> LIFECYCLE_TYPES = Set.of(
             "workflow.created", "workflow.published", "workflow.paused", "workflow.resumed");
 
+    private static final Map<String, Set<String>> ALERT_DATA_KEYS = Map.of(
+            "monitoring.alert.consecutive_failures",
+            Set.of("ruleName", "workflowName", "workflowId", "failureCount"),
+            "monitoring.alert.long_running",
+            Set.of("ruleName", "workflowName", "workflowId", "durationSeconds", "thresholdSeconds"));
+
     public WorkflowNotificationEvent {
         Objects.requireNonNull(eventType, "eventType must not be null");
         Objects.requireNonNull(occurredAt, "occurredAt must not be null");
@@ -41,9 +47,51 @@ public record WorkflowNotificationEvent(
             }
             data = Map.of("workflowName", safeName(data.get("workflowName")),
                     "workflowId", requireUuid(data.get("workflowId"), "workflowId").toString());
+        } else if (ALERT_DATA_KEYS.containsKey(eventType)) {
+            // W6-A monitoring alerts: EXECUTION entity, recipient re-checked for WORKFLOW_MONITOR at publish.
+            if (!"EXECUTION".equals(entityKind) || !requiresMonitorAccess || recipientUserId == null
+                    || !data.keySet().equals(ALERT_DATA_KEYS.get(eventType))) {
+                throw new IllegalArgumentException("Monitoring alert notification fields are invalid");
+            }
+            Map<String, String> alert = new java.util.LinkedHashMap<>();
+            alert.put("ruleName", safeName(data.get("ruleName")));
+            alert.put("workflowName", safeName(data.get("workflowName")));
+            alert.put("workflowId", requireUuid(data.get("workflowId"), "workflowId").toString());
+            for (String key : ALERT_DATA_KEYS.get(eventType)) {
+                if (key.endsWith("Count") || key.endsWith("Seconds")) {
+                    alert.put(key, requireCount(data.get(key), key));
+                }
+            }
+            data = Map.copyOf(alert);
         } else {
             throw new IllegalArgumentException("Unsupported Workflow notification type");
         }
+    }
+
+    public static WorkflowNotificationEvent consecutiveFailuresAlert(
+            UUID workspaceId, UUID recipientId, UUID executionId, UUID workflowId, String workflowName,
+            String ruleName, int failureCount, Instant at) {
+        return new WorkflowNotificationEvent("monitoring.alert.consecutive_failures", at, workspaceId, null,
+                recipientId, "EXECUTION", executionId,
+                Map.of("ruleName", ruleName, "workflowName", workflowName, "workflowId", workflowId.toString(),
+                        "failureCount", Integer.toString(failureCount)), true);
+    }
+
+    public static WorkflowNotificationEvent longRunningAlert(
+            UUID workspaceId, UUID recipientId, UUID executionId, UUID workflowId, String workflowName,
+            String ruleName, long durationSeconds, int thresholdSeconds, Instant at) {
+        return new WorkflowNotificationEvent("monitoring.alert.long_running", at, workspaceId, null,
+                recipientId, "EXECUTION", executionId,
+                Map.of("ruleName", ruleName, "workflowName", workflowName, "workflowId", workflowId.toString(),
+                        "durationSeconds", Long.toString(durationSeconds),
+                        "thresholdSeconds", Integer.toString(thresholdSeconds)), true);
+    }
+
+    private static String requireCount(String value, String field) {
+        if (value == null || !value.matches("[0-9]{1,9}")) {
+            throw new IllegalArgumentException(field + " must be a non-negative integer");
+        }
+        return value;
     }
 
     public static WorkflowNotificationEvent lifecycle(
