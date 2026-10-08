@@ -133,3 +133,65 @@ def test_load_model_profile_reroutes_container_prefix_when_model_root_provided(
     )
     assert profile["text_detection_model_dir"] == expected_det
     assert profile["text_recognition_model_dir"] == expected_rec
+
+
+def _set_engine(manifest_file: Path, engine: str) -> None:
+    data = json.loads(manifest_file.read_text(encoding="utf-8"))
+    data["models"]["vi"]["engine"] = engine
+    manifest_file.write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_engine_defaults_to_paddle(tmp_path: Path) -> None:
+    profile = load_model_profile(create_manifest(tmp_path), "vi")
+    assert profile["engine"] == "paddle"
+
+
+def test_onnxruntime_engine_requires_converted_model_files(tmp_path: Path) -> None:
+    manifest_file = create_manifest(tmp_path)
+    _set_engine(manifest_file, "onnxruntime")
+
+    with pytest.raises(ModelNotReadyError, match="inference.onnx"):
+        load_model_profile(manifest_file, "vi")
+
+    for folder in ("detection", "recognition"):
+        for name in ("inference.onnx", "inference.yml"):
+            (tmp_path / folder / name).write_bytes(b"x")
+    assert load_model_profile(manifest_file, "vi")["engine"] == "onnxruntime"
+
+
+def test_unknown_engine_raises_model_not_ready_error(tmp_path: Path) -> None:
+    manifest_file = create_manifest(tmp_path)
+    _set_engine(manifest_file, "tensorrt")
+    with pytest.raises(ModelNotReadyError, match="unsupported engine"):
+        load_model_profile(manifest_file, "vi")
+
+
+@pytest.mark.parametrize(
+    ("engine", "expected"),
+    [("paddle", {"enable_mkldnn": False}), ("onnxruntime", {"engine": "onnxruntime"})],
+)
+def test_manifest_engine_selects_paddleocr_backend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, engine: str, expected: dict
+) -> None:
+    import sys
+    import types
+
+    from src.infrastructure.engines.paddle_ocr_engine_adapter import PaddleOcrEngineAdapter
+
+    manifest_file = create_manifest(tmp_path)
+    _set_engine(manifest_file, engine)
+    for folder in ("detection", "recognition"):
+        for name in ("inference.onnx", "inference.yml"):
+            (tmp_path / folder / name).write_bytes(b"x")
+    calls: list[dict] = []
+    fake = types.ModuleType("paddleocr")
+    fake.PaddleOCR = lambda **kwargs: calls.append(kwargs) or object()
+    monkeypatch.setitem(sys.modules, "paddleocr", fake)
+    monkeypatch.delenv("OCR_MODEL_ROOT", raising=False)
+
+    PaddleOcrEngineAdapter(manifest_path=manifest_file)._get_or_create_engine("vi")
+
+    (kwargs,) = calls
+    assert {k: kwargs[k] for k in expected} == expected
+    assert ("engine" in kwargs) == (engine == "onnxruntime")
+    assert kwargs["text_recognition_model_dir"] == str((tmp_path / "recognition").resolve())

@@ -6,6 +6,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.141.1",
     "numpy>=1.26.4",
+    "onnxruntime>=1.30.0,<2",
     "opencv-contrib-python==4.10.0.84",
     "paddleocr>=3.7.0",
     "paddlex[ocr]>=3.7.0,<3.8.0",

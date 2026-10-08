@@ -21,6 +21,11 @@ REQUIRED_PROFILE_KEYS = (
     "text_recognition_model_dir",
 )
 
+# Optional profile key "engine": PaddleOCR inference backend. Absent means Paddle.
+SUPPORTED_ENGINES = ("paddle", "onnxruntime")
+# PaddleX's onnxruntime engine loads these from each model directory.
+ONNX_REQUIRED_FILES = ("inference.onnx", "inference.yml")
+
 
 def configured_manifest_path(explicit_path: str | None = None) -> Path | None:
     """Resolve model manifest path from an explicit argument or WEAV_OCR_MODEL_MANIFEST."""
@@ -144,5 +149,21 @@ def load_model_profile(
             resolved_profile[key] = str(resolved_dir)
         else:
             resolved_profile[key] = cleaned_val
+
+    engine = str(profile_data.get("engine", "paddle")).strip()
+    if engine not in SUPPORTED_ENGINES:
+        raise ModelNotReadyError(
+            f"Model profile '{profile}' in manifest '{manifest_file}' has unsupported engine "
+            f"'{engine}'; expected one of {', '.join(SUPPORTED_ENGINES)}"
+        )
+    resolved_profile["engine"] = engine
+    if engine == "onnxruntime":
+        for key in ("text_detection_model_dir", "text_recognition_model_dir"):
+            for name in ONNX_REQUIRED_FILES:
+                if not (Path(resolved_profile[key]) / name).is_file():
+                    raise ModelNotReadyError(
+                        f"Model profile '{profile}' uses engine 'onnxruntime' but '{name}' is missing "
+                        f"in '{resolved_profile[key]}' ({key}); convert the models to ONNX first"
+                    )
 
     return resolved_profile

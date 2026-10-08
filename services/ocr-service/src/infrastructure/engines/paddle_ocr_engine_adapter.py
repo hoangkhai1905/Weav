@@ -641,6 +641,12 @@ class PaddleOcrEngineAdapter(OcrEnginePort):
                     f"PaddleOCR runtime is not installed or available: {exc}"
                 ) from exc
 
+            # ONNX Runtime runs paddle2onnx-converted det/rec models through the same
+            # PaddleX pre/post-processing; Paddle keeps oneDNN off (it fails on these PIR models).
+            if config.get("engine") == "onnxruntime":
+                engine_kwargs: dict[str, Any] = {"engine": "onnxruntime"}
+            else:
+                engine_kwargs = {"enable_mkldnn": False}
             try:
                 instance = PaddleOCR(
                     text_detection_model_name=config["text_detection_model_name"],
@@ -650,7 +656,7 @@ class PaddleOcrEngineAdapter(OcrEnginePort):
                     use_doc_orientation_classify=False,
                     use_doc_unwarping=False,
                     use_textline_orientation=False,
-                    enable_mkldnn=False,
+                    **engine_kwargs,
                 )
                 self._ocr_instances[paddle_lang] = instance
                 return instance

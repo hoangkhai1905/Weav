@@ -2,12 +2,14 @@ services:
   api-gateway:
     environment:
       OCR_ALLOW_UNAUTHENTICATED_DEV: true
+      # CPU OCR on a laptop can exceed the 10s default for full pages.
+      GATEWAY_OCR_TIMEOUT_MS: ${GATEWAY_OCR_TIMEOUT_MS:-60000}
 
   ocr-service:
     environment:
       OCR_ALLOW_UNAUTHENTICATED_DEV: "true"
       OCR_MODEL_ROOT: /models
-      WEAV_OCR_MODEL_MANIFEST: /app/config/model-manifest.json
+      WEAV_OCR_MODEL_MANIFEST: ${WEAV_OCR_MODEL_MANIFEST:-/app/config/model-manifest.json}
     volumes:
       - type: bind
         source: ${OCR_MODEL_HOST_PATH:-./.data/ocr-models}
