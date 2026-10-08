@@ -3,12 +3,16 @@ package com.weav.identity.application.validation;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Validates redirect and origin values before they enter an OAuth
  * registration. HTTP is accepted only for loopback development targets.
  */
 public final class OAuthUriPolicy {
+
+    /** Custom URL schemes the mobile app registers; extend only together with the app config. */
+    private static final Set<String> MOBILE_SCHEMES = Set.of("weav");
 
     private OAuthUriPolicy() {
     }
@@ -25,6 +29,28 @@ public final class OAuthUriPolicy {
             throw new IllegalArgumentException(name + " may use HTTP only on loopback hosts");
         }
         return uri;
+    }
+
+    /**
+     * Validates the mobile app deep-link return target, for example {@code weav://auth/callback}. Only the
+     * allowlisted app scheme is accepted (never http, https, javascript or data), with a host and an absolute
+     * path and without userinfo, query or fragment. It is never checked against web origins; the web rules in
+     * {@link #requireRedirectUri} stay unchanged.
+     */
+    public static URI requireMobileReturnTarget(String value, String name) {
+        URI parsed = parse(value, name);
+        String scheme = parsed.getScheme().toLowerCase(Locale.ROOT);
+        if (!MOBILE_SCHEMES.contains(scheme)) {
+            throw new IllegalArgumentException(name + " must use the scheme " + MOBILE_SCHEMES);
+        }
+        requireHost(parsed, name);
+        rejectUnsafeComponents(parsed, name, false);
+        if (parsed.getRawPath() == null || parsed.getRawPath().isBlank() || !parsed.getRawPath().startsWith("/")) {
+            throw new IllegalArgumentException(name + " must contain an absolute path");
+        }
+        // Schemes are case-insensitive; register the redirect in canonical lowercase form (no query or
+        // fragment can exist here, so the scheme-specific part is the whole remainder).
+        return URI.create(scheme + ":" + parsed.getRawSchemeSpecificPart());
     }
 
     public static URI requireIssuerUri(String value, String name) {

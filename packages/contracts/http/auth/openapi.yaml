@@ -305,6 +305,104 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /auth/oauth/google/mobile/start:
+    get:
+      tags: [Authentication]
+      operationId: startGoogleMobileLogin
+      summary: Start a Google login from the mobile app
+      description: >-
+        Opened by the app in the system browser (in-app auth session) so the
+        correlation cookie lands in the browser that later receives Google's
+        callback. Not a fetch/XHR route: no Origin or CSRF check applies and
+        it always answers with a redirect. Creates a transaction for the
+        server-registered `mobile` client, sets the HttpOnly Secure
+        correlation cookie and redirects to Google. The callback then
+        redirects to the configured mobile deep link
+        (`weav://auth/callback`) with transaction_id and handoff_code or a
+        fixed oauth_error. Answers 503 when
+        OAUTH_MOBILE_RETURN_TARGET_URI is empty.
+      security: []
+      parameters:
+        - name: codeChallenge
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 43
+            maxLength: 43
+            pattern: '^[A-Za-z0-9_-]{43}$'
+          description: Unpadded base64url SHA-256 of the app-held PKCE verifier.
+        - name: codeChallengeMethod
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [S256]
+      responses:
+        '303':
+          description: Redirect to the Google authorization URL.
+          headers:
+            Location:
+              description: Google authorization URL.
+              schema:
+                type: string
+                format: uri
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+            Set-Cookie:
+              $ref: '#/components/headers/OAuthSetCookie'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /auth/oauth/mobile/exchange:
+    post:
+      tags: [Authentication]
+      operationId: exchangeGoogleMobileHandoff
+      summary: Exchange a mobile Google handoff for a session
+      description: >-
+        LOGIN only (Google linking stays web-only). Same one-use handoff
+        (60 s), PKCE S256 proof and failure cap as the web exchange, bound to
+        the `mobile` client: a web handoff is rejected here and a mobile
+        handoff is rejected by the web exchange. Account rules match the web
+        Google login. Returns the same TokenResponse as POST /auth/login in
+        the body; no cookies and no CSRF. Reached by the app through the
+        gateway as POST /api/auth/oauth/mobile/exchange.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthMobileExchangeRequest'
+      responses:
+        '200':
+          description: New session.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlNoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /auth/web/csrf:
     get:
       tags: [Authentication]
@@ -1939,6 +2037,30 @@ components:
         returnTargetId:
           type: string
           const: web
+        transactionId:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+        handoffCode:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: '^[A-Za-z0-9_-]{43}$'
+          description: Opaque one-use callback handoff proof.
+        codeVerifier:
+          type: string
+          minLength: 43
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._~-]{43,128}$'
+          writeOnly: true
+
+    OAuthMobileExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [transactionId, handoffCode, codeVerifier]
+      description: The client is fixed to `mobile` by the route.
+      properties:
         transactionId:
           type: string
           minLength: 43
