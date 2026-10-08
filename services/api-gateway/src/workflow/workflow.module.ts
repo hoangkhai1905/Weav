@@ -84,11 +84,49 @@ const manualExecutionSchema = z
   })
   .strict();
 
+// W6-A monitoring: workspace run history, summary and alert rules.
+const executionStatusSchema = z.enum([
+  'QUEUED',
+  'RUNNING',
+  'WAITING',
+  'SUCCESS',
+  'FAILED',
+  'CANCELLED',
+]);
+const isoInstantSchema = z
+  .string()
+  .max(40)
+  .regex(/^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:\d{2})$/);
+const runHistoryQuerySchema = z
+  .object({
+    status: executionStatusSchema.optional(),
+    workflowId: uuidSchema.optional(),
+    from: isoInstantSchema.optional(),
+    to: isoInstantSchema.optional(),
+    page: queryInteger(0).optional(),
+    size: queryInteger(1, 100).optional(),
+  })
+  .strict();
+const summaryQuerySchema = z
+  .object({ days: queryInteger(1, 30).optional() })
+  .strict();
+const alertRuleSchema = z
+  .object({
+    name: z.string().min(1).max(120),
+    type: z.enum(['CONSECUTIVE_FAILURES', 'LONG_RUNNING']),
+    workflowId: uuidSchema.nullable().optional(),
+    threshold: z.number().int().min(1).max(86_400),
+    windowMinutes: z.number().int().min(1).max(10_080).nullable().optional(),
+    cooldownMinutes: z.number().int().min(0).max(10_080).optional(),
+    enabled: z.boolean().optional(),
+  })
+  .strict();
+
 type WorkflowMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
 interface WorkflowForwardOptions {
   body?: unknown;
-  query?: Record<string, number>;
+  query?: Record<string, number | string>;
   /** Upstream deadline; defaults to 15 s. */
   timeoutMs?: number;
   /** Serialized JSON body cap; defaults to 1 MiB. */
@@ -112,7 +150,9 @@ const generateWorkflowSchema = z
     prompt: z.string().min(1).max(16_000),
     timezone: z.string().min(1).max(64).optional(),
     connections: z.record(z.string().max(128), z.string().uuid()).optional(),
-    answers: z.record(z.string().min(1).max(200), z.string().min(1).max(4_000)).optional(),
+    answers: z
+      .record(z.string().min(1).max(200), z.string().min(1).max(4_000))
+      .optional(),
   })
   .strict();
 
@@ -509,6 +549,115 @@ export class WorkflowProxyController {
   }
 }
 
+/** Workspace-wide monitoring: run history, metrics summary and alert rules (W6-A). */
+@Controller('api/v1/workspaces/:workspaceId')
+@AuthPolicy('required')
+export class MonitoringProxyController {
+  constructor(private readonly proxy: WorkflowProxyService) {}
+
+  @Get('executions')
+  history(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Query() query: unknown,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      `/workspaces/${workspace}/executions`,
+      { query: parse(runHistoryQuerySchema, query) },
+    );
+  }
+
+  @Get('monitoring/summary')
+  summary(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Query() query: unknown,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      `/workspaces/${workspace}/monitoring/summary`,
+      { query: parse(summaryQuerySchema, query) },
+    );
+  }
+
+  @Get('alert-rules')
+  listRules(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      `/workspaces/${workspace}/alert-rules`,
+    );
+  }
+
+  @Post('alert-rules')
+  createRule(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/workspaces/${workspace}/alert-rules`,
+      { body: parse(alertRuleSchema, body) },
+    );
+  }
+
+  @Put('alert-rules/:ruleId')
+  updateRule(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('ruleId') rawRuleId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    const rule = workflowId(rawRuleId);
+    return this.proxy.forward(
+      'PUT',
+      request,
+      reply,
+      `/workspaces/${workspace}/alert-rules/${rule}`,
+      { body: parse(alertRuleSchema, body) },
+    );
+  }
+
+  @Delete('alert-rules/:ruleId')
+  deleteRule(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('ruleId') rawRuleId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    const rule = workflowId(rawRuleId);
+    return this.proxy.forward(
+      'DELETE',
+      request,
+      reply,
+      `/workspaces/${workspace}/alert-rules/${rule}`,
+    );
+  }
+}
+
 /**
  * Public webhook ingress (UC021). No JWT: Workflow authenticates the
  * X-Webhook-Secret against the endpoint key. Client Authorization is never
@@ -606,6 +755,7 @@ export class TelegramWebhookProxyController {
 @Module({
   controllers: [
     WorkflowProxyController,
+    MonitoringProxyController,
     WebhookProxyController,
     TelegramWebhookProxyController,
   ],

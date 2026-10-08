@@ -44,6 +44,23 @@ const workflowNameData = z.object({ workflowName: displayNameSchema }).strict();
 const executionData = z
   .object({ workflowName: displayNameSchema, workflowId: uuidSchema })
   .strict();
+// W6-A monitoring alerts: counts travel as digit strings (the Workflow outbox data map is string-valued).
+const countString = z.string().regex(/^[0-9]{1,9}$/);
+const alertBaseData = {
+  ruleName: displayNameSchema,
+  workflowName: displayNameSchema,
+  workflowId: uuidSchema,
+};
+const consecutiveFailuresData = z
+  .object({ ...alertBaseData, failureCount: countString })
+  .strict();
+const longRunningData = z
+  .object({
+    ...alertBaseData,
+    durationSeconds: countString,
+    thresholdSeconds: countString,
+  })
+  .strict();
 const workspaceNameData = z
   .object({ workspaceName: displayNameSchema })
   .strict();
@@ -97,6 +114,20 @@ const eventVariants = [
     'EXECUTION',
     uuidSchema,
     executionData,
+  ),
+  eventSchema(
+    'monitoring.alert.consecutive_failures',
+    'workflow-service',
+    'EXECUTION',
+    uuidSchema,
+    consecutiveFailuresData,
+  ),
+  eventSchema(
+    'monitoring.alert.long_running',
+    'workflow-service',
+    'EXECUTION',
+    uuidSchema,
+    longRunningData,
   ),
   eventSchema(
     'workspace.created',

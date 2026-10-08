@@ -44,6 +44,21 @@ authorization failures, lifecycle conflicts, and unexpected failures use the
 standard structured error envelope. The raw request body limit applies to the
 manual execution route, including chunked requests.
 
+## Monitoring and alert rules (W6-A)
+
+`GET /workspaces/{workspaceId}/executions` is the workspace-wide run history
+(filters `status`, `workflowId`, `from`, `to`, paging as the per-workflow list;
+a time range is at most 90 days). `GET /workspaces/{workspaceId}/monitoring/summary?days=1..30`
+returns counts, success rate, average and p95 duration, a zero-filled UTC day
+trend, the top failing workflows and the latest failures in one response. Both
+need `WORKFLOW_MONITOR`. `GET|POST /workspaces/{workspaceId}/alert-rules` and
+`PUT|DELETE .../alert-rules/{ruleId}` manage per-workspace alert rules (at most
+20; changes need `WORKFLOW_EDIT`). When a rule fires, Workflow enqueues the
+`monitoring.alert.consecutive_failures` or `monitoring.alert.long_running`
+notification event (see `events/notification`). Contract tests:
+`MonitoringHttpTest` (workflow-service) and the monitoring block of
+`workflow.module.spec.ts` (api-gateway).
+
 ## Internal connection usage
 
 `GET /internal/workspaces/{workspaceId}/connections/{connectionId}/usage` is

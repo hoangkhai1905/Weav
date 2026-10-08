@@ -165,6 +165,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 }
 
+/** Authenticated Workflow gateway call with the 401 renew-and-retry; shared by the monitoring client. */
+export const workflowRequest = request;
+
 const REQUEST_TIMEOUT_MS = 15_000;
 // Above the gateway's 80 s generate limit (workflow-service 65 s, ai-service 60 s), so the server answers first.
 const GENERATE_TIMEOUT_MS = 85_000;

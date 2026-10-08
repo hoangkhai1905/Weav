@@ -1,5 +1,6 @@
 package com.weav.workflow.infrastructure.persistence.repository;
 
+import com.weav.workflow.application.port.out.ExecutionFinishedListener;
 import com.weav.workflow.application.port.out.ExecutionRecoveryPort;
 import com.weav.workflow.application.port.out.ExecutionStatePort;
 import com.weav.workflow.application.notification.WorkflowNotificationEvent;
@@ -26,6 +27,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -79,10 +82,18 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     private final WorkflowNotificationOutboxPort notificationOutbox;
     private final int maxRecoveries;
     private final java.time.Clock clock;
+    private final ExecutionFinishedListener finishedListener;
 
     public ExecutionStateAdapter(JdbcTemplate jdbc, ObjectMapper objectMapper,
                                  @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema) {
-        this(jdbc, objectMapper, schema, event -> { }, 5, java.time.Clock.systemUTC());
+        this(jdbc, objectMapper, schema, event -> { }, 5, java.time.Clock.systemUTC(), executionId -> { });
+    }
+
+    /** Without a finished-run listener (no alert evaluation); kept for callers that predate W6-A. */
+    public ExecutionStateAdapter(JdbcTemplate jdbc, ObjectMapper objectMapper, String schema,
+                                 WorkflowNotificationOutboxPort notificationOutbox, int maxRecoveries,
+                                 java.time.Clock clock) {
+        this(jdbc, objectMapper, schema, notificationOutbox, maxRecoveries, clock, executionId -> { });
     }
 
     @Autowired
@@ -91,7 +102,9 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
                                  WorkflowNotificationOutboxPort notificationOutbox,
                                  @Value("${weav.workflow.execution.max-recoveries:5}") int maxRecoveries,
                                  @org.springframework.beans.factory.annotation.Qualifier("workflowExecutionClock")
-                                 java.time.Clock clock) {
+                                 java.time.Clock clock,
+                                 ExecutionFinishedListener finishedListener) {
+        this.finishedListener = Objects.requireNonNull(finishedListener, "finishedListener must not be null");
         this.maxRecoveries = maxRecoveries;
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
@@ -340,6 +353,31 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
         notificationOutbox.record(WorkflowNotificationEvent.terminal(eventType, recipient.workspaceId(),
                 actor, candidate, executionId, recipient.workflowId(),
                 recipient.workflowName(), finishedAt));
+        notifyFinishedAfterCommit(executionId);
+    }
+
+    /** W6-A: alert rules are judged once the terminal state is durable, outside this transaction. */
+    private void notifyFinishedAfterCommit(UUID executionId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            callFinishedListener(executionId);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                callFinishedListener(executionId);
+            }
+        });
+    }
+
+    /** The run is already committed: a listener failure is logged and never propagated. */
+    private void callFinishedListener(UUID executionId) {
+        try {
+            finishedListener.onExecutionFinished(executionId);
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Execution {} finished listener failed ({})", executionId,
+                    exception.getClass().getSimpleName());
+        }
     }
 
     @Override

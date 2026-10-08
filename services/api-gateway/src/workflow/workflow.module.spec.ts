@@ -278,4 +278,152 @@ describe('workflow gateway routes', () => {
     expect(response.statusCode).toBe(503);
     expect(response.body).not.toContain('private-url');
   });
+  describe('monitoring routes (W6-A)', () => {
+    const ruleId = '00000000-0000-4000-8000-000000000009';
+    const json = { headers: { 'content-type': 'application/json' } };
+    const auth = { authorization: 'Bearer opaque-token' };
+
+    it('forwards run-history filters to the workspace executions path', async () => {
+      const request = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ items: [], page: 0, size: 20, totalElements: 0 }),
+            json,
+          ),
+        );
+
+      const response = await app.inject({
+        url: `/api/v1/workspaces/${workspaceId}/executions?status=FAILED&workflowId=${workflowId}&from=2026-10-01T00:00:00Z&page=1&size=50`,
+        headers: auth,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const target = new URL(request.mock.calls[0][0] as string);
+      expect(target.pathname).toBe(`/workspaces/${workspaceId}/executions`);
+      expect(Object.fromEntries(target.searchParams)).toEqual({
+        status: 'FAILED',
+        workflowId,
+        from: '2026-10-01T00:00:00Z',
+        page: '1',
+        size: '50',
+      });
+    });
+
+    it('rejects bad history and summary queries before upstream access', async () => {
+      const request = jest.spyOn(globalThis, 'fetch');
+      for (const query of [
+        'executions?status=NOPE',
+        'executions?size=101',
+        'executions?from=yesterday',
+        'executions?workflowId=nope',
+        'executions?extra=1',
+        'monitoring/summary?days=31',
+        'monitoring/summary?days=0',
+      ]) {
+        const response = await app.inject({
+          url: `/api/v1/workspaces/${workspaceId}/${query}`,
+          headers: auth,
+        });
+        expect(response.statusCode).toBe(400);
+      }
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('requires a bearer token', async () => {
+      const request = jest.spyOn(globalThis, 'fetch');
+      const response = await app.inject({
+        url: `/api/v1/workspaces/${workspaceId}/monitoring/summary`,
+      });
+      expect(response.statusCode).toBe(401);
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('forwards the summary days', async () => {
+      const request = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response(JSON.stringify({ days: 14 }), json));
+
+      const response = await app.inject({
+        url: `/api/v1/workspaces/${workspaceId}/monitoring/summary?days=14`,
+        headers: auth,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(request.mock.calls[0][0]).toBe(
+        `http://workflow.internal:8080/workspaces/${workspaceId}/monitoring/summary?days=14`,
+      );
+    });
+
+    it('forwards alert-rule CRUD and validates the body', async () => {
+      const request = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ id: ruleId }), {
+            ...json,
+            status: 201,
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ id: ruleId }), json),
+        )
+        .mockResolvedValueOnce(new Response(null, { status: 204 }));
+      const body = {
+        name: 'Sync breaks',
+        type: 'CONSECUTIVE_FAILURES',
+        workflowId,
+        threshold: 3,
+        windowMinutes: 30,
+      };
+
+      const created = await app.inject({
+        method: 'POST',
+        url: `/api/v1/workspaces/${workspaceId}/alert-rules`,
+        headers: auth,
+        payload: body,
+      });
+      const updated = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/workspaces/${workspaceId}/alert-rules/${ruleId}`,
+        headers: auth,
+        payload: { ...body, enabled: false },
+      });
+      const removed = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/workspaces/${workspaceId}/alert-rules/${ruleId}`,
+        headers: auth,
+      });
+
+      expect([
+        created.statusCode,
+        updated.statusCode,
+        removed.statusCode,
+      ]).toEqual([201, 200, 204]);
+      expect(request.mock.calls.map((call) => call[0])).toEqual([
+        `http://workflow.internal:8080/workspaces/${workspaceId}/alert-rules`,
+        `http://workflow.internal:8080/workspaces/${workspaceId}/alert-rules/${ruleId}`,
+        `http://workflow.internal:8080/workspaces/${workspaceId}/alert-rules/${ruleId}`,
+      ]);
+      const forwarded = JSON.parse(
+        (request.mock.calls[0][1] as { body: string }).body,
+      ) as unknown;
+      expect(forwarded).toEqual(body);
+
+      for (const payload of [
+        { ...body, type: 'OTHER' },
+        { ...body, threshold: 0 },
+        { ...body, name: '' },
+        { ...body, unknown: true },
+      ]) {
+        const rejected = await app.inject({
+          method: 'POST',
+          url: `/api/v1/workspaces/${workspaceId}/alert-rules`,
+          headers: auth,
+          payload,
+        });
+        expect(rejected.statusCode).toBe(400);
+      }
+      expect(request).toHaveBeenCalledTimes(3);
+    });
+  });
 });

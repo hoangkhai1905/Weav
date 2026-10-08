@@ -58,6 +58,48 @@ test('renders complete workflow data and only runs a published workflow by its r
     }),
   }));
 
+  // Run numbers come from the workspace monitoring endpoints (summary + one recent-runs page).
+  const startedAt = new Date(Date.now() - 5 * 60_000).toISOString();
+  await page.route(`**/api/v1/workspaces/${workspaceId}/monitoring/summary**`, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      days: 7,
+      from: startedAt,
+      to: startedAt,
+      workflows: { published: 1, paused: 0, draft: 1 },
+      runs: { total: 1, today: 1, success: 1, failed: 0, active: 0 },
+      successRate: 1,
+      averageDurationMs: 1000,
+      p95DurationMs: 1000,
+      trend: [{ date: startedAt.slice(0, 10), total: 1, success: 1, failed: 0 }],
+      topFailingWorkflows: [],
+      recentFailures: [],
+    }),
+  }));
+  await page.route((url) => url.pathname === `/api/v1/workspaces/${workspaceId}/executions`, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      items: [{
+        executionId: '00000000-0000-4000-8000-000000000106',
+        workflowId: publishedWorkflowId,
+        workflowName: 'Customer sync',
+        status: 'SUCCESS',
+        triggerType: 'MANUAL',
+        createdAt: startedAt,
+        startedAt,
+        finishedAt: startedAt,
+        durationMs: 1000,
+        errorCode: null,
+        errorMessage: null,
+      }],
+      page: 0,
+      size: 6,
+      totalElements: 1,
+      hasNext: false,
+    }),
+  }));
   await page.route(`**/api/v1/workspaces/${workspaceId}/workflows/${publishedWorkflowId}/executions**`, async (route) => {
     if (route.request().method() === 'GET') {
       const startedAt = new Date(Date.now() - 5 * 60_000).toISOString();

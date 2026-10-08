@@ -282,6 +282,83 @@ class ExecutionLeaseTest {
         assertTrue(executions.claim(fixture.executionId(), "worker-c", Duration.ofSeconds(30)).isEmpty());
     }
 
+    @Autowired
+    private com.weav.workflow.application.port.out.WorkflowNotificationOutboxPort notificationOutbox;
+
+    @Test
+    void aFinishedRunTriggersAlertRulesAfterCommitAndEnqueuesTheAlertNotification() {
+        Fixture fixture = fixture("RUNNING", "root", "{}", 2, true);
+        jdbc.update("update workflow.workflow_executions set recovery_count = 4 where id = ?",
+                fixture.executionId());
+        UUID ruleCreator = UUID.randomUUID();
+        jdbc.update("insert into workflow.alert_rules (id, workspace_id, name, rule_type, threshold, "
+                        + "cooldown_minutes, created_by) values (?, ?, 'Slow runs', 'LONG_RUNNING', 1, 60, ?)",
+                UUID.randomUUID(), fixture.workspaceId(), ruleCreator);
+
+        ExecutionStatePort.Lease fifth = executions.claim(fixture.executionId(), "worker-a", Duration.ofSeconds(30))
+                .orElseThrow();
+        executions.release(fifth);
+        assertTrue(executions.claim(fixture.executionId(), "worker-b", Duration.ofSeconds(30)).isEmpty());
+
+        assertEquals("FAILED", jdbc.queryForObject(
+                "select status from workflow.workflow_executions where id = ?", String.class,
+                fixture.executionId()));
+        // Two recipients: the rule creator and the workflow creator; the run is the notification entity.
+        assertEquals(2, jdbc.queryForObject(
+                "select count(*) from workflow.notification_outbox where entity_id = ? "
+                        + "and event_type = 'monitoring.alert.long_running' and entity_kind = 'EXECUTION' "
+                        + "and requires_monitor_access and status = 'PENDING'",
+                Integer.class, fixture.executionId()));
+        assertEquals(1, jdbc.queryForObject(
+                "select count(*) from workflow.alert_rule_firings where execution_id = ?", Integer.class,
+                fixture.executionId()));
+    }
+
+    @Test
+    void aRecoveryExhaustedRunFiresAConsecutiveFailuresRule() {
+        Fixture fixture = fixture("RUNNING", "root", "{}", 2, true);
+        jdbc.update("update workflow.workflow_executions set recovery_count = 4 where id = ?",
+                fixture.executionId());
+        jdbc.update("insert into workflow.alert_rules (id, workspace_id, name, rule_type, threshold, "
+                        + "window_minutes, cooldown_minutes, created_by) "
+                        + "values (?, ?, 'Any failure', 'CONSECUTIVE_FAILURES', 1, 60, 60, ?)",
+                UUID.randomUUID(), fixture.workspaceId(), UUID.randomUUID());
+
+        ExecutionStatePort.Lease fifth = executions.claim(fixture.executionId(), "worker-a", Duration.ofSeconds(30))
+                .orElseThrow();
+        executions.release(fifth);
+        assertTrue(executions.claim(fixture.executionId(), "worker-b", Duration.ofSeconds(30)).isEmpty());
+
+        assertEquals(2, jdbc.queryForObject(
+                "select count(*) from workflow.notification_outbox where entity_id = ? "
+                        + "and event_type = 'monitoring.alert.consecutive_failures'",
+                Integer.class, fixture.executionId()));
+    }
+
+    @Test
+    void aFailingFinishedListenerNeverChangesTheRunResult() {
+        Fixture fixture = fixture("RUNNING", "root", "{}", 2, true);
+        jdbc.update("update workflow.workflow_executions set recovery_count = 4 where id = ?",
+                fixture.executionId());
+        var adapter = new com.weav.workflow.infrastructure.persistence.repository.ExecutionStateAdapter(
+                jdbc, objectMapper, "workflow", notificationOutbox, 5, java.time.Clock.systemUTC(),
+                executionId -> {
+                    throw new IllegalStateException("alerting is down");
+                });
+
+        ExecutionStatePort.Lease fifth = adapter.claim(fixture.executionId(), "worker-a", Duration.ofSeconds(30))
+                .orElseThrow();
+        adapter.release(fifth);
+        assertTrue(adapter.claim(fixture.executionId(), "worker-b", Duration.ofSeconds(30)).isEmpty());
+
+        assertEquals("FAILED", jdbc.queryForObject(
+                "select status from workflow.workflow_executions where id = ?", String.class,
+                fixture.executionId()));
+        assertEquals(1, jdbc.queryForObject(
+                "select count(*) from workflow.notification_outbox where entity_id = ? "
+                        + "and event_type = 'workflow.failed'", Integer.class, fixture.executionId()));
+    }
+
     @Test
     void anInterruptedThirdAttemptFailsInsteadOfResettingOrSchedulingAnotherAttempt() {
         Fixture fixture = fixture("RUNNING", "root", "{}", 2, true);

@@ -27,6 +27,17 @@ const localized = (
   en: string,
 ): string => (locale === 'vi' ? vi : en);
 
+/** "125" -> "2 phút 5 giây" / "2 min 5 s"; only the digits validated by the event schema reach this. */
+const seconds = (value: string, locale: NotificationLocale): string => {
+  const total = Number(value);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  const vi = locale === 'vi';
+  if (minutes === 0) return vi ? `${rest} giây` : `${rest} s`;
+  if (rest === 0) return vi ? `${minutes} phút` : `${minutes} min`;
+  return vi ? `${minutes} phút ${rest} giây` : `${minutes} min ${rest} s`;
+};
+
 const content = (
   category: NotificationCategory,
   severity: NotificationSeverity,
@@ -133,6 +144,46 @@ export function renderNotification(
           locale,
           `Lần chạy quy trình “${event.data.workflowName}” thất bại. Mở chi tiết lần chạy để xem thêm.`,
           `The run of workflow “${event.data.workflowName}” failed. Open the execution details to learn more.`,
+        ),
+        {
+          kind: 'EXECUTION',
+          workspaceId: event.workspaceId,
+          executionId: event.entity.id,
+        },
+      );
+    case 'monitoring.alert.consecutive_failures':
+      return content(
+        'WORKFLOW',
+        'ERROR',
+        localized(
+          locale,
+          'Cảnh báo: quy trình lỗi liên tiếp',
+          'Alert: repeated workflow failures',
+        ),
+        localized(
+          locale,
+          `Quy tắc “${event.data.ruleName}”: quy trình “${event.data.workflowName}” đã thất bại ${event.data.failureCount} lần liên tiếp. Mở lần chạy gần nhất để xem chi tiết.`,
+          `Rule “${event.data.ruleName}”: workflow “${event.data.workflowName}” failed ${event.data.failureCount} times in a row. Open the latest run for details.`,
+        ),
+        {
+          kind: 'EXECUTION',
+          workspaceId: event.workspaceId,
+          executionId: event.entity.id,
+        },
+      );
+    case 'monitoring.alert.long_running':
+      return content(
+        'WORKFLOW',
+        'WARNING',
+        localized(
+          locale,
+          'Cảnh báo: quy trình chạy quá lâu',
+          'Alert: workflow run took too long',
+        ),
+        localized(
+          locale,
+          `Quy tắc “${event.data.ruleName}”: lần chạy quy trình “${event.data.workflowName}” kéo dài ${seconds(event.data.durationSeconds, locale)}, vượt ngưỡng ${seconds(event.data.thresholdSeconds, locale)}.`,
+          `Rule “${event.data.ruleName}”: a run of workflow “${event.data.workflowName}” lasted ${seconds(event.data.durationSeconds, locale)}, over the ${seconds(event.data.thresholdSeconds, locale)} limit.`,
         ),
         {
           kind: 'EXECUTION',

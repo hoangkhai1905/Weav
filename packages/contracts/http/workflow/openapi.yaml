@@ -337,6 +337,183 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /workspaces/{workspaceId}/executions:
+    get:
+      tags: [Monitoring]
+      operationId: listWorkspaceExecutions
+      summary: Workspace-wide run history
+      description: >-
+        Requires WORKFLOW_MONITOR. Runs of every non-deleted workflow in the
+        workspace, newest first (created time, then ID). Filters are optional
+        and combine with AND. The time range is always capped at 90 days: a
+        missing from defaults to (to, or now) minus 90 days, a missing to
+        leaves the range open upwards, and from and to together must be
+        positive and span at most 90 days (400 otherwise). to is exclusive.
+        Use createdAt for ordering; startedAt is null while
+        a run is queued. errorCode and errorMessage come from the stored run
+        error, redacted and truncated to 300 characters.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [QUEUED, RUNNING, WAITING, SUCCESS, FAILED, CANCELLED] }
+        - name: workflowId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          required: false
+          description: Inclusive lower bound on the run creation time (ISO-8601 instant).
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: false
+          description: Exclusive upper bound on the run creation time (ISO-8601 instant).
+          schema: { type: string, format: date-time }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+      responses:
+        '200':
+          description: Page of runs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceRunPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /workspaces/{workspaceId}/monitoring/summary:
+    get:
+      tags: [Monitoring]
+      operationId: getMonitoringSummary
+      summary: Workspace metrics summary
+      description: >-
+        Requires WORKFLOW_MONITOR. Aggregated in SQL over runs created in the
+        last N UTC calendar days (including today). Day buckets and "today"
+        use UTC. successRate is SUCCESS / (SUCCESS + FAILED), a fraction in
+        [0, 1], null when no run has finished; averageDurationMs and
+        p95DurationMs cover finished runs with both timestamps and are null
+        when there are none. trend has one entry per day, zero-filled.
+        topFailingWorkflows (at most 5) and recentFailures (at most 5) cover
+        the same range.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - name: days
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 30, default: 7 }
+      responses:
+        '200':
+          description: Summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MonitoringSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /workspaces/{workspaceId}/alert-rules:
+    get:
+      tags: [Monitoring]
+      operationId: listAlertRules
+      summary: List alert rules
+      description: Requires WORKFLOW_MONITOR.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+      responses:
+        '200':
+          description: All rules of the workspace (at most maxRules).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertRuleList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Monitoring]
+      operationId: createAlertRule
+      summary: Create an alert rule
+      description: >-
+        Requires WORKFLOW_EDIT. At most 20 rules per workspace (409 beyond).
+        CONSECUTIVE_FAILURES needs threshold 1..20 and windowMinutes 1..10080;
+        LONG_RUNNING needs threshold 1..86400 seconds and no windowMinutes;
+        it fires when a run passes the threshold, while it is still running
+        (checked about every minute) or, at the latest, when it finishes.
+        workflowId, when present, must be a non-deleted workflow of this
+        workspace (400 otherwise); null means every workflow. cooldownMinutes
+        defaults to 60 (0..10080). A rule fires at most once per run and not
+        again for the same workflow within its cooldown; matching runs enqueue
+        monitoring.alert.* notifications for the rule creator and the workflow
+        creator.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlertRuleRequest' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertRule' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /workspaces/{workspaceId}/alert-rules/{ruleId}:
+    put:
+      tags: [Monitoring]
+      operationId: updateAlertRule
+      summary: Replace an alert rule
+      description: Requires WORKFLOW_EDIT. Full replacement; an omitted enabled keeps the stored value.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/RuleId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlertRuleRequest' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertRule' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Monitoring]
+      operationId: deleteAlertRule
+      summary: Delete an alert rule
+      description: Requires WORKFLOW_EDIT. Deletes the rule and its firing history.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/RuleId' }
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /webhooks/{endpointKey}:
     post:
       tags: [Executions]
@@ -485,6 +662,11 @@ components:
       schema: { type: string, format: uuid }
     ExecutionId:
       name: executionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RuleId:
+      name: ruleId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -777,6 +959,114 @@ components:
         timestamp: { type: string, format: date-time }
         status: { type: integer }
         path: { type: string }
+    WorkspaceRun:
+      type: object
+      required: [executionId, workflowId, workflowName, status, triggerType, createdAt]
+      properties:
+        executionId: { type: string, format: uuid }
+        workflowId: { type: string, format: uuid }
+        workflowName: { type: string }
+        status: { type: string, enum: [QUEUED, RUNNING, WAITING, SUCCESS, FAILED, CANCELLED] }
+        triggerType: { type: string, enum: [MANUAL, SCHEDULE, WEBHOOK, TELEGRAM, GMAIL] }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        durationMs: { type: integer, format: int64, nullable: true, description: Present when both startedAt and finishedAt are. }
+        errorCode: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true, maxLength: 301 }
+    WorkspaceRunPage:
+      type: object
+      required: [items, page, size, totalElements, hasNext]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/WorkspaceRun' } }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+        totalElements: { type: integer, format: int64, minimum: 0 }
+        hasNext: { type: boolean }
+    MonitoringSummary:
+      type: object
+      required: [days, from, to, workflows, runs, successRate, averageDurationMs, p95DurationMs, trend, topFailingWorkflows, recentFailures]
+      properties:
+        days: { type: integer, minimum: 1, maximum: 30 }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        workflows:
+          type: object
+          required: [published, paused, draft]
+          properties:
+            published: { type: integer, format: int64 }
+            paused: { type: integer, format: int64 }
+            draft: { type: integer, format: int64 }
+        runs:
+          type: object
+          required: [total, today, success, failed, active]
+          properties:
+            total: { type: integer, format: int64 }
+            today: { type: integer, format: int64 }
+            success: { type: integer, format: int64 }
+            failed: { type: integer, format: int64 }
+            active: { type: integer, format: int64, description: QUEUED, RUNNING or WAITING. }
+        successRate: { type: number, minimum: 0, maximum: 1, nullable: true }
+        averageDurationMs: { type: integer, format: int64, nullable: true }
+        p95DurationMs: { type: integer, format: int64, nullable: true }
+        trend:
+          type: array
+          items:
+            type: object
+            required: [date, total, success, failed]
+            properties:
+              date: { type: string, format: date }
+              total: { type: integer, format: int64 }
+              success: { type: integer, format: int64 }
+              failed: { type: integer, format: int64 }
+        topFailingWorkflows:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            required: [workflowId, workflowName, failures, lastFailureAt]
+            properties:
+              workflowId: { type: string, format: uuid }
+              workflowName: { type: string }
+              failures: { type: integer, format: int64 }
+              lastFailureAt: { type: string, format: date-time }
+        recentFailures:
+          type: array
+          maxItems: 5
+          items: { $ref: '#/components/schemas/WorkspaceRun' }
+    AlertRuleRequest:
+      type: object
+      required: [name, type, threshold]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        type: { type: string, enum: [CONSECUTIVE_FAILURES, LONG_RUNNING] }
+        workflowId: { type: string, format: uuid, nullable: true }
+        threshold: { type: integer, minimum: 1, maximum: 86400, description: Failures in a row (1..20) or seconds. }
+        windowMinutes: { type: integer, minimum: 1, maximum: 10080, nullable: true }
+        cooldownMinutes: { type: integer, minimum: 0, maximum: 10080, default: 60 }
+        enabled: { type: boolean }
+    AlertRule:
+      type: object
+      required: [id, workspaceId, name, type, threshold, cooldownMinutes, enabled, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        workspaceId: { type: string, format: uuid }
+        workflowId: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        type: { type: string, enum: [CONSECUTIVE_FAILURES, LONG_RUNNING] }
+        threshold: { type: integer }
+        windowMinutes: { type: integer, nullable: true }
+        cooldownMinutes: { type: integer }
+        enabled: { type: boolean }
+        createdBy: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AlertRuleList:
+      type: object
+      required: [items, maxRules]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AlertRule' } }
+        maxRules: { type: integer, example: 20 }
   responses:
     BadRequest:
       description: Malformed JSON, invalid UUID, validation, or pagination bounds.
