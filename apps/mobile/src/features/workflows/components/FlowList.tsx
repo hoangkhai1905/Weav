@@ -34,7 +34,8 @@ export const FlowList: React.FC<{ workflow: Pick<Workflow, 'nodes' | 'edges'> }>
       {ordered.map((node, index) => {
         const label = labelOf(node);
         const typeLabel = t(`node.type.${node.type}`);
-        const showType = node.name !== null && typeLabel !== `node.type.${node.type}`;
+        // Second line only when it adds something: a custom name differing from the type name.
+        const showType = node.name !== null && typeLabel !== `node.type.${node.type}` && typeLabel !== label;
         return (
           <View
             key={node.id}

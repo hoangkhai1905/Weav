@@ -46,14 +46,16 @@ export default function WorkflowDetailScreen() {
   const { t, language } = useTranslation();
   const showToast = useUIStore((s) => s.showToast);
 
-  const detail = useWorkflowDetail(workflowId);
-  const history = useWorkflowExecutions(workflowId);
+  const deleteMutation = useDeleteWorkflow();
+  // Once the delete is under way the workflow is gone: stop reading it so no 404 request fires.
+  const keepReading = !deleteMutation.isPending && !deleteMutation.isSuccess;
+  const detail = useWorkflowDetail(workflowId, keepReading);
+  const history = useWorkflowExecutions(workflowId, keepReading);
   const perms = useWorkflowPermissions();
   const runMutation = useRunWorkflow();
   const pauseMutation = usePauseWorkflow();
   const resumeMutation = useResumeWorkflow();
   const publishMutation = usePublishWorkflow();
-  const deleteMutation = useDeleteWorkflow();
 
   const [showRunModal, setShowRunModal] = useState(false);
   const [payloadInput, setPayloadInput] = useState('');

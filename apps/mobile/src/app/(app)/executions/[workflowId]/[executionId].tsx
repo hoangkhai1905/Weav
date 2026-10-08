@@ -10,6 +10,7 @@ import { completeWorkflowRunInCurrentSession } from '../../../../features/workfl
 import { useNodeLabel } from '../../../../features/workflows/components/FlowList';
 import { orderFlowNodes } from '../../../../features/workflows/workflow-flow';
 import { fill } from '../../../../features/common/fill';
+import { logEventKey } from '../../../../features/executions/execution-log.copy';
 import { durationBetween, formatClock, formatDateTime } from '../../../../features/common/time';
 import { ErrorState } from '../../../../components/ui/ErrorState';
 import { FilterChips, type ChipOption } from '../../../../components/ui/FilterChips';
@@ -22,7 +23,7 @@ import { formatDuration, shortId } from '../../../../components/ui/status';
 import { useThemeColors } from '../../../../hooks/useThemeColors';
 import { useTranslation } from '../../../../hooks/useTranslation';
 import { Fonts, MinTouch, Radius, Spacing, Typography } from '../../../../constants/theme';
-import { ACTIVE_EXECUTION_STATUSES, type ExecutionLogLevel } from '../../../../domain/execution/execution.types';
+import { ACTIVE_EXECUTION_STATUSES, type ExecutionLogItem, type ExecutionLogLevel } from '../../../../domain/execution/execution.types';
 import type { ApiError } from '../../../../domain/common/error.types';
 
 type LevelFilter = 'ALL' | ExecutionLogLevel;
@@ -216,30 +217,7 @@ export default function ExecutionDetailScreen() {
           ) : shownLogs.length === 0 ? (
             <Text style={[Typography.body, { color: colors.textMuted }]}>{t('exd.logs.noMatch')}</Text>
           ) : (
-            shownLogs.map((l) => {
-              const tone = colors.tones[l.level === 'ERROR' ? 'danger' : l.level === 'WARN' ? 'warning' : l.level === 'INFO' ? 'info' : 'neutral'];
-              const node = logNode(l.nodeExecutionId);
-              return (
-                <View key={l.id} style={[styles.log, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <View style={styles.logHead}>
-                    <View style={[styles.level, { backgroundColor: tone.bg, borderColor: tone.border }]}>
-                      <Text style={[Typography.caption, { color: tone.fg, fontWeight: '700' }]}>{t(`log.level.${l.level}`)}</Text>
-                    </View>
-                    <Text style={[Typography.mono, { color: colors.textMuted, fontFamily: Fonts?.mono }]}>{formatClock(l.createdAt)}</Text>
-                  </View>
-                  {node ? (
-                    <Text style={[Typography.caption, { color: colors.textMuted }]}>
-                      {t('exd.logs.step')}: {node}
-                    </Text>
-                  ) : null}
-                  <Text selectable style={[Typography.body, { color: colors.text }]}>{l.message ?? humanize(l.eventType)}</Text>
-                  {l.message ? (
-                    <Text style={[Typography.caption, { color: colors.textSubtle, fontFamily: Fonts?.mono }]}>{l.eventType}</Text>
-                  ) : null}
-                  {Object.keys(l.metadata).length > 0 ? <JsonViewer value={l.metadata} label="metadata" /> : null}
-                </View>
-              );
-            })
+            shownLogs.map((l) => <LogRow key={l.id} log={l} step={logNode(l.nodeExecutionId)} />)
           )}
           {pages > 1 ? (
             <View style={styles.pager}>
@@ -263,10 +241,46 @@ export default function ExecutionDetailScreen() {
   );
 }
 
-/** NODE_FAILED -> "Node failed": raw event codes are never shown as the main text. */
-const humanize = (code: string) => {
-  const words = code.replace(/[_.]+/g, ' ').toLowerCase();
-  return words.charAt(0).toUpperCase() + words.slice(1);
+/** One log line: a friendly sentence; the raw message and codes only inside "Technical details". */
+const LogRow: React.FC<{ log: ExecutionLogItem; step: string | null }> = ({ log: l, step }) => {
+  const colors = useThemeColors();
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const tone = colors.tones[l.level === 'ERROR' ? 'danger' : l.level === 'WARN' ? 'warning' : l.level === 'INFO' ? 'info' : 'neutral'];
+  const hasMetadata = Object.keys(l.metadata).length > 0;
+  return (
+    <View style={[styles.log, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.logHead}>
+        <View style={[styles.level, { backgroundColor: tone.bg, borderColor: tone.border }]}>
+          <Text style={[Typography.caption, { color: tone.fg, fontWeight: '700' }]}>{t(`log.level.${l.level}`)}</Text>
+        </View>
+        <Text style={[Typography.mono, { color: colors.textMuted, fontFamily: Fonts?.mono }]}>{formatClock(l.createdAt)}</Text>
+      </View>
+      {step ? (
+        <Text style={[Typography.caption, { color: colors.textMuted }]}>
+          {t('exd.logs.step')}: {step}
+        </Text>
+      ) : null}
+      <Text style={[Typography.body, { color: colors.text }]}>{t(logEventKey(l.eventType))}</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((o) => !o)}
+        style={styles.techToggle}
+      >
+        <Text style={[Typography.label, { color: colors.primary }]}>{t('exd.logs.technical')}</Text>
+      </Pressable>
+      {open ? (
+        <View style={styles.tech}>
+          <Text selectable style={[Typography.mono, { color: colors.textMuted, fontFamily: Fonts?.mono }]}>{l.eventType}</Text>
+          {l.message ? (
+            <Text selectable style={[Typography.mono, { color: colors.textMuted, fontFamily: Fonts?.mono }]}>{l.message}</Text>
+          ) : null}
+          {hasMetadata ? <JsonViewer value={l.metadata} label="metadata" /> : null}
+        </View>
+      ) : null}
+    </View>
+  );
 };
 
 const Info: React.FC<{ label: string; value: string; mono?: boolean }> = ({ label, value, mono }) => {
@@ -317,6 +331,8 @@ const styles = StyleSheet.create({
   section: { gap: Spacing.two },
   chipsBleed: { marginHorizontal: -Spacing.three },
   log: { gap: Spacing.one, padding: Spacing.two, borderWidth: 1, borderRadius: Radius.sm },
+  techToggle: { minHeight: MinTouch, justifyContent: 'center', alignSelf: 'flex-start' },
+  tech: { gap: Spacing.one },
   logHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   level: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: Radius.pill, borderWidth: 1 },
   pager: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
