@@ -1,271 +1,218 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TextInput, Pressable, RefreshControl, Modal } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Search, Play, Pause, ExternalLink, X, Sparkles } from 'lucide-react-native';
-import { useWorkflows, usePauseWorkflow, useResumeWorkflow } from '../../../features/workflows/hooks/useWorkflows';
-import { useRunWorkflow } from '../../../features/workflows/hooks/useRunWorkflow';
-import { completeWorkflowRunInCurrentSession } from '../../../features/workflows/run-workflow.session';
+import { GitFork, Search, Sparkles, X } from 'lucide-react-native';
+import { useInfiniteWorkflows } from '../../../features/workflows/hooks/useWorkflows';
+import { filterWorkflows, type WorkflowStatusFilter } from '../../../features/workflows/workflow.filter';
+import { fill } from '../../../features/common/fill';
+import { formatRelativeTime } from '../../../features/common/time';
+import { EmptyState } from '../../../components/ui/EmptyState';
+import { ErrorState } from '../../../components/ui/ErrorState';
+import { FilterChips, type ChipOption } from '../../../components/ui/FilterChips';
+import { ListItem } from '../../../components/ui/ListItem';
+import { ListSkeleton } from '../../../components/ui/ListSkeleton';
+import { ScreenHeader } from '../../../components/ui/ScreenHeader';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
-import type { Workflow } from '../../../domain/workflow/workflow.types';
+import { MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
+import type { ApiError } from '../../../domain/common/error.types';
+import type { WorkflowSummary } from '../../../domain/workflow/workflow.types';
+
+const STATUS_FILTERS: WorkflowStatusFilter[] = ['ALL', 'PUBLISHED', 'PAUSED', 'DRAFT'];
 
 export default function WorkflowsScreen() {
   const router = useRouter();
   const colors = useThemeColors();
-  const { t } = useTranslation();
-  const { data: workflows, isLoading, refetch } = useWorkflows();
-
-  const pauseMutation = usePauseWorkflow();
-  const resumeMutation = useResumeWorkflow();
-  const runMutation = useRunWorkflow();
-
+  const { t, language } = useTranslation();
+  const query = useInfiniteWorkflows();
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<'ALL' | 'PUBLISHED' | 'PAUSED' | 'DRAFT'>('ALL');
-  const [refreshing, setRefreshing] = useState(false);
+  const [status, setStatus] = useState<WorkflowStatusFilter>('ALL');
 
-  const [selectedWfToRun, setSelectedWfToRun] = useState<Workflow | null>(null);
-  const [payloadInput, setPayloadInput] = useState('');
+  const loaded = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
+  const total = query.data?.pages[0]?.totalElements ?? 0;
+  const visible = useMemo(() => filterWorkflows(loaded, status, search), [loaded, status, search]);
+  const filtering = status !== 'ALL' || search.trim() !== '';
+  const partial = query.hasNextPage === true;
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
-  };
+  const chips: ChipOption<WorkflowStatusFilter>[] = STATUS_FILTERS.map((value) => ({
+    value,
+    label: value === 'ALL' ? t('ui.filter.all') : t(`status.${value}`),
+  }));
 
-  const filtered = (workflows || []).filter((w) => {
-    const matchesSearch = w.name.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = filter === 'ALL' || w.status === filter;
-    return matchesSearch && matchesStatus;
-  });
+  const clearFilters = useCallback(() => {
+    setSearch('');
+    setStatus('ALL');
+  }, []);
+  const loadMore = useCallback(() => {
+    if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+  }, [query]);
+  const openAi = () => router.push('/(app)/ai/generator');
 
-  const handleConfirmRun = async () => {
-    if (!selectedWfToRun) return;
-    let input: Record<string, unknown> | undefined;
-    if (payloadInput.trim()) {
-      try {
-        input = JSON.parse(payloadInput);
-      } catch (e) {
-        input = { rawPayload: payloadInput };
-      }
-    }
-    const completion = await completeWorkflowRunInCurrentSession(
-      () => runMutation.mutateAsync({ id: selectedWfToRun.id, input }),
-    );
-    if (completion.status !== 'success') return;
-    const res = completion.result;
-    setSelectedWfToRun(null);
-    setPayloadInput('');
-    if (res?.executionId) {
-      router.push(`/(app)/executions/${res.executionId}`);
-    }
-  };
+  const renderItem = ({ item }: { item: WorkflowSummary }) => (
+    <ListItem
+      title={item.name}
+      subtitle={item.description?.trim() || t('wfl.noDescription')}
+      meta={fill(t('wfl.updated'), { time: formatRelativeTime(item.updatedAt, language) })}
+      trailing={<StatusBadge status={item.status} />}
+      accessibilityHint={t('wfl.item.hint')}
+      onPress={() => router.push(`/(app)/workflows/${item.workflowId}`)}
+    />
+  );
 
-  return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>{t('workflows.title')}</Text>
-        <Pressable style={styles.aiButton} onPress={() => router.push('/(app)/ai/generator')}>
-          <Sparkles color="#ffffff" size={14} />
-          <Text style={styles.aiButtonText}>AI Generator</Text>
-        </Pressable>
-      </View>
-
-      {/* Search Bar */}
-      <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Search color={colors.textSubtle} size={16} />
+  const header = (
+    <View style={styles.controls}>
+      <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.borderStrong }]}>
+        <Search size={18} color={colors.textMuted} />
         <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
-          placeholder={t('workflows.search_placeholder')}
-          placeholderTextColor={colors.textSubtle}
           value={search}
           onChangeText={setSearch}
+          placeholder={t('wfl.search.placeholder')}
+          placeholderTextColor={colors.textSubtle}
+          accessibilityLabel={t('wfl.search.label')}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          style={[Typography.body, styles.searchInput, { color: colors.text }]}
         />
-        {search ? (
-          <Pressable onPress={() => setSearch('')}>
-            <X color={colors.textSubtle} size={16} />
+        {search !== '' ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('ui.clearSearch')}
+            onPress={() => setSearch('')}
+            style={styles.clear}
+          >
+            <X size={18} color={colors.textMuted} />
           </Pressable>
         ) : null}
       </View>
+      <FilterChips<WorkflowStatusFilter> options={chips} value={status} onChange={setStatus} accessibilityLabel={t('wfl.filter.label')} />
+    </View>
+  );
 
-      {/* Filter Tabs */}
-      <View style={styles.filterRow}>
-        {(['ALL', 'PUBLISHED', 'PAUSED', 'DRAFT'] as const).map((tab) => (
-          <Pressable
-            key={tab}
-            style={[
-              styles.filterChip,
-              { backgroundColor: colors.card, borderColor: colors.border },
-              filter === tab && { backgroundColor: colors.primaryBg, borderColor: colors.primary },
-            ]}
-            onPress={() => setFilter(tab)}
-          >
-            <Text
-              style={[
-                styles.filterText,
-                { color: colors.textSubtle },
-                filter === tab && { color: colors.primary },
-              ]}
-            >
-              {tab}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+  const footer = (
+    <View style={styles.footer}>
+      {query.isFetchingNextPage ? <ActivityIndicator color={colors.primary} /> : null}
+      {partial && !query.isFetchingNextPage ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('wfl.loadMore')}
+          onPress={loadMore}
+          style={[styles.more, { borderColor: colors.borderStrong, backgroundColor: colors.card }]}
+        >
+          <Text style={[Typography.label, { color: colors.text }]}>{t('wfl.loadMore')}</Text>
+        </Pressable>
+      ) : null}
+      {partial && filtering ? (
+        <Text style={[Typography.caption, styles.note, { color: colors.textSubtle }]}>
+          {fill(t('wfl.limit.note'), { loaded: loaded.length, total })}
+        </Text>
+      ) : null}
+    </View>
+  );
 
-      {/* Workflows List */}
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-        renderItem={({ item }) => (
-          <Pressable
-            style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => router.push(`/(app)/workflows/${item.id}`)}
-          >
-            <View style={styles.cardTop}>
-              <View style={styles.cardInfo}>
-                <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-                <Text style={[styles.cardMeta, { color: colors.textSubtle }]}>{item.triggerType} • v{item.version}</Text>
-              </View>
-              <StatusBadge status={item.status} />
-            </View>
-
-            {item.description ? (
-              <Text style={[styles.cardDesc, { color: colors.textMuted }]} numberOfLines={2}>{item.description}</Text>
-            ) : null}
-
-            {item.status === 'DRAFT' && (
-              <View style={[styles.draftHint, { backgroundColor: colors.cardSecondary }]}>
-                <Text style={[styles.draftHintText, { color: colors.textMuted }]}>{t('workflows.draft_hint')}</Text>
-              </View>
-            )}
-
-            <View style={styles.cardActions}>
-              {item.status === 'PUBLISHED' && (
-                <>
-                  <Pressable
-                    style={[styles.actionBtn, styles.runBtn]}
-                    onPress={() => setSelectedWfToRun(item)}
-                  >
-                    <Play color="#ffffff" size={13} />
-                    <Text style={styles.runBtnText}>{t('workflows.run_now')}</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.actionBtn, { backgroundColor: colors.cardSecondary }]}
-                    onPress={() => pauseMutation.mutate(item.id)}
-                  >
-                    <Pause color={colors.warning} size={13} />
-                    <Text style={[styles.actionBtnText, { color: colors.warning }]}>{t('workflows.pause')}</Text>
-                  </Pressable>
-                </>
-              )}
-
-              {item.status === 'PAUSED' && (
-                <Pressable
-                  style={[styles.actionBtn, { backgroundColor: colors.successBg, borderColor: colors.success, borderWidth: 1 }]}
-                  onPress={() => resumeMutation.mutate(item.id)}
-                >
-                  <Play color={colors.success} size={13} />
-                  <Text style={[styles.resumeBtnText, { color: colors.success }]}>{t('workflows.resume')}</Text>
-                </Pressable>
-              )}
-
-              <Pressable
-                style={[styles.actionBtn, { backgroundColor: colors.cardSecondary }]}
-                onPress={() => router.push(`/(app)/workflows/${item.id}`)}
-              >
-                <ExternalLink color={colors.primary} size={13} />
-                <Text style={[styles.actionBtnText, { color: colors.primary }]}>{t('workflows.view')}</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        )}
+  let body: React.ReactNode;
+  if (query.isPending) {
+    body = <ListSkeleton />;
+  } else if (query.isError && loaded.length === 0) {
+    body = <ErrorState error={query.error as unknown as ApiError} onRetry={() => void query.refetch()} />;
+  } else if (loaded.length === 0) {
+    body = (
+      <EmptyState
+        icon={<GitFork size={36} color={colors.textMuted} />}
+        title={t('wfl.empty.title')}
+        description={t('wfl.empty.body')}
+        actionLabel={t('wfl.empty.action')}
+        onAction={openAi}
       />
+    );
+  } else {
+    body = (
+      <FlatList
+        data={visible}
+        keyExtractor={(w) => w.workflowId}
+        renderItem={renderItem}
+        ItemSeparatorComponent={Separator}
+        ListHeaderComponent={header}
+        ListFooterComponent={footer}
+        ListEmptyComponent={
+          <EmptyState
+            title={t('wfl.noMatch.title')}
+            description={t('wfl.noMatch.body')}
+            actionLabel={t('ui.clearFilters')}
+            onAction={clearFilters}
+          />
+        }
+        contentContainerStyle={styles.list}
+        keyboardShouldPersistTaps="handled"
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.4}
+        refreshControl={
+          <RefreshControl
+            refreshing={query.isRefetching && !query.isFetchingNextPage}
+            onRefresh={() => void query.refetch()}
+            tintColor={colors.primary}
+          />
+        }
+      />
+    );
+  }
 
-      {/* Run Workflow Modal */}
-      <Modal visible={!!selectedWfToRun} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Run Workflow</Text>
-              <Pressable onPress={() => setSelectedWfToRun(null)}>
-                <X color={colors.textMuted} size={20} />
-              </Pressable>
-            </View>
-
-            {selectedWfToRun && (
-              <View style={styles.modalBody}>
-                <Text style={[styles.modalWfName, { color: colors.primary }]}>{selectedWfToRun.name}</Text>
-                <Text style={[styles.modalLabel, { color: colors.textMuted }]}>Trigger: {selectedWfToRun.triggerType}</Text>
-
-                <Text style={[styles.modalLabel, { color: colors.textMuted, marginTop: 12 }]}>Input Payload (Optional JSON):</Text>
-                <TextInput
-                  style={[styles.modalInput, { backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong, color: colors.text }]}
-                  multiline
-                  numberOfLines={4}
-                  placeholder={`{\n  "orderId": "ORD-991",\n  "amount": 500000\n}`}
-                  placeholderTextColor={colors.textSubtle}
-                  value={payloadInput}
-                  onChangeText={setPayloadInput}
-                />
-
-                <View style={styles.modalButtons}>
-                  <Pressable style={[styles.cancelBtn, { backgroundColor: colors.cardSecondary }]} onPress={() => setSelectedWfToRun(null)}>
-                    <Text style={[styles.cancelText, { color: colors.textMuted }]}>Cancel</Text>
-                  </Pressable>
-                  <Pressable style={styles.confirmRunBtn} onPress={handleConfirmRun}>
-                    <Text style={styles.confirmRunText}>Execute Workflow</Text>
-                  </Pressable>
-                </View>
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
+  return (
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
+      <ScreenHeader
+        title={t('wfl.title')}
+        subtitle={query.data ? fill(t('wfl.count'), { n: total }) : undefined}
+        trailing={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('wfl.create.ai')}
+            onPress={openAi}
+            style={[styles.ai, { backgroundColor: colors.primaryBg, borderColor: colors.primaryBorder }]}
+          >
+            <Sparkles size={20} color={colors.primary} />
+          </Pressable>
+        }
+      />
+      {body}
     </SafeAreaView>
   );
 }
 
+const Separator = () => <View style={{ height: Spacing.two }} />;
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 18, paddingTop: 10, paddingBottom: 10 },
-  title: { fontSize: 24, fontWeight: '900' },
-  aiButton: { backgroundColor: '#7c3aed', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  aiButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
-  searchBar: { marginHorizontal: 18, borderRadius: 14, borderWidth: 1, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, gap: 8, marginBottom: 12 },
-  searchInput: { flex: 1, fontSize: 13 },
-  filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 18, marginBottom: 14 },
-  filterChip: { borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 6 },
-  filterText: { fontSize: 11, fontWeight: '700' },
-  listContent: { paddingHorizontal: 18, paddingBottom: 40, gap: 12 },
-  card: { borderRadius: 18, borderWidth: 1, padding: 16, gap: 12 },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  cardInfo: { flex: 1, marginRight: 10 },
-  cardTitle: { fontSize: 15, fontWeight: '800' },
-  cardMeta: { fontSize: 11, marginTop: 2 },
-  cardDesc: { fontSize: 12, lineHeight: 16 },
-  draftHint: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  draftHintText: { fontSize: 11, fontStyle: 'italic' },
-  cardActions: { flexDirection: 'row', gap: 8, paddingTop: 4 },
-  actionBtn: { borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  actionBtnText: { fontSize: 12, fontWeight: '600' },
-  runBtn: { backgroundColor: '#7c3aed' },
-  runBtnText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
-  resumeBtnText: { fontSize: 12, fontWeight: '700' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalContent: { borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, padding: 20, gap: 16 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  modalTitle: { fontSize: 18, fontWeight: '800' },
-  modalBody: { gap: 10 },
-  modalWfName: { fontSize: 15, fontWeight: '700' },
-  modalLabel: { fontSize: 12 },
-  modalInput: { borderRadius: 12, borderWidth: 1, padding: 12, fontFamily: 'monospace', fontSize: 12, textAlignVertical: 'top' },
-  modalButtons: { flexDirection: 'row', gap: 10, marginTop: 12 },
-  cancelBtn: { flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  cancelText: { fontSize: 13, fontWeight: '700' },
-  confirmRunBtn: { flex: 2, backgroundColor: '#7c3aed', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  confirmRunText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
+  safe: { flex: 1 },
+  list: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.five },
+  controls: { gap: Spacing.two, paddingTop: Spacing.three, paddingBottom: Spacing.three, marginHorizontal: -Spacing.three },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    minHeight: MinTouch,
+    marginHorizontal: Spacing.three,
+    paddingLeft: Spacing.three,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+  },
+  searchInput: { flex: 1, minHeight: MinTouch },
+  clear: { width: MinTouch, height: MinTouch, alignItems: 'center', justifyContent: 'center' },
+  footer: { gap: Spacing.two, paddingTop: Spacing.three, alignItems: 'center' },
+  more: {
+    minHeight: MinTouch,
+    paddingHorizontal: Spacing.four,
+    justifyContent: 'center',
+    borderRadius: Radius.md,
+    borderWidth: 1,
+  },
+  note: { textAlign: 'center' },
+  ai: {
+    width: MinTouch,
+    height: MinTouch,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radius.md,
+    borderWidth: 1,
+  },
 });

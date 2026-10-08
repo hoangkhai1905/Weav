@@ -42,7 +42,10 @@ export function useNotificationTargetNavigator() {
         if (target.kind === 'WORKFLOW') {
           queryClient.removeQueries({ queryKey: ['workflow', target.workflowId] });
         } else if (target.kind === 'EXECUTION') {
-          queryClient.removeQueries({ queryKey: ['execution', target.executionId] });
+          queryClient.removeQueries({
+            queryKey: ['execution'],
+            predicate: (query) => query.queryKey[3] === target.executionId,
+          });
         } else if (target.kind === 'WORKSPACE') {
           queryClient.removeQueries({ queryKey: workspaceKeys.detail(scope.userId, target.workspaceId) });
           queryClient.removeQueries({ queryKey: workspaceKeys.members(scope.userId, target.workspaceId) });

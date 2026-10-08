@@ -1,136 +1,135 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl } from 'react-native';
+import React from 'react';
+import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, RefreshCw, Mail, FileSpreadsheet, Send, Globe } from 'lucide-react-native';
-import { useConnections, useTestConnection } from '../../../features/connections/hooks/useConnections';
-import { StatusBadge } from '../../../components/ui/StatusBadge';
-import { useUIStore } from '../../../stores/ui.store';
-import { useThemeColors } from '../../../hooks/useThemeColors';
-import type { ConnectionProvider } from '../../../domain/connection/connection.types';
+import { Info, PlugZap } from 'lucide-react-native';
+import { useConnections, useDisableConnection, useTestConnection } from '../../../features/connections/hooks/useConnections';
+import { ConnectionCard, type TestResult } from '../../../features/connections/components/ConnectionCard';
+import { friendlyErrorMessage } from '../../../features/common/friendly-error';
 import { captureAuthSessionScope, isAuthSessionScopeCurrent } from '../../../features/auth/auth-session.scope';
+import type { ConnectionItem } from '../../../domain/connection/connection.types';
+import { ConfirmSheet } from '../../../components/ui/ConfirmSheet';
+import { EmptyState } from '../../../components/ui/EmptyState';
+import { ErrorState } from '../../../components/ui/ErrorState';
+import { ListSkeleton } from '../../../components/ui/ListSkeleton';
+import { ScreenHeader } from '../../../components/ui/ScreenHeader';
+import type { ApiError } from '../../../domain/common/error.types';
+import { Radius, Spacing, Typography } from '../../../constants/theme';
+import { useThemeColors } from '../../../hooks/useThemeColors';
+import { useTranslation } from '../../../hooks/useTranslation';
+import { useUIStore } from '../../../stores/ui.store';
 
 export default function ConnectionsScreen() {
   const router = useRouter();
   const colors = useThemeColors();
-  const { data: connections, isLoading, refetch } = useConnections();
-  const testMutation = useTestConnection();
+  const { t } = useTranslation();
   const showToast = useUIStore((s) => s.showToast);
+  const query = useConnections();
+  const testMutation = useTestConnection();
+  const disableMutation = useDisableConnection();
+  const [testingId, setTestingId] = React.useState<string | null>(null);
+  const [results, setResults] = React.useState<Record<string, TestResult>>({});
+  const [toDisable, setToDisable] = React.useState<ConnectionItem | null>(null);
+  const [refreshing, setRefreshing] = React.useState(false);
 
-  const [testingId, setTestingId] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace('/(app)/(tabs)'));
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
+    try {
+      await query.refetch();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
-  const handleTest = async (id: string, name: string) => {
+  const handleTest = async (item: ConnectionItem) => {
+    if (testingId) return;
     const scope = captureAuthSessionScope();
-    setTestingId(id);
+    setTestingId(item.id);
     try {
-      const res = await testMutation.mutateAsync(id);
-      if (res.success) return;
+      const outcome = await testMutation.mutateAsync(item.id);
+      if (isAuthSessionScopeCurrent(scope)) setResults((r) => ({ ...r, [item.id]: { outcome } }));
+    } catch (error) {
       if (isAuthSessionScopeCurrent(scope)) {
-        showToast({ type: 'warning', title: 'Connection Warning', message: res.message });
-      }
-    } catch (err: any) {
-      if (isAuthSessionScopeCurrent(scope)) {
-        showToast({ type: 'error', title: 'Ping Test Failed', message: err.message || 'Could not test connection.' });
+        setResults((r) => ({ ...r, [item.id]: { error: friendlyErrorMessage(error) } }));
       }
     } finally {
       setTestingId(null);
     }
   };
 
-  const getProviderIcon = (provider: ConnectionProvider) => {
-    switch (provider) {
-      case 'gmail':
-        return <Mail color="#f43f5e" size={20} />;
-      case 'sheets':
-        return <FileSpreadsheet color="#10b981" size={20} />;
-      case 'telegram':
-        return <Send color="#0ea5e9" size={20} />;
-      case 'http':
-        return <Globe color={colors.primary} size={20} />;
+  const handleDisable = async () => {
+    const item = toDisable;
+    if (!item) return;
+    try {
+      await disableMutation.mutateAsync(item.id);
+      showToast({ type: 'success', title: t('conn.disabled').replace('{name}', item.name) });
+    } catch (error) {
+      showToast({ type: 'error', title: t('conn.disableFailed'), message: friendlyErrorMessage(error) });
+    } finally {
+      setToDisable(null);
     }
   };
 
-  const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/(app)/(tabs)');
-    }
-  };
+  const connections = query.data ?? [];
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Pressable style={styles.backBtn} onPress={handleBack}>
-          <ArrowLeft color={colors.text} size={20} />
-        </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Service Connections</Text>
-      </View>
-
-      <FlatList
-        data={connections || []}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-        renderItem={({ item }) => (
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.cardTop}>
-              <View style={[styles.iconCircle, { backgroundColor: colors.cardSecondary }]}>
-                {getProviderIcon(item.provider)}
-              </View>
-              <View style={styles.cardInfo}>
-                <Text style={[styles.connName, { color: colors.text }]}>{item.name}</Text>
-                <Text style={[styles.connProvider, { color: colors.textSubtle }]}>{item.provider.toUpperCase()} Credential</Text>
-              </View>
-              <StatusBadge status={item.status} />
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+      <ScreenHeader title={t('conn.title')} onBack={goBack} />
+      {query.isPending ? (
+        <ListSkeleton rows={4} />
+      ) : query.isError ? (
+        <ErrorState error={query.error as unknown as ApiError} onRetry={() => void query.refetch()} />
+      ) : (
+        <FlatList
+          data={connections}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+          ListHeaderComponent={
+            <View style={[styles.note, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
+              <Info size={16} color={colors.textMuted} />
+              <Text style={[Typography.caption, styles.noteText, { color: colors.textMuted }]}>{t('conn.webNote')}</Text>
             </View>
-
-            <View style={[styles.cardMeta, { borderTopColor: colors.border }]}>
-              <Text style={[styles.metaText, { color: colors.textMuted }]}>Created by: {item.createdBy}</Text>
-              <Text style={[styles.metaText, { color: colors.textMuted }]}>Created: {new Date(item.createdAt).toLocaleDateString()}</Text>
-            </View>
-
-            <View style={styles.cardFooter}>
-              <Pressable
-                style={[styles.testBtn, { backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong }]}
-                onPress={() => handleTest(item.id, item.name)}
-                disabled={testingId === item.id}
-              >
-                <RefreshCw color={colors.text} size={13} />
-                <Text style={[styles.testBtnText, { color: colors.text }]}>
-                  {testingId === item.id ? 'Pinging...' : 'Test Connection'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
+          }
+          ListEmptyComponent={
+            <EmptyState
+              icon={<PlugZap size={32} color={colors.textSubtle} />}
+              title={t('conn.empty.title')}
+              description={t('conn.empty.desc')}
+              actionLabel={t('ui.retry')}
+              onAction={() => void query.refetch()}
+            />
+          }
+          renderItem={({ item }) => (
+            <ConnectionCard
+              item={item}
+              testing={testingId === item.id}
+              result={results[item.id]}
+              onTest={() => void handleTest(item)}
+              onDisable={() => setToDisable(item)}
+            />
+          )}
+        />
+      )}
+      <ConfirmSheet
+        visible={toDisable !== null}
+        title={t('conn.disable.title')}
+        message={t('conn.disable.message').replace('{name}', toDisable?.name ?? '')}
+        confirmLabel={t('conn.disable')}
+        destructive
+        busy={disableMutation.isPending}
+        onConfirm={() => void handleDisable()}
+        onClose={() => setToDisable(null)}
       />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingTop: 10, paddingBottom: 10, borderBottomWidth: 1 },
-  backBtn: { padding: 6 },
-  headerTitle: { fontSize: 18, fontWeight: '800', marginLeft: 10 },
-  listContent: { padding: 18, paddingBottom: 40, gap: 12 },
-  card: { borderRadius: 18, borderWidth: 1, padding: 16, gap: 12 },
-  cardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconCircle: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  cardInfo: { flex: 1 },
-  connName: { fontSize: 15, fontWeight: '800' },
-  connProvider: { fontSize: 10, fontFamily: 'monospace', marginTop: 2 },
-  cardMeta: { paddingTop: 8, borderTopWidth: 1, gap: 2 },
-  metaText: { fontSize: 11 },
-  cardFooter: { paddingTop: 4 },
-  testBtn: { borderRadius: 10, paddingVertical: 8, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, borderWidth: 1 },
-  testBtnText: { fontSize: 12, fontWeight: '700' },
+  safe: { flex: 1 },
+  list: { gap: Spacing.two, padding: Spacing.three, paddingBottom: Spacing.five },
+  note: { flexDirection: 'row', gap: Spacing.two, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.md, marginBottom: Spacing.one },
+  noteText: { flex: 1 },
 });

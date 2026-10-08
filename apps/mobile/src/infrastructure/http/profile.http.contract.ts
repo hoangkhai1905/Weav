@@ -39,5 +39,7 @@ export function mapIdentityUser(user: IdentityUserResponse): UserProfile {
     email: user.email,
     name: user.displayName?.trim() || user.email,
     avatar: null,
+    // Only whether an avatar exists; the image itself comes from a short-lived signed URL.
+    avatarPresent: Boolean(user.avatarStorageKey),
   };
 }

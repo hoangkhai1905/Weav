@@ -1,13 +1,15 @@
-import type { AIRepository, AiGenerationResult } from '../../domain/ai/ai.types';
-import { httpClient, normalizeApiError } from './http-client';
+import type {
+  AiGenerateRequest,
+  AiGenerationResult,
+  AiRepository,
+} from '../../domain/ai/ai.types';
+import { buildGenerateWorkflowRequest } from './ai.http.contract';
+import { mapGenerationResult } from './ai.mapper';
+import { requestGateway } from './gateway-request';
 
-export class HttpAiRepository implements AIRepository {
-  async generateWorkflow(prompt: string): Promise<AiGenerationResult> {
-    try {
-      const res = await httpClient.post<AiGenerationResult>('/api/ai/generate-workflow', { prompt });
-      return res.data;
-    } catch (err) {
-      throw normalizeApiError(err);
-    }
+export class HttpAiRepository implements AiRepository {
+  /** Slow route (up to ~80 s): the request config carries its own 85 s timeout. */
+  generateWorkflow(workspaceId: string, request: AiGenerateRequest): Promise<AiGenerationResult> {
+    return requestGateway(buildGenerateWorkflowRequest(workspaceId, request), mapGenerationResult);
   }
 }

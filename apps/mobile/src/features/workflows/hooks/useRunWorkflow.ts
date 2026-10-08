@@ -1,20 +1,27 @@
 import { useMutation, useQueryClient, type QueryClient, type UseMutationOptions } from '@tanstack/react-query';
 import { workflowRepository } from '../../../infrastructure/repository-factory';
 import { useUIStore } from '../../../stores/ui.store';
+import { useI18nStore } from '../../../stores/i18n.store';
+import { friendlyErrorMessage } from '../../common/friendly-error';
+import type { WorkflowRunAccepted } from '../../../domain/workflow/workflow.types';
 import { captureAuthSessionScope, isAuthSessionScopeCurrent } from '../../auth/auth-session.scope';
 import { showMilestoneToastForSession } from '../../feedback/milestone-toast';
 import { notificationQueryKey } from '../../notifications/notification.query';
+import { getActiveWorkspaceId } from '../../workspace/active-workspace';
 
-type RunWorkflowVariables = { id: string; input?: Record<string, unknown> };
+/** `idempotencyKey` is only passed when retrying after a 504/timeout, so the backend de-duplicates the run. */
+type RunWorkflowVariables = { id: string; input?: Record<string, unknown>; idempotencyKey?: string };
 type RunWorkflowScope = ReturnType<typeof captureAuthSessionScope>;
 type ShowToast = ReturnType<typeof useUIStore.getState>['showToast'];
 
 export function createRunWorkflowMutationOptions(
   queryClient: QueryClient,
   showToast: ShowToast,
-): UseMutationOptions<{ executionId: string }, Error, RunWorkflowVariables, RunWorkflowScope> {
+): UseMutationOptions<WorkflowRunAccepted, Error, RunWorkflowVariables, RunWorkflowScope> {
   return {
-    mutationFn: ({ id, input }) => workflowRepository.runWorkflow(id, input),
+    // The repository creates one Idempotency-Key per call and reuses it if it retries a 504/timeout.
+    mutationFn: ({ id, input, idempotencyKey }) =>
+      workflowRepository.runWorkflow(getActiveWorkspaceId(), id, { input, idempotencyKey }),
     onMutate: () => captureAuthSessionScope(),
     onSuccess: (res, _variables, scope) => {
       if (!scope || !isAuthSessionScopeCurrent(scope)) return res;
@@ -29,8 +36,8 @@ export function createRunWorkflowMutationOptions(
       if (!scope || !isAuthSessionScopeCurrent(scope)) return;
       showToast({
         type: 'error',
-        title: 'Execution Failed to Trigger',
-        message: err.message || 'Could not start workflow run.',
+        title: useI18nStore.getState().t('run.failTitle'),
+        message: friendlyErrorMessage(err),
       });
     },
   };

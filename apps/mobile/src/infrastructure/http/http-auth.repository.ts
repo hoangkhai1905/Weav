@@ -9,7 +9,7 @@ import type {
   PasswordResetVerification,
 } from '../../domain/auth/auth.types';
 import axios, { type AxiosRequestConfig } from 'axios';
-import { httpClient } from './http-client';
+import { httpClient, normalizeApiError } from './http-client';
 import { useAuthStore } from '../../stores/auth.store';
 import {
   buildGetCurrentUserRequest,
@@ -61,6 +61,11 @@ function mapSession(data: IdentityTokens): AuthSession {
   };
 }
 
+function detailsOf(error: unknown): { details?: unknown; requestId?: string } {
+  const { details, requestId } = normalizeApiError(error);
+  return { ...(details ? { details } : {}), ...(requestId ? { requestId } : {}) };
+}
+
 async function authRequest<T>(config: AxiosRequestConfig): Promise<T> {
   try {
     return (await httpClient.request<T>(config)).data;
@@ -80,6 +85,8 @@ async function authRequest<T>(config: AxiosRequestConfig): Promise<T> {
         messages[status ?? 0] ??
         'Sign-in service unavailable. Please try again.',
       status,
+      // Field-level validation messages from the backend (error.details[].field), shown under each input.
+      ...(axios.isAxiosError(error) ? detailsOf(error) : {}),
     };
     throw authError;
   }
