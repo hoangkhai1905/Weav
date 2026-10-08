@@ -5,6 +5,15 @@ export const AVATAR_PATH = '/api/users/me/avatar';
 export const OAUTH_ACCOUNTS_PATH = '/api/users/me/oauth-accounts';
 
 export const buildGetAvatarRequest = (): AxiosRequestConfig => ({ method: 'GET', url: AVATAR_PATH });
+/** `form` is a multipart FormData with one `file` part (JPEG/PNG/WebP, max 2 MiB). */
+export const buildUploadAvatarRequest = (form: unknown): AxiosRequestConfig => ({
+  method: 'PUT',
+  url: AVATAR_PATH,
+  data: form,
+  // The shared client defaults to JSON; React Native adds the multipart boundary itself.
+  headers: { 'Content-Type': 'multipart/form-data' },
+  timeout: 30_000,
+});
 export const buildDeleteAvatarRequest = (): AxiosRequestConfig => ({ method: 'DELETE', url: AVATAR_PATH });
 export const buildOAuthAccountsRequest = (): AxiosRequestConfig => ({ method: 'GET', url: OAUTH_ACCOUNTS_PATH });
 

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { AvatarUpload } from '../../../domain/auth/account.types';
 import { accountRepository, authRepository } from '../../../infrastructure/repository-factory';
 import { useAuthStore } from '../../../stores/auth.store';
 import { expireAuthSession } from '../../auth/auth-session.runtime';
@@ -19,6 +20,19 @@ export function useAvatarUrl(hasAvatar: boolean) {
     staleTime: 2 * 60_000,
     retry: false,
     queryFn: () => accountRepository.getAvatarUrl(),
+  });
+}
+
+export function useUploadAvatar() {
+  const queryClient = useQueryClient();
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  return useMutation({
+    mutationFn: (file: AvatarUpload) => accountRepository.uploadAvatar(file),
+    onSuccess: () => {
+      if (!userId) return;
+      void queryClient.invalidateQueries({ queryKey: accountKeys.avatar(userId) });
+      void queryClient.invalidateQueries({ queryKey: profileKeys.current(userId) });
+    },
   });
 }
 

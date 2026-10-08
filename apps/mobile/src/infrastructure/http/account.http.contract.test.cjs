@@ -5,6 +5,14 @@ const c = require('./account.http.contract.ts');
 
 test('uses the real gateway routes for avatar and linked accounts', () => {
   assert.deepEqual(c.buildGetAvatarRequest(), { method: 'GET', url: '/api/users/me/avatar' });
+  const form = { marker: 'form' };
+  assert.deepEqual(c.buildUploadAvatarRequest(form), {
+    method: 'PUT',
+    url: '/api/users/me/avatar',
+    data: form,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 30000,
+  });
   assert.deepEqual(c.buildDeleteAvatarRequest(), { method: 'DELETE', url: '/api/users/me/avatar' });
   assert.deepEqual(c.buildOAuthAccountsRequest(), { method: 'GET', url: '/api/users/me/oauth-accounts' });
 });

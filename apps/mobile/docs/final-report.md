@@ -26,7 +26,6 @@ Nhánh `feature/mobile`. App mobile là app đồng hành để giám sát và �
 - Tìm kiếm/lọc workflow phía server; `lastRunAt`, `triggerType` trên danh sách workflow.
 - Thông báo `EXECUTION` không mang `workflowId` nên phải dò tối đa 50 workflow (màn lookup).
 - "Đăng xuất các thiết bị khác": backend chỉ có thu hồi một phiên hoặc tất cả (kể cả hiện tại); mobile tự liệt kê rồi thu hồi từng phiên.
-- Upload avatar cần `expo-image-picker` ở phía app (chưa cài, chưa thêm dependency).
 
 Lỗi/chỗ lạ tìm thấy ở gateway:
 - Gateway **âm thầm bỏ** `Idempotency-Key` sai định dạng (lệnh chạy khi đó không idempotent); app tự sinh key đúng `[A-Za-z0-9._:-]{8,128}`.

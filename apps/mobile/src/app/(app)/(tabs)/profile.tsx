@@ -1,12 +1,14 @@
 import React from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { Building2, ChevronRight, LogOut, MessageSquare, PlugZap, ShieldCheck, Sparkles } from 'lucide-react-native';
 import { useProfile } from '../../../features/profile/hooks/useProfile';
-import { useAvatarUrl, useDeleteAvatar } from '../../../features/profile/hooks/useAccount';
+import { useAvatarUrl, useDeleteAvatar, useUploadAvatar } from '../../../features/profile/hooks/useAccount';
 import { logoutAuthSession } from '../../../features/auth/auth-session.runtime';
 import { friendlyErrorMessage } from '../../../features/common/friendly-error';
+import { checkAvatarImage } from '../../../features/profile/avatar.utils';
 import { localizeValidation } from '../../../features/common/validation-copy';
 import { Avatar } from '../../../components/ui/Avatar';
 import { Button } from '../../../components/ui/Button';
@@ -37,6 +39,7 @@ export default function ProfileScreen() {
   const shown = profile ?? user;
   const avatar = useAvatarUrl(Boolean(shown?.avatarPresent));
   const deleteAvatar = useDeleteAvatar();
+  const uploadAvatar = useUploadAvatar();
   const [confirm, setConfirm] = React.useState<'logout' | 'avatar' | null>(null);
 
   const nameChanged = displayName.trim() !== (shown?.name ?? '');
@@ -54,6 +57,49 @@ export default function ProfileScreen() {
     setConfirm(null);
     void logoutAuthSession();
     router.replace('/(auth)/login');
+  };
+
+  const handlePickAvatar = async () => {
+    let result: ImagePicker.ImagePickerResult;
+    try {
+      // The system photo picker needs no storage permission, so there is nothing to ask up front.
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+      });
+    } catch (error) {
+      const denied = /permission/i.test(error instanceof Error ? error.message : '');
+      showToast({
+        type: 'error',
+        title: t('prof.avatar.uploadFailed'),
+        message: denied ? t('prof.avatar.noAccess') : friendlyErrorMessage(error),
+      });
+      return;
+    }
+    const asset = result.canceled ? undefined : result.assets[0];
+    if (!asset) return;
+    const checked = checkAvatarImage(asset);
+    if (checked.ok === false) {
+      showToast({
+        type: 'error',
+        title: t('prof.avatar.uploadFailed'),
+        message: t(checked.problem === 'size' ? 'prof.avatar.tooBig' : 'prof.avatar.badType'),
+      });
+      return;
+    }
+    try {
+      await uploadAvatar.mutateAsync(checked.file);
+      showToast({ type: 'success', title: t('prof.avatar.changed') });
+    } catch (error) {
+      const status = (error as { status?: number } | null)?.status;
+      showToast({
+        type: 'error',
+        title: t('prof.avatar.uploadFailed'),
+        message: status === 400 ? t('prof.avatar.rejected') : friendlyErrorMessage(error),
+      });
+    }
   };
 
   const handleDeleteAvatar = async () => {
@@ -87,15 +133,22 @@ export default function ProfileScreen() {
               </Text>
             </View>
           </View>
+          <Button
+            variant="secondary"
+            label={t(shown?.avatarPresent ? 'prof.avatar.change' : 'prof.avatar.choose')}
+            busy={uploadAvatar.isPending}
+            disabled={deleteAvatar.isPending}
+            onPress={() => void handlePickAvatar()}
+          />
           {shown?.avatarPresent ? (
             <Button
               variant="secondary"
               label={t('prof.avatar.delete')}
               busy={deleteAvatar.isPending}
+              disabled={uploadAvatar.isPending}
               onPress={() => setConfirm('avatar')}
             />
           ) : null}
-          <Text style={[Typography.caption, { color: colors.textSubtle }]}>{t('prof.avatar.webNote')}</Text>
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>

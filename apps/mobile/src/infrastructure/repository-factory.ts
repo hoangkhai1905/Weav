@@ -49,5 +49,5 @@ export const assistantRepository: AssistantRepository = new HttpAssistantReposit
 
 // Avatar and linked Google accounts exist only on the real gateway (mock mode shows neither).
 export const accountRepository: AccountRepository = isMockMode
-  ? { getAvatarUrl: async () => null, deleteAvatar: async () => undefined, listOAuthAccounts: async () => [] }
+  ? { getAvatarUrl: async () => null, uploadAvatar: async () => undefined, deleteAvatar: async () => undefined, listOAuthAccounts: async () => [] }
   : new HttpAccountRepository();

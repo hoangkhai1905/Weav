@@ -30,7 +30,7 @@ Trạng thái: OK / SAI PATH / THIẾU (không có route trên gateway) / CHƯA 
 | `change-password`, `forgot-password`, `otp/verify`, `reset-password` (`password*.contract.ts`) | `identity.module.ts:411-456` | OK |
 | `GET/DELETE /api/auth/sessions[/:id]` (`session.http.contract.ts:7`) | `identity.module.ts:466-481` | OK |
 | `POST /api/auth/otp/request` | `identity.module.ts:422` | chưa xác minh mobile có gọi (grep chỉ thấy `otp/verify`) |
-| `GET /api/users/me/oauth-accounts`, `GET/PUT/DELETE /api/users/me/avatar` | `identity.module.ts:551-581` | CHƯA DÙNG |
+| `GET /api/users/me/oauth-accounts`, `GET/PUT/DELETE /api/users/me/avatar` (`account.http.contract.ts`) | `identity.module.ts:551-581` | OK (PUT multipart field `file`, JPEG/PNG/WebP <= 2 MiB, đã thử trên gateway thật) |
 | Workspace CRUD + members (`workspace.http.contract.ts:79-147`, `http-workspace.repository.ts:111-154`) | `workspace.controller.ts:142-250` | OK |
 | `GET /api/v2/notifications`, `unread-count`, `PATCH :id/read`, `POST read-all` (`notification.http.contract.ts:8`) | `notifications.module.ts:99-146` | OK |
 
