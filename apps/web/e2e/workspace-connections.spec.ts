@@ -99,6 +99,13 @@ function connection(
   };
 }
 
+/** An already-authorized (verified once) connection: the row offers Test instead of "Connect". */
+const authorizedOnce = (value: ReturnType<typeof connection>) => ({
+  ...value,
+  hasCredential: true,
+  lastVerifiedAt: "2026-08-01T00:00:00Z",
+}) as unknown as ReturnType<typeof connection>;
+
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -555,7 +562,7 @@ test.describe("workspace connection API adapter", () => {
     ).toHaveAttribute("data-status", "DISABLED");
     await expect(
       page.getByTestId(`connection-status-${CONNECTION_GMAIL_ID}`),
-    ).toHaveText("Disabled");
+    ).toHaveText("Not connected");
     expect(createBody).toEqual({
       name: "Work Gmail",
       provider: "GMAIL",
@@ -1042,10 +1049,10 @@ test.describe("workspace connection API adapter", () => {
     page,
   }) => {
     await installAuthFixture(page);
-    let serverConnection: ReturnType<typeof connection> | null = connection(
+    let serverConnection: ReturnType<typeof connection> | null = authorizedOnce(connection(
       CONNECTION_GMAIL_ID,
       "GMAIL",
-    );
+    ));
     let deleteCalls = 0;
     let renameBody: unknown;
     await page.route("**/api/v1/workspaces/*/connections", async (route) => {
@@ -1136,9 +1143,9 @@ test.describe("workspace connection API adapter", () => {
     ).toHaveAttribute("data-status", "DISABLED");
     await expect(page.getByText("Connection disabled.", { exact: true })).toHaveCount(1);
 
-    page.on("dialog", (dialog) => dialog.accept());
     await openRowMenu(page, CONNECTION_GMAIL_ID);
     await page.getByTestId(`connection-delete-${CONNECTION_GMAIL_ID}`).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Delete connection" }).click();
     await expect(page.getByTestId("connections-empty-state")).toBeVisible();
     expect(deleteCalls).toBe(1);
   });
@@ -1167,11 +1174,11 @@ test.describe("workspace connection API adapter", () => {
           ),
       );
       await gotoAuthenticatedConnections(page);
-      page.on("dialog", (dialog) => dialog.accept());
       await openRowMenu(page, CONNECTION_GMAIL_ID);
       await page
         .getByTestId(`connection-delete-${CONNECTION_GMAIL_ID}`)
         .click();
+      await page.getByRole("alertdialog").getByRole("button", { name: "Delete connection" }).click();
 
       await expect(
         page.getByTestId(`connection-row-${CONNECTION_GMAIL_ID}`),
@@ -1195,7 +1202,7 @@ test.describe("workspace connection API adapter", () => {
     }) => {
       await installAuthFixture(page);
       await page.route("**/api/v1/workspaces/*/connections", (route) =>
-        fulfillJson(route, [connection(CONNECTION_GMAIL_ID, "GMAIL")]),
+        fulfillJson(route, [authorizedOnce(connection(CONNECTION_GMAIL_ID, "GMAIL"))]),
       );
       await page.route(
         `**/api/v1/workspaces/*/connections/${CONNECTION_GMAIL_ID}/test`,
