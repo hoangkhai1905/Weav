@@ -74,7 +74,7 @@ export default function WorkflowsScreen() {
           autoCapitalize="none"
           autoCorrect={false}
           returnKeyType="search"
-          style={[Typography.body, styles.searchInput, { color: colors.text }]}
+          style={[Typography.body, styles.searchInput, { color: colors.text, outlineColor: colors.primary }]}
         />
         {search !== '' ? (
           <Pressable

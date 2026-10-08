@@ -136,7 +136,7 @@ export default function AssistantChatScreen() {
             maxLength={MESSAGE_MAX}
             editable={!chat.sending}
             onSubmitEditing={() => submit(text)}
-            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.borderStrong, color: colors.text }]}
+            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.borderStrong, color: colors.text, outlineColor: colors.primary }]}
           />
           <Pressable
             accessibilityRole="button"

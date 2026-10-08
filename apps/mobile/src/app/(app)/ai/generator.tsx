@@ -229,7 +229,7 @@ export default function AiGeneratorScreen() {
             value={name}
             onChangeText={setName}
             maxLength={255}
-            style={[styles.input, { backgroundColor: colors.card, borderColor: emptyName ? colors.danger : colors.borderStrong, color: colors.text }]}
+            style={[styles.input, { backgroundColor: colors.card, borderColor: emptyName ? colors.danger : colors.borderStrong, color: colors.text, outlineColor: colors.primary }]}
           />
           {emptyName ? <Text accessibilityRole="alert" style={[Typography.caption, { color: colors.danger }]}>{t('aig.ready.name.empty')}</Text> : null}
         </View>
@@ -259,7 +259,7 @@ export default function AiGeneratorScreen() {
           multiline
           placeholder={t('aig.prompt.placeholder')}
           placeholderTextColor={colors.textSubtle}
-          style={[styles.prompt, { backgroundColor: colors.card, borderColor: tooLong ? colors.danger : colors.borderStrong, color: colors.text }]}
+          style={[styles.prompt, { backgroundColor: colors.card, borderColor: tooLong ? colors.danger : colors.borderStrong, color: colors.text, outlineColor: colors.primary }]}
         />
         <Text
           accessibilityLiveRegion="polite"

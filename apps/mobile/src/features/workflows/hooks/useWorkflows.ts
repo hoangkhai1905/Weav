@@ -57,6 +57,12 @@ export function useDeleteWorkflow() {
         ['executions', workspaceId, 'workflow', id],
       ];
       await Promise.all(keys.map((queryKey) => queryClient.cancelQueries({ queryKey })));
+      // Drop it from the cached list first: Home's trigger check (useQueries per workflow) would
+      // otherwise re-create the removed detail query from the stale list and fetch it (404).
+      queryClient.setQueryData<Awaited<ReturnType<typeof workflowRepository.getWorkflows>>>(
+        ['workflows', workspaceId],
+        (page) => page && { ...page, items: page.items.filter((w) => w.workflowId !== id) },
+      );
       keys.forEach((queryKey) => queryClient.removeQueries({ queryKey }));
       void queryClient.invalidateQueries({ queryKey: ['workflows'] });
       void queryClient.invalidateQueries({ queryKey: ['executions', workspaceId], exact: true });

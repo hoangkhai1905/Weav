@@ -81,7 +81,7 @@ export const QuestionsForm: React.FC<QuestionsFormProps> = ({ questions, values,
                 maxLength={4000}
                 style={[
                   styles.input,
-                  { backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong, color: colors.text },
+                  { backgroundColor: colors.cardSecondary, borderColor: colors.borderStrong, color: colors.text, outlineColor: colors.primary },
                 ]}
               />
             )}
