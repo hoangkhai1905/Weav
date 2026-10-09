@@ -104,13 +104,22 @@ Phase 2, table detection (PP-StructureV3, still Paddle; branch `feature/ocr-onnx
 - Table models on ONNX: all six convert with paddle2onnx 2.1.0, but SLANet_plus/SLANeXt_wired failed to load in ONNX Runtime 1.30 (`Loop` condition declared rank 0, inferred rank 1) at opset 14, 16 and 17. Clearing the Loop subgraph input/output shapes and `value_info` (now done by `scripts/convert_models_to_onnx.py`) makes both load.
 - Full ONNX table pipeline (`PPStructureV3(engine="onnxruntime")`) vs Paddle, same models: cells identical on invoice (9), wired 5x4 (20) and borderless 5x4 (20). Warm time per table image: 14 vs 23 s, 11 vs 28 s, 7 vs 24 s (direct pipeline). Through the Gateway with the ONNX manifest: invoice 11 s warm (first call 44 s), wired 12 s, borderless 12 s; logs show every model created from `/models/onnx`, 0 downloads.
 
+Slim ONNX image: `paddlepaddle` moved to the optional `paddle` extra (lock change only moves it; no version changes); `Dockerfile.dev` takes `OCR_RUNTIME=paddle|onnx` (compose build arg, default paddle) and sets `UV_NO_SYNC=1` so `uv run` does not drop the extra at start.
+
+| Image | Size | paddle in venv | Check |
+| ----- | ---- | -------------- | ----- |
+| `OCR_RUNTIME=paddle` | 1.02 GB | yes | Paddle manifest serves `small.png` (200) |
+| `OCR_RUNTIME=onnx` | 0.63 GB (venv 733 MB) | no | unit 205/205; 240-line benchmark 0/240 differ from Paddle (CER 3.15%); invoice/wired/borderless tables 200 through the Gateway with correct cells; peak memory ~2.3 GB with all text + table models loaded |
+
+Model conversion also runs from the ONNX image (`UV_NO_SYNC=0 uv run --extra paddle --with paddle2onnx==2.1.0 ...`); its output was byte-identical to the earlier conversion.
+
 ## 6. Risks and blockers
 
 | Level  | Issue | Next step |
 | ------ | ----- | --------- |
 | High   | Backend died on a default table request (cause unconfirmed) | Partner reads `/content/ocr-service.log`, enforces 60 s/90 s deadlines |
 | Low    | The 95 s deadline holds Gateway connections open longer in Colab/local-model mode | Dev only; the default stays 10 s |
-| Medium | Table detection ~11 s per page on CPU (ONNX); paddlepaddle is still installed although the ONNX manifest no longer uses it | Real-document table set; slim image without paddlepaddle for the ONNX profile |
+| Medium | Table detection ~11 s per page on CPU (ONNX); ~2.3 GB RAM with all models loaded | Real-document table set; consider lazy table loading on small hosts |
 
 ## 7. Next steps
 

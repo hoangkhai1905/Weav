@@ -733,13 +733,17 @@ dependencies = [
     { name = "onnxruntime" },
     { name = "opencv-contrib-python" },
     { name = "paddleocr" },
-    { name = "paddlepaddle" },
     { name = "paddlex", extra = ["ocr"] },
     { name = "pillow" },
     { name = "pydantic" },
     { name = "pypdfium2" },
     { name = "python-multipart" },
     { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+paddle = [
+    { name = "paddlepaddle" },
 ]
 
 [package.dev-dependencies]
@@ -756,7 +760,7 @@ requires-dist = [
     { name = "onnxruntime", specifier = ">=1.30.0,<2" },
     { name = "opencv-contrib-python", specifier = "==4.10.0.84" },
     { name = "paddleocr", specifier = ">=3.7.0" },
-    { name = "paddlepaddle", specifier = "==3.3.0", index = "https://www.paddlepaddle.org.cn/packages/stable/cpu/" },
+    { name = "paddlepaddle", marker = "extra == 'paddle'", specifier = "==3.3.0", index = "https://www.paddlepaddle.org.cn/packages/stable/cpu/" },
     { name = "paddlex", extras = ["ocr"], specifier = ">=3.7.0,<3.8.0" },
     { name = "pillow", specifier = ">=10.4.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
@@ -764,6 +768,7 @@ requires-dist = [
     { name = "python-multipart", specifier = "==0.0.32" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.3" },
 ]
+provides-extras = ["paddle"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -617,6 +617,9 @@ services:
     build:
       context: ./services/ocr-service
       dockerfile: Dockerfile.dev
+      args:
+        # paddle (default) or onnx: the ONNX image has no paddlepaddle and needs model-manifest.onnx.json.
+        OCR_RUNTIME: ${OCR_RUNTIME:-paddle}
 
     ports:
       - "127.0.0.1:8000:8000"

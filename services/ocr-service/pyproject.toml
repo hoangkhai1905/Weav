@@ -10,12 +10,18 @@ dependencies = [
     "opencv-contrib-python==4.10.0.84",
     "paddleocr>=3.7.0",
     "paddlex[ocr]>=3.7.0,<3.8.0",
-    "paddlepaddle==3.3.0",
     "pillow>=10.4.0",
     "pydantic>=2.13.4",
     "pypdfium2>=4.30.0",
     "python-multipart==0.0.32",
     "uvicorn[standard]>=0.52.3",
+]
+
+[project.optional-dependencies]
+# Paddle Inference runtime: needed by the default (Paddle) model manifest and for converting models to ONNX.
+# The ONNX image (model-manifest.onnx.json) installs without it.
+paddle = [
+    "paddlepaddle==3.3.0",
 ]
 
 [dependency-groups]

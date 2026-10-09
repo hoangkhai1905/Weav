@@ -391,8 +391,8 @@ contract allows up to 90 s per document; outside this overlay the default is
 10000). Override it with `GATEWAY_OCR_TIMEOUT_MS` in the local `.env`. With the
 short default, slow Colab requests fail with `503 OCR_BUSY`.
 
-**Use the GPU.** `uv sync` installs the CPU `paddlepaddle`, so a T4 runtime
-still runs OCR on CPU (cold call about 65 s, text-only about 9 s, tables about
+**Use the GPU.** `paddlepaddle` is the optional `paddle` extra; `uv sync` without it installs no Paddle at all and
+`--extra paddle` installs the CPU build, so a T4 runtime still runs OCR on CPU (cold call about 65 s, text-only about 9 s, tables about
 43 s). Install the GPU build into the uv `.venv` that uvicorn uses, not the
 system Python, from `services/ocr-service` in the notebook:
 
@@ -460,11 +460,15 @@ of ~20 s and a table page ~11 s instead of ~28 s on a laptop.
    so it is mounted; in Git Bash prefix the command with `MSYS_NO_PATHCONV=1`):
 
 ```bash
-docker compose --env-file .env -f compose.yml -f compose.dev.yml -f compose.ocr-models.dev.yml --profile app run --rm --no-deps -T -v D:/Weav-OCR-Models:/models-rw -v ./services/ocr-service/scripts:/app/scripts:ro ocr-service uv run --no-sync --with paddle2onnx==2.1.0 python scripts/convert_models_to_onnx.py --src-root /models-rw --dst-root /models-rw/onnx
+docker compose --env-file .env -f compose.yml -f compose.dev.yml -f compose.ocr-models.dev.yml --profile app run --rm --no-deps -T -e UV_NO_SYNC=0 -v D:/Weav-OCR-Models:/models-rw -v ./services/ocr-service/scripts:/app/scripts:ro ocr-service uv run --extra paddle --with paddle2onnx==2.1.0 python scripts/convert_models_to_onnx.py --src-root /models-rw --dst-root /models-rw/onnx
 ```
 
-3. Select the ONNX manifest in `.env`: `WEAV_OCR_MODEL_MANIFEST=/app/config/model-manifest.onnx.json`
-   (the default `/app/config/model-manifest.json` keeps Paddle).
+   The conversion needs Paddle; `--extra paddle` installs it into the throwaway run container, so this works from
+   either image.
+3. Select the ONNX manifest and the slim image in `.env`:
+   `WEAV_OCR_MODEL_MANIFEST=/app/config/model-manifest.onnx.json` and `OCR_RUNTIME=onnx`. The `onnx` image has no
+   paddlepaddle (0.63 GB instead of 1.02 GB) and only works with the ONNX manifest; the defaults
+   (`model-manifest.json`, `OCR_RUNTIME=paddle`) keep Paddle.
 4. Start OCR and the Gateway with the local-models overlay (not `compose.colab-ocr.dev.yml`); the overlay sets the
    Gateway OCR deadline to 95 s:
 
