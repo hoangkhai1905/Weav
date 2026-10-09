@@ -1,7 +1,7 @@
 import { delay, getStorage, setStorage, STORAGE_KEYS } from './client';
 import type { WorkflowDefinition, ExecutionDetail } from '../types/workflow.types';
 import { executionApi } from './execution.api';
-import { workflowV1Api, type GenerationResponse, type WorkflowPublication, type WorkflowRunReceipt } from './workflow-v1.api';
+import { workflowV1Api, type GenerationResponse, type NodeCapabilities, type WorkflowPublication, type WorkflowRunReceipt } from './workflow-v1.api';
 
 export const isWorkflowMockMode = import.meta.env.VITE_API_MODE === 'mock';
 
@@ -174,5 +174,10 @@ export const workflowApi = {
 
   deleteWorkflow(id: string): Promise<void> {
     return isWorkflowMockMode ? mockWorkflowApi.deleteWorkflow(id) : workflowV1Api.deleteWorkflow(id);
+  },
+
+  /** Mock mode has no backend runtime, so no gated node (OCR) is reported as available. */
+  getNodeCapabilities(workspaceId?: string): Promise<NodeCapabilities> {
+    return isWorkflowMockMode ? Promise.resolve({ nodes: {} }) : workflowV1Api.getNodeCapabilities(workspaceId);
   },
 };

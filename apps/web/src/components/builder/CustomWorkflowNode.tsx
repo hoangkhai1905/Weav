@@ -32,6 +32,7 @@ import { useI18nStore } from '../../store/useI18nStore';
 import { NODE_CATALOG, nodeSourcePorts } from '../../lib/constants/nodeCatalog';
 import { getNodeReadinessBadge } from '../../lib/nodeReadiness';
 import { useAttachableConnectionIds } from '../../hooks/useConnections';
+import { useOcrSources } from '../../hooks/useNodeCapabilities';
 
 const SUPPORTED_NODE_TYPES = new Set(NODE_CATALOG.map((item) => item.type));
 
@@ -85,7 +86,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
   const status = (data.status as CustomNodeData['status']) || 'idle';
   const executionTime = (data.executionTime as string) || '';
   const config = (data.config as Record<string, unknown>) || {};
-  const readiness = getNodeReadinessBadge(nodeType, config, useAttachableConnectionIds());
+  const readiness = getNodeReadinessBadge(nodeType, config, useAttachableConnectionIds(), useOcrSources());
   const isNodeSelected = Boolean(selected || data.selected);
   const isUnsupported = !SUPPORTED_NODE_TYPES.has(nodeType);
   const sourcePorts = nodeSourcePorts(nodeType, config);

@@ -62,6 +62,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { invalidateWorkflowQueries } from '../lib/queries/workflows';
 import { WorkflowSettingsPanel } from '../components/builder/WorkflowSettingsPanel';
 import { useAttachableConnectionIds, useConnections, useStartGoogleOAuth } from '../hooks/useConnections';
+import { useOcrSources } from '../hooks/useNodeCapabilities';
 import type { ConnectionResponse, GoogleProvider } from '../api/connection.api';
 import { CreateConnectionDialog } from './ConnectionsPage';
 import { storeOAuthPendingContext } from '../lib/oauthPending';
@@ -215,6 +216,7 @@ const getNodeReadinessMessage = (
   config: Record<string, unknown>,
   t: (key: string) => string,
   attachableConnectionIds?: ReadonlySet<string>,
+  ocrSources?: readonly string[],
 ): string | undefined => {
   if (!SUPPORTED_NODE_TYPES.has(type)) return t('builder.cfg.msg_unsupported').replace('{type}', type);
   if (type === 'trigger.webhook') return t('builder.cfg.msg_webhook');
@@ -242,12 +244,22 @@ const getNodeReadinessMessage = (
   }
   if (type === 'http.request' && !String(config.url ?? '').trim()) return t('builder.cfg.msg_http');
   if (type === 'ocr.extract') {
-    return t('builder.cfg.msg_ocr');
+    // Same verdict as the step badge; the Workflow Service decides which OCR sources can run.
+    const state = getNodeReadinessBadge(type, config, undefined, ocrSources).state;
+    if (state === 'ready') return undefined;
+    if (state === 'not-configured') return t('builder.cfg.msg_ocr_source');
+    return t(ocrSources?.length ? 'builder.cfg.msg_ocr_source_off' : 'builder.cfg.msg_ocr');
   }
   return undefined;
 };
 
-const getPublishBlockers = (nodes: Node[], edges: Edge[], t: (key: string) => string, attachableConnectionIds?: ReadonlySet<string>): string[] => {
+const getPublishBlockers = (
+  nodes: Node[],
+  edges: Edge[],
+  t: (key: string) => string,
+  attachableConnectionIds?: ReadonlySet<string>,
+  ocrSources?: readonly string[],
+): string[] => {
   const blockers = new Set<string>();
   // Mirrors the Workflow Service UNREACHABLE_NODE rule: every action must be reachable from a trigger.
   const reachable = new Set(nodes.filter((node) => String(node.data?.nodeType ?? '').startsWith('trigger.')).map((node) => node.id));
@@ -282,7 +294,8 @@ const getPublishBlockers = (nodes: Node[], edges: Edge[], t: (key: string) => st
       if (message) blockers.add(message);
     }
     if (type === 'ocr.extract') {
-      blockers.add(getNodeReadinessMessage(type, config, t) ?? t('builder.blocker.not_configured').replace('{type}', type));
+      const message = getNodeReadinessMessage(type, config, t, undefined, ocrSources);
+      if (message) blockers.add(message);
     }
   }
   definitionBlockers(nodes, edges, t).forEach((blocker) => blockers.add(blocker));
@@ -368,12 +381,16 @@ export const WorkflowBuilderPage: React.FC = () => {
     [nodes]
   );
   const attachableConnectionIds = useAttachableConnectionIds();
-  const publishBlockers = useMemo(() => getPublishBlockers(nodes, edges, t, attachableConnectionIds), [nodes, edges, t, attachableConnectionIds]);
+  const ocrSources = useOcrSources();
+  const publishBlockers = useMemo(
+    () => getPublishBlockers(nodes, edges, t, attachableConnectionIds, ocrSources),
+    [nodes, edges, t, attachableConnectionIds, ocrSources],
+  );
   const selectedNodeReadiness = selectedNode
-    ? getNodeReadinessBadge(selectedNodeType, selectedNodeConfig, attachableConnectionIds)
+    ? getNodeReadinessBadge(selectedNodeType, selectedNodeConfig, attachableConnectionIds, ocrSources)
     : undefined;
   const selectedNodeReadinessMessage = selectedNode
-    ? getNodeReadinessMessage(selectedNodeType, selectedNodeConfig, t, attachableConnectionIds)
+    ? getNodeReadinessMessage(selectedNodeType, selectedNodeConfig, t, attachableConnectionIds, ocrSources)
     : undefined;
   const isUnsupportedNode = Boolean(selectedNodeType) && !SUPPORTED_NODE_TYPES.has(selectedNodeType);
   const isGoogleSheetsNode = selectedNodeType === 'google.sheets';
@@ -1735,7 +1752,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                                 <ItemIcon size={14} />
                               </span>
                               <span className="truncate text-[13px] font-medium text-foreground">{item.nameKey ? t(item.nameKey) : item.title}</span>
-                              {getNodeReadinessBadge(item.type, {}).state === 'unavailable' && (
+                              {getNodeReadinessBadge(item.type, {}, undefined, ocrSources).state === 'unavailable' && (
                                 <span data-testid="palette-unavailable" className="shrink-0 rounded bg-warn-bg px-1.5 py-0.5 text-[10px] font-medium text-warn">{t('builder.readiness.unavailable')}</span>
                               )}
                               <span className="ml-auto hidden max-w-[45%] truncate text-xs text-muted-foreground sm:block">{item.descKey ? t(item.descKey) : item.description}</span>

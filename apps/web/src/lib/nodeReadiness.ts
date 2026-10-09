@@ -61,16 +61,24 @@ export const isConditionComplete = (config: Record<string, unknown>): boolean =>
 /**
  * `attachableConnectionIds`: ids of the workspace's ACTIVE connections the user can attach.
  * Leave it undefined while the list is loading so a step is not flagged before we know.
+ * `ocrSources`: OCR sources the Workflow Service has enabled ("url", "artifact"); absent or empty
+ * means OCR cannot run in a workflow yet.
  */
 export const getNodeReadinessBadge = (
   nodeType: string,
   config: Record<string, unknown>,
   attachableConnectionIds?: ReadonlySet<string>,
+  ocrSources?: readonly string[],
 ): NodeReadinessBadge => {
   if (!SUPPORTED_NODE_TYPES.has(nodeType)) return { state: 'unsupported', label: 'Unsupported', labelKey: 'builder.readiness.unsupported' };
   if (nodeType === 'trigger.webhook') return { state: 'draft', label: 'Not published', labelKey: 'builder.readiness.not_published' };
   if (nodeType === 'ocr.extract') {
-    return { state: 'unavailable', label: 'Unavailable', labelKey: 'builder.readiness.unavailable' };
+    const unavailable: NodeReadinessBadge = { state: 'unavailable', label: 'Unavailable', labelKey: 'builder.readiness.unavailable' };
+    if (!ocrSources?.length) return unavailable;
+    // Exactly one source (DefinitionValidator OCR_SOURCE_REQUIRED / OCR_SOURCE_CONFLICT), and it must be enabled.
+    const hasUrl = !isBlank(config.fileUrl);
+    if (hasUrl === !isBlank(config.artifactId)) return NOT_CONFIGURED;
+    if (!ocrSources.includes(hasUrl ? 'url' : 'artifact')) return unavailable;
   }
   const connectionFields = CONNECTION_NODE_FIELDS[nodeType]?.(config);
   if (connectionFields) {
