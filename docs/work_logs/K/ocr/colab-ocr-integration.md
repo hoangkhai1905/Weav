@@ -95,14 +95,21 @@ ONNX Runtime in `ocr-service` (branch `feature/ocr-onnx`, local Docker, laptop C
 
 Service logs confirm `Creating model ... /models/onnx/...` with `onnxruntime`. Conversion: `scripts/convert_models_to_onnx.py` with paddle2onnx 2.1.0 (constant-folding warnings are harmless).
 
+Phase 2, table detection (PP-StructureV3, still Paddle; branch `feature/ocr-onnx`):
+
+- The manifests gained a `"table"` section: offline models from the bundle (no downloads), the fine-tuned Vietnamese recognizer, and `SLANet_plus` for wired and wireless structure. If a table model folder is missing the service logs a warning and keeps PaddleOCR's downloaded defaults (the Colab notebook only provisions the three text models).
+- Invoice through the Gateway: cells keep diacritics ("Sản phẩm", "Đơn giá" instead of "San phåm"/"Sn phm"); warm ~28 s instead of ~59 s; first call after start 67 s (all models load). Logs show every model created from `/models/...`, 0 downloads.
+- Per-model time before (Paddle CPU, invoice): rec 17-19 s, SLANeXt_wired 10-12 s, PP-DocLayout_plus-L ~11 s, RT-DETR-L wired cells 8-16 s. SLANet_plus takes ~0.5 s.
+- SLANeXt_wired vs SLANet_plus on three synthetic tables (invoice 3x3, wired 5x4, borderless 5x4): identical cells (20/20 structure; 17/20 and 18/20 exact text on the 5x4 tables). Remaining errors come from the recognizer: `1` -> `F`, `cơ` -> `CƠ`, a stray trailing character (`Số lượng9`, `3.500.0000`).
+- Table models on ONNX are not possible yet: all six convert with paddle2onnx 2.1.0, but SLANet_plus and SLANeXt_wired fail to load in ONNX Runtime 1.30 (`Loop` node shape inference) at opset 14, 16 and 17.
+
 ## 6. Risks and blockers
 
 | Level  | Issue | Next step |
 | ------ | ----- | --------- |
 | High   | Backend died on a default table request (cause unconfirmed) | Partner reads `/content/ocr-service.log`, enforces 60 s/90 s deadlines |
-| Medium | Table text loses diacritics | Partner change in `paddle_table_engine_adapter.py` (handoff) |
 | Low    | The 95 s deadline holds Gateway connections open longer in Colab/local-model mode | Dev only; the default stays 10 s |
-| Medium | Table detection on CPU ~60 s/page and PP-StructureV3 models are downloaded into the container instead of read from the bundle | Phase 2: load table models from the bundle (and the Vietnamese recognizer), then try ONNX for them |
+| Medium | Table detection on CPU still ~28 s per page | Real-document table set; try skipping the second OCR pass inside PP-StructureV3 |
 
 ## 7. Next steps
 

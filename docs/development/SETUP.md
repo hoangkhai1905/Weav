@@ -472,8 +472,10 @@ docker compose --env-file .env -f compose.yml -f compose.dev.yml -f compose.ocr-
 docker compose --env-file .env -f compose.yml -f compose.dev.yml -f compose.ocr-models.dev.yml --profile app up -d --build ocr-service api-gateway
 ```
 
-The first request loads the models (~20 s). The first table request also downloads the PP-StructureV3 models into the
-container (they are not read from the bundle yet), so it can time out once.
+The first request loads the models (~20 s; with tables ~70 s). Table detection reads its models from the manifest's
+`"table"` section (bundle folders under `/models/paddlex-cache/official_models`, Vietnamese recognizer, `SLANet_plus`)
+and always runs on Paddle, about 30 s per page on a laptop CPU. If those folders are missing, the service logs a warning
+and falls back to PaddleOCR's downloaded default table models.
 
 ## 9. Kiểm tra Web và NestJS services
 

@@ -56,6 +56,8 @@ Update the table manifest/bundle to match, and add a regression test with a Viet
 **Acceptance.** A table image with Vietnamese headers/cells (for example "Sản phẩm", "Số lượng", "Giấy A4")
 returns cell text with diacritics intact and the same table structure; the test fails on the old behavior.
 
+> **Resolved 2026-10-09 on `feature/ocr-onnx`:** the manifest `"table"` section points PP-StructureV3 at the Vietnamese recognizer and bundle models; cells keep diacritics. See the work log.
+
 ## Finding 3 - Backend died on a default table request (stability, cause unconfirmed)
 
 **Reproduction.** Direct multipart request to the tunnel without `Authorization` (dev mode,

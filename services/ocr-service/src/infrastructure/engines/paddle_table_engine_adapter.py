@@ -8,12 +8,15 @@ rows/cells, canonical boxes, and source block references.
 
 from __future__ import annotations
 
+import logging
+import os
 import re
 import unicodedata
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from math import isfinite
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
@@ -27,7 +30,13 @@ from src.domain.errors import (
 from src.domain.models.ocr_result import BoundingBox, TableCell, TableResult, TextBlock
 from src.domain.ports.document_loader_port import LoadedDocument
 from src.domain.ports.table_engine_port import TableEnginePort
+from src.infrastructure.engines.model_manifest import (
+    configured_manifest_path,
+    load_table_profile,
+)
 from src.infrastructure.processors.pdf_renderer import PdfRenderer
+
+logger = logging.getLogger(__name__)
 
 MAX_TABLES_LIMIT = 100
 MAX_CELLS_LIMIT = 10_000
@@ -481,11 +490,31 @@ class PaddleTableEngineAdapter(TableEnginePort):
                 "use_table_recognition": True,
                 "enable_mkldnn": False,
             }
-            defaults.update(self._table_kwargs)
+            table_kwargs = self._table_kwargs or self._manifest_table_kwargs()
+            if "text_recognition_model_name" in table_kwargs:
+                # An explicit recognizer replaces the language alias's default model.
+                defaults.pop("lang")
+            defaults.update(table_kwargs)
             self._table_instance = PPStructureV3(**defaults)
         except Exception as exc:
             raise ModelNotReadyError("Failed to initialize PaddleOCR table engine") from exc
         return self._table_instance
+
+    @staticmethod
+    def _manifest_table_kwargs() -> dict[str, Any]:
+        """Offline table models from the manifest's "table" section, or {} for PaddleOCR defaults."""
+        manifest = configured_manifest_path()
+        if manifest is None:
+            return {}
+        root = os.environ.get("OCR_MODEL_ROOT", "").strip()
+        profile = load_table_profile(manifest, Path(root) if root else None)
+        if profile is None:
+            logger.warning(
+                "Table models not configured or missing in %s; using PaddleOCR default table models",
+                manifest,
+            )
+            return {}
+        return profile
 
 
 __all__ = [
