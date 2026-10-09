@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ReactFlow,
@@ -49,11 +49,13 @@ import {
   Split,
   Braces,
   WandSparkles,
+  Share2,
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
 import { OutputSchemaEditor } from '../components/builder/OutputSchemaEditor';
 import { GenerateWorkflowPanel } from '../components/builder/GenerateWorkflowPanel';
+import { ShareTemplateDialog } from '../components/templates/ShareTemplateDialog';
 import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
@@ -296,7 +298,6 @@ export const WorkflowBuilderPage: React.FC = () => {
   const refreshNotifications = useNotificationMilestoneRefresh();
   const { workflowId } = useParams<{ workflowId: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
   const queryClient = useQueryClient();
   const { theme } = useUIStore();
   const { language, t } = useI18nStore();
@@ -424,13 +425,8 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [publishedWebhooks, setPublishedWebhooks] = useState<WebhookProvisioning[]>([]);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null);
-  // Handed over once by the Create with AI page via router state; cleared below so a reload does not reopen it.
-  const [generateSeed] = useState(() => (location.state as { generatePrompt?: string } | null)?.generatePrompt ?? '');
-  const [isGeneratePanelOpen, setIsGeneratePanelOpen] = useState(Boolean(generateSeed));
-  useEffect(() => {
-    if (generateSeed) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
-  }, []);
+  const [isGeneratePanelOpen, setIsGeneratePanelOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
 
   // Inspector Form State (for selected node)
   const [ocrLanguage, setOcrLanguage] = useState('vi+en');
@@ -1299,6 +1295,8 @@ export const WorkflowBuilderPage: React.FC = () => {
     scheduleExecutionStep(() => setIsPreviewing(false), edges.length * 500 + 300);
   };
 
+  const hasUnsavedChanges = !isSaved || (workflow !== null && (workflowTitle !== workflow.name || workflowDescription !== (workflow.description ?? '')));
+
   return (
     <div
       onPointerDownCapture={handleWorkspacePointerDown}
@@ -1392,6 +1390,17 @@ export const WorkflowBuilderPage: React.FC = () => {
             className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Sparkles size={15} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            data-testid="workflow-share-template"
+            onClick={() => setIsShareOpen(true)}
+            disabled={isLoadingWorkflow || !workflow || hasUnsavedChanges}
+            title={hasUnsavedChanges ? t('tpl.share.save_first') : t('tpl.share.menu')}
+            aria-label={t('tpl.share.menu')}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Share2 size={15} aria-hidden="true" />
           </button>
           <button
             data-testid="workflow-preview"
@@ -1528,7 +1537,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             workflow={workflow}
             name={workflowTitle}
             description={workflowDescription}
-            dirty={!isSaved || workflowTitle !== workflow.name || workflowDescription !== (workflow.description ?? '')}
+            dirty={hasUnsavedChanges}
             saving={isSavingWorkflow}
             workspaceName={activeWorkspace?.name ?? ''}
             onNameChange={(value) => {
@@ -2615,10 +2624,17 @@ export const WorkflowBuilderPage: React.FC = () => {
       />
       <GenerateWorkflowPanel
         open={isGeneratePanelOpen}
-        initialPrompt={generateSeed}
         onClose={() => setIsGeneratePanelOpen(false)}
         onReady={handleGenerateReady}
       />
+      {isShareOpen && workflowId && workflow && (
+        <ShareTemplateDialog
+          workflowId={workflowId}
+          defaultName={workflow.name}
+          nodeNames={Object.fromEntries(nodes.map((node) => [node.id, String(node.data?.name ?? '')]))}
+          onClose={() => setIsShareOpen(false)}
+        />
+      )}
       {addConnectionFor && activeWorkspaceId && (
         <CreateConnectionDialog
           workspaceId={activeWorkspaceId}

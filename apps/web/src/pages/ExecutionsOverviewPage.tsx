@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, ExternalLink, LoaderCircle, RefreshCw } from 'lucide-react';
@@ -36,6 +36,7 @@ export function ExecutionsOverviewPage() {
   const { t } = useI18nStore();
   const locale = appLocale();
   const workspaceId = useWorkspaceStore((state) => state.activeWorkspaceId) ?? 'active';
+  const ids = { days: useId(), status: useId(), workflow: useId() };
   const [tab, setTab] = useState<Tab>('runs');
   const [days, setDays] = useState(7);
   const [status, setStatus] = useState<RunStatus | ''>('');
@@ -120,12 +121,12 @@ export function ExecutionsOverviewPage() {
           <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{t('executions.title')}</h1>
           <p className="mt-1 text-xs text-muted-foreground sm:text-sm">{t('monitoring.subtitle')}</p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-text-2">
-          {t('monitoring.range_label')}
-          <select className={fieldCls} value={days} onChange={(event) => setDays(Number(event.target.value))} data-testid="monitoring-days">
+        <div className="flex items-center gap-2 text-xs text-text-2">
+          <label htmlFor={ids.days}>{t('monitoring.range_label')}</label>
+          <select id={ids.days} className={fieldCls} value={days} onChange={(event) => setDays(Number(event.target.value))} data-testid="monitoring-days">
             {[7, 14, 30].map((value) => <option key={value} value={value}>{t('monitoring.last_days').replace('{days}', String(value))}</option>)}
           </select>
-        </label>
+        </div>
         <button type="button" className={btnCls} onClick={refresh} disabled={refreshing}>
           <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} aria-hidden="true" />{t('monitoring.refresh')}
         </button>
@@ -160,20 +161,20 @@ export function ExecutionsOverviewPage() {
       ) : (
         <div role="tabpanel" id="monitoring-panel-runs" aria-labelledby="monitoring-tab-runs" className="space-y-3">
           <div className="flex flex-wrap items-end gap-3" data-testid="monitoring-filters">
-            <label className="text-xs font-medium text-text-2">
-              {t('executions.col_status')}
-              <select className={`${fieldCls} mt-1 block`} value={status} onChange={(event) => changeFilter(() => setStatus(event.target.value as RunStatus | ''))} data-testid="monitoring-filter-status">
+            <div className="text-xs font-medium text-text-2">
+              <label htmlFor={ids.status}>{t('executions.col_status')}</label>
+              <select id={ids.status} className={`${fieldCls} mt-1 block`} value={status} onChange={(event) => changeFilter(() => setStatus(event.target.value as RunStatus | ''))} data-testid="monitoring-filter-status">
                 <option value="">{t('monitoring.all_statuses')}</option>
                 {RUN_STATUSES.map((value) => <option key={value} value={value}>{t(`monitoring.status.${value.toLowerCase()}`)}</option>)}
               </select>
-            </label>
-            <label className="text-xs font-medium text-text-2">
-              {t('executions.col_workflow')}
-              <select className={`${fieldCls} mt-1 block max-w-[240px]`} value={workflowId} onChange={(event) => changeFilter(() => setWorkflowId(event.target.value))} data-testid="monitoring-filter-workflow">
+            </div>
+            <div className="text-xs font-medium text-text-2">
+              <label htmlFor={ids.workflow}>{t('executions.col_workflow')}</label>
+              <select id={ids.workflow} className={`${fieldCls} mt-1 block max-w-[240px]`} value={workflowId} onChange={(event) => changeFilter(() => setWorkflowId(event.target.value))} data-testid="monitoring-filter-workflow">
                 <option value="">{t('monitoring.all_workflows')}</option>
                 {workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name}</option>)}
               </select>
-            </label>
+            </div>
             <label className="text-xs font-medium text-text-2">
               {t('monitoring.from_date')}
               <input type="date" className={`${fieldCls} mt-1 block`} value={fromDate} max={toDate || undefined} onChange={(event) => changeFilter(() => setFromDate(event.target.value))} data-testid="monitoring-filter-from" />

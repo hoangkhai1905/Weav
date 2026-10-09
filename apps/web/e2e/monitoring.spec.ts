@@ -171,6 +171,14 @@ test.describe('monitoring overview', () => {
     );
   });
 
+  test('filter selects are named exactly by their label', async ({ page }) => {
+    await setup(page);
+    await page.goto('/executions');
+    await expect(page.getByLabel('Status', { exact: true })).toHaveAttribute('data-testid', 'monitoring-filter-status');
+    await expect(page.getByLabel('Workflow name', { exact: true })).toHaveAttribute('data-testid', 'monitoring-filter-workflow');
+    await expect(page.getByLabel('Time range', { exact: true })).toHaveAttribute('data-testid', 'monitoring-days');
+  });
+
   test('sends status, workflow and date filters to the server and pages through results', async ({ page }) => {
     const stub = await setup(page);
     await page.goto('/executions');
