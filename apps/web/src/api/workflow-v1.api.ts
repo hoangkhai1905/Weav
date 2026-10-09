@@ -253,6 +253,9 @@ async function fetchWorkspaces(): Promise<WorkspaceSummary[]> {
   return page.items.filter((item) => typeof item?.id === 'string' && typeof item.name === 'string');
 }
 
+/** True when a workflow call failed only because the user has no workspace yet. */
+export const isNoWorkspaceError = (error: unknown) => error instanceof WorkflowApiError && error.status === 409;
+
 export async function getActiveWorkflowWorkspaceId(): Promise<string> {
   const workspaces = await loadWorkspaces();
   if (workspaces.length === 0) {
