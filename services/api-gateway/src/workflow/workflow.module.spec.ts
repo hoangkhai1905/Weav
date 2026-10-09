@@ -278,6 +278,58 @@ describe('workflow gateway routes', () => {
     expect(response.statusCode).toBe(503);
     expect(response.body).not.toContain('private-url');
   });
+  describe('stop a run (W6-C3)', () => {
+    const executionId = '00000000-0000-4000-8000-0000000000e1';
+    const auth = { authorization: 'Bearer opaque-token' };
+
+    it('forwards the cancel request and relays 202, 404 and 409', async () => {
+      const request = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ status: 'CANCEL_REQUESTED' }), {
+            status: 202,
+            headers: { 'content-type': 'application/json' },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: { code: 'EXECUTION_ALREADY_FINISHED' } }), {
+            status: 409,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      const url = `/api/v1/workspaces/${workspaceId}/workflows/${workflowId}/executions/${executionId}/cancel`;
+
+      const accepted = await app.inject({ method: 'POST', url, headers: auth });
+      const finished = await app.inject({ method: 'POST', url, headers: auth });
+
+      expect([accepted.statusCode, finished.statusCode]).toEqual([202, 409]);
+      expect(accepted.json()).toEqual({ status: 'CANCEL_REQUESTED' });
+      expect(request).toHaveBeenCalledWith(
+        `http://workflow.internal:8080/workspaces/${workspaceId}/workflows/${workflowId}/executions/${executionId}/cancel`,
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    it('rejects a malformed execution id and a missing token before upstream access', async () => {
+      const request = jest.spyOn(globalThis, 'fetch');
+      const base = `/api/v1/workspaces/${workspaceId}/workflows/${workflowId}/executions`;
+
+      const badId = await app.inject({
+        method: 'POST',
+        url: `${base}/not-a-uuid/cancel`,
+        headers: auth,
+      });
+      const noToken = await app.inject({
+        method: 'POST',
+        url: `${base}/${executionId}/cancel`,
+      });
+
+      expect(badId.statusCode).toBe(400);
+      expect(noToken.statusCode).toBe(401);
+      expect(request).not.toHaveBeenCalled();
+    });
+  });
+
   describe('monitoring routes (W6-A)', () => {
     const ruleId = '00000000-0000-4000-8000-000000000009';
     const json = { headers: { 'content-type': 'application/json' } };

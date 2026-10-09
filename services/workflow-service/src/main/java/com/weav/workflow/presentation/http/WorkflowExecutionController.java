@@ -1,6 +1,8 @@
 package com.weav.workflow.presentation.http;
 
 import com.weav.workflow.application.port.out.ExecutionQueryPort;
+import com.weav.workflow.application.port.out.ExecutionStatePort;
+import com.weav.workflow.application.service.ExecutionCancelService;
 import com.weav.workflow.application.service.ExecutionQueryService;
 import com.weav.workflow.application.usecase.TriggerExecutionUseCase;
 import com.weav.workflow.domain.exception.BadRequestException;
@@ -31,11 +33,30 @@ import java.util.UUID;
 public final class WorkflowExecutionController {
     private final TriggerExecutionUseCase triggerExecutionUseCase;
     private final ExecutionQueryService queryService;
+    private final ExecutionCancelService cancelService;
 
     public WorkflowExecutionController(TriggerExecutionUseCase triggerExecutionUseCase,
-                                       ExecutionQueryService queryService) {
+                                       ExecutionQueryService queryService,
+                                       ExecutionCancelService cancelService) {
         this.triggerExecutionUseCase = triggerExecutionUseCase;
         this.queryService = queryService;
+        this.cancelService = cancelService;
+    }
+
+    /** W6-C3: stop a run. CANCELLED = ended at once; CANCEL_REQUESTED = the runner stops it between nodes. */
+    @PostMapping("/{executionId}/cancel")
+    public ResponseEntity<CancelResponse> cancel(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID workflowId,
+            @PathVariable UUID executionId,
+            @AuthenticationPrincipal Jwt jwt) {
+        ExecutionStatePort.CancelResult result = cancelService.cancel(workspaceId, workflowId, executionId,
+                actorId(jwt));
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(new CancelResponse(
+                result == ExecutionStatePort.CancelResult.CANCELLED ? "CANCELLED" : "CANCEL_REQUESTED"));
+    }
+
+    public record CancelResponse(String status) {
     }
 
     @PostMapping

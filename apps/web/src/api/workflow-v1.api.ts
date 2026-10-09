@@ -1,6 +1,7 @@
 import type { WorkflowDefinition, WorkflowEdge, WorkflowNode, WorkflowStatus } from '../types/workflow.types';
 import { tr } from '../lib/i18n/tr';
 import { primaryTrigger } from '../lib/executions/runView';
+import { nodeLabel } from '../lib/nodeLabels';
 import { useAuthStore } from '../store/useAuthStore';
 
 const ACTIVE_WORKSPACE_KEY = 'weav_active_workspace_id';
@@ -314,7 +315,8 @@ export function definitionToCanvas(
     return [{
       id: rawNode.id,
       type: rawNode.type,
-      name: layoutName(layout[rawNode.id], rawNode.id),
+      // N8: a step the model did not title is labelled by its type ("Gửi email"), never by its raw id.
+      name: layoutName(layout[rawNode.id], nodeLabel(rawNode.type, tr)),
       config: isRecord(rawNode.config) ? rawNode.config : {},
       ...(position ? { position } : {}),
     }];
@@ -536,6 +538,15 @@ export const workflowV1Api = {
     return request<WorkflowRunReceipt>(
       `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(id)}/executions`,
       { method: 'POST', body: JSON.stringify({ input }) },
+    );
+  },
+
+  /** W6-C3: stops a run. CANCELLED = it ended at once (was queued); CANCEL_REQUESTED = it stops after the current step. 409 = already finished. */
+  async cancelExecution(workflowId: string, executionId: string, workspaceId?: string): Promise<{ status: 'CANCELLED' | 'CANCEL_REQUESTED' }> {
+    const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
+    return request<{ status: 'CANCELLED' | 'CANCEL_REQUESTED' }>(
+      `/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/${encodeURIComponent(workflowId)}/executions/${encodeURIComponent(executionId)}/cancel`,
+      { method: 'POST' },
     );
   },
 

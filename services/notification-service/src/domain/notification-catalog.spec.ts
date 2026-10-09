@@ -335,9 +335,9 @@ describe('notification catalog', () => {
     expect(failuresVi.message).toContain('“Daily report”');
     expect(failuresVi.message).toContain('3 lần liên tiếp');
     expect(failuresEn.message).toContain('failed 3 times in a row');
-    expect(slowVi.message).toContain('2 phút 5 giây');
+    expect(slowVi.message).toContain('đã chạy hơn 2 phút 5 giây');
     expect(slowVi.message).toContain('ngưỡng 1 phút');
-    expect(slowEn.message).toContain('2 min 5 s');
+    expect(slowEn.message).toContain('has run for over 2 min 5 s');
     expect(slowEn.message).toContain('1 min limit');
     for (const content of [failuresVi, failuresEn, slowVi, slowEn]) {
       expect(content.target).toEqual({

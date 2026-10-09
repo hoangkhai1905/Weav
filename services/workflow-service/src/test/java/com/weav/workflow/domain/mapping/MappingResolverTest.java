@@ -4,11 +4,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -237,6 +239,38 @@ class MappingResolverTest {
         assertEquals("w!", resolver.resolve("{{ variables.v }}!", context));
         assertEquals(Map.of("b", 1), resolver.resolve("{{ trigger.input.a }}", context));
         assertMappingError(() -> resolver.resolve("{{ trigger.input.n.b }}", context));
+    }
+
+    @Test
+    void runExpressionsResolveFromTheRunAndKeepOldNamesWorking() {
+        UUID runId = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
+        UUID workflowId = UUID.fromString("00000000-0000-0000-0000-0000000000b2");
+        RunInfo run = new RunInfo(runId, workflowId, "Hóa đơn", Instant.parse("2026-10-09T03:00:00Z"));
+        MappingContext context = new MappingContext(Map.of(), Map.of("now", Map.of("x", "from node")),
+                Map.of("now", "from variable"), run);
+
+        assertEquals("Sent 2026-10-09T03:00:00Z", resolver.resolve("Sent {{ now }}", context));
+        assertEquals(runId.toString(), resolver.resolve("{{ run.id }}", context));
+        assertEquals(workflowId.toString(), resolver.resolve("{{ workflow.id }}", context));
+        assertEquals("Hóa đơn #" + runId, resolver.resolve("{{ workflow.name }} #{{ run.id }}", context));
+        // A node or a variable literally named "now" keeps resolving as before.
+        assertEquals("from node", resolver.resolve("{{ nodes.now.output.x }}", context));
+        assertEquals("from variable", resolver.resolve("{{ variables.now }}", context));
+        assertEquals(Set.of("now"), resolver.references("{{ nodes.now.output.x }} {{ now }}", Set.of("now")));
+    }
+
+    @Test
+    void runExpressionsAreUnavailableWithoutRunInfo() {
+        MappingContext context = new MappingContext(Map.of(), Map.of(), Map.of());
+
+        assertMappingError(() -> resolver.resolve("{{ now }}", context));
+        assertMappingError(() -> resolver.resolve("{{ run.id }}", context));
+        assertMappingError(() -> resolver.resolve("{{ workflow.name }}", context));
+        MappingContext unnamed = new MappingContext(Map.of(), Map.of(), Map.of(),
+                new RunInfo(UUID.randomUUID(), UUID.randomUUID(), null, Instant.EPOCH));
+        assertMappingError(() -> resolver.resolve("{{ workflow.name }}", unnamed));
+        assertMappingError(() -> resolver.resolve("{{ run.other }}", unnamed));
+        assertMappingError(() -> resolver.resolve("{{ nowhere }}", unnamed));
     }
 
     private static void assertMappingError(org.junit.jupiter.api.function.Executable action) {

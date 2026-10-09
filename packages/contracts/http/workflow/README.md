@@ -112,3 +112,20 @@ admission. Deferred provider integrations remain unavailable or gated: do not
 infer readiness from a documented node type alone. See
 [`services/workflow-service/README.md`](../../../../services/workflow-service/README.md)
 for runtime configuration, integration readiness, and acceptance commands.
+
+## Stop a run and run expressions (W6-C3)
+
+`POST /workspaces/{workspaceId}/workflows/{workflowId}/executions/{executionId}/cancel`
+needs `WORKFLOW_RUN` and has no body. A QUEUED run ends CANCELLED at once
+(`202 {"status":"CANCELLED"}`); a RUNNING or WAITING run gets a flag the runner
+checks between nodes (`202 {"status":"CANCEL_REQUESTED"}`): the node already running
+finishes, the rest are CANCELLED and the run ends CANCELLED with error code
+`CANCELLED_BY_USER`. A run that already ended answers `409 EXECUTION_ALREADY_FINISHED`;
+an unknown run, or one of another workflow or workspace, answers 404. A stopped run
+records no `workflow.failed` notification and counts as neither success nor failure
+in monitoring. Contract tests: `ExecutionCancelStateTest`, `ExecutionRunnerTest` and
+`WorkflowExecutionHttpTest` (workflow-service), the stop block of
+`workflow.module.spec.ts` (api-gateway).
+
+Mappings gain `{{ now }}` (ISO-8601 UTC instant when the step starts), `{{ run.id }}`,
+`{{ workflow.id }}` and `{{ workflow.name }}`; existing roots are unchanged.

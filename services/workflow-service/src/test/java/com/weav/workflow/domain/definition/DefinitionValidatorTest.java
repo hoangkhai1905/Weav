@@ -674,6 +674,17 @@ class DefinitionValidatorTest {
                 "INVALID_FIELD_TYPE"));
     }
 
+    @Test
+    void runExpressionsAreAcceptedAsMappings() {
+        WorkflowDefinition definition = manualThen("call", "http.request", Map.of("method", "POST",
+                "url", "https://example.com", "body", "{{ workflow.name }} {{ workflow.id }} {{ run.id }} {{ now }}"));
+
+        assertFalse(validator.validatePublish(definition).stream().anyMatch(issue -> issue.code().equals("MAPPING_ERROR")));
+        assertTrue(validator.validatePublish(manualThen("call", "http.request", Map.of("method", "POST",
+                "url", "https://example.com", "body", "{{ run.nope }}"))).stream()
+                .anyMatch(issue -> issue.code().equals("MAPPING_ERROR")));
+    }
+
     private static WorkflowDefinition definition(List<WorkflowDefinition.Node> nodes,
             List<WorkflowDefinition.Edge> edges) {
         return new WorkflowDefinition("1.0", nodes, edges, Map.of());

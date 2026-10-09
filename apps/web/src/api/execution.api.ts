@@ -212,6 +212,12 @@ export const executionApi = {
     return detailToExecution(detail, workflow);
   },
 
+  /** Stops a live run (W6-C3). The demo data has no live runs, so mock mode reports an immediate stop. */
+  async cancelExecution(workflowId: string, executionId: string): Promise<{ status: 'CANCELLED' | 'CANCEL_REQUESTED' }> {
+    if (isWorkflowMockMode) return { status: 'CANCELLED' };
+    return workflowV1Api.cancelExecution(workflowId, executionId);
+  },
+
   createExecutionForWorkflow(wf: WorkflowDefinition): Promise<ExecutionDetail> {
     if (isWorkflowMockMode) return mockExecutionApi.createExecutionForWorkflow(wf);
     throw new Error('Use the manual execution endpoint for live workflows.');

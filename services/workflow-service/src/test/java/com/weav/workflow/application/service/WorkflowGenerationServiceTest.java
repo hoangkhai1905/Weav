@@ -36,6 +36,19 @@ class WorkflowGenerationServiceTest {
         assertEquals(Map.of("x", 100, "y", 100), ((Map<?, ?>) result.get("layout")).get("start"));
     }
 
+    @Test void readyLayoutCarriesTheModelsReadableStepNamesOnly() {
+        Map<String, Object> named = new java.util.LinkedHashMap<>(node("start", "trigger.manual", Map.of()));
+        named.put("name", "Chạy thủ công");
+        Map<String, Object> blank = new java.util.LinkedHashMap<>(node("ping", "http.request",
+                Map.of("method", "GET", "url", "https://example.com")));
+        blank.put("name", "   ");
+        Map<String, Object> intent = Map.of("name", "Tên", "nodes", List.of(named, blank), "edges", List.of(edge("start", "ping")));
+        Map<?, ?> layout = (Map<?, ?>) service(new FakeAi(Map.of("status", "ready", "intent", intent)),
+                new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null, Map.of()).get("layout");
+        assertEquals(Map.of("x", 100, "y", 100, "name", "Chạy thủ công"), layout.get("start"));
+        assertEquals(Map.of("x", 400, "y", 100), layout.get("ping"));
+    }
+
     @Test void passesNeedsInputAndUnsupportedThroughAfterRevalidatingCodes() {
         FakeAi ai = new FakeAi(Map.of("status", "needs_input", "questions",
                 List.of(Map.of("code", "URL", "field", "http.request.url"))),

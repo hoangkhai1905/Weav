@@ -339,6 +339,41 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/executions/{executionId}/cancel:
+    post:
+      tags: [Executions]
+      operationId: cancelExecution
+      summary: Stop a run
+      description: >-
+        Requires WORKFLOW_RUN. A QUEUED run ends CANCELLED at once (status
+        CANCELLED). A RUNNING or WAITING run gets a stop request (status
+        CANCEL_REQUESTED): the node that is already running finishes first,
+        then the remaining nodes are CANCELLED and the run ends CANCELLED with
+        error code CANCELLED_BY_USER. A stopped run records no failure
+        notification and counts as neither success nor failure in monitoring.
+        A run that already ended answers 409 EXECUTION_ALREADY_FINISHED.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+        - { $ref: '#/components/parameters/ExecutionId' }
+      responses:
+        '202':
+          description: The run was stopped or a stop was requested.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [CANCELLED, CANCEL_REQUESTED] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /workspaces/{workspaceId}/executions:
     get:
       tags: [Monitoring]
