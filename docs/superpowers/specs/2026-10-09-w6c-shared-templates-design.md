@@ -101,12 +101,12 @@ Gateway: a new rate-limit category `template` (`GATEWAY_TEMPLATE_RATE_LIMIT`, de
 
 ## 6. Stop a running execution
 
-- `POST /workspaces/{ws}/executions/{id}/cancel` (caller can edit the workflow; gateway route + contract).
-  - QUEUED or WAITING → CANCELLED at once.
-  - RUNNING → sets `cancel_requested_at` (Flyway V15). The runner checks it before starting each node; when it is set, the remaining nodes are CANCELLED and the execution ends CANCELLED.
+- `POST /workspaces/{ws}/workflows/{wf}/executions/{id}/cancel` (caller has `WORKFLOW_RUN`; gateway route + contract).
+  - QUEUED → CANCELLED at once (conditional update).
+  - RUNNING or WAITING → sets `cancel_requested_at` (Flyway V15). The runner holds the lease and checks the flag on every loop turn. When it is set, the runner stops scheduling, the remaining nodes are CANCELLED, and the execution ends CANCELLED with error code `CANCELLED_BY_USER`.
   - Already finished → 409.
   - A node that is already running finishes first (HTTP calls are not interrupted). The dialog says so.
-- The completion event and monitoring treat CANCELLED as neither success nor failure (metrics count it separately; alert rules ignore it). W6-B `trigger.workflow_event` will not fire on it.
+- The completion event and monitoring treat CANCELLED as neither success nor failure. Today a CANCELLED terminal state records a `workflow.failed` notification; it must record none (the user stopped it). The finished listener still runs; metrics and alert rules already count only SUCCESS/FAILED. W6-B `trigger.workflow_event` will not fire on it.
 - Web: a "Dừng" button on the run detail page for QUEUED, WAITING and RUNNING, with a confirm; the status badge shows CANCELLED.
 
 ## 7. Run expressions
