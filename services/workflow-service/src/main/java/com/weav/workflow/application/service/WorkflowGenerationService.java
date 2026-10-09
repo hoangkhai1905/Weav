@@ -21,7 +21,7 @@ import java.util.function.BooleanSupplier;
 @Service
 public class WorkflowGenerationService {
     private static final Set<String> QUESTION_CODES = Set.of("URL", "SCHEDULE", "TIMEZONE", "VALUE");
-    private static final String ANSWERS_HEADER = "\n\nAnswers the user already gave:\n";
+    private static final String ANSWERS_HEADER = "\n\nAnswers the user already gave (reuse the node ids that appear in the answer keys):\n";
     private static final Set<String> REASON_CODES = Set.of("CAPABILITY_UNAVAILABLE", "OUT_OF_SCOPE", "AMBIGUOUS_REQUEST");
     private final WorkspaceAuthorization authorization;
     private final WorkspaceConnectionPort connections;
