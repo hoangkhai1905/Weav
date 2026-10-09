@@ -169,6 +169,7 @@ describe('validateGatewayEnvironment', () => {
       ocrPerMinute: 10,
       webhookPerMinute: 60,
       assistantPerMinute: 20,
+      templatePerMinute: 20,
       windowMs: 60_000,
     });
     expect(config.trustProxyHops).toBe(0);

@@ -17,6 +17,8 @@ tags:
     description: Manual execution admission and authorized monitoring
   - name: Internal
     description: Service-to-service operations
+  - name: Templates
+    description: Shared workflow templates (W6-C1) - share, browse and copy sanitized snapshots
 paths:
   /workspaces/{workspaceId}/workflows:
     post:
@@ -549,6 +551,221 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  # ---- W6-C1 shared templates ------------------------------------------------
+  /workspaces/{workspaceId}/workflows/{workflowId}/template/preview:
+    post:
+      tags: [Templates]
+      operationId: previewWorkflowTemplate
+      summary: Preview what sharing this workflow would remove
+      description: >-
+        Requires WORKFLOW_EDIT. Sanitizes the current draft exactly as sharing
+        would and writes nothing. removedFields lists connection references and
+        personal fields (x-weav-personal node schema fields that are not a
+        single mapping expression) that sharing deletes; warnings lists free
+        text that looks like an e-mail address (EMAIL) or a token (TOKEN) and
+        is kept, for the owner to review. existing is this workflow's current
+        template, if any. 400 TEMPLATE_NODE_NOT_SHAREABLE when a node has a
+        type the catalog does not know (the message names the node id).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+      responses:
+        '200':
+          description: The sanitized snapshot and what was changed in it.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplatePreview' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /workspaces/{workspaceId}/workflows/{workflowId}/template:
+    put:
+      tags: [Templates]
+      operationId: shareWorkflowAsTemplate
+      summary: Share this workflow as a template (create or refresh)
+      description: >-
+        Requires WORKFLOW_EDIT. Stores a sanitized snapshot. Sharing the same
+        workflow again updates its template (same id and shareCode) and returns
+        200; the first share returns 201. 409 TEMPLATE_LIMIT_REACHED beyond 50
+        live templates per user; 409 TEMPLATE_OWNED_BY_OTHER when another
+        member already shared this workflow; 400 for a workflow without steps
+        and 400 TEMPLATE_NODE_NOT_SHAREABLE for a node of unknown type. Request
+        bodies of the template routes are capped at 16 KB (400 beyond); unknown
+        fields, duplicate keys and trailing content are 400; null = absent for
+        the optional string fields.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ShareTemplateRequest' }
+      responses:
+        '200':
+          description: Existing template refreshed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateDetail' }
+        '201':
+          description: Template created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /templates:
+    get:
+      tags: [Templates]
+      operationId: listTemplates
+      summary: Browse templates
+      description: >-
+        scope=public (default): the gallery, most used first. scope=workspace:
+        PRIVATE templates shared from workspaceId (needs membership, 403
+        otherwise; workspaceId is required, 400 otherwise). scope=mine: every
+        template the caller owns, any visibility. q matches name or
+        description, case-insensitively.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: scope, in: query, required: false, schema: { type: string, enum: [public, workspace, mine], default: public } }
+        - { name: workspaceId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 100 } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+      responses:
+        '200':
+          description: A page of template summaries (no definition).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplatePage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /templates/by-code/{code}:
+    get:
+      tags: [Templates]
+      operationId: getTemplateByCode
+      summary: Open a template by its share code
+      description: >-
+        The code is case-insensitive and ignores spaces and dashes (wv7k-3m9q
+        resolves WV7K3M9Q); I and L read as 1, O as 0. Only UNLISTED and PUBLIC
+        templates resolve; a PRIVATE or unknown code is 404. Rate limited
+        (gateway template bucket).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: code, in: path, required: true, schema: { type: string, maxLength: 32 } }
+      responses:
+        '200':
+          description: The template.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /templates/{templateId}:
+    get:
+      tags: [Templates]
+      operationId: getTemplate
+      summary: Read a template
+      description: >-
+        Visible to the owner, anyone for PUBLIC and UNLISTED, and workspace
+        members for PRIVATE. A hidden template is 404, never 403.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TemplateId' }
+      responses:
+        '200':
+          description: The template.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Templates]
+      operationId: updateTemplate
+      summary: Rename, re-describe or change the visibility of a template
+      description: >-
+        The owner may change any field. A system ADMIN may only set a PUBLIC
+        template to PRIVATE (unpublish); any other change by a non-owner is
+        403. Absent fields stay unchanged.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TemplateId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PatchTemplateRequest' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Templates]
+      operationId: deleteTemplate
+      summary: Delete a template
+      description: Owner only (soft delete). The share code stops resolving.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TemplateId' }
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /templates/{templateId}/use:
+    post:
+      tags: [Templates]
+      operationId: useTemplate
+      summary: Copy a template into a workspace as a new draft workflow
+      description: >-
+        The caller must see the template (404 otherwise) and have
+        WORKFLOW_CREATE in workspaceId (403). Creates the draft and counts the
+        use in one transaction. The copy carries no connection ids: the user
+        re-picks them in the builder. name defaults to the template name.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/TemplateId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UseTemplateRequest' }
+      responses:
+        '201':
+          description: Draft workflow created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workflowId]
+                properties:
+                  workflowId: { type: string, format: uuid }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /webhooks/{endpointKey}:
     post:
       tags: [Executions]
@@ -733,6 +950,11 @@ components:
       schema: { type: string, format: uuid }
     ConnectionId:
       name: connectionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TemplateId:
+      name: templateId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -1137,6 +1359,99 @@ components:
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/AlertRule' } }
         maxRules: { type: integer, example: 20 }
+    # ---- W6-C1 shared templates
+    TemplateVisibility:
+      type: string
+      enum: [PRIVATE, UNLISTED, PUBLIC]
+      description: PRIVATE = members of the source workspace; UNLISTED = anyone with the code or id; PUBLIC = gallery.
+    ShareTemplateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, visibility]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        description: { type: string, nullable: true, maxLength: 2000, description: 'null = absent.' }
+        authorName: { type: string, nullable: true, maxLength: 120, description: 'Display name snapshot chosen by the client. null = absent.' }
+        visibility: { $ref: '#/components/schemas/TemplateVisibility' }
+    PatchTemplateRequest:
+      type: object
+      additionalProperties: false
+      description: Request bodies are capped at 16 KB. null = absent (field unchanged).
+      properties:
+        name: { type: string, nullable: true, minLength: 1, maxLength: 255, description: 'null = absent.' }
+        description: { type: string, nullable: true, maxLength: 2000, description: 'A blank string clears it; null = absent (unchanged).' }
+        visibility:
+          nullable: true
+          description: 'null = absent.'
+          allOf:
+            - { $ref: '#/components/schemas/TemplateVisibility' }
+    UseTemplateRequest:
+      type: object
+      additionalProperties: false
+      required: [workspaceId]
+      properties:
+        workspaceId: { type: string, format: uuid }
+        name: { type: string, nullable: true, minLength: 1, maxLength: 255, description: 'null = absent (template name is used).' }
+    TemplateSummary:
+      type: object
+      required: [id, name, nodeTypes, visibility, usageCount, createdAt, updatedAt, owned]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        authorName: { type: string, nullable: true }
+        nodeTypes: { type: array, items: { type: string }, description: Distinct node types in definition order. }
+        visibility: { $ref: '#/components/schemas/TemplateVisibility' }
+        usageCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        owned: { type: boolean, description: True when the caller is the owner. }
+    TemplateDetail:
+      allOf:
+        - { $ref: '#/components/schemas/TemplateSummary' }
+        - type: object
+          required: [definition]
+          properties:
+            definition: { type: object, additionalProperties: true, description: Sanitized workflow definition (schemaVersion, nodes, edges, variables). }
+            editorState: { type: object, additionalProperties: true, nullable: true, description: Only nodes.<id>.name and nodes.<id>.position. }
+            shareCode: { type: string, minLength: 8, maxLength: 8, description: Owner only. }
+            workspaceId: { type: string, format: uuid, description: Owner only. }
+            sourceWorkflowId: { type: string, format: uuid, description: Owner only. }
+    TemplatePage:
+      type: object
+      required: [items, page, size, totalElements]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/TemplateSummary' } }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+    TemplatePreview:
+      type: object
+      required: [definition, removedFields, warnings]
+      properties:
+        definition: { type: object, additionalProperties: true }
+        editorState: { type: object, additionalProperties: true, nullable: true }
+        removedFields:
+          type: array
+          items:
+            type: object
+            required: [nodeId, field]
+            properties:
+              nodeId: { type: string }
+              field: { type: string }
+        warnings:
+          type: array
+          items:
+            type: object
+            required: [nodeId, field, reason]
+            properties:
+              nodeId: { type: string }
+              field: { type: string }
+              reason: { type: string, enum: [EMAIL, TOKEN] }
+        existing:
+          nullable: true
+          allOf:
+            - { $ref: '#/components/schemas/TemplateDetail' }
   responses:
     BadRequest:
       description: Malformed JSON, invalid UUID, validation, or pagination bounds.

@@ -59,6 +59,8 @@ New schema field keyword `x-weav-personal: true` (allowed in `ClasspathNodeSchem
 4. `editor_state`: only `nodes.<id>.name` and `nodes.<id>.position` are kept.
 5. Kept literal text anywhere in a config (outside `{{ }}` expressions) is scanned. An e-mail address, or a 24+ character run of `[A-Za-z0-9_-]` (a likely token), produces a warning `{nodeId, field, reason}`. The value itself is not changed: free text cannot be sanitized automatically, so the owner reviews it.
 
+A node type missing from the catalog makes preview/share fail with 400 `TEMPLATE_NODE_NOT_SHAREABLE` (fail closed). A pure expression means a mapping path (`{{ trigger.input.x }}`), not arbitrary brace content.
+
 Output: `{ definition, editorState, removedFields: [{nodeId, field}], warnings: [{nodeId, field, reason: EMAIL|TOKEN}] }`.
 
 Fields marked `x-weav-personal`:
@@ -68,7 +70,7 @@ Fields marked `x-weav-personal`:
 | `email.send` | `to`, `cc`, `bcc`, `replyTo`, `senderName` |
 | `telegram.send_message` | `chatId` |
 | `google.sheets` | `spreadsheetId` |
-| `google.drive` | `folderId` |
+| `google.drive` | `folderId`, `file` |
 | `google.calendar` | `calendarId`, `attendees` |
 | `http.request` | `headers`, `query` |
 | `ocr.extract` | `artifactId`, `fileUrl` |

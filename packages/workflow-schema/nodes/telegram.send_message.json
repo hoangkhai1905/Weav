@@ -24,6 +24,7 @@
       "title": "Chat ID",
       "description": "Telegram chat that receives the message: a numeric chat id or an @channel username.",
       "x-weav-template": true,
+      "x-weav-personal": true,
       "oneOf": [
         {
           "type": "string",

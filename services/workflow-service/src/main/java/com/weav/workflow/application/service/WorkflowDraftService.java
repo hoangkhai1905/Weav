@@ -97,6 +97,34 @@ public class WorkflowDraftService {
         });
     }
 
+    /**
+     * Creates a workflow whose first draft is the given definition (a template copy), in one transaction with the
+     * {@code workflow.created} event. The definition must not carry connection ids: the user re-picks them.
+     */
+    public Workflow createWithDraft(CreateWorkflowCommand command, WorkflowDefinition definition,
+                                    Map<String, Object> editorState) {
+        Objects.requireNonNull(command, "command must not be null");
+        Objects.requireNonNull(definition, "definition must not be null");
+        workspaceAuthorization.require(command.workspaceId(), command.actorId(), "WORKFLOW_CREATE");
+        validateName(command.name());
+        validateDefinition(definition);
+        Map<String, Object> frozenEditorState = freezeEditorState(editorState);
+        validateEditorState(frozenEditorState);
+        if (!connectionIds(definition).isEmpty()) {
+            throw new BadRequestException("A new workflow cannot start with connection references");
+        }
+        Map<String, Object> serializedDefinition = toMap(definition);
+        return transactions.execute(status -> {
+            Workflow created = createWorkflow.execute(command);
+            created.updateDraft(command.name(), command.description(), serializedDefinition, frozenEditorState);
+            Workflow saved = workflowRepository.save(created);
+            notificationOutbox.record(WorkflowNotificationEvent.lifecycle("workflow.created",
+                    saved.getWorkspaceId(), command.actorId(), saved.getId(), saved.getName(),
+                    saved.getCreatedAt()));
+            return saved;
+        });
+    }
+
     public Workflow save(UUID workspaceId, UUID workflowId, UUID actorId, String name, String description,
                          WorkflowDefinition definition, Map<String, Object> editorState) {
         return save(workspaceId, workflowId, actorId, name, description, definition, editorState, null);
