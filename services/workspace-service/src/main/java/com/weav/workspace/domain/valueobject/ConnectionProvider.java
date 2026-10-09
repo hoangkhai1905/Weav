@@ -6,7 +6,8 @@ public enum ConnectionProvider {
     TELEGRAM,
     HTTP,
     GOOGLE_CALENDAR,
-    GOOGLE_DRIVE;
+    GOOGLE_DRIVE,
+    DISCORD;
 
     /** True for providers connected through the shared Google OAuth flow. */
     public boolean isGoogleOAuth() {

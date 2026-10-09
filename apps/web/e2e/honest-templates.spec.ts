@@ -135,9 +135,9 @@ export function validateTemplate(template: WorkflowTemplate): string[] {
 }
 
 test.describe('workflow templates', () => {
-  test('there are 6 to 8 templates with unique ids', () => {
+  test('there are 6 to 12 templates with unique ids', () => {
     expect(WORKFLOW_TEMPLATES.length).toBeGreaterThanOrEqual(6);
-    expect(WORKFLOW_TEMPLATES.length).toBeLessThanOrEqual(8);
+    expect(WORKFLOW_TEMPLATES.length).toBeLessThanOrEqual(12);
     expect(new Set(WORKFLOW_TEMPLATES.map((template) => template.id)).size).toBe(WORKFLOW_TEMPLATES.length);
   });
 

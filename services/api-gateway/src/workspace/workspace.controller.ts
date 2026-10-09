@@ -100,6 +100,7 @@ const createConnectionBodySchema = z
       'GOOGLE_SHEETS',
       'GOOGLE_CALENDAR',
       'GOOGLE_DRIVE',
+      'DISCORD',
     ]),
     authType: z.enum(['NONE', 'TOKEN', 'API_KEY', 'BASIC', 'OAUTH2']),
     config: connectionConfigSchema.optional(),
