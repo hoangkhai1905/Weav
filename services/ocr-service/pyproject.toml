@@ -12,6 +12,7 @@ dependencies = [
     "paddlex[ocr]>=3.7.0,<3.8.0",
     "pillow>=10.4.0",
     "pydantic>=2.13.4",
+    "pyjwt[crypto]>=2.10.0",
     "pypdfium2>=4.30.0",
     "python-multipart==0.0.32",
     "uvicorn[standard]>=0.52.3",
