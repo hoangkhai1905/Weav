@@ -194,6 +194,33 @@ describe('validateGatewayEnvironment', () => {
     }
   });
 
+  it('reads the OCR signing key location and id, with gateway-dev-1 as default id', () => {
+    const unset = validateGatewayEnvironment(developmentEnvironment()).ocr;
+    expect(unset.signingKeyLocation).toBeUndefined();
+    expect(unset.signingKeyId).toBe('gateway-dev-1');
+
+    const empty = validateGatewayEnvironment({
+      ...developmentEnvironment(),
+      GATEWAY_OCR_SIGNING_KEY_LOCATION: '',
+    }).ocr;
+    expect(empty.signingKeyLocation).toBeUndefined();
+
+    const set = validateGatewayEnvironment({
+      ...developmentEnvironment(),
+      GATEWAY_OCR_SIGNING_KEY_LOCATION: '/run/secrets/api-gateway.pem',
+      GATEWAY_OCR_SIGNING_KEY_ID: 'gateway-2',
+    }).ocr;
+    expect(set.signingKeyLocation).toBe('/run/secrets/api-gateway.pem');
+    expect(set.signingKeyId).toBe('gateway-2');
+
+    expect(() =>
+      validateGatewayEnvironment({
+        ...developmentEnvironment(),
+        GATEWAY_OCR_SIGNING_KEY_ID: '  ',
+      }),
+    ).toThrow('GATEWAY_OCR_SIGNING_KEY_ID');
+  });
+
   it('no longer has a bot upstream and ignores a leftover BOT_SERVICE_URL', () => {
     const config = validateGatewayEnvironment({
       ...developmentEnvironment(),

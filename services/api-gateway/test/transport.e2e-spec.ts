@@ -1,4 +1,12 @@
-import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import {
+  createHmac,
+  generateKeyPairSync,
+  randomBytes,
+  randomUUID,
+} from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   createServer,
   request as httpRequest,
@@ -15,6 +23,28 @@ jest.setTimeout(25_000);
 
 const ORIGINAL_ENVIRONMENT = { ...process.env };
 const fixtureSecret = randomBytes(48).toString('hex');
+// The Gateway signs its own OCR token and never forwards the user's, so the
+// fixture picks a scenario by workspace id (x-workspace-id) instead.
+const scenarioWorkspace: Record<string, string> = Object.fromEntries(
+  [
+    'redirect-token',
+    'slow-token',
+    'slow-body-token',
+    'non-json-error-token',
+    'measure-limit-token',
+    'normal-slow-token',
+    'progressive-upload-token',
+  ].map((label) => [label, randomUUID()]),
+);
+const ocrKeyDir = mkdtempSync(join(tmpdir(), 'gateway-ocr-key-'));
+const ocrKeyFile = join(ocrKeyDir, 'api-gateway.pem');
+writeFileSync(
+  ocrKeyFile,
+  generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({
+    type: 'pkcs8',
+    format: 'pem',
+  }),
+);
 const signedAuthorization: Record<string, string> = Object.fromEntries(
   [
     'redirect-token',
@@ -170,16 +200,28 @@ function handleFixtureRequest(
       return;
     }
 
+    // Workspace Service membership check made by the OCR route.
+    if (
+      request.method === 'GET' &&
+      /^\/workspaces\/[0-9a-f-]{36}$/.test(url.pathname)
+    ) {
+      writeJson(response, 200, { id: url.pathname.split('/')[2] });
+      return;
+    }
+
     if (url.pathname === '/v1/extractions') {
       if (
-        request.headers.authorization === signedAuthorization['redirect-token']
+        request.headers['x-workspace-id'] ===
+        scenarioWorkspace['redirect-token']
       ) {
         response.writeHead(302, { location: '/unexpected' });
         response.end();
         return;
       }
 
-      if (request.headers.authorization === signedAuthorization['slow-token']) {
+      if (
+        request.headers['x-workspace-id'] === scenarioWorkspace['slow-token']
+      ) {
         const timer = setTimeout(() => {
           pendingTimers.delete(timer);
           if (!response.writableEnded) {
@@ -191,7 +233,8 @@ function handleFixtureRequest(
       }
 
       if (
-        request.headers.authorization === signedAuthorization['slow-body-token']
+        request.headers['x-workspace-id'] ===
+        scenarioWorkspace['slow-body-token']
       ) {
         response.writeHead(200, { 'content-type': 'application/json' });
         response.write('{"accepted":');
@@ -206,8 +249,8 @@ function handleFixtureRequest(
       }
 
       if (
-        request.headers.authorization ===
-        signedAuthorization['non-json-error-token']
+        request.headers['x-workspace-id'] ===
+        scenarioWorkspace['non-json-error-token']
       ) {
         response.writeHead(500, { 'content-type': 'text/html' });
         response.end('<html>secretmarker</html>');
@@ -215,8 +258,8 @@ function handleFixtureRequest(
       }
 
       if (
-        request.headers.authorization ===
-        signedAuthorization['measure-limit-token']
+        request.headers['x-workspace-id'] ===
+        scenarioWorkspace['measure-limit-token']
       ) {
         writeJson(response, 200, {
           accepted: true,
@@ -227,8 +270,8 @@ function handleFixtureRequest(
       }
 
       if (
-        request.headers.authorization ===
-        signedAuthorization['normal-slow-token']
+        request.headers['x-workspace-id'] ===
+        scenarioWorkspace['normal-slow-token']
       ) {
         const timer = setTimeout(() => {
           pendingTimers.delete(timer);
@@ -292,6 +335,7 @@ function applyTestEnvironment(upstreamUrl: string): void {
     WORKSPACE_SERVICE_URL: upstreamUrl,
     NOTIFICATION_SERVICE_URL: upstreamUrl,
     OCR_SERVICE_URL: upstreamUrl,
+    GATEWAY_OCR_SIGNING_KEY_LOCATION: ocrKeyFile,
   });
 }
 
@@ -333,6 +377,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
       fixture.close((error) => (error ? reject(error) : resolve()));
     });
     restoreEnvironment();
+    rmSync(ocrKeyDir, { recursive: true, force: true });
   });
 
   it('propagates one canonical ID and forwards only safe request headers', async () => {
@@ -512,6 +557,19 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
     );
     expect(forwarded?.headers['x-request-id']).toBe('req-ocr-stream');
     expect(forwarded?.headers['x-correlation-id']).toBe('req-ocr-stream');
+    // The Gateway's own RS256 Service JWT replaces the user's token.
+    expect(forwarded?.headers.authorization).toMatch(/^Bearer \S+$/);
+    expect(forwarded?.headers.authorization).not.toBe(
+      signedAuthorization['opaque-access-token'],
+    );
+    expect(forwarded?.headers['x-workspace-id']).toBe(WORKSPACE_ID);
+    // The user's token goes only to Workspace Service (membership), never to OCR.
+    const membership = fixtureRequests.find(
+      ({ path }) => path === `/workspaces/${WORKSPACE_ID}`,
+    );
+    expect(membership?.headers.authorization).toBe(
+      signedAuthorization['opaque-access-token'],
+    );
     expect(forwarded?.headers.traceparent).toBeUndefined();
     expect(forwarded?.headers.cookie).toBeUndefined();
     expect(forwarded?.headers['x-internal-service-key']).toBeUndefined();
@@ -545,7 +603,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
           host: '127.0.0.1',
           port: address.port,
           method: 'POST',
-          path: `/api/v1/workspaces/${WORKSPACE_ID}/ocr/extractions`,
+          path: `/api/v1/workspaces/${scenarioWorkspace['progressive-upload-token']}/ocr/extractions`,
           headers: {
             authorization: signedAuthorization['progressive-upload-token'],
             'content-type': `multipart/form-data; boundary=${boundary}`,
@@ -588,8 +646,8 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
     const forwarded = fixtureRequests.find(
       ({ path, headers }) =>
         path === '/v1/extractions' &&
-        headers.authorization ===
-          signedAuthorization['progressive-upload-token'],
+        headers['x-workspace-id'] ===
+          scenarioWorkspace['progressive-upload-token'],
     );
     expect(forwarded?.body).toBe(multipartBody);
     expect(forwarded?.aborted).toBe(false);
@@ -601,7 +659,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
       .getInstance()
       .inject({
         method: 'POST',
-        url: `/api/v1/workspaces/${WORKSPACE_ID}/ocr/extractions`,
+        url: `/api/v1/workspaces/${scenarioWorkspace['redirect-token']}/ocr/extractions`,
         headers: {
           authorization: signedAuthorization['redirect-token'],
           'content-type': 'application/json',
@@ -629,7 +687,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
       .getInstance()
       .inject({
         method: 'POST',
-        url: `/api/v1/workspaces/${WORKSPACE_ID}/ocr/extractions`,
+        url: `/api/v1/workspaces/${scenarioWorkspace['non-json-error-token']}/ocr/extractions`,
         headers: {
           authorization: signedAuthorization['non-json-error-token'],
           'content-type': 'application/json',
@@ -672,7 +730,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
       .getInstance()
       .inject({
         method: 'POST',
-        url: `/api/v1/workspaces/${WORKSPACE_ID}/ocr/extractions`,
+        url: `/api/v1/workspaces/${scenarioWorkspace['measure-limit-token']}/ocr/extractions`,
         headers: {
           authorization: signedAuthorization['measure-limit-token'],
           'content-type': `multipart/form-data; boundary=${boundary}`,
@@ -695,7 +753,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
       .getInstance()
       .inject({
         method: 'POST',
-        url: `/api/v1/workspaces/${WORKSPACE_ID}/ocr/extractions`,
+        url: `/api/v1/workspaces/${scenarioWorkspace['slow-token']}/ocr/extractions`,
         headers: {
           authorization: signedAuthorization['slow-token'],
           'content-type': 'application/json',
@@ -728,7 +786,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
       .getInstance()
       .inject({
         method: 'POST',
-        url: `/api/v1/workspaces/${WORKSPACE_ID}/ocr/extractions`,
+        url: `/api/v1/workspaces/${scenarioWorkspace['slow-body-token']}/ocr/extractions`,
         headers: {
           authorization: signedAuthorization['slow-body-token'],
           'content-type': 'application/json',
@@ -752,7 +810,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
       fixtureRequests.some(
         ({ path, headers, aborted }) =>
           path === '/v1/extractions' &&
-          headers.authorization === signedAuthorization['slow-body-token'] &&
+          headers['x-workspace-id'] === scenarioWorkspace['slow-body-token'] &&
           aborted,
       ),
     );
@@ -764,7 +822,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
       .getInstance()
       .inject({
         method: 'POST',
-        url: `/api/v1/workspaces/${WORKSPACE_ID}/ocr/extractions`,
+        url: `/api/v1/workspaces/${scenarioWorkspace['normal-slow-token']}/ocr/extractions`,
         headers: {
           authorization: signedAuthorization['normal-slow-token'],
           'content-type': 'application/json',
@@ -800,7 +858,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
           host: '127.0.0.1',
           port: address.port,
           method: 'POST',
-          path: `/api/v1/workspaces/${WORKSPACE_ID}/ocr/extractions`,
+          path: `/api/v1/workspaces/${scenarioWorkspace['slow-token']}/ocr/extractions`,
           headers: {
             authorization: signedAuthorization['slow-token'],
             'content-type': 'application/json',
@@ -823,7 +881,7 @@ describe('Gateway transport boundary (Fastify e2e)', () => {
             fixtureRequests.some(
               ({ path, headers, body }) =>
                 path === '/v1/extractions' &&
-                headers.authorization === signedAuthorization['slow-token'] &&
+                headers['x-workspace-id'] === scenarioWorkspace['slow-token'] &&
                 body.length > 0,
             ),
           );
