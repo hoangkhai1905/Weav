@@ -83,13 +83,26 @@ Notebook pitfalls found: in Colab `uv pip` without `-p .venv` installs into `/us
 
 ONNX CPU spike (details and table in the handoff, Finding 4): converted det + vi rec with paddle2onnx 2.1.0; `PaddleOCR(engine="onnxruntime")` matches production Paddle on 240/240 lines (CER 2.97% both), A4 page 17.3 s -> 7.0 s, peak RSS 1364 -> 1145 MB, install ~1.4 -> ~0.75 GB; short-line latency unchanged; `enable_mkldnn=True` crashes on paddle 3.3 PIR models. Scripts and raw JSON stayed in the session scratch folder (not committed).
 
+ONNX Runtime in `ocr-service` (branch `feature/ocr-onnx`, local Docker, laptop CPU, real service through HTTP):
+
+| Case | Paddle manifest | ONNX manifest |
+| ---- | --------------- | ------------- |
+| 240-line benchmark CER / word acc / exact | 3.15% / 89.6% / 119 | 3.15% / 89.6% / 119 (0/240 predictions differ) |
+| Line p50 / p95 | 470 / 696 ms | 469 / 776 ms |
+| A4 page, 25 lines (3 runs) | 22.0 / 20.1 / 19.1 s | 8.4 / 7.0 / 6.5 s |
+| Invoice via Gateway, text only | - | 200 in 3.9 s (first call after start 23 s, model load) |
+| Invoice via Gateway, tables (still Paddle) | - | 200 in ~59 s warm; first call downloads table models and hit the old 60 s deadline |
+
+Service logs confirm `Creating model ... /models/onnx/...` with `onnxruntime`. Conversion: `scripts/convert_models_to_onnx.py` with paddle2onnx 2.1.0 (constant-folding warnings are harmless).
+
 ## 6. Risks and blockers
 
 | Level  | Issue | Next step |
 | ------ | ----- | --------- |
 | High   | Backend died on a default table request (cause unconfirmed) | Partner reads `/content/ocr-service.log`, enforces 60 s/90 s deadlines |
 | Medium | Table text loses diacritics | Partner change in `paddle_table_engine_adapter.py` (handoff) |
-| Low    | The 95 s deadline holds Gateway connections open longer in Colab mode | Dev only; the default stays 10 s |
+| Low    | The 95 s deadline holds Gateway connections open longer in Colab/local-model mode | Dev only; the default stays 10 s |
+| Medium | Table detection on CPU ~60 s/page and PP-StructureV3 models are downloaded into the container instead of read from the bundle | Phase 2: load table models from the bundle (and the Vietnamese recognizer), then try ONNX for them |
 
 ## 7. Next steps
 

@@ -448,6 +448,33 @@ cd ..\..
 
 ---
 
+### Local OCR on CPU with ONNX Runtime (no Colab)
+
+The text OCR models (detection + recognition) can run on CPU through ONNX Runtime with the same results as Paddle
+(0/240 differing lines on the synthetic Vietnamese benchmark) and about 3x faster on a full page (~7 s vs ~20 s for
+an A4 page on a laptop). Table detection still runs on Paddle (about 60 s per page on CPU).
+
+1. Put the model bundle (from `scripts/setup-ocr-model.ps1`) somewhere and point `.env` at it:
+   `OCR_MODEL_HOST_PATH=D:/Weav-OCR-Models`.
+2. Convert the models once (writes `<OCR_MODEL_HOST_PATH>/onnx/<model>/inference.onnx`; `scripts/` is not in the image,
+   so it is mounted; in Git Bash prefix the command with `MSYS_NO_PATHCONV=1`):
+
+```bash
+docker compose --env-file .env -f compose.yml -f compose.dev.yml -f compose.ocr-models.dev.yml --profile app run --rm --no-deps -T -v D:/Weav-OCR-Models:/models-rw -v ./services/ocr-service/scripts:/app/scripts:ro ocr-service uv run --no-sync --with paddle2onnx==2.1.0 python scripts/convert_models_to_onnx.py --src-root /models-rw --dst-root /models-rw/onnx
+```
+
+3. Select the ONNX manifest in `.env`: `WEAV_OCR_MODEL_MANIFEST=/app/config/model-manifest.onnx.json`
+   (the default `/app/config/model-manifest.json` keeps Paddle).
+4. Start OCR and the Gateway with the local-models overlay (not `compose.colab-ocr.dev.yml`); the overlay sets the
+   Gateway OCR deadline to 95 s:
+
+```bash
+docker compose --env-file .env -f compose.yml -f compose.dev.yml -f compose.ocr-models.dev.yml --profile app up -d --build ocr-service api-gateway
+```
+
+The first request loads the models (~20 s). The first table request also downloads the PP-StructureV3 models into the
+container (they are not read from the bundle yet), so it can time out once.
+
 ## 9. Kiểm tra Web và NestJS services
 
 ```powershell
