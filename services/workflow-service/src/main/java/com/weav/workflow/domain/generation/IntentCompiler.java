@@ -21,6 +21,7 @@ import java.util.regex.Pattern;
 /** Maps a WorkflowIntent 1:1 onto a WorkflowDefinition and reuses validatePublish as the only graph validator. */
 public final class IntentCompiler {
     private static final Pattern NODE_ID = Pattern.compile("^[a-z][a-z0-9_]{0,31}$");
+    private static final int MAX_STEP_NAME = 80;
 
     private final DefinitionValidator validator;
 
@@ -31,7 +32,12 @@ public final class IntentCompiler {
     public sealed interface Compilation permits Ready, NeedsConnections, NeedsValues, Invalid {
     }
 
-    public record Ready(String name, WorkflowDefinition definition, Map<String, Position> layout) implements Compilation {
+    /** {@code nodeNames}: the model's readable step titles by node id; only valid, non-blank ones. */
+    public record Ready(String name, WorkflowDefinition definition, Map<String, Position> layout,
+                        Map<String, String> nodeNames) implements Compilation {
+        public Ready(String name, WorkflowDefinition definition, Map<String, Position> layout) {
+            this(name, definition, layout, Map.of());
+        }
     }
 
     public record NeedsConnections(List<String> nodeTypes) implements Compilation {
@@ -66,6 +72,7 @@ public final class IntentCompiler {
             return new Invalid();
         }
         List<WorkflowDefinition.Node> nodes = new ArrayList<>();
+        Map<String, String> nodeNames = new LinkedHashMap<>();
         for (Object raw : rawNodes) {
             if (!(raw instanceof Map<?, ?> node) || !(node.get("id") instanceof String id) || !NODE_ID.matcher(id).matches()
                     || !(node.get("type") instanceof String type) || !(node.get("config") instanceof Map<?, ?> rawConfig)
@@ -85,6 +92,10 @@ public final class IntentCompiler {
                 config.put("connectionId", connection.toString());
             }
             nodes.add(new WorkflowDefinition.Node(id, type, config));
+            if (node.get("name") instanceof String title && !title.isBlank()
+                    && title.codePointCount(0, title.length()) <= MAX_STEP_NAME) {
+                nodeNames.put(id, title.strip());
+            }
         }
         List<WorkflowDefinition.Edge> edges = new ArrayList<>();
         for (int i = 0; i < rawEdges.size(); i++) {
@@ -130,7 +141,7 @@ public final class IntentCompiler {
             return values.isEmpty() ? new NeedsConnections(List.copyOf(connectionTypes))
                     : new NeedsValues(List.copyOf(values));
         }
-        return new Ready(name, definition, layout(nodes, edges));
+        return new Ready(name, definition, layout(nodes, edges), Map.copyOf(nodeNames));
     }
 
     private static void fillAnswers(String id, String type, Map<String, Object> config, Map<String, String> answers) {

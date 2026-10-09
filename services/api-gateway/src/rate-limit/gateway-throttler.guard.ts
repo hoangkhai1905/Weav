@@ -80,6 +80,29 @@ export function isAssistantRequest(request: GatewayRateLimitRequest): boolean {
   );
 }
 
+const TEMPLATE_COLLECTION_PATH = /^\/api\/v1\/templates(?:\/.*)?$/;
+const TEMPLATE_BY_CODE_PATH = /^\/api\/v1\/templates\/by-code\/[^/]+$/;
+const WORKFLOW_TEMPLATE_PATH =
+  /^\/api\/v1\/workspaces\/[^/]+\/workflows\/[^/]+\/template(?:\/preview)?$/;
+
+/**
+ * W6-C shared templates: every change (share, patch, delete, use) and the share-code lookup, which is the only
+ * guessable entry point. Plain template reads stay in the general bucket.
+ */
+export function isTemplateRequest(request: GatewayRateLimitRequest): boolean {
+  const method = request.method?.toUpperCase();
+  const path = requestPath(request);
+  if (method === 'GET') {
+    return TEMPLATE_BY_CODE_PATH.test(path);
+  }
+  if (method === 'HEAD' || method === 'OPTIONS') {
+    return false;
+  }
+  return (
+    TEMPLATE_COLLECTION_PATH.test(path) || WORKFLOW_TEMPLATE_PATH.test(path)
+  );
+}
+
 // Covers /webhooks/<key> and the Telegram variant /webhooks/telegram/<key>; keys are random, so one bucket each.
 const WEBHOOK_PATH_PATTERN = /^\/api\/v1\/webhooks\/(?:telegram\/)?([^/]+)$/;
 
@@ -162,7 +185,9 @@ export class GatewayThrottlerGuard extends ThrottlerGuard {
     }
 
     if (
-      (isOcrRequest(request) || isAssistantRequest(request)) &&
+      (isOcrRequest(request) ||
+        isAssistantRequest(request) ||
+        isTemplateRequest(request)) &&
       !request.principal?.sub
     ) {
       const token = authorizationToken(request);
@@ -186,7 +211,9 @@ export class GatewayThrottlerGuard extends ThrottlerGuard {
 
   protected getTracker(request: GatewayRateLimitRequest): Promise<string> {
     if (
-      (isOcrRequest(request) || isAssistantRequest(request)) &&
+      (isOcrRequest(request) ||
+        isAssistantRequest(request) ||
+        isTemplateRequest(request)) &&
       request.principal?.sub
     ) {
       return Promise.resolve(`subject:${request.principal.sub}`);

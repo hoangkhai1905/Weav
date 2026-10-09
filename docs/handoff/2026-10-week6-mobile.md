@@ -150,3 +150,106 @@ Other members receive a new event type (the owner who deleted does not):
 2. Wrong name: `400`, nothing changes.
 3. As a plain member of the same kind of workspace: no delete action; a manual `DELETE` returns `403`.
 4. With a second account that is a member: after the owner deletes, that account gets the `workspace.deleted` notification and the workspace disappears from its list on refresh.
+
+## C. Shared templates API (W6-C1)
+
+Backend is ready (workflow-service + API Gateway). Nothing in `apps/mobile` was changed. Mobile screens are the partner's work; this is the contract. Web uses the same routes (gallery tabs, enter-code dialog, share dialog in the builder).
+
+### C.1 Idea
+
+A user shares one of their workflows as a template: a sanitized snapshot (connections, recipients, chat ids, sheet ids and similar personal fields are removed on the server). Others browse or open a template by its 8-character code, then copy it into one of their workspaces as a new draft and re-pick connections. The static built-in templates of the app are unrelated and stay as they are.
+
+| Visibility | Who sees it |
+| --- | --- |
+| `PRIVATE` | members of the workspace it was shared from ("team library"); never resolvable by code |
+| `UNLISTED` | anyone signed in who has the code or the id; never listed |
+| `PUBLIC` | the gallery (search and browse); published immediately; a system admin can take it down |
+
+All routes need `Authorization: Bearer <access token>` and go through the gateway under `/api/v1`. A template the caller may not see answers `404` (never `403`), also for ids and codes that do not exist.
+
+### C.2 Routes
+
+| Call | Result |
+| --- | --- |
+| `GET /templates?scope=public&q=&page=0&size=20` | gallery page, most used first. `scope=mine` = everything you own (any visibility). `scope=workspace&workspaceId=<id>` = PRIVATE templates of that workspace (`403` if not a member) |
+| `GET /templates/by-code/{code}` | open by code. Typing is forgiving: `wv7k-3m9q`, spaces and lower case all work; `I`/`L` read as `1`, `O` as `0`. `404` for an unknown, deleted or PRIVATE code. Rate limited (see C.4) |
+| `GET /templates/{id}` | open by id |
+| `POST /templates/{id}/use` body `{"workspaceId":"<id>","name":"optional"}` | `201 {"workflowId":"<id>"}`: a new draft in that workspace. Needs permission to create workflows there (`403` otherwise). Open the builder on the returned id |
+| `PATCH /templates/{id}` body any of `{name, description, visibility}` | owner only (`403` for others who can see it) |
+| `DELETE /templates/{id}` | owner only, `204` |
+| `POST /workspaces/{ws}/workflows/{wf}/template/preview` | what sharing would remove (see below); writes nothing |
+| `PUT /workspaces/{ws}/workflows/{wf}/template` body `{name, description?, authorName?, visibility}` | share or refresh; `201` first time, `200` when the workflow already has a template (same id and code) |
+
+JSON shapes (camelCase, dates ISO-8601):
+
+```json
+// TemplateSummary (items of the list; no definition)
+{ "id": "uuid", "name": "Hoa don", "description": "…" , "authorName": "Khai",
+  "nodeTypes": ["trigger.gmail", "email.send"], "visibility": "PUBLIC",
+  "usageCount": 3, "createdAt": "…", "updatedAt": "…", "owned": false }
+
+// list page
+{ "items": [TemplateSummary], "page": 0, "size": 20, "totalElements": 7 }
+
+// TemplateDetail = TemplateSummary + definition and editorState; shareCode, workspaceId and
+// sourceWorkflowId are present only when "owned" is true
+{ …TemplateSummary, "definition": { "schemaVersion": "1.0", "nodes": [], "edges": [], "variables": {} },
+  "editorState": { "nodes": { "<nodeId>": { "name": "…", "position": { "x": 0, "y": 0 } } } },
+  "shareCode": "WV7K3M9Q" }
+
+// preview
+{ "definition": {…}, "editorState": {…},
+  "removedFields": [ { "nodeId": "send_email", "field": "to" } ],
+  "warnings": [ { "nodeId": "send_email", "field": "body", "reason": "EMAIL" } ],
+  "existing": TemplateDetail | null }
+```
+
+`reason` is `EMAIL` (looks like an e-mail address) or `TOKEN` (24+ characters of letters, digits, `_`, `-`). Warnings are not removed: the owner must read the text and decide, so show them and ask for a confirmation before saving.
+
+### C.3 Enter-code flow (what the app should do)
+
+1. Input accepts the code as typed; send it unchanged to `GET /templates/by-code/{code}` (the server normalises it). Trim the field and keep the length under 32 characters.
+2. Show name, author, description and the node list (`nodeTypes`). The number of connections the user must re-pick is the number of nodes in `definition.nodes` whose type needs a connection (email.send, telegram.send_message, google.*, trigger.gmail, trigger.telegram).
+3. "Use template" calls `POST /templates/{id}/use` with the active workspace id, then opens the new workflow in the builder. The copy has no connections: the builder shows each connection field empty.
+4. Errors: `404` "code not found" (do not reveal whether it exists but is private); `403` on use "you cannot create workflows in this workspace"; `429` too many attempts, wait a minute.
+
+### C.4 Limits and errors
+
+- At most 50 templates per user (`409` code `TEMPLATE_LIMIT_REACHED`); another member already sharing the same workflow gives `409` `TEMPLATE_OWNED_BY_OTHER`; sharing a workflow without steps is `400`.
+- Name 1-255 characters, description up to 2000, author name up to 120; unknown JSON fields are rejected with `400`.
+- Gateway rate limit `template`: 20 per minute per user for every change (share, patch, delete, use) and every code lookup (`GET /templates/by-code/*`); other reads use the general limit. A `429` carries `Retry-After`.
+- Body rules: optional string fields (`description`, `authorName`, PATCH `name`/`visibility`, use `name`) may be `null`, meaning "absent" (a blank `description` string clears it); bodies are capped at 16 KB (`400` beyond); preview and share answer `400` code `TEMPLATE_NODE_NOT_SHAREABLE` when the workflow has a node of an unknown type.
+- Deleted workspace: its PRIVATE templates disappear for everyone but the owner; UNLISTED and PUBLIC ones stay.
+
+## D. Stop a run and run expressions (W6-C3)
+
+### What it does
+A user can stop a run that is queued, waiting or running, and mappings gain four run values. Both are additive: nothing existing changed shape.
+
+### 1. Stop a run
+`POST /api/v1/workspaces/{workspaceId}/workflows/{workflowId}/executions/{executionId}/cancel` with the normal bearer token and no body. The caller needs the same permission as "run" (`WORKFLOW_RUN`).
+
+| Status | Body | Meaning | What to show |
+| --- | --- | --- | --- |
+| 202 | `{ "status": "CANCELLED" }` | The run was still queued and ended at once | Run shows "Đã dừng" / "Stopped" |
+| 202 | `{ "status": "CANCEL_REQUESTED" }` | The run is going; the step already running finishes, the rest never start | "Đang dừng…" / "Stopping…" until a poll returns `CANCELLED` |
+| 403 | | No run permission | hide or disable the action |
+| 404 | | Unknown run, or the run belongs to another workflow/workspace | treat as gone |
+| 409 | `error.code = EXECUTION_ALREADY_FINISHED` | The run ended before the request | "Lượt chạy đã kết thúc, không thể dừng." then refresh |
+
+- Show the action ("Dừng") only while the run status is `QUEUED`, `WAITING` or `RUNNING`, and ask for a confirm that says the current step finishes first.
+- The final status is `CANCELLED` (already in the status enum). Its error is `{ "code": "CANCELLED_BY_USER" }`; unstarted steps are `CANCELLED`. Label it "Đã dừng" / "Stopped" (not "failed": a stopped run sends no failure notification and counts as neither success nor failure in monitoring).
+- The list/detail responses do not say that a stop was requested; keep "Đang dừng…" in the screen state and rely on polling (2 s) for the final status. Repeating the request while a stop is pending is safe (`202 CANCEL_REQUESTED` again).
+
+### 2. Run expressions
+Config fields that accept `{{ ... }}` now also accept `{{ now }}` (UTC time, ISO 8601, taken when the step starts), `{{ run.id }}`, `{{ workflow.id }}`, `{{ workflow.name }}`. If the app has a variable picker, list them under a group "Lần chạy" / "This run". Existing expressions (`trigger.input.*`, `nodes.<id>.output.*`, `variables.*`) are unchanged, including steps or variables literally named `now`.
+
+### 3. Workspace that no longer exists
+Calls scoped to a workspace now answer `404` (error code `RESOURCE_NOT_FOUND`) instead of `403` when the caller is not a member of the workspace, or it is deleted or missing. `403` is only for a member who lacks the capability.
+
+For the mobile app: workflow routes now answer 404 (not 403) for non-members; `ErrorState` may want to show its calm "no access" state for 404 on workflow screens too.
+
+### 4. How to check
+1. Start a long run (an http step against a slow URL), call cancel: `202 CANCEL_REQUESTED`, then the run ends `CANCELLED` after the current step; no "failed" notification arrives.
+2. Cancel a finished run: `409 EXECUTION_ALREADY_FINISHED`.
+3. A step with body `{{ run.id }} {{ now }}` shows the run id and a UTC timestamp in its output.

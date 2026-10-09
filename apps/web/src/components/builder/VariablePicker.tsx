@@ -8,6 +8,14 @@ interface VariablePickerProps {
   insert: (text: string) => boolean;
 }
 
+/** W6-C3: values of the run itself; the path IS the whole expression (no prefix). */
+const RUN_PATHS: Array<{ path: string; labelKey: string }> = [
+  { path: 'now', labelKey: 'builder.var.run_now' },
+  { path: 'run.id', labelKey: 'builder.var.run_id' },
+  { path: 'workflow.id', labelKey: 'builder.var.workflow_id' },
+  { path: 'workflow.name', labelKey: 'builder.var.workflow_name' },
+];
+
 export const VariablePicker: React.FC<VariablePickerProps> = ({ groups, insert }) => {
   const { t } = useI18nStore();
   const [open, setOpen] = useState(false);
@@ -16,7 +24,7 @@ export const VariablePicker: React.FC<VariablePickerProps> = ({ groups, insert }
   const panelId = useId();
   const keepFocus = (event: React.MouseEvent) => event.preventDefault();
   const add = (prefix: string, path: string) => {
-    const text = `{{ ${prefix}.${path} }}`;
+    const text = `{{ ${prefix ? `${prefix}.${path}` : path} }}`;
     setNotice(insert(text) ? { ok: true, text: t('builder.var.inserted').replace('{text}', text) } : { ok: false, text: t('builder.var.no_target') });
   };
   const keyOk = isValidPath(key);
@@ -82,6 +90,24 @@ export const VariablePicker: React.FC<VariablePickerProps> = ({ groups, insert }
               )}
             </div>
           ))}
+          <div role="group" aria-label={t('builder.var.run')} data-testid="variable-run-group">
+            <p className="mb-1 font-mono text-[10px] font-semibold text-text-2">{t('builder.var.run')}</p>
+            <div className="flex flex-wrap gap-1">
+              {RUN_PATHS.map(({ path, labelKey }) => (
+                <button
+                  key={path}
+                  type="button"
+                  data-testid="variable-option"
+                  onMouseDown={keepFocus}
+                  onClick={() => add('', path)}
+                  title={`{{ ${path} }} · ${t(labelKey)}`}
+                  className="rounded border border-border-strong bg-card px-1.5 py-0.5 font-mono text-[10px] text-foreground hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {path}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>

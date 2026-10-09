@@ -278,6 +278,58 @@ describe('workflow gateway routes', () => {
     expect(response.statusCode).toBe(503);
     expect(response.body).not.toContain('private-url');
   });
+  describe('stop a run (W6-C3)', () => {
+    const executionId = '00000000-0000-4000-8000-0000000000e1';
+    const auth = { authorization: 'Bearer opaque-token' };
+
+    it('forwards the cancel request and relays 202, 404 and 409', async () => {
+      const request = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ status: 'CANCEL_REQUESTED' }), {
+            status: 202,
+            headers: { 'content-type': 'application/json' },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: { code: 'EXECUTION_ALREADY_FINISHED' } }), {
+            status: 409,
+            headers: { 'content-type': 'application/json' },
+          }),
+        );
+      const url = `/api/v1/workspaces/${workspaceId}/workflows/${workflowId}/executions/${executionId}/cancel`;
+
+      const accepted = await app.inject({ method: 'POST', url, headers: auth });
+      const finished = await app.inject({ method: 'POST', url, headers: auth });
+
+      expect([accepted.statusCode, finished.statusCode]).toEqual([202, 409]);
+      expect(accepted.json()).toEqual({ status: 'CANCEL_REQUESTED' });
+      expect(request).toHaveBeenCalledWith(
+        `http://workflow.internal:8080/workspaces/${workspaceId}/workflows/${workflowId}/executions/${executionId}/cancel`,
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    it('rejects a malformed execution id and a missing token before upstream access', async () => {
+      const request = jest.spyOn(globalThis, 'fetch');
+      const base = `/api/v1/workspaces/${workspaceId}/workflows/${workflowId}/executions`;
+
+      const badId = await app.inject({
+        method: 'POST',
+        url: `${base}/not-a-uuid/cancel`,
+        headers: auth,
+      });
+      const noToken = await app.inject({
+        method: 'POST',
+        url: `${base}/${executionId}/cancel`,
+      });
+
+      expect(badId.statusCode).toBe(400);
+      expect(noToken.statusCode).toBe(401);
+      expect(request).not.toHaveBeenCalled();
+    });
+  });
+
   describe('monitoring routes (W6-A)', () => {
     const ruleId = '00000000-0000-4000-8000-000000000009';
     const json = { headers: { 'content-type': 'application/json' } };
@@ -424,6 +476,239 @@ describe('workflow gateway routes', () => {
         expect(rejected.statusCode).toBe(400);
       }
       expect(request).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('template routes (W6-C1)', () => {
+    const templateId = '00000000-0000-4000-8000-00000000000a';
+    const json = { headers: { 'content-type': 'application/json' } };
+    const auth = { authorization: 'Bearer opaque-token' };
+    const base = 'http://workflow.internal:8080';
+    const workflowBase = `/workspaces/${workspaceId}/workflows/${workflowId}`;
+
+    it('forwards share preview and share to the workflow template path', async () => {
+      const request = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(new Response(JSON.stringify({}), json))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ id: templateId }), {
+            ...json,
+            status: 201,
+          }),
+        );
+      const body = {
+        name: 'Invoice mail',
+        description: 'd',
+        authorName: 'Khai',
+        visibility: 'UNLISTED',
+      };
+
+      const preview = await app.inject({
+        method: 'POST',
+        url: `/api/v1/${workflowBase.slice(1)}/template/preview`,
+        headers: auth,
+      });
+      const shared = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/${workflowBase.slice(1)}/template`,
+        headers: auth,
+        payload: body,
+      });
+
+      expect([preview.statusCode, shared.statusCode]).toEqual([200, 201]);
+      expect(request.mock.calls.map((call) => call[0])).toEqual([
+        `${base}${workflowBase}/template/preview`,
+        `${base}${workflowBase}/template`,
+      ]);
+      expect(
+        request.mock.calls.map((call) => (call[1] as RequestInit).method),
+      ).toEqual(['POST', 'PUT']);
+      expect(
+        JSON.parse((request.mock.calls[1][1] as { body: string }).body),
+      ).toEqual(body);
+    });
+
+    it('forwards browse, read, patch, delete and use', async () => {
+      const request = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ items: [] }), json),
+        )
+        .mockResolvedValueOnce(new Response(JSON.stringify({}), json))
+        .mockResolvedValueOnce(new Response(JSON.stringify({}), json))
+        .mockResolvedValueOnce(new Response(JSON.stringify({}), json))
+        .mockResolvedValueOnce(new Response(null, { status: 204 }))
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ workflowId }), {
+            ...json,
+            status: 201,
+          }),
+        );
+
+      const responses = [
+        await app.inject({
+          url: `/api/v1/templates?scope=workspace&workspaceId=${workspaceId}&q=hoa%20don&page=1&size=10`,
+          headers: auth,
+        }),
+        await app.inject({
+          url: `/api/v1/templates/${templateId}`,
+          headers: auth,
+        }),
+        await app.inject({
+          url: '/api/v1/templates/by-code/wv7k-3m9q',
+          headers: auth,
+        }),
+        await app.inject({
+          method: 'PATCH',
+          url: `/api/v1/templates/${templateId}`,
+          headers: auth,
+          payload: { visibility: 'PUBLIC' },
+        }),
+        await app.inject({
+          method: 'DELETE',
+          url: `/api/v1/templates/${templateId}`,
+          headers: auth,
+        }),
+        await app.inject({
+          method: 'POST',
+          url: `/api/v1/templates/${templateId}/use`,
+          headers: auth,
+          payload: { workspaceId, name: 'My copy' },
+        }),
+      ];
+
+      expect(responses.map((response) => response.statusCode)).toEqual([
+        200, 200, 200, 200, 204, 201,
+      ]);
+      expect(request.mock.calls.map((call) => call[0])).toEqual([
+        `${base}/templates?scope=workspace&workspaceId=${workspaceId}&q=hoa+don&page=1&size=10`,
+        `${base}/templates/${templateId}`,
+        `${base}/templates/by-code/wv7k-3m9q`,
+        `${base}/templates/${templateId}`,
+        `${base}/templates/${templateId}`,
+        `${base}/templates/${templateId}/use`,
+      ]);
+      expect(
+        request.mock.calls.map((call) => (call[1] as RequestInit).method),
+      ).toEqual(['GET', 'GET', 'GET', 'PATCH', 'DELETE', 'POST']);
+      expect(
+        JSON.parse((request.mock.calls[3][1] as { body: string }).body),
+      ).toEqual({ visibility: 'PUBLIC' });
+    });
+
+    it('accepts null for optional string fields and forwards them', async () => {
+      const request = jest
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation(() =>
+          Promise.resolve(new Response(JSON.stringify({}), json)),
+        );
+
+      const shared = await app.inject({
+        method: 'PUT',
+        url: `/api/v1/${workflowBase.slice(1)}/template`,
+        headers: auth,
+        payload: {
+          name: 'x',
+          description: null,
+          authorName: null,
+          visibility: 'PRIVATE',
+        },
+      });
+      const patched = await app.inject({
+        method: 'PATCH',
+        url: `/api/v1/templates/${templateId}`,
+        headers: auth,
+        payload: { name: null, description: null, visibility: null },
+      });
+      const used = await app.inject({
+        method: 'POST',
+        url: `/api/v1/templates/${templateId}/use`,
+        headers: auth,
+        payload: { workspaceId, name: null },
+      });
+
+      expect([shared.statusCode, patched.statusCode, used.statusCode]).toEqual([
+        200, 200, 200,
+      ]);
+      const bodies = request.mock.calls.map(
+        (call) => JSON.parse((call[1] as { body: string }).body) as unknown,
+      );
+      expect(bodies[0]).toEqual({
+        name: 'x',
+        description: null,
+        authorName: null,
+        visibility: 'PRIVATE',
+      });
+      expect(bodies[1]).toEqual({
+        name: null,
+        description: null,
+        visibility: null,
+      });
+      expect(bodies[2]).toEqual({ workspaceId, name: null });
+    });
+
+    it('rejects bad input before upstream access', async () => {
+      const request = jest.spyOn(globalThis, 'fetch');
+      const bad = [
+        {
+          method: 'PUT',
+          url: `/api/v1/${workflowBase.slice(1)}/template`,
+          payload: { name: 'x' },
+        },
+        {
+          method: 'PUT',
+          url: `/api/v1/${workflowBase.slice(1)}/template`,
+          payload: { name: '', visibility: 'PUBLIC' },
+        },
+        {
+          method: 'PUT',
+          url: `/api/v1/${workflowBase.slice(1)}/template`,
+          payload: { name: 'x', visibility: 'SECRET' },
+        },
+        {
+          method: 'PUT',
+          url: `/api/v1/${workflowBase.slice(1)}/template`,
+          payload: { name: 'x', visibility: 'PUBLIC', extra: 1 },
+        },
+        {
+          method: 'PATCH',
+          url: `/api/v1/templates/${templateId}`,
+          payload: { owner: 'x' },
+        },
+        {
+          method: 'POST',
+          url: `/api/v1/templates/${templateId}/use`,
+          payload: {},
+        },
+        {
+          method: 'POST',
+          url: '/api/v1/templates/not-a-uuid/use',
+          payload: { workspaceId },
+        },
+        { method: 'GET', url: '/api/v1/templates?scope=nope' },
+        { method: 'GET', url: '/api/v1/templates?size=500' },
+        { method: 'GET', url: '/api/v1/templates/by-code/%2e%2e%2fsecret' },
+      ] as const;
+
+      for (const item of bad) {
+        const response = await app.inject({
+          method: item.method,
+          url: item.url,
+          headers: auth,
+          payload: 'payload' in item ? item.payload : undefined,
+        });
+        expect([item.url, response.statusCode]).toEqual([item.url, 400]);
+      }
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('requires a bearer token', async () => {
+      const request = jest.spyOn(globalThis, 'fetch');
+
+      const response = await app.inject({ url: '/api/v1/templates' });
+
+      expect(response.statusCode).toBe(401);
+      expect(request).not.toHaveBeenCalled();
     });
   });
 });

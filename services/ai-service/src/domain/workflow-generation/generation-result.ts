@@ -157,6 +157,7 @@ export function generationResultSchema(capabilities: Capability[]) {
     .object({
       id: nodeId,
       type: z.string(),
+      name: codePoints(80).optional(),
       config: z.record(z.string(), z.unknown()),
     })
     .refine(

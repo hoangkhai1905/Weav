@@ -9,6 +9,7 @@ import com.weav.workflow.application.port.out.WorkspaceAccessPort;
 import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
 import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableException;
 import com.weav.workflow.domain.exception.ForbiddenException;
+import com.weav.workflow.domain.exception.WorkspaceNotFoundException;
 import com.weav.workflow.infrastructure.security.ServiceJwtSigner;
 import com.weav.workflow.infrastructure.web.CorrelationIdFilter;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -63,10 +64,11 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
     private final CircuitBreaker circuitBreaker;
     /** Null when no signing key is configured: then only the legacy static key header is sent. */
     private final ServiceJwtSigner serviceJwtSigner;
-    /** Only access-check answers are cached: Access or DENIED. Never errors, never credentials. */
+    /** Only access-check answers are cached: Access, DENIED or NOT_FOUND. Never errors, never credentials. */
     private final Cache<AccessKey, Object> accessCache;
 
     private static final Object DENIED = new Object();
+    private static final Object NOT_FOUND = new Object();
     private static final int ACCESS_CACHE_MAX_ENTRIES = 10_000;
 
     private record AccessKey(UUID workspaceId, UUID userId) {
@@ -137,6 +139,9 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
         if (cached == DENIED) {
             throw new ForbiddenException();
         }
+        if (cached == NOT_FOUND) {
+            throw new WorkspaceNotFoundException();
+        }
         if (cached instanceof Access access) {
             return access;
         }
@@ -144,6 +149,9 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
             Access access = fetchAccess(workspaceId, userId);
             accessCache.put(key, access);
             return access;
+        } catch (WorkspaceNotFoundException missing) {
+            accessCache.put(key, NOT_FOUND);
+            throw missing;
         } catch (ForbiddenException denied) {
             accessCache.put(key, DENIED);
             throw denied;
@@ -154,6 +162,11 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
         long started = System.nanoTime();
         String path = INTERNAL_PREFIX + workspaceId + "/users/" + userId + "/access";
         ResponseEnvelope response = send("access", HttpMethod.GET, path, null, started, "workspace:access", workspaceId, null);
+        if (response.statusCode() == 404) {
+            // 404 = the caller is not a member, or the workspace is deleted/missing (workspace-service cannot tell
+            // them apart). Answered as 404; 403 stays for a member lacking the capability.
+            throw new WorkspaceNotFoundException();
+        }
         if (isDenied(response.statusCode())) {
             throw new ForbiddenException();
         }

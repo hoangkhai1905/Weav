@@ -145,7 +145,17 @@ class WorkspaceClientTest {
     void missingAccessSnapshotIsDeniedAsForbidden() {
         stubResponse.set(new StubResponse(404, "{\"message\":\"private workspace details\"}", false, 0));
 
-        assertThrows(ForbiddenException.class, () -> client.getAccess(WORKSPACE_ID, USER_ID));
+        assertThrows(com.weav.workflow.domain.exception.WorkspaceNotFoundException.class,
+                () -> client.getAccess(WORKSPACE_ID, USER_ID));
+    }
+
+    @Test
+    void forbiddenAccessAnswerStaysAPlainDenialNotAMissingWorkspace() {
+        stubResponse.set(new StubResponse(403, "{}", false, 0));
+
+        ForbiddenException denied = assertThrows(ForbiddenException.class,
+                () -> client.getAccess(WORKSPACE_ID, USER_ID));
+        assertFalse(denied instanceof com.weav.workflow.domain.exception.WorkspaceNotFoundException);
     }
 
     @Test

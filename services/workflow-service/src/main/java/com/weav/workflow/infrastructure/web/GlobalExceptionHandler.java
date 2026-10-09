@@ -3,6 +3,7 @@ package com.weav.workflow.infrastructure.web;
 import com.weav.workflow.domain.exception.ConflictException;
 import com.weav.workflow.domain.exception.DomainException;
 import com.weav.workflow.domain.exception.ForbiddenException;
+import com.weav.workflow.domain.exception.WorkspaceNotFoundException;
 import com.weav.workflow.domain.exception.IdempotencyKeyReusedException;
 import com.weav.workflow.domain.exception.InvalidStateException;
 import com.weav.workflow.domain.exception.RateLimitExceededException;
@@ -236,6 +237,9 @@ public class GlobalExceptionHandler {
         }
         if (exception instanceof UnauthorizedException) {
             return HttpStatus.UNAUTHORIZED;
+        }
+        if (exception instanceof WorkspaceNotFoundException) {
+            return HttpStatus.NOT_FOUND;
         }
         if (exception instanceof ForbiddenException) {
             return HttpStatus.FORBIDDEN;

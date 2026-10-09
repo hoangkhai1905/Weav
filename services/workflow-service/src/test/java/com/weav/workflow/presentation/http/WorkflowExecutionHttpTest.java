@@ -319,6 +319,42 @@ class WorkflowExecutionHttpTest {
                 .andExpect(jsonPath("$.error.code").value("INVALID_PARAMETER"));
     }
 
+    @Test
+    void cancelEndsAQueuedRunOnceAndRefusesAFinishedOne() throws Exception {
+        UUID workflowId = createPublishedWorkflow("cancel-root");
+        MvcResult result = mockMvc.perform(post("/workspaces/{workspaceId}/workflows/{workflowId}/executions",
+                        workspaceId, workflowId)
+                        .header("Authorization", "Bearer " + accessToken(USER_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"input\":{}}"))
+                .andExpect(status().isAccepted()).andReturn();
+        UUID executionId = UUID.fromString(objectMapper.readTree(result.getResponse().getContentAsString())
+                .path("executionId").stringValue());
+        String cancelPath = "/workspaces/{workspaceId}/workflows/{workflowId}/executions/{executionId}/cancel";
+
+        workspaceBoundary.setCapabilities(Set.of("WORKSPACE_VIEW", "WORKFLOW_MONITOR"));
+        mockMvc.perform(post(cancelPath, workspaceId, workflowId, executionId)
+                        .header("Authorization", "Bearer " + accessToken(USER_ID)))
+                .andExpect(status().isForbidden());
+        assertEquals("QUEUED", scalar("select status from workflow.workflow_executions where id = ?", executionId));
+
+        workspaceBoundary.setCapabilities(ALL_CAPABILITIES);
+        mockMvc.perform(post(cancelPath, workspaceId, workflowId, executionId)
+                        .header("Authorization", "Bearer " + accessToken(USER_ID)))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+        assertEquals("CANCELLED", scalar("select status from workflow.workflow_executions where id = ?", executionId));
+
+        mockMvc.perform(post(cancelPath, workspaceId, workflowId, executionId)
+                        .header("Authorization", "Bearer " + accessToken(USER_ID)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("EXECUTION_ALREADY_FINISHED"));
+        mockMvc.perform(post(cancelPath, workspaceId, workflowId, UUID.randomUUID())
+                        .header("Authorization", "Bearer " + accessToken(USER_ID)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
+    }
+
     private UUID createPublishedWorkflow(String rootId) {
         Workflow draft = workflowDraftService.create(new CreateWorkflowCommand(
                 workspaceId, USER_ID, "Execution HTTP test", null));

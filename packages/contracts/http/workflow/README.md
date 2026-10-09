@@ -59,6 +59,25 @@ notification event (see `events/notification`). Contract tests:
 `MonitoringHttpTest` (workflow-service) and the monitoring block of
 `workflow.module.spec.ts` (api-gateway).
 
+## Shared templates (W6-C1)
+
+`PUT /workspaces/{workspaceId}/workflows/{workflowId}/template` shares a
+workflow as a sanitized snapshot (201 first time, 200 when it refreshes the
+workflow's existing template, same id and share code); `POST .../template/preview`
+shows what would be removed or warned about without writing. `GET /templates`
+(`scope=public|workspace|mine`), `GET /templates/{id}`, `GET /templates/by-code/{code}`,
+`PATCH` and `DELETE /templates/{id}`, and `POST /templates/{id}/use` browse, edit
+and copy. Visibility is PRIVATE (members of the source workspace), UNLISTED (id
+or code) or PUBLIC (gallery); a template the caller may not see is always 404.
+The sanitizer removes connection ids and `x-weav-personal` node-schema fields
+unless they are a single mapping expression, blanks variable values, keeps only
+node names and positions in the editor state, and warns (EMAIL, TOKEN) about
+likely personal text it leaves in place. Contract tests: `TemplateHttpTest` and
+`TemplateSanitizerTest` (workflow-service); the template block of
+`workflow.module.spec.ts` and `test/template.e2e-spec.ts` (api-gateway). The
+gateway limits template changes and share-code lookups with the `template`
+bucket (`GATEWAY_TEMPLATE_RATE_LIMIT`, default 20 per minute per user).
+
 ## Internal connection usage
 
 `GET /internal/workspaces/{workspaceId}/connections/{connectionId}/usage` is
@@ -93,3 +112,20 @@ admission. Deferred provider integrations remain unavailable or gated: do not
 infer readiness from a documented node type alone. See
 [`services/workflow-service/README.md`](../../../../services/workflow-service/README.md)
 for runtime configuration, integration readiness, and acceptance commands.
+
+## Stop a run and run expressions (W6-C3)
+
+`POST /workspaces/{workspaceId}/workflows/{workflowId}/executions/{executionId}/cancel`
+needs `WORKFLOW_RUN` and has no body. A QUEUED run ends CANCELLED at once
+(`202 {"status":"CANCELLED"}`); a RUNNING or WAITING run gets a flag the runner
+checks between nodes (`202 {"status":"CANCEL_REQUESTED"}`): the node already running
+finishes, the rest are CANCELLED and the run ends CANCELLED with error code
+`CANCELLED_BY_USER`. A run that already ended answers `409 EXECUTION_ALREADY_FINISHED`;
+an unknown run, or one of another workflow or workspace, answers 404. A stopped run
+records no `workflow.failed` notification and counts as neither success nor failure
+in monitoring. Contract tests: `ExecutionCancelStateTest`, `ExecutionRunnerTest` and
+`WorkflowExecutionHttpTest` (workflow-service), the stop block of
+`workflow.module.spec.ts` (api-gateway).
+
+Mappings gain `{{ now }}` (ISO-8601 UTC instant when the step starts), `{{ run.id }}`,
+`{{ workflow.id }}` and `{{ workflow.name }}`; existing roots are unchanged.
