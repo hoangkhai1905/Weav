@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/discord.send_message",
+  "title": "Send Discord message",
+  "description": "Posts a message to a Discord channel through a webhook. Mentions (@everyone, @here, users, roles) never ping.",
+  "x-weav-node": {
+    "type": "discord.send_message",
+    "category": "action",
+    "label": "Send Discord message",
+    "sideEffect": true
+  },
+  "type": "object",
+  "properties": {
+    "connectionId": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Discord connection",
+      "description": "Discord connection holding the channel's webhook URL.",
+      "x-weav-connection": {
+        "provider": "DISCORD"
+      }
+    },
+    "content": {
+      "type": "string",
+      "title": "Message",
+      "description": "Message text, at most 2000 characters after mappings are applied.",
+      "x-weav-template": true,
+      "minLength": 1
+    },
+    "username": {
+      "type": "string",
+      "title": "Sender name",
+      "description": "Optional name shown instead of the webhook's own, at most 80 characters.",
+      "x-weav-template": true
+    }
+  },
+  "required": [
+    "connectionId",
+    "content"
+  ],
+  "additionalProperties": false
+}

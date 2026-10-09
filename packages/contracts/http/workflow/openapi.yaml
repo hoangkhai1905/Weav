@@ -1082,7 +1082,7 @@ components:
             required: [triggerId, type, status, reasonCode, nextRunAt, lastTriggeredAt]
             properties:
               triggerId: { type: string, format: uuid }
-              type: { type: string, enum: [SCHEDULE, WEBHOOK, TELEGRAM, GMAIL] }
+              type: { type: string, enum: [SCHEDULE, WEBHOOK, TELEGRAM, GMAIL, WORKFLOW_EVENT] }
               status: { type: string, enum: [ACTIVE, DISABLED] }
               reasonCode:
                 type: string
@@ -1152,7 +1152,7 @@ components:
         workflowId: { type: string, format: uuid }
         workflowVersionId: { type: string, format: uuid }
         status: { type: string, enum: [QUEUED, RUNNING, WAITING, SUCCESS, FAILED, CANCELLED] }
-        triggerType: { type: string, enum: [MANUAL, SCHEDULE, WEBHOOK, TELEGRAM, GMAIL] }
+        triggerType: { type: string, enum: [MANUAL, SCHEDULE, WEBHOOK, TELEGRAM, GMAIL, WORKFLOW_EVENT] }
         createdAt: { type: string, format: date-time }
         startedAt: { type: string, format: date-time, nullable: true }
         finishedAt: { type: string, format: date-time, nullable: true }
@@ -1259,7 +1259,7 @@ components:
         workflowId: { type: string, format: uuid }
         workflowName: { type: string }
         status: { type: string, enum: [QUEUED, RUNNING, WAITING, SUCCESS, FAILED, CANCELLED] }
-        triggerType: { type: string, enum: [MANUAL, SCHEDULE, WEBHOOK, TELEGRAM, GMAIL] }
+        triggerType: { type: string, enum: [MANUAL, SCHEDULE, WEBHOOK, TELEGRAM, GMAIL, WORKFLOW_EVENT] }
         createdAt: { type: string, format: date-time }
         startedAt: { type: string, format: date-time, nullable: true }
         finishedAt: { type: string, format: date-time, nullable: true }

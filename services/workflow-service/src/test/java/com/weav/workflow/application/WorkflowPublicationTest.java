@@ -327,6 +327,30 @@ class WorkflowPublicationTest {
         assertFalse(provisioning.toString().contains("secret-marker"));
     }
 
+    @Test
+    void workflowEventTriggerMayOnlyWatchWorkflowsOfTheSameWorkspace() {
+        UUID foreign = UUID.randomUUID();
+        com.weav.workflow.application.port.out.ControlBotStore store =
+                org.mockito.Mockito.mock(com.weav.workflow.application.port.out.ControlBotStore.class);
+        when(store.existingWorkflowIds(WORKSPACE_ID, Set.of(foreign))).thenReturn(Set.of());
+        Workflow workflow = workflow(WORKSPACE_ID, ACTOR_ID, WorkflowStatus.DRAFT, null,
+                definition(List.of(node("event", "trigger.workflow_event",
+                        Map.of("events", List.of("FAILED"), "workflowIds", List.of(foreign.toString())))),
+                        List.of(), "watch"));
+        when(workflows.findByWorkspaceAndId(WORKSPACE_ID, workflow.getId())).thenReturn(Optional.of(workflow));
+        WorkflowPublicationService service = new WorkflowPublicationService(workflows, versions, triggers,
+                authorization, workspaceConnections, Optional.empty(), schedules, webhookSecrets, event -> { },
+                org.springframework.transaction.support.TransactionOperations.withoutTransaction(),
+                Optional.empty(), Optional.of(store));
+
+        WorkflowDraftValidationException rejection = assertThrows(WorkflowDraftValidationException.class,
+                () -> service.publish(WORKSPACE_ID, workflow.getId(), ACTOR_ID));
+
+        assertTrue(rejection.issues().stream().anyMatch(issue ->
+                "WORKFLOW_NOT_IN_WORKSPACE".equals(issue.code()) && "event".equals(issue.nodeId())));
+        verify(workflows, never()).lockByWorkspaceAndId(any(), any());
+    }
+
     private WorkflowPublicationService service(Optional<ConnectionReferencePort> referencePort) {
         return new WorkflowPublicationService(workflows, versions, triggers, authorization,
                 workspaceConnections, referencePort, schedules, webhookSecrets);
