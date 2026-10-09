@@ -59,6 +59,25 @@ notification event (see `events/notification`). Contract tests:
 `MonitoringHttpTest` (workflow-service) and the monitoring block of
 `workflow.module.spec.ts` (api-gateway).
 
+## Shared templates (W6-C1)
+
+`PUT /workspaces/{workspaceId}/workflows/{workflowId}/template` shares a
+workflow as a sanitized snapshot (201 first time, 200 when it refreshes the
+workflow's existing template, same id and share code); `POST .../template/preview`
+shows what would be removed or warned about without writing. `GET /templates`
+(`scope=public|workspace|mine`), `GET /templates/{id}`, `GET /templates/by-code/{code}`,
+`PATCH` and `DELETE /templates/{id}`, and `POST /templates/{id}/use` browse, edit
+and copy. Visibility is PRIVATE (members of the source workspace), UNLISTED (id
+or code) or PUBLIC (gallery); a template the caller may not see is always 404.
+The sanitizer removes connection ids and `x-weav-personal` node-schema fields
+unless they are a single mapping expression, blanks variable values, keeps only
+node names and positions in the editor state, and warns (EMAIL, TOKEN) about
+likely personal text it leaves in place. Contract tests: `TemplateHttpTest` and
+`TemplateSanitizerTest` (workflow-service); the template block of
+`workflow.module.spec.ts` and `test/template.e2e-spec.ts` (api-gateway). The
+gateway limits template changes and share-code lookups with the `template`
+bucket (`GATEWAY_TEMPLATE_RATE_LIMIT`, default 20 per minute per user).
+
 ## Internal connection usage
 
 `GET /internal/workspaces/{workspaceId}/connections/{connectionId}/usage` is

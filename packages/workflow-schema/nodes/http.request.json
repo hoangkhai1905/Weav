@@ -32,13 +32,15 @@
       "additionalProperties": {
         "type": "string"
       },
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-personal": true
     },
     "query": {
       "type": "object",
       "title": "Query parameters",
       "description": "Query string parameters as name and value pairs.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-personal": true
     },
     "body": {
       "title": "Body",

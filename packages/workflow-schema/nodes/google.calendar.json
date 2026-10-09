@@ -24,7 +24,8 @@
       "type": "string",
       "title": "Calendar ID",
       "description": "Calendar to add the event to. Defaults to the primary calendar.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-personal": true
     },
     "summary": {
       "type": "string",
@@ -70,6 +71,7 @@
       "title": "Attendees",
       "description": "Email addresses to invite.",
       "x-weav-template": true,
+      "x-weav-personal": true,
       "items": {
         "type": "string",
         "minLength": 1
