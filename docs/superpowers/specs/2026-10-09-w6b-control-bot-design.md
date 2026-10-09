@@ -17,6 +17,8 @@ Config:
 | `input` | object, template | `run` only: trigger input for the target (manual-style run) |
 | `limit` | integer 1-20, default 5 | `list_failures` |
 | `text` | string, template | `command` only: the raw chat text |
+| `sender` | string, template | `command` only, required: who sent the text (bot template: `{{ trigger.input.message.from.id }}`) |
+| `allowedSenders` | array of strings, personal | `command` only, required, non-empty: Telegram user ids allowed to control workflows (K 2026-10-09) |
 
 Behaviour:
 
@@ -40,6 +42,8 @@ Behaviour:
   - Output: the operation's output plus `reply`, a Vietnamese plain-text message of at most 1000 characters describing the result or the error.
   - An unknown command, or a failure of the operation, does NOT fail the node. It returns `ok: false` with a helpful `reply`, so the bot always answers.
 - **Side effect:** `run`, `pause`, `resume` and `command` are side-effecting (`x-weav-node.sideEffect: true`).
+- **Access:** the capability check runs before the target is resolved (no name probing). In `command` mode, a `sender` not in `allowedSenders` gets `{ok:false, reply:"Bạn không có quyền điều khiển quy trình."}` and nothing else happens. The ambiguous-name reply lists names only.
+- **Loop guard (review 2026-10-09):** a `run` executed inside a chained run (trigger type `WORKFLOW_EVENT`, or itself started this way) admits the target with idempotency key prefix `wfctl-chain-`. Such runs never fire workflow events. Runs the bot starts from a normal trigger stay unmarked, so their failures still alert.
 
 ## 3. `trigger.workflow_event`
 
@@ -55,7 +59,8 @@ Behaviour:
 - **Input:** `{workflowId, workflowName, executionId, status, errorCode, errorMessage, startedAt, finishedAt, durationMs, runUrl}`. `runUrl` is the web base URL plus the run path, from config `WORKFLOW_WEB_BASE_URL`; when that is empty, the field is omitted.
 - **When it never fires:**
   - CANCELLED runs.
-  - Loop guard: an execution whose trigger type is `WORKFLOW_EVENT` never fires workflow events (depth 1).
+  - Loop guard: an execution whose trigger type is `WORKFLOW_EVENT`, or whose idempotency key starts with `wfctl-chain-` (section 2), never fires workflow events.
+  - Known limit: Discord 429 retries on the runner's fixed schedule; `Retry-After` is not honoured.
   - A workflow never fires itself.
 - **Idempotency:** one firing per (listening trigger, source execution), enforced by a unique key on the queued execution, reusing the existing idempotency column and pattern.
 - **Publish validation:** publishing checks that every listed `workflowIds` entry exists in the same workspace.
@@ -77,7 +82,7 @@ Behaviour:
 
 ## 5. Built-in templates (web static list)
 
-- "Bot Telegram điều khiển quy trình": `trigger.telegram` → `weav.workflow` (`command`, `text: {{ trigger.input.message.text }}`) → `telegram.send_message` (`chatId: {{ trigger.input.message.chat.id }}`, `text: {{ nodes.control.output.reply }}`).
+- "Bot Telegram điều khiển quy trình": `trigger.telegram` → `weav.workflow` (`command`, `text: {{ trigger.input.message.text }}`, `sender: {{ trigger.input.message.from.id }}`, `allowedSenders` left for the user) → `telegram.send_message` (`chatId: {{ trigger.input.message.chat.id }}`, `text: {{ nodes.control.output.reply }}`).
 - "Cảnh báo lỗi qua email": `trigger.workflow_event` (`events: [FAILED]`) → `email.send` (subject/body from the trigger input; recipient left for the user).
 - "Cảnh báo lỗi qua Discord": same trigger → `discord.send_message`.
 
