@@ -38,7 +38,8 @@ public record ResolvedConnectionCredential(
         };
         boolean validProvider = switch (authType) {
             case NONE, API_KEY, BASIC -> provider == ConnectionProvider.HTTP;
-            case TOKEN -> provider == ConnectionProvider.HTTP || provider == ConnectionProvider.TELEGRAM;
+            case TOKEN -> provider == ConnectionProvider.HTTP || provider == ConnectionProvider.TELEGRAM
+                    || provider == ConnectionProvider.DISCORD;
             case OAUTH2 -> provider.isGoogleOAuth();
         };
         if (!auth.keySet().equals(expectedAuthKeys) || !validProvider) {

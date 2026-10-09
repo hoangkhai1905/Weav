@@ -32,6 +32,7 @@ import com.weav.workspace.infrastructure.persistence.SpringAfterCommitExecutor;
 import com.weav.workspace.infrastructure.provider.http.HttpConnectionProvider;
 import com.weav.workspace.infrastructure.provider.http.HttpTargetValidator;
 import com.weav.workspace.infrastructure.provider.http.PinnedHttpTransport;
+import com.weav.workspace.infrastructure.provider.discord.DiscordConnectionProvider;
 import com.weav.workspace.infrastructure.provider.telegram.TelegramConnectionProvider;
 import com.weav.workspace.infrastructure.workflow.WorkflowConnectionUsageClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -300,8 +301,16 @@ public class WorkspaceApplicationConfig {
     }
 
     @Bean
+    public DiscordConnectionProvider discordConnectionProvider(
+            HttpTargetValidator targetValidator,
+            PinnedHttpTransport transport) {
+        return new DiscordConnectionProvider(targetValidator, transport);
+    }
+
+    @Bean
     public ConnectionProviderRegistry connectionProviderRegistry(
             TelegramConnectionProvider telegramConnectionProvider,
+            DiscordConnectionProvider discordConnectionProvider,
             HttpConnectionProvider httpConnectionProvider,
             @Qualifier("gmailConnectionProvider") GoogleConnectionProvider gmailConnectionProvider,
             @Qualifier("googleSheetsConnectionProvider") GoogleConnectionProvider googleSheetsConnectionProvider,
@@ -309,6 +318,7 @@ public class WorkspaceApplicationConfig {
             @Qualifier("googleDriveConnectionProvider") GoogleConnectionProvider googleDriveConnectionProvider) {
         return new ConnectionProviderRegistry(
                 telegramConnectionProvider,
+                discordConnectionProvider,
                 httpConnectionProvider,
                 gmailConnectionProvider,
                 googleSheetsConnectionProvider,

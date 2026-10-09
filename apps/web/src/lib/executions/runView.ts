@@ -1,6 +1,6 @@
 import type { NodeExecutionResult, WorkflowEdge, WorkflowNode } from '../../types/workflow.types';
 
-const KNOWN_TRIGGERS = new Set(['manual', 'schedule', 'webhook', 'telegram', 'gmail']);
+const KNOWN_TRIGGERS = new Set(['manual', 'schedule', 'webhook', 'telegram', 'gmail', 'workflow_event']);
 
 /** "trigger.gmail" / "GMAIL" -> "gmail". */
 export function triggerKey(type: string | undefined): string {

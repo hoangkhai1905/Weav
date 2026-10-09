@@ -57,6 +57,28 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
     ],
   },
   {
+    type: 'trigger.workflow_event',
+    title: 'Workflow Finished',
+    description: 'Starts the workflow when another workflow of this workspace fails or succeeds.',
+    category: 'trigger',
+    iconName: 'BellRing',
+    defaultConfig: { events: ['FAILED'] },
+    inputs: [],
+    // Keys under trigger.input (runUrl only when WORKFLOW_WEB_BASE_URL is configured).
+    outputs: [
+      { name: 'workflowId', type: 'string' },
+      { name: 'workflowName', type: 'string' },
+      { name: 'executionId', type: 'string' },
+      { name: 'status', type: 'string' },
+      { name: 'errorCode', type: 'string' },
+      { name: 'errorMessage', type: 'string' },
+      { name: 'startedAt', type: 'string' },
+      { name: 'finishedAt', type: 'string' },
+      { name: 'durationMs', type: 'number' },
+      { name: 'runUrl', type: 'string' },
+    ],
+  },
+  {
     type: 'http.request',
     title: 'HTTP Request',
     description: 'Send an outbound HTTP request using Workflow V1 controls.',
@@ -101,6 +123,26 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
     defaultConfig: { chatId: '', text: '' },
     inputs: [{ name: 'text', type: 'string' }],
     outputs: [{ name: 'messageId', type: 'number' }, { name: 'chatId', type: 'number' }],
+  },
+  {
+    type: 'discord.send_message',
+    title: 'Discord Send Message',
+    description: 'Post a message to a Discord channel through a webhook connection.',
+    category: 'action',
+    iconName: 'MessageSquare',
+    defaultConfig: { content: '' },
+    inputs: [{ name: 'content', type: 'string' }],
+    outputs: [{ name: 'sent', type: 'boolean' }],
+  },
+  {
+    type: 'weav.workflow',
+    title: 'Control Workflows',
+    description: 'Run, pause, resume or inspect workflows of this workspace, or answer a chat command.',
+    category: 'action',
+    iconName: 'Bot',
+    defaultConfig: { operation: 'command', sender: '{{ trigger.input.message.from.id }}' },
+    inputs: [{ name: 'text', type: 'string' }],
+    outputs: [], // depends on the operation: see nodeOutputPaths
   },
   {
     type: 'logic.condition',
@@ -271,6 +313,14 @@ const OUTPUTS_BY_OPERATION: Record<string, Record<string, string[]>> = {
     list: ['events', 'count', 'truncated', 'events[0].id', 'events[0].summary', 'events[0].start', 'events[0].end', 'events[0].htmlLink'],
   },
 };
+OUTPUTS_BY_OPERATION['weav.workflow'] = {
+  run: ['executionId', 'status', 'workflowId', 'workflowName'],
+  pause: ['workflowId', 'name', 'status'],
+  resume: ['workflowId', 'name', 'status'],
+  status: ['workflowId', 'name', 'status', 'lastRun.executionId', 'lastRun.status', 'lastRun.finishedAt', 'successRate7d'],
+  list_failures: ['items', 'items[0].workflowId', 'items[0].workflowName', 'items[0].executionId', 'items[0].finishedAt', 'items[0].errorCode', 'items[0].errorMessage'],
+  command: ['reply', 'ok'],
+};
 const DEFAULT_OPERATION: Record<string, string> = { 'google.sheets': 'read', 'google.drive': 'upload', 'google.calendar': 'create' };
 
 /**
@@ -297,6 +347,9 @@ const NODE_ID_PREFIX: Record<string, string> = {
   'trigger.webhook': 'webhook',
   'trigger.telegram': 'telegram_trigger',
   'trigger.gmail': 'gmail_trigger',
+  'trigger.workflow_event': 'workflow_event',
+  'discord.send_message': 'discord_send',
+  'weav.workflow': 'control',
   'http.request': 'http',
   'email.send': 'send_email',
   'google.sheets': 'sheets',

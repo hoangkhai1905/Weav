@@ -732,6 +732,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       'GOOGLE_SHEETS',
       'GOOGLE_CALENDAR',
       'GOOGLE_DRIVE',
+      'DISCORD',
     ] as const;
     const authTypes = ['NONE', 'TOKEN', 'API_KEY', 'BASIC', 'OAUTH2'] as const;
 

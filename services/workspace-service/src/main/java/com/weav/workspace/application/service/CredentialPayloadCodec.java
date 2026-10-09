@@ -24,6 +24,9 @@ import java.util.Set;
  */
 public final class CredentialPayloadCodec {
 
+    /** The secret of a DISCORD connection is its webhook URL; anything else is rejected (SSRF). */
+    public static final java.util.regex.Pattern DISCORD_WEBHOOK_URL = java.util.regex.Pattern.compile(
+            "https://(discord\\.com|discordapp\\.com)/api/webhooks/\\d+/[A-Za-z0-9_-]+");
     private static final Set<String> TOKEN_FIELDS = Set.of("token");
     private static final Set<String> API_KEY_FIELDS = Set.of("apiKey");
     private static final Set<String> BASIC_FIELDS = Set.of("username", "password");
@@ -139,7 +142,7 @@ public final class CredentialPayloadCodec {
         }
 
         Set<String> expectedFields = switch (provider) {
-            case TELEGRAM -> authType == ConnectionAuthType.TOKEN ? TOKEN_FIELDS : null;
+            case TELEGRAM, DISCORD -> authType == ConnectionAuthType.TOKEN ? TOKEN_FIELDS : null;
             case HTTP -> switch (authType) {
                 case TOKEN -> TOKEN_FIELDS;
                 case API_KEY -> API_KEY_FIELDS;
@@ -153,6 +156,10 @@ public final class CredentialPayloadCodec {
                 || payload.size() != expectedFields.size()
                 || !payload.keySet().equals(expectedFields)
                 || payload.values().stream().anyMatch(value -> !(value instanceof String text) || text.isBlank())) {
+            throw invalidPayload();
+        }
+        if (provider == ConnectionProvider.DISCORD
+                && !DISCORD_WEBHOOK_URL.matcher((String) payload.get("token")).matches()) {
             throw invalidPayload();
         }
     }

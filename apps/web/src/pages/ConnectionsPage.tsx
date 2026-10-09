@@ -68,6 +68,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   GOOGLE_CALENDAR: "Google Calendar",
   GOOGLE_DRIVE: "Google Drive",
   TELEGRAM: "Telegram",
+  DISCORD: "Discord",
   HTTP: "HTTP",
 };
 
@@ -396,6 +397,10 @@ function ConnectionRow({
   );
 }
 
+type TokenProvider = "TELEGRAM" | "DISCORD";
+// Same pattern as workspace-service (CredentialPayloadCodec.DISCORD_WEBHOOK_URL); the server is the authority.
+const DISCORD_WEBHOOK_URL = /^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+$/;
+
 /** "New connection" dialog, shared by the Connections page and the builder inspector. */
 export function CreateConnectionDialog({
   workspaceId,
@@ -406,7 +411,7 @@ export function CreateConnectionDialog({
   onCreated,
 }: {
   workspaceId: string;
-  initialProvider?: GoogleProvider | "TELEGRAM";
+  initialProvider?: GoogleProvider | TokenProvider;
   submitLabel?: string;
   pendingLabel?: string;
   onClose: () => void;
@@ -416,9 +421,11 @@ export function CreateConnectionDialog({
   const { t } = useI18nStore();
   const createConnection = useCreateConnection();
   const [name, setName] = useState("");
-  const [provider, setProvider] = useState<GoogleProvider | "TELEGRAM">(initialProvider);
+  const [provider, setProvider] = useState<GoogleProvider | TokenProvider>(initialProvider);
   const [token, setToken] = useState("");
-  const isTelegram = provider === "TELEGRAM";
+  const isDiscord = provider === "DISCORD";
+  // Telegram and Discord are token connections: the secret is sent once to the credential endpoint.
+  const isToken = provider === "TELEGRAM" || isDiscord;
   const [createError, setCreateError] = useState("");
   const [isFinishing, setIsFinishing] = useState(false);
   const busy = createConnection.isPending || isFinishing;
@@ -430,8 +437,12 @@ export function CreateConnectionDialog({
       setCreateError(t("connections.create.validation"));
       return;
     }
-    if (isTelegram && (!token.trim() || token.length > 4096)) {
-      setCreateError(t("connections.create.token_validation"));
+    if (isToken && (!token.trim() || token.length > 4096)) {
+      setCreateError(t(isDiscord ? "connections.create.discord_validation" : "connections.create.token_validation"));
+      return;
+    }
+    if (isDiscord && !DISCORD_WEBHOOK_URL.test(token.trim())) {
+      setCreateError(t("connections.create.discord_validation"));
       return;
     }
     if (busy) return;
@@ -441,7 +452,7 @@ export function CreateConnectionDialog({
     try {
       const connection = await createConnection.mutateAsync({
         workspaceId,
-        input: provider === "TELEGRAM"
+        input: provider === "TELEGRAM" || provider === "DISCORD"
           ? { name: normalizedName, provider, authType: "TOKEN", token: token.trim() }
           : { name: normalizedName, provider, authType: "OAUTH2" },
       });
@@ -520,7 +531,7 @@ export function CreateConnectionDialog({
               data-testid="connection-create-provider"
               value={provider}
               onChange={(event) =>
-                setProvider(event.target.value as GoogleProvider | "TELEGRAM")
+                setProvider(event.target.value as GoogleProvider | TokenProvider)
               }
               className={fieldCls}
             >
@@ -529,15 +540,16 @@ export function CreateConnectionDialog({
               <option value="GOOGLE_CALENDAR">Google Calendar</option>
               <option value="GOOGLE_DRIVE">Google Drive</option>
               <option value="TELEGRAM">{t("connections.create.telegram_option")}</option>
+              <option value="DISCORD">{t("connections.create.discord_option")}</option>
             </select>
           </div>
-          {isTelegram && (
+          {isToken && (
             <div>
               <label
                 htmlFor="connection-create-token"
                 className="mb-1.5 block text-xs font-medium text-text-2"
               >
-                {t("connections.create.token")}
+                {t(isDiscord ? "connections.create.discord_url" : "connections.create.token")}
               </label>
               <input
                 id="connection-create-token"
@@ -556,7 +568,7 @@ export function CreateConnectionDialog({
                 className={fieldCls}
               />
               <p id="connection-create-token-hint" className="mt-1 text-[11px] text-muted-foreground">
-                {t("connections.create.token_hint")}
+                {t(isDiscord ? "connections.create.discord_hint" : "connections.create.token_hint")}
               </p>
             </div>
           )}
@@ -593,7 +605,7 @@ export function CreateConnectionDialog({
               )}
               {busy
                 ? (pendingLabel ?? t("connections.create.pending"))
-                : (submitLabel ?? (isTelegram ? t("connections.create.submit") : t("w5c.create_and_connect")))}
+                : (submitLabel ?? (isToken ? t("connections.create.submit") : t("w5c.create_and_connect")))}
             </button>
           </div>
         </form>

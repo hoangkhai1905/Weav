@@ -16,6 +16,7 @@ public final class ConnectionProviderPolicy {
             ConnectionProvider.GOOGLE_CALENDAR, Set.of(ConnectionAuthType.OAUTH2),
             ConnectionProvider.GOOGLE_DRIVE, Set.of(ConnectionAuthType.OAUTH2),
             ConnectionProvider.TELEGRAM, Set.of(ConnectionAuthType.TOKEN),
+            ConnectionProvider.DISCORD, Set.of(ConnectionAuthType.TOKEN),
             ConnectionProvider.HTTP, Set.of(
                     ConnectionAuthType.NONE,
                     ConnectionAuthType.API_KEY,
