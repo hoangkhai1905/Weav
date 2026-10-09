@@ -27,7 +27,7 @@ public final class ClasspathNodeSchemaSource implements NodeSchemaSource {
             "properties", "required", "additionalProperties", "x-weav-node", "x-weav-mutually-exclusive");
     private static final Set<String> FIELD_KEYWORDS = Set.of("type", "enum", "items", "oneOf",
             "additionalProperties", "minLength", "minItems", "minimum", "maxLength", "maximum", "title", "description",
-            "x-weav-template", "x-weav-connection", "x-weav-static", "default");
+            "x-weav-template", "x-weav-connection", "x-weav-static", "x-weav-personal", "default");
     private static final Set<String> CATEGORIES = Set.of("trigger", "action", "logic", "ai");
 
     private final JsonMapper mapper = JsonMapper.builder().build();
@@ -125,7 +125,8 @@ public final class ClasspathNodeSchemaSource implements NodeSchemaSource {
                 node.has("minimum") ? node.get("minimum").decimalValue() : null,
                 flag(node, "x-weav-template", where), provider, flag(node, "x-weav-static", where),
                 intValue(node, "maxLength", where),
-                node.has("maximum") ? node.get("maximum").decimalValue() : null);
+                node.has("maximum") ? node.get("maximum").decimalValue() : null,
+                flag(node, "x-weav-personal", where));
     }
 
     private static Integer intValue(JsonNode node, String name, String where) {

@@ -35,6 +35,22 @@ public record NodeConfigSchema(
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
+    /** Fields holding a credential reference ({@code x-weav-connection}). */
+    public Set<String> connectionFields() {
+        return properties.entrySet().stream()
+                .filter(entry -> entry.getValue().connectionProvider() != null)
+                .map(Map.Entry::getKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    /** Fields that identify a person or their resources ({@code x-weav-personal}): stripped from shared templates. */
+    public Set<String> personalFields() {
+        return properties.entrySet().stream()
+                .filter(entry -> entry.getValue().personal())
+                .map(Map.Entry::getKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
     /** Template fields declared as plain {@code type: string} (no oneOf, no untyped "any value"). */
     public Set<String> stringOnlyFields() {
         return properties.entrySet().stream()
@@ -49,6 +65,7 @@ public record NodeConfigSchema(
      *
      * @param template accepts {{ }} mappings in place of a literal of the declared type
      * @param isStatic literal metadata: never mapping-resolved and never credential-key scanned
+     * @param personal identifies a person or their resources: a shared template keeps it only as a pure mapping
      */
     public record Field(
             String type,
@@ -63,7 +80,17 @@ public record NodeConfigSchema(
             String connectionProvider,
             boolean isStatic,
             Integer maxLength,
-            BigDecimal maximum) {
+            BigDecimal maximum,
+            boolean personal) {
+
+        /** Pre-W6-C signature: a field that is not personal. */
+        public Field(String type, Set<String> enumValues, Field items, List<Field> oneOf,
+                     Field additionalProperties, Integer minLength, Integer minItems, BigDecimal minimum,
+                     boolean template, String connectionProvider, boolean isStatic, Integer maxLength,
+                     BigDecimal maximum) {
+            this(type, enumValues, items, oneOf, additionalProperties, minLength, minItems, minimum, template,
+                    connectionProvider, isStatic, maxLength, maximum, false);
+        }
 
         /** Type, items, oneOf, additionalProperties and minimum. Enums are checked by the catalog rules. */
         public boolean matchesShape(Object value) {
