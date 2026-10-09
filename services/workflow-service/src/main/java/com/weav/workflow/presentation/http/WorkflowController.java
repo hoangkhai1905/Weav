@@ -3,6 +3,8 @@ package com.weav.workflow.presentation.http;
 import com.weav.workflow.application.dto.CreateWorkflowCommand;
 import com.weav.workflow.application.port.out.ConnectionReferenceUnavailableException;
 import com.weav.workflow.application.service.WorkflowDraftService;
+import com.weav.workflow.application.service.WorkspaceAuthorization;
+import com.weav.workflow.infrastructure.ocr.OcrClientProperties;
 import com.weav.workflow.application.service.WorkflowDraftValidationException;
 import com.weav.workflow.application.service.DraftChangedException;
 import com.weav.workflow.application.service.DraftRevisionConflictException;
@@ -53,12 +55,18 @@ public class WorkflowController {
     private final DefinitionJsonCodec definitionCodec;
     private final ObjectMapper objectMapper;
     private final WorkflowGenerationService workflowGenerationService;
+    private final WorkspaceAuthorization workspaceAuthorization;
+    private final OcrClientProperties ocrProperties;
 
     public WorkflowController(
             WorkflowDraftService workflowDraftService,
             WorkflowPublicationService workflowPublicationService,
             WorkflowGenerationService workflowGenerationService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            WorkspaceAuthorization workspaceAuthorization,
+            OcrClientProperties ocrProperties) {
+        this.workspaceAuthorization = workspaceAuthorization;
+        this.ocrProperties = ocrProperties;
         this.workflowDraftService = workflowDraftService;
         this.workflowPublicationService = workflowPublicationService;
         this.workflowGenerationService = workflowGenerationService;
@@ -108,6 +116,17 @@ public class WorkflowController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
         return WorkflowResponse.Page.from(workflowDraftService.list(workspaceId, actorId(jwt), page, size));
+    }
+
+    /** Which optional nodes this deployment can run; the builder hides the ones that report unavailable. */
+    @GetMapping("/node-capabilities")
+    public java.util.Map<String, Object> nodeCapabilities(
+            @PathVariable UUID workspaceId,
+            @AuthenticationPrincipal Jwt jwt) {
+        workspaceAuthorization.require(workspaceId, actorId(jwt), "WORKSPACE_VIEW");
+        List<String> sources = ocrProperties.signingKeyConfigured() ? ocrProperties.enabledSources() : List.of();
+        return java.util.Map.of("nodes", java.util.Map.of("ocr.extract",
+                java.util.Map.of("available", !sources.isEmpty(), "sources", sources)));
     }
 
     @GetMapping("/{workflowId}")

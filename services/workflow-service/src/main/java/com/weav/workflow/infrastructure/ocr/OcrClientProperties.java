@@ -4,6 +4,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 /** Configuration for the private OCR adapter. Every source and remote-security gate defaults closed. */
@@ -25,7 +27,7 @@ public record OcrClientProperties(
 
     public static final int MAX_RESPONSE_BYTES = 1_048_576;
     private static final Duration MAX_CONNECT_TIMEOUT = Duration.ofSeconds(5);
-    private static final Duration MAX_READ_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration MAX_READ_TIMEOUT = Duration.ofSeconds(120);
     private static final Duration MAX_TOKEN_LIFETIME = Duration.ofSeconds(120);
 
     public OcrClientProperties {
@@ -43,6 +45,26 @@ public record OcrClientProperties(
         if (maxResponseBytes < 1 || maxResponseBytes > MAX_RESPONSE_BYTES) {
             throw new IllegalArgumentException("maxResponseBytes must be between 1 and 1048576");
         }
+    }
+
+    /** Source types ("url", "artifact") whose full gate chain is open. The single source of truth for gating. */
+    public List<String> enabledSources() {
+        if (!enabled || !serviceClaimsVerified) {
+            return List.of();
+        }
+        List<String> sources = new ArrayList<>(2);
+        if (urlSourceEnabled && urlAllowlistVerified) {
+            sources.add("url");
+        }
+        if (artifactSourceEnabled && artifactResolverVerified) {
+            sources.add("artifact");
+        }
+        return List.copyOf(sources);
+    }
+
+    /** True when a signing key id and key location are set (not that the key is valid). */
+    public boolean signingKeyConfigured() {
+        return keyId != null && !keyId.isBlank() && privateKeyLocation != null && !privateKeyLocation.isBlank();
     }
 
     private static void validateBaseUrl(URI value) {

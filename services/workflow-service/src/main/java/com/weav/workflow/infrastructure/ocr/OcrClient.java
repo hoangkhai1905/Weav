@@ -130,14 +130,7 @@ public class OcrClient {
     }
 
     private void requireEnabledFor(String sourceType) {
-        boolean enabled = properties.enabled() && properties.serviceClaimsVerified();
-        if ("url".equals(sourceType)) {
-            if (!enabled || !properties.urlSourceEnabled() || !properties.urlAllowlistVerified()) {
-                throw notConfiguredFailure();
-            }
-            return;
-        }
-        if (!enabled || !properties.artifactSourceEnabled() || !properties.artifactResolverVerified()) {
+        if (!properties.enabledSources().contains(sourceType)) {
             throw notConfiguredFailure();
         }
     }

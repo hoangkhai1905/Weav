@@ -283,6 +283,29 @@ class WorkflowDraftHttpTest {
     }
 
     @Test
+    void nodeCapabilitiesLiteralRouteWinsOverWorkflowIdAndFollowsWorkspaceViewAuthorization() throws Exception {
+        mockMvc.perform(get("/workspaces/{workspaceId}/workflows/node-capabilities", workspaceId)
+                        .header("Authorization", "Bearer " + accessToken(USER_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nodes['ocr.extract'].available").value(false))
+                .andExpect(jsonPath("$.nodes['ocr.extract'].sources").isEmpty());
+
+        mockMvc.perform(get("/workspaces/{workspaceId}/workflows/node-capabilities", workspaceId))
+                .andExpect(status().isUnauthorized());
+
+        workspaceBoundary.setCapabilities(Set.of());
+        mockMvc.perform(get("/workspaces/{workspaceId}/workflows/node-capabilities", workspaceId)
+                        .header("Authorization", "Bearer " + accessToken(USER_ID)))
+                .andExpect(status().isForbidden());
+        workspaceBoundary.setCapabilities(Set.of("WORKSPACE_VIEW", "WORKFLOW_CREATE", "WORKFLOW_EDIT"));
+
+        UUID workflowId = createDraft("Still reachable by id");
+        mockMvc.perform(get("/workspaces/{workspaceId}/workflows/{workflowId}", workspaceId, workflowId)
+                        .header("Authorization", "Bearer " + accessToken(USER_ID)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void rejectsRequestsWithoutAccessTokenAndReturnsCorrelationIdForDraftErrors() throws Exception {
         MvcResult unauthorized = mockMvc.perform(post("/workspaces/{workspaceId}/workflows", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)

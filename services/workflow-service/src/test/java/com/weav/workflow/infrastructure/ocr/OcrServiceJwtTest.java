@@ -61,6 +61,21 @@ class OcrServiceJwtTest {
     }
 
     @Test
+    void everyTokenCarriesAUniqueJtiAndNoNotBeforeClaim() throws Exception {
+        Path privateKey = writePrivateKey(keyPair());
+        WorkflowServiceJwtIssuer issuer = new WorkflowServiceJwtIssuer(
+                properties(privateKey.toUri().toString(), Duration.ofSeconds(60)), new DefaultResourceLoader());
+        Instant now = Instant.parse("2026-09-23T01:02:03Z");
+
+        JWTClaimsSet first = SignedJWT.parse(issuer.issue(context(), now)).getJWTClaimsSet();
+        JWTClaimsSet second = SignedJWT.parse(issuer.issue(context(), now)).getJWTClaimsSet();
+
+        assertNotNull(UUID.fromString(first.getJWTID()));
+        assertFalse(first.getJWTID().equals(second.getJWTID()));
+        assertEquals(null, first.getNotBeforeTime());
+    }
+
+    @Test
     void contractVerifierRejectsWrongServiceClaimsEvenWhenTheyAreSigned() throws Exception {
         KeyPair keyPair = keyPair();
         Instant now = Instant.parse("2026-09-23T01:02:03Z");
