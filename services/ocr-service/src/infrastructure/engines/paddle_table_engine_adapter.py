@@ -494,6 +494,8 @@ class PaddleTableEngineAdapter(TableEnginePort):
             if "text_recognition_model_name" in table_kwargs:
                 # An explicit recognizer replaces the language alias's default model.
                 defaults.pop("lang")
+            if table_kwargs.get("engine") == "onnxruntime":
+                defaults.pop("enable_mkldnn")
             defaults.update(table_kwargs)
             self._table_instance = PPStructureV3(**defaults)
         except Exception as exc:

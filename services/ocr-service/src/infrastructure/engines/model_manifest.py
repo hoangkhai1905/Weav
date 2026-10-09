@@ -174,9 +174,9 @@ def _resolve_model_dir(raw: str, manifest_file: Path, model_root: Path | None) -
 def load_table_profile(manifest_path: Path, model_root: Path | None = None) -> dict[str, object] | None:
     """Return PP-StructureV3 kwargs from the manifest's optional "table" object.
 
-    Returns None when the manifest has no table section or a configured model directory is
-    missing, so callers can fall back to PaddleOCR's default (downloaded) table models.
-    Table models always run on Paddle: SLANet/SLANeXt ONNX exports do not load in ONNX Runtime.
+    Returns None when the manifest has no table section, a configured model directory is missing,
+    or (with "engine": "onnxruntime") a folder lacks its converted model, so callers can fall back
+    to PaddleOCR's default (downloaded) table models.
     """
     try:
         manifest_file = Path(manifest_path).expanduser()
@@ -190,6 +190,10 @@ def load_table_profile(manifest_path: Path, model_root: Path | None = None) -> d
         if key.endswith("_dir") and isinstance(val, str):
             path = _resolve_model_dir(val.strip(), manifest_file, model_root)
             if not path.is_dir():
+                return None
+            if table.get("engine") == "onnxruntime" and not all(
+                (path / name).is_file() for name in ONNX_REQUIRED_FILES
+            ):
                 return None
             resolved[key] = str(path)
         else:

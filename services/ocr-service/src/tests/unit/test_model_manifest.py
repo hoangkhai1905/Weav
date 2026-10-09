@@ -253,7 +253,21 @@ def test_table_engine_uses_manifest_models_or_language_default(
     (kwargs,) = calls
     if with_table:
         assert "lang" not in kwargs
+        assert kwargs["enable_mkldnn"] is False and "engine" not in kwargs
         assert kwargs["text_recognition_model_dir"] == str((tmp_path / "recognition").resolve())
     else:
         assert kwargs["lang"] == "vi"
         assert "text_recognition_model_dir" not in kwargs
+
+
+def test_onnx_table_profile_requires_converted_models(tmp_path: Path) -> None:
+    manifest_file = create_manifest(tmp_path)
+    _add_table(manifest_file, "recognition")
+    data = json.loads(manifest_file.read_text(encoding="utf-8"))
+    data["table"]["engine"] = "onnxruntime"
+    manifest_file.write_text(json.dumps(data), encoding="utf-8")
+    assert load_table_profile(manifest_file) is None
+
+    for name in ("inference.onnx", "inference.yml"):
+        (tmp_path / "recognition" / name).write_bytes(b"x")
+    assert load_table_profile(manifest_file)["engine"] == "onnxruntime"

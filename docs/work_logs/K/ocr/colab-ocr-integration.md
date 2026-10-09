@@ -101,7 +101,8 @@ Phase 2, table detection (PP-StructureV3, still Paddle; branch `feature/ocr-onnx
 - Invoice through the Gateway: cells keep diacritics ("Sản phẩm", "Đơn giá" instead of "San phåm"/"Sn phm"); warm ~28 s instead of ~59 s; first call after start 67 s (all models load). Logs show every model created from `/models/...`, 0 downloads.
 - Per-model time before (Paddle CPU, invoice): rec 17-19 s, SLANeXt_wired 10-12 s, PP-DocLayout_plus-L ~11 s, RT-DETR-L wired cells 8-16 s. SLANet_plus takes ~0.5 s.
 - SLANeXt_wired vs SLANet_plus on three synthetic tables (invoice 3x3, wired 5x4, borderless 5x4): identical cells (20/20 structure; 17/20 and 18/20 exact text on the 5x4 tables). Remaining errors come from the recognizer: `1` -> `F`, `cơ` -> `CƠ`, a stray trailing character (`Số lượng9`, `3.500.0000`).
-- Table models on ONNX are not possible yet: all six convert with paddle2onnx 2.1.0, but SLANet_plus and SLANeXt_wired fail to load in ONNX Runtime 1.30 (`Loop` node shape inference) at opset 14, 16 and 17.
+- Table models on ONNX: all six convert with paddle2onnx 2.1.0, but SLANet_plus/SLANeXt_wired failed to load in ONNX Runtime 1.30 (`Loop` condition declared rank 0, inferred rank 1) at opset 14, 16 and 17. Clearing the Loop subgraph input/output shapes and `value_info` (now done by `scripts/convert_models_to_onnx.py`) makes both load.
+- Full ONNX table pipeline (`PPStructureV3(engine="onnxruntime")`) vs Paddle, same models: cells identical on invoice (9), wired 5x4 (20) and borderless 5x4 (20). Warm time per table image: 14 vs 23 s, 11 vs 28 s, 7 vs 24 s (direct pipeline). Through the Gateway with the ONNX manifest: invoice 11 s warm (first call 44 s), wired 12 s, borderless 12 s; logs show every model created from `/models/onnx`, 0 downloads.
 
 ## 6. Risks and blockers
 
@@ -109,7 +110,7 @@ Phase 2, table detection (PP-StructureV3, still Paddle; branch `feature/ocr-onnx
 | ------ | ----- | --------- |
 | High   | Backend died on a default table request (cause unconfirmed) | Partner reads `/content/ocr-service.log`, enforces 60 s/90 s deadlines |
 | Low    | The 95 s deadline holds Gateway connections open longer in Colab/local-model mode | Dev only; the default stays 10 s |
-| Medium | Table detection on CPU still ~28 s per page | Real-document table set; try skipping the second OCR pass inside PP-StructureV3 |
+| Medium | Table detection ~11 s per page on CPU (ONNX); paddlepaddle is still installed although the ONNX manifest no longer uses it | Real-document table set; slim image without paddlepaddle for the ONNX profile |
 
 ## 7. Next steps
 

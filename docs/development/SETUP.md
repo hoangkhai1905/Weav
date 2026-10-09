@@ -450,9 +450,9 @@ cd ..\..
 
 ### Local OCR on CPU with ONNX Runtime (no Colab)
 
-The text OCR models (detection + recognition) can run on CPU through ONNX Runtime with the same results as Paddle
-(0/240 differing lines on the synthetic Vietnamese benchmark) and about 3x faster on a full page (~7 s vs ~20 s for
-an A4 page on a laptop). Table detection still runs on Paddle (about 60 s per page on CPU).
+Text OCR and table detection can run on CPU through ONNX Runtime with the same results as Paddle (0/240 differing
+lines on the synthetic Vietnamese benchmark; identical cells on our table samples): an A4 text page takes ~7 s instead
+of ~20 s and a table page ~11 s instead of ~28 s on a laptop.
 
 1. Put the model bundle (from `scripts/setup-ocr-model.ps1`) somewhere and point `.env` at it:
    `OCR_MODEL_HOST_PATH=D:/Weav-OCR-Models`.
@@ -472,10 +472,12 @@ docker compose --env-file .env -f compose.yml -f compose.dev.yml -f compose.ocr-
 docker compose --env-file .env -f compose.yml -f compose.dev.yml -f compose.ocr-models.dev.yml --profile app up -d --build ocr-service api-gateway
 ```
 
-The first request loads the models (~20 s; with tables ~70 s). Table detection reads its models from the manifest's
-`"table"` section (bundle folders under `/models/paddlex-cache/official_models`, Vietnamese recognizer, `SLANet_plus`)
-and always runs on Paddle, about 30 s per page on a laptop CPU. If those folders are missing, the service logs a warning
-and falls back to PaddleOCR's downloaded default table models.
+The first request loads the models (~20 s; the first table request ~45 s). Table detection reads its models from the
+manifest's `"table"` section (bundle folders, Vietnamese recognizer, `SLANet_plus`); the ONNX manifest points it at
+`/models/onnx/...` with `"engine": "onnxruntime"`. The converter also converts these table models and clears the
+`Loop` subgraph shapes that paddle2onnx mis-declares for SLANet (otherwise ONNX Runtime refuses to load it). If a table
+folder or its `inference.onnx` is missing, the service logs a warning and falls back to PaddleOCR's downloaded
+default table models.
 
 ## 9. Kiểm tra Web và NestJS services
 
