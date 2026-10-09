@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/weav.workflow",
+  "title": "Control workflows",
+  "description": "Runs, pauses, resumes or inspects a workflow of the same workspace, lists recent failures, or answers a chat command (/run, /pause, /resume, /status, /failures, /help). It acts as the user who published this workflow, with that user's permissions. Output of command also has reply (plain text to send back) and ok.",
+  "x-weav-node": {
+    "type": "weav.workflow",
+    "category": "action",
+    "label": "Control workflows",
+    "sideEffect": true
+  },
+  "type": "object",
+  "properties": {
+    "operation": {
+      "type": "string",
+      "title": "Operation",
+      "description": "run, pause, resume, status, list_failures, or command (parse a chat message such as /status My workflow).",
+      "enum": [
+        "run",
+        "pause",
+        "resume",
+        "status",
+        "list_failures",
+        "command"
+      ]
+    },
+    "workflow": {
+      "type": "string",
+      "title": "Workflow",
+      "description": "Target workflow: its id, or its exact name (case-insensitive) in this workspace. Required except for command; for list_failures an empty value means the whole workspace.",
+      "x-weav-template": true
+    },
+    "input": {
+      "type": "object",
+      "title": "Run input",
+      "description": "Used by run: the trigger input given to the target workflow.",
+      "x-weav-template": true
+    },
+    "limit": {
+      "title": "Limit",
+      "description": "Used by list_failures: how many recent failures to return (1 to 20, default 5).",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "text": {
+      "type": "string",
+      "title": "Chat text",
+      "description": "Used by command: the raw chat message, for example {{ trigger.input.message.text }}.",
+      "x-weav-template": true
+    },
+    "sender": {
+      "type": "string",
+      "title": "Sender",
+      "description": "Used by command: who sent the message, for example {{ trigger.input.message.from.id }}. Must be one of allowedSenders, otherwise the command is refused.",
+      "x-weav-template": true,
+      "x-weav-personal": true
+    },
+    "allowedSenders": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "title": "Allowed senders",
+      "description": "Used by command: sender ids (for example Telegram user ids) allowed to control workflows. Required for command, at least one.",
+      "x-weav-personal": true
+    }
+  },
+  "required": [
+    "operation"
+  ],
+  "additionalProperties": false
+}

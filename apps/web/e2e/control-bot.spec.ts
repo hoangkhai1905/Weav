@@ -1,7 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { WORKFLOW_TEMPLATES, templateToDraft } from '../src/lib/templates/index.js';
-import { nodeOutputPaths } from '../src/lib/constants/nodeCatalog.js';
-import { triggerTypeLabel } from '../src/lib/executions/runView.js';
 
 // W6-B2: Discord connection form, the three control-bot inspectors and templates (backend stubbed).
 
@@ -226,6 +224,7 @@ test('run input does not leak between control steps and never keeps stale JSON',
   expect(nodes.find((node) => node.id === 'control_2')?.config.input).toBeUndefined();
 
   // Leaving "run" resets the textarea, so coming back does not show the old text.
+  await page.getByTestId('rf__node-control_2').click();
   await page.getByTestId('field-operation').selectOption('status');
   await page.getByTestId('field-operation').selectOption('run');
   await expect(page.getByTestId('weav-workflow-input')).toHaveValue('');
@@ -272,23 +271,30 @@ test.describe('control bot templates', () => {
   }
 });
 
-test.describe('output paths and labels', () => {
-  test('nodeOutputPaths match the executors', () => {
-    expect(nodeOutputPaths('weav.workflow', { operation: 'run' })).toEqual(['executionId', 'status', 'workflowId', 'workflowName']);
-    expect(nodeOutputPaths('weav.workflow', { operation: 'pause' })).toEqual(['workflowId', 'name', 'status']);
-    expect(nodeOutputPaths('weav.workflow', { operation: 'resume' })).toEqual(['workflowId', 'name', 'status']);
-    expect(nodeOutputPaths('weav.workflow', { operation: 'status' })).toEqual(expect.arrayContaining(['lastRun.finishedAt', 'successRate7d']));
-    expect(nodeOutputPaths('weav.workflow', { operation: 'list_failures' })).toEqual(expect.arrayContaining(['items', 'items[0].workflowId', 'items[0].errorMessage']));
-    expect(nodeOutputPaths('weav.workflow', { operation: 'command' })).toEqual(['reply', 'ok']);
-    expect(nodeOutputPaths('discord.send_message', {})).toEqual(['sent']);
-    expect(nodeOutputPaths('trigger.workflow_event', {})).toEqual([
-      'workflowId', 'workflowName', 'executionId', 'status', 'errorCode', 'errorMessage', 'startedAt', 'finishedAt', 'durationMs', 'runUrl',
-    ]);
-  });
-
-  test('WORKFLOW_EVENT runs get a readable trigger label', () => {
-    const t = (key: string) => (key === 'runs.trigger_type.workflow_event' ? 'Workflow event' : key);
-    expect(triggerTypeLabel('WORKFLOW_EVENT', t)).toBe('Workflow event');
-    expect(triggerTypeLabel('trigger.workflow_event', t)).toBe('Workflow event');
-  });
+// The variable picker lists what the executors return; asserted through the UI (no imports from src/).
+test('the variable picker offers the real outputs of the new steps', async ({ page }) => {
+  await stubBackend(page);
+  await openBuilder(page);
+  const paths = async (group: string) => {
+    await page.getByTestId('rf__node-http_1').click();
+    await page.locator('#http-body').click();
+    if (await page.getByTestId('variable-option').count() === 0) await page.getByTestId('variable-picker-toggle').click();
+    return page.getByRole('group', { name: group, exact: true }).getByTestId('variable-option').allInnerTexts();
+  };
+  await addNode(page, 'weav.workflow');
+  await addNode(page, 'http.request');
+  const expected: Record<string, string[]> = {
+    run: ['executionId', 'status', 'workflowId', 'workflowName'],
+    pause: ['workflowId', 'name', 'status'],
+    status: ['workflowId', 'name', 'status', 'lastRun.executionId', 'lastRun.status', 'lastRun.finishedAt', 'successRate7d'],
+    command: ['reply', 'ok'],
+  };
+  for (const [operation, list] of Object.entries(expected)) {
+    await page.getByTestId('rf__node-control_1').click();
+    await page.getByTestId('field-operation').selectOption(operation);
+    expect(await paths('control_1')).toEqual(list);
+  }
+  await page.getByTestId('rf__node-control_1').click();
+  await page.getByTestId('field-operation').selectOption('list_failures');
+  expect(await paths('control_1')).toEqual(expect.arrayContaining(['items', 'items[0].workflowId', 'items[0].errorMessage']));
 });

@@ -253,3 +253,29 @@ For the mobile app: workflow routes now answer 404 (not 403) for non-members; `E
 1. Start a long run (an http step against a slow URL), call cancel: `202 CANCEL_REQUESTED`, then the run ends `CANCELLED` after the current step; no "failed" notification arrives.
 2. Cancel a finished run: `409 EXECUTION_ALREADY_FINISHED`.
 3. A step with body `{{ run.id }} {{ now }}` shows the run id and a UTC timestamp in its output.
+
+## E. Control bot nodes (W6-B)
+
+### What it does
+Three new workflow node types. Nothing existing changed shape; the only API-visible change is one new execution trigger value, `WORKFLOW_EVENT`, and one new connection provider, `DISCORD`.
+
+### 1. `trigger.workflow_event` (starts a workflow when another one finishes)
+- Config: `events` (required, non-empty list of `FAILED` / `SUCCEEDED`), `workflowIds` (optional list of workflow ids of the same workspace; empty means every other workflow).
+- Runs of this trigger have `triggerType = "WORKFLOW_EVENT"` in the run list and detail (add it to the trigger-type label map; unknown values should fall back to the raw text). Registrations in the trigger list use `type = "WORKFLOW_EVENT"`.
+- Trigger input (`trigger.input.*`): `workflowId`, `workflowName`, `executionId`, `status` (`FAILED` or `SUCCEEDED`), `errorCode`, `errorMessage` (null on success), `startedAt`, `finishedAt`, `durationMs`, and `runUrl` (only when the server has `WORKFLOW_WEB_BASE_URL`; it points at the web app, not a mobile deep link).
+- Cancelled runs never fire it, a run started by this trigger never fires it again, and a workflow never fires itself.
+- Publishing is rejected with `error.details` code `WORKFLOW_NOT_IN_WORKSPACE` when `workflowIds` names a workflow of another workspace.
+
+### 2. `weav.workflow` (run, pause, resume or inspect workflows; answer chat commands)
+- Config: `operation` (`run`, `pause`, `resume`, `status`, `list_failures`, `command`), `workflow` (id or exact name), `input` (object, `run` only), `limit` (1-20, default 5, `list_failures`), `text` (`command` only), `sender` (`command` only, template such as `{{ trigger.input.message.from.id }}`) and `allowedSenders` (`command` only, list of sender ids; at least one, required at publish).
+- It acts as the user who published the workflow and needs that user's permission (`WORKFLOW_RUN`, `WORKFLOW_MANAGE_STATE`, `WORKFLOW_MONITOR`); a denied call fails the step with `FORBIDDEN`.
+- A `command` whose `sender` is not in `allowedSenders` does nothing and answers `ok: false` with `reply` "Bạn không có quyền điều khiển quy trình."
+- Runs started by a `weav.workflow` `run` step inside a workflow-event chain are marked, and the marked runs never fire `trigger.workflow_event` (this stops A-runs-B-runs-A loops). The marker is the run's idempotency key prefix `wfctl-chain-`; it is not shown in any API response.
+- `command` never fails the step: the output has `ok` and `reply` (plain Vietnamese text, at most 1000 characters) to send back to the chat.
+
+### 3. `discord.send_message`
+Needs a `DISCORD` connection (auth type `TOKEN`, the secret is the channel webhook URL). Config: `connectionId`, `content` (at most 2000 characters), `username` (optional, at most 80). Mentions never ping.
+
+### 4. How to check
+1. Publish a workflow with `trigger.workflow_event` (`events: ["FAILED"]`), then make another workflow fail: the first one runs once, with `triggerType = WORKFLOW_EVENT` and the failed run's details as input.
+2. Run a `weav.workflow` `command` step with text `/status <workflow name>`: the output `reply` describes the workflow.

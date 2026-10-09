@@ -109,6 +109,7 @@ class WorkflowGenerationServiceTest {
         var definition = (com.weav.workflow.domain.definition.WorkflowDefinition) result.get("definition");
         assertEquals("Hello there", definition.nodes().get(1).config().get("body"));
         assertTrue(String.valueOf(ai.payload.get("prompt")).contains("email.send.body: Hello there"));
+        assertTrue(String.valueOf(ai.payload.get("prompt")).contains("reuse the node ids"));
     }
 
     @Test void answerKeyedByNodeIdAlsoFillsAndNonTextFieldsAreNotAskable() {
