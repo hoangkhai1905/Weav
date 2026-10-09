@@ -54,13 +54,27 @@ class IntentCompilerTest {
                 intent(List.of(node("start", "trigger.manual", Map.of()), node("a", "http.request",
                         Map.of("method", "GET", "url", "https://e.com", "connectionId", UUID.randomUUID().toString()))),
                         List.of(edge("start", "a"))),
-                intent(List.of(node("Start!", "trigger.manual", Map.of()), node("a", "http.request", GET)), List.of(edge("Start!", "a"))),
-                intent(List.of(node("start", "trigger.schedule", Map.of("cron", "0 0 9 * * *")), node("a", "http.request", GET)),
-                        List.of(edge("start", "a"))));
+                intent(List.of(node("Start!", "trigger.manual", Map.of()), node("a", "http.request", GET)), List.of(edge("Start!", "a"))));
         for (Map<String, Object> candidate : invalid) {
             assertInstanceOf(IntentCompiler.Invalid.class, compiler.compile(candidate, Map.of()), candidate.toString());
         }
         assertInstanceOf(IntentCompiler.Invalid.class, compiler.compile("not an object", Map.of()));
+    }
+
+    @Test
+    void aScheduleWithoutAManualTriggerAsksForItsTimezoneAndCompilesOnceGiven() {
+        Map<String, Object> schedule = intent(
+                List.of(node("start", "trigger.schedule", Map.of("cron", "0 0 9 * * *")), node("a", "http.request", GET)),
+                List.of(edge("start", "a")));
+        assertEquals(new IntentCompiler.NeedsValues(List.of(new IntentCompiler.Missing("trigger.schedule", "timezone"))),
+                compiler.compile(schedule, Map.of()));
+
+        Map<String, Object> withTimezone = intent(
+                List.of(node("start", "trigger.schedule", Map.of("cron", "0 0 9 * * *", "timezone", "Asia/Ho_Chi_Minh")),
+                        node("a", "http.request", GET)),
+                List.of(edge("start", "a")));
+        IntentCompiler withScheduleValidation = new IntentCompiler(new DefinitionValidator((nodeId, cron, timezone) -> List.of()));
+        assertInstanceOf(IntentCompiler.Ready.class, withScheduleValidation.compile(withTimezone, Map.of()));
     }
 
     @Test

@@ -85,32 +85,42 @@ async function gotoGenerator(page: Page) {
   if (new URL(page.url()).pathname === "/login") await page.goto("/ai/workflow-generator");
 }
 
+async function openGeneratePanel(page: Page) {
+  const profileResponse = page.waitForResponse((response) => response.url().includes("/api/auth/me"));
+  await page.goto(`/workflows/${WORKFLOW_ID}/builder`);
+  await profileResponse;
+  await page.getByTestId("workflow-generate-ai").click();
+  return page.getByRole("dialog", { name: "Generate with AI" });
+}
+
 test.describe("Create with AI page", () => {
-  test("creates a draft and opens the builder with the generate panel prefilled, once", async ({ page }) => {
+  test("shows the AI-disabled error in plain words and keeps the prompt", async ({ page }) => {
     await installAuthFixture(page);
-    const { posts, generates } = await stubWorkflows(page);
+    const { generates } = await stubWorkflows(page);
     await gotoGenerator(page);
 
-    await page.locator("#workflow-prompt").fill(PROMPT);
-    await page.getByTestId("ai-generator-continue").click();
+    await page.getByLabel("What should this workflow do?").fill(PROMPT);
+    await page.getByRole("button", { name: "Generate workflow", exact: true }).click();
 
-    await expect(page).toHaveURL(new RegExp(`/workflows/${WORKFLOW_ID}/builder$`));
-    expect(posts).toEqual([{ name: "When a new email arrives in Gmail, add the sender to Google…" }]);
-    const dialog = page.getByRole("dialog", { name: "Generate with AI" });
+    await expect(page.getByRole("alert")).toHaveText("AI is unavailable right now.");
+    await expect(page.getByLabel("What should this workflow do?")).toHaveValue(PROMPT);
+    expect(generates).toHaveLength(1);
+    expect((generates[0] as { prompt: string }).prompt).toBe(PROMPT);
+  });
+});
+
+test.describe("Generate with AI panel in the builder", () => {
+  test("shows the AI-disabled error from the generate route in plain words", async ({ page }) => {
+    await installAuthFixture(page);
+    const { generates } = await stubWorkflows(page);
+    const dialog = await openGeneratePanel(page);
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole("textbox").first()).toHaveValue(PROMPT);
-    expect(generates).toEqual([]);
 
-    // AI-disabled error from the generate route is shown in plain words.
+    await dialog.getByRole("textbox").first().fill(PROMPT);
     await dialog.getByRole("button", { name: "Generate", exact: true }).click();
     await expect(dialog.getByRole("alert")).toHaveText("AI is unavailable right now.");
     expect(generates).toHaveLength(1);
     expect((generates[0] as { prompt: string }).prompt).toBe(PROMPT);
-
-    await page.reload();
-    await expect(page.getByTestId("workflow-generate-ai")).toBeVisible();
-    await expect(page.getByRole("dialog", { name: "Generate with AI" })).toHaveCount(0);
-    expect(generates).toHaveLength(1);
   });
 
   test("asks a plain question for a missing value, then builds the workflow from the answer", async ({ page }) => {
@@ -135,11 +145,8 @@ test.describe("Create with AI page", () => {
           ? ready
           : { status: "needs_input", questions: [{ code: "VALUE", field: "email.send.body" }] },
     });
-    await gotoGenerator(page);
-    await page.locator("#workflow-prompt").fill(PROMPT);
-    await page.getByTestId("ai-generator-continue").click();
-
-    const dialog = page.getByRole("dialog", { name: "Generate with AI" });
+    const dialog = await openGeneratePanel(page);
+    await dialog.getByRole("textbox").first().fill(PROMPT);
     await dialog.getByRole("button", { name: "Generate", exact: true }).click();
     const question = dialog.getByLabel("What should the email say?");
     await expect(question).toBeVisible();
@@ -152,32 +159,7 @@ test.describe("Create with AI page", () => {
     await expect(dialog).toHaveCount(0);
     await expect(page.locator(".react-flow__node")).toHaveCount(2);
     expect(generates).toHaveLength(2);
-    expect((generates[1] as { prompt: string; answers: unknown }).prompt).toBe(PROMPT);
+    expect((generates[1] as { prompt: string }).prompt).toBe(PROMPT);
     expect((generates[1] as { answers: unknown }).answers).toEqual({ "email.send.body": "Hello there" });
-  });
-
-  test("shows a friendly error and stays when the draft cannot be created", async ({ page }) => {
-    await installAuthFixture(page);
-    const { posts } = await stubWorkflows(page, { createStatus: 500 });
-    await gotoGenerator(page);
-
-    await page.locator("#workflow-prompt").fill(PROMPT);
-    await page.getByTestId("ai-generator-continue").click();
-
-    await expect(page.getByTestId("ai-generator-error")).toHaveText("We could not create the draft. Please try again in a few minutes.");
-    await expect(page).toHaveURL(/\/ai\/workflow-generator$/);
-    await expect(page.locator("#workflow-prompt")).toHaveValue(PROMPT);
-    expect(posts).toHaveLength(1);
-  });
-
-  test("the button stays disabled until something is typed; examples fill the box", async ({ page }) => {
-    await installAuthFixture(page);
-    await stubWorkflows(page);
-    await gotoGenerator(page);
-
-    await expect(page.getByTestId("ai-generator-continue")).toBeDisabled();
-    await page.getByRole("button", { name: "Daily email summary" }).click();
-    await expect(page.locator("#workflow-prompt")).toHaveValue(/summarize new Gmail emails/);
-    await expect(page.getByTestId("ai-generator-continue")).toBeEnabled();
   });
 });

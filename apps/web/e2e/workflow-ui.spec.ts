@@ -459,7 +459,7 @@ test.describe('workspace account surfaces', () => {
     await page.goto('/help');
     await expect(page.getByTestId('help-page')).toBeVisible();
     await expect(page.getByRole('heading', { name: /^(Trợ giúp & Tài liệu|Help & Docs)$/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Mở hướng dẫn', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Bắt đầu nhanh', exact: true })).toBeVisible();
   });
 });
 
@@ -471,8 +471,18 @@ test.describe('AI workflow generator focus', () => {
     await expect(page.getByTestId('ai-generator-page')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Create with AI', exact: true })).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'What should this workflow do?' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeDisabled();
-    await expect(page.getByTestId('workflow-preview')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Generate workflow', exact: true })).toBeVisible();
+    await expect(page.getByText('Natural Language to Pipeline AST', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('5 steps ready', { exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('ai-generator-preview')).toHaveCount(0);
+  });
+
+  test('enables generation only once a prompt is entered', async ({ page }) => {
+    await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
+    await page.goto('/ai/workflow-generator');
+    await expect(page.getByRole('button', { name: 'Generate workflow', exact: true })).toBeDisabled();
+    await page.getByRole('textbox', { name: 'What should this workflow do?' }).fill('Ping a site every hour');
+    await expect(page.getByRole('button', { name: 'Generate workflow', exact: true })).toBeEnabled();
   });
 });
 

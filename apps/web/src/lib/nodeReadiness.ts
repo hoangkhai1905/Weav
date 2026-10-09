@@ -24,12 +24,13 @@ const isBlank = (value: unknown) => !String(value ?? '').trim();
 // besides connectionId, for the steps that use a workspace connection.
 const CONNECTION_NODE_FIELDS: Record<string, (config: Record<string, unknown>) => string[]> = {
   'google.sheets': () => ['spreadsheetId', 'range'],
-  'email.send': () => ['to', 'subject'],
+  // A reply keeps the original subject, so the subject is optional when replying to a message (#57).
+  'email.send': (config) => ['to', ...(isBlank(config.replyToMessageId) ? ['subject'] : [])],
   'telegram.send_message': () => ['chatId', 'text'],
   'trigger.telegram': () => [],
   'trigger.gmail': () => [],
-  // Upload with `content` needs a name; with `file` the name defaults to the file's own.
-  'google.drive': (config) => ['operation', ...(config.operation === 'upload' && !isBlank(config.content) ? ['name'] : [])],
+  // Upload with `content` (or nothing) needs a name; with `file` the name defaults to the file's own (S10).
+  'google.drive': (config) => ['operation', ...(config.operation === 'upload' && isBlank(config.file) ? ['name'] : [])],
   'google.calendar': (config) => (isBlank(config.operation) || config.operation === 'create' ? ['summary', 'start', 'end'] : []),
 };
 

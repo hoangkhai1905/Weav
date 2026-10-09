@@ -78,18 +78,22 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     private final String outboxTable;
     private final WorkflowNotificationOutboxPort notificationOutbox;
     private final int maxRecoveries;
+    private final java.time.Clock clock;
 
     public ExecutionStateAdapter(JdbcTemplate jdbc, ObjectMapper objectMapper,
                                  @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema) {
-        this(jdbc, objectMapper, schema, event -> { }, 5);
+        this(jdbc, objectMapper, schema, event -> { }, 5, java.time.Clock.systemUTC());
     }
 
     @Autowired
     public ExecutionStateAdapter(JdbcTemplate jdbc, ObjectMapper objectMapper,
                                  @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema,
                                  WorkflowNotificationOutboxPort notificationOutbox,
-                                 @Value("${weav.workflow.execution.max-recoveries:5}") int maxRecoveries) {
+                                 @Value("${weav.workflow.execution.max-recoveries:5}") int maxRecoveries,
+                                 @org.springframework.beans.factory.annotation.Qualifier("workflowExecutionClock")
+                                 java.time.Clock clock) {
         this.maxRecoveries = maxRecoveries;
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.notificationOutbox = Objects.requireNonNull(notificationOutbox, "notificationOutbox must not be null");
@@ -147,13 +151,13 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
                 UPDATE %s
                 SET lease_owner = ?, lease_token = lease_token + 1,
                     lease_until = CURRENT_TIMESTAMP + (? * INTERVAL '1 millisecond'),
-                    status = 'RUNNING', started_at = COALESCE(started_at, CURRENT_TIMESTAMP),
+                    status = 'RUNNING', started_at = COALESCE(started_at, ?),
                     recovery_count = recovery_count + CASE WHEN status = 'RUNNING' THEN 1 ELSE 0 END
                 WHERE id = ? AND status IN ('QUEUED', 'RUNNING')
                   AND (lease_until IS NULL OR lease_until < CURRENT_TIMESTAMP)
                 RETURNING lease_token, recovery_count
                 """.formatted(executionTable), (rs, rowNum) -> new long[] {rs.getLong(1), rs.getLong(2)},
-                owner, leaseMillis, executionId);
+                owner, leaseMillis, Timestamp.from(clock.instant()), executionId);
         if (tokens.isEmpty()) {
             return Optional.empty();
         }
@@ -161,7 +165,7 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
             // WF-9: a run that keeps crashing at run level must not be re-queued forever.
             LOGGER.warn("Execution {} exhausted its {} crash recoveries and was failed", executionId, maxRecoveries);
             failExecution(executionId, RECOVERY_EXHAUSTED_ERROR);
-            recordTerminalNotification(executionId, ExecutionStatus.FAILED, Instant.now());
+            recordTerminalNotification(executionId, ExecutionStatus.FAILED, clock.instant());
             return Optional.empty();
         }
 
@@ -492,7 +496,10 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
         }
         long rootMatches = definition.nodes().stream()
                 .filter(Objects::nonNull)
-                .filter(node -> row.rootNodeId().equals(node.id()) && expectedType.equals(node.type()))
+                .filter(node -> row.rootNodeId().equals(node.id()) && node.type() != null
+                        && (expectedType.equals(node.type()) || row.triggerId() == null
+                        && ExecutionTriggerType.MANUAL.name().equals(row.triggerType())
+                        && node.type().startsWith("trigger.")))
                 .count();
         boolean rootHasIncoming = definition.edges().stream()
                 .filter(Objects::nonNull)

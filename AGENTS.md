@@ -55,7 +55,7 @@ Weav is a graduation-thesis platform for automating and monitoring work processe
 
 | Path | Stack | Verify with |
 | --- | --- | --- |
-| `apps/web` | React + Vite | `pnpm --dir apps/web exec tsc --noEmit`, `pnpm --dir apps/web build`, `VITE_API_MODE=http pnpm --dir apps/web exec playwright test --project=chromium` |
+| `apps/web` | React + Vite | `pnpm --dir apps/web exec tsc --noEmit -p tsconfig.app.json` (plain `tsc --noEmit` checks nothing: the root tsconfig only has references), `pnpm --dir apps/web build`, `VITE_API_MODE=http pnpm --dir apps/web exec playwright test --project=chromium` |
 | `apps/mobile` | React Native + Expo | `npx tsc --noEmit -p .` (from `apps/mobile`); no unit test script |
 | `services/identity-service`, `workspace-service`, `workflow-service` | Spring Boot | `JAVA_TOOL_OPTIONS=-Duser.timezone=UTC ./mvnw verify` (from the service folder) |
 | `services/api-gateway`, `ai-service`, `notification-service` | NestJS | `pnpm --dir <path> test`, `test:e2e`, `build` |

@@ -11,7 +11,6 @@ import {
   UserPlus,
   Users,
   X,
-  Zap,
 } from 'lucide-react';
 import type { WorkspaceMember } from '../types/workflow.types';
 import {
@@ -45,12 +44,21 @@ function getWorkspaceErrorMessage(error: unknown, t: (key: string) => string): s
       FORBIDDEN: 'workspace.error.forbidden',
       WORKSPACE_NOT_FOUND: 'workspace.error.not_found',
       MEMBER_NOT_FOUND: 'workspace.error.member_not_found',
+      USER_NOT_FOUND: 'w5c.user_not_found',
       CONFLICT: 'workspace.error.conflict',
       RATE_LIMITED: 'workspace.error.rate_limited',
       INVALID_RESPONSE: 'workspace.error.invalid_response',
       WORKSPACE_UNAVAILABLE: 'workspace.error.unavailable',
     };
-    return t(errorKeys[error.code] ?? 'workspace.error.unavailable');
+    const statusKeys: Record<number, string> = {
+      400: 'workspace.error.invalid',
+      401: 'workspace.error.unauthenticated',
+      403: 'workspace.error.forbidden',
+      404: 'workspace.error.not_found',
+      409: 'workspace.error.conflict',
+      429: 'workspace.error.rate_limited',
+    };
+    return t(errorKeys[error.code] ?? statusKeys[error.status] ?? 'workspace.error.unavailable');
   }
   return t('workspace.error.unavailable');
 }
@@ -373,7 +381,8 @@ export function WorkspacePage() {
       }
     } catch (error) {
       if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) {
-        setMemberActionError(getWorkspaceErrorMessage(error, t));
+        const noSuchUser = error instanceof WorkspaceApiError && error.code === 'USER_NOT_FOUND';
+        setMemberActionError(noSuchUser ? t('w5c.user_not_found') : getWorkspaceErrorMessage(error, t));
       }
     } finally {
       setMemberMutationKey(null);
@@ -553,11 +562,10 @@ export function WorkspacePage() {
       {activeWorkspace && (
         <>
           {tab === 'overview' && (
-          <motion.section variants={itemMotion} className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label={t('workspace.summary')}>
+          <motion.section variants={itemMotion} className="grid grid-cols-1 gap-3 sm:grid-cols-2" aria-label={t('workspace.summary')}>
             {[
               { label: t('workspace.members'), value: members.length, icon: Users, tone: 'text-run bg-run-bg' },
-              { label: t('workspace.publishing_access'), value: members.filter((member) => member.canPublishWorkflow).length, icon: ShieldCheck, tone: 'text-ok bg-ok-bg' },
-              { label: t('workspace.environment'), value: t('workspace.environment.production'), icon: Zap, tone: 'text-warn bg-warn-bg' },
+              { label: t('workspace.publishing_access'), value: members.filter((member) => member.role === 'OWNER' || member.canPublishWorkflow).length, icon: ShieldCheck, tone: 'text-ok bg-ok-bg' },
             ].map(({ label, value, icon: Icon, tone }) => (
               <motion.div key={label} variants={itemMotion} whileHover={prefersReducedMotion ? undefined : { y: -2, transition: { duration: 0.15 } }} className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
                 <span className={`flex size-9 items-center justify-center rounded-lg ${tone}`}><Icon size={17} aria-hidden="true" /></span>
@@ -614,7 +622,7 @@ export function WorkspacePage() {
                 data-testid="workspace-member-email"
                 type="text"
                 inputMode="email"
-                placeholder="existing-user@company.com"
+                placeholder={t('w5c.member_email_placeholder')}
                 value={inviteEmail}
                 onChange={(event) => {
                   setInviteEmail(event.target.value);
@@ -730,10 +738,10 @@ export function WorkspacePage() {
                               onClick={() => void handleTogglePermission(member, 'canPublishWorkflow')}
                               disabled={member.role === 'OWNER' || memberActionsDisabled}
                               title={member.role === 'OWNER' ? t('workspace.owner_permissions_locked') : undefined}
-                              className={`flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1 text-[11px] font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${member.canPublishWorkflow ? 'border-ok/30 bg-ok-bg text-ok hover:bg-ok-bg' : 'border-warn/30 bg-warn-bg text-warn hover:bg-warn-bg'}`}
+                              className={`flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1 text-[11px] font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${member.role === 'OWNER' || member.canPublishWorkflow ? 'border-ok/30 bg-ok-bg text-ok hover:bg-ok-bg' : 'border-warn/30 bg-warn-bg text-warn hover:bg-warn-bg'}`}
                             >
-                              {member.canPublishWorkflow ? <Check size={12} /> : <X size={12} />}
-                              <span>{member.canPublishWorkflow ? t('workspace.allowed') : t('workspace.restricted')}</span>
+                              {member.role === 'OWNER' || member.canPublishWorkflow ? <Check size={12} /> : <X size={12} />}
+                              <span>{t('w5c.chip_publish')}: {member.role === 'OWNER' || member.canPublishWorkflow ? t('workspace.allowed') : t('workspace.restricted')}</span>
                             </button>
                             <button
                               type="button"
@@ -741,10 +749,10 @@ export function WorkspacePage() {
                               onClick={() => void handleTogglePermission(member, 'canManageWorkflowState')}
                               disabled={member.role === 'OWNER' || memberActionsDisabled}
                               title={member.role === 'OWNER' ? t('workspace.owner_permissions_locked') : undefined}
-                              className={`mt-1 flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1 text-[11px] font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${member.canManageWorkflowState ? 'border-ok/30 bg-ok-bg text-ok hover:bg-ok-bg' : 'border-warn/30 bg-warn-bg text-warn hover:bg-warn-bg'}`}
+                              className={`mt-1 flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1 text-[11px] font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${member.role === 'OWNER' || member.canManageWorkflowState ? 'border-ok/30 bg-ok-bg text-ok hover:bg-ok-bg' : 'border-warn/30 bg-warn-bg text-warn hover:bg-warn-bg'}`}
                             >
                               <ShieldCheck size={12} aria-hidden="true" />
-                              <span>{member.canManageWorkflowState ? t('workspace.allowed') : t('workspace.restricted')}</span>
+                              <span>{t('w5c.chip_pause')}: {member.role === 'OWNER' || member.canManageWorkflowState ? t('workspace.allowed') : t('workspace.restricted')}</span>
                             </button>
                           </td>
                           <td className="px-5 py-4 text-[11px] text-muted-foreground">{new Date(member.joinedAt).toLocaleDateString(appLocale())}</td>

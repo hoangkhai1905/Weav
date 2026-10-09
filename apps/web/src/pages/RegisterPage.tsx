@@ -5,7 +5,7 @@ import { ArrowRight, Sun, Moon, Globe } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
-import { authApi } from '../api/auth.api';
+import { authApi, getAuthApiErrorStatus, getAuthApiFieldErrors } from '../api/auth.api';
 import { AnimatedWorkflowShowcase } from '../components/auth/AnimatedWorkflowShowcase';
 import { Logo } from '../components/common/Logo';
 
@@ -20,17 +20,31 @@ export function RegisterPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
+    // Same rule as Identity: 8-72 characters and at most 72 UTF-8 bytes.
+    if (password.length < 8 || password.length > 72 || new TextEncoder().encode(password).length > 72) {
+      setFieldErrors({ password: t('w5c.password_rule') });
+      return;
+    }
+    setFieldErrors({});
+    setLoading(true);
     try {
       const session = await authApi.register(email, name, password);
       setUser(session.user);
       navigate('/dashboard');
-    } catch {
-      setError(t('auth.registration_failed'));
+    } catch (err) {
+      const server = getAuthApiFieldErrors(err);
+      const mapped: Record<string, string> = {};
+      if (server.password) mapped.password = t('w5c.password_rule');
+      if (server.email) mapped.email = t('w5c.email_invalid');
+      if (server.displayName) mapped.name = t('w5c.name_too_long');
+      if (getAuthApiErrorStatus(err) === 409) mapped.email = t('w5c.email_taken');
+      if (Object.keys(mapped).length > 0) setFieldErrors(mapped);
+      else setError(err instanceof Error && getAuthApiErrorStatus(err) !== 400 ? err.message : t('auth.registration_failed'));
     } finally {
       setLoading(false);
     }
@@ -119,6 +133,7 @@ export function RegisterPage() {
                   </label>
                   <input
                     type="text"
+                    aria-invalid={!!fieldErrors.name} aria-describedby={fieldErrors.name ? "reg-err-name" : undefined}
                     aria-label={t('auth.full_name')}
                     required
                     value={name}
@@ -126,6 +141,7 @@ export function RegisterPage() {
                     placeholder={t('auth.name_placeholder')}
                     className="w-full px-3.5 py-2.5 bg-subtle border border-border rounded-xl text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:border-run/30 focus:ring-1 focus:ring-run/30 transition-all"
                   />
+                  {fieldErrors.name && <p id="reg-err-name" role="alert" className="mt-1 text-xs text-err">{fieldErrors.name}</p>}
                 </div>
 
                 <div>
@@ -134,6 +150,7 @@ export function RegisterPage() {
                   </label>
                   <input
                     type="email"
+                    aria-invalid={!!fieldErrors.email} aria-describedby={fieldErrors.email ? "reg-err-email" : undefined}
                     aria-label={t('auth.email')}
                     required
                     value={email}
@@ -141,6 +158,7 @@ export function RegisterPage() {
                     placeholder={t('auth.email_placeholder')}
                     className="w-full px-3.5 py-2.5 bg-subtle border border-border rounded-xl text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:border-run/30 focus:ring-1 focus:ring-run/30 transition-all"
                   />
+                  {fieldErrors.email && <p id="reg-err-email" role="alert" className="mt-1 text-xs text-err">{fieldErrors.email}</p>}
                 </div>
 
                 <div>
@@ -149,6 +167,7 @@ export function RegisterPage() {
                   </label>
                   <input
                     type="password"
+                    aria-invalid={!!fieldErrors.password} aria-describedby={fieldErrors.password ? "reg-err-password" : undefined}
                     aria-label={t('auth.password')}
                     required
                     value={password}
@@ -156,6 +175,7 @@ export function RegisterPage() {
                     placeholder="••••••••••••"
                     className="w-full px-3.5 py-2.5 bg-subtle border border-border rounded-xl text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:border-run/30 focus:ring-1 focus:ring-run/30 transition-all"
                   />
+                  {fieldErrors.password && <p id="reg-err-password" role="alert" className="mt-1 text-xs text-err">{fieldErrors.password}</p>}
                 </div>
 
                 <button

@@ -1,5 +1,6 @@
 import type { WorkflowDefinition, WorkflowEdge, WorkflowNode, WorkflowStatus } from '../types/workflow.types';
 import { tr } from '../lib/i18n/tr';
+import { primaryTrigger } from '../lib/executions/runView';
 import { useAuthStore } from '../store/useAuthStore';
 
 const ACTIVE_WORKSPACE_KEY = 'weav_active_workspace_id';
@@ -7,14 +8,18 @@ const PAGE_SIZE = 100;
 
 export class WorkflowApiError extends Error {
   readonly status: number;
+  /** Validation details of a 400 (`field` + "CODE: message"); empty for other errors. */
+  readonly details: Array<{ field?: string; message?: string }>;
 
   constructor(
     status: number,
     message: string,
+    details: Array<{ field?: string; message?: string }> = [],
   ) {
     super(message);
     this.name = 'WorkflowApiError';
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -46,6 +51,8 @@ interface WorkflowSummaryV1 {
   createdAt?: string;
   updatedAt?: string;
   publishedAt?: string | null;
+  /** Node types of every trigger node, in definition order. */
+  triggerTypes?: string[];
 }
 
 interface WorkflowDetailV1 extends WorkflowSummaryV1 {
@@ -207,7 +214,13 @@ async function requestOnce<T>(path: string, init: RequestInit = {}): Promise<T> 
     const firstDetail = response.status === 400 && Array.isArray(envelope?.details) && isRecord(envelope.details[0])
       ? envelope.details[0].message
       : undefined;
-    throw new WorkflowApiError(response.status, typeof firstDetail === 'string' && firstDetail ? `${message}: ${firstDetail}` : message);
+    const details = response.status === 400 && Array.isArray(envelope?.details)
+      ? envelope.details.filter(isRecord).map((item) => ({
+        ...(typeof item.field === 'string' ? { field: item.field } : {}),
+        ...(typeof item.message === 'string' ? { message: item.message } : {}),
+      }))
+      : [];
+    throw new WorkflowApiError(response.status, typeof firstDetail === 'string' && firstDetail ? `${message}: ${firstDetail}` : message, details);
   }
 
   return payload as T;
@@ -327,7 +340,8 @@ function mapSummary(summary: WorkflowSummaryV1, workspaceId: string): WorkflowDe
     description: typeof summary.description === 'string' ? summary.description : undefined,
     status: safeStatus(summary.status),
     version: 1,
-    triggerType: 'trigger.manual',
+    triggerType: primaryTrigger(summary.triggerTypes) ?? 'trigger.manual',
+    ...(Array.isArray(summary.triggerTypes) ? { triggerTypes: summary.triggerTypes } : {}),
     nodes: [],
     edges: [],
     createdAt: safeString(summary.createdAt),
@@ -342,10 +356,11 @@ function mapDetail(detail: WorkflowDetailV1, workspaceId: string): WorkflowDefin
   const editorState = isRecord(detail.editorState) ? detail.editorState : {};
   const editorNodes = isRecord(editorState.nodes) ? editorState.nodes : {};
   const { nodes, edges } = definitionToCanvas(detail.definition, editorNodes);
-  const trigger = nodes.find((node) => node.type.startsWith('trigger.'));
+  const triggerTypes = nodes.filter((node) => node.type.startsWith('trigger.')).map((node) => node.type);
   return {
     ...workflow,
-    triggerType: trigger?.type ?? 'trigger.manual',
+    triggerType: primaryTrigger(triggerTypes) ?? 'trigger.manual',
+    triggerTypes,
     nodes,
     edges,
   };
@@ -475,6 +490,15 @@ export const workflowV1Api = {
       { method: 'PUT', body: JSON.stringify(serializeWorkflowDraft(merged)) },
     );
     return mapDetail(saved, activeWorkspaceId);
+  },
+
+  /**
+   * Renames on its own: the server has no rename endpoint, so this re-sends the last SAVED draft (fresh copy,
+   * never the unsaved canvas) with the new name. A canvas that fails validation cannot lose the rename.
+   */
+  async renameWorkflow(id: string, name: string, workspaceId?: string): Promise<WorkflowDefinition> {
+    detailCache.clear();
+    return this.updateWorkflow(id, { name }, workspaceId);
   },
 
   async publishWorkflow(id: string, workspaceId?: string): Promise<WorkflowPublication> {

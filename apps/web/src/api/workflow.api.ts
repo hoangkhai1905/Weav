@@ -130,6 +130,10 @@ export const workflowApi = {
     return workflowV1Api.createWorkflow({ name: payload.name ?? 'Untitled Workflow', description: payload.description });
   },
 
+  renameWorkflow(id: string, name: string): Promise<WorkflowDefinition> {
+    return isWorkflowMockMode ? mockWorkflowApi.updateWorkflow(id, { name }) : workflowV1Api.renameWorkflow(id, name);
+  },
+
   updateWorkflow(id: string, updates: Partial<WorkflowDefinition>): Promise<WorkflowDefinition> {
     return isWorkflowMockMode
       ? mockWorkflowApi.updateWorkflow(id, updates)

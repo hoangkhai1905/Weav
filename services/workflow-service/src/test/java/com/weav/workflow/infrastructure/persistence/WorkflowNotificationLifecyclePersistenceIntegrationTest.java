@@ -680,14 +680,15 @@ class WorkflowNotificationLifecyclePersistenceIntegrationTest {
                     """, Integer.class, failedExecutionId));
 
             notificationPublisher.publishPending();
-            awaitInboxCount(workspaceId, 6, java.time.Duration.ofSeconds(15));
+            // #32: the actor's own lifecycle events (created/published/paused/resumed) are skipped by the consumer.
+            awaitInboxCount(workspaceId, 2, java.time.Duration.ofSeconds(15));
 
             List<Map<String, Object>> inboxRows = jdbc.queryForList("""
                     SELECT source_event_id, event_type, user_id, execution_id, content::text AS content
                     FROM notification.notification_inbox WHERE workspace_id = ?
                     """, workspaceId);
-            assertEquals(6, inboxRows.size());
-            assertEquals(4, inboxRows.stream().filter(row -> creatorId.equals(row.get("user_id"))).count());
+            assertEquals(2, inboxRows.size());
+            assertEquals(0, inboxRows.stream().filter(row -> creatorId.equals(row.get("user_id"))).count());
             assertEquals(2, inboxRows.stream().filter(row -> initiatorId.equals(row.get("user_id"))).count());
             assertEquals(0, jdbc.queryForObject("""
                     SELECT count(*) FROM notification.notification_deliveries
@@ -716,11 +717,7 @@ class WorkflowNotificationLifecyclePersistenceIntegrationTest {
 
             List<Map<String, Object>> creatorInbox = getInbox(bridge, bridge.creatorToken());
             List<Map<String, Object>> initiatorInbox = getInbox(bridge, bridge.initiatorToken());
-            assertEquals(4, creatorInbox.size());
-            assertEquals(4, creatorInbox.stream().filter(item -> item.get("eventType") instanceof String).count());
-            assertTrue(creatorInbox.stream().allMatch(item ->
-                    Set.of("workflow.created", "workflow.published", "workflow.paused", "workflow.resumed")
-                            .contains(item.get("eventType"))));
+            assertEquals(0, creatorInbox.size());
             assertEquals(2, initiatorInbox.size());
             assertTrue(initiatorInbox.stream().allMatch(item ->
                     Set.of("workflow.completed", "workflow.failed").contains(item.get("eventType"))));
@@ -739,7 +736,7 @@ class WorkflowNotificationLifecyclePersistenceIntegrationTest {
                     }, replay);
             assertTrue(replay.getFuture().get(5, TimeUnit.SECONDS).ack());
             Thread.sleep(500);
-            assertEquals(6, jdbc.queryForObject("""
+            assertEquals(2, jdbc.queryForObject("""
                     SELECT count(*) FROM notification.notification_inbox WHERE workspace_id = ?
                     """, Integer.class, workspaceId), "replaying the same eventId must deduplicate");
             assertNull(rabbitTemplate.receive(RabbitExecutionConfiguration.EXECUTION_QUEUE, 100),

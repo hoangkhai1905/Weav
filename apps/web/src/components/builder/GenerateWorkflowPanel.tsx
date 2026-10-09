@@ -1,12 +1,10 @@
 import { useEffect, useId, useState } from 'react';
 import { connectionApi, type ConnectionResponse } from '../../api/connection.api';
-import { workflowApi } from '../../api/workflow.api';
-import { WorkflowApiError, type GenerationResponse } from '../../api/workflow-v1.api';
+import type { GenerationResponse } from '../../api/workflow-v1.api';
+import { useWorkflowGeneration, type ReadyGeneration } from '../ai/useWorkflowGeneration';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
-import { tr } from '../../lib/i18n/tr';
 
-type ReadyResult = Extract<GenerationResponse, { status: 'ready' }>;
 type Question = Extract<GenerationResponse, { status: 'needs_input' }>['questions'][number];
 
 /** Everything except a connection pick can be answered in words. */
@@ -36,7 +34,7 @@ function questionText(t: (key: string) => string, question: Question): string {
 interface GenerateWorkflowPanelProps {
   open: boolean;
   onClose: () => void;
-  onReady: (result: ReadyResult) => void;
+  onReady: (result: ReadyGeneration) => void;
   /** Prefills the description (e.g. handed over from the Create with AI page). */
   initialPrompt?: string;
 }
@@ -51,15 +49,12 @@ export function GenerateWorkflowPanel({ open, onClose, onReady, initialPrompt = 
   const [sheetsConnection, setSheetsConnection] = useState('');
   const [emailConnection, setEmailConnection] = useState('');
   const [connections, setConnections] = useState<ConnectionResponse[]>([]);
-  const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<GenerationResponse | null>(null);
+  const { isPending, error, result, generate, reset } = useWorkflowGeneration();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    setError(null);
-    setResult(null);
+    reset();
     setAnswers({});
     setConnections([]);
   }
@@ -89,42 +84,15 @@ export function GenerateWorkflowPanel({ open, onClose, onReady, initialPrompt = 
   const handleGenerate = async () => {
     if (!canSubmit) return;
     const given = Object.fromEntries(Object.entries(answers).filter(([, value]) => value.trim()));
-    setIsPending(true);
-    setError(null);
-    setResult(null);
-    try {
-      const generated = await workflowApi.generateWorkflow({
-        prompt: prompt.trim(),
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        ...(Object.keys(given).length ? { answers: given } : {}),
-        ...((sheetsConnection || emailConnection)
-          ? {
-              connections: {
-                ...(sheetsConnection ? { 'google.sheets': sheetsConnection } : {}),
-                ...(emailConnection ? { 'email.send': emailConnection } : {}),
-              },
-            }
-          : {}),
-      });
-      if (generated.status === 'ready') {
-        onReady(generated);
-        return;
-      }
-      setResult(generated);
-    } catch (unknown) {
-      if (unknown instanceof WorkflowApiError) {
-        if (unknown.status === 429) setError(tr('msg.too_many_requests_wait_a_minute'));
-        else if (unknown.status === 503) setError(tr('msg.ai_is_unavailable_right_now'));
-        else if (unknown.status === 504) setError(tr('msg.ai_took_too_long_try_a_shorter'));
-        else if (unknown.status === 400 || unknown.status === 413) setError(tr('ai.error.invalid_request'));
-        else if (unknown.status === 403) setError(tr('ai.error.no_permission'));
-        else setError(tr('msg.the_workflow_request_could_not_be_completed'));
-      } else {
-        setError(tr('msg.the_workflow_request_could_not_be_completed'));
-      }
-    } finally {
-      setIsPending(false);
-    }
+    const generated = await generate({
+      prompt: prompt.trim(),
+      answers: given,
+      connections: {
+        ...(sheetsConnection ? { 'google.sheets': sheetsConnection } : {}),
+        ...(emailConnection ? { 'email.send': emailConnection } : {}),
+      },
+    });
+    if (generated?.status === 'ready') onReady(generated);
   };
 
   return (

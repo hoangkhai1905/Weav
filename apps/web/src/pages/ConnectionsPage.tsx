@@ -22,6 +22,9 @@ import {
   useTestConnection,
 } from "../hooks/useConnections";
 import { useWorkspaceListContext } from "../hooks/useWorkspace";
+import { ConfirmModal } from "../components/common/ConfirmModal";
+import { appLocale } from "../lib/i18n/tr";
+import { formatRelativeTime } from "../lib/relativeTime";
 import { statusBadgeClass, type StatusTone } from "../components/common/statusBadgeClass";
 import { useI18nStore } from "../store/useI18nStore";
 import { useWorkspaceStore } from "../store/useWorkspaceStore";
@@ -58,6 +61,15 @@ function getOAuthNoticeKey(state: unknown): string | null {
   ]);
   return typeof key === "string" && allowedKeys.has(key) ? key : null;
 }
+
+const PROVIDER_LABELS: Record<string, string> = {
+  GMAIL: "Gmail",
+  GOOGLE_SHEETS: "Google Sheets",
+  GOOGLE_CALENDAR: "Google Calendar",
+  GOOGLE_DRIVE: "Google Drive",
+  TELEGRAM: "Telegram",
+  HTTP: "HTTP",
+};
 
 const STATUS_KEYS: Record<ConnectionStatus, string> = {
   DISABLED: "connections.status.disabled",
@@ -241,6 +253,8 @@ function ConnectionRow({
     (GOOGLE_PROVIDERS as readonly string[]).includes(connection.provider) && connection.authType === "OAUTH2";
   // Primary contextual action: (re)authorize a Google connection that needs it, otherwise verify it.
   const primaryIsOAuth = isGoogleOAuth && (connection.status !== "ACTIVE" || !connection.hasCredential);
+  // Created but never authorized: nothing to re-authorize or test yet, only "connect".
+  const neverConnected = isGoogleOAuth && !connection.hasCredential && !connection.lastVerifiedAt;
   return (
     <li
       data-testid={`connection-row-${connection.id}`}
@@ -249,7 +263,7 @@ function ConnectionRow({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-text-2">
-            {connection.provider}
+            {PROVIDER_LABELS[connection.provider] ?? connection.provider}
           </span>
           <h2 className="truncate text-[13px] font-medium text-foreground">
             {connection.name}
@@ -259,20 +273,24 @@ function ConnectionRow({
           <span
             data-testid={`connection-status-${connection.id}`}
             data-status={connection.status}
-            className={statusBadgeClass(STATUS_TONES[connection.status])}
+            className={statusBadgeClass(neverConnected ? "pause" : STATUS_TONES[connection.status])}
           >
-            {t(STATUS_KEYS[connection.status])}
+            {neverConnected ? t("w5c.not_connected") : t(STATUS_KEYS[connection.status])}
           </span>
-          <span>
-            {connection.lastVerifiedAt
-              ? `${t("connections.last_verified")}: ${connection.lastVerifiedAt}`
-              : t("connections.never_verified")}
-          </span>
-          <span>
-            {connection.hasCredential
-              ? t("connections.credential_present")
-              : t("connections.credential_missing")}
-          </span>
+          {!neverConnected && (
+            <span title={connection.lastVerifiedAt ?? undefined}>
+              {connection.lastVerifiedAt
+                ? `${t("connections.last_verified")}: ${formatRelativeTime(connection.lastVerifiedAt, appLocale())}`
+                : t("connections.never_verified")}
+            </span>
+          )}
+          {!neverConnected && (
+            <span>
+              {connection.hasCredential
+                ? t("connections.credential_present")
+                : t("connections.credential_missing")}
+            </span>
+          )}
         </div>
       </div>
       <div className="shrink-0 text-xs text-muted-foreground">
@@ -329,7 +347,7 @@ function ConnectionRow({
                   disabled={isWorking}
                   className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border border-primary px-3 text-[13px] font-medium text-accent-ink transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {isWorking ? t("connections.oauth.starting") : t("connections.oauth.start")}
+                  {isWorking ? t("connections.oauth.starting") : neverConnected ? t("w5c.connect") : t("connections.oauth.start")}
                 </button>
               ) : (
                 <button
@@ -346,8 +364,11 @@ function ConnectionRow({
                 label={t("connections.more_actions")}
                 items={[
                   { key: "rename", testId: `connection-rename-${connection.id}`, label: t("connections.rename.action"), onSelect: onStartRename },
-                  ...(primaryIsOAuth
+                  ...(primaryIsOAuth && !neverConnected
                     ? [{ key: "test", testId: `connection-test-${connection.id}`, label: isWorking ? t("connections.test.pending") : t("connections.test.action"), onSelect: onTest, disabled: isWorking }]
+                    : []),
+                  ...(connection.status === "DISABLED" && connection.hasCredential
+                    ? [{ key: "enable", testId: `connection-enable-${connection.id}`, label: t("w5c.enable"), onSelect: onTest, disabled: isWorking }]
                     : []),
                   ...(connection.status !== "DISABLED"
                     ? [{ key: "disable", testId: `connection-disable-${connection.id}`, label: t("connections.disable.action"), onSelect: onDisable, disabled: isWorking }]
@@ -572,7 +593,7 @@ export function CreateConnectionDialog({
               )}
               {busy
                 ? (pendingLabel ?? t("connections.create.pending"))
-                : (submitLabel ?? t("connections.create.submit"))}
+                : (submitLabel ?? (isTelegram ? t("connections.create.submit") : t("w5c.create_and_connect")))}
             </button>
           </div>
         </form>
@@ -611,6 +632,7 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
   const [actionMessages, setActionMessages] = useState<Record<string, string>>(
     {},
   );
+  const [pendingRemove, setPendingRemove] = useState<ConnectionResponse | null>(null);
   const oauthCallbackHandled = useRef(false);
 
   useEffect(() => {
@@ -816,7 +838,6 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
   };
 
   const handleRemove = async (connection: ConnectionResponse) => {
-    if (!window.confirm(t("connections.delete.confirm"))) return;
     const mutationSession = captureNotificationSession();
     try {
       await removeConnection.mutateAsync({
@@ -1023,7 +1044,7 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
                 onRename={(event) => void handleRename(event, connection)}
                 onTest={() => void handleTest(connection)}
                 onDisable={() => void handleDisable(connection)}
-                onRemove={() => void handleRemove(connection)}
+                onRemove={() => setPendingRemove(connection)}
                 onStartOAuth={() =>
                   void handleStartGoogleOAuth(connection, Date.now())
                 }
@@ -1039,9 +1060,29 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
         <CreateConnectionDialog
           workspaceId={activeWorkspaceId}
           onClose={() => setIsCreateOpen(false)}
-          onCreated={() => setIsCreateOpen(false)}
+          onCreated={async (created) => {
+            setIsCreateOpen(false);
+            // One step: a Google connection goes straight to Google's consent screen.
+            if ((GOOGLE_PROVIDERS as readonly string[]).includes(created.provider)) {
+              await handleStartGoogleOAuth(created, Date.now());
+            }
+          }}
         />
       )}
+      <ConfirmModal
+        isOpen={pendingRemove !== null}
+        onClose={() => setPendingRemove(null)}
+        onConfirm={async () => {
+          const target = pendingRemove;
+          setPendingRemove(null);
+          if (target) await handleRemove(target);
+        }}
+        title={t("connections.delete")}
+        description={t("connections.delete.confirm")}
+        confirmText={t("connections.delete")}
+        cancelText={t("connections.cancel")}
+        variant="danger"
+      />
     </main>
   );
 }

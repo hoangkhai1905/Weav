@@ -75,7 +75,11 @@ public final class GmailMessageParser {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("messageId", id);
         input.put("threadId", message.get("threadId") instanceof String thread ? clean(thread) : "");
-        input.put("from", header(headers, "from"));
+        String from = header(headers, "from");
+        String[] sender = sender(from);
+        input.put("from", from);
+        input.put("fromEmail", sender[1]);
+        input.put("fromName", sender[0]);
         input.put("to", header(headers, "to"));
         input.put("cc", header(headers, "cc"));
         input.put("subject", header(headers, "subject"));
@@ -87,6 +91,44 @@ public final class GmailMessageParser {
         input.put("labelIds", labels(message.get("labelIds")));
         input.put("attachments", attachments.stream().map(AttachmentPart::metadata).toList());
         return Optional.of(new Parsed(id, internalDate, input, attachments));
+    }
+
+    /** {display name or "", bare address} of a From header ({@code addr}, {@code Name <addr>}, {@code "Name" <addr>}). */
+    static String[] sender(String from) {
+        String header = from.trim();
+        java.util.regex.Matcher m = GmailNodeExecutor.MAILBOX.matcher(header);
+        if (m.matches()) {
+            return new String[] {displayName(m.group(1)), m.group(2).trim()};
+        }
+        // Lenient fallback: exactly one <...> group outside quotes that holds a valid address; the text before it
+        // is the name. Anything more ambiguous (a second group, for example in a comment) keeps the whole header.
+        int open = -1;
+        int groups = 0;
+        boolean quoted = false;
+        for (int i = 0; i < header.length(); i++) {
+            char c = header.charAt(i);
+            if (quoted && c == '\\' && i + 1 < header.length()) {
+                i++;
+            } else if (c == '"') {
+                quoted = !quoted;
+            } else if (!quoted && c == '<') {
+                groups++;
+                open = i;
+            }
+        }
+        int close = groups == 1 ? header.indexOf('>', open) : -1;
+        if (close > open && GmailNodeExecutor.ADDRESS.matcher(header.substring(open + 1, close).trim()).matches()) {
+            return new String[] {displayName(header.substring(0, open)), header.substring(open + 1, close).trim()};
+        }
+        return new String[] {"", header};
+    }
+
+    private static String displayName(String raw) {
+        String name = raw.trim();
+        if (name.length() >= 2 && name.startsWith("\"") && name.endsWith("\"")) {
+            name = name.substring(1, name.length() - 1).replaceAll("\\\\(.)", "$1");
+        }
+        return name.trim();
     }
 
     /**

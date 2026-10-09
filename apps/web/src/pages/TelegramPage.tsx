@@ -1,117 +1,111 @@
 import { useEffect, useState } from 'react';
-import { Send, Unlink, Bot, Terminal, Activity } from 'lucide-react';
-import type { TelegramStatus } from '../api/telegram.api';
-import { telegramApi } from '../api/telegram.api';
+import { Link } from 'react-router-dom';
+import { ArrowRight, Bot, Send } from 'lucide-react';
+import { connectionApi, type ConnectionResponse } from '../api/connection.api';
+import { TELEGRAM_TEMPLATE_IDS, WORKFLOW_TEMPLATES } from '../lib/templates';
 import { useI18nStore } from '../store/useI18nStore';
+import { useWorkspaceStore } from '../store/useWorkspaceStore';
 
-const TELEGRAM_ACTIVITY_KEYS: Record<string, string> = {
-  'Command /run wf-001 executed by @truong_dev': 'telegram.log.run_executed',
-  'Bot reply: Workflow execution started (ID: exec-101)': 'telegram.log.bot_reply',
-  'Automated alert sent to @weav_exec_team': 'telegram.log.alert_sent',
-};
+const STEP_KEYS = ['open', 'create', 'copy', 'connect'] as const;
 
 export function TelegramPage() {
-  const { t } = useI18nStore();
-  const [status, setStatus] = useState<TelegramStatus | null>(null);
-
-  useEffect(() => {
-    telegramApi.getStatus().then((data) => {
-      setStatus(data);
-    });
-  }, []);
-
-  if (!status) {
-    return <div className="p-8 text-center text-muted-foreground">{t('telegram.loading')}</div>;
+  const { t, language } = useI18nStore();
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const [bots, setBots] = useState<ConnectionResponse[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  // Drop the previous workspace's bots as soon as the workspace changes.
+  const [seenWorkspaceId, setSeenWorkspaceId] = useState(activeWorkspaceId);
+  if (seenWorkspaceId !== activeWorkspaceId) {
+    setSeenWorkspaceId(activeWorkspaceId);
+    setBots(null);
+    setLoadFailed(false);
   }
 
+  useEffect(() => {
+    if (!activeWorkspaceId) return;
+    const controller = new AbortController();
+    connectionApi
+      .list(activeWorkspaceId, controller.signal)
+      .then((items) => {
+        setBots(items.filter((item) => item.provider === 'TELEGRAM'));
+        setLoadFailed(false);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setLoadFailed(true);
+      });
+    return () => controller.abort();
+  }, [activeWorkspaceId]);
+
+  const templates = WORKFLOW_TEMPLATES.filter((template) => TELEGRAM_TEMPLATE_IDS.includes(template.id));
+  const card = 'rounded-2xl border border-border bg-card p-6';
+
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-10">
-      {/* Header */}
+    <div data-testid="telegram-page" className="mx-auto max-w-4xl space-y-6 pb-10">
       <div>
-        <h1 className="text-xl font-bold text-foreground flex items-center gap-2">
-          {t('telegram.title')} <Send size={20} className="text-run" />
+        <h1 className="flex items-center gap-2 text-xl font-bold text-foreground">
+          {t('hp.tg.title')} <Send size={20} className="text-run" aria-hidden="true" />
         </h1>
-        <p className="text-xs text-text-2">{t('telegram.subtitle')}</p>
+        <p className="text-xs text-text-2">{t('hp.tg.subtitle')}</p>
       </div>
 
-      {/* Connection Card (n8n Style) */}
-      <div className="bg-card border border-border rounded-2xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-run-bg border border-run/30 text-run flex items-center justify-center shrink-0">
-            <Bot size={26} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-bold text-foreground text-base">{status.botUsername}</h2>
-              <span className="px-2.5 py-0.5 text-[10px] font-bold rounded-full bg-ok-bg text-ok border border-ok/30">
-                {t('telegram.connected')}
-              </span>
-            </div>
-            <p className="text-xs text-text-2">
-              {t('telegram.linked_account')} <span className="text-foreground font-semibold">{status.linkedAccount}</span>
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => alert(t('telegram.unlink_confirmation'))}
-            className="px-3.5 py-2 bg-subtle hover:bg-muted text-text-2 border border-border rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+      <section aria-labelledby="telegram-bots-title" className={`${card} space-y-4`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="telegram-bots-title" className="text-sm font-bold text-foreground">{t('hp.tg.bots_title')}</h2>
+          <Link
+            to="/connections"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <Unlink size={15} />
-            <span>{t('telegram.unlink')}</span>
-          </button>
+            {t('hp.tg.add_bot')} <ArrowRight size={13} aria-hidden="true" />
+          </Link>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Bot Commands Catalog */}
-        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
-          <h3 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
-            <Terminal size={16} className="text-run" /> {t('telegram.commands')}
-          </h3>
-
-          <div className="space-y-3">
-            <div className="p-3 bg-subtle border border-border rounded-xl space-y-1">
-              <div className="font-mono text-xs text-run font-bold">/list</div>
-              <p className="text-xs text-text-2">{t('telegram.command.list')}</p>
-            </div>
-
-            <div className="p-3 bg-subtle border border-border rounded-xl space-y-1">
-              <div className="font-mono text-xs text-run font-bold">/status &lt;executionId&gt;</div>
-              <p className="text-xs text-text-2">{t('telegram.command.status')}</p>
-            </div>
-
-            <div className="p-3 bg-subtle border border-border rounded-xl space-y-1">
-              <div className="font-mono text-xs text-run font-bold">/run &lt;workflowId&gt;</div>
-              <p className="text-xs text-text-2">{t('telegram.command.run')}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Live Activity Stream */}
-        <div className="bg-card border border-border rounded-2xl p-6 space-y-4">
-          <h3 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
-            <Activity size={16} className="text-warn" /> {t('telegram.activity_feed')}
-          </h3>
-
-          <div className="space-y-2">
-            {status.activityLogs.map((log) => (
-              <div key={log.id} className="p-3 bg-subtle border border-border rounded-xl text-xs space-y-1">
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                  <span>{log.timestamp}</span>
-                  <span className={log.direction === 'INCOMING' ? 'text-run font-bold' : 'text-run font-bold'}>
-                    {log.direction === 'INCOMING' ? t('telegram.direction.incoming') : t('telegram.direction.outgoing')}
-                  </span>
-                </div>
-                <div className="text-foreground font-semibold">
-                  {TELEGRAM_ACTIVITY_KEYS[log.message] ? t(TELEGRAM_ACTIVITY_KEYS[log.message]) : log.message}
-                </div>
-              </div>
+        {!activeWorkspaceId ? (
+          <p className="text-xs text-muted-foreground">{t('hp.tg.no_workspace')}</p>
+        ) : loadFailed ? (
+          <p role="alert" className="text-xs text-err">{t('hp.tg.load_failed')}</p>
+        ) : bots === null ? (
+          <p className="text-xs text-muted-foreground">{t('telegram.loading')}</p>
+        ) : bots.length === 0 ? (
+          <p className="text-xs text-muted-foreground">{t('hp.tg.no_bots')}</p>
+        ) : (
+          <ul className="divide-y divide-border rounded-xl border border-border">
+            {bots.map((bot) => (
+              <li key={bot.id} className="flex items-center gap-3 px-4 py-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-run-bg text-run"><Bot size={18} aria-hidden="true" /></span>
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{bot.name}</span>
+                <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${bot.status === 'ACTIVE' ? 'border-ok/30 bg-ok-bg text-ok' : 'border-err/30 bg-err-bg text-err'}`}>
+                  {bot.status === 'ACTIVE' ? t('hp.tg.status_active') : t('hp.tg.status_inactive')}
+                </span>
+              </li>
             ))}
-          </div>
+          </ul>
+        )}
+      </section>
+
+      <section aria-labelledby="telegram-steps-title" className={`${card} space-y-3`}>
+        <h2 id="telegram-steps-title" className="text-sm font-bold text-foreground">{t('hp.tg.steps_title')}</h2>
+        <ol className="list-decimal space-y-1.5 pl-5 text-xs leading-5 text-text-2">
+          {STEP_KEYS.map((key) => <li key={key}>{t(`hp.tg.step.${key}`)}</li>)}
+        </ol>
+        <p className="text-[11px] text-muted-foreground">{t('hp.tg.one_workflow_note')}</p>
+      </section>
+
+      <section aria-labelledby="telegram-templates-title" className={`${card} space-y-3`}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="telegram-templates-title" className="text-sm font-bold text-foreground">{t('hp.tg.templates_title')}</h2>
+          <Link to="/workflows/new#templates-list" className="text-xs font-semibold text-run hover:underline">{t('hp.tg.all_templates')}</Link>
         </div>
-      </div>
+        <ul className="space-y-2">
+          {templates.map((template) => {
+            const copy = language === 'VI' ? template.vi : template.en;
+            return (
+              <li key={template.id} className="rounded-xl border border-border bg-subtle px-4 py-3">
+                <p className="text-sm font-semibold text-foreground">{copy.name}</p>
+                <p className="mt-0.5 text-xs text-text-2">{copy.description}</p>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
     </div>
   );
 }

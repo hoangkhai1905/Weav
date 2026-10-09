@@ -46,6 +46,29 @@ describe('notification use cases', () => {
     expect(inboxRepository.ingest).toHaveBeenCalledWith(event);
     expect(repo.ingest).not.toHaveBeenCalled();
   });
+  it('skips the inbox for a workflow lifecycle event whose only recipient is its actor', async () => {
+    const ingest = (inboxRepository as unknown as { ingest: jest.Mock }).ingest;
+    const actor = randomUUID();
+    const workflowId = randomUUID();
+    const event = (recipient: string) => ({
+      schemaVersion: 2,
+      eventId: randomUUID(),
+      eventType: 'workflow.paused',
+      occurredAt: '2026-09-27T04:00:00Z',
+      producer: 'workflow-service',
+      actorUserId: actor,
+      recipientUserIds: [recipient],
+      workspaceId: randomUUID(),
+      entity: { kind: 'WORKFLOW', id: workflowId },
+      data: { workflowName: 'Daily report' },
+    });
+
+    await service.consume(event(actor));
+    expect(ingest).not.toHaveBeenCalled();
+
+    await service.consume(event(randomUUID()));
+    expect(ingest).toHaveBeenCalledTimes(1);
+  });
   it('rejects a present unsupported schemaVersion instead of falling back to legacy', async () => {
     await expect(
       service.consume({ ...testEvent(), schemaVersion: 3 }),

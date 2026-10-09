@@ -259,6 +259,7 @@ class WorkflowDraftHttpTest {
                         .header("Authorization", "Bearer " + accessToken(USER_ID)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.items[0].triggerTypes[0]").value("trigger.manual"))
                 .andExpect(jsonPath("$.page").value(0))
                 .andExpect(jsonPath("$.size").value(2))
                 .andExpect(jsonPath("$.totalElements").value(3));
