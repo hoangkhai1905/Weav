@@ -297,6 +297,8 @@ services:
       WORKFLOW_WEBHOOK_RATE_LIMIT_WINDOW: ${WORKFLOW_WEBHOOK_RATE_LIMIT_WINDOW:-1m}
       # Public HTTPS base URL of the gateway (a tunnel in dev); empty keeps trigger.telegram unavailable
       WORKFLOW_PUBLIC_BASE_URL: ${WORKFLOW_PUBLIC_BASE_URL:-}
+      # Web app base URL for the runUrl field of trigger.workflow_event input; empty omits it
+      WORKFLOW_WEB_BASE_URL: ${WORKFLOW_WEB_BASE_URL:-}
       # Call timeout for Telegram setWebhook/deleteWebhook (they run inside the publish transaction)
       WORKFLOW_TELEGRAM_CONTROL_TIMEOUT: ${WORKFLOW_TELEGRAM_CONTROL_TIMEOUT:-10s}
       WORKFLOW_EXECUTION_OUTBOX_BATCH_SIZE: ${WORKFLOW_EXECUTION_OUTBOX_BATCH_SIZE:-50}

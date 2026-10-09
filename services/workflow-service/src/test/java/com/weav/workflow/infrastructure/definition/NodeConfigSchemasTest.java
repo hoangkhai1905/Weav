@@ -36,7 +36,8 @@ class NodeConfigSchemasTest {
             "trigger.manual", "trigger.schedule", "trigger.webhook", "trigger.telegram", "http.request",
             "email.send", "google.sheets", "telegram.send_message", "logic.condition", "ai.extract",
             "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive", "logic.switch",
-            "data.set", "ai.generate", "trigger.gmail");
+            "data.set", "ai.generate", "trigger.gmail", "weav.workflow", "trigger.workflow_event",
+            "discord.send_message");
 
     /** The publish-required fields the validator hard-coded before schemas drove it. */
     private static final Map<String, List<String>> REQUIRED = Map.ofEntries(
@@ -55,7 +56,10 @@ class NodeConfigSchemasTest {
             Map.entry("logic.switch", List.of("value", "cases")),
             Map.entry("data.set", List.of("fields")),
             Map.entry("ai.generate", List.of("prompt")),
-            Map.entry("trigger.gmail", List.of("connectionId")));
+            Map.entry("trigger.gmail", List.of("connectionId")),
+            Map.entry("weav.workflow", List.of("operation")), // workflow: required unless command/list_failures
+            Map.entry("trigger.workflow_event", List.of("events")),
+            Map.entry("discord.send_message", List.of("connectionId", "content")));
 
     @Test
     void registryLoadsAllThirteenNodeTypes() {
@@ -81,7 +85,8 @@ class NodeConfigSchemasTest {
             "ai.extract.text", "ai.classify.content", "ai.summarize.inputText",
             "ocr.extract.artifactId", "ocr.extract.fileUrl", "google.calendar.connectionId",
             "google.calendar.summary", "google.calendar.start", "google.calendar.end",
-            "google.drive.connectionId", "google.drive.operation", "ai.generate.prompt", "trigger.gmail.connectionId");
+            "google.drive.connectionId", "google.drive.operation", "ai.generate.prompt", "trigger.gmail.connectionId",
+            "discord.send_message.connectionId", "discord.send_message.content");
 
     private static Field field(String type, String name) {
         return NodeCatalog.schema(type).properties().get(name);
@@ -163,6 +168,8 @@ class NodeConfigSchemasTest {
                 NodeCatalog.schema("trigger.telegram").properties().get("connectionId").connectionProvider());
         assertEquals("TELEGRAM",
                 NodeCatalog.schema("telegram.send_message").properties().get("connectionId").connectionProvider());
+        assertEquals("DISCORD",
+                NodeCatalog.schema("discord.send_message").properties().get("connectionId").connectionProvider());
         assertEquals("GOOGLE_CALENDAR",
                 NodeCatalog.schema("google.calendar").properties().get("connectionId").connectionProvider());
         assertEquals("GOOGLE_DRIVE",
@@ -292,6 +299,79 @@ class NodeConfigSchemasTest {
         assertTrue(reply.matchesShape(1) && !reply.matchesShape(0) && !reply.matchesShape(-5));
         assertEquals(Set.of("and", "or"), field("logic.condition", "combinator").enumValues());
         assertEquals("array", field("logic.condition", "conditions").type());
+    }
+
+    @Test
+    void controlBotNodesDeclareTheirShapeAndSideEffects() {
+        assertEquals(Set.of("run", "pause", "resume", "status", "list_failures", "command"),
+                field("weav.workflow", "operation").enumValues());
+        Field limit = field("weav.workflow", "limit");
+        assertTrue(limit.matchesShape(1) && limit.matchesShape(20) && limit.matchesShape("{{ trigger.n }}"));
+        assertFalse(limit.matchesShape(0) || limit.matchesShape(21));
+        assertTrue(field("weav.workflow", "workflow").template() && field("weav.workflow", "text").template());
+        assertTrue(field("weav.workflow", "input").template());
+        assertFalse(field("weav.workflow", "operation").template());
+        assertTrue(NodeCatalog.schema("weav.workflow").sideEffect());
+        assertFalse(NodeSideEffects.isSideEffecting("weav.workflow", Map.of("operation", "status")));
+        assertFalse(NodeSideEffects.isSideEffecting("weav.workflow", Map.of("operation", "list_failures")));
+        for (String operation : List.of("run", "pause", "resume", "command", "{{ trigger.op }}")) {
+            assertTrue(NodeSideEffects.isSideEffecting("weav.workflow", Map.of("operation", operation)), operation);
+        }
+        assertEquals("trigger", NodeCatalog.schema("trigger.workflow_event").category());
+        assertFalse(NodeCatalog.schema("trigger.workflow_event").sideEffect());
+        assertEquals(1, field("trigger.workflow_event", "events").minItems());
+        assertEquals(Set.of("FAILED", "SUCCEEDED"), field("trigger.workflow_event", "events").items().enumValues());
+        assertTrue(NodeSideEffects.isSideEffecting("discord.send_message", Map.of()));
+        assertTrue(field("discord.send_message", "content").template());
+        assertFalse(field("discord.send_message", "connectionId").template());
+    }
+
+    private static List<String> publishCodes(String type, Map<String, Object> config) {
+        WorkflowDefinition definition = new WorkflowDefinition("1.0",
+                List.of(new WorkflowDefinition.Node("manual", "trigger.manual", Map.of()),
+                        new WorkflowDefinition.Node("n", type, config)),
+                List.of(new WorkflowDefinition.Edge("e1", "manual", "n", null)), Map.of());
+        return new DefinitionValidator().validatePublish(definition).stream().map(ValidationIssue::code).toList();
+    }
+
+    @Test
+    void controlBotNodesValidateOperationTargetEventsAndLimit() {
+        assertEquals(List.of(), publishCodes("weav.workflow", Map.of("operation", "run", "workflow", "Report")));
+        assertEquals(List.of(), publishCodes("weav.workflow", Map.of("operation", "command", "text", "/help",
+                "sender", "{{ trigger.input.message.from.id }}", "allowedSenders", List.of("42"))));
+        // a chat command without a sender allow-list is rejected at publish
+        assertTrue(publishCodes("weav.workflow", Map.of("operation", "command", "text", "/help"))
+                .contains("REQUIRED_FIELD_MISSING"));
+        assertTrue(publishCodes("weav.workflow", Map.of("operation", "command", "text", "/help",
+                "sender", "1", "allowedSenders", List.of())).contains("REQUIRED_FIELD_MISSING"));
+        assertTrue(NodeCatalog.schema("weav.workflow").personalFields().containsAll(Set.of("sender", "allowedSenders")));
+        assertEquals(List.of(), publishCodes("weav.workflow", Map.of("operation", "list_failures", "limit", 5)));
+        assertTrue(publishCodes("weav.workflow", Map.of("operation", "pause")).contains("REQUIRED_FIELD_MISSING"));
+        assertTrue(publishCodes("weav.workflow", Map.of("operation", "reboot", "workflow", "x"))
+                .contains("INVALID_ENUM_VALUE"));
+        assertFalse(publishCodes("weav.workflow", Map.of("operation", "list_failures", "limit", 21)).isEmpty());
+        assertFalse(publishCodes("weav.workflow", Map.of("operation", "list_failures", "limit", "25")).isEmpty());
+        assertEquals(List.of(), publishCodes("weav.workflow", Map.of("operation", "list_failures", "limit", "{{ trigger.input.n }}")));
+
+        assertEquals(List.of(), publishCodes("discord.send_message",
+                Map.of("connectionId", UUID.randomUUID().toString(), "content", "hi")));
+        assertFalse(publishCodes("discord.send_message", Map.of("connectionId", UUID.randomUUID().toString())).isEmpty());
+    }
+
+    @Test
+    void workflowEventTriggerNeedsKnownNonEmptyEvents() {
+        WorkflowDefinition ok = new WorkflowDefinition("1.0",
+                List.of(new WorkflowDefinition.Node("t", "trigger.workflow_event",
+                        Map.of("events", List.of("FAILED", "SUCCEEDED"), "workflowIds", List.of()))),
+                List.of(), Map.of());
+        assertEquals(List.of(), new DefinitionValidator().validatePublish(ok).stream().map(ValidationIssue::code).toList());
+        for (Map<String, Object> bad : List.of(Map.<String, Object>of("events", List.of()),
+                Map.<String, Object>of("events", List.of("CANCELLED")),
+                Map.<String, Object>of("workflowIds", List.of("a")))) {
+            WorkflowDefinition definition = new WorkflowDefinition("1.0",
+                    List.of(new WorkflowDefinition.Node("t", "trigger.workflow_event", bad)), List.of(), Map.of());
+            assertFalse(new DefinitionValidator().validatePublish(definition).isEmpty(), bad.toString());
+        }
     }
 
     @Test

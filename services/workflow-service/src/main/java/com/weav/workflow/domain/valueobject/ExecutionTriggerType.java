@@ -5,5 +5,6 @@ public enum ExecutionTriggerType {
     SCHEDULE,
     WEBHOOK,
     TELEGRAM,
-    GMAIL
+    GMAIL,
+    WORKFLOW_EVENT
 }
