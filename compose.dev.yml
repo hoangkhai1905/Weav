@@ -371,7 +371,7 @@ services:
       WORKFLOW_OCR_SIGNING_KEY_ID: ${WORKFLOW_OCR_SIGNING_KEY_ID:-}
       WORKFLOW_OCR_SIGNING_KEY_LOCATION: ${WORKFLOW_OCR_SIGNING_KEY_LOCATION:-}
       WORKFLOW_OCR_CONNECT_TIMEOUT: ${WORKFLOW_OCR_CONNECT_TIMEOUT:-5s}
-      WORKFLOW_OCR_READ_TIMEOUT: ${WORKFLOW_OCR_READ_TIMEOUT:-30s}
+      WORKFLOW_OCR_READ_TIMEOUT: ${WORKFLOW_OCR_READ_TIMEOUT:-100s}
       WORKFLOW_OCR_TOKEN_LIFETIME: ${WORKFLOW_OCR_TOKEN_LIFETIME:-60s}
       WORKFLOW_OCR_MAX_RESPONSE_BYTES: ${WORKFLOW_OCR_MAX_RESPONSE_BYTES:-1048576}
 
@@ -532,6 +532,13 @@ services:
       GATEWAY_WEBHOOK_RATE_LIMIT: ${GATEWAY_WEBHOOK_RATE_LIMIT:-60}
       GATEWAY_ASSISTANT_RATE_LIMIT: ${GATEWAY_ASSISTANT_RATE_LIMIT:-20}
       GATEWAY_THROTTLER_REDIS_URL: ${GATEWAY_THROTTLER_REDIS_URL:-${VALKEY_URL:-}}
+      # OCR preview Service JWT (RS256). Empty keeps the dev bypass path (no token) when OCR_ALLOW_UNAUTHENTICATED_DEV=true.
+      GATEWAY_OCR_SIGNING_KEY_LOCATION: ${GATEWAY_OCR_SIGNING_KEY_LOCATION:-}
+      GATEWAY_OCR_SIGNING_KEY_ID: ${GATEWAY_OCR_SIGNING_KEY_ID:-gateway-dev-1}
+
+    volumes:
+      # Only the Gateway's own private key (scripts/ai-dev-keys.mjs writes it to tmp/service-keys/gateway).
+      - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/gateway:/run/gateway-keys:ro
 
     networks:
       default: {}
@@ -630,12 +637,17 @@ services:
       APP_ENV: ${APP_ENV:-development}
       OCR_MODEL_ROOT: /models
       WEAV_OCR_MODEL_MANIFEST: ${WEAV_OCR_MODEL_MANIFEST:-/app/config/model-manifest.json}
+      # Service JWT verification: issuer=JWKS pairs (public keys only). Empty rejects every token.
+      OCR_TRUSTED_ISSUERS: ${OCR_TRUSTED_ISSUERS:-}
+      # Hosts (and subdomains) URL sources may be fetched from. Empty denies all URL sources.
+      OCR_URL_ALLOWLIST: ${OCR_URL_ALLOWLIST:-}
 
     volumes:
       - type: bind
         source: ${OCR_MODEL_HOST_PATH:-./.data/ocr-models}
         target: /models
         read_only: true
+      - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/public:/run/weav-keys:ro
 
 networks:
   # Dedicated gateway<->identity network with a fixed subnet so the gateway IP can be pinned.

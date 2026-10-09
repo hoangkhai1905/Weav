@@ -113,6 +113,15 @@ Slim ONNX image: `paddlepaddle` moved to the optional `paddle` extra (lock chang
 
 Model conversion also runs from the ONNX image (`UV_NO_SYNC=0 uv run --extra paddle --with paddle2onnx==2.1.0 ...`); its output was byte-identical to the earlier conversion.
 
+OCR workflow node end to end (branch `feature/ocr-workflow-node`, 2026-10-10):
+
+- ocr-service verifies Service JWTs (`src/api/service_auth.py`; `OCR_TRUSTED_ISSUERS`, `OCR_URL_ALLOWLIST`). Live checks: `Bearer x` 401, correctly-claimed token signed with another key 401, valid Gateway/Workflow tokens 200, `X-Workspace-ID` mismatch 403. Unit 233/233.
+- Gateway signs `preview` tokens after a Workspace Service membership check (403/404 -> 403, other -> 503) and proxies `GET .../workflows/node-capabilities`. Unit 127/127, e2e 120/120.
+- Workflow Service: `node-capabilities` endpoint (one `enabledSources()` decision shared with runtime gating), OCR read timeout max 120 s (default 100 s), and the OCR HttpClient pinned to HTTP/1.1: the JDK default sent an h2c upgrade that uvicorn rejects ("Unsupported upgrade request", then "Malformed JSON" 400) - the first real run failed with it. 852 tests: 0 failures; known env errors (TLS cert x2, notification dist x1) plus RabbitMQ container start timeouts (7, pass when rerun alone). Built with `-Djava.version=21` (pom wants 25, only JDK 21 installed).
+- Web: OCR readiness, inspector message, publish blockers and palette tag follow `node-capabilities`; tsc clean.
+- Live: builder shows the OCR step "Ready" with a `fileUrl`, publishes, and the run `398956ce` succeeded (OCR step 27.5 s, text + 9 blocks in the node output). Builder "Try OCR" through the Gateway returned 200.
+- Not done: artifact (workspace file) source, a resolver, and passing a previous step's file (Telegram/Gmail/Drive) into the OCR step.
+
 ## 6. Risks and blockers
 
 | Level  | Issue | Next step |

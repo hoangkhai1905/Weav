@@ -483,6 +483,31 @@ manifest's `"table"` section (bundle folders, Vietnamese recognizer, `SLANet_plu
 folder or its `inference.onnx` is missing, the service logs a warning and falls back to PaddleOCR's downloaded
 default table models.
 
+### OCR in workflows (service-to-service JWT)
+
+The `ocr.extract` workflow node and the builder's OCR preview reach the OCR service with short-lived RS256
+Service JWTs (`packages/contracts/http/ocr/openapi.yaml`, `ServiceJwtAuth`). The Gateway never forwards the
+user's token to OCR: it checks workspace membership with Workspace Service, then signs a `preview` token.
+Workflow Service signs an `execution` token per node attempt. OCR verifies signature, issuer key, audience,
+scope, mode, tenant and lifetime (max 120 s).
+
+1. `node scripts/ai-dev-keys.mjs` (keeps existing keys; adds `tmp/service-keys/gateway/api-gateway.pem` and
+   `tmp/service-keys/public/api-gateway.jwks.json`).
+2. In `.env`:
+   - `GATEWAY_OCR_SIGNING_KEY_LOCATION=/run/gateway-keys/api-gateway.pem`
+   - `OCR_TRUSTED_ISSUERS=weav-workflow=/run/weav-keys/workflow-service.jwks.json,weav-api-gateway=/run/weav-keys/api-gateway.jwks.json`
+   - `OCR_URL_ALLOWLIST=<hosts URL sources may come from, e.g. api.telegram.org,googleusercontent.com>`
+   - `WORKFLOW_OCR_SIGNING_KEY_ID=workflow-dev-1`, `WORKFLOW_OCR_SIGNING_KEY_LOCATION=file:/run/weav-keys/workflow-service.pem`
+   - `WORKFLOW_OCR_ENABLED=true`, `WORKFLOW_OCR_URL_SOURCE_ENABLED=true`, and only after checking the two settings
+     above: `WORKFLOW_OCR_SERVICE_CLAIMS_VERIFIED=true`, `WORKFLOW_OCR_URL_ALLOWLIST_VERIFIED=true`.
+   The artifact (workspace file) source stays off (`WORKFLOW_OCR_ARTIFACT_*=false`); no resolver exists yet.
+3. Recreate `ocr-service`, `workflow-service` and `api-gateway`. The builder reads
+   `GET /api/v1/workspaces/{id}/workflows/node-capabilities`; the OCR step stops showing "Unavailable" once the
+   URL source is enabled.
+
+Without these settings OCR rejects every token (401); in development the header-less bypass still works for
+local tools only when `OCR_ALLOW_UNAUTHENTICATED_DEV=true`.
+
 ## 9. Kiểm tra Web và NestJS services
 
 ```powershell
