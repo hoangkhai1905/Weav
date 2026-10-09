@@ -182,8 +182,8 @@ export function renderNotification(
         ),
         localized(
           locale,
-          `Quy tắc “${event.data.ruleName}”: lần chạy quy trình “${event.data.workflowName}” kéo dài ${seconds(event.data.durationSeconds, locale)}, vượt ngưỡng ${seconds(event.data.thresholdSeconds, locale)}.`,
-          `Rule “${event.data.ruleName}”: a run of workflow “${event.data.workflowName}” lasted ${seconds(event.data.durationSeconds, locale)}, over the ${seconds(event.data.thresholdSeconds, locale)} limit.`,
+          `Quy tắc “${event.data.ruleName}”: lần chạy quy trình “${event.data.workflowName}” đã chạy hơn ${seconds(event.data.durationSeconds, locale)}, vượt ngưỡng ${seconds(event.data.thresholdSeconds, locale)}.`,
+          `Rule “${event.data.ruleName}”: a run of workflow “${event.data.workflowName}” has run for over ${seconds(event.data.durationSeconds, locale)}, past the ${seconds(event.data.thresholdSeconds, locale)} limit.`,
         ),
         {
           kind: 'EXECUTION',

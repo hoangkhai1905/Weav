@@ -17,6 +17,11 @@ describe('GENERATE_SYSTEM', () => {
     'attachments[0]',
     'same language as the request',
     'node ids stay ASCII snake_case',
+    '{{now}}',
+    '{{run.id}}',
+    '{{workflow.name}}',
+    '"name":string,"config":object',
+    'readable step title',
   ])('documents %s', (fragment) => {
     expect(GENERATE_SYSTEM).toContain(fragment);
   });

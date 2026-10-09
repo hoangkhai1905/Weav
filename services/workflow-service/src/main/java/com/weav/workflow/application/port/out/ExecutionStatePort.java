@@ -29,6 +29,21 @@ public interface ExecutionStatePort {
 
     void release(Lease lease);
 
+    /**
+     * W6-C3: stop a run. QUEUED ends CANCELLED at once; RUNNING/WAITING gets a flag the lease holder checks
+     * between nodes. Never overwrites a finished run.
+     */
+    default CancelResult requestCancel(UUID workspaceId, UUID workflowId, UUID executionId, Instant at) {
+        throw new UnsupportedOperationException("Cancellation is not supported by this state port");
+    }
+
+    /** Whether a user asked to stop this run; checked by the runner on every loop turn. */
+    default boolean isCancelRequested(UUID executionId) {
+        return false;
+    }
+
+    enum CancelResult { CANCELLED, REQUESTED, ALREADY_FINISHED, NOT_FOUND }
+
     record Lease(UUID executionId, String owner, long token) {
         public Lease {
             Objects.requireNonNull(executionId, "executionId");
@@ -45,7 +60,17 @@ public interface ExecutionStatePort {
                     WorkflowDefinition definition, String firingRoot, Object input, GraphState graph,
                     Map<String, NodeExecution> nodes, List<NodeExecutionAttempt> attempts,
                     Map<String, Instant> nextAttempts, String correlationId, String traceparent,
-                    ExecutionStatus status) {
+                    ExecutionStatus status, String workflowName) {
+        /** Without the workflow name ({{ workflow.name }} then fails as unavailable); kept for older callers. */
+        public Snapshot(UUID workflowId, UUID workspaceId, WorkflowVersion version,
+                        WorkflowDefinition definition, String firingRoot, Object input, GraphState graph,
+                        Map<String, NodeExecution> nodes, List<NodeExecutionAttempt> attempts,
+                        Map<String, Instant> nextAttempts, String correlationId, String traceparent,
+                        ExecutionStatus status) {
+            this(workflowId, workspaceId, version, definition, firingRoot, input, graph, nodes, attempts,
+                    nextAttempts, correlationId, traceparent, status, null);
+        }
+
         public Snapshot {
             Objects.requireNonNull(workflowId, "workflowId");
             Objects.requireNonNull(workspaceId, "workspaceId");

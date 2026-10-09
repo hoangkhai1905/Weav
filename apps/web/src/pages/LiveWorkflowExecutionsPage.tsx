@@ -21,8 +21,8 @@ function errorMessage(error: unknown): string {
 
 function statusLabel(status: ExecutionDetail['status'], isVietnamese: boolean): string {
   const labels = isVietnamese
-    ? { QUEUED: 'Đang chờ', RUNNING: 'Đang chạy', SUCCESS: 'Thành công', FAILED: 'Thất bại', CANCELLED: 'Đã hủy' }
-    : { QUEUED: 'Queued', RUNNING: 'Running', SUCCESS: 'Success', FAILED: 'Failed', CANCELLED: 'Cancelled' };
+    ? { QUEUED: 'Đang chờ', RUNNING: 'Đang chạy', SUCCESS: 'Thành công', FAILED: 'Thất bại', CANCELLED: tr('runs.status.cancelled') }
+    : { QUEUED: 'Queued', RUNNING: 'Running', SUCCESS: 'Success', FAILED: 'Failed', CANCELLED: tr('runs.status.cancelled') };
   return labels[status];
 }
 

@@ -547,6 +547,26 @@ export class WorkflowProxyController {
       { query: parse(logQuerySchema, query) },
     );
   }
+
+  // W6-C3: stop a run (needs WORKFLOW_RUN; Workflow Service answers 202, 404 or 409).
+  @Post(':workflowId/executions/:executionId/cancel')
+  cancelExecution(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('workflowId') rawWorkflowId: string,
+    @Param('executionId') rawExecutionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    const workflow = workflowId(rawWorkflowId);
+    const execution = workflowId(rawExecutionId);
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/workspaces/${workspace}/workflows/${workflow}/executions/${execution}/cancel`,
+    );
+  }
 }
 
 /** Workspace-wide monitoring: run history, metrics summary and alert rules (W6-A). */
