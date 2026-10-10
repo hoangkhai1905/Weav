@@ -241,7 +241,8 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
     description: 'Workflow OCR execution is unavailable until service and artifact prerequisites are verified.',
     category: 'ocr',
     iconName: 'Scan',
-    defaultConfig: { language: 'vi+en', detectTables: true },
+    // Table models make CPU OCR ~40x slower: new steps leave them off. A saved config without the key keeps the server default (on).
+    defaultConfig: { language: 'vi+en', detectTables: false },
     inputs: [{ name: 'artifactId', type: 'string' }, { name: 'fileUrl', type: 'string' }, { name: 'file', type: 'object' }],
     // The OCR service response as is (OcrClient.validateSuccess): the text lives under text.rawText.
     outputs: [
