@@ -54,6 +54,12 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
       { name: 'message.from.id', type: 'number' },
       { name: 'message.from.username', type: 'string' },
       { name: 'message.from.firstName', type: 'string' },
+      // A photo or document sent to the bot, stored as a workspace file (absent when there is none; `skipped` when it could not be stored).
+      { name: 'file', type: 'object' },
+      { name: 'file.fileId', type: 'string' },
+      { name: 'file.filename', type: 'string' },
+      { name: 'file.mimeType', type: 'string' },
+      { name: 'file.size', type: 'number' },
     ],
   },
   {
@@ -169,6 +175,8 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
       { name: 'body', type: 'string' },
       { name: 'labelIds', type: 'array' },
       { name: 'attachments', type: 'array' },
+      // The whole first attachment is what a file source ({{ trigger.input.attachments[0] }}) takes.
+      { name: 'attachments[0]', type: 'object' },
       { name: 'attachments[0].filename', type: 'string' },
       { name: 'attachments[0].mimeType', type: 'string' },
       { name: 'attachments[0].size', type: 'number' },
@@ -178,7 +186,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
   {
     type: 'google.drive',
     title: 'Google Drive',
-    description: 'Upload a file to or list files in Google Drive.',
+    description: 'Upload, download or list files in Google Drive.',
     category: 'action',
     iconName: 'HardDrive',
     defaultConfig: { operation: 'upload' },
@@ -234,7 +242,7 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
     category: 'ocr',
     iconName: 'Scan',
     defaultConfig: { language: 'vi+en', detectTables: true },
-    inputs: [{ name: 'artifactId', type: 'string' }, { name: 'fileUrl', type: 'string' }],
+    inputs: [{ name: 'artifactId', type: 'string' }, { name: 'fileUrl', type: 'string' }, { name: 'file', type: 'object' }],
     // The OCR service response as is (OcrClient.validateSuccess): the text lives under text.rawText.
     outputs: [
       { name: 'text.rawText', type: 'string' },
@@ -265,6 +273,8 @@ const OUTPUTS_BY_OPERATION: Record<string, Record<string, string[]>> = {
   'google.drive': {
     upload: ['id', 'name', 'mimeType', 'webViewLink'],
     list: ['files', 'files[0].id', 'files[0].name', 'files[0].mimeType', 'files[0].webViewLink'],
+    // `file` is the whole downloaded file, usable as the file source of a later step (for example OCR).
+    download: ['file', 'file.fileId', 'file.filename', 'file.mimeType', 'file.size'],
   },
   'google.calendar': {
     create: ['eventId', 'htmlLink', 'status', 'start', 'end'],

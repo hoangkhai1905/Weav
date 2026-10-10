@@ -198,7 +198,9 @@ const SCHEMA_FORMS: Record<string, { provider?: GoogleProvider | 'TELEGRAM'; fie
   'trigger.gmail': { provider: 'GMAIL', fields: () => ['query', 'pollIntervalMinutes'] },
   'google.drive': {
     provider: 'GOOGLE_DRIVE',
-    fields: (config) => ['operation', ...(config.operation === 'list' ? ['folderId', 'nameContains', 'pageSize'] : ['file', 'content', 'name', 'mimeType', 'folderId'])],
+    fields: (config) => ['operation', ...(config.operation === 'list'
+      ? ['folderId', 'nameContains', 'pageSize']
+      : config.operation === 'download' ? ['fileId'] : ['file', 'content', 'name', 'mimeType', 'folderId'])],
     multiline: ['content'],
   },
   'google.calendar': {
@@ -248,7 +250,8 @@ const getNodeReadinessMessage = (
     const state = getNodeReadinessBadge(type, config, undefined, ocrSources).state;
     if (state === 'ready') return undefined;
     if (state === 'not-configured') return t('builder.cfg.msg_ocr_source');
-    return t(ocrSources?.length ? 'builder.cfg.msg_ocr_source_off' : 'builder.cfg.msg_ocr');
+    if (!ocrSources?.length) return t('builder.cfg.msg_ocr');
+    return t(String(config.file ?? '').trim() ? 'builder.cfg.msg_ocr_file_off' : 'builder.cfg.msg_ocr_source_off');
   }
   return undefined;
 };
@@ -301,6 +304,11 @@ const getPublishBlockers = (
   definitionBlockers(nodes, edges, t).forEach((blocker) => blockers.add(blocker));
   return [...blockers];
 };
+
+type OcrSourceMode = 'url' | 'file' | 'artifact';
+// Which OCR source a saved config uses; a draft with none yet shows the link field.
+const ocrModeOf = (config: Record<string, unknown>): OcrSourceMode =>
+  String(config.file ?? '').trim() ? 'file' : String(config.artifactId ?? '').trim() ? 'artifact' : 'url';
 
 type OcrErrorState = { code: string; message: string; retryable?: boolean };
 type OcrScope = { userId: string | null; workspaceId: string | null };
@@ -450,6 +458,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   }, []);
 
   // Inspector Form State (for selected node)
+  const [ocrSourceMode, setOcrSourceMode] = useState<OcrSourceMode>('url');
   const [ocrLanguage, setOcrLanguage] = useState('vi+en');
   const [ocrDetectTables, setOcrDetectTables] = useState(true);
   const [ocrFile, setOcrFile] = useState<File | null>(null);
@@ -997,6 +1006,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     setSelectedNodeId(node.id);
     if (node.data?.nodeType === 'ocr.extract') {
       const config = (node.data.config ?? {}) as Record<string, unknown>;
+      setOcrSourceMode(ocrModeOf(config));
       setOcrLanguage(String(config.language ?? 'vi+en'));
       setOcrDetectTables(Boolean(config.detectTables ?? true));
       setOcrFile(null);
@@ -1251,6 +1261,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     setSelectedNodeId(newNodeId);
     setInspectorOpen(true);
     if (type === 'ocr.extract') {
+      setOcrSourceMode('url');
       setOcrLanguage('vi+en');
       setOcrDetectTables(true);
       setOcrFile(null);
@@ -2071,28 +2082,67 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </div>
 
                   <div data-testid="ocr-workflow-source" className="space-y-2 rounded border border-border bg-subtle p-2.5">
-                    <p className="text-[11px] font-semibold text-text-2">{t('builder.cfg.ocr_source')}</p>
-                    <div>
-                      <label htmlFor="ocr-artifact-id" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.artifact_id')}</label>
-                      <input
-                        id="ocr-artifact-id"
-                        data-testid="ocr-artifact-id"
-                        value={String(selectedNodeConfig.artifactId ?? '')}
-                        onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value || undefined, fileUrl: undefined })}
-                        className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="ocr-file-url" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.file_url')}</label>
-                      <input
-                        id="ocr-file-url"
-                        data-testid="ocr-file-url"
-                        value={String(selectedNodeConfig.fileUrl ?? '')}
-                        onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value || undefined, artifactId: undefined })}
-                        placeholder="https://..."
-                        className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
+                    <label htmlFor="ocr-source-mode" className="block text-[11px] font-semibold text-text-2">{t('builder.cfg.ocr_source')}</label>
+                    <select
+                      id="ocr-source-mode"
+                      data-testid="ocr-source-mode"
+                      value={ocrSourceMode}
+                      onChange={(event) => {
+                        // Only one source is saved: leaving a source clears the others.
+                        setOcrSourceMode(event.target.value as OcrSourceMode);
+                        updateSelectedNodeConfig({ fileUrl: undefined, artifactId: undefined, file: undefined });
+                      }}
+                      className="w-full rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                    >
+                      {(['url', 'file', 'artifact'] as const).map((source) => (
+                        <option key={source} value={source}>
+                          {t(`builder.cfg.ocr_source_${source}`)}
+                          {ocrSources && !ocrSources.includes(source) ? ` (${t('builder.cfg.ocr_source_not_enabled')})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {ocrSourceMode === 'artifact' && (
+                      <div>
+                        <label htmlFor="ocr-artifact-id" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.artifact_id')}</label>
+                        <input
+                          id="ocr-artifact-id"
+                          data-testid="ocr-artifact-id"
+                          value={String(selectedNodeConfig.artifactId ?? '')}
+                          onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value || undefined, fileUrl: undefined, file: undefined })}
+                          className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+                    )}
+                    {ocrSourceMode === 'url' && (
+                      <div>
+                        <label htmlFor="ocr-file-url" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.file_url')}</label>
+                        <input
+                          id="ocr-file-url"
+                          data-testid="ocr-file-url"
+                          value={String(selectedNodeConfig.fileUrl ?? '')}
+                          onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value || undefined, artifactId: undefined, file: undefined })}
+                          placeholder="https://..."
+                          className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+                    )}
+                    {ocrSourceMode === 'file' && (
+                      <div>
+                        <label htmlFor="ocr-file-mapping" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.ocr_file_mapping')}</label>
+                        <input
+                          id="ocr-file-mapping"
+                          data-testid="ocr-file-mapping"
+                          value={typeof selectedNodeConfig.file === 'object' && selectedNodeConfig.file !== null ? JSON.stringify(selectedNodeConfig.file) : String(selectedNodeConfig.file ?? '')}
+                          onChange={(event) => updateSelectedNodeConfig({ file: event.target.value || undefined, fileUrl: undefined, artifactId: undefined })}
+                          placeholder="{{ trigger.input.attachments[0] }}"
+                          className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                        <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.ocr_file_hint')}</p>
+                        {ocrSources && !ocrSources.includes('file') && (
+                          <p data-testid="ocr-file-off" className="mt-1 text-[10px] leading-relaxed text-warn">{t('builder.cfg.msg_ocr_file_off')}</p>
+                        )}
+                      </div>
+                    )}
                     <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.ocr_source_hint')}</p>
                   </div>
 

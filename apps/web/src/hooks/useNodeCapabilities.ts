@@ -4,7 +4,7 @@ import { useAuthStore } from "../store/useAuthStore";
 import { useWorkspaceStore } from "../store/useWorkspaceStore";
 
 /**
- * OCR sources the Workflow Service can run right now ("url", "artifact"); [] when OCR is off,
+ * OCR sources the Workflow Service can run right now ("url", "artifact", "file"); [] when OCR is off,
  * undefined while loading. A failed lookup counts as off so the builder never over-promises.
  */
 export function useOcrSources(): readonly string[] | undefined {

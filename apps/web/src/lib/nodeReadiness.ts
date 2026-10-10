@@ -30,7 +30,10 @@ const CONNECTION_NODE_FIELDS: Record<string, (config: Record<string, unknown>) =
   'trigger.telegram': () => [],
   'trigger.gmail': () => [],
   // Upload with `content` (or nothing) needs a name; with `file` the name defaults to the file's own (S10).
-  'google.drive': (config) => ['operation', ...(config.operation === 'upload' && isBlank(config.file) ? ['name'] : [])],
+  'google.drive': (config) => ['operation',
+    ...(config.operation === 'upload' && isBlank(config.file) ? ['name'] : []),
+    // Download needs the id of the Drive file to fetch.
+    ...(config.operation === 'download' ? ['fileId'] : [])],
   'google.calendar': (config) => (isBlank(config.operation) || config.operation === 'create' ? ['summary', 'start', 'end'] : []),
 };
 
@@ -61,7 +64,7 @@ export const isConditionComplete = (config: Record<string, unknown>): boolean =>
 /**
  * `attachableConnectionIds`: ids of the workspace's ACTIVE connections the user can attach.
  * Leave it undefined while the list is loading so a step is not flagged before we know.
- * `ocrSources`: OCR sources the Workflow Service has enabled ("url", "artifact"); absent or empty
+ * `ocrSources`: OCR sources the Workflow Service has enabled ("url", "artifact", "file"); absent or empty
  * means OCR cannot run in a workflow yet.
  */
 export const getNodeReadinessBadge = (
@@ -76,9 +79,10 @@ export const getNodeReadinessBadge = (
     const unavailable: NodeReadinessBadge = { state: 'unavailable', label: 'Unavailable', labelKey: 'builder.readiness.unavailable' };
     if (!ocrSources?.length) return unavailable;
     // Exactly one source (DefinitionValidator OCR_SOURCE_REQUIRED / OCR_SOURCE_CONFLICT), and it must be enabled.
-    const hasUrl = !isBlank(config.fileUrl);
-    if (hasUrl === !isBlank(config.artifactId)) return NOT_CONFIGURED;
-    if (!ocrSources.includes(hasUrl ? 'url' : 'artifact')) return unavailable;
+    const used = ([['url', config.fileUrl], ['artifact', config.artifactId], ['file', config.file]] as const)
+      .filter(([, value]) => !isBlank(value)).map(([source]) => source);
+    if (used.length !== 1) return NOT_CONFIGURED;
+    if (!ocrSources.includes(used[0])) return unavailable;
   }
   const connectionFields = CONNECTION_NODE_FIELDS[nodeType]?.(config);
   if (connectionFields) {
