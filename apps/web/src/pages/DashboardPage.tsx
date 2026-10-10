@@ -4,6 +4,8 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { Plus, Play, RotateCw, Sparkles, ArrowRight, Activity, ShoppingCart, ArrowLeftRight, Headphones, Cloud } from 'lucide-react';
 import type { WorkflowDefinition } from '../types/workflow.types';
 import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
+import { NoWorkspaceNotice } from '../components/common/NoWorkspaceNotice';
+import { isNoWorkspaceError } from '../api/workflow-v1.api';
 import { WorkflowActivityChart } from '../components/dashboard/WorkflowActivityChart';
 import { LiveExecutionPanel } from '../components/dashboard/LiveExecutionPanel';
 import { useI18nStore } from '../store/useI18nStore';
@@ -22,6 +24,7 @@ interface HttpDashboardContentProps {
   workflows: WorkflowDefinition[];
   isLoading: boolean;
   error: string | null;
+  noWorkspace: boolean;
   actionError: string | null;
   onRetry: () => void;
   onRunWorkflow: (id: string) => void;
@@ -124,7 +127,7 @@ function DashboardQuickActions({ prefersReducedMotion }: DashboardQuickActionsPr
   );
 }
 
-function HttpDashboardContent({ workflows, isLoading, error, actionError, onRetry, onRunWorkflow }: HttpDashboardContentProps) {
+function HttpDashboardContent({ workflows, isLoading, error, noWorkspace, actionError, onRetry, onRunWorkflow }: HttpDashboardContentProps) {
   const { language, t } = useI18nStore();
   const locale = language === 'VI' ? 'vi-VN' : 'en-US';
   const publishedCount = workflows.filter((workflow) => workflow.status === 'PUBLISHED').length;
@@ -161,6 +164,14 @@ function HttpDashboardContent({ workflows, isLoading, error, actionError, onRetr
         <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground" data-testid="dashboard-workflows-loading">
           {t('dashboard.real_data_loading')}
         </div>
+      </section>
+    );
+  }
+
+  if (noWorkspace) {
+    return (
+      <section data-testid="dashboard-real-data" className="space-y-6">
+        <NoWorkspaceNotice />
       </section>
     );
   }
@@ -300,6 +311,7 @@ export function DashboardPage() {
   const [workflows, setWorkflows] = useState<WorkflowDefinition[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [noWorkspace, setNoWorkspace] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
@@ -309,12 +321,14 @@ export function DashboardPage() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     setApiError(null);
+    setNoWorkspace(false);
     try {
       const wfList = await fetchWorkflowList(queryClient);
       setWorkflows(wfList);
     } catch (e) {
       setWorkflows([]);
-      setApiError(e instanceof Error ? e.message : tr('msg.workflow_data_could_not_be_loaded'));
+      if (isNoWorkspaceError(e)) setNoWorkspace(true);
+      else setApiError(e instanceof Error ? e.message : tr('msg.workflow_data_could_not_be_loaded'));
     } finally {
       setIsLoading(false);
     }
@@ -680,6 +694,7 @@ export function DashboardPage() {
           workflows={workflows}
           isLoading={isLoading}
           error={apiError}
+          noWorkspace={noWorkspace}
           actionError={actionError}
           onRetry={() => void loadData()}
           onRunWorkflow={(id) => void handleRunWorkflow(id)}

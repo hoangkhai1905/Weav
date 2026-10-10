@@ -11,6 +11,8 @@ import { WorkflowGlyph } from '../components/workflows/WorkflowGlyph';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { statusBadgeClass } from '../components/common/statusBadgeClass';
 import { TypedConfirmDialog } from '../components/common/TypedConfirmDialog';
+import { NoWorkspaceNotice } from '../components/common/NoWorkspaceNotice';
+import { isNoWorkspaceError } from '../api/workflow-v1.api';
 import { REDUCED_MOTION_TRANSITION } from '../lib/motion';
 import { useI18nStore } from '../store/useI18nStore';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
@@ -93,6 +95,7 @@ export function WorkflowsPage() {
   const [workflowsList, setWorkflowsList] = useState<WorkflowItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [noWorkspace, setNoWorkspace] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<StatusTab>('ALL');
@@ -114,6 +117,7 @@ export function WorkflowsPage() {
     try {
       const data = await fetchWorkflowList(queryClient, { force });
       setLoadError(null);
+      setNoWorkspace(false);
       const mapped: WorkflowItem[] = data.map((wf: WorkflowDefinition) => ({
         id: wf.id,
         code: wf.id.slice(0, 8),
@@ -131,7 +135,8 @@ export function WorkflowsPage() {
       setIsLoading(false);
     } catch (error) {
       setWorkflowsList([]);
-      setLoadError(error instanceof Error ? error.message : t('workflows.load_error_fallback'));
+      if (isNoWorkspaceError(error)) setNoWorkspace(true);
+      else setLoadError(error instanceof Error ? error.message : t('workflows.load_error_fallback'));
       setIsLoading(false);
     }
   }, [t, queryClient]);
@@ -163,7 +168,9 @@ export function WorkflowsPage() {
       refreshNotifications(mutationSession);
       navigate(`/workflows/${newWf.id}/builder`);
     } catch (error) {
-      if (isCurrentNotificationSession(mutationSession)) {
+      if (isNoWorkspaceError(error)) {
+        setNoWorkspace(true);
+      } else if (isCurrentNotificationSession(mutationSession)) {
         setApiError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_created'));
       }
     }
@@ -500,7 +507,11 @@ export function WorkflowsPage() {
       </AnimatePresence>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        {loadError ? (
+        {noWorkspace ? (
+          <div className="mx-auto max-w-[560px] px-5 py-12">
+            <NoWorkspaceNotice />
+          </div>
+        ) : loadError ? (
           <div role="alert" data-testid="workflow-load-error" className="px-5 py-12">
             <div className="mx-auto max-w-[560px] rounded-lg border border-err-border bg-err-bg p-4">
               <div className="text-sm font-semibold text-err">{t('workflows.load_error_title')}</div>

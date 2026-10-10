@@ -64,3 +64,14 @@ Lane W5-polish, nhánh `feat/w5-polish` (từ `week5` 27ecd89). Tất cả copy 
 Lệnh: `tsc --noEmit -p tsconfig.app.json` sạch; `pnpm --dir apps/web build` ok; ai-service `test` 209 pass + `build` ok; Playwright (port 4180) 6 spec: baseline 3 lỗi localization (có sẵn), sau sửa không lỗi mới (executions-live + honest-pages cập nhật assertion cho copy mới). eslint: lỗi `react-hooks/refs` có sẵn ở `AiGeneratorPage.tsx` dòng "createDraft" (không do lane này).
 
 Rủi ro: tên bước do AI sinh vẫn tiếng Anh vì `intent.nodes` chỉ có `id` (backend suy ra tên); cần sửa ở workflow-service nếu muốn. Câu hỏi VALUE với id node dạng `send_email.config.to` không dịch được tên node (chỉ nhận biết kiểu node khi field bắt đầu bằng type như `email.send.`).
+
+## 2026-10-10 — Thông báo "chưa có không gian" (nhánh `fix/no-workspace-notice` từ `dev`)
+
+| Mục | Thay đổi |
+| --- | --- |
+| Lỗi | Tài khoản mới chưa có workspace: `getActiveWorkflowWorkspaceId` ném `WorkflowApiError(409)`, Tổng quan và Quy trình hiện khung lỗi đỏ như sự cố |
+| Sửa | `isNoWorkspaceError()` (`api/workflow-v1.api.ts`) + `components/common/NoWorkspaceNotice.tsx` (thông báo trung tính + nút "Tạo không gian làm việc" -> `/workspace`); dùng ở `DashboardPage` (HttpDashboardContent) và `WorkflowsPage` (tải danh sách + nút Tạo quy trình). Lỗi thật vẫn giữ khung đỏ + Thử lại |
+
+Lệnh: `tsc --noEmit` sạch; eslint chỉ còn lỗi có sẵn `react-hooks/set-state-in-effect` ở `WorkflowsPage` (có trên HEAD trước khi sửa); `git diff --check` sạch; GitNexus detect-changes: 3 file, risk medium (chỉ 2 luồng WorkflowsPage). Người dùng kiểm tra trên stack thật với tài khoản 0 workspace: ổn.
+
+Ghi chú môi trường cùng phiên: identity/workspace/workflow crash-loop do mật khẩu Neon `neondb_owner` cũ trong `.env` (SQL 28P01); đã cập nhật `.env` + `--force-recreate`. Gateway/RabbitMQ/ai-service bị dừng giữa chừng -> bật lại.
