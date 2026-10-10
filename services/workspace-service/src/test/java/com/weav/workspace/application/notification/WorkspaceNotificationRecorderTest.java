@@ -39,6 +39,23 @@ class WorkspaceNotificationRecorderTest {
     }
 
     @Test
+    void invitationCreatedGoesOnlyToTheInviterWithExactDataFields() throws Exception {
+        recorder.recordInvitationCreated(WORKSPACE_ID, OWNER_ID, "Team space", "new@example.com",
+                "Owner Name", Instant.parse("2026-01-09T03:04:05Z"));
+
+        JsonNode event = objectMapper.readTree(objectMapper.writeValueAsBytes(outbox.events.get(0)));
+        assertThat(event.get("eventType").asString()).isEqualTo("workspace.invitation.created");
+        assertThat(event.get("recipientUserIds")).hasSize(1);
+        assertThat(event.get("recipientUserIds").get(0).asString()).isEqualTo(OWNER_ID.toString());
+        assertThat(event.get("entity").get("kind").asString()).isEqualTo("WORKSPACE");
+        JsonNode data = event.get("data");
+        assertThat(fieldNames(data)).containsExactlyInAnyOrder(
+                "workspaceName", "inviteeEmail", "inviterName", "expiresAt");
+        assertThat(data.get("inviteeEmail").asString()).isEqualTo("new@example.com");
+        assertThat(data.get("expiresAt").asString()).isEqualTo("2026-01-09T03:04:05Z");
+    }
+
+    @Test
     void createdAndRenamedSerializeOnlyTheApprovedEnvelopeFields() throws Exception {
         recorder.recordCreated(WORKSPACE_ID, OWNER_ID, "Team space");
         recorder.recordRenamed(WORKSPACE_ID, OWNER_ID, "New name", List.of(OWNER_ID, MEMBER_ID));

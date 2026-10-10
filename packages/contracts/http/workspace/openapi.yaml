@@ -12,6 +12,7 @@ servers:
 tags:
   - name: Workspaces
   - name: Members
+  - name: Invitations
   - name: Connections
   - name: OAuth
   - name: Internal
@@ -305,6 +306,199 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ---- W7-A1: invite by e-mail (owner side) ----
+  /workspaces/{workspaceId}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Invitations]
+      operationId: listWorkspaceInvitations
+      summary: List pending invitations (including expired ones) of a workspace; OWNER only
+      responses:
+        '200':
+          description: Pending invitations, newest first, at most 50.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerInvitationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [Invitations]
+      operationId: createWorkspaceInvitation
+      summary: Invite an e-mail address that has no Weav account; OWNER only
+      description: >-
+        Error codes: 409 USER_EXISTS (an active account exists, add the member directly), USER_INACTIVE,
+        INVITATION_EXISTS (a live pending invitation exists); 429 INVITATION_LIMIT (50 pending per workspace).
+        Pending invitations expire after 7 days.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvitationRequest'
+      responses:
+        '201':
+          description: Invitation created; notification-service sends the e-mail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerInvitation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/{workspaceId}/invitations/{invitationId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/InvitationId'
+    delete:
+      tags: [Invitations]
+      operationId: revokeWorkspaceInvitation
+      summary: Revoke a pending invitation (live or expired); OWNER only
+      responses:
+        '204':
+          description: Invitation revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/{workspaceId}/invitations/{invitationId}/resend:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      tags: [Invitations]
+      operationId: resendWorkspaceInvitation
+      summary: Resend a live pending invitation, at most once per 10 minutes; OWNER only
+      description: >-
+        Extends the expiry to now + 7 days. 409 INVITATION_NOT_PENDING for expired or answered
+        invitations (re-invite instead); 429 INVITATION_RESEND_TOO_SOON.
+      responses:
+        '200':
+          description: Invitation re-sent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerInvitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ---- W7-A1: invite by e-mail (invitee side) ----
+  /workspaces/invitations:
+    get:
+      tags: [Invitations]
+      operationId: listMyInvitations
+      summary: Live pending invitations addressed to the caller's verified e-mail
+      description: >-
+        With an unverified e-mail the response is 200 with an empty list and emailVerified false.
+        Invitations of soft-deleted workspaces are hidden.
+      responses:
+        '200':
+          description: The caller's invitations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyInvitationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/invitations/{invitationId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      tags: [Invitations]
+      operationId: acceptInvitation
+      summary: Accept an invitation and become a MEMBER (default permissions)
+      description: >-
+        The caller's verified e-mail must equal the invited e-mail; otherwise 404 INVITATION_NOT_FOUND.
+        409 EMAIL_NOT_VERIFIED; 410 INVITATION_GONE for expired, revoked, declined or deleted-workspace
+        invitations. Accepting twice returns 200 both times.
+      responses:
+        '200':
+          description: The caller is a member of the workspace.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptInvitationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /workspaces/invitations/{invitationId}/decline:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    post:
+      tags: [Invitations]
+      operationId: declineInvitation
+      summary: Decline an invitation
+      responses:
+        '204':
+          description: Invitation declined.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/Gone'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -841,6 +1035,13 @@ components:
       schema:
         type: string
         format: uuid
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     Search:
       name: search
       in: query
@@ -943,6 +1144,18 @@ components:
         Resource state does not allow the requested operation. For the internal resolve route the
         additive code CONNECTION_RECONNECT_REQUIRED means the stored Google authorization is missing
         required scopes or was rejected; the user must reconnect the connection.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Gone:
+      description: The resource existed but can no longer be used (INVITATION_GONE).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TooManyRequests:
+      description: A per-resource limit or cooldown was hit (INVITATION_LIMIT, INVITATION_RESEND_TOO_SOON).
       content:
         application/json:
           schema:
@@ -1348,6 +1561,92 @@ components:
           uniqueItems: true
           items:
             $ref: '#/components/schemas/WorkspaceCapability'
+    CreateInvitationRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+          maxLength: 320
+    OwnerInvitation:
+      type: object
+      additionalProperties: false
+      required: [id, workspaceId, email, status, invitedBy, createdAt, expiresAt, lastSentAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        email:
+          type: string
+          description: Canonical (trimmed, lower-case) invited address.
+        status:
+          type: string
+          enum: [PENDING, EXPIRED, ACCEPTED, DECLINED, REVOKED]
+        invitedBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        lastSentAt:
+          type: string
+          format: date-time
+    OwnerInvitationListResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/OwnerInvitation'
+    MyInvitation:
+      type: object
+      additionalProperties: false
+      required: [id, workspaceId, workspaceName, invitedByName, expiresAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        workspaceName:
+          type: string
+        invitedByName:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    MyInvitationListResponse:
+      type: object
+      additionalProperties: false
+      required: [items, emailVerified]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MyInvitation'
+        emailVerified:
+          type: boolean
+    AcceptInvitationResponse:
+      type: object
+      additionalProperties: false
+      required: [workspaceId]
+      properties:
+        workspaceId:
+          type: string
+          format: uuid
     ErrorResponse:
       type: object
       additionalProperties: false

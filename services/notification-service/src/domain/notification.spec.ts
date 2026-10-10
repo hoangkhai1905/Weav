@@ -25,6 +25,18 @@ describe('notification domain', () => {
     if (kind === 'mismatched execution') event.aggregateId = event.eventId;
     expect(executionEventSchema.safeParse(event).success).toBe(false);
   });
+  it('rejects EMAIL as a v1 execution recipient provider', () => {
+    const event = testEvent();
+    expect(
+      executionEventSchema.safeParse({
+        ...event,
+        payload: {
+          ...event.payload,
+          recipients: [{ provider: 'EMAIL', destination: 'a@example.com' }],
+        },
+      }).success,
+    ).toBe(false);
+  });
   it('does not copy raw summary/error or internal receipt/destination into the inbox', () => {
     const event = testEvent();
     event.payload.summary = 'sensitive';

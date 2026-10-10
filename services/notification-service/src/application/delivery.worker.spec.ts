@@ -1,4 +1,4 @@
-import { DeliveryWorker } from './delivery.worker';
+﻿import { DeliveryWorker } from './delivery.worker';
 import { DeliveryError } from '../domain/notification';
 import {
   mockRepository,
@@ -13,6 +13,7 @@ describe('durable delivery worker', () => {
   const worker = new DeliveryWorker(repo, testSettings(), {
     TELEGRAM: { send },
     EXPO_PUSH: { send, receipt },
+    EMAIL: { send },
   });
   beforeEach(() => jest.resetAllMocks());
   it('persists successful sends', async () => {

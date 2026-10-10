@@ -103,6 +103,7 @@ const v2EventTypes = [
   'workspace.member_permissions_updated',
   'workspace.member_left',
   'workspace.deleted',
+  'workspace.invitation.created',
   'connection.connected',
   'connection.disabled',
   'connection.invalid',
@@ -152,6 +153,13 @@ function v2EventFor(eventType, recipientUserId = randomUUID()) {
       const subjectUserId =
         eventType === 'workspace.member_left' ? randomUUID() : recipientUserId;
       data = { workspaceName: 'Broker workspace', subjectUserId };
+    } else if (eventType === 'workspace.invitation.created') {
+      data = {
+        workspaceName: 'Broker workspace',
+        inviterName: 'Broker inviter',
+        inviteeEmail: 'invitee@example.test',
+        expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
+      };
     } else {
       data = { workspaceName: 'Broker workspace' };
     }
@@ -165,7 +173,9 @@ function v2EventFor(eventType, recipientUserId = randomUUID()) {
     ? recipientUserId
     : eventType === 'workspace.member_left'
       ? data.subjectUserId
-      : actorUserId;
+      : eventType === 'workspace.invitation.created'
+        ? recipientUserId
+        : actorUserId;
   return {
     schemaVersion: 2,
     eventId: randomUUID(),
@@ -374,7 +384,7 @@ test(
           await until(
             async () => (await repo.unreadCount(e.payload.userId)) === 2,
           );
-          assert.equal(v2EventTypes.length, 22);
+          assert.equal(v2EventTypes.length, 23);
           for (const eventType of v2EventTypes) {
             const v2 = v2EventFor(eventType);
             v2Events.push(v2);
@@ -395,7 +405,8 @@ test(
               await repo.client.notificationDelivery.count({
                 where: { sourceEventId: v2.eventId },
               }),
-              0,
+              // An invitation event also owns its EMAIL delivery (W7-A1).
+              eventType === 'workspace.invitation.created' ? 1 : 0,
             );
           }
 

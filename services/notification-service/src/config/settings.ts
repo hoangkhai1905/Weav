@@ -60,6 +60,18 @@ const schema = z
     NOTIFICATION_TELEGRAM_ENABLED: flag('false'),
     TELEGRAM_BOT_TOKEN: z.string().optional(),
     NOTIFICATION_EXPO_ENABLED: flag('false'),
+    // W7-A1: invitation e-mail over SMTP; reuses the SMTP_* names of identity's auth mail.
+    NOTIFICATION_EMAIL_ENABLED: flag('false'),
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: integer(587, 1, 65535),
+    SMTP_USERNAME: z.string().optional(),
+    SMTP_PASSWORD: z.string().optional(),
+    SMTP_AUTH_ENABLED: flag('false'),
+    SMTP_STARTTLS_ENABLED: flag('false'),
+    SMTP_STARTTLS_REQUIRED: flag('false'),
+    SMTP_SSL_ENABLED: flag('false'),
+    SMTP_FROM_ADDRESS: z.string().optional(),
+    SMTP_FROM_NAME: z.string().default('Weav'),
     EXPO_ACCESS_TOKEN: z.string().optional(),
     NOTIFICATION_DETAIL_BASE_URL: z.preprocess(
       (value) => (value === '' ? undefined : value),
@@ -73,16 +85,60 @@ const schema = z
         path: ['TELEGRAM_BOT_TOKEN'],
         message: 'Required when enabled',
       });
+    if (v.NOTIFICATION_EMAIL_ENABLED) {
+      const required: [string, unknown][] = [
+        ['SMTP_HOST', v.SMTP_HOST],
+        ['SMTP_FROM_ADDRESS', v.SMTP_FROM_ADDRESS],
+        ...(v.SMTP_AUTH_ENABLED
+          ? ([
+              ['SMTP_USERNAME', v.SMTP_USERNAME],
+              ['SMTP_PASSWORD', v.SMTP_PASSWORD],
+            ] as [string, unknown][])
+          : []),
+      ];
+      for (const [name, value] of required)
+        if (!value)
+          ctx.addIssue({
+            code: 'custom',
+            path: [name],
+            message: 'Required when e-mail is enabled',
+          });
+    }
     if (v.NOTIFICATION_LEASE_MS < v.NOTIFICATION_TIMEOUT_MS * 3)
       ctx.addIssue({
         code: 'custom',
         path: ['NOTIFICATION_LEASE_MS'],
         message: 'Must exceed three provider timeouts',
       });
+    if (v.NOTIFICATION_EMAIL_ENABLED && !v.NOTIFICATION_DETAIL_BASE_URL)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['NOTIFICATION_DETAIL_BASE_URL'],
+        message: 'Required when e-mail is enabled',
+      });
+    if (v.NOTIFICATION_EMAIL_ENABLED) {
+      const tls = v.SMTP_STARTTLS_ENABLED || v.SMTP_SSL_ENABLED;
+      if (v.SMTP_STARTTLS_REQUIRED && !tls)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['SMTP_STARTTLS_REQUIRED'],
+          message: 'Requires SMTP_STARTTLS_ENABLED or SMTP_SSL_ENABLED',
+        });
+      if (v.SMTP_AUTH_ENABLED && !tls)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['SMTP_AUTH_ENABLED'],
+          message: 'Credentials need SMTP_STARTTLS_ENABLED or SMTP_SSL_ENABLED',
+        });
+    }
     if (v.NOTIFICATION_DETAIL_BASE_URL) {
       const url = new URL(v.NOTIFICATION_DETAIL_BASE_URL);
+      // Plain HTTP is allowed only for a local dev web app (localhost / 127.0.0.1).
+      const localDev =
+        url.protocol === 'http:' &&
+        (url.hostname === 'localhost' || url.hostname === '127.0.0.1');
       if (
-        url.protocol !== 'https:' ||
+        (url.protocol !== 'https:' && !localDev) ||
         url.username ||
         url.password ||
         url.search ||
@@ -91,7 +147,8 @@ const schema = z
         ctx.addIssue({
           code: 'custom',
           path: ['NOTIFICATION_DETAIL_BASE_URL'],
-          message: 'Use HTTPS without credentials, query or fragment',
+          message:
+            'Use HTTPS (or http://localhost for local dev) without credentials, query or fragment',
         });
     }
   });

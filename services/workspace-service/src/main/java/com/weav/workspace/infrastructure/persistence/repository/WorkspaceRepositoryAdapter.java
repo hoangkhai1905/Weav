@@ -51,6 +51,16 @@ public class WorkspaceRepositoryAdapter implements WorkspaceRepository {
     }
 
     @Override
+    public List<Workspace> findAllByIds(java.util.Collection<UUID> workspaceIds) {
+        if (workspaceIds.isEmpty()) {
+            return List.of();
+        }
+        return repository.findByIdInAndStatus(workspaceIds, WorkspaceStatus.ACTIVE).stream()
+                .map(mapper::toDomain)
+                .toList();
+    }
+
+    @Override
     public boolean existsOwnedNameNormalized(
             UUID ownerId,
             String normalizedName,

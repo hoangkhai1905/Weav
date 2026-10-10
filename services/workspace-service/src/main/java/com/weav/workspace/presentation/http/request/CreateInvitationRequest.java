@@ -1,0 +1,12 @@
+package com.weav.workspace.presentation.http.request;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+public record CreateInvitationRequest(
+        @NotBlank(message = "Email is required")
+        @Size(max = 320, message = "Email must not exceed 320 characters")
+        @Email(message = "Email is invalid")
+        String email) {
+}

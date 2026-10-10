@@ -21,6 +21,7 @@ import {
 } from './inbox.persistence';
 
 const uuidSchema = z.uuid();
+const invitationEventType = 'workspace.invitation.created';
 const reconciliationLockNamespace = 1313821769;
 
 type CandidateGroup = {
@@ -152,6 +153,14 @@ export class PrismaInboxRepository
           orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
         });
         if (storedDeliveries.length > 0) {
+          // W7-A1: an invitation event owns its EMAIL delivery; a broker redelivery is a no-op.
+          if (
+            event.eventType === invitationEventType &&
+            storedDeliveries.every(
+              (row) => row.eventType === invitationEventType,
+            )
+          )
+            return;
           if (expectedExecutionId === null)
             throw new InboxPersistenceConflictError();
           assertDeliveryEventIdentity(storedDeliveries, {
@@ -204,6 +213,34 @@ export class PrismaInboxRepository
         });
         if (stored !== event.recipientUserIds.length)
           throw new InboxPersistenceConflictError();
+
+        if (event.eventType === invitationEventType) {
+          // Owned by the inviter (the only recipient), linked to the inviter's inbox row (D4).
+          const inviterId = event.recipientUserIds[0];
+          await tx.notificationDelivery.createMany({
+            skipDuplicates: true,
+            data: [
+              {
+                userId: inviterId,
+                inboxId: inboxIdForKey(inboxDedupKey(inviterId, event.eventId)),
+                sourceEventId: event.eventId,
+                provider: 'EMAIL',
+                destination: event.data.inviteeEmail,
+                eventType: event.eventType,
+                executionId: null,
+                // readAt: the legacy v1 list must not count the e-mail as an unread notification.
+                readAt: new Date(),
+                payload: {
+                  workspaceName: event.data.workspaceName,
+                  inviterName: event.data.inviterName,
+                  expiresAt: event.data.expiresAt,
+                  title: 'Invitation e-mail',
+                  message: 'An invitation e-mail was sent.',
+                },
+              },
+            ],
+          });
+        }
       },
       { maxWait: 10000, timeout: 30000 },
     );

@@ -295,6 +295,18 @@ export function renderNotification(
         ),
         { kind: 'NONE' },
       );
+    case 'workspace.invitation.created':
+      return content(
+        'WORKSPACE',
+        'INFO',
+        localized(locale, 'Đã tạo lời mời', 'Invitation created'),
+        localized(
+          locale,
+          `Đã tạo lời mời cho ${event.data.inviteeEmail} tham gia “${event.data.workspaceName}”.`,
+          `Invitation created for ${event.data.inviteeEmail} to join “${event.data.workspaceName}”.`,
+        ),
+        { kind: 'WORKSPACE', workspaceId: event.workspaceId },
+      );
     case 'connection.connected':
       return content(
         'CONNECTION',

@@ -112,6 +112,12 @@ const catalogCases: CatalogCase[] = [
     targetKind: 'NONE',
   },
   {
+    eventType: 'workspace.invitation.created',
+    category: 'WORKSPACE',
+    severity: 'INFO',
+    targetKind: 'WORKSPACE',
+  },
+  {
     eventType: 'connection.connected',
     category: 'CONNECTION',
     severity: 'SUCCESS',
@@ -198,6 +204,13 @@ function eventOf(eventType: string, overrides: Record<string, unknown> = {}) {
       : workspaceEvent
         ? {
             workspaceName: 'Đội vận hành',
+            ...(eventType === 'workspace.invitation.created'
+              ? {
+                  inviterName: 'Nguyễn An',
+                  inviteeEmail: 'new.member@example.com',
+                  expiresAt: '2026-10-17T04:00:00Z',
+                }
+              : {}),
             ...(eventType.includes('member_')
               ? {
                   subjectUserId:
@@ -286,11 +299,18 @@ function deepFreeze<T>(value: T): T {
 }
 
 describe('notification catalog', () => {
+  it('names the invitee e-mail in the inviter inbox copy, vi and en', () => {
+    const event = eventOf('workspace.invitation.created');
+    expect(render()(event, 'vi').message).toContain('new.member@example.com');
+    expect(render()(event, 'en').message).toContain('new.member@example.com');
+    expect(render()(event, 'en').title).toBe('Invitation created');
+  });
+
   it('exports a pure notification renderer', () => {
     expect(() => require('./notification-catalog')).not.toThrow();
   });
 
-  it('renders both locales with the specified metadata and target for all 22 event types', () => {
+  it('renders both locales with the specified metadata and target for all 23 event types', () => {
     for (const spec of catalogCases) {
       const event = eventOf(spec.eventType);
       for (const locale of ['vi', 'en']) {
