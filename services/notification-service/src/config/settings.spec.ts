@@ -15,6 +15,116 @@ describe('notification configuration validation', () => {
       ...extra,
     };
   }
+  it('requires SMTP settings only when e-mail is enabled', () => {
+    expect(loadSettings(env()).NOTIFICATION_EMAIL_ENABLED).toBe(false);
+    expect(() =>
+      loadSettings(env({ NOTIFICATION_EMAIL_ENABLED: 'true' })),
+    ).toThrow('SMTP_HOST');
+    expect(() =>
+      loadSettings(
+        env({
+          NOTIFICATION_EMAIL_ENABLED: 'true',
+          NOTIFICATION_DETAIL_BASE_URL: 'https://weav.test',
+          SMTP_HOST: 'smtp.test',
+          SMTP_FROM_ADDRESS: 'no-reply@weav.test',
+          SMTP_AUTH_ENABLED: 'true',
+          SMTP_STARTTLS_ENABLED: 'true',
+        }),
+      ),
+    ).toThrow('SMTP_USERNAME');
+    expect(
+      loadSettings(
+        env({
+          NOTIFICATION_EMAIL_ENABLED: 'true',
+          NOTIFICATION_DETAIL_BASE_URL: 'https://weav.test',
+          SMTP_HOST: 'smtp.test',
+          SMTP_FROM_ADDRESS: 'no-reply@weav.test',
+        }),
+      ).SMTP_PORT,
+    ).toBe(587);
+  });
+  describe('invitation e-mail link and TLS guards', () => {
+    const email = {
+      NOTIFICATION_EMAIL_ENABLED: 'true',
+      NOTIFICATION_DETAIL_BASE_URL: 'https://weav.test',
+      SMTP_HOST: 'smtp.test',
+      SMTP_FROM_ADDRESS: 'no-reply@weav.test',
+    };
+    it('requires NOTIFICATION_DETAIL_BASE_URL when e-mail is enabled', () => {
+      const { NOTIFICATION_DETAIL_BASE_URL: _omit, ...rest } = email;
+      expect(() => loadSettings(env(rest))).toThrow(
+        'NOTIFICATION_DETAIL_BASE_URL',
+      );
+    });
+    it.each([
+      'https://weav.test',
+      'http://localhost:5173',
+      'http://localhost',
+      'http://127.0.0.1:5173',
+    ])('accepts base URL %s', (url) => {
+      expect(() =>
+        loadSettings(env({ ...email, NOTIFICATION_DETAIL_BASE_URL: url })),
+      ).not.toThrow();
+    });
+    it.each([
+      'http://weav.test',
+      'http://localhost.evil.test',
+      'http://user:pw@localhost:5173',
+      'http://localhost:5173/?q=1',
+      'https://weav.test/#frag',
+      'ftp://localhost',
+    ])('rejects base URL %s', (url) => {
+      expect(() =>
+        loadSettings(env({ ...email, NOTIFICATION_DETAIL_BASE_URL: url })),
+      ).toThrow('NOTIFICATION_DETAIL_BASE_URL');
+    });
+    it('keeps the HTTPS-only rule for the Telegram link when e-mail is off', () => {
+      expect(() =>
+        loadSettings(env({ NOTIFICATION_DETAIL_BASE_URL: 'http://weav.test' })),
+      ).toThrow('NOTIFICATION_DETAIL_BASE_URL');
+      expect(
+        loadSettings(
+          env({ NOTIFICATION_DETAIL_BASE_URL: 'http://localhost:5173' }),
+        ).NOTIFICATION_DETAIL_BASE_URL,
+      ).toBe('http://localhost:5173');
+    });
+    it('rejects STARTTLS_REQUIRED without STARTTLS or SSL', () => {
+      expect(() =>
+        loadSettings(env({ ...email, SMTP_STARTTLS_REQUIRED: 'true' })),
+      ).toThrow('SMTP_STARTTLS_REQUIRED');
+      expect(
+        loadSettings(
+          env({
+            ...email,
+            SMTP_STARTTLS_REQUIRED: 'true',
+            SMTP_STARTTLS_ENABLED: 'true',
+          }),
+        ).SMTP_STARTTLS_REQUIRED,
+      ).toBe(true);
+      expect(
+        loadSettings(
+          env({
+            ...email,
+            SMTP_STARTTLS_REQUIRED: 'true',
+            SMTP_SSL_ENABLED: 'true',
+          }),
+        ).SMTP_SSL_ENABLED,
+      ).toBe(true);
+    });
+    it('rejects credentials in clear (auth without STARTTLS or SSL)', () => {
+      const auth = {
+        ...email,
+        SMTP_AUTH_ENABLED: 'true',
+        SMTP_USERNAME: 'u',
+        SMTP_PASSWORD: 'p',
+      };
+      expect(() => loadSettings(env(auth))).toThrow('SMTP_AUTH_ENABLED');
+      expect(
+        loadSettings(env({ ...auth, SMTP_SSL_ENABLED: 'true' }))
+          .SMTP_AUTH_ENABLED,
+      ).toBe(true);
+    });
+  });
   it.each(['RABBITMQ_USERNAME', 'RABBITMQ_PASSWORD'])(
     'requires broker credential %s (no guest default)',
     (key) => {

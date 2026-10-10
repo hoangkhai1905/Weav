@@ -4,10 +4,12 @@ import com.weav.workspace.domain.exception.ConflictException;
 import com.weav.workspace.domain.exception.DependencyUnavailableException;
 import com.weav.workspace.domain.exception.DomainException;
 import com.weav.workspace.domain.exception.ForbiddenException;
+import com.weav.workspace.domain.exception.GoneException;
 import com.weav.workspace.domain.exception.IdempotencyKeyReusedException;
 import com.weav.workspace.domain.exception.InvalidStateException;
 import com.weav.workspace.domain.exception.MembershipNotFoundException;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
+import com.weav.workspace.domain.exception.TooManyRequestsException;
 import com.weav.workspace.domain.exception.UnauthorizedException;
 import com.weav.workspace.domain.exception.UserNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -153,6 +155,12 @@ public class GlobalExceptionHandler {
         }
         if (exception instanceof ConflictException) {
             return HttpStatus.CONFLICT;
+        }
+        if (exception instanceof GoneException) {
+            return HttpStatus.GONE;
+        }
+        if (exception instanceof TooManyRequestsException) {
+            return HttpStatus.TOO_MANY_REQUESTS;
         }
         if (exception instanceof UnauthorizedException) {
             return HttpStatus.UNAUTHORIZED;

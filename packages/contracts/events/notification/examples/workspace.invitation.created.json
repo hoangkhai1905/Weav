@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 2,
+  "eventId": "00000000-0000-4000-8000-000000000011",
+  "eventType": "workspace.invitation.created",
+  "occurredAt": "2026-10-10T04:00:00Z",
+  "producer": "workspace-service",
+  "actorUserId": "00000000-0000-4000-8000-000000000002",
+  "recipientUserIds": ["00000000-0000-4000-8000-000000000002"],
+  "workspaceId": "00000000-0000-4000-8000-000000000003",
+  "entity": {
+    "kind": "WORKSPACE",
+    "id": "00000000-0000-4000-8000-000000000003"
+  },
+  "data": {
+    "workspaceName": "Đội vận hành",
+    "inviteeEmail": "new.member@example.com",
+    "inviterName": "Nguyễn An",
+    "expiresAt": "2026-10-17T04:00:00Z"
+  }
+}

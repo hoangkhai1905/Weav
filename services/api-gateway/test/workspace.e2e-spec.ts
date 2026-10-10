@@ -1336,7 +1336,10 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       'PUT /api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential',
       'DELETE /api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential',
     ];
-    const actual = extractOperations(gatewayDocument);
+    // W7-A1 invitation routes are asserted in their own test below.
+    const actual = extractOperations(gatewayDocument).filter(
+      (operation) => !operation.includes('/invitations'),
+    );
 
     expect(actual).toHaveLength(expected.length);
     expect(actual).toEqual(expect.arrayContaining(expected));
@@ -1361,5 +1364,32 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
         );
       }
     }
+  });
+});
+
+describe('Workspace gateway contract: W7-A1 invitations', () => {
+  it('lists exactly the seven invitation method/path pairs', () => {
+    const gatewayDocument = readFileSync(
+      resolve(
+        __dirname,
+        '../../../packages/contracts/http/gateway/openapi.yaml',
+      ),
+      'utf8',
+    );
+    const actual = extractOperations(gatewayDocument).filter((operation) =>
+      operation.includes('/invitations'),
+    );
+    expect(actual).toHaveLength(7);
+    expect(actual).toEqual(
+      expect.arrayContaining([
+        'GET /api/v1/workspaces/{workspaceId}/invitations',
+        'POST /api/v1/workspaces/{workspaceId}/invitations',
+        'DELETE /api/v1/workspaces/{workspaceId}/invitations/{invitationId}',
+        'POST /api/v1/workspaces/{workspaceId}/invitations/{invitationId}/resend',
+        'GET /api/v1/invitations',
+        'POST /api/v1/invitations/{invitationId}/accept',
+        'POST /api/v1/invitations/{invitationId}/decline',
+      ]),
+    );
   });
 });

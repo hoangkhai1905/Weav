@@ -48,7 +48,7 @@ public record WorkspaceNotificationEvent(
         }
     }
 
-    public sealed interface Data permits WorkspaceNameData, MembershipData, ConnectionNameData {}
+    public sealed interface Data permits WorkspaceNameData, MembershipData, ConnectionNameData, InvitationData {}
 
     public record ConnectionNameData(String connectionName) implements Data {
         public ConnectionNameData {
@@ -66,6 +66,16 @@ public record WorkspaceNotificationEvent(
         public MembershipData {
             Objects.requireNonNull(workspaceName);
             Objects.requireNonNull(subjectUserId);
+        }
+    }
+
+    public record InvitationData(
+            String workspaceName, String inviteeEmail, String inviterName, String expiresAt) implements Data {
+        public InvitationData {
+            Objects.requireNonNull(workspaceName);
+            Objects.requireNonNull(inviteeEmail);
+            Objects.requireNonNull(inviterName);
+            Objects.requireNonNull(expiresAt);
         }
     }
 }

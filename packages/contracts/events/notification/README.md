@@ -17,6 +17,8 @@ Every event has exactly these fields: `schemaVersion`, `eventId`, `eventType`, `
 
 The application additionally enforces cross-field equality rules: a `WORKSPACE` entity ID equals `workspaceId`; identity recipients are exactly `[entity.id]`, and a non-null identity actor equals `entity.id`; `workspace.member_added`, `workspace.member_removed`, and `workspace.member_permissions_updated` recipients are exactly `[data.subjectUserId]`. JSON Schema cannot express these instance-to-instance equality rules in the standard dialect used here.
 
+`workspace.invitation.created` recipients must be exactly `[actorUserId]` (the inviter); this is also a Zod-only rule. Its `inviteeEmail` must match `^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9.-]{1,255}$`.
+
 For `workspace.member_left`, Workspace resolves the current Owner as the recipient. The Owner recipient is intentionally not constrained to equal `data.subjectUserId`, which identifies the departing member.
 
 The `producer` field is an event-family assertion, not publisher authentication. Broker credentials, permissions, and routing-key checks must establish which internal service actually published a message.
@@ -40,6 +42,7 @@ The `producer` field is an event-family assertion, not publisher authentication.
 | `workspace.member_permissions_updated` | `workspace-service` | `WORKSPACE`   | `workspaceName`, `subjectUserId` | WORKSPACE / INFO     | workspace         |
 | `workspace.member_left`                | `workspace-service` | `WORKSPACE`   | `workspaceName`, `subjectUserId` | WORKSPACE / INFO     | workspace         |
 | `workspace.deleted`                    | `workspace-service` | `WORKSPACE`   | `workspaceName`                  | WORKSPACE / WARNING  | none              |
+| `workspace.invitation.created`         | `workspace-service` | `WORKSPACE`   | `workspaceName`, `inviteeEmail`, `inviterName`, `expiresAt` | WORKSPACE / INFO     | workspace (inviter only; also sends an EMAIL delivery to `inviteeEmail`) |
 | `connection.connected`                 | `workspace-service` | `CONNECTION`  | `connectionName`                 | CONNECTION / SUCCESS | connection        |
 | `connection.disabled`                  | `workspace-service` | `CONNECTION`  | `connectionName`                 | CONNECTION / WARNING | connection        |
 | `connection.invalid`                   | `workspace-service` | `CONNECTION`  | `connectionName`                 | CONNECTION / ERROR   | connection        |

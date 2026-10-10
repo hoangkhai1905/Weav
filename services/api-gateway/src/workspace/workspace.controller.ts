@@ -82,6 +82,10 @@ const addMemberBodySchema = z
   .object({ email: z.string().min(1).max(320) })
   .strict();
 
+const createInvitationBodySchema = z
+  .object({ email: z.string().min(1).max(320) })
+  .strict();
+
 const updatePermissionsBodySchema = z
   .object({
     canPublishWorkflow: z.boolean(),
@@ -276,6 +280,63 @@ export class WorkspaceController {
       request,
       reply,
       `/${workspace}/members/${user}`,
+    );
+  }
+
+  @Get(':workspaceId/invitations')
+  listInvitations(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const id = workspaceId(rawWorkspaceId);
+    return this.proxy.forward('GET', request, reply, `/${id}/invitations`);
+  }
+
+  @Post(':workspaceId/invitations')
+  createInvitation(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const id = workspaceId(rawWorkspaceId);
+    return this.proxy.forward('POST', request, reply, `/${id}/invitations`, {
+      body: parse(createInvitationBodySchema, body),
+    });
+  }
+
+  @Delete(':workspaceId/invitations/:invitationId')
+  revokeInvitation(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('invitationId') rawInvitationId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const invitation = workspaceId(rawInvitationId);
+    return this.proxy.forward(
+      'DELETE',
+      request,
+      reply,
+      `/${workspace}/invitations/${invitation}`,
+    );
+  }
+
+  @Post(':workspaceId/invitations/:invitationId/resend')
+  resendInvitation(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('invitationId') rawInvitationId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workspaceId(rawWorkspaceId);
+    const invitation = workspaceId(rawInvitationId);
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/${workspace}/invitations/${invitation}/resend`,
     );
   }
 

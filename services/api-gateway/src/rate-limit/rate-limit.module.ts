@@ -9,6 +9,7 @@ import { FailOpenThrottlerStorage } from './fail-open-throttler-storage';
 import {
   GatewayThrottlerGuard,
   isAssistantRequest,
+  isInvitationRequest,
   isOcrRateLimitEligible,
   isOcrRequest,
   isOperationalRequest,
@@ -90,6 +91,16 @@ function requestFromContext(context: {
               skipIf: (context: ExecutionContext) =>
                 skipOperational(context) ||
                 !isTemplateRequest(requestFromContext(context)),
+            },
+            {
+              // Per user: invitation create and resend each send an e-mail (W7-A1).
+              name: 'invitation',
+              limit: gateway.limits.invitationPerMinute,
+              ttl: gateway.limits.windowMs,
+              blockDuration: gateway.limits.windowMs,
+              skipIf: (context: ExecutionContext) =>
+                skipOperational(context) ||
+                !isInvitationRequest(requestFromContext(context)),
             },
             {
               // Per endpoint key, on top of the general per-IP bucket, so one

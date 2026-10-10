@@ -60,6 +60,18 @@ class IdentityDirectoryHttpClientTest {
     }
 
     @Test
+    void mapsEmailVerifiedAndDefaultsToFalseWhenMissing() throws Exception {
+        UUID userId = UUID.randomUUID();
+        startServer(exchange -> respond(exchange, 200, "{\"userId\":\"" + userId
+                + "\",\"email\":\"v@example.com\",\"displayName\":null,\"active\":true,\"emailVerified\":true}"));
+        assertTrue(client().findByEmail("v@example.com").orElseThrow().emailVerified());
+        server.stop(0);
+        startServer(exchange -> respond(exchange, 200, "{\"userId\":\"" + userId
+                + "\",\"email\":\"v@example.com\",\"displayName\":null,\"active\":true}"));
+        assertTrue(!client().findByEmail("v@example.com").orElseThrow().emailVerified());
+    }
+
+    @Test
     void validatesEmailUsingIdentityRulesBeforeNetworkCall() throws Exception {
         AtomicInteger requests = new AtomicInteger();
         UUID userId = UUID.randomUUID();

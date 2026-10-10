@@ -67,6 +67,18 @@ const workspaceNameData = z
 const memberData = z
   .object({ workspaceName: displayNameSchema, subjectUserId: uuidSchema })
   .strict();
+// W7-A1: inviteeEmail is personal data; it is sent to the EMAIL provider and never logged.
+// No quotes, commas, semicolons or angle brackets: the address goes to SMTP as a bare mailbox.
+export const INVITEE_EMAIL_PATTERN =
+  /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9.-]{1,255}$/;
+const invitationData = z
+  .object({
+    workspaceName: displayNameSchema,
+    inviterName: displayNameSchema,
+    inviteeEmail: z.string().min(3).max(320).regex(INVITEE_EMAIL_PATTERN),
+    expiresAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
 const connectionNameData = z
   .object({ connectionName: displayNameSchema })
   .strict();
@@ -179,6 +191,13 @@ const eventVariants = [
     workspaceNameData,
   ),
   eventSchema(
+    'workspace.invitation.created',
+    'workspace-service',
+    'WORKSPACE',
+    uuidSchema,
+    invitationData,
+  ),
+  eventSchema(
     'connection.connected',
     'workspace-service',
     'CONNECTION',
@@ -262,6 +281,20 @@ export const notificationEventV2Schema = strictEventUnion.superRefine(
             code: 'custom',
             path: ['recipientUserIds'],
             message: 'Membership events must target exactly the subject user',
+          });
+        }
+        break;
+      case 'workspace.invitation.created':
+        if (
+          event.actorUserId === null ||
+          event.recipientUserIds.length !== 1 ||
+          event.recipientUserIds[0].toLowerCase() !==
+            event.actorUserId.toLowerCase()
+        ) {
+          context.addIssue({
+            code: 'custom',
+            path: ['recipientUserIds'],
+            message: 'Invitation events must target exactly the inviter',
           });
         }
         break;
