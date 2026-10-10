@@ -2,6 +2,7 @@ import React from 'react';
 import { Plus, X } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { SchemaField } from './SchemaField';
+import type { VariableGroup } from '../../lib/variablePaths';
 
 const inputCls = 'w-full min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
 const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
@@ -22,16 +23,18 @@ interface SwitchEditorProps {
   onChange: (updates: Record<string, unknown>) => void;
   /** Called with the new case list so the canvas can drop edges of removed or renamed ports. */
   onCasesChange: (cases: string[]) => void;
+  /** Data from the steps before, shown as named chips in the value to match. */
+  groups?: VariableGroup[];
 }
 
 /** logic.switch: the value to match and one output port per case; unmatched values leave by "default". */
-export const SwitchEditor: React.FC<SwitchEditorProps> = ({ config, onChange, onCasesChange }) => {
+export const SwitchEditor: React.FC<SwitchEditorProps> = ({ config, onChange, onCasesChange, groups }) => {
   const { t } = useI18nStore();
   const cases = Array.isArray(config.cases) ? config.cases.map((item) => String(item ?? '')) : [];
 
   return (
     <div data-testid="switch-config" className="space-y-3">
-      <SchemaField nodeType="logic.switch" name="value" value={config.value} onChange={(value) => onChange({ value })} />
+      <SchemaField nodeType="logic.switch" name="value" value={config.value} onChange={(value) => onChange({ value })} groups={groups} />
       <fieldset className="space-y-1.5">
         <legend className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.field.logic.switch.cases')}</legend>
         {cases.map((value, index) => {

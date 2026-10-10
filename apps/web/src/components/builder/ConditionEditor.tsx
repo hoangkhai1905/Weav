@@ -1,6 +1,8 @@
 import React from 'react';
 import { Plus, X } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
+import type { VariableGroup } from '../../lib/variablePaths';
+import { MappingTextField } from './MappingTextField';
 
 const inputCls = 'w-full min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
 const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
@@ -32,13 +34,15 @@ const withOperator = (condition: Condition, operator: string): Condition => ({
 interface ConditionEditorProps {
   config: Record<string, unknown>;
   onChange: (updates: Record<string, unknown>) => void;
+  /** Data from the steps before, shown as named chips in both sides of a comparison. */
+  groups?: VariableGroup[];
 }
 
 /**
  * logic.condition has two exclusive forms (CONDITION_FORM_CONFLICT when mixed): single {left, operator, right}
  * or multi {combinator, conditions[1..10]}. Switching clears the other form's keys.
  */
-export const ConditionEditor: React.FC<ConditionEditorProps> = ({ config, onChange }) => {
+export const ConditionEditor: React.FC<ConditionEditorProps> = ({ config, onChange, groups = [] }) => {
   const { t } = useI18nStore();
   const multi = config.conditions !== undefined || config.combinator !== undefined;
   const conditions: Condition[] = multi
@@ -111,8 +115,8 @@ export const ConditionEditor: React.FC<ConditionEditorProps> = ({ config, onChan
               </div>
             )}
             <div>
-              <label htmlFor={`condition-left${suffix}`} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_left')}</label>
-              <input id={`condition-left${suffix}`} data-testid="condition-left" value={String(condition.left ?? '')} placeholder="{{ trigger.input.email }}" onChange={(event) => update(index, { left: event.target.value })} className={`${inputCls} font-mono`} />
+              <label id={`condition-left${suffix}-label`} onClick={() => document.getElementById(`condition-left${suffix}`)?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_left')}</label>
+              <MappingTextField id={`condition-left${suffix}`} labelledBy={`condition-left${suffix}-label`} testId="condition-left" value={String(condition.left ?? '')} placeholder={t('builder.cfg.cond_left_placeholder')} groups={groups} onChange={(left) => update(index, { left })} />
             </div>
             <div>
               <label htmlFor={`condition-operator${suffix}`} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_operator')}</label>
@@ -121,8 +125,8 @@ export const ConditionEditor: React.FC<ConditionEditorProps> = ({ config, onChan
               </select>
             </div>
             <div>
-              <label htmlFor={`condition-right${suffix}`} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_right')}</label>
-              <input id={`condition-right${suffix}`} data-testid="condition-right" value={String(condition.right ?? '')} placeholder="500 or {{ variables.threshold }}" onChange={(event) => update(index, { right: event.target.value })} className={`${inputCls} font-mono`} />
+              <label id={`condition-right${suffix}-label`} onClick={() => document.getElementById(`condition-right${suffix}`)?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_right')}</label>
+              <MappingTextField id={`condition-right${suffix}`} labelledBy={`condition-right${suffix}-label`} testId="condition-right" value={String(condition.right ?? '')} placeholder={t('builder.cfg.cond_right_placeholder')} groups={groups} onChange={(right) => update(index, { right })} />
             </div>
           </fieldset>
         );

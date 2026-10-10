@@ -1,6 +1,8 @@
 import React from 'react';
 import { Plus, X } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
+import { fileSources, mappingOf, pathLabel, type VariableGroup } from '../../lib/variablePaths';
+import { MappingTextField } from './MappingTextField';
 
 const fieldCls = 'min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
 const inputCls = `${fieldCls} w-full font-mono`;
@@ -16,11 +18,15 @@ interface AttachmentsEditorProps {
   value: unknown;
   /** `undefined` removes `attachments` from the config. */
   onChange: (value: unknown) => void;
+  /** Data from the steps before: names the chips and lists the files a file-id attachment can pick. */
+  groups?: VariableGroup[];
 }
 
 /** email.send `attachments`: a list of {url|fileId, filename?} or one mapping that resolves to such a list. */
-export const AttachmentsEditor: React.FC<AttachmentsEditorProps> = ({ value, onChange }) => {
+export const AttachmentsEditor: React.FC<AttachmentsEditorProps> = ({ value, onChange, groups = [] }) => {
   const { t } = useI18nStore();
+  // A file-id attachment takes the stored file's id; the file name defaults to the file's own (EmailAttachmentResolver).
+  const files = fileSources(groups).map((source) => ({ ...source, idMapping: mappingOf(source.group, `${source.path}.fileId`) }));
   const mapping = typeof value === 'string';
   const items: Attachment[] = Array.isArray(value) ? value as Attachment[] : [];
   const kindOf = (item: Attachment): Kind => ('fileId' in item ? 'fileId' : 'url');
@@ -43,13 +49,13 @@ export const AttachmentsEditor: React.FC<AttachmentsEditorProps> = ({ value, onC
       </select>
 
       {mapping ? (
-        <input
-          aria-label={t('builder.cfg.attach_mapping')}
-          data-testid="attachments-mapping"
+        <MappingTextField
+          id="attachments-mapping"
+          ariaLabel={t('builder.cfg.attach_mapping')}
+          testId="attachments-mapping"
           value={value as string}
-          placeholder="{{ trigger.input.attachments }}"
-          onChange={(event) => onChange(event.target.value)}
-          className={inputCls}
+          groups={groups}
+          onChange={(next) => onChange(next)}
         />
       ) : (
         <>
@@ -68,13 +74,15 @@ export const AttachmentsEditor: React.FC<AttachmentsEditorProps> = ({ value, onC
                     <option value="url">{t('builder.cfg.attach_url')}</option>
                     <option value="fileId">{t('builder.cfg.attach_file_id')}</option>
                   </select>
-                  <input
-                    aria-label={t('builder.cfg.attach_source').replace('{n}', n)}
-                    data-testid="attachment-source"
+                  <MappingTextField
+                    id={`attachment-source-${index}`}
+                    ariaLabel={t('builder.cfg.attach_source').replace('{n}', n)}
+                    testId="attachment-source"
+                    className="min-w-0 flex-1"
                     value={item[kind] ?? ''}
-                    placeholder={kind === 'url' ? 'https://...' : '{{ trigger.input.attachments[0].fileId }}'}
-                    onChange={(event) => setItem(index, kind, event.target.value, item.filename ?? '')}
-                    className={inputCls}
+                    groups={groups}
+                    placeholder={kind === 'url' ? 'https://...' : t('builder.cfg.attach_pick')}
+                    onChange={(next) => setItem(index, kind, next, item.filename ?? '')}
                   />
                   <button
                     type="button"
@@ -86,6 +94,20 @@ export const AttachmentsEditor: React.FC<AttachmentsEditorProps> = ({ value, onC
                     <X size={13} aria-hidden="true" />
                   </button>
                 </div>
+                {kind === 'fileId' && files.length > 0 && (
+                  <select
+                    aria-label={`${t('builder.cfg.attach_pick')} ${n}`}
+                    data-testid="attachment-file-pick"
+                    value={files.find((file) => file.idMapping === item.fileId)?.idMapping ?? ''}
+                    onChange={(event) => event.target.value && setItem(index, 'fileId', event.target.value, item.filename ?? '')}
+                    className={`${fieldCls} w-full`}
+                  >
+                    <option value="">{t('builder.cfg.attach_pick')}</option>
+                    {files.map((file) => (
+                      <option key={file.idMapping} value={file.idMapping}>{pathLabel(file.group, file.path, t) ?? file.path} — {file.group.label}</option>
+                    ))}
+                  </select>
+                )}
                 <input
                   aria-label={t('builder.cfg.attach_filename').replace('{n}', n)}
                   data-testid="attachment-filename"

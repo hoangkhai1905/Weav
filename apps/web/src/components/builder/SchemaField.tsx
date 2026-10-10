@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { NODE_SCHEMAS, schemaTypes } from '../../lib/nodeSchemas';
 import { toLocalInput, withLocalOffset } from '../../lib/localOffset';
+import type { VariableGroup } from '../../lib/variablePaths';
+import { idFromGoogleLink } from '../../lib/googleLinks';
+import { MappingTextField } from './MappingTextField';
 
 // The executors reject more than this even where the schema has no maximum.
 const INTEGER_CAP: Record<string, number> = { maxLength: 5000 };
@@ -18,6 +21,8 @@ interface SchemaFieldProps {
   connections?: { id: string; name: string }[];
   /** Render a text field as a textarea (prompts, file content, descriptions). */
   multiline?: boolean;
+  /** Data from the steps before: a template text field then shows inserted data as named chips. */
+  groups?: VariableGroup[];
 }
 
 /**
@@ -27,7 +32,7 @@ interface SchemaFieldProps {
  * Labels come from `builder.field.<type>.<name>` (fallback: schema title); `..._hint` adds help text;
  * enum options use `builder.field.<type>.<name>.<value>` (fallback: the raw value).
  */
-export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value, onChange, connections, multiline }) => {
+export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value, onChange, connections, multiline, groups }) => {
   const { t } = useI18nStore();
   // Text that is not a valid whole number is shown with an error but never written to the config.
   const [badInteger, setBadInteger] = useState<string | null>(null);
@@ -53,8 +58,29 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
     );
   }
 
+  // A text field that can take data from earlier steps (not a number, list, choice or a stored file object).
+  const chipText = Boolean(groups) && Boolean(property['x-weav-template']) && types.includes('string')
+    && !types.includes('integer') && property.type !== 'array' && !property.enum && !property['x-weav-connection']
+    && (typeof value === 'string' || value === undefined || value === null);
+
+  // Drive file and folder ids also take the pasted Drive link; only the id inside it is saved.
+  const takesGoogleLink = nodeType.startsWith('google.') && (name === 'fileId' || name === 'folderId');
+  const textValue = (next: string) => (takesGoogleLink ? idFromGoogleLink(next) : next);
+
   let control: React.ReactNode;
-  if (property['x-weav-connection'] || property.enum) {
+  if (chipText && groups) {
+    control = (
+      <MappingTextField
+        id={id}
+        labelledBy={`${id}-label`}
+        testId={`field-${name}`}
+        multiline={multiline}
+        value={text}
+        groups={groups}
+        onChange={(next) => onChange(next === '' ? undefined : textValue(next))}
+      />
+    );
+  } else if (property['x-weav-connection'] || property.enum) {
     // Friendly option names come from `<key>.<value>`; the saved value stays the raw enum.
     const optionLabel = (option: string) => (t(`${key}.${option}`) === `${key}.${option}` ? option : t(`${key}.${option}`));
     const options = property.enum?.map((option) => ({ id: option, name: optionLabel(option) })) ?? connections ?? [];
@@ -107,7 +133,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
             const next = event.target.value;
             if (!isInteger || next === '' || next.includes('{{')) {
               setBadInteger(null);
-              onChange(next === '' ? undefined : next);
+              onChange(next === '' ? undefined : textValue(next));
             } else if (/^(0|[1-9]\d{0,8})$/.test(next) && Number(next) >= min && (max === undefined || Number(next) <= max)) {
               setBadInteger(null);
               onChange(Number(next));
@@ -129,7 +155,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
   const isCalendarTime = nodeType === 'google.calendar' && (name === 'start' || name === 'end');
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-[11px] font-medium text-text-2">{label}</label>
+      <label id={`${id}-label`} htmlFor={id} onClick={chipText ? () => document.getElementById(id)?.focus() : undefined} className="mb-1 block text-[11px] font-medium text-text-2">{label}</label>
       {isCalendarTime ? (
         <div className="flex items-start gap-1.5">
           <div className="min-w-0 flex-1">{control}</div>
