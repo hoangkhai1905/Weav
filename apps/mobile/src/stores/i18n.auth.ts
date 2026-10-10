@@ -44,6 +44,12 @@ export const authVi: Record<string, string> = {
   'au.forgot.err.code': 'Mã xác nhận chưa đúng hoặc đã hết hạn. Bạn kiểm tra lại hoặc gửi lại mã nhé.',
   'au.forgot.err.used': 'Lần đặt lại này không còn hiệu lực. Vui lòng gửi lại mã mới.',
   'au.forgot.err.generic': 'Chưa thực hiện được. Bạn thử lại sau nhé.',
+  'au.or': 'hoặc',
+  'au.google.signIn': 'Tiếp tục với Google',
+  'au.google.err.unavailable': 'Đăng nhập Google đang không khả dụng. Bạn thử lại sau hoặc dùng mật khẩu nhé.',
+  'au.google.err.retry': 'Phiên đăng nhập Google đã hết hạn. Bạn bấm lại nút Google để thử lần nữa.',
+  'au.google.err.notAllowed': 'Tài khoản Google này chưa thể đăng nhập Weav. Bạn thử tài khoản khác nhé.',
+  'au.google.err.linkRequired': 'Email này đã có tài khoản dùng mật khẩu. Bạn đăng nhập bằng mật khẩu, rồi liên kết Google trên bản web nhé.',
 };
 export const authEn: Record<string, string> = {
   'ui.showPassword': 'Show password',
@@ -90,4 +96,10 @@ export const authEn: Record<string, string> = {
   'au.forgot.err.code': 'The code is wrong or has expired. Check it or request a new one.',
   'au.forgot.err.used': 'This reset attempt is no longer valid. Please request a new code.',
   'au.forgot.err.generic': 'Something went wrong. Please try again.',
+  'au.or': 'or',
+  'au.google.signIn': 'Continue with Google',
+  'au.google.err.unavailable': 'Google sign-in is unavailable right now. Try again later or use your password.',
+  'au.google.err.retry': 'The Google sign-in expired. Tap the Google button to try again.',
+  'au.google.err.notAllowed': 'This Google account cannot sign in to Weav. Try another account.',
+  'au.google.err.linkRequired': 'This email already has a password account. Sign in with your password, then link Google in the web app.',
 };

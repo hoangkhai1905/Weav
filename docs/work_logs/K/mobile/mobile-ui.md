@@ -6,7 +6,7 @@
 
 | Trường | Giá trị |
 | --- | --- |
-| Cập nhật gần nhất | 2026-10-07 (Asia/Saigon) |
+| Cập nhật gần nhất | 2026-10-11 (Asia/Saigon) |
 | Dự án | Weav, `apps/mobile` (Expo SDK 57) |
 | Nhánh | `feature/mobile-ui` |
 | Người thực hiện | AI agent (theo yêu cầu của K) |
@@ -224,5 +224,12 @@ Lý do: người dùng thấy giao diện cũ "xấu quá", trông như do AI l�
 - Web: kiểm trong Browser pane, trình duyệt ưu tiên tối + chưa lưu lựa chọn -> `class="light"`.
 - Lưu ý kiểm thử: khi cửa sổ Claude bị che (`visibilityState: hidden`), Chrome dừng animation/rAF nên sheet và chuyển màn bị kẹt; không phải lỗi app.
 
+### Đăng nhập Google trên mobile (nhánh `feature/mobile-google-sign-in`, 2026-10-11)
+- Theo handoff tuần 6 mục A: PKCE S256 + `WebBrowser.openAuthSessionAsync(start, 'weav://auth/callback')` + `POST /api/auth/oauth/mobile/exchange`. Mã xác minh chỉ giữ trong bộ nhớ, không tự thử lại khi đổi mã thất bại.
+- File: `features/auth/google-sign-in.ts` (hàm thuần: verifier, challenge base64url, URL bắt đầu, đọc deep link, ánh xạ lỗi), `google-sign-in.runtime.ts` (expo-crypto + expo-web-browser), `exchangeGoogleHandoff` trong `AuthRepository` (HTTP giữ nguyên `error.code` để phân biệt `ACCOUNT_LINK_REQUIRED`/`CONFLICT`; mock trả phiên giả), nút "Tiếp tục với Google" ở `login.tsx`, chuỗi vi/en trong `i18n.auth.ts`, `app.json` scheme `["mobile","weav"]`, thêm `expo-crypto`, `EXPO_PUBLIC_IDENTITY_URL` trong `.env.example`, README.
+- Nút ẩn trên web và khi thiếu `EXPO_PUBLIC_IDENTITY_URL` (identity chỉ cho trả về scheme `weav`, web không nhận được).
+- Kiểm: `tsc` sạch; 187/187 test (thêm `google-sign-in.test.cjs`, có vector RFC 7636). Identity thật: challenge đúng -> 303 sang Google, challenge sai -> 400 `VALIDATION_ERROR`; gateway exchange mã giả -> 401 `OAUTH_HANDOFF_INVALID`.
+- Chưa kiểm trọn luồng trên thiết bị (đang dựng emulator + dev build).
+
 ### Để sau
-- Đăng nhập Google trên mobile: luồng hiện có chỉ cho web (gọi thẳng identity-service :8082, kiểm Origin + cookie + CSRF, quay về `/auth/callback` của web; gateway chưa có route). Cần client OAuth cho mobile (PKCE + deep link `weav://auth/callback`) + route gateway + `expo-auth-session`. Người dùng quyết định để sau (2026-10-08).
+- (Đã làm 2026-10-11, xem mục trên) Đăng nhập Google trên mobile: luồng hiện có chỉ cho web (gọi thẳng identity-service :8082, kiểm Origin + cookie + CSRF, quay về `/auth/callback` của web; gateway chưa có route). Cần client OAuth cho mobile (PKCE + deep link `weav://auth/callback`) + route gateway + `expo-auth-session`. Người dùng quyết định để sau (2026-10-08).

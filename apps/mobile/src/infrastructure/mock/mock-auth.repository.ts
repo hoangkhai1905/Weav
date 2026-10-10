@@ -3,6 +3,7 @@ import type {
   AuthSession,
   UserProfile,
   AuthTokens,
+  GoogleHandoff,
   PasswordResetReceipt,
   PasswordResetVerification,
 } from '../../domain/auth/auth.types';
@@ -22,6 +23,10 @@ export class MockAuthRepository implements AuthRepository {
       refreshToken: 'mock_refresh_token_' + Date.now(),
     };
     return { user, tokens };
+  }
+
+  async exchangeGoogleHandoff(_handoff: GoogleHandoff): Promise<AuthSession> {
+    return this.login(MOCK_USER.email, '');
   }
 
   async register(email: string, name: string, _password: string): Promise<AuthSession> {

@@ -16,6 +16,14 @@ requires a real Identity access token via the existing auth flow; it never falls
 back to mock data on HTTP errors. A 401 expires the current existing auth session,
 while a delayed response from a superseded session is ignored.
 
+Google sign-in (native builds only) needs `EXPO_PUBLIC_IDENTITY_URL`, the public
+HTTPS URL of identity-service (for example a `cloudflared` tunnel to `:8081`), and a
+dev client or EAS build that includes the `weav` scheme and `expo-crypto`; Expo Go
+and web cannot receive `weav://auth/callback`, so the button stays hidden there.
+Identity must have `OAUTH_MOBILE_RETURN_TARGET_URI=weav://auth/callback` and a
+`GOOGLE_REDIRECT_URI` on that tunnel registered in Google Cloud Console. Flow and
+errors: `docs/handoff/2026-10-week6-mobile.md` section A.
+
 The focused Node checks use the repository's existing `.test.cjs` convention and
 can be run from the repo root:
 

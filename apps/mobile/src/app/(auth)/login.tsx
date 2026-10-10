@@ -4,6 +4,7 @@ import { useRouter, type Href } from 'expo-router';
 import { Lock, LogIn, Mail } from 'lucide-react-native';
 import { authRepository } from '../../infrastructure/repository-factory';
 import { beginAuthOperation, establishAuthSession } from '../../features/auth/auth-session.runtime';
+import { googleSignInAvailable, signInWithGoogle } from '../../features/auth/google-sign-in.runtime';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, validatePasswordRecovery } from '../../features/auth/password-recovery.utils';
 import { fieldErrorsFromError } from '../../features/common/field-errors';
 import { localizeValidation } from '../../features/common/validation-copy';
@@ -31,6 +32,7 @@ export default function LoginScreen() {
   const [errors, setErrors] = useState<Errors>({});
   const [general, setGeneral] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   const validate = (): Errors => {
     const next: Errors = {};
@@ -62,6 +64,20 @@ export default function LoginScreen() {
     }
   };
 
+  const handleGoogle = async () => {
+    setGeneral(null);
+    setGoogleBusy(true);
+    try {
+      const result = await signInWithGoogle();
+      if (result.kind === 'signedIn') router.replace('/(app)/(tabs)');
+      else if (result.kind === 'error') setGeneral(t(result.messageKey));
+    } catch {
+      setGeneral(t('au.google.err.unavailable'));
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
   return (
     <AuthShell title={t('au.login.title')} subtitle={t('au.login.subtitle')}>
       <TextField
@@ -90,7 +106,20 @@ export default function LoginScreen() {
       {general ? (
         <Text accessibilityRole="alert" style={[Typography.caption, { color: colors.danger }]}>{general}</Text>
       ) : null}
-      <Button label={t('au.signIn')} icon={<LogIn size={18} color={colors.onPrimary} />} busy={loading} onPress={() => { void handleLogin(); }} />
+      <Button label={t('au.signIn')} icon={<LogIn size={18} color={colors.onPrimary} />} busy={loading} disabled={googleBusy} onPress={() => { void handleLogin(); }} />
+      {googleSignInAvailable ? (
+        <>
+          <Text style={[Typography.caption, styles.or, { color: colors.textMuted }]}>{t('au.or')}</Text>
+          <Button
+            testID="google-sign-in"
+            variant="secondary"
+            label={t('au.google.signIn')}
+            busy={googleBusy}
+            disabled={loading}
+            onPress={() => { void handleGoogle(); }}
+          />
+        </>
+      ) : null}
       <Pressable
         testID="password-recovery-link"
         accessibilityRole="link"
@@ -115,5 +144,6 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
+  or: { textAlign: 'center' },
   link: { minHeight: MinTouch, alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing.one },
 });
