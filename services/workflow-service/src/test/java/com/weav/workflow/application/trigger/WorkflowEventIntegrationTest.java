@@ -14,6 +14,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -50,6 +54,8 @@ class WorkflowEventIntegrationTest {
     private ControlBotStore store;
     @Autowired
     private JdbcTemplate jdbc;
+    @Autowired
+    private PlatformTransactionManager transactionManager;
     @Autowired
     private WorkflowPublicationTestConfiguration.PublicationWorkspaceAccess workspaceAccess;
 
@@ -158,6 +164,31 @@ class WorkflowEventIntegrationTest {
         finish(failed, "FAILED");
         eventTrigger.onExecutionFinished(failed);
         assertEquals(1, eventRuns(alert).size());
+        assertEquals(0, eventRuns(paused).size());
+    }
+
+    /** The production path: the finished listener runs inside afterCommit of the run's own transaction. */
+    @Test
+    void listenersStartWhenFiredFromAfterCommitAndAPausedOneDoesNotBlockTheRest() {
+        Workflow failing = source("Report");
+        Workflow paused = watcher("Paused alert", List.of("FAILED"), List.of());
+        Workflow alert = watcher("Alert", List.of("FAILED"), List.of());
+        publication.pause(workspaceId, paused.getId(), USER_ID);
+        UUID execution = run(failing);
+        finish(execution, "FAILED");
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        eventTrigger.onExecutionFinished(execution);
+                    }
+                }));
+
+        List<Map<String, Object>> runs = eventRuns(alert);
+        assertEquals(1, runs.size());
+        assertEquals("WORKFLOW_EVENT", runs.getFirst().get("trigger_type"));
+        assertEquals("wfevent:" + execution, runs.getFirst().get("idempotency_key"));
         assertEquals(0, eventRuns(paused).size());
     }
 

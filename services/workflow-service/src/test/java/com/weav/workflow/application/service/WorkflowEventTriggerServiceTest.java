@@ -22,6 +22,8 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.springframework.transaction.PlatformTransactionManager;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
@@ -45,7 +47,7 @@ class WorkflowEventTriggerServiceTest {
         ExecutionAdmissionService admission = new ExecutionAdmissionService(
                 new WorkspaceAuthorization((w, u) -> new WorkspaceAccessPort.Access(w, u, "MEMBER", Set.of())),
                 port, JsonMapper.builder().build(), 1_048_576, 32);
-        service = new WorkflowEventTriggerService(new Store(), admission, "https://app.example.test/");
+        service = new WorkflowEventTriggerService(new Store(), admission, mock(PlatformTransactionManager.class), "https://app.example.test/");
         when(port.create(any())).thenAnswer(call -> new ExecutionAdmissionPort.Admission(
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), ExecutionStatus.QUEUED));
     }
@@ -202,7 +204,7 @@ class WorkflowEventTriggerServiceTest {
         ExecutionAdmissionService admission = new ExecutionAdmissionService(
                 new WorkspaceAuthorization((w, u) -> new WorkspaceAccessPort.Access(w, u, "MEMBER", Set.of())),
                 port, JsonMapper.builder().build(), 1_048_576, 32);
-        WorkflowEventTriggerService bare = new WorkflowEventTriggerService(new Store(), admission, "");
+        WorkflowEventTriggerService bare = new WorkflowEventTriggerService(new Store(), admission, mock(PlatformTransactionManager.class), "");
         listener(UUID.randomUUID(), List.of("FAILED"), List.of());
 
         bare.fire(EXECUTION);

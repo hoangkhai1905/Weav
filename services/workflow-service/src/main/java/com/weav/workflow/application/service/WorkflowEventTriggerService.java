@@ -11,6 +11,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.util.LinkedHashMap;
@@ -36,12 +39,17 @@ public final class WorkflowEventTriggerService implements ExecutionFinishedListe
     private final ControlBotStore store;
     private final ExecutionAdmissionService admission;
     private final String webBaseUrl;
+    private final TransactionTemplate newTransaction;
 
     public WorkflowEventTriggerService(
-            ControlBotStore store, ExecutionAdmissionService admission,
+            ControlBotStore store, ExecutionAdmissionService admission, PlatformTransactionManager transactionManager,
             @Value("${weav.workflow.web-base-url:}") String webBaseUrl) {
         this.store = Objects.requireNonNull(store);
         this.admission = Objects.requireNonNull(admission);
+        // Called from afterCommit, where the finished run's transaction is still bound: a plain REQUIRED call would
+        // join it and the admission's pessimistic locks would fail. Each listener gets its own transaction.
+        this.newTransaction = new TransactionTemplate(Objects.requireNonNull(transactionManager));
+        this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.webBaseUrl = normalizeBase(webBaseUrl);
     }
 
@@ -71,13 +79,14 @@ public final class WorkflowEventTriggerService implements ExecutionFinishedListe
                 continue;
             }
             try {
-                admission.automatic(listener.triggerId(), input(source, event), null, null, null,
-                        "wfevent:" + executionId);
+                newTransaction.executeWithoutResult(status -> admission.automatic(listener.triggerId(),
+                        input(source, event), null, null, null, "wfevent:" + executionId));
                 started++;
             } catch (RuntimeException exception) {
                 // A listener that was paused or republished meanwhile is not an error for the others.
-                LOGGER.warn("event=workflow_event_admission_failed listenerWorkflowId={} executionId={} cause={}",
-                        listener.workflowId(), executionId, exception.getClass().getSimpleName());
+                LOGGER.warn("event=workflow_event_admission_failed listenerWorkflowId={} executionId={} cause={} "
+                                + "message={}", listener.workflowId(), executionId,
+                        exception.getClass().getSimpleName(), exception.getMessage());
             }
         }
         return started;
