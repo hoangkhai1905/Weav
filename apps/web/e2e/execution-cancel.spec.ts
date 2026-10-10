@@ -214,8 +214,8 @@ test.describe("run values in the variable picker (stubbed backend)", () => {
     await expect(group).toContainText("Lần chạy");
     await expect(group.getByTestId("variable-option")).toHaveText(["now", "run.id", "workflow.id", "workflow.name"]);
     await group.getByRole("button", { name: "workflow.name", exact: true }).click();
-    await expect(page.locator("#http-body")).toHaveValue("{{ workflow.name }}");
+    await expect(page.locator("#http-body")).toHaveAttribute("data-value", "{{ workflow.name }}");
     await group.getByRole("button", { name: "now", exact: true }).click();
-    await expect(page.locator("#http-body")).toHaveValue("{{ workflow.name }}{{ now }}");
+    await expect(page.locator("#http-body")).toHaveAttribute("data-value", "{{ workflow.name }}{{ now }}");
   });
 });

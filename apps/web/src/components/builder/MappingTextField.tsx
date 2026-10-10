@@ -1,17 +1,21 @@
-import React, { useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Braces } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
-import { describeMapping, mappingFieldInserts, type VariableGroup } from '../../lib/variablePaths';
+import { describeMapping, mappingFieldInserts, mappingOf, pathLabel, RUN_PATHS, type VariableGroup } from '../../lib/variablePaths';
 
 interface MappingTextFieldProps {
   id: string;
   /** Id of the visible label (a <label for> does not focus a contenteditable). */
-  labelledBy: string;
+  labelledBy?: string;
+  /** Accessible name when there is no visible label of its own. */
+  ariaLabel?: string;
   value: string;
   onChange: (next: string) => void;
-  /** Data the trigger and earlier steps hand over: names the chips and flags data no step provides. */
+  /** Data the trigger and earlier steps hand over: names the chips, fills the "+ Data" menu, flags unknown data. */
   groups: VariableGroup[];
   multiline?: boolean;
   placeholder?: string;
+  testId?: string;
 }
 
 // Browsers keep typed spaces as non-breaking spaces in contenteditable.
@@ -24,14 +28,17 @@ const CHIP_UNKNOWN = `${CHIP} border-warn/40 bg-warn-bg text-warn`;
 
 /**
  * A text field that shows each `{{ ... }}` as a chip with a friendly name ("Text read") and an × to remove it,
- * while the saved value stays the plain mapping string. Typing, pasting and "Insert variable" all work; a
- * mapping typed or pasted by hand turns into a chip when the field loses focus.
+ * while the saved value stays the plain mapping string. A "+ Data" menu under the field inserts data from the
+ * steps before at the caret; typing, pasting and "Insert variable" also work, and a mapping typed or pasted by
+ * hand turns into a chip when the field loses focus.
  */
-export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelledBy, value, onChange, groups, multiline, placeholder }) => {
+export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelledBy, ariaLabel, value, onChange, groups, multiline, placeholder, testId }) => {
   const { t } = useI18nStore();
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const emitted = useRef<string | null>(null);
-  // Where the caret was last inside this field: "Insert variable" takes focus away, so the live selection is gone.
+  // Where the caret was last inside this field: a menu or "Insert variable" takes focus away, so the live selection is gone.
   const caret = useRef<Range | null>(null);
   // Latest props for DOM handlers and the registered insert, which outlive a single render.
   const live = useRef({ groups, t, onChange });
@@ -98,6 +105,40 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
     live.current.onChange(next);
   };
 
+  /** Inserts `text` (chips for its mappings) at the remembered caret, else at the end of the field. */
+  const insert = (text: string) => {
+    const el = ref.current;
+    if (!el) return;
+    const selection = window.getSelection();
+    // The remembered caret, unless the field was rebuilt since (its nodes are gone): then the end of the field.
+    let range = caret.current && el.contains(caret.current.startContainer) ? caret.current : null;
+    if (!range) {
+      range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+    }
+    range.deleteContents();
+    const nodes = nodesFor(text);
+    const fragment = document.createDocumentFragment();
+    fragment.append(...nodes);
+    range.insertNode(fragment);
+    const last = nodes[nodes.length - 1];
+    el.focus();
+    if (last && selection) {
+      const after = document.createRange();
+      after.setStartAfter(last);
+      after.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(after);
+      caret.current = after.cloneRange();
+    }
+    emit();
+  };
+  const insertRef = useRef(insert);
+  useLayoutEffect(() => {
+    insertRef.current = insert;
+  });
+
   // Rebuild the chips only when the value changed from outside (another step, a quick insert), never while typing.
   useLayoutEffect(() => {
     if (value !== emitted.current) {
@@ -122,81 +163,120 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
       if (range && el.contains(range.commonAncestorContainer)) caret.current = range.cloneRange();
     };
     document.addEventListener('selectionchange', remember);
-    mappingFieldInserts.set(el, (text) => {
-      const selection = window.getSelection();
-      // The remembered caret, unless the field was rebuilt since (its nodes are gone): then the end of the field.
-      let range = caret.current && el.contains(caret.current.startContainer) ? caret.current : null;
-      if (!range) {
-        range = document.createRange();
-        range.selectNodeContents(el);
-        range.collapse(false);
-      }
-      range.deleteContents();
-      const nodes = nodesFor(text);
-      const fragment = document.createDocumentFragment();
-      fragment.append(...nodes);
-      range.insertNode(fragment);
-      const last = nodes[nodes.length - 1];
-      el.focus();
-      if (last && selection) {
-        const after = document.createRange();
-        after.setStartAfter(last);
-        after.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(after);
-        caret.current = after.cloneRange();
-      }
-      emit();
-    });
+    mappingFieldInserts.set(el, (text) => insertRef.current(text));
     return () => {
       document.removeEventListener('selectionchange', remember);
       mappingFieldInserts.delete(el);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the insert reads live props through refs
   }, []);
 
+  // The "+ Data" menu closes on a click outside it.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [menuOpen]);
+
+  const pick = (mapping: string) => {
+    insert(mapping);
+    setMenuOpen(false);
+  };
+  // Keeps the caret in the field while a menu item is pressed.
+  const keepCaret = (event: React.MouseEvent) => event.preventDefault();
+  const itemCls = 'flex w-full flex-col items-start rounded px-2 py-1 text-left hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+
   return (
-    <div
-      ref={ref}
-      id={id}
-      role="textbox"
-      tabIndex={0}
-      contentEditable
-      suppressContentEditableWarning
-      aria-multiline={multiline ? 'true' : 'false'}
-      aria-labelledby={labelledBy}
-      aria-placeholder={placeholder}
-      data-mapping-field
-      data-placeholder={placeholder}
-      data-value={value}
-      spellCheck={false}
-      onInput={emit}
-      // Turn a {{ ... }} typed or pasted by hand into a chip; otherwise leave the nodes (and the remembered caret) alone.
-      onBlur={() => {
-        const typed = [...(ref.current?.childNodes ?? [])].some((node) => node.nodeType === Node.TEXT_NODE && HAS_TOKEN.test(node.textContent ?? ''));
-        if (typed) render(serialize());
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter') return;
-        event.preventDefault();
-        if (multiline) document.execCommand('insertLineBreak');
-      }}
-      onPaste={(event) => {
-        event.preventDefault();
-        const text = event.clipboardData.getData('text/plain');
-        document.execCommand('insertText', false, multiline ? text : text.replace(/\r?\n/g, ' '));
-      }}
-      onMouseDown={(event) => {
-        // Keep the caret where it is when removing a chip.
-        if ((event.target as HTMLElement).closest('[data-chip-remove]')) event.preventDefault();
-      }}
-      onClick={(event) => {
-        const remove = (event.target as HTMLElement).closest('[data-chip-remove]');
-        if (!remove) return;
-        remove.closest('[data-mapping]')?.remove();
-        emit();
-      }}
-      className={`w-full cursor-text rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs leading-6 text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] ${multiline ? 'min-h-[6rem] whitespace-pre-wrap break-words' : 'min-h-[2rem] overflow-x-auto whitespace-pre'}`}
-    />
+    <div className="relative">
+      <div
+        ref={ref}
+        id={id}
+        role="textbox"
+        tabIndex={0}
+        contentEditable
+        suppressContentEditableWarning
+        aria-multiline={multiline ? 'true' : 'false'}
+        aria-labelledby={labelledBy}
+        aria-label={ariaLabel}
+        aria-placeholder={placeholder}
+        data-mapping-field
+        data-testid={testId}
+        data-placeholder={placeholder}
+        data-value={value}
+        spellCheck={false}
+        onInput={emit}
+        // Turn a {{ ... }} typed or pasted by hand into a chip; otherwise leave the nodes (and the remembered caret) alone.
+        onBlur={() => {
+          const typed = [...(ref.current?.childNodes ?? [])].some((node) => node.nodeType === Node.TEXT_NODE && HAS_TOKEN.test(node.textContent ?? ''));
+          if (typed) render(serialize());
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter') return;
+          event.preventDefault();
+          if (multiline) document.execCommand('insertLineBreak');
+        }}
+        onPaste={(event) => {
+          event.preventDefault();
+          const text = event.clipboardData.getData('text/plain');
+          document.execCommand('insertText', false, multiline ? text : text.replace(/\r?\n/g, ' '));
+        }}
+        onMouseDown={(event) => {
+          // Keep the caret where it is when removing a chip.
+          if ((event.target as HTMLElement).closest('[data-chip-remove]')) event.preventDefault();
+        }}
+        onClick={(event) => {
+          const remove = (event.target as HTMLElement).closest('[data-chip-remove]');
+          if (!remove) return;
+          remove.closest('[data-mapping]')?.remove();
+          emit();
+        }}
+        className={`w-full cursor-text rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs leading-6 text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] ${multiline ? 'min-h-[6rem] whitespace-pre-wrap break-words' : 'min-h-[2rem] overflow-x-auto whitespace-pre'}`}
+      />
+      <div ref={menuRef} className="mt-0.5 flex justify-end">
+        <button
+          type="button"
+          data-testid="mapping-data-toggle"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onMouseDown={keepCaret}
+          onClick={() => setMenuOpen(!menuOpen)}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-text-2 hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Braces size={11} aria-hidden="true" />{t('builder.var.add_data')}
+        </button>
+        {menuOpen && (
+          <div
+            role="menu"
+            data-testid="mapping-data-menu"
+            onKeyDown={(event) => { if (event.key === 'Escape') setMenuOpen(false); }}
+            className="absolute right-0 top-full z-30 mt-1 max-h-72 w-72 max-w-full space-y-2 overflow-y-auto rounded-md border border-border bg-popover p-2 shadow-pop"
+          >
+            {groups.length === 0 && <p className="px-2 text-[10px] text-muted-foreground">{t('builder.var.empty')}</p>}
+            {groups.map((group) => (
+              <div key={group.key}>
+                <p className="px-2 pb-0.5 text-[10px] font-semibold text-text-2">{group.label}</p>
+                {group.paths.map((path) => (
+                  <button key={path} type="button" role="menuitem" data-testid="mapping-data-item" data-path={path} onMouseDown={keepCaret} onClick={() => pick(mappingOf(group, path))} className={itemCls}>
+                    <span className="text-[11px] text-foreground">{pathLabel(group, path, t) ?? path}</span>
+                    <span className="font-mono text-[9px] text-muted-foreground">{path}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+            <div>
+              <p className="px-2 pb-0.5 text-[10px] font-semibold text-text-2">{t('builder.var.run')}</p>
+              {RUN_PATHS.map(({ path, labelKey }) => (
+                <button key={path} type="button" role="menuitem" data-testid="mapping-data-item" data-path={path} onMouseDown={keepCaret} onClick={() => pick(`{{ ${path} }}`)} className={itemCls}>
+                  <span className="text-[11px] text-foreground">{t(labelKey)}</span>
+                  <span className="font-mono text-[9px] text-muted-foreground">{path}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 };

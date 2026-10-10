@@ -405,6 +405,8 @@ export const WorkflowBuilderPage: React.FC = () => {
       onChange={(value) => updateSelectedNodeConfig({ [name]: value })}
       connections={connections}
       multiline={multiline}
+      // Text fields of a step show data from earlier steps as chips; a trigger has no earlier step.
+      groups={selectedNodeType.startsWith('trigger.') ? undefined : inspectorGroups}
     />
   );
   /** One-click data suggestions under the text field `name` of the selected step. */
@@ -1383,7 +1385,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     >
       {/* TOP EDITOR HEADER (48px): breadcrumb + name | tabs | actions */}
       <header className="z-20 grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-3 border-b border-border bg-card px-3 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2 overflow-hidden">
           <Link
             to="/workflows"
             className="flex h-7 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 text-[13px] text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -1407,14 +1409,14 @@ export const WorkflowBuilderPage: React.FC = () => {
               if (e.key === 'Escape' && workflow) { skipCommitRef.current = true; setWorkflowTitle(workflow.name); e.currentTarget.blur(); }
             }}
             title={workflowTitle}
-            className="h-7 min-w-[72px] flex-1 truncate rounded-md border border-transparent bg-transparent px-1.5 text-sm font-semibold text-foreground transition-colors hover:border-border focus:border-primary focus:bg-card focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+            className="h-7 min-w-[3rem] flex-1 truncate rounded-md border border-transparent bg-transparent px-1.5 text-sm font-semibold text-foreground transition-colors hover:border-border focus:border-primary focus:bg-card focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
           />
           {/* Narrow screens keep only the dot so the name never spills over the tabs and actions. */}
           <span
             title={isSaved ? t('builder.saved') : t('builder.edited')}
             className={`inline-flex h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded px-1.5 text-xs font-medium before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] ${isSaved ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'}`}
           >
-            <span className="sr-only md:not-sr-only">{isSaved ? t('builder.saved') : t('builder.edited')}</span>
+            <span className="sr-only lg:not-sr-only">{isSaved ? t('builder.saved') : t('builder.edited')}</span>
           </span>
           {workflow?.status !== 'PUBLISHED' && workflow?.status !== 'PAUSED' && (
             <span className="hidden h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded bg-pause-bg px-1.5 text-xs font-medium text-pause before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] xl:inline-flex">
@@ -1992,11 +1994,11 @@ export const WorkflowBuilderPage: React.FC = () => {
               ) : selectedNodeType === 'trigger.workflow_event' ? (
                 <WorkflowEventInspector key={`control-bot:${selectedNodeId}`} config={selectedNodeConfig} currentWorkflowId={workflow?.id} onChange={updateSelectedNodeConfig} />
               ) : selectedNodeType === 'logic.switch' ? (
-                <SwitchEditor config={selectedNodeConfig} onChange={updateSelectedNodeConfig} onCasesChange={updateSwitchCases} />
+                <SwitchEditor key={selectedNodeId} config={selectedNodeConfig} onChange={updateSelectedNodeConfig} onCasesChange={updateSwitchCases} groups={inspectorGroups} />
               ) : selectedNodeType === 'data.set' ? (
-                <DataSetEditor key={selectedNodeId} value={selectedNodeConfig.fields} onChange={(fields) => updateSelectedNodeConfig({ fields })} />
+                <DataSetEditor key={selectedNodeId} value={selectedNodeConfig.fields} onChange={(fields) => updateSelectedNodeConfig({ fields })} groups={inspectorGroups} />
               ) : selectedNodeType === 'logic.condition' ? (
-                <ConditionEditor config={selectedNodeConfig} onChange={updateSelectedNodeConfig} />
+                <ConditionEditor key={selectedNodeId} config={selectedNodeConfig} onChange={updateSelectedNodeConfig} groups={inspectorGroups} />
               ) : selectedNodeType === 'trigger.schedule' ? (
                 <SchedulePicker
                   key={selectedNodeId}
@@ -2088,12 +2090,12 @@ export const WorkflowBuilderPage: React.FC = () => {
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="http-url" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.url')}</label>
-                    <input id="http-url" value={String(selectedNodeConfig.url ?? '')} onChange={(event) => updateSelectedNodeConfig({ url: event.target.value })} placeholder="https://example.com/api" className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    <label id="http-url-label" onClick={() => document.getElementById('http-url')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.url')}</label>
+                    <MappingTextField key={`${selectedNodeId}-url`} id="http-url" labelledBy="http-url-label" value={String(selectedNodeConfig.url ?? '')} onChange={(url) => updateSelectedNodeConfig({ url })} groups={inspectorGroups} placeholder="https://example.com/api" />
                   </div>
                   <div>
-                    <label htmlFor="http-body" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.body')}</label>
-                    <textarea id="http-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} placeholder={t('builder.cfg.body_placeholder')} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    <label id="http-body-label" onClick={() => document.getElementById('http-body')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.body')}</label>
+                    <MappingTextField key={`${selectedNodeId}-body`} id="http-body" labelledBy="http-body-label" multiline value={String(selectedNodeConfig.body ?? '')} onChange={(body) => updateSelectedNodeConfig({ body })} groups={inspectorGroups} placeholder={t('builder.cfg.body_placeholder')} />
                   </div>
                   <KeyValueEditor key={`headers-${selectedNodeId}`} label={t('builder.cfg.http_headers')} testId="http-headers" value={selectedNodeConfig.headers} onChange={(headers) => updateSelectedNodeConfig({ headers })} />
                   <KeyValueEditor key={`query-${selectedNodeId}`} label={t('builder.cfg.http_query')} testId="http-query" value={selectedNodeConfig.query} onChange={(query) => updateSelectedNodeConfig({ query })} />
@@ -2134,8 +2136,8 @@ export const WorkflowBuilderPage: React.FC = () => {
                     )}
                   </div>
                   <div>
-                    <label htmlFor="email-to" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.recipient')}</label>
-                    <input id="email-to" value={String(selectedNodeConfig.to ?? '')} onChange={(event) => updateSelectedNodeConfig({ to: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    <label id="email-to-label" onClick={() => document.getElementById('email-to')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.recipient')}</label>
+                    <MappingTextField key={`${selectedNodeId}-to`} id="email-to" labelledBy="email-to-label" value={String(selectedNodeConfig.to ?? '')} onChange={(to) => updateSelectedNodeConfig({ to })} groups={inspectorGroups} />
                   </div>
                   <div>
                     <label id="email-subject-label" onClick={() => document.getElementById('email-subject')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.subject')}</label>
@@ -2166,9 +2168,9 @@ export const WorkflowBuilderPage: React.FC = () => {
                         onChange={(outputSchema) => updateSelectedNodeConfig({ outputSchema })}
                       />
                       <div>
-                        <label htmlFor="ai-input-text" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.input_text')}</label>
-                        <input id="ai-input-text" value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
-                        {suggestionsFor('text')}
+                        <label id="ai-input-text-label" onClick={() => document.getElementById('ai-input-text')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.input_text')}</label>
+                        <MappingTextField key={`${selectedNodeId}-ai-text`} id="ai-input-text" labelledBy="ai-input-text-label" multiline value={String(selectedNodeConfig.text ?? '')} onChange={(text) => updateSelectedNodeConfig({ text })} groups={inspectorGroups} />
+                        {suggestionsFor('text', true)}
                       </div>
                       {configField('instructions', undefined, true)}
                     </div>

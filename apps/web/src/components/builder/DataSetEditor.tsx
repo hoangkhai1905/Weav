@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { isCredentialKey, isReferenceableName } from '../../lib/mappingGrammar';
+import type { VariableGroup } from '../../lib/variablePaths';
+import { MappingTextField } from './MappingTextField';
 
 const fieldCls = 'min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
 const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
@@ -35,6 +37,8 @@ interface DataSetEditorProps {
   value: unknown;
   /** Receives the `fields` object (or mapping string); `undefined` removes it. */
   onChange: (fields: unknown) => void;
+  /** Data from the steps before, shown as named chips in text and mapping values. */
+  groups?: VariableGroup[];
 }
 
 /**
@@ -44,7 +48,7 @@ interface DataSetEditorProps {
  * the saved object until fixed. Objects/arrays from an existing config are shown read-only and saved unchanged.
  * Mount with `key={nodeId}` so switching steps reloads the rows.
  */
-export const DataSetEditor: React.FC<DataSetEditorProps> = ({ value, onChange }) => {
+export const DataSetEditor: React.FC<DataSetEditorProps> = ({ value, onChange, groups = [] }) => {
   const { t } = useI18nStore();
   const mapping = typeof value === 'string';
   const [rows, setRows] = useState<Row[]>(() =>
@@ -74,13 +78,13 @@ export const DataSetEditor: React.FC<DataSetEditorProps> = ({ value, onChange })
         <option value="mapping">{t('builder.cfg.data_set_mode_mapping')}</option>
       </select>
       {mapping ? (
-        <input
-          aria-label={t('builder.cfg.data_set_mapping')}
-          data-testid="data-set-mapping"
+        <MappingTextField
+          id="data-set-mapping"
+          ariaLabel={t('builder.cfg.data_set_mapping')}
+          testId="data-set-mapping"
           value={value as string}
-          placeholder="{{ nodes.lookup.output.rows[0] }}"
-          onChange={(event) => onChange(event.target.value)}
-          className={`${fieldCls} w-full font-mono`}
+          groups={groups}
+          onChange={(next) => onChange(next)}
         />
       ) : (
         <>
@@ -131,16 +135,26 @@ export const DataSetEditor: React.FC<DataSetEditorProps> = ({ value, onChange })
                   </select>
                 ) : row.type === 'raw' ? (
                   <code data-testid="data-set-value" className={`${fieldCls} block w-full truncate bg-subtle font-mono text-muted-foreground`}>{row.value}</code>
+                ) : row.type === 'text' || row.type === 'mapping' ? (
+                  <MappingTextField
+                    id={`data-set-value-${index}`}
+                    ariaLabel={t('builder.cfg.data_set_value').replace('{n}', n)}
+                    testId="data-set-value"
+                    value={row.value}
+                    groups={groups}
+                    placeholder={row.type === 'mapping' ? t('builder.cfg.data_set_mapping_placeholder') : t('builder.cfg.data_set_text_placeholder')}
+                    onChange={(next) => update(index, { value: next })}
+                  />
                 ) : (
                   <input
                     aria-label={t('builder.cfg.data_set_value').replace('{n}', n)}
                     aria-invalid={invalidNumber(row) || undefined}
                     data-testid="data-set-value"
-                    inputMode={row.type === 'number' ? 'decimal' : undefined}
+                    inputMode="decimal"
                     value={row.value}
-                    placeholder={row.type === 'mapping' ? '{{ trigger.input.email }}' : t(`builder.cfg.data_set_${row.type}_placeholder`)}
+                    placeholder={t('builder.cfg.data_set_number_placeholder')}
                     onChange={(event) => update(index, { value: event.target.value })}
-                    className={`${fieldCls} w-full ${row.type === 'mapping' ? 'font-mono' : ''}`}
+                    className={`${fieldCls} w-full`}
                   />
                 )}
                 {row.type === 'mapping' && <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.data_set_mapping_hint')}</p>}

@@ -80,7 +80,7 @@ test('new steps show their real id and the variable picker uses it', async ({ pa
   await expect(page.getByRole('group', { name: 'http_1', exact: true })).toBeVisible();
   await expect(page.getByRole('group', { name: 'http_2', exact: true })).toHaveCount(0);
   await page.getByRole('group', { name: 'http_1', exact: true }).getByRole('button', { name: 'status', exact: true }).click();
-  await expect(page.locator('#http-body')).toHaveValue('{{ nodes.http_1.output.status }}');
+  await expect(page.locator('#http-body')).toHaveAttribute('data-value', '{{ nodes.http_1.output.status }}');
 
   await page.getByTestId('workflow-publish').click();
   await expect.poll(() => backend.publishCalls()).toBe(1);
@@ -228,7 +228,7 @@ test('calendar date-time picker, one "no formatting" option and several sheet ro
 
   await addNode(page, 'google.calendar');
   await page.getByTestId('field-start-picker').fill('2026-10-05T09:00');
-  await expect(page.getByTestId('field-start')).toHaveValue(/^2026-10-05T09:00:00[+-]\d\d:\d\d$/);
+  await expect(page.getByTestId('field-start')).toHaveAttribute('data-value', /^2026-10-05T09:00:00[+-]\d\d:\d\d$/);
 
   await addNode(page, 'telegram.send_message');
   const parseMode = page.getByTestId('field-parseMode');
@@ -283,8 +283,8 @@ test.describe('calendar times in another time zone', () => {
     await page.goto(`/workflows/${workflowId}/builder`);
     await page.getByTestId('rf__node-cal').getByTestId('workflow-node').click();
     await expect(page.getByTestId('field-start-picker')).toHaveValue('2026-10-05T09:00'); // 02:00Z is 09:00 at +07:00
-    await expect(page.getByTestId('field-start')).toHaveValue('2026-10-05T02:00:00Z'); // stored value untouched
+    await expect(page.getByTestId('field-start')).toHaveAttribute('data-value', '2026-10-05T02:00:00Z'); // stored value untouched
     await page.getByTestId('field-start-picker').fill('2026-10-05T10:00');
-    await expect(page.getByTestId('field-start')).toHaveValue('2026-10-05T10:00:00+07:00');
+    await expect(page.getByTestId('field-start')).toHaveAttribute('data-value', '2026-10-05T10:00:00+07:00');
   });
 });
