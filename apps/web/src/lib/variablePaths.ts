@@ -33,6 +33,22 @@ export const pathLabel = (group: VariableGroup, path: string, t: (key: string) =
   return undefined;
 };
 
+/** Content people most often put in a message or prompt (`<nodeType>:<path>`), offered as one-click suggestions. */
+const FEATURED_PATHS = new Set([
+  'trigger.telegram:message.text', 'trigger.telegram:message.from.firstName',
+  'trigger.gmail:subject', 'trigger.gmail:body', 'trigger.gmail:fromName',
+  'ocr.extract:text.rawText', 'ai.summarize:summary', 'ai.classify:category', 'ai.generate:text',
+  'google.drive:webViewLink',
+]);
+
+/** Up to `max` featured values from earlier steps, the closest step first. */
+export const suggestedData = (groups: VariableGroup[], max = 4) =>
+  [...groups].reverse()
+    .flatMap((group) => group.paths
+      .filter((path) => group.nodeTypes.some((type) => FEATURED_PATHS.has(`${type}:${path}`)))
+      .map((path) => ({ group, path, mapping: mappingOf(group, path) })))
+    .slice(0, max);
+
 /** Files earlier steps produce, as mappings a file source (OCR) can take as is. */
 export const fileSources = (groups: VariableGroup[]) =>
   groups.flatMap((group) => group.paths.filter((path) => FILE_PATHS.has(path)).map((path) => ({ group, path, mapping: mappingOf(group, path) })));

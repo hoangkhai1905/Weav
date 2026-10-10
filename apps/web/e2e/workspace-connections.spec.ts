@@ -2097,18 +2097,22 @@ test.describe("workflow builder Week 4 new nodes", () => {
     // Trying OCR on a sample file is tucked away so it is not mistaken for part of the workflow.
     await expect(page.getByTestId("ocr-try")).not.toHaveAttribute("open", "");
 
-    // Telegram send: "whoever just wrote to the bot" fills the chat, one click adds the OCR text.
+    // Telegram send: "whoever just wrote to the bot" fills the chat; quick inserts offer the closest step's data first.
     await page.locator(node("telegram.send_message")).click();
     await page.getByTestId("telegram-chat-target").selectOption("reply");
     await expect(page.locator("#telegram-chat-id")).toHaveCount(0);
-    await page.getByTestId("telegram-insert-ocr").click();
-    await expect(page.locator("#telegram-text")).toHaveValue("{{ nodes.ocr_1.output.text.rawText }}");
+    const suggestions = page.getByTestId("data-suggestion");
+    await expect(suggestions.first()).toHaveText("+ Text read");
+    await expect(page.getByTestId("data-suggestions")).toContainText("Message received");
+    await page.locator("#telegram-text").fill("Invoice:");
+    await suggestions.first().click();
+    await expect(page.locator("#telegram-text")).toHaveValue("Invoice:\n{{ nodes.ocr_1.output.text.rawText }}");
 
     await saveDraft(page);
     expect(savedConfig(state, "ocr_1")).toMatchObject({ file: "{{ trigger.input.file }}" });
     expect(savedConfig(state, "reply")).toMatchObject({
       chatId: "{{ trigger.input.message.chat.id }}",
-      text: "{{ nodes.ocr_1.output.text.rawText }}",
+      text: "Invoice:\n{{ nodes.ocr_1.output.text.rawText }}",
     });
   });
 

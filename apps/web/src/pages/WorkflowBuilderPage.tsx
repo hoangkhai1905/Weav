@@ -80,7 +80,8 @@ import { CommaListInput } from '../components/builder/CommaListInput';
 import { KeyValueEditor } from '../components/builder/KeyValueEditor';
 import { definitionBlockers } from '../lib/publishBlockers';
 import { VariablePicker } from '../components/builder/VariablePicker';
-import { fileSources, mappingOf, pathLabel, upstreamGroups, useFieldTarget } from '../lib/variablePaths';
+import { DataSuggestions } from '../components/builder/DataSuggestions';
+import { fileSources, pathLabel, upstreamGroups, useFieldTarget } from '../lib/variablePaths';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
 import { definitionToCanvas, WorkflowApiError, type GenerationResponse } from '../api/workflow-v1.api';
@@ -211,6 +212,12 @@ const SCHEMA_FORMS: Record<string, { provider?: GoogleProvider | 'TELEGRAM'; fie
     multiline: ['description'],
   },
   'ai.generate': { fields: () => ['prompt', 'instructions', 'maxLength'], multiline: ['prompt', 'instructions'] },
+};
+// Schema-form fields that get one-click data suggestions under them (the main content of the step).
+const SUGGEST_FIELDS: Record<string, string[]> = {
+  'ai.generate': ['prompt'],
+  'google.calendar': ['summary', 'description'],
+  'google.drive': ['content'],
 };
 
 const getNodeReadinessMessage = (
@@ -386,6 +393,15 @@ export const WorkflowBuilderPage: React.FC = () => {
       onChange={(value) => updateSelectedNodeConfig({ [name]: value })}
       connections={connections}
       multiline={multiline}
+    />
+  );
+  /** One-click data suggestions under the text field `name` of the selected step. */
+  const suggestionsFor = (name: string, multiline = false) => (
+    <DataSuggestions
+      groups={inspectorGroups}
+      value={selectedNodeConfig[name]}
+      multiline={multiline}
+      onChange={(next) => updateSelectedNodeConfig({ [name]: next })}
     />
   );
   const selectedSchemaForm = SCHEMA_FORMS[selectedNodeType];
@@ -1384,8 +1400,12 @@ export const WorkflowBuilderPage: React.FC = () => {
             title={workflowTitle}
             className="h-7 min-w-[72px] flex-1 truncate rounded-md border border-transparent bg-transparent px-1.5 text-sm font-semibold text-foreground transition-colors hover:border-border focus:border-primary focus:bg-card focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
           />
-          <span className={`inline-flex h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded px-1.5 text-xs font-medium before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] ${isSaved ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'}`}>
-            {isSaved ? t('builder.saved') : t('builder.edited')}
+          {/* Narrow screens keep only the dot so the name never spills over the tabs and actions. */}
+          <span
+            title={isSaved ? t('builder.saved') : t('builder.edited')}
+            className={`inline-flex h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded px-1.5 text-xs font-medium before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] ${isSaved ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'}`}
+          >
+            <span className="sr-only md:not-sr-only">{isSaved ? t('builder.saved') : t('builder.edited')}</span>
           </span>
           {workflow?.status !== 'PUBLISHED' && workflow?.status !== 'PAUSED' && (
             <span className="hidden h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded bg-pause-bg px-1.5 text-xs font-medium text-pause before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] xl:inline-flex">
@@ -1934,7 +1954,15 @@ export const WorkflowBuilderPage: React.FC = () => {
                       </div>
                     );
                   })()}
-                  {selectedSchemaForm.fields(selectedNodeConfig).map((name) => configField(name, undefined, selectedSchemaForm.multiline?.includes(name)))}
+                  {selectedSchemaForm.fields(selectedNodeConfig).map((name) => {
+                    const multiline = selectedSchemaForm.multiline?.includes(name);
+                    return (
+                      <React.Fragment key={name}>
+                        {configField(name, undefined, multiline)}
+                        {SUGGEST_FIELDS[selectedNodeType]?.includes(name) && suggestionsFor(name, multiline)}
+                      </React.Fragment>
+                    );
+                  })}
                   {selectedNodeType === 'trigger.telegram' && <p data-testid="telegram-trigger-hint" className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.telegram_trigger_hint')}</p>}
                   {selectedNodeType === 'google.drive' && <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.drive_hint')}</p>}
                 </div>
@@ -2012,23 +2040,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                   <div>
                     <label htmlFor="telegram-text" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.message')}</label>
                     <textarea id="telegram-text" rows={4} value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} placeholder={t('builder.cfg.tg_text_placeholder')} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
-                    {/* One-click inserts for the results people most often send back: the text an OCR step read. */}
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {inspectorGroups.filter((group) => group.nodeTypes.includes('ocr.extract')).map((group) => (
-                        <button
-                          key={group.key}
-                          type="button"
-                          data-testid="telegram-insert-ocr"
-                          onClick={() => {
-                            const text = String(selectedNodeConfig.text ?? '');
-                            updateSelectedNodeConfig({ text: `${text}${text && !text.endsWith('\n') ? '\n' : ''}${mappingOf(group, 'text.rawText')}` });
-                          }}
-                          className="rounded border border-border-strong bg-card px-1.5 py-0.5 text-[10px] font-medium text-text-2 hover:border-primary hover:text-foreground"
-                        >
-                          {t('builder.cfg.tg_insert_ocr').replace('{step}', group.label)}
-                        </button>
-                      ))}
-                    </div>
+                    {suggestionsFor('text', true)}
                   </div>
                   <details
                     key={`tg-advanced-${selectedNodeId}`}
@@ -2103,10 +2115,12 @@ export const WorkflowBuilderPage: React.FC = () => {
                   <div>
                     <label htmlFor="email-subject" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.subject')}</label>
                     <input id="email-subject" value={String(selectedNodeConfig.subject ?? '')} onChange={(event) => updateSelectedNodeConfig({ subject: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    {suggestionsFor('subject')}
                   </div>
                   <div>
                     <label htmlFor="email-body" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.body')}</label>
                     <textarea id="email-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    {suggestionsFor('body', true)}
                   </div>
                   {['bodyType', 'cc', 'bcc'].map((name) => configField(name))}
                   <AttachmentsEditor value={selectedNodeConfig.attachments} onChange={(attachments) => updateSelectedNodeConfig({ attachments })} />
@@ -2129,6 +2143,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       <div>
                         <label htmlFor="ai-input-text" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.input_text')}</label>
                         <input id="ai-input-text" value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                        {suggestionsFor('text')}
                       </div>
                       {configField('instructions', undefined, true)}
                     </div>
@@ -2136,12 +2151,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                   {selectedNodeType === 'ai.classify' && (
                     <div className="space-y-3">
                       {configField('content', undefined, true)}
+                      {suggestionsFor('content', true)}
                       <CommaListInput key={selectedNodeId} id="ai-categories" label={t('builder.cfg.categories')} value={selectedNodeConfig.categories} onChange={(categories) => updateSelectedNodeConfig({ categories })} />
                     </div>
                   )}
                   {selectedNodeType === 'ai.summarize' && (
                     <div className="space-y-3">
                       {configField('inputText', undefined, true)}
+                      {suggestionsFor('inputText', true)}
                       {/* Whole numbers 1..5000 are saved as numbers, a {{ }} mapping stays text, empty is omitted, anything else is flagged and not saved. */}
                       {configField('maxLength')}
                     </div>
