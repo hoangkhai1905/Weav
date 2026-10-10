@@ -42,7 +42,7 @@ public final class WebhookController {
 
     /**
      * Telegram delivers updates here (registered by publishing a trigger.telegram). Telegram only needs a 2xx, so
-     * an admitted update, a redelivery and a non-text update are all answered with 200.
+     * an admitted update, a redelivery and an update with nothing to run are all answered with 200.
      */
     @PostMapping("/telegram/{endpointKey}")
     public ResponseEntity<Map<String, Object>> acceptTelegram(

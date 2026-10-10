@@ -14,12 +14,18 @@ public class OcrClientConfiguration {
 
     @Bean("ocrRestClient")
     RestClient ocrRestClient(OcrClientProperties properties) {
-        HttpClient httpClient = HttpClient.newBuilder()
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(ocrHttpClient(properties));
+        requestFactory.setReadTimeout(properties.readTimeout());
+        return RestClient.builder().requestFactory(requestFactory).build();
+    }
+
+    // HTTP/1.1 only: the JDK default sends an h2c upgrade over plain http, which the OCR service's
+    // uvicorn rejects ("Unsupported upgrade request") and then misreads the JSON body (400).
+    static HttpClient ocrHttpClient(OcrClientProperties properties) {
+        return HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(properties.connectTimeout())
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
-        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-        requestFactory.setReadTimeout(properties.readTimeout());
-        return RestClient.builder().requestFactory(requestFactory).build();
     }
 }

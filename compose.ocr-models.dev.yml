@@ -2,12 +2,14 @@ services:
   api-gateway:
     environment:
       OCR_ALLOW_UNAUTHENTICATED_DEV: true
+      # CPU OCR on a laptop: full pages take ~7s, table detection ~60s (OCR contract allows 90s).
+      GATEWAY_OCR_TIMEOUT_MS: ${GATEWAY_OCR_TIMEOUT_MS:-95000}
 
   ocr-service:
     environment:
       OCR_ALLOW_UNAUTHENTICATED_DEV: "true"
       OCR_MODEL_ROOT: /models
-      WEAV_OCR_MODEL_MANIFEST: /app/config/model-manifest.json
+      WEAV_OCR_MODEL_MANIFEST: ${WEAV_OCR_MODEL_MANIFEST:-/app/config/model-manifest.json}
     volumes:
       - type: bind
         source: ${OCR_MODEL_HOST_PATH:-./.data/ocr-models}

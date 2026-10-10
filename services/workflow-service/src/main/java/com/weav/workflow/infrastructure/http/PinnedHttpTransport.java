@@ -65,13 +65,16 @@ public class PinnedHttpTransport {
             "^/gmail/v1/users/me/messages/[0-9A-Fa-f]{1,32}/attachments/[A-Za-z0-9_-]{1,2048}$");
     private static final Pattern GMAIL_THREAD_ID = Pattern.compile("[A-Za-z0-9]{1,64}");
     private static final String DRIVE_UPLOAD_PATH = "/upload/drive/v3/files";
+    private static final Pattern DRIVE_FILE_PATH = Pattern.compile("^/drive/v3/files/[A-Za-z0-9_%-]{1,1024}$");
     /** Hard ceiling for any per-call byte cap; the default caps stay at 1 MiB. */
     public static final int MAX_CALL_BYTES = 32 * 1024 * 1024;
     private static final String GMAIL_MESSAGES_PATH = "/gmail/v1/users/me/messages";
     private static final Pattern GMAIL_MESSAGE_PATH = Pattern.compile("^/gmail/v1/users/me/messages/[0-9A-Fa-f]{1,32}$");
     private static final Pattern DISCORD_WEBHOOK_PATH = Pattern.compile("/api/webhooks/[0-9]{1,24}/[A-Za-z0-9_-]{1,128}");
     private static final String TELEGRAM_HOST = "api.telegram.org";
-    private static final Set<String> TELEGRAM_METHODS = Set.of("sendMessage", "setWebhook", "deleteWebhook");
+    private static final Set<String> TELEGRAM_METHODS = Set.of("sendMessage", "setWebhook", "deleteWebhook", "getFile");
+    private static final Pattern TELEGRAM_FILE_PATH = Pattern.compile(
+            "/file/bot[0-9]{1,20}:[A-Za-z0-9_-]{1,128}/[A-Za-z0-9_./-]{1,256}");
     private static final Pattern TELEGRAM_PATH = Pattern.compile("/bot[0-9]{1,20}:[A-Za-z0-9_-]{1,128}/[A-Za-z]{1,32}");
     private static final Set<String> FORBIDDEN_HEADERS = Set.of(
             "host", "content-length", "transfer-encoding", "connection", "proxy-connection",
@@ -237,6 +240,17 @@ public class PinnedHttpTransport {
     }
 
     /**
+     * Downloads one file of a Telegram bot ({@code https://api.telegram.org/file/bot<token>/<file_path>}) as bytes,
+     * at most {@code maxBytes}. The bot token is part of the path, so the URI is never logged or echoed in a failure
+     * (every failure here has a fixed message). GET only, no redirects, DNS approved and pinned like every call.
+     */
+    public Download downloadTelegramFile(URI uri, int maxBytes) {
+        validateTelegramFileUri(uri);
+        int responseCap = boundedCap(maxBytes);
+        return download(targetPolicy.approve(uri), responseCap);
+    }
+
+    /**
      * POSTs JSON to a Discord channel webhook. The host is fixed to discord.com or discordapp.com and the path to
      * {@code /api/webhooks/<id>/<token>}; the token is part of the path, so the URI is never logged or echoed in a
      * failure. DNS is approved and pinned here immediately before the request is sent.
@@ -280,6 +294,25 @@ public class PinnedHttpTransport {
         return executeWithAuthentication(target, method, Map.of(),
                 Map.of("Authorization", "Bearer " + accessToken), query, body, callTimeout,
                 requestCap, maxResponseBytes, false);
+    }
+
+    /**
+     * Downloads the content of one Drive file ({@code GET /drive/v3/files/{id}?alt=media}) as raw bytes. A non-2xx
+     * answer comes back as a response whose {@code data} is the (bounded) error body bytes; a body over
+     * {@code maxResponseBytes} fails with {@code HTTP_RESPONSE_TOO_LARGE}.
+     */
+    public HttpResponse executeGoogleApiDownloadWithBearerToken(
+            URI uri, Object query, String accessToken, int maxResponseBytes) {
+        validateGoogleApiUri(uri, "GET");
+        if (!DRIVE_FILE_PATH.matcher(uri.getRawPath()).matches()) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID", "The Google destination is invalid.", false);
+        }
+        requireBearerToken(accessToken, "Google");
+        int responseCap = boundedCap(maxResponseBytes);
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "GET", Map.of(),
+                Map.of("Authorization", "Bearer " + accessToken), query, null, callTimeout,
+                maxRequestBytes, responseCap, true);
     }
 
     /**
@@ -734,7 +767,8 @@ public class PinnedHttpTransport {
                 "POST".equals(verb) && (GOOGLE_CALENDAR_EVENTS_PATH.matcher(path).matches()
                         || DRIVE_UPLOAD_PATH.equals(path))
                 || "GET".equals(verb) && (GOOGLE_CALENDAR_EVENTS_PATH.matcher(path).matches()
-                        || "/drive/v3/files".equals(path)));
+                        || "/drive/v3/files".equals(path)
+                        || DRIVE_FILE_PATH.matcher(path).matches()));
         if (uri == null
                 || !uri.isAbsolute()
                 || uri.getScheme() == null
@@ -905,6 +939,26 @@ public class PinnedHttpTransport {
                 || !(GMAIL_MESSAGES_PATH.equals(path) || GMAIL_MESSAGE_PATH.matcher(path).matches())) {
             throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
                     "The Gmail destination is invalid.", false);
+        }
+    }
+
+    private void validateTelegramFileUri(URI uri) {
+        String path = uri == null ? null : uri.getRawPath();
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(TELEGRAM_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || path == null
+                || !TELEGRAM_FILE_PATH.matcher(path).matches()
+                || path.contains("..") || path.contains("//")) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Telegram destination is invalid.", false);
         }
     }
 

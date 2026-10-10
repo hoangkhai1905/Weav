@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 /** Pure Java structural, configuration, and publish-graph validation. */
 public final class DefinitionValidator {
@@ -188,7 +189,7 @@ public final class DefinitionValidator {
         }
 
         if ("ocr.extract".equals(node.type())
-                && config.containsKey("artifactId") && config.containsKey("fileUrl")) {
+                && Stream.of("artifactId", "fileUrl", "file").filter(config::containsKey).count() > 1) {
             add(issues, node.id(), "config", "OCR_SOURCE_CONFLICT", "Only one OCR source may be configured.");
         }
 
@@ -229,9 +230,16 @@ public final class DefinitionValidator {
                 }
             }
         }
+        if ("google.drive".equals(node.type()) && "download".equals(config.get("operation"))
+                && !(config.get("fileId") instanceof String driveFileId && !driveFileId.isBlank())) {
+            add(issues, node.id(), "config.fileId", "REQUIRED_FIELD_MISSING",
+                    "A required configuration field is missing.");
+        }
         if ("ocr.extract".equals(node.type())) {
             boolean hasNonblankSource = config.get("artifactId") instanceof String artifactId && !artifactId.isBlank()
-                    || config.get("fileUrl") instanceof String fileUrl && !fileUrl.isBlank();
+                    || config.get("fileUrl") instanceof String fileUrl && !fileUrl.isBlank()
+                    || config.get("file") instanceof String file && !file.isBlank()
+                    || config.get("file") instanceof Map<?, ?> reference && !reference.isEmpty();
             if (!hasNonblankSource) {
                 add(issues, node.id(), "config", "OCR_SOURCE_REQUIRED",
                         "Exactly one non-empty OCR source must be configured.");

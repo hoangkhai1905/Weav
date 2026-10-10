@@ -403,7 +403,27 @@ export function serializeWorkflowDraft(workflow: WorkflowDefinition): {
   };
 }
 
+/** Per-node runtime availability reported by the Workflow Service (e.g. whether OCR is enabled and which sources). */
+export interface NodeCapabilities {
+  nodes: Record<string, { available: boolean; sources: string[] }>;
+}
+
 export const workflowV1Api = {
+  async getNodeCapabilities(workspaceId?: string): Promise<NodeCapabilities> {
+    const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
+    const value = await request<unknown>(`/api/v1/workspaces/${encodeURIComponent(activeWorkspaceId)}/workflows/node-capabilities`);
+    const nodes = isRecord(value) && isRecord(value.nodes) ? value.nodes : {};
+    const result: NodeCapabilities['nodes'] = {};
+    for (const [type, entry] of Object.entries(nodes)) {
+      if (!isRecord(entry)) continue;
+      result[type] = {
+        available: entry.available === true,
+        sources: Array.isArray(entry.sources) ? entry.sources.filter((source): source is string => typeof source === 'string') : [],
+      };
+    }
+    return { nodes: result };
+  },
+
   async getWorkflows(workspaceId?: string): Promise<WorkflowDefinition[]> {
     const activeWorkspaceId = workspaceId ?? await getActiveWorkflowWorkspaceId();
     const items: WorkflowSummaryV1[] = [];

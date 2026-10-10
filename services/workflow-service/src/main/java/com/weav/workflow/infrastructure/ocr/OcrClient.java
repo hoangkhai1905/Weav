@@ -1,11 +1,14 @@
 package com.weav.workflow.infrastructure.ocr;
 
 import com.weav.workflow.application.node.NodeExecutor;
+import com.weav.workflow.application.port.out.WorkflowFileStore;
 import com.weav.workflow.infrastructure.http.OutputSanitizer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import tools.jackson.core.StreamReadFeature;
@@ -77,24 +80,67 @@ public class OcrClient {
         }
         ExtractionRequest extractionRequest = parseRequest(request);
         requireEnabledFor(extractionRequest.sourceType());
+        return send(context, MediaType.APPLICATION_JSON, serializeRequest(extractionRequest),
+                extractionRequest.sensitiveSourceValue());
+    }
 
+    /**
+     * Sends an uploaded file as {@code multipart/form-data} (parts {@code file}, {@code language},
+     * {@code detectTables}) to the same endpoint. The bytes, filename and token are never logged or kept.
+     */
+    public Map<String, Object> extractFile(NodeExecutor.Context context, String filename, String mimeType,
+                                           byte[] bytes, String language, boolean detectTables) {
+        if (context == null || bytes == null || bytes.length == 0 || !Set.of("vi", "en", "vi+en").contains(language)) {
+            throw configurationFailure();
+        }
+        if (!properties.fileSourceEnabled()) {
+            throw notConfiguredFailure();
+        }
+        String uploadName = uploadFilename(filename);
+        MediaType partType = MediaType.APPLICATION_OCTET_STREAM;
+        try {
+            if (mimeType != null) {
+                partType = MediaType.parseMediaType(mimeType);
+            }
+        } catch (IllegalArgumentException ignored) {
+            // an unusable stored type falls back to octet-stream; the OCR service detects the real type itself
+        }
+        MultipartBodyBuilder multipart = new MultipartBodyBuilder();
+        multipart.part("file", new ByteArrayResource(bytes) {
+            @Override
+            public String getFilename() {
+                return uploadName;
+            }
+        }).filename(uploadName).contentType(partType);
+        multipart.part("language", language);
+        multipart.part("detectTables", Boolean.toString(detectTables));
+        return send(context, MediaType.MULTIPART_FORM_DATA, multipart.build(), null);
+    }
+
+    /** ASCII-only upload name (a non-ASCII name would be sent as an RFC 5987 parameter, which is not needed here). */
+    private static String uploadFilename(String filename) {
+        String safe = WorkflowFileStore.safeFilename(filename);
+        return safe == null ? "document.bin" : safe.replaceAll("[^A-Za-z0-9._ -]", "_");
+    }
+
+    private Map<String, Object> send(NodeExecutor.Context context, MediaType contentType, Object body,
+                                     String sensitiveValue) {
         UUID requestId = UUID.randomUUID();
         String serviceToken = jwtIssuer.issue(context, Instant.now(clock));
-        byte[] requestBody = serializeRequest(extractionRequest);
         HttpResponse response;
         try {
             response = restClient.post()
                     .uri(endpoint())
                     .headers(headers -> {
                         headers.setBearerAuth(serviceToken);
-                        headers.setContentType(MediaType.APPLICATION_JSON);
+                        headers.setContentType(contentType);
                         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
                         headers.set("X-Request-ID", requestId.toString());
                         if (validTraceparent(context.traceparent())) {
                             headers.set("traceparent", context.traceparent());
                         }
                     })
-                    .body(requestBody)
+                    .body(body)
                     .exchange((clientRequest, clientResponse) -> new HttpResponse(
                             clientResponse.getStatusCode().value(),
                             clientResponse.getHeaders().getFirst(HttpHeaders.CONTENT_TYPE),
@@ -121,8 +167,8 @@ public class OcrClient {
         Map<String, Object> result = toMap(response.body().bytes());
         LinkedHashSet<String> activeSecrets = new LinkedHashSet<>();
         activeSecrets.add(serviceToken);
-        if (extractionRequest.sensitiveSourceValue() != null) {
-            activeSecrets.add(extractionRequest.sensitiveSourceValue());
+        if (sensitiveValue != null) {
+            activeSecrets.add(sensitiveValue);
         }
         @SuppressWarnings("unchecked")
         Map<String, Object> sanitized = (Map<String, Object>) OutputSanitizer.sanitize(result, activeSecrets);
@@ -130,14 +176,7 @@ public class OcrClient {
     }
 
     private void requireEnabledFor(String sourceType) {
-        boolean enabled = properties.enabled() && properties.serviceClaimsVerified();
-        if ("url".equals(sourceType)) {
-            if (!enabled || !properties.urlSourceEnabled() || !properties.urlAllowlistVerified()) {
-                throw notConfiguredFailure();
-            }
-            return;
-        }
-        if (!enabled || !properties.artifactSourceEnabled() || !properties.artifactResolverVerified()) {
+        if (!properties.enabledSources().contains(sourceType)) {
             throw notConfiguredFailure();
         }
     }

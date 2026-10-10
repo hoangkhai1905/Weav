@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import uuid
 import warnings
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -52,6 +53,7 @@ from src.domain.models.ocr_result import (
     TextResult,
 )
 from src.main import app
+from src.tests.unit.service_jwt_helpers import WORKSPACE_ID, make_key, mint, write_jwks
 
 
 def _build_dummy_extraction_result(request_id: uuid.UUID) -> OcrExtractionResult:
@@ -130,8 +132,15 @@ def client(fake_use_case: FakeExtractTextUseCase) -> TestClient:
 
 
 @pytest.fixture
-def default_auth_headers() -> dict[str, str]:
-    return {"Authorization": "Bearer test-service-jwt"}
+def default_auth_headers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, str]:
+    """Valid workflow Service JWT; trusts a throwaway key via OCR_TRUSTED_ISSUERS."""
+    key = make_key()
+    jwks = write_jwks(tmp_path / "workflow.jwks.json", key, "workflow-dev-1")
+    monkeypatch.setenv("OCR_TRUSTED_ISSUERS", f"weav-workflow={jwks}")
+    token = mint(key, "workflow-dev-1", "weav-workflow")
+    return {"Authorization": f"Bearer {token}"}
 
 
 # ===========================================================================
@@ -145,7 +154,7 @@ class TestMultipartUpload:
     ) -> None:
         """Multipart upload forwards file stream, language, detectTables, and workspace/request context."""
         req_id = str(uuid.uuid4())
-        workspace_id = str(uuid.uuid4())
+        workspace_id = WORKSPACE_ID
         file_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRtestcontent"
 
         headers = {
@@ -194,7 +203,7 @@ class TestMultipartUpload:
     ) -> None:
         """Multipart upload without language or detectTables uses default options ('vi+en', True)."""
         req_id = str(uuid.uuid4())
-        workspace_id = str(uuid.uuid4())
+        workspace_id = WORKSPACE_ID
 
         headers = {
             **default_auth_headers,
@@ -225,7 +234,7 @@ class TestJsonSourceRequests:
     ) -> None:
         """JSON request with artifactId forwards ArtifactSource to use case."""
         req_id = str(uuid.uuid4())
-        workspace_id = str(uuid.uuid4())
+        workspace_id = WORKSPACE_ID
         artifact_id = uuid.uuid4()
 
         headers = {
@@ -262,7 +271,7 @@ class TestJsonSourceRequests:
     ) -> None:
         """JSON request with fileUrl forwards UrlSource to use case."""
         req_id = str(uuid.uuid4())
-        workspace_id = str(uuid.uuid4())
+        workspace_id = WORKSPACE_ID
         target_url = "https://files.internal.weav/contracts/document.pdf"
 
         headers = {

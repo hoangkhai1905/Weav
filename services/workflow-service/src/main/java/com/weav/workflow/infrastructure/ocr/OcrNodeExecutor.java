@@ -1,6 +1,7 @@
 package com.weav.workflow.infrastructure.ocr;
 
 import com.weav.workflow.application.node.NodeExecutor;
+import com.weav.workflow.application.port.out.WorkflowFileStore;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -14,12 +15,16 @@ import java.util.UUID;
 public final class OcrNodeExecutor implements NodeExecutor {
 
     private static final String TYPE = "ocr.extract";
-    private static final Set<String> CONFIG_FIELDS = Set.of("artifactId", "fileUrl", "language", "detectTables");
+    private static final Set<String> CONFIG_FIELDS = Set.of("artifactId", "fileUrl", "file", "language", "detectTables");
+    /** The OCR service rejects larger uploads (its bounded spool is 10 MiB), so never send more. */
+    static final int MAX_FILE_BYTES = 10 * 1024 * 1024;
 
     private final OcrClient client;
+    private final WorkflowFileStore files;
 
-    public OcrNodeExecutor(OcrClient client) {
+    public OcrNodeExecutor(OcrClient client, WorkflowFileStore files) {
         this.client = Objects.requireNonNull(client, "client must not be null");
+        this.files = Objects.requireNonNull(files, "files must not be null");
     }
 
     @Override
@@ -36,9 +41,11 @@ public final class OcrNodeExecutor implements NodeExecutor {
         }
         boolean hasArtifact = resolvedConfig.containsKey("artifactId");
         boolean hasUrl = resolvedConfig.containsKey("fileUrl");
-        if (hasArtifact == hasUrl) {
+        boolean hasFile = resolvedConfig.containsKey("file");
+        if ((hasArtifact ? 1 : 0) + (hasUrl ? 1 : 0) + (hasFile ? 1 : 0) != 1) {
             throw invalidConfiguration();
         }
+        String fileId = hasFile ? fileId(resolvedConfig.get("file")) : null;
 
         Map<String, Object> source = new LinkedHashMap<>();
         if (hasArtifact) {
@@ -48,7 +55,7 @@ public final class OcrNodeExecutor implements NodeExecutor {
             }
             source.put("type", "artifact");
             source.put("artifactId", artifactId);
-        } else {
+        } else if (hasUrl) {
             Object fileUrl = resolvedConfig.get("fileUrl");
             if (!(fileUrl instanceof String value) || value.isBlank() || value.length() > 4096) {
                 throw invalidConfiguration();
@@ -66,11 +73,29 @@ public final class OcrNodeExecutor implements NodeExecutor {
             throw invalidConfiguration();
         }
 
+        if (hasFile) {
+            WorkflowFileStore.StoredFile stored = files.read(context.workspaceId(), fileId);
+            if (stored.reference().size() > MAX_FILE_BYTES || stored.bytes().length > MAX_FILE_BYTES) {
+                throw new Failure("FILE_TOO_LARGE", "The file is larger than the 10 MiB that OCR accepts.", false);
+            }
+            return new Result(client.extractFile(context, stored.reference().filename(),
+                    stored.reference().mimeType(), stored.bytes(), (String) language, (Boolean) detectTables), null);
+        }
+
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("source", source);
         request.put("language", language);
         request.put("detectTables", detectTables);
         return new Result(client.extract(context, request), null);
+    }
+
+    /** The file id of a file reference object ({@code fileId} required) or of a plain id string. */
+    private String fileId(Object value) {
+        Object id = value instanceof Map<?, ?> reference ? reference.get("fileId") : value;
+        if (!(id instanceof String text) || text.isBlank() || text.length() > 1024) {
+            throw invalidConfiguration();
+        }
+        return text;
     }
 
     private String canonicalUuid(Object value) {

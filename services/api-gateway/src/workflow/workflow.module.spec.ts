@@ -71,6 +71,41 @@ describe('workflow gateway routes', () => {
     );
   });
 
+  it('routes node-capabilities to its own upstream path, not :workflowId', async () => {
+    const capabilities = {
+      nodes: { 'ocr.extract': { available: true, sources: ['url'] } },
+    };
+    const request = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(capabilities), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    const response = await app.inject({
+      url: `/api/v1/workspaces/${workspaceId}/workflows/node-capabilities`,
+      headers: { authorization: 'Bearer opaque-token', cookie: 'private' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toEqual(capabilities);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith(
+      `http://workflow.internal:8080/workspaces/${workspaceId}/workflows/node-capabilities`,
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          authorization: 'Bearer opaque-token',
+        }) as unknown,
+      }),
+    );
+
+    const missingToken = await app.inject(
+      `/api/v1/workspaces/${workspaceId}/workflows/node-capabilities`,
+    );
+    expect(missingToken.statusCode).toBe(401);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it('forwards workflow deletion and relays 204 without a body', async () => {
     const request = jest
       .spyOn(globalThis, 'fetch')

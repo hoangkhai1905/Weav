@@ -143,6 +143,8 @@ class PinnedHttpTransportFileCallsTest {
         assertDoesNotThrow(() -> transport.validateGoogleApiUri(URI.create(events), "GET"));
         assertDoesNotThrow(() -> transport.validateGoogleApiUri(URI.create(events), "POST"));
         assertDoesNotThrow(() -> transport.validateGoogleApiUri(URI.create("https://www.googleapis.com/drive/v3/files"), "GET"));
+        // A single Drive file (metadata or alt=media content) is readable for the download operation.
+        assertDoesNotThrow(() -> transport.validateGoogleApiUri(URI.create("https://www.googleapis.com/drive/v3/files/abc"), "GET"));
         assertDoesNotThrow(() -> transport.validateGoogleApiUri(
                 URI.create("https://www.googleapis.com/upload/drive/v3/files"), "POST"));
         for (String[] bad : new String[][] {
@@ -152,7 +154,9 @@ class PinnedHttpTransportFileCallsTest {
                 {"https://www.googleapis.com/calendar/v3/users/me/calendarList", "GET"},
                 {"https://www.googleapis.com/upload/drive/v3/files", "GET"},
                 {"https://www.googleapis.com/drive/v3/files", "POST"},
-                {"https://www.googleapis.com/drive/v3/files/abc", "GET"},
+                {"https://www.googleapis.com/drive/v3/files/abc", "POST"},
+                {"https://www.googleapis.com/drive/v3/files/abc", "DELETE"},
+                {"https://www.googleapis.com/drive/v3/files/abc/permissions", "GET"},
                 {"https://calendar.googleapis.com/calendar/v3/calendars/primary/events", "GET"}}) {
             assertInvalid(() -> transport.validateGoogleApiUri(URI.create(bad[0]), bad[1]), bad[1] + " " + bad[0]);
         }

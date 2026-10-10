@@ -5,22 +5,62 @@ export { isValidPath } from './mappingGrammar';
 
 export interface VariableGroup {
   key: string;
-  /** Group label: the step id (steps) or a trigger title. */
+  /** Group label: the step's display name (steps) or a trigger title. */
   label: string;
   /** Mapping prefix: `trigger.input` or `nodes.<id>.output`. */
   prefix: string;
   paths: string[];
+  /** Node types behind the group, used to look up friendly path names. */
+  nodeTypes: string[];
   /** Trigger input that has no fixed keys (manual, webhook): the user types the key. */
   freeForm?: boolean;
 }
 
 const FREE_FORM_TRIGGERS = new Set(['trigger.manual', 'trigger.webhook']);
 
+/** Paths that hold a whole stored file (Telegram photo/document, Drive download, first email attachment). */
+const FILE_PATHS = new Set(['file', 'attachments[0]']);
+
+export const mappingOf = (group: VariableGroup, path: string) => `{{ ${group.prefix}.${path} }}`;
+
+/** Friendly name of `path` (`builder.var.path.<nodeType>.<path>`), or undefined when none is defined. */
+export const pathLabel = (group: VariableGroup, path: string, t: (key: string) => string): string | undefined => {
+  for (const type of group.nodeTypes) {
+    const key = `builder.var.path.${type}.${path}`;
+    const text = t(key);
+    if (text !== key) return text;
+  }
+  return undefined;
+};
+
+/** Content people most often put in a message or prompt (`<nodeType>:<path>`), offered as one-click suggestions. */
+const FEATURED_PATHS = new Set([
+  'trigger.telegram:message.text', 'trigger.telegram:message.from.firstName',
+  'trigger.gmail:subject', 'trigger.gmail:body', 'trigger.gmail:fromName',
+  'ocr.extract:text.rawText', 'ai.summarize:summary', 'ai.classify:category', 'ai.generate:text',
+  'google.drive:webViewLink',
+]);
+
+/** Up to `max` featured values from earlier steps, the closest step first. */
+export const suggestedData = (groups: VariableGroup[], max = 4) =>
+  [...groups].reverse()
+    .flatMap((group) => group.paths
+      .filter((path) => group.nodeTypes.some((type) => FEATURED_PATHS.has(`${type}:${path}`)))
+      .map((path) => ({ group, path, mapping: mappingOf(group, path) })))
+    .slice(0, max);
+
+/** Files earlier steps produce, as mappings a file source (OCR) can take as is. */
+export const fileSources = (groups: VariableGroup[]) =>
+  groups.flatMap((group) => group.paths.filter((path) => FILE_PATHS.has(path)).map((path) => ({ group, path, mapping: mappingOf(group, path) })));
+
 /**
  * The trigger and the steps that run BEFORE `selectedId` (reachable backwards through edges): the server
- * rejects a mapping to any other step (DefinitionValidator).
+ * rejects a mapping to any other step (DefinitionValidator). `stepLabel` names a step (defaults to its id).
  */
-export function upstreamGroups(nodes: Node[], edges: Edge[], selectedId: string, triggerLabel: string): VariableGroup[] {
+export function upstreamGroups(
+  nodes: Node[], edges: Pick<Edge, 'source' | 'target'>[], selectedId: string, triggerLabel: string,
+  stepLabel: (node: Node) => string = (node) => node.id,
+): VariableGroup[] {
   const parents = new Map<string, string[]>();
   edges.forEach((edge) => parents.set(edge.target, [...(parents.get(edge.target) ?? []), edge.source]));
   const seen = new Set<string>();
@@ -42,13 +82,15 @@ export function upstreamGroups(nodes: Node[], edges: Edge[], selectedId: string,
       label: triggerLabel,
       prefix: 'trigger.input',
       paths,
+      nodeTypes: triggers.map((node) => String(node.data?.nodeType)),
       freeForm: triggers.some((node) => FREE_FORM_TRIGGERS.has(String(node.data?.nodeType))),
     });
   }
   upstream
     .filter((node) => !String(node.data?.nodeType ?? '').startsWith('trigger.'))
     .forEach((node) => {
-      groups.push({ key: node.id, label: node.id, prefix: `nodes.${node.id}.output`, paths: nodeOutputPaths(String(node.data?.nodeType), config(node)) });
+      const type = String(node.data?.nodeType);
+      groups.push({ key: node.id, label: stepLabel(node), prefix: `nodes.${node.id}.output`, paths: nodeOutputPaths(type, config(node)), nodeTypes: [type] });
     });
   return groups;
 }

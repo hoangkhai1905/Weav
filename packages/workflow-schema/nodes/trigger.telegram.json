@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "weav:node/trigger.telegram",
   "title": "Telegram message",
-  "description": "Starts the workflow when the connected Telegram bot receives a text message. Needs a Telegram bot connection.",
+  "description": "Starts the workflow when the connected Telegram bot receives a message with text, a caption, a photo or a document. A photo or document is kept as {{ trigger.input.file }} (fileId, filename, mimeType, size) so a later step such as OCR can read it; if it cannot be kept, file.skipped says why (too_large, not_stored or error). Needs a Telegram bot connection.",
   "x-weav-node": {
     "type": "trigger.telegram",
     "category": "trigger",

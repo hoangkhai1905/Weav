@@ -235,18 +235,29 @@ test('unconfigured integrations remain visible and cannot be published as ready'
   await expect(page.getByTestId('workflow-publish')).toBeDisabled();
 });
 
-test('OCR draft source allows one source at a time and exposes the closed production gate', async ({ page }) => {
+test('OCR draft source allows one source at a time and offers a file from an earlier step', async ({ page }) => {
   await loginAndOpenBuilder(page);
   await addNode(page, 'ocr.extract');
 
   const inspector = page.getByTestId('workflow-inspector');
-  await expect(inspector.getByTestId('ocr-artifact-id')).toHaveValue('');
+  const mode = inspector.getByTestId('ocr-source-mode');
+  await expect(mode).toHaveValue('url');
   await expect(inspector.getByTestId('ocr-file-url')).toHaveValue('');
-  await expect(inspector.getByTestId('integration-readiness')).toContainText('URL allowlist');
-  await inspector.getByTestId('ocr-artifact-id').fill('1b24b7f4-c277-4475-a44f-a2492d0a4bf3');
-  await expect(inspector.getByTestId('ocr-file-url')).toHaveValue('');
+  await expect(inspector.getByTestId('integration-readiness')).toContainText('not enabled on the server');
+
   await inspector.getByTestId('ocr-file-url').fill('https://files.example.test/invoice.pdf');
-  await expect(inspector.getByTestId('ocr-artifact-id')).toHaveValue('');
+  await mode.selectOption('file');
+  await expect(inspector.getByTestId('ocr-file-url')).toHaveCount(0);
+  await expect(inspector.getByTestId('ocr-file-mapping')).toHaveValue('');
+  await inspector.getByTestId('ocr-file-mapping').fill('{{ trigger.input.attachments[0] }}');
+  await expect(inspector.getByTestId('ocr-file-mapping')).toHaveValue('{{ trigger.input.attachments[0] }}');
+
+  await mode.selectOption('url');
+  await expect(inspector.getByTestId('ocr-file-url')).toHaveValue('');
+  await mode.selectOption('artifact');
+  await inspector.getByTestId('ocr-artifact-id').fill('1b24b7f4-c277-4475-a44f-a2492d0a4bf3');
+  await mode.selectOption('file');
+  await expect(inspector.getByTestId('ocr-file-mapping')).toHaveValue('');
 });
 
 test('legacy unsupported node data survives the editor mapper unchanged', async ({ page }) => {

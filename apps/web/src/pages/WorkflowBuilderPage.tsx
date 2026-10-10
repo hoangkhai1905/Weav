@@ -67,6 +67,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { invalidateWorkflowQueries } from '../lib/queries/workflows';
 import { WorkflowSettingsPanel } from '../components/builder/WorkflowSettingsPanel';
 import { useAttachableConnectionIds, useConnections, useStartGoogleOAuth } from '../hooks/useConnections';
+import { useOcrSources } from '../hooks/useNodeCapabilities';
 import type { ConnectionResponse, GoogleProvider } from '../api/connection.api';
 import { CreateConnectionDialog } from './ConnectionsPage';
 import { storeOAuthPendingContext } from '../lib/oauthPending';
@@ -85,7 +86,8 @@ import { CommaListInput } from '../components/builder/CommaListInput';
 import { KeyValueEditor } from '../components/builder/KeyValueEditor';
 import { definitionBlockers } from '../lib/publishBlockers';
 import { VariablePicker } from '../components/builder/VariablePicker';
-import { upstreamGroups, useFieldTarget } from '../lib/variablePaths';
+import { DataSuggestions } from '../components/builder/DataSuggestions';
+import { fileSources, pathLabel, upstreamGroups, useFieldTarget } from '../lib/variablePaths';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
 import { definitionToCanvas, WorkflowApiError, type GenerationResponse } from '../api/workflow-v1.api';
@@ -209,7 +211,9 @@ const SCHEMA_FORMS: Record<string, { provider?: GoogleProvider | 'TELEGRAM' | 'D
   'discord.send_message': { provider: 'DISCORD', fields: () => ['content', 'username'], multiline: ['content'] },
   'google.drive': {
     provider: 'GOOGLE_DRIVE',
-    fields: (config) => ['operation', ...(config.operation === 'list' ? ['folderId', 'nameContains', 'pageSize'] : ['file', 'content', 'name', 'mimeType', 'folderId'])],
+    fields: (config) => ['operation', ...(config.operation === 'list'
+      ? ['folderId', 'nameContains', 'pageSize']
+      : config.operation === 'download' ? ['fileId'] : ['file', 'content', 'name', 'mimeType', 'folderId'])],
     multiline: ['content'],
   },
   'google.calendar': {
@@ -221,12 +225,19 @@ const SCHEMA_FORMS: Record<string, { provider?: GoogleProvider | 'TELEGRAM' | 'D
   },
   'ai.generate': { fields: () => ['prompt', 'instructions', 'maxLength'], multiline: ['prompt', 'instructions'] },
 };
+// Schema-form fields that get one-click data suggestions under them (the main content of the step).
+const SUGGEST_FIELDS: Record<string, string[]> = {
+  'ai.generate': ['prompt'],
+  'google.calendar': ['summary', 'description'],
+  'google.drive': ['content'],
+};
 
 const getNodeReadinessMessage = (
   type: string,
   config: Record<string, unknown>,
   t: (key: string) => string,
   attachableConnectionIds?: ReadonlySet<string>,
+  ocrSources?: readonly string[],
 ): string | undefined => {
   if (!SUPPORTED_NODE_TYPES.has(type)) return t('builder.cfg.msg_unsupported').replace('{type}', type);
   if (type === 'trigger.webhook') return t('builder.cfg.msg_webhook');
@@ -254,12 +265,23 @@ const getNodeReadinessMessage = (
   }
   if (type === 'http.request' && !String(config.url ?? '').trim()) return t('builder.cfg.msg_http');
   if (type === 'ocr.extract') {
-    return t('builder.cfg.msg_ocr');
+    // Same verdict as the step badge; the Workflow Service decides which OCR sources can run.
+    const state = getNodeReadinessBadge(type, config, undefined, ocrSources).state;
+    if (state === 'ready') return undefined;
+    if (state === 'not-configured') return t('builder.cfg.msg_ocr_source');
+    if (!ocrSources?.length) return t('builder.cfg.msg_ocr');
+    return t(String(config.file ?? '').trim() ? 'builder.cfg.msg_ocr_file_off' : 'builder.cfg.msg_ocr_source_off');
   }
   return undefined;
 };
 
-const getPublishBlockers = (nodes: Node[], edges: Edge[], t: (key: string) => string, attachableConnectionIds?: ReadonlySet<string>): string[] => {
+const getPublishBlockers = (
+  nodes: Node[],
+  edges: Edge[],
+  t: (key: string) => string,
+  attachableConnectionIds?: ReadonlySet<string>,
+  ocrSources?: readonly string[],
+): string[] => {
   const blockers = new Set<string>();
   // Mirrors the Workflow Service UNREACHABLE_NODE rule: every action must be reachable from a trigger.
   const reachable = new Set(nodes.filter((node) => String(node.data?.nodeType ?? '').startsWith('trigger.')).map((node) => node.id));
@@ -294,12 +316,23 @@ const getPublishBlockers = (nodes: Node[], edges: Edge[], t: (key: string) => st
       if (message) blockers.add(message);
     }
     if (type === 'ocr.extract') {
-      blockers.add(getNodeReadinessMessage(type, config, t) ?? t('builder.blocker.not_configured').replace('{type}', type));
+      const message = getNodeReadinessMessage(type, config, t, undefined, ocrSources);
+      if (message) blockers.add(message);
     }
   }
   definitionBlockers(nodes, edges, t).forEach((blocker) => blockers.add(blocker));
   return [...blockers];
 };
+
+type OcrSourceMode = 'url' | 'file' | 'artifact';
+// Which OCR source a saved config uses; a draft with none yet shows the link field.
+const ocrModeOf = (config: Record<string, unknown>): OcrSourceMode =>
+  String(config.file ?? '').trim() ? 'file' : String(config.artifactId ?? '').trim() ? 'artifact' : 'url';
+
+/** Telegram send target "whoever just wrote to the bot" (a Telegram trigger's chat). */
+const TELEGRAM_REPLY_CHAT = '{{ trigger.input.message.chat.id }}';
+/** OCR file picker value for "type a mapping yourself". */
+const OCR_FILE_CUSTOM = '__custom';
 
 type OcrErrorState = { code: string; message: string; retryable?: boolean };
 type OcrScope = { userId: string | null; workspaceId: string | null };
@@ -330,6 +363,12 @@ export const WorkflowBuilderPage: React.FC = () => {
   // Highest number handed out per id prefix in this workflow, so a deleted step's id is not reused.
   const idMarks = useRef<{ workflowId?: string; marks: Record<string, number> }>({ marks: {} });
   const fieldTarget = useFieldTarget(selectedNodeId);
+  const stepLabel = (node: Node) => (node.data?.nameKey ? t(String(node.data.nameKey)) : String(node.data?.name || node.id));
+  /** Data the trigger and earlier steps hand to step `id` (what "Insert variable" offers). */
+  const groupsBefore = (id: string, nodeList: Node[] = nodes, edgeList: Pick<Edge, 'source' | 'target'>[] = edges) =>
+    upstreamGroups(nodeList, edgeList, id, t('builder.var.trigger'), stepLabel);
+  const inspectorGroups = selectedNodeId ? groupsBefore(selectedNodeId) : [];
+  const ocrFileOptions = fileSources(inspectorGroups);
   const { data: workspaceConnections, isLoading: isLoadingConnections } = useConnections();
   const gmailConnections = useMemo(
     () => (workspaceConnections ?? []).filter(
@@ -367,6 +406,15 @@ export const WorkflowBuilderPage: React.FC = () => {
       multiline={multiline}
     />
   );
+  /** One-click data suggestions under the text field `name` of the selected step. */
+  const suggestionsFor = (name: string, multiline = false) => (
+    <DataSuggestions
+      groups={inspectorGroups}
+      value={selectedNodeConfig[name]}
+      multiline={multiline}
+      onChange={(next) => updateSelectedNodeConfig({ [name]: next })}
+    />
+  );
   const selectedSchemaForm = SCHEMA_FORMS[selectedNodeType];
   // Edges leave a switch by case name; drop the ones whose case was removed or renamed (INVALID_SOURCE_PORT).
   const updateSwitchCases = (cases: string[]) => {
@@ -379,12 +427,16 @@ export const WorkflowBuilderPage: React.FC = () => {
     [nodes]
   );
   const attachableConnectionIds = useAttachableConnectionIds();
-  const publishBlockers = useMemo(() => getPublishBlockers(nodes, edges, t, attachableConnectionIds), [nodes, edges, t, attachableConnectionIds]);
+  const ocrSources = useOcrSources();
+  const publishBlockers = useMemo(
+    () => getPublishBlockers(nodes, edges, t, attachableConnectionIds, ocrSources),
+    [nodes, edges, t, attachableConnectionIds, ocrSources],
+  );
   const selectedNodeReadiness = selectedNode
-    ? getNodeReadinessBadge(selectedNodeType, selectedNodeConfig, attachableConnectionIds)
+    ? getNodeReadinessBadge(selectedNodeType, selectedNodeConfig, attachableConnectionIds, ocrSources)
     : undefined;
   const selectedNodeReadinessMessage = selectedNode
-    ? getNodeReadinessMessage(selectedNodeType, selectedNodeConfig, t, attachableConnectionIds)
+    ? getNodeReadinessMessage(selectedNodeType, selectedNodeConfig, t, attachableConnectionIds, ocrSources)
     : undefined;
   const isUnsupportedNode = Boolean(selectedNodeType) && !SUPPORTED_NODE_TYPES.has(selectedNodeType);
   const isGoogleSheetsNode = selectedNodeType === 'google.sheets';
@@ -439,8 +491,12 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [isShareOpen, setIsShareOpen] = useState(false);
 
   // Inspector Form State (for selected node)
+  const [ocrSourceMode, setOcrSourceMode] = useState<OcrSourceMode>('url');
   const [ocrLanguage, setOcrLanguage] = useState('vi+en');
-  const [ocrDetectTables, setOcrDetectTables] = useState(true);
+  const [ocrDetectTables, setOcrDetectTables] = useState(false);
+  // The user chose "type a mapping yourself" in the file picker (kept while the field is still empty).
+  const [ocrFileCustom, setOcrFileCustom] = useState(false);
+  const [ocrTryOpen, setOcrTryOpen] = useState(false);
   const [ocrFile, setOcrFile] = useState<File | null>(null);
   const [ocrFileUserId, setOcrFileUserId] = useState<string | null>(null);
   const [ocrResult, setOcrResult] = useState<OcrExtractionResult | null>(null);
@@ -986,6 +1042,10 @@ export const WorkflowBuilderPage: React.FC = () => {
     setSelectedNodeId(node.id);
     if (node.data?.nodeType === 'ocr.extract') {
       const config = (node.data.config ?? {}) as Record<string, unknown>;
+      const hasSource = ['file', 'fileUrl', 'artifactId'].some((key) => String(config[key] ?? '').trim());
+      // A step with no source yet opens on "file from an earlier step" when an earlier step hands over a file.
+      setOcrSourceMode(!hasSource && fileSources(groupsBefore(node.id)).length ? 'file' : ocrModeOf(config));
+      setOcrFileCustom(false);
       setOcrLanguage(String(config.language ?? 'vi+en'));
       setOcrDetectTables(Boolean(config.detectTables ?? true));
       setOcrFile(null);
@@ -1205,6 +1265,12 @@ export const WorkflowBuilderPage: React.FC = () => {
       && !type.startsWith('trigger.')
       && !nodeSourcePorts(anchorType, (anchor?.data?.config ?? {}) as Record<string, unknown>)
       && !edges.some((edge) => edge.source === anchor?.id);
+    // Prefill the obvious source from what the steps before hand over: the file for OCR, the chat to answer for Telegram.
+    const before = linkFromAnchor && anchor ? groupsBefore(newNodeId, nodes, [...edges, { source: anchor.id, target: newNodeId }]) : [];
+    const prefill: Record<string, unknown> = {};
+    const firstFile = fileSources(before)[0];
+    if (type === 'ocr.extract' && firstFile) prefill.file = firstFile.mapping;
+    if (type === 'telegram.send_message' && before.some((group) => group.nodeTypes.includes('trigger.telegram'))) prefill.chatId = TELEGRAM_REPLY_CHAT;
     const newNode: Node = {
       id: newNodeId,
       type: 'customNode',
@@ -1218,7 +1284,7 @@ export const WorkflowBuilderPage: React.FC = () => {
         status: 'idle',
         executionTime: '',
         selected: true,
-        config: { ...(catalogItem?.defaultConfig ?? {}) },
+        config: { ...(catalogItem?.defaultConfig ?? {}), ...prefill },
       },
     };
 
@@ -1240,8 +1306,10 @@ export const WorkflowBuilderPage: React.FC = () => {
     setSelectedNodeId(newNodeId);
     setInspectorOpen(true);
     if (type === 'ocr.extract') {
+      setOcrSourceMode(firstFile ? 'file' : 'url');
+      setOcrFileCustom(false);
       setOcrLanguage('vi+en');
-      setOcrDetectTables(true);
+      setOcrDetectTables(false);
       setOcrFile(null);
       setOcrFileUserId(null);
       clearOcrResult();
@@ -1340,8 +1408,12 @@ export const WorkflowBuilderPage: React.FC = () => {
             title={workflowTitle}
             className="h-7 min-w-[72px] flex-1 truncate rounded-md border border-transparent bg-transparent px-1.5 text-sm font-semibold text-foreground transition-colors hover:border-border focus:border-primary focus:bg-card focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
           />
-          <span className={`inline-flex h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded px-1.5 text-xs font-medium before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] ${isSaved ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'}`}>
-            {isSaved ? t('builder.saved') : t('builder.edited')}
+          {/* Narrow screens keep only the dot so the name never spills over the tabs and actions. */}
+          <span
+            title={isSaved ? t('builder.saved') : t('builder.edited')}
+            className={`inline-flex h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded px-1.5 text-xs font-medium before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] ${isSaved ? 'bg-ok-bg text-ok' : 'bg-warn-bg text-warn'}`}
+          >
+            <span className="sr-only md:not-sr-only">{isSaved ? t('builder.saved') : t('builder.edited')}</span>
           </span>
           {workflow?.status !== 'PUBLISHED' && workflow?.status !== 'PAUSED' && (
             <span className="hidden h-5 shrink-0 items-center gap-[5px] whitespace-nowrap rounded bg-pause-bg px-1.5 text-xs font-medium text-pause before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] xl:inline-flex">
@@ -1754,7 +1826,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                                 <ItemIcon size={14} />
                               </span>
                               <span className="truncate text-[13px] font-medium text-foreground">{item.nameKey ? t(item.nameKey) : item.title}</span>
-                              {getNodeReadinessBadge(item.type, {}).state === 'unavailable' && (
+                              {getNodeReadinessBadge(item.type, {}, undefined, ocrSources).state === 'unavailable' && (
                                 <span data-testid="palette-unavailable" className="shrink-0 rounded bg-warn-bg px-1.5 py-0.5 text-[10px] font-medium text-warn">{t('builder.readiness.unavailable')}</span>
                               )}
                               <span className="ml-auto hidden max-w-[45%] truncate text-xs text-muted-foreground sm:block">{item.descKey ? t(item.descKey) : item.description}</span>
@@ -1850,7 +1922,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             {inspectorTab === 'config' && !isUnsupportedNode && !selectedNodeType.startsWith('trigger.') && selectedNodeId && (
               <VariablePicker
                 key={selectedNodeId}
-                groups={upstreamGroups(nodes, edges, selectedNodeId, t('builder.var.trigger'))}
+                groups={inspectorGroups}
                 insert={fieldTarget.insert}
               />
             )}
@@ -1901,7 +1973,15 @@ export const WorkflowBuilderPage: React.FC = () => {
                       </div>
                     );
                   })()}
-                  {selectedSchemaForm.fields(selectedNodeConfig).map((name) => configField(name, undefined, selectedSchemaForm.multiline?.includes(name)))}
+                  {selectedSchemaForm.fields(selectedNodeConfig).map((name) => {
+                    const multiline = selectedSchemaForm.multiline?.includes(name);
+                    return (
+                      <React.Fragment key={name}>
+                        {configField(name, undefined, multiline)}
+                        {SUGGEST_FIELDS[selectedNodeType]?.includes(name) && suggestionsFor(name, multiline)}
+                      </React.Fragment>
+                    );
+                  })}
                   {selectedNodeType === 'trigger.telegram' && <p data-testid="telegram-trigger-hint" className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.telegram_trigger_hint')}</p>}
                   {selectedNodeType === 'google.drive' && <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.drive_hint')}</p>}
                   {selectedNodeType === 'discord.send_message' && <CharCounter value={selectedNodeConfig.content} max={2000} />}
@@ -1950,15 +2030,53 @@ export const WorkflowBuilderPage: React.FC = () => {
                       </p>
                     )}
                   </div>
-                  <div>
-                    <label htmlFor="telegram-chat-id" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.chat_id')}</label>
-                    <input id="telegram-chat-id" value={String(selectedNodeConfig.chatId ?? '')} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
-                  </div>
+                  {(() => {
+                    const chatId = String(selectedNodeConfig.chatId ?? '');
+                    const canReply = inspectorGroups.some((group) => group.nodeTypes.includes('trigger.telegram'));
+                    const replying = canReply && chatId === TELEGRAM_REPLY_CHAT;
+                    return (
+                      <div className="space-y-2">
+                        {canReply && (
+                          <div>
+                            <label htmlFor="telegram-chat-target" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.tg_target')}</label>
+                            <select
+                              id="telegram-chat-target"
+                              data-testid="telegram-chat-target"
+                              value={replying ? 'reply' : 'custom'}
+                              onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value === 'reply' ? TELEGRAM_REPLY_CHAT : '' })}
+                              className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                            >
+                              <option value="reply">{t('builder.cfg.tg_target_reply')}</option>
+                              <option value="custom">{t('builder.cfg.tg_target_custom')}</option>
+                            </select>
+                          </div>
+                        )}
+                        {!replying && (
+                          <div>
+                            <label htmlFor="telegram-chat-id" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.chat_id')}</label>
+                            <input id="telegram-chat-id" value={chatId} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} placeholder="123456789" className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                            <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.tg_chat_hint')}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div>
                     <label htmlFor="telegram-text" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.message')}</label>
-                    <textarea id="telegram-text" rows={3} value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    <textarea id="telegram-text" rows={4} value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} placeholder={t('builder.cfg.tg_text_placeholder')} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    {suggestionsFor('text', true)}
                   </div>
-                  {['parseMode', 'disableNotification', 'replyToMessageId'].map((name) => configField(name))}
+                  <details
+                    key={`tg-advanced-${selectedNodeId}`}
+                    data-testid="telegram-advanced"
+                    open={Boolean(selectedNodeConfig.parseMode || selectedNodeConfig.disableNotification || selectedNodeConfig.replyToMessageId)}
+                    className="group rounded-md border border-border"
+                  >
+                    <summary className="cursor-pointer select-none px-2.5 py-1.5 text-[11px] font-medium text-text-2 hover:text-foreground">{t('builder.cfg.advanced_options')}</summary>
+                    <div className="space-y-3 border-t border-border p-2.5">
+                      {['parseMode', 'disableNotification', 'replyToMessageId'].map((name) => configField(name))}
+                    </div>
+                  </details>
                 </div>
               ) : selectedNodeType === 'http.request' ? (
                 <div data-testid="http-request-config" className="space-y-3">
@@ -2021,10 +2139,12 @@ export const WorkflowBuilderPage: React.FC = () => {
                   <div>
                     <label htmlFor="email-subject" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.subject')}</label>
                     <input id="email-subject" value={String(selectedNodeConfig.subject ?? '')} onChange={(event) => updateSelectedNodeConfig({ subject: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    {suggestionsFor('subject')}
                   </div>
                   <div>
                     <label htmlFor="email-body" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.body')}</label>
                     <textarea id="email-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    {suggestionsFor('body', true)}
                   </div>
                   {['bodyType', 'cc', 'bcc'].map((name) => configField(name))}
                   <AttachmentsEditor value={selectedNodeConfig.attachments} onChange={(attachments) => updateSelectedNodeConfig({ attachments })} />
@@ -2047,6 +2167,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       <div>
                         <label htmlFor="ai-input-text" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.input_text')}</label>
                         <input id="ai-input-text" value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                        {suggestionsFor('text')}
                       </div>
                       {configField('instructions', undefined, true)}
                     </div>
@@ -2054,12 +2175,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                   {selectedNodeType === 'ai.classify' && (
                     <div className="space-y-3">
                       {configField('content', undefined, true)}
+                      {suggestionsFor('content', true)}
                       <CommaListInput key={selectedNodeId} id="ai-categories" label={t('builder.cfg.categories')} value={selectedNodeConfig.categories} onChange={(categories) => updateSelectedNodeConfig({ categories })} />
                     </div>
                   )}
                   {selectedNodeType === 'ai.summarize' && (
                     <div className="space-y-3">
                       {configField('inputText', undefined, true)}
+                      {suggestionsFor('inputText', true)}
                       {/* Whole numbers 1..5000 are saved as numbers, a {{ }} mapping stays text, empty is omitted, anything else is flagged and not saved. */}
                       {configField('maxLength')}
                     </div>
@@ -2078,52 +2201,109 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </div>
 
                   <div data-testid="ocr-workflow-source" className="space-y-2 rounded border border-border bg-subtle p-2.5">
-                    <p className="text-[11px] font-semibold text-text-2">{t('builder.cfg.ocr_source')}</p>
-                    <div>
-                      <label htmlFor="ocr-artifact-id" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.artifact_id')}</label>
-                      <input
-                        id="ocr-artifact-id"
-                        data-testid="ocr-artifact-id"
-                        value={String(selectedNodeConfig.artifactId ?? '')}
-                        onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value || undefined, fileUrl: undefined })}
-                        className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="ocr-file-url" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.file_url')}</label>
-                      <input
-                        id="ocr-file-url"
-                        data-testid="ocr-file-url"
-                        value={String(selectedNodeConfig.fileUrl ?? '')}
-                        onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value || undefined, artifactId: undefined })}
-                        placeholder="https://..."
-                        className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
-                      />
-                    </div>
+                    <label htmlFor="ocr-source-mode" className="block text-[11px] font-semibold text-text-2">{t('builder.cfg.ocr_source')}</label>
+                    <select
+                      id="ocr-source-mode"
+                      data-testid="ocr-source-mode"
+                      value={ocrSourceMode}
+                      onChange={(event) => {
+                        // Only one source is saved: leaving a source clears the others.
+                        setOcrSourceMode(event.target.value as OcrSourceMode);
+                        updateSelectedNodeConfig({ fileUrl: undefined, artifactId: undefined, file: undefined });
+                      }}
+                      className="w-full rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                    >
+                      {/* A source the server has not enabled is hidden, unless this step already uses it. */}
+                      {(['url', 'file', 'artifact'] as const).filter((source) => !ocrSources || ocrSources.includes(source) || source !== 'artifact' || ocrSourceMode === 'artifact').map((source) => (
+                        <option key={source} value={source}>
+                          {t(`builder.cfg.ocr_source_${source}`)}
+                          {ocrSources && !ocrSources.includes(source) ? ` (${t('builder.cfg.ocr_source_not_enabled')})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {ocrSourceMode === 'artifact' && (
+                      <div>
+                        <label htmlFor="ocr-artifact-id" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.artifact_id')}</label>
+                        <input
+                          id="ocr-artifact-id"
+                          data-testid="ocr-artifact-id"
+                          value={String(selectedNodeConfig.artifactId ?? '')}
+                          onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value || undefined, fileUrl: undefined, file: undefined })}
+                          className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+                    )}
+                    {ocrSourceMode === 'url' && (
+                      <div>
+                        <label htmlFor="ocr-file-url" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.file_url')}</label>
+                        <input
+                          id="ocr-file-url"
+                          data-testid="ocr-file-url"
+                          value={String(selectedNodeConfig.fileUrl ?? '')}
+                          onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value || undefined, artifactId: undefined, file: undefined })}
+                          placeholder="https://..."
+                          className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                      </div>
+                    )}
+                    {ocrSourceMode === 'file' && (() => {
+                      const current = typeof selectedNodeConfig.file === 'string' ? selectedNodeConfig.file.trim() : '';
+                      const picked = ocrFileOptions.find((option) => option.mapping === current);
+                      // Show the expression box when there is nothing to pick, the user asked for it, or the saved value is not on the list.
+                      const typing = !ocrFileOptions.length || ocrFileCustom || Boolean(current && !picked) || typeof selectedNodeConfig.file === 'object';
+                      return (
+                      <div className="space-y-2">
+                        {ocrFileOptions.length > 0 && (
+                          <div>
+                            <label htmlFor="ocr-file-pick" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.ocr_file_pick')}</label>
+                            <select
+                              id="ocr-file-pick"
+                              data-testid="ocr-file-pick"
+                              value={picked ? picked.mapping : typing ? OCR_FILE_CUSTOM : ''}
+                              onChange={(event) => {
+                                const custom = event.target.value === OCR_FILE_CUSTOM;
+                                setOcrFileCustom(custom);
+                                updateSelectedNodeConfig({ file: custom ? undefined : event.target.value || undefined, fileUrl: undefined, artifactId: undefined });
+                              }}
+                              className="w-full rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                            >
+                              <option value="">{t('builder.cfg.ocr_file_choose')}</option>
+                              {ocrFileOptions.map((option) => (
+                                <option key={option.mapping} value={option.mapping}>
+                                  {pathLabel(option.group, option.path, t) ?? option.path} — {option.group.label}
+                                </option>
+                              ))}
+                              <option value={OCR_FILE_CUSTOM}>{t('builder.cfg.ocr_file_custom')}</option>
+                            </select>
+                          </div>
+                        )}
+                        {!ocrFileOptions.length && (
+                          <p data-testid="ocr-file-none" className="text-[10px] leading-relaxed text-warn">{t('builder.cfg.ocr_file_none')}</p>
+                        )}
+                        {typing && (
+                      <div>
+                        <label htmlFor="ocr-file-mapping" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.ocr_file_mapping')}</label>
+                        <input
+                          id="ocr-file-mapping"
+                          data-testid="ocr-file-mapping"
+                          value={typeof selectedNodeConfig.file === 'object' && selectedNodeConfig.file !== null ? JSON.stringify(selectedNodeConfig.file) : String(selectedNodeConfig.file ?? '')}
+                          onChange={(event) => updateSelectedNodeConfig({ file: event.target.value || undefined, fileUrl: undefined, artifactId: undefined })}
+                          placeholder="{{ trigger.input.attachments[0] }}"
+                          className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                        <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.ocr_file_hint')}</p>
+                      </div>
+                        )}
+                        {ocrSources && !ocrSources.includes('file') && (
+                          <p data-testid="ocr-file-off" className="text-[10px] leading-relaxed text-warn">{t('builder.cfg.msg_ocr_file_off')}</p>
+                        )}
+                      </div>
+                      );
+                    })()}
                     <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.ocr_source_hint')}</p>
                   </div>
 
-                  <div>
-                    <label htmlFor="ocr-file-input" className="mb-1 block text-[11px] font-medium text-text-2">
-                      {t('builder.cfg.ocr_try')}
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed border-border-strong bg-subtle px-2.5 py-2 text-xs text-text-2 transition-colors hover:border-run/30 hover:bg-run-bg">
-                      <Upload size={14} className="shrink-0 text-run" />
-                      <span className="min-w-0 flex-1 truncate">{currentUserOcrFile?.name ?? t('ocr.choose_file')}</span>
-                      <input
-                        id="ocr-file-input"
-                        data-testid="ocr-file-input"
-                        type="file"
-                        accept=".pdf,.png,.jpg,.jpeg,.webp,image/*,application/pdf"
-                        onChange={handleOcrFileChange}
-                        disabled={isOcrRunning}
-                        className="sr-only"
-                      />
-                    </label>
-                    <p className="mt-1 text-[10px] text-muted-foreground">{t('ocr.accepted')}</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
                     <div>
                       <label htmlFor="ocr-language" className="mb-1 block text-[11px] font-medium text-text-2">
                         {t('ocr.language')}
@@ -2142,18 +2322,52 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <option value="en">{t('settings.english')}</option>
                       </select>
                     </div>
-                    <label className="mt-5 flex items-center gap-2 text-[11px] text-text-2">
+                    <div>
+                      <label className="flex items-center gap-2 text-[11px] text-text-2">
+                        <input
+                          type="checkbox"
+                          data-testid="ocr-detect-tables"
+                          checked={ocrDetectTables}
+                          onChange={(event) => {
+                            setOcrDetectTables(event.target.checked);
+                            updateSelectedNodeConfig({ detectTables: event.target.checked });
+                          }}
+                          className="size-3.5 accent-run"
+                        />
+                        {t('ocr.detect_tables')}
+                      </label>
+                      <p className="mt-1 pl-5 text-[10px] leading-relaxed text-muted-foreground">{t('ocr.detect_tables_hint')}</p>
+                    </div>
+                  </div>
+
+                  {/* Trying OCR on a sample file is separate from the workflow: collapsed so it is not mistaken for a required step. */}
+                  <details
+                    data-testid="ocr-try"
+                    open={ocrTryOpen}
+                    onToggle={(event) => setOcrTryOpen(event.currentTarget.open)}
+                    className="rounded-md border border-border"
+                  >
+                    <summary className="cursor-pointer select-none px-2.5 py-1.5 text-[11px] font-medium text-text-2 hover:text-foreground">{t('builder.cfg.ocr_try')}</summary>
+                    <div className="space-y-3 border-t border-border p-2.5">
+                  <div>
+                    <label className="flex cursor-pointer items-center gap-2 rounded border border-dashed border-border-strong bg-subtle px-2.5 py-2 text-xs text-text-2 transition-colors hover:border-run/30 hover:bg-run-bg">
+                      <Upload size={14} className="shrink-0 text-run" />
+                      <span className="min-w-0 flex-1 truncate">{currentUserOcrFile?.name ?? t('ocr.choose_file')}</span>
                       <input
-                        type="checkbox"
-                        checked={ocrDetectTables}
+                        id="ocr-file-input"
+                        data-testid="ocr-file-input"
+                        type="file"
+                        accept=".pdf,.png,.jpg,.jpeg,.webp,image/*,application/pdf"
+                        aria-label={t('ocr.choose_file')}
                         onChange={(event) => {
-                          setOcrDetectTables(event.target.checked);
-                          updateSelectedNodeConfig({ detectTables: event.target.checked });
+                          setOcrTryOpen(true);
+                          handleOcrFileChange(event);
                         }}
-                        className="size-3.5 accent-run"
+                        disabled={isOcrRunning}
+                        className="sr-only"
                       />
-                      {t('ocr.detect_tables')}
                     </label>
+                    <p className="mt-1 text-[10px] text-muted-foreground">{t('ocr.accepted')}</p>
                   </div>
 
                   {visibleOcrError && (
@@ -2270,6 +2484,8 @@ export const WorkflowBuilderPage: React.FC = () => {
                       </div>
                     </div>
                   )}
+                    </div>
+                  </details>
                 </div>
               ) : isGoogleNode ? (
                 <div className="space-y-4">

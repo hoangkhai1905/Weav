@@ -386,6 +386,34 @@ The Colab tunnel is temporary and should only receive non-sensitive test
 documents. If the notebook restarts, update the local `.env` URL and recreate
 the Gateway container.
 
+The overlay also sets `GATEWAY_OCR_TIMEOUT_MS=95000` for the Gateway (the OCR
+contract allows up to 90 s per document; outside this overlay the default is
+10000). Override it with `GATEWAY_OCR_TIMEOUT_MS` in the local `.env`. With the
+short default, slow Colab requests fail with `503 OCR_BUSY`.
+
+**Use the GPU.** `paddlepaddle` is the optional `paddle` extra; `uv sync` without it installs no Paddle at all and
+`--extra paddle` installs the CPU build, so a T4 runtime still runs OCR on CPU (cold call about 65 s, text-only about 9 s, tables about
+43 s). Install the GPU build into the uv `.venv` that uvicorn uses, not the
+system Python, from `services/ocr-service` in the notebook:
+
+```bash
+uv pip uninstall -p .venv paddlepaddle
+uv pip install -p .venv paddlepaddle-gpu==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu130/
+.venv/bin/python -c "import paddle; print(paddle.device.get_device())"  # expect gpu:0
+```
+
+In Colab, `uv pip` without `-p .venv` targets the system Python (`/usr`), not the service venv.
+Restart uvicorn with `.venv/bin/uvicorn` (or `uv run --no-sync uvicorn`); plain `uv run` and
+`uv sync` re-sync the lockfile and reinstall the CPU package. The service sets no device, so PaddleOCR uses the GPU
+automatically.
+
+**Reading the service log.** The notebook starts uvicorn with its output in
+`/content/ocr-service.log`. If requests return `503`/`502` through the tunnel,
+run `!tail -n 100 /content/ocr-service.log` in a notebook cell before
+restarting; it shows crashes, out-of-memory kills, and model-load errors.
+Review it before pasting it anywhere. Known OCR-service issues found with this
+setup are in `docs/handoffs/2026-10-08-ocr-service-colab-findings.md`.
+
 For direct Maven startup, inject the same names into the process environment through the local shell or secret manager before starting `services/identity-service`; do not pass secret values on the command line or commit `.env`.
 
 The Identity-local OpenAPI contract is published at `packages/contracts/http/auth/openapi.yaml`. Version 1.1 adds the M1 contract target for profile display-name updates, self-service session listing/revocation, revoke-all, and local password change. These additions are contract-first: do not treat them as runtime-ready until the matching M1 implementation and HTTP tests pass. OTP/recovery, admin, avatar, Gateway, and mobile operations remain deferred; the M3 Google OAuth web transport still requires real-provider/browser acceptance.
@@ -419,6 +447,66 @@ cd ..\..
 ```
 
 ---
+
+### Local OCR on CPU with ONNX Runtime (no Colab)
+
+Text OCR and table detection can run on CPU through ONNX Runtime with the same results as Paddle (0/240 differing
+lines on the synthetic Vietnamese benchmark; identical cells on our table samples): an A4 text page takes ~7 s instead
+of ~20 s and a table page ~11 s instead of ~28 s on a laptop.
+
+1. Put the model bundle (from `scripts/setup-ocr-model.ps1`) somewhere and point `.env` at it:
+   `OCR_MODEL_HOST_PATH=D:/Weav-OCR-Models`.
+2. Convert the models once (writes `<OCR_MODEL_HOST_PATH>/onnx/<model>/inference.onnx`; `scripts/` is not in the image,
+   so it is mounted; in Git Bash prefix the command with `MSYS_NO_PATHCONV=1`):
+
+```bash
+docker compose --env-file .env -f compose.yml -f compose.dev.yml -f compose.ocr-models.dev.yml --profile app run --rm --no-deps -T -e UV_NO_SYNC=0 -v D:/Weav-OCR-Models:/models-rw -v ./services/ocr-service/scripts:/app/scripts:ro ocr-service uv run --extra paddle --with paddle2onnx==2.1.0 python scripts/convert_models_to_onnx.py --src-root /models-rw --dst-root /models-rw/onnx
+```
+
+   The conversion needs Paddle; `--extra paddle` installs it into the throwaway run container, so this works from
+   either image.
+3. Select the ONNX manifest and the slim image in `.env`:
+   `WEAV_OCR_MODEL_MANIFEST=/app/config/model-manifest.onnx.json` and `OCR_RUNTIME=onnx`. The `onnx` image has no
+   paddlepaddle (0.63 GB instead of 1.02 GB) and only works with the ONNX manifest; the defaults
+   (`model-manifest.json`, `OCR_RUNTIME=paddle`) keep Paddle.
+4. Start OCR and the Gateway with the local-models overlay (not `compose.colab-ocr.dev.yml`); the overlay sets the
+   Gateway OCR deadline to 95 s:
+
+```bash
+docker compose --env-file .env -f compose.yml -f compose.dev.yml -f compose.ocr-models.dev.yml --profile app up -d --build ocr-service api-gateway
+```
+
+The first request loads the models (~20 s; the first table request ~45 s). Table detection reads its models from the
+manifest's `"table"` section (bundle folders, Vietnamese recognizer, `SLANet_plus`); the ONNX manifest points it at
+`/models/onnx/...` with `"engine": "onnxruntime"`. The converter also converts these table models and clears the
+`Loop` subgraph shapes that paddle2onnx mis-declares for SLANet (otherwise ONNX Runtime refuses to load it). If a table
+folder or its `inference.onnx` is missing, the service logs a warning and falls back to PaddleOCR's downloaded
+default table models.
+
+### OCR in workflows (service-to-service JWT)
+
+The `ocr.extract` workflow node and the builder's OCR preview reach the OCR service with short-lived RS256
+Service JWTs (`packages/contracts/http/ocr/openapi.yaml`, `ServiceJwtAuth`). The Gateway never forwards the
+user's token to OCR: it checks workspace membership with Workspace Service, then signs a `preview` token.
+Workflow Service signs an `execution` token per node attempt. OCR verifies signature, issuer key, audience,
+scope, mode, tenant and lifetime (max 120 s).
+
+1. `node scripts/ai-dev-keys.mjs` (keeps existing keys; adds `tmp/service-keys/gateway/api-gateway.pem` and
+   `tmp/service-keys/public/api-gateway.jwks.json`).
+2. In `.env`:
+   - `GATEWAY_OCR_SIGNING_KEY_LOCATION=/run/gateway-keys/api-gateway.pem`
+   - `OCR_TRUSTED_ISSUERS=weav-workflow=/run/weav-keys/workflow-service.jwks.json,weav-api-gateway=/run/weav-keys/api-gateway.jwks.json`
+   - `OCR_URL_ALLOWLIST=<hosts URL sources may come from, e.g. api.telegram.org,googleusercontent.com>`
+   - `WORKFLOW_OCR_SIGNING_KEY_ID=workflow-dev-1`, `WORKFLOW_OCR_SIGNING_KEY_LOCATION=file:/run/weav-keys/workflow-service.pem`
+   - `WORKFLOW_OCR_ENABLED=true`, `WORKFLOW_OCR_URL_SOURCE_ENABLED=true`, and only after checking the two settings
+     above: `WORKFLOW_OCR_SERVICE_CLAIMS_VERIFIED=true`, `WORKFLOW_OCR_URL_ALLOWLIST_VERIFIED=true`.
+   The artifact (workspace file) source stays off (`WORKFLOW_OCR_ARTIFACT_*=false`); no resolver exists yet.
+3. Recreate `ocr-service`, `workflow-service` and `api-gateway`. The builder reads
+   `GET /api/v1/workspaces/{id}/workflows/node-capabilities`; the OCR step stops showing "Unavailable" once the
+   URL source is enabled.
+
+Without these settings OCR rejects every token (401); in development the header-less bypass still works for
+local tools only when `OCR_ALLOW_UNAUTHENTICATED_DEV=true`.
 
 ## 9. Kiểm tra Web và NestJS services
 

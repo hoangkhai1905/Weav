@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import contextlib
-import os
 import uuid
 
 from fastapi import APIRouter, Depends, Request
@@ -12,38 +11,12 @@ from fastapi.responses import JSONResponse
 from starlette.datastructures import UploadFile
 
 from src.api.dependencies import get_extract_text_use_case
+from src.api.service_auth import authenticate_request
 from src.application.use_cases.extract_text_use_case import ExtractTextUseCase
-from src.domain.errors import (
-    InvalidRequestError,
-    UnauthenticatedError,
-)
+from src.domain.errors import InvalidRequestError
 from src.domain.models.ocr_request import validate_single_source
 
 router = APIRouter(tags=["extractions"])
-
-
-def is_dev_auth_bypass_enabled() -> bool:
-    """Check whether local development unauthenticated access is explicitly enabled."""
-    app_env = os.environ.get("APP_ENV", "").strip().lower()
-    allow_unauth_dev = (
-        os.environ.get("OCR_ALLOW_UNAUTHENTICATED_DEV", "").strip().lower()
-    )
-    return app_env == "development" and allow_unauth_dev == "true"
-
-
-def verify_authorization(authorization: str | None) -> None:
-    """Require Bearer authorization unless APP_ENV=development AND OCR_ALLOW_UNAUTHENTICATED_DEV=true."""
-    if is_dev_auth_bypass_enabled() and not authorization:
-        return
-
-    if not authorization:
-        raise UnauthenticatedError("Authentication required")
-
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0] != "Bearer" or not parts[1].strip():
-        raise UnauthenticatedError(
-            "Invalid authorization scheme; Bearer token required"
-        )
 
 
 def resolve_request_id(request: Request) -> tuple[uuid.UUID, bool]:
@@ -70,18 +43,10 @@ async def extract_ocr(
     if not is_valid_req_id:
         raise InvalidRequestError("Invalid X-Request-ID header: must be a valid UUID")
 
-    # 2. Enforce Bearer authorization
-    auth_header = request.headers.get("authorization")
-    verify_authorization(auth_header)
-
-    # 3. Extract and propagate X-Workspace-ID
-    workspace_header = request.headers.get("X-Workspace-ID")
-    workspace_id: uuid.UUID | str | None = None
-    if workspace_header:
-        try:
-            workspace_id = uuid.UUID(workspace_header)
-        except (ValueError, TypeError):
-            workspace_id = workspace_header
+    # 2. Verify the Service JWT; tenant context comes from its workspace_id claim
+    workspace_id = authenticate_request(
+        request.headers.get("authorization"), request.headers.get("X-Workspace-ID")
+    )
 
     # 4. Check Content-Type header
     content_type = request.headers.get("content-type", "").lower()

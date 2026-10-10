@@ -393,6 +393,20 @@ describe('Gateway routes added for full service coverage (Fastify e2e)', () => {
     });
   });
 
+  it('routes node-capabilities to the static Workflow path, not :workflowId', async () => {
+    const response = await inject({
+      method: 'GET',
+      url: `/api/v1/workspaces/${WORKSPACE_ID}/workflows/node-capabilities`,
+      headers: { authorization: user },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(fixtureRequests).toHaveLength(1);
+    expect(fixtureRequests[0].path).toBe(
+      `/workspaces/${WORKSPACE_ID}/workflows/node-capabilities`,
+    );
+    expect(fixtureRequests[0].method).toBe('GET');
+  });
+
   it('routes workflow generation with its own size cap', async () => {
     const generated = await inject({
       method: 'POST',

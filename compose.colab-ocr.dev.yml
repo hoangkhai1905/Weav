@@ -4,3 +4,5 @@ services:
       # The OCR service runs in the Colab runtime through its temporary HTTPS tunnel.
       OCR_SERVICE_URL: ${OCR_SERVICE_URL}
       OCR_ALLOW_UNAUTHENTICATED_DEV: "true"
+      # The service may spend up to 90s per document (OCR contract); wait slightly longer.
+      GATEWAY_OCR_TIMEOUT_MS: ${GATEWAY_OCR_TIMEOUT_MS:-95000}

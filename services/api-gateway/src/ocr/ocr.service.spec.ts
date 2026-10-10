@@ -2,24 +2,72 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { HttpException, Logger } from '@nestjs/common';
+import { generateKeyPairSync } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Readable } from 'node:stream';
+import { decodeProtectedHeader, importSPKI, jwtVerify } from 'jose';
 import { OcrService } from './ocr.service';
 
 describe('OcrService (Proxy Boundary)', () => {
   let service: OcrService;
-  let mockFetch: jest.Mock;
+  let mockFetch: jest.Mock; // OCR upstream
+  let workspaceFetch: jest.Mock; // Workspace Service membership check
   let mockConfigService: { get: jest.Mock };
 
   const DEFAULT_OCR_URL = 'http://ocr-service:8000';
+  const WORKSPACE_URL = 'http://workspace-service:8080';
   const VALID_WORKSPACE_ID = '3fa85f64-5717-4562-b3fc-2c963f66afa6';
+  const KEY_ID = 'gateway-test-1';
+
+  let keyDir: string;
+  let keyFile: string;
+  let publicKeyPem: string;
+
+  // Gateway config with a signing key, as production would have it.
+  const gatewayConfig = (overrides: Record<string, unknown> = {}) => ({
+    appEnv: 'production',
+    upstreams: { ocr: DEFAULT_OCR_URL, workspace: WORKSPACE_URL },
+    ocr: {
+      allowUnauthenticatedDev: false,
+      timeoutMs: 10_000,
+      signingKeyLocation: keyFile,
+      signingKeyId: KEY_ID,
+      ...overrides,
+    },
+  });
+
+  beforeAll(() => {
+    const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+    });
+    keyDir = mkdtempSync(join(tmpdir(), 'ocr-key-'));
+    keyFile = join(keyDir, 'api-gateway.pem');
+    writeFileSync(keyFile, privateKey.export({ type: 'pkcs8', format: 'pem' }));
+    publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }) as string;
+  });
+
+  afterAll(() => rmSync(keyDir, { recursive: true, force: true }));
 
   beforeEach(async () => {
     mockFetch = jest.fn();
+    // Default: the caller is a member of the workspace.
+    workspaceFetch = jest.fn(() =>
+      Promise.resolve(new Response('{}', { status: 200 })),
+    );
+    const routedFetch = jest.fn((url: string, init: RequestInit) =>
+      String(url).startsWith(WORKSPACE_URL)
+        ? workspaceFetch(url, init)
+        : mockFetch(url, init),
+    );
 
-    // Default configuration: production environment, dev bypass disabled
+    // Default configuration: production environment, dev bypass disabled, signing key set
     mockConfigService = {
       get: jest.fn((key: string, defaultValue?: any) => {
         switch (key) {
+          case 'gateway':
+            return gatewayConfig();
           case 'OCR_SERVICE_URL':
             return DEFAULT_OCR_URL;
           case 'APP_ENV':
@@ -44,7 +92,7 @@ describe('OcrService (Proxy Boundary)', () => {
         },
         {
           provide: 'FETCH_FN',
-          useValue: mockFetch,
+          useValue: routedFetch,
         },
       ],
     }).compile();
@@ -324,69 +372,270 @@ describe('OcrService (Proxy Boundary)', () => {
     });
   });
 
-  describe('Authorization forwarding and log redaction', () => {
-    it('should forward Authorization Bearer token to upstream without logging the token', async () => {
-      const secretToken = 'super-secret-bearer-jwt-token-to-never-log-12345';
-      const authHeader = `Bearer ${secretToken}`;
-
-      mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify({ schemaVersion: '1.0' }), {
-          status: 200,
-        }),
+  describe('Service JWT minting and log redaction', () => {
+    const upstreamOk = () =>
+      new Response(JSON.stringify({ schemaVersion: '1.0' }), { status: 200 });
+    const jsonReq = (authorization?: string) => ({
+      headers: {
+        'content-type': 'application/json',
+        ...(authorization ? { authorization } : {}),
+        'x-request-id': 'req-service-jwt',
+      },
+      body: {
+        source: {
+          type: 'artifact',
+          artifactId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+        },
+      },
+    });
+    const useGateway = (overrides: Record<string, unknown>, appEnv?: string) =>
+      mockConfigService.get.mockImplementation((key: string) =>
+        key === 'gateway'
+          ? { ...gatewayConfig(overrides), ...(appEnv ? { appEnv } : {}) }
+          : undefined,
       );
 
-      const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
-      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
-      const errorSpy = jest
-        .spyOn(Logger.prototype, 'error')
-        .mockImplementation();
-      const debugSpy = jest
-        .spyOn(Logger.prototype, 'debug')
-        .mockImplementation();
-      const verboseSpy = jest
-        .spyOn(Logger.prototype, 'verbose')
-        .mockImplementation();
-      const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation();
-      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+    it('sends a short-lived RS256 Service JWT instead of the user token, without logging either', async () => {
+      const secretToken = 'super-secret-bearer-jwt-token-to-never-log-12345';
+      mockFetch.mockResolvedValueOnce(upstreamOk());
 
-      const req = {
-        headers: {
-          'content-type': 'application/json',
-          authorization: authHeader,
-          'x-request-id': 'req-redaction-test',
-        },
-        body: {
-          source: {
-            type: 'artifact',
-            artifactId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
-          },
-        },
-      };
-
-      await service.proxyExtraction(VALID_WORKSPACE_ID, req);
-
-      // Verify token was forwarded to upstream
-      const [, init] = mockFetch.mock.calls[0];
-      expect(init.headers['authorization']).toBe(authHeader);
-
-      // Verify token was never logged
-      const allSpies = [
-        logSpy,
-        warnSpy,
-        errorSpy,
-        debugSpy,
-        verboseSpy,
-        consoleLogSpy,
-        consoleWarnSpy,
-        consoleErrorSpy,
+      const spies = [
+        jest.spyOn(Logger.prototype, 'log').mockImplementation(),
+        jest.spyOn(Logger.prototype, 'warn').mockImplementation(),
+        jest.spyOn(Logger.prototype, 'error').mockImplementation(),
+        jest.spyOn(Logger.prototype, 'debug').mockImplementation(),
+        jest.spyOn(Logger.prototype, 'verbose').mockImplementation(),
+        jest.spyOn(console, 'log').mockImplementation(),
+        jest.spyOn(console, 'warn').mockImplementation(),
+        jest.spyOn(console, 'error').mockImplementation(),
       ];
-      for (const spy of allSpies) {
+
+      await service.proxyExtraction(
+        VALID_WORKSPACE_ID,
+        jsonReq(`Bearer ${secretToken}`),
+      );
+
+      const [, init] = mockFetch.mock.calls[0];
+      const sent: string = init.headers['authorization'];
+      expect(sent).toMatch(/^Bearer \S+$/);
+      expect(sent).not.toContain(secretToken);
+      const token = sent.slice('Bearer '.length);
+
+      expect(decodeProtectedHeader(token)).toMatchObject({
+        alg: 'RS256',
+        kid: KEY_ID,
+      });
+      const { payload } = await jwtVerify(
+        token,
+        await importSPKI(publicKeyPem, 'RS256'),
+        {
+          issuer: 'weav-api-gateway',
+          audience: 'weav-ocr',
+          algorithms: ['RS256'],
+        },
+      );
+      expect(payload.scope).toBe('ocr:extract');
+      expect(payload.mode).toBe('preview');
+      expect(payload.workspace_id).toBe(VALID_WORKSPACE_ID);
+      expect(payload.exp! - payload.iat!).toBe(60);
+      expect(payload.jti).toMatch(/^[0-9a-f-]{36}$/);
+
+      for (const spy of spies) {
         for (const callArgs of spy.mock.calls) {
           const serialized = JSON.stringify(callArgs);
           expect(serialized).not.toContain(secretToken);
+          expect(serialized).not.toContain(token);
         }
       }
+    });
+
+    it('mints a distinct jti for every request', async () => {
+      mockFetch
+        .mockResolvedValueOnce(upstreamOk())
+        .mockResolvedValueOnce(upstreamOk());
+      await service.proxyExtraction(VALID_WORKSPACE_ID, jsonReq('Bearer u'));
+      await service.proxyExtraction(VALID_WORKSPACE_ID, jsonReq('Bearer u'));
+      const jtis = mockFetch.mock.calls.map(
+        ([, init]) =>
+          JSON.parse(
+            Buffer.from(
+              init.headers.authorization.split('.')[1],
+              'base64url',
+            ).toString(),
+          ).jti,
+      );
+      expect(new Set(jtis).size).toBe(2);
+    });
+
+    it('fails closed with a sanitized 503 and logs once when the key file is unreadable', async () => {
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation();
+      useGateway({ signingKeyLocation: join(keyDir, 'missing.pem') });
+
+      for (let i = 0; i < 2; i += 1) {
+        const res = await service.proxyExtraction(
+          VALID_WORKSPACE_ID,
+          jsonReq('Bearer u'),
+        );
+        expect(res.status).toBe(503);
+        expect((res.data as any).error.code).toBe('OCR_BUSY');
+        expect(JSON.stringify(res.data)).not.toContain('missing.pem');
+      }
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails closed with 503 when the key file is not a PKCS#8 PEM', async () => {
+      jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      const bad = join(keyDir, 'bad.pem');
+      writeFileSync(bad, 'not a key');
+      useGateway({ signingKeyLocation: bad });
+      const res = await service.proxyExtraction(
+        VALID_WORKSPACE_ID,
+        jsonReq('Bearer u'),
+      );
+      expect(res.status).toBe(503);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('fails closed with 503 when no key is configured outside the dev bypass', async () => {
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation();
+      useGateway({ signingKeyLocation: undefined });
+      const res = await service.proxyExtraction(
+        VALID_WORKSPACE_ID,
+        jsonReq('Bearer user-token'),
+      );
+      expect(res.status).toBe(503);
+      expect((res.data as any).error.code).toBe('OCR_BUSY');
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalled();
+    });
+
+    describe('workspace membership', () => {
+      it('checks membership with the caller token only at Workspace Service, then mints for OCR', async () => {
+        mockFetch.mockResolvedValueOnce(upstreamOk());
+        const res = await service.proxyExtraction(
+          VALID_WORKSPACE_ID,
+          jsonReq('Bearer user-token'),
+        );
+        expect(res.status).toBe(200);
+
+        expect(workspaceFetch).toHaveBeenCalledTimes(1);
+        const [wsUrl, wsInit] = workspaceFetch.mock.calls[0];
+        expect(wsUrl).toBe(`${WORKSPACE_URL}/workspaces/${VALID_WORKSPACE_ID}`);
+        expect(wsInit.method).toBe('GET');
+        expect(wsInit.redirect).toBe('error');
+        expect(wsInit.headers.authorization).toBe('Bearer user-token');
+        expect(wsInit.headers['x-request-id']).toBe('req-service-jwt');
+        expect(wsInit.headers['x-correlation-id']).toBe('req-service-jwt');
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        const [, ocrInit] = mockFetch.mock.calls[0];
+        expect(ocrInit.headers.authorization).toMatch(/^Bearer \S+$/);
+        expect(ocrInit.headers.authorization).not.toContain('user-token');
+      });
+
+      it.each([403, 404])(
+        'returns 403 FORBIDDEN and never mints or calls OCR when Workspace Service says %s',
+        async (status) => {
+          workspaceFetch.mockResolvedValueOnce(
+            new Response('{"secret":"x"}', { status }),
+          );
+          const res = await service.proxyExtraction(
+            VALID_WORKSPACE_ID,
+            jsonReq('Bearer user-token'),
+          );
+          expect(res.status).toBe(403);
+          expect((res.data as any).error.code).toBe('FORBIDDEN');
+          expect((res.data as any).error.retryable).toBe(false);
+          expect((res.data as any).requestId).toBe('req-service-jwt');
+          expect(JSON.stringify(res.data)).not.toContain('secret');
+          expect(mockFetch).not.toHaveBeenCalled();
+        },
+      );
+
+      it('returns the sanitized 503 and never calls OCR when Workspace Service answers 500', async () => {
+        jest.spyOn(Logger.prototype, 'error').mockImplementation();
+        workspaceFetch.mockResolvedValueOnce(
+          new Response('boom', { status: 500 }),
+        );
+        const res = await service.proxyExtraction(
+          VALID_WORKSPACE_ID,
+          jsonReq('Bearer user-token'),
+        );
+        expect(res.status).toBe(503);
+        expect((res.data as any).error.code).toBe('OCR_BUSY');
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it('returns the sanitized 503 and never calls OCR when the membership call fails or times out', async () => {
+        const errorSpy = jest
+          .spyOn(Logger.prototype, 'error')
+          .mockImplementation();
+        workspaceFetch.mockRejectedValueOnce(new TypeError('ECONNREFUSED'));
+        const failed = await service.proxyExtraction(
+          VALID_WORKSPACE_ID,
+          jsonReq('Bearer user-token'),
+        );
+        expect(failed.status).toBe(503);
+
+        jest.useFakeTimers();
+        try {
+          workspaceFetch.mockImplementationOnce(
+            (_url: string, init: { signal: AbortSignal }) =>
+              new Promise((_resolve, reject) => {
+                init.signal.addEventListener('abort', () =>
+                  reject(new Error('aborted')),
+                );
+              }),
+          );
+          const pending = service.proxyExtraction(
+            VALID_WORKSPACE_ID,
+            jsonReq('Bearer user-token'),
+          );
+          await jest.advanceTimersByTimeAsync(5_001);
+          const timedOut = await pending;
+          expect(timedOut.status).toBe(503);
+        } finally {
+          jest.useRealTimers();
+        }
+
+        expect(mockFetch).not.toHaveBeenCalled();
+        for (const call of errorSpy.mock.calls) {
+          expect(JSON.stringify(call)).not.toContain('user-token');
+        }
+      });
+
+      it('skips the membership call on the dev-bypass path without a key', async () => {
+        useGateway(
+          { signingKeyLocation: undefined, allowUnauthenticatedDev: true },
+          'development',
+        );
+        mockFetch.mockResolvedValueOnce(upstreamOk());
+        await service.proxyExtraction(
+          VALID_WORKSPACE_ID,
+          jsonReq('Bearer user-token'),
+        );
+        expect(workspaceFetch).not.toHaveBeenCalled();
+      });
+    });
+
+    it('sends no Authorization at all (not the user token) when the dev bypass is on and no key is set', async () => {
+      useGateway(
+        { signingKeyLocation: undefined, allowUnauthenticatedDev: true },
+        'development',
+      );
+      mockFetch.mockResolvedValueOnce(upstreamOk());
+      const res = await service.proxyExtraction(
+        VALID_WORKSPACE_ID,
+        jsonReq('Bearer user-token'),
+      );
+      expect(res.status).toBe(200);
+      const [, init] = mockFetch.mock.calls[0];
+      expect(init.headers).not.toHaveProperty('authorization');
     });
   });
 
@@ -632,6 +881,42 @@ describe('OcrService (Proxy Boundary)', () => {
       expect(serialized).not.toContain('ECONNREFUSED');
       expect(serialized).not.toContain('127.0.0.1:8000');
       expect(serialized).not.toContain('fetch failed');
+    });
+  });
+
+  describe('Configurable upstream deadline', () => {
+    it('aborts the upstream call at gateway.ocr.timeoutMs and returns sanitized 503 OCR_BUSY', async () => {
+      mockConfigService.get.mockImplementation((key: string) =>
+        key === 'gateway' ? gatewayConfig({ timeoutMs: 50 }) : undefined,
+      );
+      // Never resolves; only rejects when the gateway deadline aborts the signal.
+      mockFetch.mockImplementationOnce(
+        (_url: string, init: { signal: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            init.signal.addEventListener('abort', () =>
+              reject(new Error('aborted')),
+            );
+          }),
+      );
+
+      const startedAt = Date.now();
+      const res = await service.proxyExtraction(VALID_WORKSPACE_ID, {
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer token',
+        },
+        body: {
+          source: {
+            type: 'artifact',
+            artifactId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+          },
+        },
+      });
+
+      expect(Date.now() - startedAt).toBeLessThan(2000);
+      expect(res.status).toBe(503);
+      expect((res.data as any).error.code).toBe('OCR_BUSY');
+      expect((res.data as any).error.retryable).toBe(true);
     });
   });
 

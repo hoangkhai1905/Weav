@@ -285,6 +285,39 @@ class DefinitionValidatorTest {
     }
 
     @Test
+    void ocrFileSourceIsExclusiveWithTheOtherSourcesAndAcceptsAReferenceOrAMapping() {
+        var conflict = definition(List.of(manual("manual"),
+                node("ocr", "ocr.extract", Map.of("file", "{{ trigger.input.file }}", "fileUrl", "https://a.test/f"))),
+                List.of());
+        var mapped = definition(List.of(manual("manual"),
+                node("ocr", "ocr.extract", Map.of("file", "{{ trigger.input.attachments[0] }}"))), List.of());
+        var reference = definition(List.of(manual("manual"),
+                node("ocr", "ocr.extract", Map.of("file", Map.of("fileId", "f1")))), List.of());
+        var empty = definition(List.of(manual("manual"),
+                node("ocr", "ocr.extract", Map.of("file", Map.of()))), List.of());
+
+        assertTrue(validator.validateDraft(conflict).stream().anyMatch(issue -> issue.code().equals("OCR_SOURCE_CONFLICT")));
+        assertTrue(validator.validatePublish(mapped).stream().noneMatch(issue -> issue.code().startsWith("OCR_SOURCE")));
+        assertTrue(validator.validatePublish(reference).stream().noneMatch(issue -> issue.code().startsWith("OCR_SOURCE")));
+        assertTrue(validator.validatePublish(empty).stream().anyMatch(issue -> issue.code().equals("OCR_SOURCE_REQUIRED")));
+    }
+
+    @Test
+    void driveDownloadNeedsAFileIdAtPublish() {
+        String connection = java.util.UUID.randomUUID().toString();
+        var missing = definition(List.of(manual("manual"), node("drive", "google.drive",
+                Map.of("connectionId", connection, "operation", "download"))), List.of());
+        var present = definition(List.of(manual("manual"), node("drive", "google.drive",
+                Map.of("connectionId", connection, "operation", "download", "fileId", "{{ trigger.input.id }}"))),
+                List.of());
+
+        assertTrue(validator.validatePublish(missing).stream().anyMatch(issue ->
+                issue.code().equals("REQUIRED_FIELD_MISSING") && "config.fileId".equals(issue.field())));
+        assertTrue(validator.validatePublish(present).stream().noneMatch(issue ->
+                "config.fileId".equals(issue.field())));
+    }
+
+    @Test
     void optionalHttpConnectionAndRequiredSheetsConnectionMustBeLiteralUuids() {
         var httpWithoutConnection = definition(List.of(manual("manual"),
                 node("request", "http.request", httpConfig())), List.of(edge("e1", "manual", "request")));

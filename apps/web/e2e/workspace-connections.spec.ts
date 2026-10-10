@@ -1953,6 +1953,8 @@ test.describe("workflow builder Week 4 node fields", () => {
     await page.getByLabel("Telegram bot connection").selectOption(CONNECTION_TELEGRAM_ID);
     await page.locator("#telegram-chat-id").fill("-100123");
     await page.locator("#telegram-text").fill("<b>Hi</b>");
+    // The less common options live under "Advanced options".
+    await page.getByTestId("telegram-advanced").locator("summary").click();
     await page.getByLabel("Parse mode").selectOption("HTML");
     await page.getByLabel("Send silently").check();
     await page.getByLabel("Reply to message ID").fill("42");
@@ -2069,6 +2071,48 @@ test.describe("workflow builder Week 4 new nodes", () => {
       folderId: "folder-1",
       nameContains: "report",
       pageSize: 20,
+    });
+  });
+
+  test("OCR picks the photo sent to the bot and Telegram send answers that chat with the OCR text", async ({ page }) => {
+    const state = await openBuilder(page, [
+      { id: "telegram_trigger_1", type: "trigger.telegram", config: {} },
+      { id: "ocr_1", type: "ocr.extract", config: { language: "vi+en" } },
+      { id: "reply", type: "telegram.send_message", config: { chatId: "", text: "" } },
+    ], [
+      { id: "trigger-ocr", source: "telegram_trigger_1", target: "ocr_1" },
+      { id: "ocr-reply", source: "ocr_1", target: "reply" },
+    ]);
+
+    // An OCR step with no source yet opens on the files earlier steps hand over, by friendly name.
+    await page.locator(node("ocr.extract")).click();
+    await expect(page.getByTestId("ocr-source-mode")).toHaveValue("file");
+    const pick = page.getByTestId("ocr-file-pick");
+    await expect(pick.locator("option", { hasText: "Photo/file sent to the bot" })).toHaveCount(1);
+    await expect(page.getByTestId("ocr-file-mapping")).toHaveCount(0);
+    await pick.selectOption("__custom");
+    await expect(page.getByTestId("ocr-file-mapping")).toHaveValue("");
+    await pick.selectOption("{{ trigger.input.file }}");
+    await expect(page.getByTestId("ocr-file-mapping")).toHaveCount(0);
+    // Trying OCR on a sample file is tucked away so it is not mistaken for part of the workflow.
+    await expect(page.getByTestId("ocr-try")).not.toHaveAttribute("open", "");
+
+    // Telegram send: "whoever just wrote to the bot" fills the chat; quick inserts offer the closest step's data first.
+    await page.locator(node("telegram.send_message")).click();
+    await page.getByTestId("telegram-chat-target").selectOption("reply");
+    await expect(page.locator("#telegram-chat-id")).toHaveCount(0);
+    const suggestions = page.getByTestId("data-suggestion");
+    await expect(suggestions.first()).toHaveText("+ Text read");
+    await expect(page.getByTestId("data-suggestions")).toContainText("Message received");
+    await page.locator("#telegram-text").fill("Invoice:");
+    await suggestions.first().click();
+    await expect(page.locator("#telegram-text")).toHaveValue("Invoice:\n{{ nodes.ocr_1.output.text.rawText }}");
+
+    await saveDraft(page);
+    expect(savedConfig(state, "ocr_1")).toMatchObject({ file: "{{ trigger.input.file }}" });
+    expect(savedConfig(state, "reply")).toMatchObject({
+      chatId: "{{ trigger.input.message.chat.id }}",
+      text: "Invoice:\n{{ nodes.ocr_1.output.text.rawText }}",
     });
   });
 

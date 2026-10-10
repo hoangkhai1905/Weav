@@ -24,6 +24,7 @@ class OcrClientSpringContextTest {
                     "weav.workflow.ocr.token-lifetime", "60s",
                     "weav.workflow.ocr.max-response-bytes", "1048576")));
             context.getBeanFactory().registerSingleton("objectMapper", new ObjectMapper());
+            context.getBeanFactory().registerSingleton("fileStore", new com.weav.workflow.infrastructure.files.InMemoryFileStore());
             context.register(
                     OcrClientConfiguration.class,
                     WorkflowServiceJwtIssuer.class,

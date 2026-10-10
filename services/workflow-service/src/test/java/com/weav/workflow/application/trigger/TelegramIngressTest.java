@@ -1,6 +1,7 @@
 package com.weav.workflow.application.trigger;
 
 import com.weav.workflow.application.port.out.ExecutionAdmissionPort;
+import com.weav.workflow.application.port.out.TelegramFilePort;
 import com.weav.workflow.application.port.out.WebhookSecretPort;
 import com.weav.workflow.application.port.out.WorkflowTriggerPort;
 import com.weav.workflow.application.service.ExecutionAdmissionService;
@@ -26,6 +27,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -183,6 +185,115 @@ class TelegramIngressTest {
         assertThrows(WebhookNotFoundException.class,
                 () -> service.acceptTelegram("webhook-key", SECRET, update(1, "hi", false), null, null));
         verify(admissions, never()).automatic(any(), any(), any(), any(), any(), anyString());
+    }
+
+    @Test
+    void parsesCaptionsDocumentsAndPhotoSizesAndIgnoresMessagesWithNothingToRun() {
+        TelegramUpdate caption = TelegramUpdate.from(Map.of("update_id", 5, "message",
+                Map.of("caption", "scan", "photo", List.of(
+                        Map.of("file_id", "s", "width", 90, "height", 90, "file_size", 100),
+                        Map.of("file_id", "l", "width", 1280, "height", 960, "file_size", 90000),
+                        Map.of("file_id", "m", "width", 320, "height", 240, "file_size", 5000))))).orElseThrow();
+        assertEquals(Map.of("updateId", 5L, "message", Map.of("caption", "scan")), caption.input());
+        assertEquals(List.of("l", "m", "s"), caption.files().stream().map(TelegramUpdate.FileCandidate::telegramFileId).toList());
+        assertEquals(new TelegramUpdate.FileCandidate("l", "photo.jpg", "image/jpeg", 90000L), caption.files().get(0));
+
+        TelegramUpdate document = TelegramUpdate.from(Map.of("update_id", 6, "message", Map.of("document",
+                Map.of("file_id", "d", "file_name", "a/b\\invoice.pdf", "mime_type", "application/pdf",
+                        "file_size", 12)))).orElseThrow();
+        assertEquals(List.of(new TelegramUpdate.FileCandidate("d", "abinvoice.pdf", "application/pdf", 12L)),
+                document.files());
+        assertEquals(Map.of("updateId", 6L, "message", Map.of()), document.input());
+
+        TelegramUpdate bare = TelegramUpdate.from(Map.of("update_id", 7, "message",
+                Map.of("document", Map.of("file_id", "d")))).orElseThrow();
+        assertEquals(new TelegramUpdate.FileCandidate("d", "document", "application/octet-stream", null),
+                bare.files().get(0));
+
+        assertTrue(TelegramUpdate.from(Map.of("update_id", 8, "message", Map.of("document", Map.of("file_name", "x")))).isEmpty());
+        assertTrue(TelegramUpdate.from(Map.of("update_id", 9, "message", Map.of("caption", " "))).isEmpty());
+    }
+
+    @Test
+    void aPhotoIsDownloadedAfterAuthenticationAndAddedToTheInputAsFile() throws Exception {
+        UUID connectionId = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+        WorkflowTrigger bot = botTrigger(connectionId);
+        stubBot(bot, workspaceId);
+        List<Object[]> fetched = new java.util.ArrayList<>();
+        TelegramFilePort port = (workspace, connection, candidates) -> {
+            fetched.add(new Object[]{workspace, connection, candidates});
+            return Map.of("fileId", "stored-1", "filename", "photo.jpg", "mimeType", "image/jpeg", "size", 90000L);
+        };
+        WebhookTriggerService withFiles = serviceWith(Optional.of(port));
+        Map<String, Object> update = Map.of("update_id", 11, "message", Map.of("message_id", 3, "caption", "receipt",
+                "photo", List.of(Map.of("file_id", "l", "width", 800, "height", 600, "file_size", 90000))));
+
+        assertTrue(withFiles.acceptTelegram(KEY, SECRET, update, "corr", null).isPresent());
+
+        assertEquals(1, fetched.size());
+        assertEquals(workspaceId, fetched.get(0)[0]);
+        assertEquals(connectionId, fetched.get(0)[1]);
+        ArgumentCaptor<Object> input = ArgumentCaptor.forClass(Object.class);
+        verify(admissions).automatic(eq(bot.getId()), input.capture(), any(), eq("corr"), any(), eq("telegram:11"));
+        assertEquals(Map.of("updateId", 11L,
+                "message", Map.of("messageId", 3L, "caption", "receipt"),
+                "file", Map.of("fileId", "stored-1", "filename", "photo.jpg", "mimeType", "image/jpeg", "size", 90000L)),
+                input.getValue());
+
+        assertThrows(WebhookNotFoundException.class, () -> withFiles.acceptTelegram(KEY, "wrong", update, null, null));
+        assertEquals(1, fetched.size(), "an unauthenticated caller never starts a download");
+    }
+
+    @Test
+    void aFileThatCannotBeFetchedNeverLosesTheRun() throws Exception {
+        UUID connectionId = UUID.randomUUID();
+        WorkflowTrigger bot = botTrigger(connectionId);
+        stubBot(bot, UUID.randomUUID());
+        Map<String, Object> update = Map.of("update_id", 12, "message", Map.of("text", "see attached",
+                "document", Map.of("file_id", "d", "file_name", "a.pdf", "mime_type", "application/pdf", "file_size", 7)));
+
+        TelegramFilePort crashing = (workspace, connection, candidates) -> {
+            throw new IllegalStateException("boom " + candidates);
+        };
+        assertTrue(serviceWith(Optional.of(crashing)).acceptTelegram(KEY, SECRET, update, null, null).isPresent());
+        assertTrue(serviceWith(Optional.empty()).acceptTelegram(KEY, SECRET, update, null, null).isPresent());
+
+        ArgumentCaptor<Object> input = ArgumentCaptor.forClass(Object.class);
+        verify(admissions, org.mockito.Mockito.times(2)).automatic(eq(bot.getId()), input.capture(), any(), any(), any(),
+                eq("telegram:12"));
+        Map<String, Object> skipped = Map.of("filename", "a.pdf", "mimeType", "application/pdf", "size", 7L);
+        for (int i = 0; i < 2; i++) {
+            Map<?, ?> file = (Map<?, ?>) ((Map<?, ?>) input.getAllValues().get(i)).get("file");
+            assertEquals(i == 0 ? "error" : "not_stored", file.get("skipped"));
+            skipped.forEach((key, value) -> assertEquals(value, file.get(key)));
+            assertFalse(file.toString().contains("boom"));
+        }
+    }
+
+    private WebhookTriggerService serviceWith(Optional<TelegramFilePort> port) {
+        return new WebhookTriggerService(workflows, triggers, secrets, admissions,
+                new WebhookIngressRateLimiter(1000, Duration.ofMinutes(1)),
+                new WebhookEndpointRateLimiter(1000, Duration.ofMinutes(1)), port,
+                org.springframework.transaction.support.TransactionOperations.withoutTransaction());
+    }
+
+    private WorkflowTrigger botTrigger(UUID connectionId) throws Exception {
+        WorkflowTrigger bot = WorkflowTrigger.createNew(workflowId, versionId, "node", TriggerType.TELEGRAM,
+                Map.of("connectionId", connectionId.toString()), TriggerStatus.ACTIVE, null, null, Instant.now());
+        bot.provisionWebhook(KEY, sha256(SECRET));
+        return bot;
+    }
+
+    private void stubBot(WorkflowTrigger bot, UUID workspaceId) {
+        when(triggers.findTelegramByEndpoint(KEY)).thenReturn(Optional.of(bot));
+        when(triggers.lockCurrent(workflowId, bot.getId())).thenReturn(Optional.of(bot));
+        Instant now = Instant.now();
+        Workflow published = new Workflow(workflowId, workspaceId, "Bot", "d", WorkflowStatus.PUBLISHED, "1.0",
+                Map.of("schemaVersion", "1.0", "nodes", List.of(), "edges", List.of(), "variables", Map.of()),
+                Map.of(), versionId, UUID.randomUUID(), now, now, now, null, null);
+        when(workflows.findById(workflowId)).thenReturn(Optional.of(published));
+        when(workflows.lockById(eq(workflowId), any())).thenReturn(Optional.of(published));
     }
 
     private WorkflowTrigger trigger(TriggerType type) throws Exception {

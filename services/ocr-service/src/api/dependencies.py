@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import os
+
 from src.application.use_cases.extract_text_use_case import ExtractTextUseCase
 from src.domain.ports.artifact_resolver_port import ArtifactResolverPort
 from src.infrastructure.engines.paddle_ocr_engine_adapter import PaddleOcrEngineAdapter
@@ -10,7 +12,10 @@ from src.infrastructure.engines.paddle_table_engine_adapter import (
     PaddleTableEngineAdapter,
 )
 from src.infrastructure.files.document_loader import DocumentLoader
-from src.infrastructure.files.safe_url_fetcher import SafeUrlFetcher
+from src.infrastructure.files.safe_url_fetcher import (
+    SafeUrlFetcher,
+    UrlAllowlistPolicy,
+)
 from src.infrastructure.processors.opencv_preprocessor_adapter import (
     OpenCvPreprocessorAdapter,
 )
@@ -37,7 +42,12 @@ def create_extract_text_use_case(
     table_engine = PaddleTableEngineAdapter(
         pdf_renderer=pdf_renderer,
     )
-    url_fetcher = SafeUrlFetcher()
+    # OCR_URL_ALLOWLIST: comma-separated hostnames. Each entry matches that host and its
+    # subdomains (a leading dot is ignored); unset or empty denies every URL source.
+    allowed_hosts = {
+        h.strip() for h in os.environ.get("OCR_URL_ALLOWLIST", "").split(",") if h.strip()
+    }
+    url_fetcher = SafeUrlFetcher(policy=UrlAllowlistPolicy(allowed_domains=allowed_hosts))
 
     return ExtractTextUseCase(
         document_loader=document_loader,

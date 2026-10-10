@@ -19,7 +19,11 @@ ENV PYTHONUNBUFFERED=1
 
 COPY pyproject.toml uv.lock ./
 
-RUN uv sync --locked
+# paddle: Paddle Inference (default manifest, model conversion). onnx: ONNX Runtime only, no paddlepaddle.
+ARG OCR_RUNTIME=paddle
+RUN case "$OCR_RUNTIME" in       paddle) uv sync --locked --extra paddle ;;       onnx) uv sync --locked ;;       *) echo "OCR_RUNTIME must be paddle or onnx" >&2; exit 1 ;;     esac
+# Keep the installed runtime: a plain `uv run` would re-sync and drop the optional paddle extra.
+ENV UV_NO_SYNC=1
 
 COPY . .
 

@@ -422,6 +422,22 @@ export class WorkflowProxyController {
     );
   }
 
+  // Static segment: must stay registered next to (and wins over) :workflowId.
+  @Get('node-capabilities')
+  nodeCapabilities(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const id = workflowId(rawWorkspaceId);
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      `/workspaces/${id}/workflows/node-capabilities`,
+    );
+  }
+
   @Get(':workflowId')
   get(
     @Param('workspaceId') rawWorkspaceId: string,

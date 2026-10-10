@@ -31,7 +31,10 @@ const CONNECTION_NODE_FIELDS: Record<string, (config: Record<string, unknown>) =
   'trigger.gmail': () => [],
   'discord.send_message': () => ['content'],
   // Upload with `content` (or nothing) needs a name; with `file` the name defaults to the file's own (S10).
-  'google.drive': (config) => ['operation', ...(config.operation === 'upload' && isBlank(config.file) ? ['name'] : [])],
+  'google.drive': (config) => ['operation',
+    ...(config.operation === 'upload' && isBlank(config.file) ? ['name'] : []),
+    // Download needs the id of the Drive file to fetch.
+    ...(config.operation === 'download' ? ['fileId'] : [])],
   'google.calendar': (config) => (isBlank(config.operation) || config.operation === 'create' ? ['summary', 'start', 'end'] : []),
 };
 
@@ -62,16 +65,25 @@ export const isConditionComplete = (config: Record<string, unknown>): boolean =>
 /**
  * `attachableConnectionIds`: ids of the workspace's ACTIVE connections the user can attach.
  * Leave it undefined while the list is loading so a step is not flagged before we know.
+ * `ocrSources`: OCR sources the Workflow Service has enabled ("url", "artifact", "file"); absent or empty
+ * means OCR cannot run in a workflow yet.
  */
 export const getNodeReadinessBadge = (
   nodeType: string,
   config: Record<string, unknown>,
   attachableConnectionIds?: ReadonlySet<string>,
+  ocrSources?: readonly string[],
 ): NodeReadinessBadge => {
   if (!SUPPORTED_NODE_TYPES.has(nodeType)) return { state: 'unsupported', label: 'Unsupported', labelKey: 'builder.readiness.unsupported' };
   if (nodeType === 'trigger.webhook') return { state: 'draft', label: 'Not published', labelKey: 'builder.readiness.not_published' };
   if (nodeType === 'ocr.extract') {
-    return { state: 'unavailable', label: 'Unavailable', labelKey: 'builder.readiness.unavailable' };
+    const unavailable: NodeReadinessBadge = { state: 'unavailable', label: 'Unavailable', labelKey: 'builder.readiness.unavailable' };
+    if (!ocrSources?.length) return unavailable;
+    // Exactly one source (DefinitionValidator OCR_SOURCE_REQUIRED / OCR_SOURCE_CONFLICT), and it must be enabled.
+    const used = ([['url', config.fileUrl], ['artifact', config.artifactId], ['file', config.file]] as const)
+      .filter(([, value]) => !isBlank(value)).map(([source]) => source);
+    if (used.length !== 1) return NOT_CONFIGURED;
+    if (!ocrSources.includes(used[0])) return unavailable;
   }
   if (nodeType === 'trigger.workflow_event' && !(Array.isArray(config.events) && config.events.length > 0)) return NOT_CONFIGURED;
   if (nodeType === 'weav.workflow') {

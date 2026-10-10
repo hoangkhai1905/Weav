@@ -140,6 +140,16 @@ const environmentSchema = z.object({
   OCR_SERVICE_URL: upstreamUrlSchema.default(DEFAULT_UPSTREAMS.ocr),
   CORS_ALLOWED_ORIGINS: z.string().optional(),
   OCR_ALLOW_UNAUTHENTICATED_DEV: booleanEnvironmentSchema,
+  // Upstream deadline for one OCR extraction; raise it for slow remote runtimes (Colab).
+  GATEWAY_OCR_TIMEOUT_MS: positiveIntegerEnvironmentSchema(10_000),
+  // PKCS#8 PEM private key the Gateway signs OCR Service JWTs with; empty = unset.
+  GATEWAY_OCR_SIGNING_KEY_LOCATION: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+  GATEWAY_OCR_SIGNING_KEY_ID: z.string().trim().min(1).default('gateway-dev-1'),
   GATEWAY_GENERAL_RATE_LIMIT: positiveIntegerEnvironmentSchema(120),
   GATEWAY_AUTH_RATE_LIMIT: positiveIntegerEnvironmentSchema(10),
   GATEWAY_OCR_RATE_LIMIT: positiveIntegerEnvironmentSchema(10),
@@ -196,6 +206,9 @@ export interface GatewayConfig {
   };
   ocr: {
     allowUnauthenticatedDev: boolean;
+    timeoutMs: number;
+    signingKeyLocation?: string;
+    signingKeyId: string;
   };
 }
 
@@ -339,6 +352,9 @@ export function validateGatewayEnvironment(
     },
     ocr: {
       allowUnauthenticatedDev: parsed.data.OCR_ALLOW_UNAUTHENTICATED_DEV,
+      timeoutMs: parsed.data.GATEWAY_OCR_TIMEOUT_MS,
+      signingKeyLocation: parsed.data.GATEWAY_OCR_SIGNING_KEY_LOCATION,
+      signingKeyId: parsed.data.GATEWAY_OCR_SIGNING_KEY_ID,
     },
   };
 }

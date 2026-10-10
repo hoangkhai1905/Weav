@@ -1,6 +1,12 @@
-import { createHmac, randomBytes, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import {
+  createHmac,
+  generateKeyPairSync,
+  randomBytes,
+  randomUUID,
+} from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import {
   createServer,
   request as httpRequest,
@@ -405,6 +411,17 @@ async function waitFor(
   }
 }
 
+// The Gateway signs its own OCR Service JWT; it needs a PKCS#8 key outside the dev bypass.
+const ocrKeyDir = mkdtempSync(join(tmpdir(), 'gateway-ocr-key-'));
+const ocrKeyFile = join(ocrKeyDir, 'api-gateway.pem');
+writeFileSync(
+  ocrKeyFile,
+  generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({
+    type: 'pkcs8',
+    format: 'pem',
+  }),
+);
+
 function applyTestEnvironment(upstreamUrl: string): void {
   Object.assign(process.env, {
     APP_ENV: 'test',
@@ -420,6 +437,7 @@ function applyTestEnvironment(upstreamUrl: string): void {
     WORKSPACE_SERVICE_URL: upstreamUrl,
     NOTIFICATION_SERVICE_URL: upstreamUrl,
     OCR_SERVICE_URL: upstreamUrl,
+    GATEWAY_OCR_SIGNING_KEY_LOCATION: ocrKeyFile,
   });
 }
 
@@ -478,6 +496,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       fixture.close((error) => (error ? reject(error) : resolveClose()));
     });
     restoreEnvironment();
+    rmSync(ocrKeyDir, { recursive: true, force: true });
   });
 
   it('proxies all public operations with exact paths and preserved responses', async () => {
@@ -1066,9 +1085,47 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ accepted: true });
     expect(fixtureRequests.map(({ path }) => path)).toEqual([
+      `/workspaces/${WORKSPACE_ID}`,
       '/v1/extractions',
     ]);
+    // The user's token goes only to Workspace Service (membership check);
+    // OCR gets the Gateway's own Service JWT.
+    expect(fixtureRequests[0].headers.authorization).toBe(
+      signedAuthorization['normal-token'],
+    );
+    expect(fixtureRequests[1].headers.authorization).toMatch(/^Bearer \S+$/);
+    expect(fixtureRequests[1].headers.authorization).not.toBe(
+      signedAuthorization['normal-token'],
+    );
   });
+
+  it.each([403, 404])(
+    'rejects OCR with 403 FORBIDDEN and never reaches OCR when membership answers %s',
+    async (status) => {
+      const response = await app
+        .getHttpAdapter()
+        .getInstance()
+        .inject({
+          method: 'POST',
+          url: `/api/v1/workspaces/${WORKSPACE_ID}/ocr/extractions`,
+          headers: {
+            authorization: signedAuthorization[`status-${status}-token`],
+            'content-type': 'application/json',
+          },
+          payload: {
+            source: { type: 'url', fileUrl: 'https://files.example.test' },
+          },
+        });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toMatchObject({
+        error: { code: 'FORBIDDEN', retryable: false },
+      });
+      expect(fixtureRequests.map(({ path }) => path)).toEqual([
+        `/workspaces/${WORKSPACE_ID}`,
+      ]);
+    },
+  );
 
   it('rejects redirects and does not retry a failed mutation', async () => {
     const redirect = await app

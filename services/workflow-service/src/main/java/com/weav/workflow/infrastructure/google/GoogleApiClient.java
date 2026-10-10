@@ -72,6 +72,36 @@ public class GoogleApiClient {
         return successfulObject(response, service);
     }
 
+    /**
+     * Downloads a file's content (GET with {@code alt=media}) as raw bytes of at most {@code maxBytes}; errors are
+     * classified like {@link #call}.
+     */
+    public byte[] download(
+            ResolvedConnection connection,
+            String provider,
+            String service,
+            String path,
+            Map<String, String> query,
+            int maxBytes) {
+        String accessToken = accessToken(connection, provider, service);
+        URI target;
+        try {
+            target = URI.create(BASE_URL + path);
+        } catch (IllegalArgumentException exception) {
+            throw configurationFailure(service);
+        }
+        PinnedHttpTransport.HttpResponse response =
+                transport.executeGoogleApiDownloadWithBearerToken(target, query, accessToken, maxBytes);
+        if (response != null && response.status() >= 200 && response.status() < 300
+                && response.data() instanceof byte[] bytes) {
+            return bytes;
+        }
+        // Not a success: reuse the status classification (the error body is dropped, it is never shown).
+        successfulObject(response == null ? null
+                : new PinnedHttpTransport.HttpResponse(response.status(), null, response.headers()), service);
+        throw invalidResponse(service);
+    }
+
     /** Percent-encodes one path segment (UTF-8, space as %20). */
     public static String encodePathSegment(String value, String service) {
         if (value == null || value.isBlank() || value.length() > MAX_PATH_PARAMETER_LENGTH

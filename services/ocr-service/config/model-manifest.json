@@ -25,5 +25,23 @@
       "text_recognition_model_name": "en_PP-OCRv5_mobile_rec",
       "text_recognition_model_dir": "/models/paddlex-cache/official_models/en_PP-OCRv5_mobile_rec"
     }
+  },
+  "table": {
+    "layout_detection_model_name": "PP-DocLayout_plus-L",
+    "layout_detection_model_dir": "/models/paddlex-cache/official_models/PP-DocLayout_plus-L",
+    "text_detection_model_name": "PP-OCRv5_mobile_det",
+    "text_detection_model_dir": "/models/paddlex-cache/official_models/PP-OCRv5_mobile_det",
+    "text_recognition_model_name": "PP-OCRv6_medium_rec",
+    "text_recognition_model_dir": "/models/paddlex-cache/official_models/pp-ocrv6-medium-rec-vietnamese",
+    "table_classification_model_name": "PP-LCNet_x1_0_table_cls",
+    "table_classification_model_dir": "/models/paddlex-cache/official_models/PP-LCNet_x1_0_table_cls",
+    "wired_table_structure_recognition_model_name": "SLANet_plus",
+    "wired_table_structure_recognition_model_dir": "/models/paddlex-cache/official_models/SLANet_plus",
+    "wireless_table_structure_recognition_model_name": "SLANet_plus",
+    "wireless_table_structure_recognition_model_dir": "/models/paddlex-cache/official_models/SLANet_plus",
+    "wired_table_cells_detection_model_name": "RT-DETR-L_wired_table_cell_det",
+    "wired_table_cells_detection_model_dir": "/models/paddlex-cache/official_models/RT-DETR-L_wired_table_cell_det",
+    "wireless_table_cells_detection_model_name": "RT-DETR-L_wireless_table_cell_det",
+    "wireless_table_cells_detection_model_dir": "/models/paddlex-cache/official_models/RT-DETR-L_wireless_table_cell_det"
   }
 }
