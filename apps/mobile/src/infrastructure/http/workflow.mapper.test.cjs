@@ -93,3 +93,16 @@ test('maps the 202 run response and rejects other statuses', () => {
     /status/,
   );
 });
+
+test('detail maps a WORKFLOW_EVENT trigger registration', () => {
+  const wf = mapWorkflow({
+    ...summary(),
+    revision: 1,
+    definition: { schemaVersion: '1.0', nodes: [{ id: 'n1', type: 'trigger.workflow_event', config: {} }], edges: [] },
+    editorState: null,
+    triggers: [
+      { triggerId: 't1', type: 'WORKFLOW_EVENT', status: 'ACTIVE', reasonCode: null, nextRunAt: null, lastTriggeredAt: null },
+    ],
+  });
+  assert.equal(wf.triggers[0].type, 'WORKFLOW_EVENT');
+});

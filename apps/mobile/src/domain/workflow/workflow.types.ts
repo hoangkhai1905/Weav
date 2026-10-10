@@ -1,6 +1,6 @@
 export type WorkflowStatus = 'DRAFT' | 'PUBLISHED' | 'PAUSED';
 
-export type WorkflowTriggerType = 'SCHEDULE' | 'WEBHOOK' | 'TELEGRAM' | 'GMAIL';
+export type WorkflowTriggerType = 'SCHEDULE' | 'WEBHOOK' | 'TELEGRAM' | 'GMAIL' | 'WORKFLOW_EVENT';
 export type WorkflowTriggerStatus = 'ACTIVE' | 'DISABLED';
 export type WorkflowTriggerReasonCode =
   | 'DEPENDENCY_NOT_CONFIGURED'

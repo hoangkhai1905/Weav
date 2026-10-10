@@ -101,3 +101,8 @@ test('maps detail nodes (READY/SKIPPED), attempts and DEBUG/WARN logs', () => {
     /level/,
   );
 });
+
+test('maps WORKFLOW_EVENT runs without breaking the page', () => {
+  const page = mapExecutionPage(pageOf([summary(), summary({ executionId: 'e2', triggerType: 'WORKFLOW_EVENT' })]));
+  assert.equal(page.items[1].triggerType, 'WORKFLOW_EVENT');
+});
