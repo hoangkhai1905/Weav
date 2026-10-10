@@ -459,6 +459,33 @@ describe('Gateway routes added for full service coverage (Fastify e2e)', () => {
     expect(JSON.parse(forwarded.body.toString())).toEqual({ event: 'push' });
   });
 
+  it('maps Authorization: Apikey to x-webhook-secret on the webhook route only', async () => {
+    let n = 0; // distinct endpoint key per call: the route is rate-limited per key
+    const send = (authorization: string, extra: Record<string, string> = {}) =>
+      inject({
+        method: 'POST',
+        url: `/api/v1/webhooks/${String((n += 1)).repeat(32)}`,
+        headers: { authorization, ...extra },
+        payload: { transferType: 'in' },
+      });
+
+    await send('Apikey sepay-key-1');
+    await send('Apikey from-authorization', {
+      'x-webhook-secret': 'from-header',
+    });
+    await send('Bearer abc');
+    await send('Apikey two parts');
+
+    const [apikey, both, bearer, malformed] = fixtureRequests;
+    expect(apikey.headers['x-webhook-secret']).toBe('sepay-key-1');
+    expect(apikey.headers.authorization).toBeUndefined();
+    expect(both.headers['x-webhook-secret']).toBe('from-header');
+    expect(both.headers.authorization).toBeUndefined();
+    expect(bearer.headers['x-webhook-secret']).toBeUndefined();
+    expect(bearer.headers.authorization).toBeUndefined();
+    expect(malformed.headers['x-webhook-secret']).toBeUndefined();
+  });
+
   it('rejects malformed webhook keys and non-JSON bodies before forwarding', async () => {
     const badKey = await inject({
       method: 'POST',
