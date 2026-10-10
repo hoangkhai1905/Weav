@@ -179,6 +179,8 @@ const MAX_GENERATE_REQUEST_BYTES = 32_768;
 const GENERATE_TIMEOUT_MS = 80_000;
 const WEBHOOK_ENDPOINT_KEY_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 const WEBHOOK_SECRET_PATTERN = /^[\x21-\x7e]{1,512}$/;
+// SePay's "API Key" webhook auth sends `Authorization: Apikey <key>`; the key is the Weav webhook secret.
+const WEBHOOK_APIKEY_PATTERN = /^Apikey\s+(\S{1,512})$/i;
 // Telegram's secret_token alphabet and length (setWebhook): 1-256 of A-Z a-z 0-9 _ -.
 const TELEGRAM_SECRET_TOKEN_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
 
@@ -880,11 +882,19 @@ export class WebhookProxyController {
     }
     const extraHeaders: Record<string, string> = {};
     const secret = getRequestHeader(request.headers, 'x-webhook-secret');
-    if (secret !== undefined) {
+    if (secret) {
       if (!WEBHOOK_SECRET_PATTERN.test(secret)) {
         throw new BadRequestException('Request validation failed');
       }
       extraHeaders['x-webhook-secret'] = secret;
+    } else {
+      // X-Webhook-Secret wins; otherwise map `Authorization: Apikey <key>`. The Authorization header itself is never forwarded.
+      const apiKey = WEBHOOK_APIKEY_PATTERN.exec(
+        getRequestHeader(request.headers, 'authorization') ?? '',
+      )?.[1];
+      if (apiKey && WEBHOOK_SECRET_PATTERN.test(apiKey)) {
+        extraHeaders['x-webhook-secret'] = apiKey;
+      }
     }
     return this.proxy.forward(
       'POST',

@@ -773,7 +773,12 @@ paths:
       summary: Receive a workflow webhook
       description: >-
         Authenticates the opaque endpoint identifier with X-Webhook-Secret;
-        no user JWT is required. The accepted JSON value becomes trigger.input.
+        no user JWT is required. Through the API Gateway, providers that can
+        only send an API key (for example SePay) may instead send
+        "Authorization: Apikey <secret>"; the Gateway maps it to
+        X-Webhook-Secret only when X-Webhook-Secret is absent or empty
+        (X-Webhook-Secret wins), and never forwards the Authorization header.
+        An empty X-Webhook-Secret is treated as missing (same generic 404). The accepted JSON value becomes trigger.input.
         Unknown, missing, wrong, inactive, paused, or superseded registrations
         all return the same generic 404. The endpoint identifier and secret
         must be redacted from logs, metrics, and traces. Request bodies are
@@ -793,7 +798,9 @@ paths:
         - name: X-Webhook-Secret
           in: header
           required: true
-          description: Required high-entropy webhook secret; never returned after one-time publication.
+          description: >-
+            High-entropy webhook secret; never returned after one-time publication. Workflow-service
+            always receives it in this header; at the Gateway "Authorization: Apikey <secret>" can replace it.
           schema: { type: string, minLength: 43, maxLength: 43, pattern: '^[A-Za-z0-9_-]{43}$', writeOnly: true }
       requestBody:
         required: false

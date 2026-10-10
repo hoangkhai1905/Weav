@@ -180,6 +180,96 @@ describe('workflow gateway routes', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  describe('webhook Apikey mapping (SePay)', () => {
+    const key = 'W'.repeat(32);
+    const forwardedHeaders = async (headers: Record<string, string>) => {
+      const request = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), {
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/webhooks/${key}`,
+        headers,
+        payload: { transferType: 'in' },
+      });
+      return (request.mock.calls[0][1] as { headers: Record<string, string> })
+        .headers;
+    };
+
+    it('maps Authorization: Apikey to x-webhook-secret and drops Authorization', async () => {
+      const headers = await forwardedHeaders({
+        authorization: 'apikey  s3cret_Key-1',
+      });
+      expect(headers['x-webhook-secret']).toBe('s3cret_Key-1');
+      expect(headers.authorization).toBeUndefined();
+    });
+
+    it('lets X-Webhook-Secret win when both are present', async () => {
+      const headers = await forwardedHeaders({
+        authorization: 'Apikey from-authorization',
+        'x-webhook-secret': 'from-header',
+      });
+      expect(headers['x-webhook-secret']).toBe('from-header');
+      expect(headers.authorization).toBeUndefined();
+    });
+
+    it('forwards no secret for Bearer or malformed Apikey values', async () => {
+      for (const authorization of [
+        'Bearer abc',
+        'Apikey',
+        'Apikey a b',
+        `Apikey ${'k'.repeat(513)}`,
+        'Apikey café',
+        ['Apikey one', 'Apikey two'] as unknown as string,
+      ]) {
+        jest.restoreAllMocks();
+        const headers = await forwardedHeaders({ authorization });
+        expect(headers['x-webhook-secret']).toBeUndefined();
+        expect(headers.authorization).toBeUndefined();
+      }
+    });
+
+    it('accepts an upper-case scheme or a tab separator', async () => {
+      for (const authorization of ['APIKEY tabbed-key', 'Apikey\ttabbed-key']) {
+        jest.restoreAllMocks();
+        const headers = await forwardedHeaders({ authorization });
+        expect(headers['x-webhook-secret']).toBe('tabbed-key');
+      }
+    });
+
+    it('treats an empty X-Webhook-Secret as missing', async () => {
+      const mapped = await forwardedHeaders({
+        authorization: 'Apikey from-authorization',
+        'x-webhook-secret': '',
+      });
+      expect(mapped['x-webhook-secret']).toBe('from-authorization');
+      jest.restoreAllMocks();
+      const alone = await forwardedHeaders({ 'x-webhook-secret': '' });
+      expect(alone['x-webhook-secret']).toBeUndefined();
+    });
+
+    it('does not map Apikey on the Telegram route', async () => {
+      const request = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ ok: true }), {
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+      await app.inject({
+        method: 'POST',
+        url: `/api/v1/webhooks/telegram/${key}`,
+        headers: { authorization: 'Apikey nope' },
+        payload: { update_id: 1 },
+      });
+      const headers = (
+        request.mock.calls[0][1] as { headers: Record<string, string> }
+      ).headers;
+      expect(headers['x-webhook-secret']).toBeUndefined();
+      expect(headers.authorization).toBeUndefined();
+    });
+  });
+
   describe('telegram webhook ingress', () => {
     const key = 'T'.repeat(32);
     const secret = 'telegram_secret-token_0123456789';
