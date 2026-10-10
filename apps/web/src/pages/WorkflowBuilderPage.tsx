@@ -50,6 +50,7 @@ import {
   Braces,
   WandSparkles,
   Share2,
+  Download,
   Bot,
   BellRing,
   MessageSquare,
@@ -61,6 +62,8 @@ import { ExecutionEdge } from '../components/builder/ExecutionEdge';
 import { OutputSchemaEditor } from '../components/builder/OutputSchemaEditor';
 import { GenerateWorkflowPanel } from '../components/builder/GenerateWorkflowPanel';
 import { ShareTemplateDialog } from '../components/templates/ShareTemplateDialog';
+import { previewShare } from '../api/templates.api';
+import { buildWorkflowFile, workflowFileName } from '../lib/workflowTransfer';
 import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
@@ -95,6 +98,7 @@ import { describeIssues, type WorkflowIssue } from '../lib/publishErrors';
 import { workflowToReactFlow, reactFlowToWorkflow } from '../lib/mappers/workflowMapper';
 import type { WorkflowDefinition } from '../types/workflow.types';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
+import { toast } from 'sonner';
 import { showErrorToast, showSuccessToast } from '../lib/feedback/toast';
 import { ConfirmModal } from '../components/common/ConfirmModal';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
@@ -1336,6 +1340,31 @@ export const WorkflowBuilderPage: React.FC = () => {
     scheduleExecutionStep(() => setIsPreviewing(false), edges.length * 500 + 300);
   };
 
+  // Exports the sanitized saved draft (the server strips connections, chat ids, emails) as a downloadable JSON file.
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExportJson = async () => {
+    if (!workflowId || !workflow) return;
+    setIsExporting(true);
+    try {
+      const preview = await previewShare(workflowId);
+      const file = buildWorkflowFile(workflow, preview);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = workflowFileName(workflow.name);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      if (preview.warnings.length > 0) toast.warning(t('workflows.transfer.export_warning'));
+    } catch (error) {
+      if (error instanceof WorkflowApiError) toast.error(error.message);
+      else showErrorToast('workflows.transfer.export_failed');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const hasUnsavedChanges = !isSaved || (workflow !== null && (workflowTitle !== workflow.name || workflowDescription !== (workflow.description ?? '')));
 
   return (
@@ -1442,6 +1471,17 @@ export const WorkflowBuilderPage: React.FC = () => {
             className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Share2 size={15} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            data-testid="workflow-export-json"
+            onClick={() => void handleExportJson()}
+            disabled={isLoadingWorkflow || !workflow || hasUnsavedChanges || isExporting}
+            title={hasUnsavedChanges ? t('tpl.share.save_first') : t('workflows.transfer.export')}
+            aria-label={hasUnsavedChanges ? `${t('workflows.transfer.export')}. ${t('tpl.share.save_first')}` : t('workflows.transfer.export')}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download size={15} aria-hidden="true" />
           </button>
           <button
             data-testid="workflow-preview"
