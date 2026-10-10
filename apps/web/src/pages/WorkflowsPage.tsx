@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { primaryTrigger, triggerTypeLabel } from '../lib/executions/runView';
 import { Copy, Edit3, History, MoreHorizontal, Pause, Play, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
 import type { ExecutionDetail, WorkflowDefinition } from '../types/workflow.types';
-import { workflowApi } from '../api/workflow.api';
+import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
+import { getActiveWorkflowWorkspaceId, workflowRequest, workflowV1Api } from '../api/workflow-v1.api';
+import { WORKFLOW_FILE_MAX_BYTES, buildDraftBody, importedWorkflowName, parseWorkflowFile } from '../lib/workflowTransfer';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchRecentExecutions, fetchWorkflowList, invalidateWorkflowQueries, workflowRunStatsKey } from '../lib/queries/workflows';
 import { WorkflowGlyph } from '../components/workflows/WorkflowGlyph';
@@ -152,20 +154,74 @@ export function WorkflowsPage() {
   });
   const stats = useMemo<Record<string, RunStats>>(() => statsQuery.data ?? {}, [statsQuery.data]);
 
-  const handleCreate = async () => {
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const importBusyRef = useRef(false);
+  const [isImporting, setIsImporting] = useState(false);
+
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const picked = input.files?.[0];
+    input.value = ''; // lets the same file be chosen again
+    if (!picked || importBusyRef.current) return;
+    importBusyRef.current = true;
+    setIsImporting(true);
     setApiError(null);
+    let workspaceId: string | null = null;
+    let createdId: string | null = null;
     const mutationSession = captureNotificationSession();
     try {
-      const newWf = await workflowApi.createWorkflow({ name: 'New AI Workflow' });
+      if (isWorkflowMockMode) {
+        setApiError(t('workflows.transfer.unavailable'));
+        return;
+      }
+      if (picked.size > WORKFLOW_FILE_MAX_BYTES) {
+        setApiError(t('workflows.transfer.err.too_large'));
+        return;
+      }
+      let text: string;
+      try {
+        text = await picked.text();
+      } catch {
+        setApiError(t('workflows.transfer.err.unreadable'));
+        return;
+      }
+      const parsed = parseWorkflowFile(text, picked.size);
+      if (!parsed.ok) {
+        setApiError(t(parsed.error));
+        return;
+      }
+      const { file } = parsed;
+      const description = file.description ?? undefined;
+      // One workspace for create, draft save and cleanup, even if the user switches workspace meanwhile.
+      workspaceId = await getActiveWorkflowWorkspaceId();
+      const created = await workflowV1Api.createWorkflow(
+        { name: importedWorkflowName(file.name, t('workflows.transfer.suffix')), ...(description ? { description } : {}) },
+        workspaceId,
+      );
+      createdId = created.id;
+      await workflowRequest(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/workflows/${encodeURIComponent(created.id)}/draft`, {
+        method: 'PUT',
+        body: JSON.stringify(buildDraftBody(created.name, file)),
+      });
       if (!isCurrentNotificationSession(mutationSession)) return;
       void invalidateWorkflowQueries(queryClient);
-      showSuccessToast('toast.workflow.created', mutationSession);
-      refreshNotifications(mutationSession);
-      navigate(`/workflows/${newWf.id}/builder`);
+      showSuccessToast('workflows.transfer.done', mutationSession);
+      navigate(`/workflows/${created.id}/builder`);
     } catch (error) {
-      if (isCurrentNotificationSession(mutationSession)) {
-        setApiError(error instanceof Error ? error.message : tr('msg.workflow_could_not_be_created'));
+      let message = error instanceof Error ? error.message : t('workflows.transfer.failed');
+      if (createdId && workspaceId) {
+        // No junk drafts: the draft was rejected, so remove the empty workflow created for it.
+        try {
+          await workflowV1Api.deleteWorkflow(createdId, workspaceId);
+        } catch {
+          message = `${message} ${t('workflows.transfer.cleanup_failed')}`;
+        }
+        void invalidateWorkflowQueries(queryClient);
       }
+      if (isCurrentNotificationSession(mutationSession)) setApiError(message);
+    } finally {
+      importBusyRef.current = false;
+      setIsImporting(false);
     }
   };
 
@@ -374,10 +430,20 @@ export function WorkflowsPage() {
             <Sparkles size={14} aria-hidden="true" />
             {t('nav.ai_generator')}
           </Link>
-          <button type="button" className={btn}>
-            {t('workflows.import')}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json,application/json"
+            data-testid="workflow-import-input"
+            className="hidden"
+            tabIndex={-1}
+            onChange={(event) => void handleImportFile(event)}
+          />
+          <button type="button" className={btn} disabled={isImporting} onClick={() => importInputRef.current?.click()}>
+            {isImporting ? t('workflows.transfer.importing') : t('workflows.import')}
           </button>
-          <button type="button" onClick={handleCreate} className={btnPrimary}>
+          <span role="status" aria-live="polite" className="sr-only">{isImporting ? t('workflows.transfer.importing') : ''}</span>
+          <button type="button" onClick={() => navigate('/workflows/new')} className={btnPrimary}>
             <Plus size={14} strokeWidth={2} aria-hidden="true" />
             {t('dashboard.new_workflow')}
           </button>
@@ -565,8 +631,8 @@ export function WorkflowsPage() {
                 </li>
               </ol>
               <div className="mt-5 flex gap-2">
-                <button type="button" onClick={handleCreate} className={btnPrimary}>
-                  {t('workflows.empty_create')}
+                <button type="button" onClick={() => navigate('/workflows/new')} className={btnPrimary}>
+                  {t('dashboard.new_workflow')}
                 </button>
                 <Link to="/ai/workflow-generator" className={btn}>
                   <Sparkles size={14} aria-hidden="true" />
