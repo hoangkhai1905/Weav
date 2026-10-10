@@ -1316,8 +1316,8 @@ components:
           format: date-time
     ConnectionProvider:
       type: string
-      description: DISCORD connections use authType TOKEN; the credential token is the channel webhook URL (write-only).
-      enum: [TELEGRAM, HTTP, GMAIL, GOOGLE_SHEETS, GOOGLE_CALENDAR, GOOGLE_DRIVE, DISCORD]
+      description: DISCORD, SLACK and TEAMS connections use authType TOKEN; the credential token is the channel or workflow webhook URL (write-only).
+      enum: [TELEGRAM, HTTP, GMAIL, GOOGLE_SHEETS, GOOGLE_CALENDAR, GOOGLE_DRIVE, DISCORD, SLACK, TEAMS]
     ConnectionAuthType:
       type: string
       enum: [NONE, TOKEN, API_KEY, BASIC, OAUTH2]

@@ -29,6 +29,8 @@ import {
   WandSparkles,
   BellRing,
   MessageSquare,
+  CalendarClock,
+  Type,
 } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { NODE_CATALOG, nodeSourcePorts } from '../../lib/constants/nodeCatalog';
@@ -68,6 +70,10 @@ const ICON_MAP: Record<string, React.ElementType> = {
   'ai.generate': WandSparkles,
   'trigger.workflow_event': BellRing,
   'discord.send_message': MessageSquare,
+  'slack.send_message': MessageSquare,
+  'teams.send_message': MessageSquare,
+  'format.datetime': CalendarClock,
+  'format.text': Type,
   'weav.workflow': Bot,
 };
 

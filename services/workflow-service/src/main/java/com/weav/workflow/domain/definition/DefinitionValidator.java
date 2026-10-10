@@ -42,7 +42,12 @@ public final class DefinitionValidator {
             "telegram.send_message.parseMode", enumValues("telegram.send_message", "parseMode"),
             "google.sheets.valueInputOption", enumValues("google.sheets", "valueInputOption"),
             "google.calendar.operation", enumValues("google.calendar", "operation"),
-            "weav.workflow.operation", enumValues("weav.workflow", "operation"));
+            "weav.workflow.operation", enumValues("weav.workflow", "operation"),
+            "format.datetime.operation", enumValues("format.datetime", "operation"),
+            "format.datetime.unit", enumValues("format.datetime", "unit"),
+            "format.datetime.locale", enumValues("format.datetime", "locale"),
+            "format.text.operation", enumValues("format.text", "operation"),
+            "format.text.locale", enumValues("format.text", "locale"));
     private static final Set<String> WORKFLOW_EVENTS = Set.of("FAILED", "SUCCEEDED");
     private static final Set<String> HTTP_METHODS = Set.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
 
@@ -291,6 +296,23 @@ public final class DefinitionValidator {
         if ("data.set".equals(node.type())) {
             validateDataSetFields(node, issues);
         }
+        if ("format.datetime".equals(node.type())) {
+            validateFormatRequirements(node, issues, "now".equals(config.get("operation")) ? List.of()
+                    : List.of("value"), switch (config.get("operation") instanceof String op ? op : "") {
+                        case "add", "subtract" -> List.of("amount", "unit");
+                        case "format" -> List.of("pattern");
+                        case "convert" -> List.of("timezone");
+                        default -> List.<String>of();
+                    });
+        }
+        if ("format.text".equals(node.type())) {
+            validateFormatRequirements(node, issues, List.of("value"),
+                    switch (config.get("operation") instanceof String op ? op : "") {
+                        case "replace" -> List.of("search");
+                        case "truncate" -> List.of("maxLength");
+                        default -> List.<String>of();
+                    });
+        }
         if ("logic.condition".equals(node.type())) {
             Object operator = config.get("operator");
             if (operator instanceof String text && Set.of("gt", "gte", "lt", "lte").contains(text)) {
@@ -439,6 +461,17 @@ public final class DefinitionValidator {
         }
     }
 
+    /** Fields a format operation needs; a mapped or missing operation only gets the always-required ones. */
+    private static void validateFormatRequirements(
+            WorkflowDefinition.Node node, List<ValidationIssue> issues, List<String> always, List<String> byOperation) {
+        for (String field : java.util.stream.Stream.concat(always.stream(), byOperation.stream()).toList()) {
+            if (!node.config().containsKey(field)) {
+                add(issues, node.id(), "config." + field, "REQUIRED_FIELD_MISSING",
+                        "A required configuration field is missing.");
+            }
+        }
+    }
+
     private static void validateDataSetFields(WorkflowDefinition.Node node, List<ValidationIssue> issues) {
         if (!(node.config().get("fields") instanceof Map<?, ?> fields)) {
             return; // missing is REQUIRED_FIELD_MISSING; a mapping string resolves at run time
@@ -464,12 +497,37 @@ public final class DefinitionValidator {
                 && !CONDITION_OPERATORS.contains(text)) {
             add(issues, node.id(), "config.operator", "INVALID_CONDITION_OPERATOR",
                     "The condition operator is not supported.");
+        } else if ("format.datetime".equals(node.type()) && "pattern".equals(field) && !text.isBlank()
+                && !validDatePattern(text)) {
+            add(issues, node.id(), "config.pattern", "INVALID_DATETIME_PATTERN",
+                    "The date-time pattern is not valid.");
+        } else if ("format.datetime".equals(node.type()) && "timezone".equals(field) && !text.isBlank()
+                && !validZone(text)) {
+            add(issues, node.id(), "config.timezone", "INVALID_TIMEZONE", "The time zone is not valid.");
         } else if (LITERAL_ENUMS.containsKey(node.type() + "." + field) && !text.isBlank()
                 && !LITERAL_ENUMS.get(node.type() + "." + field).contains(text)) {
             add(issues, node.id(), "config." + field, "INVALID_ENUM_VALUE", "The value is not supported.");
         } else if (!text.isBlank() && !validLiteralString(node.type() + "." + field, text)) {
             add(issues, node.id(), "config." + field, "INVALID_FIELD_TYPE",
                     "The configuration field has an invalid shape.");
+        }
+    }
+
+    private static boolean validDatePattern(String pattern) {
+        try {
+            java.time.format.DateTimeFormatter.ofPattern(pattern);
+            return true;
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
+    private static boolean validZone(String zone) {
+        try {
+            java.time.ZoneId.of(zone);
+            return true;
+        } catch (java.time.DateTimeException exception) {
+            return false;
         }
     }
 

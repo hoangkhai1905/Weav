@@ -25,14 +25,14 @@ public final class NodeSideEffects {
         return switch (type) {
             case "http.request" -> !(config != null && config.get("method") instanceof String method
                     && SAFE_HTTP_METHODS.contains(method.toUpperCase(Locale.ROOT)));
-            case "email.send", "telegram.send_message", "discord.send_message" -> true;
+            case "email.send", "telegram.send_message", "discord.send_message", "slack.send_message", "teams.send_message" -> true;
             case "weav.workflow" -> !(config != null && ("status".equals(config.get("operation"))
                     || "list_failures".equals(config.get("operation"))));
             case "google.calendar" -> !(config != null && "list".equals(config.get("operation")));
             case "google.sheets" -> !(config != null
                     && ("read".equals(config.get("operation")) || "lookup".equals(config.get("operation"))));
             case "google.drive" -> !(config != null && "list".equals(config.get("operation")));
-            case "logic.condition", "logic.switch", "data.set", "ai.extract", "ai.classify", "ai.summarize", "ocr.extract", "ai.generate" -> false;
+            case "logic.condition", "logic.switch", "data.set", "format.datetime", "format.text", "ai.extract", "ai.classify", "ai.summarize", "ocr.extract", "ai.generate" -> false;
             default -> type.startsWith("trigger.") ? false : true;
         };
     }

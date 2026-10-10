@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/slack.send_message",
+  "title": "Send Slack message",
+  "description": "Posts a message to a Slack channel through an incoming webhook.",
+  "x-weav-node": {
+    "type": "slack.send_message",
+    "category": "action",
+    "label": "Send Slack message",
+    "sideEffect": true
+  },
+  "type": "object",
+  "properties": {
+    "connectionId": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Slack connection",
+      "description": "Slack connection holding the channel's incoming webhook URL.",
+      "x-weav-connection": {
+        "provider": "SLACK"
+      }
+    },
+    "text": {
+      "type": "string",
+      "title": "Message",
+      "description": "Message text, at most 4000 characters after mappings are applied.",
+      "x-weav-template": true,
+      "minLength": 1
+    }
+  },
+  "required": [
+    "connectionId",
+    "text"
+  ],
+  "additionalProperties": false
+}

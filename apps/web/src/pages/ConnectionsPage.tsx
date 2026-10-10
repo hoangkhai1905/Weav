@@ -69,6 +69,8 @@ const PROVIDER_LABELS: Record<string, string> = {
   GOOGLE_DRIVE: "Google Drive",
   TELEGRAM: "Telegram",
   DISCORD: "Discord",
+  SLACK: "Slack",
+  TEAMS: "Microsoft Teams",
   HTTP: "HTTP",
 };
 
@@ -397,9 +399,30 @@ function ConnectionRow({
   );
 }
 
-type TokenProvider = "TELEGRAM" | "DISCORD";
-// Same pattern as workspace-service (CredentialPayloadCodec.DISCORD_WEBHOOK_URL); the server is the authority.
+type WebhookProvider = "DISCORD" | "SLACK" | "TEAMS";
+type TokenProvider = "TELEGRAM" | WebhookProvider;
+const isWebhookProvider = (provider: string): provider is WebhookProvider =>
+  provider === "DISCORD" || provider === "SLACK" || provider === "TEAMS";
+// Same rules as workspace-service (CredentialPayloadCodec); the server is the authority.
 const DISCORD_WEBHOOK_URL = /^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+$/;
+const SLACK_WEBHOOK_URL = /^https:\/\/hooks\.slack\.com\/services\/T[A-Z0-9]{1,20}\/B[A-Z0-9]{1,20}\/[A-Za-z0-9]{1,64}$/;
+function isTeamsWebhookUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return url.protocol === "https:" && (url.port === "" || url.port === "443") && !url.username && !url.hash
+      && (host.endsWith(".logic.azure.com") || host.endsWith(".api.powerplatform.com"))
+      && url.pathname.includes("/workflows/") && url.pathname.endsWith("/triggers/manual/paths/invoke")
+      && Boolean(url.searchParams.get("sig"));
+  } catch {
+    return false;
+  }
+}
+function isValidWebhookUrl(provider: WebhookProvider, value: string): boolean {
+  if (provider === "DISCORD") return DISCORD_WEBHOOK_URL.test(value);
+  if (provider === "SLACK") return SLACK_WEBHOOK_URL.test(value);
+  return isTeamsWebhookUrl(value);
+}
 
 /** "New connection" dialog, shared by the Connections page and the builder inspector. */
 export function CreateConnectionDialog({
@@ -423,9 +446,10 @@ export function CreateConnectionDialog({
   const [name, setName] = useState("");
   const [provider, setProvider] = useState<GoogleProvider | TokenProvider>(initialProvider);
   const [token, setToken] = useState("");
-  const isDiscord = provider === "DISCORD";
-  // Telegram and Discord are token connections: the secret is sent once to the credential endpoint.
-  const isToken = provider === "TELEGRAM" || isDiscord;
+  const webhookProvider = isWebhookProvider(provider) ? provider : null;
+  const webhookKey = webhookProvider ? webhookProvider.toLowerCase() : null;
+  // Telegram, Discord, Slack and Teams are token connections: the secret is sent once to the credential endpoint.
+  const isToken = provider === "TELEGRAM" || webhookProvider !== null;
   const [createError, setCreateError] = useState("");
   const [isFinishing, setIsFinishing] = useState(false);
   const busy = createConnection.isPending || isFinishing;
@@ -438,11 +462,11 @@ export function CreateConnectionDialog({
       return;
     }
     if (isToken && (!token.trim() || token.length > 4096)) {
-      setCreateError(t(isDiscord ? "connections.create.discord_validation" : "connections.create.token_validation"));
+      setCreateError(t(webhookKey ? `connections.create.${webhookKey}_validation` : "connections.create.token_validation"));
       return;
     }
-    if (isDiscord && !DISCORD_WEBHOOK_URL.test(token.trim())) {
-      setCreateError(t("connections.create.discord_validation"));
+    if (webhookProvider && !isValidWebhookUrl(webhookProvider, token.trim())) {
+      setCreateError(t(`connections.create.${webhookKey}_validation`));
       return;
     }
     if (busy) return;
@@ -452,7 +476,7 @@ export function CreateConnectionDialog({
     try {
       const connection = await createConnection.mutateAsync({
         workspaceId,
-        input: provider === "TELEGRAM" || provider === "DISCORD"
+        input: provider === "TELEGRAM" || isWebhookProvider(provider)
           ? { name: normalizedName, provider, authType: "TOKEN", token: token.trim() }
           : { name: normalizedName, provider, authType: "OAUTH2" },
       });
@@ -541,6 +565,8 @@ export function CreateConnectionDialog({
               <option value="GOOGLE_DRIVE">Google Drive</option>
               <option value="TELEGRAM">{t("connections.create.telegram_option")}</option>
               <option value="DISCORD">{t("connections.create.discord_option")}</option>
+              <option value="SLACK">{t("connections.create.slack_option")}</option>
+              <option value="TEAMS">{t("connections.create.teams_option")}</option>
             </select>
           </div>
           {isToken && (
@@ -549,7 +575,7 @@ export function CreateConnectionDialog({
                 htmlFor="connection-create-token"
                 className="mb-1.5 block text-xs font-medium text-text-2"
               >
-                {t(isDiscord ? "connections.create.discord_url" : "connections.create.token")}
+                {t(webhookKey ? `connections.create.${webhookKey}_url` : "connections.create.token")}
               </label>
               <input
                 id="connection-create-token"
@@ -568,7 +594,7 @@ export function CreateConnectionDialog({
                 className={fieldCls}
               />
               <p id="connection-create-token-hint" className="mt-1 text-[11px] text-muted-foreground">
-                {t(isDiscord ? "connections.create.discord_hint" : "connections.create.token_hint")}
+                {t(webhookKey ? `connections.create.${webhookKey}_hint` : "connections.create.token_hint")}
               </p>
             </div>
           )}

@@ -71,7 +71,11 @@
             "trigger.gmail",
             "weav.workflow",
             "trigger.workflow_event",
-            "discord.send_message"
+            "discord.send_message",
+            "format.datetime",
+            "format.text",
+            "slack.send_message",
+            "teams.send_message"
           ]
         },
         "config": {
@@ -1052,6 +1056,233 @@
                     "type": "string"
                   },
                   "username": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "format.datetime"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "type": "string",
+                    "enum": [
+                      "now",
+                      "add",
+                      "subtract",
+                      "format",
+                      "convert"
+                    ]
+                  },
+                  "value": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      }
+                    ]
+                  },
+                  "amount": {
+                    "oneOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -100000,
+                        "maximum": 100000
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "unit": {
+                    "type": "string",
+                    "enum": [
+                      "minutes",
+                      "hours",
+                      "days",
+                      "weeks",
+                      "months",
+                      "years"
+                    ]
+                  },
+                  "pattern": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "timezone": {
+                    "type": "string"
+                  },
+                  "locale": {
+                    "type": "string",
+                    "enum": [
+                      "vi",
+                      "en"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "format.text"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "type": "string",
+                    "enum": [
+                      "upper",
+                      "lower",
+                      "trim",
+                      "replace",
+                      "split",
+                      "join",
+                      "truncate",
+                      "number_format"
+                    ]
+                  },
+                  "value": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  },
+                  "search": {
+                    "type": "string"
+                  },
+                  "replacement": {
+                    "type": "string"
+                  },
+                  "separator": {
+                    "type": "string",
+                    "maxLength": 16
+                  },
+                  "maxLength": {
+                    "oneOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100000
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "decimals": {
+                    "oneOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 6
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "locale": {
+                    "type": "string",
+                    "enum": [
+                      "vi",
+                      "en"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "slack.send_message"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "teams.send_message"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "text": {
                     "type": "string"
                   }
                 },

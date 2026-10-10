@@ -37,7 +37,7 @@ class NodeConfigSchemasTest {
             "email.send", "google.sheets", "telegram.send_message", "logic.condition", "ai.extract",
             "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive", "logic.switch",
             "data.set", "ai.generate", "trigger.gmail", "weav.workflow", "trigger.workflow_event",
-            "discord.send_message");
+            "discord.send_message", "format.datetime", "format.text", "slack.send_message", "teams.send_message");
 
     /** The publish-required fields the validator hard-coded before schemas drove it. */
     private static final Map<String, List<String>> REQUIRED = Map.ofEntries(
@@ -59,7 +59,11 @@ class NodeConfigSchemasTest {
             Map.entry("trigger.gmail", List.of("connectionId")),
             Map.entry("weav.workflow", List.of("operation")), // workflow: required unless command/list_failures
             Map.entry("trigger.workflow_event", List.of("events")),
-            Map.entry("discord.send_message", List.of("connectionId", "content")));
+            Map.entry("discord.send_message", List.of("connectionId", "content")),
+            Map.entry("format.datetime", List.of("operation")),
+            Map.entry("format.text", List.of("operation")),
+            Map.entry("slack.send_message", List.of("connectionId", "text")),
+            Map.entry("teams.send_message", List.of("connectionId", "text")));
 
     @Test
     void registryLoadsAllThirteenNodeTypes() {
@@ -86,7 +90,10 @@ class NodeConfigSchemasTest {
             "ocr.extract.artifactId", "ocr.extract.fileUrl", "google.calendar.connectionId",
             "google.calendar.summary", "google.calendar.start", "google.calendar.end",
             "google.drive.connectionId", "google.drive.operation", "ai.generate.prompt", "trigger.gmail.connectionId",
-            "discord.send_message.connectionId", "discord.send_message.content");
+            "discord.send_message.connectionId", "discord.send_message.content",
+            "format.datetime.operation", "format.text.operation",
+            "slack.send_message.connectionId", "slack.send_message.text",
+            "teams.send_message.connectionId", "teams.send_message.text");
 
     private static Field field(String type, String name) {
         return NodeCatalog.schema(type).properties().get(name);
@@ -356,6 +363,53 @@ class NodeConfigSchemasTest {
         assertEquals(List.of(), publishCodes("discord.send_message",
                 Map.of("connectionId", UUID.randomUUID().toString(), "content", "hi")));
         assertFalse(publishCodes("discord.send_message", Map.of("connectionId", UUID.randomUUID().toString())).isEmpty());
+    }
+
+    @Test
+    void w7NodesValidateConnectionsEnumsAndCrossFieldRequirements() {
+        String conn = UUID.randomUUID().toString();
+        assertEquals("SLACK", NodeCatalog.schema("slack.send_message").properties().get("connectionId").connectionProvider());
+        assertEquals("TEAMS", NodeCatalog.schema("teams.send_message").properties().get("connectionId").connectionProvider());
+        assertTrue(NodeSideEffects.isSideEffecting("slack.send_message", Map.of()));
+        assertTrue(NodeSideEffects.isSideEffecting("teams.send_message", Map.of()));
+        assertFalse(NodeSideEffects.isSideEffecting("format.datetime", Map.of()));
+        assertFalse(NodeSideEffects.isSideEffecting("format.text", Map.of()));
+        assertEquals(List.of(), publishCodes("slack.send_message", Map.of("connectionId", conn, "text", "hi")));
+        assertEquals(List.of(), publishCodes("teams.send_message", Map.of("connectionId", conn, "title", "T", "text", "hi")));
+        assertFalse(publishCodes("teams.send_message", Map.of("connectionId", conn)).isEmpty());
+
+        assertEquals(List.of(), publishCodes("format.datetime", Map.of("operation", "now")));
+        assertEquals(List.of(), publishCodes("format.datetime", Map.of("operation", "add", "value", "{{ trigger.input.d }}",
+                "amount", 3, "unit", "days", "timezone", "Asia/Ho_Chi_Minh")));
+        assertEquals(List.of(), publishCodes("format.datetime", Map.of("operation", "format", "value", "2026-10-05",
+                "pattern", "dd/MM/yyyy HH:mm", "locale", "vi")));
+        assertTrue(publishCodes("format.datetime", Map.of("operation", "format", "value", "2026-10-05",
+                "pattern", "bad [pattern")).contains("INVALID_DATETIME_PATTERN"));
+        assertTrue(publishCodes("format.datetime", Map.of("operation", "convert", "value", "2026-10-05",
+                "timezone", "Mars/Olympus")).contains("INVALID_TIMEZONE"));
+        assertEquals(List.of(), publishCodes("format.datetime", Map.of("operation", "format", "value", "2026-10-05",
+                "pattern", "dd/MM/yyyy", "amount", 5, "unit", "days")));
+        assertEquals(List.of(), publishCodes("format.text", Map.of("operation", "upper", "value", "a",
+                "search", "x", "maxLength", 3, "decimals", 2)));
+        assertTrue(publishCodes("format.datetime", Map.of("operation", "reboot")).contains("INVALID_ENUM_VALUE"));
+        assertTrue(publishCodes("format.datetime", Map.of("operation", "add", "value", "2026-10-05"))
+                .contains("REQUIRED_FIELD_MISSING"));
+        assertTrue(publishCodes("format.datetime", Map.of("operation", "format")).contains("REQUIRED_FIELD_MISSING"));
+        assertTrue(publishCodes("format.datetime", Map.of("operation", "add", "value", "x", "amount", 100001,
+                "unit", "days")).contains("INVALID_FIELD_TYPE"));
+        assertTrue(publishCodes("format.datetime", Map.of("operation", "add", "value", "x", "amount", 1,
+                "unit", "decades")).contains("INVALID_ENUM_VALUE"));
+
+        assertEquals(List.of(), publishCodes("format.text", Map.of("operation", "upper", "value", "abc")));
+        assertEquals(List.of(), publishCodes("format.text", Map.of("operation", "join", "value", "{{ trigger.input.items }}")));
+        assertTrue(publishCodes("format.text", Map.of("operation", "replace", "value", "abc"))
+                .contains("REQUIRED_FIELD_MISSING"));
+        assertTrue(publishCodes("format.text", Map.of("operation", "truncate", "value", "abc"))
+                .contains("REQUIRED_FIELD_MISSING"));
+        assertTrue(publishCodes("format.text", Map.of("operation", "upper")).contains("REQUIRED_FIELD_MISSING"));
+        assertTrue(publishCodes("format.text", Map.of("operation", "titlecase", "value", "a")).contains("INVALID_ENUM_VALUE"));
+        assertTrue(publishCodes("format.text", Map.of("operation", "split", "value", "a", "separator", "x".repeat(17)))
+                .contains("INVALID_FIELD_TYPE"));
     }
 
     @Test

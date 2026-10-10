@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/teams.send_message",
+  "title": "Send Teams message",
+  "description": "Posts a message card to a Microsoft Teams channel or chat through a Power Automate Workflows webhook.",
+  "x-weav-node": {
+    "type": "teams.send_message",
+    "category": "action",
+    "label": "Send Teams message",
+    "sideEffect": true
+  },
+  "type": "object",
+  "properties": {
+    "connectionId": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Teams connection",
+      "description": "Teams connection holding the Workflows webhook URL.",
+      "x-weav-connection": {
+        "provider": "TEAMS"
+      }
+    },
+    "title": {
+      "type": "string",
+      "title": "Title",
+      "description": "Optional bold heading of the card, at most 200 characters.",
+      "x-weav-template": true
+    },
+    "text": {
+      "type": "string",
+      "title": "Message",
+      "description": "Message text, at most 4000 characters after mappings are applied.",
+      "x-weav-template": true,
+      "minLength": 1
+    }
+  },
+  "required": [
+    "connectionId",
+    "text"
+  ],
+  "additionalProperties": false
+}

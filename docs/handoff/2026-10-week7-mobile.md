@@ -42,3 +42,7 @@ Owners can now invite an e-mail address that has no Weav account. The person sig
 
 1. Owner calls the create route with a fresh `+alias` address; the e-mail arrives when `NOTIFICATION_EMAIL_ENABLED=true`.
 2. Sign up with that address, verify it, then `GET /api/v1/invitations` lists it and accept makes the user a member.
+
+## W7-A2 (node bundle)
+
+No mobile change required. Connection providers SLACK and TEAMS (authType TOKEN) were added to the workspace connection provider enum; mobile only needs an update if it lists providers exhaustively.
