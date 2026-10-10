@@ -62,6 +62,15 @@ public record OcrClientProperties(
         return List.copyOf(sources);
     }
 
+    /**
+     * True when uploaded files (a reference to a stored workflow file) may be sent to OCR. That path needs no URL
+     * allowlist or artifact resolver, only the master switch and the verified service claims; the caller also needs a
+     * configured file store.
+     */
+    public boolean fileSourceEnabled() {
+        return enabled && serviceClaimsVerified;
+    }
+
     /** True when a signing key id and key location are set (not that the key is valid). */
     public boolean signingKeyConfigured() {
         return keyId != null && !keyId.isBlank() && privateKeyLocation != null && !privateKeyLocation.isBlank();

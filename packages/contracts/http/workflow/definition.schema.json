@@ -498,8 +498,12 @@
                     "type": "string",
                     "enum": [
                       "upload",
-                      "list"
+                      "list",
+                      "download"
                     ]
+                  },
+                  "fileId": {
+                    "type": "string"
                   },
                   "name": {
                     "type": "string"
@@ -785,6 +789,16 @@
                   "fileUrl": {
                     "type": "string"
                   },
+                  "file": {
+                    "oneOf": [
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
                   "language": {
                     "type": "string"
                   },
@@ -793,9 +807,25 @@
                   }
                 },
                 "not": {
-                  "required": [
-                    "artifactId",
-                    "fileUrl"
+                  "anyOf": [
+                    {
+                      "required": [
+                        "artifactId",
+                        "fileUrl"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "artifactId",
+                        "file"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "fileUrl",
+                        "file"
+                      ]
+                    }
                   ]
                 },
                 "additionalProperties": false

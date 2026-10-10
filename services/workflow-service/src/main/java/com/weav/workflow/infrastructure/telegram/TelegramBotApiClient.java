@@ -16,7 +16,7 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
- * Bounded client for the three Telegram Bot API methods Weav uses. The host is fixed and the bot token only
+ * Bounded client for the Telegram Bot API methods Weav uses (send, webhook control, file download). The host is fixed and the bot token only
  * lives in the request path, so it is never logged, echoed in a failure or kept after the call.
  */
 @Component
@@ -102,6 +102,36 @@ public class TelegramBotApiClient {
 
     public void deleteWebhook(ResolvedConnection connection) {
         call(connection, "deleteWebhook", Map.of(), controlTimeout);
+    }
+
+    /** Resolves a Telegram {@code file_id} to its download path ({@code file_path}) and, when known, its size. */
+    public RemoteFile getFile(ResolvedConnection connection, String telegramFileId) {
+        Map<String, Object> result = call(connection, "getFile", Map.of("file_id", telegramFileId), null);
+        if (!(result.get("file_path") instanceof String filePath) || filePath.isBlank()) {
+            throw invalidResponse();
+        }
+        Long size = result.get("file_size") instanceof Number number ? number.longValue() : null;
+        return new RemoteFile(filePath, size);
+    }
+
+    /**
+     * Downloads the bytes behind a {@link #getFile} path with at most {@code maxBytes}. The download URL carries the
+     * bot token, so a failure only ever carries a fixed message: {@code HTTP_RESPONSE_TOO_LARGE} when the file is
+     * over the limit, {@code FILE_DOWNLOAD_FAILED} for a rejected path.
+     */
+    public byte[] downloadFile(ResolvedConnection connection, String filePath, int maxBytes) {
+        String token = botToken(connection);
+        URI uri;
+        try {
+            uri = URI.create("https://api.telegram.org/file/bot" + token + "/" + filePath);
+        } catch (IllegalArgumentException exception) {
+            throw new NodeExecutor.Failure("FILE_DOWNLOAD_FAILED", "The Telegram file path is invalid.", false);
+        }
+        return transport.downloadTelegramFile(uri, maxBytes).bytes();
+    }
+
+    /** A file known to the Bot API: the path below the file download endpoint and the declared size. */
+    public record RemoteFile(String filePath, Long size) {
     }
 
     private Map<String, Object> call(

@@ -2,6 +2,7 @@ package com.weav.workflow.presentation.http;
 
 import com.weav.workflow.application.dto.CreateWorkflowCommand;
 import com.weav.workflow.application.port.out.ConnectionReferenceUnavailableException;
+import com.weav.workflow.application.port.out.WorkflowFileStore;
 import com.weav.workflow.application.service.WorkflowDraftService;
 import com.weav.workflow.application.service.WorkspaceAuthorization;
 import com.weav.workflow.infrastructure.ocr.OcrClientProperties;
@@ -57,6 +58,7 @@ public class WorkflowController {
     private final WorkflowGenerationService workflowGenerationService;
     private final WorkspaceAuthorization workspaceAuthorization;
     private final OcrClientProperties ocrProperties;
+    private final WorkflowFileStore fileStore;
 
     public WorkflowController(
             WorkflowDraftService workflowDraftService,
@@ -64,9 +66,11 @@ public class WorkflowController {
             WorkflowGenerationService workflowGenerationService,
             ObjectMapper objectMapper,
             WorkspaceAuthorization workspaceAuthorization,
-            OcrClientProperties ocrProperties) {
+            OcrClientProperties ocrProperties,
+            WorkflowFileStore fileStore) {
         this.workspaceAuthorization = workspaceAuthorization;
         this.ocrProperties = ocrProperties;
+        this.fileStore = fileStore;
         this.workflowDraftService = workflowDraftService;
         this.workflowPublicationService = workflowPublicationService;
         this.workflowGenerationService = workflowGenerationService;
@@ -124,7 +128,14 @@ public class WorkflowController {
             @PathVariable UUID workspaceId,
             @AuthenticationPrincipal Jwt jwt) {
         workspaceAuthorization.require(workspaceId, actorId(jwt), "WORKSPACE_VIEW");
-        List<String> sources = ocrProperties.signingKeyConfigured() ? ocrProperties.enabledSources() : List.of();
+        List<String> sources = new java.util.ArrayList<>();
+        if (ocrProperties.signingKeyConfigured()) {
+            sources.addAll(ocrProperties.enabledSources());
+            // "file" reads a stored workflow file (earlier step output), so it also needs the file store.
+            if (ocrProperties.fileSourceEnabled() && fileStore.configured()) {
+                sources.add("file");
+            }
+        }
         return java.util.Map.of("nodes", java.util.Map.of("ocr.extract",
                 java.util.Map.of("available", !sources.isEmpty(), "sources", sources)));
     }

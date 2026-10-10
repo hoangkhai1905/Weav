@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "weav:node/google.drive",
   "title": "Google Drive",
-  "description": "Uploads a text file or a file from an earlier step (such as an email attachment) to, or lists files in, Google Drive. Only files created or opened by Weav are visible.",
+  "description": "Uploads a text file or a file from an earlier step (such as an email attachment) to Google Drive, downloads a Drive file so later steps (for example OCR) can read it, or lists files. Only files created or opened by Weav are visible.",
   "x-weav-node": {
     "type": "google.drive",
     "category": "action",
@@ -23,12 +23,19 @@
     "operation": {
       "type": "string",
       "title": "Operation",
-      "description": "Upload a text file or list files.",
+      "description": "Upload a text file, download a file, or list files.",
       "enum": [
         "upload",
-        "list"
+        "list",
+        "download"
       ],
       "minLength": 1
+    },
+    "fileId": {
+      "type": "string",
+      "title": "Drive file ID",
+      "description": "The Drive file to download. Used by download. Regular files only (PDF, images, ...), up to 10 MiB; Google Docs, Sheets and Slides are not supported. The result is output.file, which can be passed to the OCR step.",
+      "x-weav-template": true
     },
     "name": {
       "type": "string",

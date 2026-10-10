@@ -4,6 +4,7 @@ import com.weav.workflow.application.port.out.WorkspaceAccessPort;
 import com.weav.workflow.application.service.WorkspaceAuthorization;
 import com.weav.workflow.domain.exception.BadRequestException;
 import com.weav.workflow.domain.exception.ForbiddenException;
+import com.weav.workflow.infrastructure.files.InMemoryFileStore;
 import com.weav.workflow.infrastructure.ocr.OcrClientProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -34,7 +35,7 @@ class WorkflowNodeCapabilitiesTest {
                 .nodeCapabilities(WORKSPACE, jwt(USER.toString()));
 
         assertEquals(Map.of("nodes", Map.of("ocr.extract",
-                Map.of("available", true, "sources", List.of("url", "artifact")))), body);
+                Map.of("available", true, "sources", List.of("url", "artifact", "file")))), body);
         String json = new ObjectMapper().writeValueAsString(body);
         assertFalse(json.contains("secret") || json.contains("ocr.internal"));
     }
@@ -51,6 +52,19 @@ class WorkflowNodeCapabilitiesTest {
     }
 
     @Test
+    void fileSourceNeedsTheFileStoreAndStaysAvailableWithoutUrlOrArtifactSources() {
+        OcrClientProperties fileOnly = ocr(true, false, false, "k", "file:///k.pem");
+
+        assertEquals(Map.of("nodes", Map.of("ocr.extract", Map.of("available", true, "sources", List.of("file")))),
+                controller(fileOnly, VIEW).nodeCapabilities(WORKSPACE, jwt(USER.toString())));
+        assertEquals(Map.of("nodes", Map.of("ocr.extract", Map.of("available", false, "sources", List.of()))),
+                controller(fileOnly, VIEW, false).nodeCapabilities(WORKSPACE, jwt(USER.toString())));
+        assertEquals(Map.of("nodes", Map.of("ocr.extract", Map.of("available", true, "sources", List.of("url")))),
+                controller(ocr(true, true, false, "k", "file:///k.pem"), VIEW, false)
+                        .nodeCapabilities(WORKSPACE, jwt(USER.toString())));
+    }
+
+    @Test
     void nonMembersAreDeniedAndMalformedPrincipalsRejected() {
         WorkflowController denied = controller(ocr(true, true, true, "k", "file:///k.pem"), Set.of());
 
@@ -59,9 +73,15 @@ class WorkflowNodeCapabilitiesTest {
     }
 
     private static WorkflowController controller(OcrClientProperties ocr, Set<String> capabilities) {
+        return controller(ocr, capabilities, true);
+    }
+
+    private static WorkflowController controller(OcrClientProperties ocr, Set<String> capabilities, boolean fileStore) {
+        InMemoryFileStore store = new InMemoryFileStore();
+        store.configured = fileStore;
         WorkspaceAccessPort access = (workspaceId, userId) ->
                 new WorkspaceAccessPort.Access(workspaceId, userId, "MEMBER", capabilities);
-        return new WorkflowController(null, null, null, new ObjectMapper(), new WorkspaceAuthorization(access), ocr);
+        return new WorkflowController(null, null, null, new ObjectMapper(), new WorkspaceAuthorization(access), ocr, store);
     }
 
     /** All verification gates open; only the master switch, source switches and key vary. */

@@ -181,6 +181,95 @@ class OcrClientContractTest {
         assertFalse(failure.retryable());
     }
 
+    @Test
+    void postsAnUploadedFileAsMultipartWithTheSameAuthAndChecksTheEchoedRequestId() throws Exception {
+        OcrClientProperties properties = properties(true, false, false, true, false, false,
+                writePrivateKey(keyPair()));
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        String fixture = Files.readString(contractFixture("success-with-tables.json"));
+        AtomicReference<String> body = new AtomicReference<>();
+
+        server.expect(requestTo("http://ocr.internal/v1/extractions"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Authorization", org.hamcrest.Matchers.startsWith("Bearer eyJ")))
+                .andExpect(header("X-Request-ID", org.hamcrest.Matchers.matchesPattern("[0-9a-fA-F-]{36}")))
+                .andExpect(header("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"))
+                .andExpect(header("Content-Type", org.hamcrest.Matchers.startsWith("multipart/form-data;boundary=")))
+                .andExpect(request -> body.set(((org.springframework.mock.http.client.MockClientHttpRequest) request)
+                        .getBodyAsString(StandardCharsets.ISO_8859_1)))
+                .andRespond(request -> {
+                    String id = request.getHeaders().getFirst("X-Request-ID");
+                    return withSuccess(fixture.replace("eeb24fb2-df80-4dcb-b22d-3a4884799c73", id)
+                            .replace("4c9d5ea3-7fa2-43ce-95b8-8c17042a969f", id), MediaType.APPLICATION_JSON)
+                            .createResponse(request);
+                });
+
+        Map<String, Object> output = client(properties, builder).extractFile(context(),
+                "hóa đơn/..\\scan.pdf", "application/pdf", new byte[] {'%', 'P', 'D', 'F'}, "en", false);
+        server.verify();
+
+        assertEquals("1.0", output.get("schemaVersion"));
+        String sent = body.get();
+        assertTrue(sent.contains("name=\"file\"; filename=\"h_a __n..scan.pdf\""), sent);
+        assertTrue(sent.contains("Content-Type: application/pdf"), sent);
+        assertTrue(sent.contains("name=\"language\"") && sent.contains("\r\n\r\nen\r\n"), sent);
+        assertTrue(sent.contains("name=\"detectTables\"") && sent.contains("\r\n\r\nfalse\r\n"), sent);
+        assertTrue(sent.contains("%PDF"), sent);
+    }
+
+    @Test
+    void fileUploadIsClosedWithoutTheMasterSwitchAndRejectsEmptyOrInvalidInput() throws Exception {
+        Path key = writePrivateKey(keyPair());
+        OcrClient closed = client(properties(false, true, true, true, true, true, key));
+        OcrClient unverified = client(properties(true, true, true, false, true, true, key));
+        OcrClient open = client(properties(true, false, false, true, false, false, key));
+
+        assertEquals("DEPENDENCY_NOT_CONFIGURED", org.junit.jupiter.api.Assertions.assertThrows(
+                NodeExecutor.Failure.class, () -> closed.extractFile(context(), "a.pdf", "application/pdf",
+                        new byte[] {1}, "vi", true)).code());
+        assertEquals("DEPENDENCY_NOT_CONFIGURED", org.junit.jupiter.api.Assertions.assertThrows(
+                NodeExecutor.Failure.class, () -> unverified.extractFile(context(), "a.pdf", "application/pdf",
+                        new byte[] {1}, "vi", true)).code());
+        assertEquals("CONFIGURATION_ERROR", org.junit.jupiter.api.Assertions.assertThrows(
+                NodeExecutor.Failure.class, () -> open.extractFile(context(), "a.pdf", "application/pdf",
+                        new byte[0], "vi", true)).code());
+        assertEquals("CONFIGURATION_ERROR", org.junit.jupiter.api.Assertions.assertThrows(
+                NodeExecutor.Failure.class, () -> open.extractFile(context(), "a.pdf", "application/pdf",
+                        new byte[] {1}, "fr", true)).code());
+    }
+
+    @Test
+    void uploadMapsProviderErrorsAndInvalidSuccessBodiesWithoutLeakingTheFile() throws Exception {
+        OcrClientProperties properties = properties(true, false, false, true, false, false,
+                writePrivateKey(keyPair()));
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("http://ocr.internal/v1/extractions")).andRespond(withStatus(HttpStatus.PAYLOAD_TOO_LARGE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"error\":{\"code\":\"FILE_TOO_LARGE\",\"retryable\":false}}"));
+        server.expect(requestTo("http://ocr.internal/v1/extractions"))
+                .andRespond(withSuccess("{\"schemaVersion\":\"1.0\"}", MediaType.APPLICATION_JSON));
+        OcrClient client = client(properties, builder);
+
+        NodeExecutor.Failure tooLarge = org.junit.jupiter.api.Assertions.assertThrows(NodeExecutor.Failure.class,
+                () -> client.extractFile(context(), "a.pdf", "application/pdf", new byte[] {1}, "vi", true));
+        NodeExecutor.Failure invalid = org.junit.jupiter.api.Assertions.assertThrows(NodeExecutor.Failure.class,
+                () -> client.extractFile(context(), "a.pdf", "application/pdf", new byte[] {1}, "vi", true));
+        server.verify();
+
+        assertEquals("FILE_TOO_LARGE", tooLarge.code());
+        assertFalse(tooLarge.retryable());
+        assertEquals("OCR_INVALID_RESPONSE", invalid.code());
+        assertFalse(tooLarge.getMessage().contains("a.pdf"));
+    }
+
+    private OcrClient client(OcrClientProperties properties, RestClient.Builder builder) {
+        return new OcrClient(properties,
+                new WorkflowServiceJwtIssuer(properties, new DefaultResourceLoader()),
+                builder.build(), new ObjectMapper());
+    }
+
     private OcrClient client(OcrClientProperties properties) {
         return new OcrClient(properties,
                 new WorkflowServiceJwtIssuer(properties, new DefaultResourceLoader()),

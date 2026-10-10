@@ -257,7 +257,8 @@ class NodeConfigSchemasTest {
         assertTrue(NodeSideEffects.isSideEffecting("google.drive", Map.of("operation", "upload")));
         assertTrue(NodeSideEffects.isSideEffecting("google.drive", Map.of("operation", "{{ trigger.op }}")));
         assertFalse(NodeSideEffects.isSideEffecting("google.drive", Map.of("operation", "list")));
-        assertEquals(Set.of("upload", "list"), field("google.drive", "operation").enumValues());
+        assertFalse(NodeSideEffects.isSideEffecting("google.drive", Map.of("operation", "download")));
+        assertEquals(Set.of("upload", "list", "download"), field("google.drive", "operation").enumValues());
         assertFalse(field("google.drive", "operation").template());
         assertEquals("boolean", field("google.calendar", "sendInvitations").type());
         assertEquals(0, BigDecimal.ONE.compareTo(field("google.drive", "pageSize").minimum()));

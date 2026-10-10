@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "weav:node/ocr.extract",
   "title": "Extract text from file (OCR)",
-  "description": "Reads text and tables from an uploaded file or a file URL. Configure either artifactId or fileUrl, not both.",
+  "description": "Reads text and tables from a file produced by an earlier step (such as an email attachment, a Telegram photo or a Drive download), an uploaded file or a file URL. Configure exactly one of artifactId, fileUrl or file.",
   "x-weav-node": {
     "type": "ocr.extract",
     "category": "ai",
@@ -14,16 +14,29 @@
     "artifactId": {
       "type": "string",
       "title": "Uploaded file",
-      "description": "Identifier of an uploaded file. Use this or File URL, not both.",
+      "description": "Identifier of an uploaded file. Use only one of Uploaded file, File URL or File from an earlier step.",
       "x-weav-template": true,
       "minLength": 1
     },
     "fileUrl": {
       "type": "string",
       "title": "File URL",
-      "description": "Address of a file to read. Use this or Uploaded file, not both.",
+      "description": "Address of a file to read. Use only one of Uploaded file, File URL or File from an earlier step.",
       "x-weav-template": true,
       "minLength": 1
+    },
+    "file": {
+      "title": "File from an earlier step",
+      "description": "A file produced by an earlier step, for example an email attachment: {{ trigger.input.attachments[0] }}, a Telegram photo or document: {{ trigger.input.file }}, or a Google Drive download. Up to 10 MiB. Use only one of Uploaded file, File URL or File from an earlier step.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "string"
+        }
+      ]
     },
     "language": {
       "type": "string",
@@ -43,7 +56,8 @@
   "x-weav-mutually-exclusive": [
     [
       "artifactId",
-      "fileUrl"
+      "fileUrl",
+      "file"
     ]
   ]
 }

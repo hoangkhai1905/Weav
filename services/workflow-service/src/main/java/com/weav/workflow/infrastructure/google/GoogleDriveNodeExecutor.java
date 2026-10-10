@@ -35,6 +35,8 @@ public final class GoogleDriveNodeExecutor extends GoogleApiNodeExecutor {
     static final int MAX_FILE_BYTES = 5 * 1024 * 1024;
     private static final int UPLOAD_CAP_BYTES = MAX_FILE_BYTES + 64 * 1024;
     private static final int MAX_PAGE_SIZE = 100;
+    /** A download is kept in the workflow file store, whose default per-file limit is the same. */
+    static final int MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024;
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     private final GoogleApiClient client;
@@ -63,6 +65,7 @@ public final class GoogleDriveNodeExecutor extends GoogleApiNodeExecutor {
         return switch (config.get("operation") instanceof String operation ? operation : "") {
             case "upload" -> upload(context, connectionId, config);
             case "list" -> list(connectionId, config);
+            case "download" -> download(context, connectionId, config);
             default -> throw configurationFailure();
         };
     }
@@ -126,6 +129,58 @@ public final class GoogleDriveNodeExecutor extends GoogleApiNodeExecutor {
                     "The file is larger than the 5 MiB that Google Drive upload supports here.", false);
         }
         return stored;
+    }
+
+    /**
+     * Downloads one Drive file into the workflow file store and returns a file reference under "file". Google-native
+     * documents (Docs, Sheets, Slides) have no binary content and fail with a clear non-retryable error; exporting
+     * them is left out on purpose.
+     */
+    private Call download(Context context, UUID connectionId, Map<String, Object> config) {
+        String driveFileId = requiredText(config.get("fileId"), MAX_LINE_LENGTH);
+        if (context == null) {
+            throw configurationFailure();
+        }
+        String path = "/drive/v3/files/" + GoogleApiClient.encodePathSegment(driveFileId, SERVICE);
+        if (!files.configured()) {
+            throw new NodeExecutor.Failure("DEPENDENCY_NOT_CONFIGURED",
+                    "File storage is not configured, so the Drive file cannot be kept for the next steps.", false);
+        }
+        return new Call(connectionId, connection -> {
+            Map<String, Object> meta = client.call(connection, PROVIDER, SERVICE, "GET", path,
+                    Map.of("fields", "id,name,mimeType,size"), null);
+            String mimeType = meta.get("mimeType") instanceof String text ? text : "application/octet-stream";
+            if (mimeType.startsWith("application/vnd.google-apps.")) {
+                throw new NodeExecutor.Failure("CONFIGURATION_ERROR",
+                        "This is a Google Docs, Sheets or Slides file, which cannot be downloaded as is. "
+                                + "Pick a regular file such as a PDF or an image.", false);
+            }
+            if (meta.get("size") instanceof String size && size.matches("[0-9]{1,18}")
+                    && Long.parseLong(size) > MAX_DOWNLOAD_BYTES) {
+                throw tooLarge();
+            }
+            byte[] bytes;
+            try {
+                bytes = client.download(connection, PROVIDER, SERVICE, path, Map.of("alt", "media"),
+                        MAX_DOWNLOAD_BYTES);
+            } catch (NodeExecutor.Failure failure) {
+                throw "HTTP_RESPONSE_TOO_LARGE".equals(failure.code()) ? tooLarge() : failure;
+            }
+            String name = meta.get("name") instanceof String text ? WorkflowFileStore.safeFilename(text) : null;
+            WorkflowFileStore.FileReference stored = files.store(context.workspaceId(), context.executionId(),
+                    name == null ? "drive-file" : name, mimeType, bytes);
+            Map<String, Object> reference = new LinkedHashMap<>();
+            reference.put("fileId", stored.fileId());
+            reference.put("filename", stored.filename());
+            reference.put("mimeType", stored.mimeType());
+            reference.put("size", stored.size());
+            return Map.of("file", reference);
+        });
+    }
+
+    private static NodeExecutor.Failure tooLarge() {
+        return new NodeExecutor.Failure("FILE_TOO_LARGE",
+                "The Drive file is larger than the 10 MiB that can be downloaded here.", false);
     }
 
     private Call list(UUID connectionId, Map<String, Object> config) {
