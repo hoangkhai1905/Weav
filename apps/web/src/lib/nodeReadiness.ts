@@ -30,9 +30,34 @@ const CONNECTION_NODE_FIELDS: Record<string, (config: Record<string, unknown>) =
   'trigger.telegram': () => [],
   'trigger.gmail': () => [],
   'discord.send_message': () => ['content'],
+  'slack.send_message': () => ['text'],
+  'teams.send_message': () => ['text'],
   // Upload with `content` (or nothing) needs a name; with `file` the name defaults to the file's own (S10).
   'google.drive': (config) => ['operation', ...(config.operation === 'upload' && isBlank(config.file) ? ['name'] : [])],
   'google.calendar': (config) => (isBlank(config.operation) || config.operation === 'create' ? ['summary', 'start', 'end'] : []),
+};
+
+// format.datetime / format.text mirror DefinitionValidator.validateFormatRequirements (publish-only checks).
+const FORMAT_NODE_FIELDS: Record<string, (config: Record<string, unknown>) => string[]> = {
+  'format.datetime': (config) => [
+    ...(config.operation === 'now' ? [] : ['value']),
+    ...(config.operation === 'add' || config.operation === 'subtract' ? ['amount', 'unit'] : []),
+    ...(config.operation === 'format' ? ['pattern'] : []),
+    ...(config.operation === 'convert' ? ['timezone'] : []),
+  ],
+  'format.text': (config) => [
+    'value',
+    ...(config.operation === 'replace' ? ['search'] : []),
+    ...(config.operation === 'truncate' ? ['maxLength'] : []),
+  ],
+};
+export const isFormatNodeComplete = (type: string, config: Record<string, unknown>): boolean => {
+  const required = FORMAT_NODE_FIELDS[type];
+  if (!required || isBlank(config.operation)) return !required;
+  // truncate keeps at least one character: a literal 0 or negative is not valid (a mapping resolves at run time).
+  const limit = Number(config.maxLength);
+  if (type === 'format.text' && config.operation === 'truncate' && !isBlank(config.maxLength) && Number.isFinite(limit) && limit < 1) return false;
+  return required(config).every((field) => !isBlank(config[field]));
 };
 
 // logic.switch and data.set mirror DefinitionValidator.validateSwitchCases / validateDataSetFields.
@@ -101,7 +126,8 @@ export const getNodeReadinessBadge = (
   }
   if ((nodeType === 'logic.switch' && !isSwitchComplete(config))
     || (nodeType === 'data.set' && !isDataSetComplete(config))
-    || (nodeType === 'ai.generate' && isBlank(config.prompt))) {
+    || (nodeType === 'ai.generate' && isBlank(config.prompt))
+    || !isFormatNodeComplete(nodeType, config)) {
     return NOT_CONFIGURED;
   }
   if (nodeType === 'logic.condition' && !isConditionComplete(config)) {

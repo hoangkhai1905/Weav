@@ -17,6 +17,8 @@ public final class ConnectionProviderPolicy {
             ConnectionProvider.GOOGLE_DRIVE, Set.of(ConnectionAuthType.OAUTH2),
             ConnectionProvider.TELEGRAM, Set.of(ConnectionAuthType.TOKEN),
             ConnectionProvider.DISCORD, Set.of(ConnectionAuthType.TOKEN),
+            ConnectionProvider.SLACK, Set.of(ConnectionAuthType.TOKEN),
+            ConnectionProvider.TEAMS, Set.of(ConnectionAuthType.TOKEN),
             ConnectionProvider.HTTP, Set.of(
                     ConnectionAuthType.NONE,
                     ConnectionAuthType.API_KEY,

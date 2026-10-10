@@ -4,7 +4,7 @@ import { tr } from '../lib/i18n/tr';
 import { useAuthStore } from '../store/useAuthStore';
 
 export type ConnectionProvider =
-  "TELEGRAM" | "DISCORD" | "HTTP" | "GMAIL" | "GOOGLE_SHEETS" | "GOOGLE_CALENDAR" | "GOOGLE_DRIVE";
+  "TELEGRAM" | "DISCORD" | "SLACK" | "TEAMS" | "HTTP" | "GMAIL" | "GOOGLE_SHEETS" | "GOOGLE_CALENDAR" | "GOOGLE_DRIVE";
 export type GoogleProvider = Extract<
   ConnectionProvider,
   "GMAIL" | "GOOGLE_SHEETS" | "GOOGLE_CALENDAR" | "GOOGLE_DRIVE"
@@ -40,9 +40,9 @@ export interface CreateGoogleConnectionRequest {
 
 export interface CreateTelegramConnectionRequest {
   name: string;
-  provider: "TELEGRAM" | "DISCORD";
+  provider: "TELEGRAM" | "DISCORD" | "SLACK" | "TEAMS";
   authType: "TOKEN";
-  /** Telegram bot token (@BotFather) or Discord webhook URL; write-only, sent once to the credential endpoint and never kept. */
+  /** Telegram bot token (@BotFather) or a Discord, Slack or Teams webhook URL; write-only, sent once to the credential endpoint and never kept. */
   token: string;
 }
 
@@ -177,7 +177,7 @@ function parseConnection(value: unknown): ConnectionResponse {
       tr('msg.workspace_returned_an_invalid_connection_response'),
     );
 
-  const providers = ["TELEGRAM", "DISCORD", "HTTP", ...GOOGLE_PROVIDERS] as const;
+  const providers = ["TELEGRAM", "DISCORD", "SLACK", "TEAMS", "HTTP", ...GOOGLE_PROVIDERS] as const;
   const authTypes = ["NONE", "TOKEN", "API_KEY", "BASIC", "OAUTH2"] as const;
   const statuses = ["DISABLED", "ACTIVE", "INVALID"] as const;
   const nullableString = (field: unknown) =>
@@ -322,7 +322,7 @@ export const connectionApi = {
       },
     });
     const created = parseConnection(value);
-    if (input.provider !== "TELEGRAM" && input.provider !== "DISCORD") return created;
+    if (!("token" in input)) return created;
     // The connection is created DISABLED without a credential: store the token, then verify it
     // (VERIFIED activates the connection). A failed save removes the empty shell again.
     try {

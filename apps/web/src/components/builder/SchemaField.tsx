@@ -4,7 +4,18 @@ import { NODE_SCHEMAS, schemaTypes } from '../../lib/nodeSchemas';
 import { toLocalInput, withLocalOffset } from '../../lib/localOffset';
 
 // The executors reject more than this even where the schema has no maximum.
-const INTEGER_CAP: Record<string, number> = { maxLength: 5000 };
+const INTEGER_CAP: Record<string, number> = {
+  maxLength: 5000,
+  'format.text.maxLength': 100000,
+  'format.text.decimals': 6,
+  'format.datetime.amount': 100000,
+};
+
+// Per-type lower bounds where the schema's oneOf hides the minimum from the field itself.
+const INTEGER_MIN: Record<string, number> = {
+  'format.datetime.amount': -100000,
+  'format.text.maxLength': 1,
+};
 
 const inputCls = 'w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
 
@@ -87,9 +98,12 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
   } else {
     // Integer fields also take a mapping such as {{ trigger.input.id }}. Plain digits within the schema range
     // are saved as a number; a mapping stays text; anything else is flagged and not saved.
-    const isInteger = types.includes('integer');
-    const min = property.minimum ?? 0;
-    const max = property.maximum ?? INTEGER_CAP[name];
+    // A string-or-unbounded-integer field (format.datetime value: a date, or epoch milliseconds) is free text.
+    const freeText = Boolean(property.oneOf?.some((branch) => branch.type === 'string'))
+      && Boolean(property.oneOf?.some((branch) => branch.type === 'integer' && branch.minimum === undefined && branch.maximum === undefined));
+    const isInteger = types.includes('integer') && !freeText;
+    const min = property.minimum ?? INTEGER_MIN[`${nodeType}.${name}`] ?? 0;
+    const max = property.maximum ?? INTEGER_CAP[`${nodeType}.${name}`] ?? INTEGER_CAP[name];
     const shown = badInteger ?? text;
     const invalid = isInteger && badInteger !== null;
     control = (
@@ -108,7 +122,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
             if (!isInteger || next === '' || next.includes('{{')) {
               setBadInteger(null);
               onChange(next === '' ? undefined : next);
-            } else if (/^(0|[1-9]\d{0,8})$/.test(next) && Number(next) >= min && (max === undefined || Number(next) <= max)) {
+            } else if ((min < 0 ? /^(0|-?[1-9]\d{0,8})$/ : /^(0|[1-9]\d{0,8})$/).test(next) && Number(next) >= min && (max === undefined || Number(next) <= max)) {
               setBadInteger(null);
               onChange(Number(next));
             } else {

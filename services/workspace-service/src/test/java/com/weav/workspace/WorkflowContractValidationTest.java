@@ -69,7 +69,7 @@ class WorkflowContractValidationTest {
         assertThat(properties).containsOnlyKeys(
                 "triggerId", "type", "status", "reasonCode", "nextRunAt", "lastTriggeredAt");
         assertThat(map(properties, "triggerId").get("format")).isEqualTo("uuid");
-        assertThat(map(properties, "type").get("enum")).isEqualTo(List.of("SCHEDULE", "WEBHOOK", "TELEGRAM", "GMAIL"));
+        assertThat(map(properties, "type").get("enum")).isEqualTo(List.of("SCHEDULE", "WEBHOOK", "TELEGRAM", "GMAIL", "WORKFLOW_EVENT"));
         assertThat(map(properties, "status").get("enum")).isEqualTo(List.of("ACTIVE", "DISABLED"));
         assertThat(map(properties, "reasonCode").get("enum"))
                 .isEqualTo(List.of("DEPENDENCY_NOT_CONFIGURED", "SCHEDULE_ADMISSION_FAILED",

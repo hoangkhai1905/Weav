@@ -70,6 +70,7 @@ public class PinnedHttpTransport {
     private static final String GMAIL_MESSAGES_PATH = "/gmail/v1/users/me/messages";
     private static final Pattern GMAIL_MESSAGE_PATH = Pattern.compile("^/gmail/v1/users/me/messages/[0-9A-Fa-f]{1,32}$");
     private static final Pattern DISCORD_WEBHOOK_PATH = Pattern.compile("/api/webhooks/[0-9]{1,24}/[A-Za-z0-9_-]{1,128}");
+    private static final Pattern SLACK_WEBHOOK_PATH = Pattern.compile("/services/T[A-Z0-9]{1,20}/B[A-Z0-9]{1,20}/[A-Za-z0-9]{1,64}");
     private static final String TELEGRAM_HOST = "api.telegram.org";
     private static final Set<String> TELEGRAM_METHODS = Set.of("sendMessage", "setWebhook", "deleteWebhook");
     private static final Pattern TELEGRAM_PATH = Pattern.compile("/bot[0-9]{1,20}:[A-Za-z0-9_-]{1,128}/[A-Za-z]{1,32}");
@@ -243,6 +244,27 @@ public class PinnedHttpTransport {
      */
     public HttpResponse executeDiscordWebhook(URI uri, Object body) {
         validateDiscordUri(uri);
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "POST", Map.of(), Map.of(), null, body, callTimeout);
+    }
+
+    /**
+     * POSTs JSON to a Slack incoming webhook. The host is fixed to hooks.slack.com (https, default port) and the path
+     * to {@code /services/T../B../<secret>}; the secret is part of the path, so the URI is never logged or echoed.
+     */
+    public HttpResponse executeSlackWebhook(URI uri, Object body) {
+        validateSlackUri(uri);
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "POST", Map.of(), Map.of(), null, body, callTimeout);
+    }
+
+    /**
+     * POSTs JSON to a Power Automate "Workflows" webhook used for Microsoft Teams. The host must be under
+     * {@code .logic.azure.com} or {@code .api.powerplatform.com}; the query (it carries {@code sig=}) is part of the
+     * secret, is sent as is and is never logged or echoed.
+     */
+    public HttpResponse executeTeamsWebhook(URI uri, Object body) {
+        validateTeamsUri(uri);
         OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
         return executeWithAuthentication(target, "POST", Map.of(), Map.of(), null, body, callTimeout);
     }
@@ -923,6 +945,53 @@ public class PinnedHttpTransport {
                 || !DISCORD_WEBHOOK_PATH.matcher(uri.getRawPath()).matches()) {
             throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
                     "The Discord destination is invalid.", false);
+        }
+    }
+
+    private void validateSlackUri(URI uri) {
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase("hooks.slack.com")
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || uri.getRawPath() == null
+                || !SLACK_WEBHOOK_PATH.matcher(uri.getRawPath()).matches()) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Slack destination is invalid.", false);
+        }
+    }
+
+    /** True for an https Power Automate Workflows webhook URI (see {@link #executeTeamsWebhook}). */
+    public static boolean isTeamsWebhookUri(URI uri) {
+        String host = uri == null || uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+        String path = uri == null || uri.getRawPath() == null ? "" : uri.getRawPath();
+        boolean hostOk = (host.endsWith(".logic.azure.com") && host.length() > ".logic.azure.com".length()
+                || host.endsWith(".api.powerplatform.com") && host.length() > ".api.powerplatform.com".length())
+                && !host.startsWith(".") && !host.contains("..");
+        return uri != null
+                && uri.isAbsolute()
+                && uri.getScheme() != null
+                && uri.getScheme().equalsIgnoreCase("https")
+                && hostOk
+                && (uri.getPort() == -1 || uri.getPort() == 443)
+                && uri.getRawUserInfo() == null
+                && uri.getRawFragment() == null
+                && uri.getRawQuery() != null
+                && Pattern.compile("(^|&)sig=[^&]+").matcher(uri.getRawQuery()).find()
+                && path.contains("/workflows/")
+                && !path.contains("..")
+                && path.endsWith("/triggers/manual/paths/invoke");
+    }
+
+    private void validateTeamsUri(URI uri) {
+        if (!isTeamsWebhookUri(uri)) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Teams destination is invalid.", false);
         }
     }
 

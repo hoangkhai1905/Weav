@@ -162,7 +162,8 @@ class DefinitionValidatorTest {
                 "http.request", "email.send", "google.sheets", "telegram.send_message", "logic.condition",
                 "ai.extract", "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive",
                 "logic.switch", "data.set", "ai.generate", "trigger.gmail", "weav.workflow",
-                "trigger.workflow_event", "discord.send_message"),
+                "trigger.workflow_event", "discord.send_message", "format.datetime", "format.text",
+                "slack.send_message", "teams.send_message"),
                 NodeCatalog.supportedTypes());
     }
 
