@@ -3,6 +3,7 @@ import { useI18nStore } from '../../store/useI18nStore';
 import { NODE_SCHEMAS, schemaTypes } from '../../lib/nodeSchemas';
 import { toLocalInput, withLocalOffset } from '../../lib/localOffset';
 import type { VariableGroup } from '../../lib/variablePaths';
+import { idFromGoogleLink } from '../../lib/googleLinks';
 import { MappingTextField } from './MappingTextField';
 
 // The executors reject more than this even where the schema has no maximum.
@@ -62,6 +63,10 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
     && !types.includes('integer') && property.type !== 'array' && !property.enum && !property['x-weav-connection']
     && (typeof value === 'string' || value === undefined || value === null);
 
+  // Drive file and folder ids also take the pasted Drive link; only the id inside it is saved.
+  const takesGoogleLink = nodeType.startsWith('google.') && (name === 'fileId' || name === 'folderId');
+  const textValue = (next: string) => (takesGoogleLink ? idFromGoogleLink(next) : next);
+
   let control: React.ReactNode;
   if (chipText && groups) {
     control = (
@@ -72,7 +77,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
         multiline={multiline}
         value={text}
         groups={groups}
-        onChange={(next) => onChange(next === '' ? undefined : next)}
+        onChange={(next) => onChange(next === '' ? undefined : textValue(next))}
       />
     );
   } else if (property['x-weav-connection'] || property.enum) {
@@ -128,7 +133,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
             const next = event.target.value;
             if (!isInteger || next === '' || next.includes('{{')) {
               setBadInteger(null);
-              onChange(next === '' ? undefined : next);
+              onChange(next === '' ? undefined : textValue(next));
             } else if (/^(0|[1-9]\d{0,8})$/.test(next) && Number(next) >= min && (max === undefined || Number(next) <= max)) {
               setBadInteger(null);
               onChange(Number(next));

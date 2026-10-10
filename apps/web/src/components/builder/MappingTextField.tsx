@@ -16,6 +16,8 @@ interface MappingTextFieldProps {
   multiline?: boolean;
   placeholder?: string;
   testId?: string;
+  /** Classes for the outer wrapper, for example `min-w-0 flex-1` inside a row. */
+  className?: string;
 }
 
 // Browsers keep typed spaces as non-breaking spaces in contenteditable.
@@ -32,7 +34,7 @@ const CHIP_UNKNOWN = `${CHIP} border-warn/40 bg-warn-bg text-warn`;
  * steps before at the caret; typing, pasting and "Insert variable" also work, and a mapping typed or pasted by
  * hand turns into a chip when the field loses focus.
  */
-export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelledBy, ariaLabel, value, onChange, groups, multiline, placeholder, testId }) => {
+export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelledBy, ariaLabel, value, onChange, groups, multiline, placeholder, testId, className }) => {
   const { t } = useI18nStore();
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -189,7 +191,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
   const itemCls = 'flex w-full flex-col items-start rounded px-2 py-1 text-left hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
   return (
-    <div className="relative">
+    <div className={`relative ${className ?? ''}`}>
       <div
         ref={ref}
         id={id}

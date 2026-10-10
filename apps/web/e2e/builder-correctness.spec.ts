@@ -118,6 +118,8 @@ test('invalid numbers and credential-like header names are flagged and never sav
   await expect(page.getByTestId('field-maxLength')).not.toHaveAttribute('aria-invalid', 'true');
 
   await addNode(page, 'http.request');
+  // Headers live under "Advanced options".
+  await page.getByTestId('http-advanced').locator('summary').click();
   await page.getByTestId('http-headers-add').click();
   await page.getByTestId('http-headers-key').fill('Authorization');
   await expect(page.getByText('looks like a credential', { exact: false })).toBeVisible();

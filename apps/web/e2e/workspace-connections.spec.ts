@@ -2121,6 +2121,48 @@ test.describe("workflow builder Week 4 new nodes", () => {
     });
   });
 
+  test("Gmail steps: answer the sender, attach the received file, quick filters and a pasted Drive link", async ({ page }) => {
+    const state = await openBuilder(page, [
+      { id: "gmail_trigger_1", type: "trigger.gmail", config: { connectionId: CONNECTION_GMAIL_ID, pollIntervalMinutes: 5 } },
+      { id: "mail", type: "email.send", config: { connectionId: CONNECTION_GMAIL_ID, to: "", subject: "Re", body: "Thanks" } },
+      { id: "drive", type: "google.drive", config: { connectionId: CONNECTION_DRIVE_ID, operation: "download" } },
+    ], [
+      { id: "trigger-mail", source: "gmail_trigger_1", target: "mail" },
+      { id: "mail-drive", source: "mail", target: "drive" },
+    ]);
+
+    // Quick filters build the Gmail search; a term already there is not added twice.
+    await page.locator(node("trigger.gmail")).click();
+    const filters = page.getByTestId("gmail-quick-filters");
+    await filters.getByRole("button", { name: "+ Has attachment" }).click();
+    await filters.getByRole("button", { name: "+ Has attachment" }).click();
+    await filters.getByRole("button", { name: "+ From address…" }).click();
+    await expect(page.getByTestId("field-query")).toHaveValue("has:attachment from:");
+
+    // Send to the sender of the email that started the run, and attach its first attachment.
+    await page.locator(node("email.send")).click();
+    await page.getByTestId("email-target").selectOption("sender");
+    await expect(page.locator("#email-to")).toHaveCount(0);
+    await page.getByTestId("attachment-add").click();
+    await page.getByLabel("Source of file 1").selectOption("fileId");
+    await page.getByTestId("attachment-file-pick").selectOption({ label: "First attachment — Trigger data" });
+    await expect(page.getByTestId("attachment-source").getByTestId("mapping-chip")).toHaveText("First attachment (file id)×");
+
+    // A pasted Drive link keeps only the file id.
+    await page.locator(node("google.drive")).click();
+    await page.getByTestId("field-fileId").fill("https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp/view?usp=sharing");
+    await page.getByTestId("field-fileId").blur();
+    await expect(page.getByTestId("field-fileId")).toHaveAttribute("data-value", "1AbCdEfGhIjKlMnOp");
+
+    await saveDraft(page);
+    expect(savedConfig(state, "gmail_trigger_1")).toMatchObject({ query: "has:attachment from:" });
+    expect(savedConfig(state, "mail")).toMatchObject({
+      to: "{{ trigger.input.fromEmail }}",
+      attachments: [{ fileId: "{{ trigger.input.attachments[0].fileId }}" }],
+    });
+    expect(savedConfig(state, "drive")).toMatchObject({ fileId: "1AbCdEfGhIjKlMnOp" });
+  });
+
   test("Google Calendar create needs title, start and end; list needs nothing", async ({ page }) => {
     const state = await openBuilder(page, [
       { id: "manual", type: "trigger.manual", config: {} },

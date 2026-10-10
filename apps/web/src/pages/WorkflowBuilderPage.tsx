@@ -88,6 +88,7 @@ import { definitionBlockers } from '../lib/publishBlockers';
 import { VariablePicker } from '../components/builder/VariablePicker';
 import { DataSuggestions } from '../components/builder/DataSuggestions';
 import { MappingTextField } from '../components/builder/MappingTextField';
+import { idFromGoogleLink } from '../lib/googleLinks';
 import { fileSources, pathLabel, upstreamGroups, useFieldTarget } from '../lib/variablePaths';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
@@ -332,6 +333,15 @@ const ocrModeOf = (config: Record<string, unknown>): OcrSourceMode =>
 
 /** Telegram send target "whoever just wrote to the bot" (a Telegram trigger's chat). */
 const TELEGRAM_REPLY_CHAT = '{{ trigger.input.message.chat.id }}';
+/** Gmail send recipient "whoever sent the email that started the run" (a Gmail trigger's sender address). */
+const GMAIL_REPLY_TO = '{{ trigger.input.fromEmail }}';
+/** One-click Gmail search terms for the Gmail trigger filter; a term ending in ":" waits for its value. */
+const GMAIL_QUICK_FILTERS: Array<[labelKey: string, term: string]> = [
+  ['builder.cfg.gmail_quick_attachment', 'has:attachment'],
+  ['builder.cfg.gmail_quick_unread', 'is:unread'],
+  ['builder.cfg.gmail_quick_from', 'from:'],
+  ['builder.cfg.gmail_quick_subject', 'subject:'],
+];
 /** OCR file picker value for "type a mapping yourself". */
 const OCR_FILE_CUSTOM = '__custom';
 
@@ -1274,6 +1284,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     const firstFile = fileSources(before)[0];
     if (type === 'ocr.extract' && firstFile) prefill.file = firstFile.mapping;
     if (type === 'telegram.send_message' && before.some((group) => group.nodeTypes.includes('trigger.telegram'))) prefill.chatId = TELEGRAM_REPLY_CHAT;
+    if (type === 'email.send' && before.some((group) => group.nodeTypes.includes('trigger.gmail'))) prefill.to = GMAIL_REPLY_TO;
     const newNode: Node = {
       id: newNodeId,
       type: 'customNode',
@@ -1384,7 +1395,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       className="flex h-full w-full flex-col overflow-hidden bg-background font-sans text-foreground"
     >
       {/* TOP EDITOR HEADER (48px): breadcrumb + name | tabs | actions */}
-      <header className="z-20 grid h-12 shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-3 border-b border-border bg-card px-3 sm:px-4">
+      <header className="z-20 grid h-12 shrink-0 grid-cols-[minmax(7rem,1fr)_auto_auto] items-center lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-3 border-b border-border bg-card px-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 overflow-hidden">
           <Link
             to="/workflows"
@@ -1525,7 +1536,8 @@ export const WorkflowBuilderPage: React.FC = () => {
               className="hidden h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex"
             >
               <Play size={13} aria-hidden="true" />
-              <span>{hasUnpublishedChanges ? t('builder.publish_and_run') : t('builder.run')}</span>
+              {/* The long "publish and run" label only fits wide screens; narrower ones keep the icon (and the tooltip). */}
+              <span className={hasUnpublishedChanges ? 'sr-only xl:not-sr-only' : undefined}>{hasUnpublishedChanges ? t('builder.publish_and_run') : t('builder.run')}</span>
             </button>
           )}
           <button
@@ -1987,6 +1999,35 @@ export const WorkflowBuilderPage: React.FC = () => {
                   })}
                   {selectedNodeType === 'trigger.telegram' && <p data-testid="telegram-trigger-hint" className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.telegram_trigger_hint')}</p>}
                   {selectedNodeType === 'google.drive' && <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.drive_hint')}</p>}
+                  {selectedNodeType === 'trigger.gmail' && (
+                    // Builds the Gmail search for people who do not know its syntax; "from:"/"subject:" wait for the value.
+                    <div data-testid="gmail-quick-filters" className="flex flex-wrap items-center gap-1">
+                      <span className="text-[10px] text-muted-foreground">{t('builder.cfg.gmail_quick')}</span>
+                      {GMAIL_QUICK_FILTERS.map(([labelKey, term]) => (
+                        <button
+                          key={term}
+                          type="button"
+                          data-testid="gmail-quick-filter"
+                          data-term={term}
+                          onClick={() => {
+                            const query = String(selectedNodeConfig.query ?? '').trim();
+                            const needsValue = term.endsWith(':');
+                            if (!needsValue && query.split(/\s+/).includes(term)) return;
+                            const next = query ? `${query} ${term}` : term;
+                            updateSelectedNodeConfig({ query: next });
+                            window.setTimeout(() => {
+                              const field = document.getElementById('field-trigger-gmail-query') as HTMLInputElement | null;
+                              field?.focus();
+                              field?.setSelectionRange(next.length, next.length);
+                            }, 0);
+                          }}
+                          className="rounded border border-border-strong bg-card px-1.5 py-0.5 text-[10px] font-medium text-text-2 hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {t(labelKey)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {selectedNodeType === 'discord.send_message' && <CharCounter value={selectedNodeConfig.content} max={2000} />}
                 </div>
               ) : selectedNodeType === 'weav.workflow' && selectedNodeId ? (
@@ -2097,10 +2138,23 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <label id="http-body-label" onClick={() => document.getElementById('http-body')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.body')}</label>
                     <MappingTextField key={`${selectedNodeId}-body`} id="http-body" labelledBy="http-body-label" multiline value={String(selectedNodeConfig.body ?? '')} onChange={(body) => updateSelectedNodeConfig({ body })} groups={inspectorGroups} placeholder={t('builder.cfg.body_placeholder')} />
                   </div>
-                  <KeyValueEditor key={`headers-${selectedNodeId}`} label={t('builder.cfg.http_headers')} testId="http-headers" value={selectedNodeConfig.headers} onChange={(headers) => updateSelectedNodeConfig({ headers })} />
-                  <KeyValueEditor key={`query-${selectedNodeId}`} label={t('builder.cfg.http_query')} testId="http-query" value={selectedNodeConfig.query} onChange={(query) => updateSelectedNodeConfig({ query })} />
-                  {configField('connectionId', httpConnections)}
-                  <p className="text-[10px] text-muted-foreground">{t('builder.cfg.http_hint')}</p>
+                  {/* Headers, query parameters and a stored connection are rarely needed: kept under Advanced options. */}
+                  <details
+                    key={`http-advanced-${selectedNodeId}`}
+                    data-testid="http-advanced"
+                    open={Boolean(selectedNodeConfig.connectionId
+                      || (selectedNodeConfig.headers && Object.keys(selectedNodeConfig.headers as object).length)
+                      || (selectedNodeConfig.query && Object.keys(selectedNodeConfig.query as object).length))}
+                    className="group rounded-md border border-border"
+                  >
+                    <summary className="cursor-pointer select-none px-2.5 py-1.5 text-[11px] font-medium text-text-2 hover:text-foreground">{t('builder.cfg.advanced_options')}</summary>
+                    <div className="space-y-3 border-t border-border p-2.5">
+                      <KeyValueEditor key={`headers-${selectedNodeId}`} label={t('builder.cfg.http_headers')} testId="http-headers" value={selectedNodeConfig.headers} onChange={(headers) => updateSelectedNodeConfig({ headers })} />
+                      <KeyValueEditor key={`query-${selectedNodeId}`} label={t('builder.cfg.http_query')} testId="http-query" value={selectedNodeConfig.query} onChange={(query) => updateSelectedNodeConfig({ query })} />
+                      {configField('connectionId', httpConnections)}
+                      <p className="text-[10px] text-muted-foreground">{t('builder.cfg.http_hint')}</p>
+                    </div>
+                  </details>
                 </div>
               ) : selectedNodeType === 'email.send' ? (
                 <div data-testid="email-config" className="space-y-3">
@@ -2136,8 +2190,28 @@ export const WorkflowBuilderPage: React.FC = () => {
                     )}
                   </div>
                   <div>
-                    <label id="email-to-label" onClick={() => document.getElementById('email-to')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.recipient')}</label>
-                    <MappingTextField key={`${selectedNodeId}-to`} id="email-to" labelledBy="email-to-label" value={String(selectedNodeConfig.to ?? '')} onChange={(to) => updateSelectedNodeConfig({ to })} groups={inspectorGroups} />
+                    {/* After a Gmail trigger the usual answer goes back to whoever sent that email. */}
+                    {inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail')) && (
+                      <div className="mb-2">
+                        <label htmlFor="email-target" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.mail_target')}</label>
+                        <select
+                          id="email-target"
+                          data-testid="email-target"
+                          value={selectedNodeConfig.to === GMAIL_REPLY_TO ? 'sender' : 'custom'}
+                          onChange={(event) => updateSelectedNodeConfig({ to: event.target.value === 'sender' ? GMAIL_REPLY_TO : '' })}
+                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        >
+                          <option value="sender">{t('builder.cfg.mail_target_sender')}</option>
+                          <option value="custom">{t('builder.cfg.mail_target_custom')}</option>
+                        </select>
+                      </div>
+                    )}
+                    {selectedNodeConfig.to !== GMAIL_REPLY_TO || !inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail')) ? (
+                      <>
+                        <label id="email-to-label" onClick={() => document.getElementById('email-to')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.recipient')}</label>
+                        <MappingTextField key={`${selectedNodeId}-to`} id="email-to" labelledBy="email-to-label" value={String(selectedNodeConfig.to ?? '')} onChange={(to) => updateSelectedNodeConfig({ to })} groups={inspectorGroups} />
+                      </>
+                    ) : null}
                   </div>
                   <div>
                     <label id="email-subject-label" onClick={() => document.getElementById('email-subject')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.subject')}</label>
@@ -2150,7 +2224,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     {suggestionsFor('body', true)}
                   </div>
                   {['bodyType', 'cc', 'bcc'].map((name) => configField(name))}
-                  <AttachmentsEditor value={selectedNodeConfig.attachments} onChange={(attachments) => updateSelectedNodeConfig({ attachments })} />
+                  <AttachmentsEditor key={`${selectedNodeId}-attachments`} value={selectedNodeConfig.attachments} onChange={(attachments) => updateSelectedNodeConfig({ attachments })} groups={inspectorGroups} />
                   <details data-testid="email-advanced" className="group rounded-md border border-border">
                     <summary className="cursor-pointer select-none px-2.5 py-1.5 text-[11px] font-medium text-text-2 hover:text-foreground">{t('builder.cfg.advanced_options')}</summary>
                     <div className="space-y-3 border-t border-border p-2.5">
@@ -2578,7 +2652,8 @@ export const WorkflowBuilderPage: React.FC = () => {
                           id="google-spreadsheet-id"
                           type="text"
                           value={String(selectedNodeConfig.spreadsheetId ?? '')}
-                          onChange={(event) => updateSelectedNodeConfig({ spreadsheetId: event.target.value })}
+                          // A pasted Sheets link is reduced to the id inside it.
+                          onChange={(event) => updateSelectedNodeConfig({ spreadsheetId: idFromGoogleLink(event.target.value) })}
                           className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
                         />
                       </div>
