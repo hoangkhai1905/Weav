@@ -120,7 +120,15 @@ OCR workflow node end to end (branch `feature/ocr-workflow-node`, 2026-10-10):
 - Workflow Service: `node-capabilities` endpoint (one `enabledSources()` decision shared with runtime gating), OCR read timeout max 120 s (default 100 s), and the OCR HttpClient pinned to HTTP/1.1: the JDK default sent an h2c upgrade that uvicorn rejects ("Unsupported upgrade request", then "Malformed JSON" 400) - the first real run failed with it. 852 tests: 0 failures; known env errors (TLS cert x2, notification dist x1) plus RabbitMQ container start timeouts (7, pass when rerun alone). Built with `-Djava.version=21` (pom wants 25, only JDK 21 installed).
 - Web: OCR readiness, inspector message, publish blockers and palette tag follow `node-capabilities`; tsc clean.
 - Live: builder shows the OCR step "Ready" with a `fileUrl`, publishes, and the run `398956ce` succeeded (OCR step 27.5 s, text + 9 blocks in the node output). Builder "Try OCR" through the Gateway returned 200.
-- Not done: artifact (workspace file) source, a resolver, and passing a previous step's file (Telegram/Gmail/Drive) into the OCR step.
+- Not done (first pass): artifact (workspace file) source, a resolver, and passing a previous step's file (Telegram/Gmail/Drive) into the OCR step.
+
+Files from earlier steps (same branch, 2026-10-10, in progress; uncommitted):
+
+- Decision: new `ocr.extract` source `file` (file reference `{fileId,...}` or fileId string, e.g. `{{ trigger.input.attachments[0] }}`). Workflow Service reads it from the workflow file store and sends multipart to `/v1/extractions`, which the OCR service already accepts, so no partner change is needed. Exactly one of `artifactId`/`fileUrl`/`file` (`OCR_SOURCE_CONFLICT`/`OCR_SOURCE_REQUIRED`); over 10 MiB is `FILE_TOO_LARGE`. `file` is listed in `node-capabilities` when OCR is enabled, claims are verified, the signing key is set and the file store is configured. `artifactId` stays disabled (needs the OCR artifact resolver, partner side).
+- Google Drive `download` (`fileId`) stores the file and returns `{file:{fileId,filename,mimeType,size}}`; Google-native docs fail `CONFIGURATION_ERROR`; limited by the connection's Drive scope.
+- `trigger.telegram` runs for text, caption, photo or document; the photo (largest that fits) or document is downloaded after secret check + ingress budget, outside the DB transaction (`@Transactional` replaced by `TransactionOperations` around the locked admission), and exposed as `trigger.input.file` or `{skipped: too_large|not_stored|error}`. Bot token/URL never logged. A redelivery may leave an orphan file (retention purges it).
+- Web: OCR source selector (link / earlier-step file / workspace file ID), readiness per enabled source, catalog outputs for Telegram `file`, Gmail `attachments[0]`, Drive `download`; tsc clean, build OK, `workflow-catalog-v1.spec.ts` OCR case passes (mock mode).
+- Workflow Service targeted tests pass (OCR, validator, schemas, Drive, Telegram); full `mvnw verify` and the live run are pending (Docker engine stopped responding).
 
 ## 6. Risks and blockers
 
