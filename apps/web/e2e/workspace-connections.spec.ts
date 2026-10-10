@@ -2103,10 +2103,15 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(page.locator("#telegram-chat-id")).toHaveCount(0);
     const suggestions = page.getByTestId("data-suggestion");
     await expect(suggestions.first()).toHaveText("+ Text read");
-    await expect(page.getByTestId("data-suggestions")).toContainText("Message received");
+    // A photo carries no text message, so with OCR before that suggestion would only break the run.
+    await expect(page.getByTestId("data-suggestions")).toContainText("Sender name");
+    await expect(page.getByTestId("data-suggestions")).not.toContainText("Text message received");
     await page.locator("#telegram-text").fill("Invoice:");
     await suggestions.first().click();
-    await expect(page.locator("#telegram-text")).toHaveValue("Invoice:\n{{ nodes.ocr_1.output.text.rawText }}");
+    // The field shows the data as a named chip; the saved value stays the mapping.
+    await expect(page.locator("#telegram-text")).toHaveAttribute("data-value", "Invoice:\n{{ nodes.ocr_1.output.text.rawText }}");
+    await expect(page.locator("#telegram-text").getByTestId("mapping-chip")).toHaveText("Text read×");
+    await expect(page.locator("#telegram-text")).not.toContainText("{{");
 
     await saveDraft(page);
     expect(savedConfig(state, "ocr_1")).toMatchObject({ file: "{{ trigger.input.file }}" });

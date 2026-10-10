@@ -46,7 +46,9 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
     // Keys under trigger.input (TelegramUpdate).
     outputs: [
       { name: 'updateId', type: 'number' },
+      // Only text messages carry `text`; a photo or document carries an optional `caption` instead.
       { name: 'message.text', type: 'string' },
+      { name: 'message.caption', type: 'string' },
       { name: 'message.messageId', type: 'number' },
       { name: 'message.date', type: 'number' },
       { name: 'message.chat.id', type: 'number' },

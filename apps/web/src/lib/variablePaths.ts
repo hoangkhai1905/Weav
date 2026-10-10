@@ -41,13 +41,50 @@ const FEATURED_PATHS = new Set([
   'google.drive:webViewLink',
 ]);
 
-/** Up to `max` featured values from earlier steps, the closest step first. */
-export const suggestedData = (groups: VariableGroup[], max = 4) =>
-  [...groups].reverse()
+/**
+ * Up to `max` featured values from earlier steps, the closest step first. With an OCR step before, the run is
+ * about a photo or file: a Telegram photo carries no `message.text` (only an optional caption), so that
+ * suggestion would make the run fail with a missing value and is left out.
+ */
+export const suggestedData = (groups: VariableGroup[], max = 4) => {
+  const readsFile = groups.some((group) => group.nodeTypes.includes('ocr.extract'));
+  return [...groups].reverse()
     .flatMap((group) => group.paths
-      .filter((path) => group.nodeTypes.some((type) => FEATURED_PATHS.has(`${type}:${path}`)))
+      .filter((path) => group.nodeTypes.some((type) => FEATURED_PATHS.has(`${type}:${path}`)
+        && !(readsFile && type === 'trigger.telegram' && path === 'message.text')))
       .map((path) => ({ group, path, mapping: mappingOf(group, path) })))
     .slice(0, max);
+};
+
+/** W6-C3: values of the run itself; the path IS the whole expression (no prefix). */
+export const RUN_PATHS: Array<{ path: string; labelKey: string }> = [
+  { path: 'now', labelKey: 'builder.var.run_now' },
+  { path: 'run.id', labelKey: 'builder.var.run_id' },
+  { path: 'workflow.id', labelKey: 'builder.var.workflow_id' },
+  { path: 'workflow.name', labelKey: 'builder.var.workflow_name' },
+];
+
+/**
+ * How a `{{ inner }}` expression reads to a person: the friendly name of the data, a tooltip with its step and the
+ * raw expression, and whether an earlier step (or the run) really provides it.
+ */
+export const describeMapping = (inner: string, groups: VariableGroup[], t: (key: string) => string) => {
+  const raw = `{{ ${inner} }}`;
+  const run = RUN_PATHS.find((item) => item.path === inner);
+  if (run) return { label: t(run.labelKey), title: `${t('builder.var.run')}: ${raw}`, known: true };
+  const group = groups.find((item) => inner.startsWith(`${item.prefix}.`));
+  if (!group) return { label: inner, title: `${t('builder.var.unknown')}: ${raw}`, known: false };
+  const path = inner.slice(group.prefix.length + 1);
+  const known = group.paths.includes(path) || Boolean(group.freeForm);
+  return {
+    label: pathLabel(group, path, t) ?? path,
+    title: known ? `${group.label}: ${raw}` : `${t('builder.var.unknown')}: ${raw}`,
+    known,
+  };
+};
+
+/** Rich text fields (MappingTextField) register how to insert at their caret, so "Insert variable" can target them. */
+export const mappingFieldInserts = new WeakMap<HTMLElement, (text: string) => void>();
 
 /** Files earlier steps produce, as mappings a file source (OCR) can take as is. */
 export const fileSources = (groups: VariableGroup[]) =>
@@ -102,11 +139,16 @@ type TextField = HTMLInputElement | HTMLTextAreaElement;
  * (the picker's own buttons do not take focus away). Fields that are never mapped opt out with `data-notemplate`.
  */
 export function useFieldTarget(resetKey: unknown) {
-  const target = useRef<TextField | null>(null);
+  const target = useRef<TextField | HTMLElement | null>(null);
   // A field of the previously selected step must not receive an insert meant for this one.
   useEffect(() => { target.current = null; }, [resetKey]);
   const onFocusCapture = (event: React.FocusEvent) => {
     const el = event.target;
+    const rich = el instanceof HTMLElement ? el.closest<HTMLElement>('[data-mapping-field]') : null;
+    if (rich && mappingFieldInserts.has(rich)) {
+      target.current = rich;
+      return;
+    }
     const isText = (el instanceof HTMLInputElement && (el.type === 'text' || el.type === '')) || el instanceof HTMLTextAreaElement;
     if (isText && !el.readOnly && el.dataset.notemplate === undefined && !el.closest('[data-variable-picker]')) target.current = el;
   };
@@ -114,6 +156,12 @@ export function useFieldTarget(resetKey: unknown) {
   const insert = (text: string): boolean => {
     const el = target.current;
     if (!el || !el.isConnected) return false;
+    const richInsert = mappingFieldInserts.get(el);
+    if (richInsert) {
+      richInsert(text);
+      return true;
+    }
+    if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return false;
     const start = el.selectionStart ?? el.value.length;
     const end = el.selectionEnd ?? start;
     const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;

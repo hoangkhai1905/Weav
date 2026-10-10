@@ -1,20 +1,12 @@
 import React, { useId, useState } from 'react';
 import { Braces } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
-import { isValidPath, mappingOf, pathLabel, type VariableGroup } from '../../lib/variablePaths';
+import { isValidPath, mappingOf, pathLabel, RUN_PATHS, type VariableGroup } from '../../lib/variablePaths';
 
 interface VariablePickerProps {
   groups: VariableGroup[];
   insert: (text: string) => boolean;
 }
-
-/** W6-C3: values of the run itself; the path IS the whole expression (no prefix). */
-const RUN_PATHS: Array<{ path: string; labelKey: string }> = [
-  { path: 'now', labelKey: 'builder.var.run_now' },
-  { path: 'run.id', labelKey: 'builder.var.run_id' },
-  { path: 'workflow.id', labelKey: 'builder.var.workflow_id' },
-  { path: 'workflow.name', labelKey: 'builder.var.workflow_name' },
-];
 
 export const VariablePicker: React.FC<VariablePickerProps> = ({ groups, insert }) => {
   const { t } = useI18nStore();
