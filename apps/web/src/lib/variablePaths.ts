@@ -41,13 +41,20 @@ const FEATURED_PATHS = new Set([
   'google.drive:webViewLink',
 ]);
 
-/** Up to `max` featured values from earlier steps, the closest step first. */
-export const suggestedData = (groups: VariableGroup[], max = 4) =>
-  [...groups].reverse()
+/**
+ * Up to `max` featured values from earlier steps, the closest step first. With an OCR step before, the run is
+ * about a photo or file: a Telegram photo carries no `message.text` (only an optional caption), so that
+ * suggestion would make the run fail with a missing value and is left out.
+ */
+export const suggestedData = (groups: VariableGroup[], max = 4) => {
+  const readsFile = groups.some((group) => group.nodeTypes.includes('ocr.extract'));
+  return [...groups].reverse()
     .flatMap((group) => group.paths
-      .filter((path) => group.nodeTypes.some((type) => FEATURED_PATHS.has(`${type}:${path}`)))
+      .filter((path) => group.nodeTypes.some((type) => FEATURED_PATHS.has(`${type}:${path}`)
+        && !(readsFile && type === 'trigger.telegram' && path === 'message.text')))
       .map((path) => ({ group, path, mapping: mappingOf(group, path) })))
     .slice(0, max);
+};
 
 /** Files earlier steps produce, as mappings a file source (OCR) can take as is. */
 export const fileSources = (groups: VariableGroup[]) =>
