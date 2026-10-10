@@ -53,11 +53,11 @@ Routes (JWT; all inside the existing workspace lock/transaction pattern):
 | `GET /workspaces/{id}/invitations` | OWNER | PENDING (incl. expired) newest first, max 50. |
 | `DELETE /workspaces/{id}/invitations/{invId}` | OWNER | PENDING -> REVOKED, `204`; otherwise `409 INVITATION_NOT_PENDING`. |
 | `POST /workspaces/{id}/invitations/{invId}/resend` | OWNER | Live PENDING only; `last_sent_at` older than 10 min else `429 INVITATION_RESEND_TOO_SOON`; extends `expires_at` to now + 7 days; records the event again (new event id); `200`. |
-| `GET /me/invitations` | any user | Looks up the caller in identity (by user id). Unverified e-mail -> `200 {items: [], emailVerified: false}`. Else live PENDING invitations for that e-mail in non-deleted workspaces: `{id, workspaceId, workspaceName, invitedByName, expiresAt}`. |
-| `POST /me/invitations/{invId}/accept` | invitee | Caller's verified canonical e-mail must equal the row's e-mail, else `404` (do not reveal). Unverified -> `409 EMAIL_NOT_VERIFIED`. Expired/REVOKED -> `410 INVITATION_GONE`. Workspace deleted -> `410`. Already a member -> mark ACCEPTED, `200` (idempotent). Else create MEMBER membership + `recordMemberAdded` + cache evict exactly like `AddMemberUseCase`, mark ACCEPTED, `200 {workspaceId}`. |
-| `POST /me/invitations/{invId}/decline` | invitee | Same checks; PENDING -> DECLINED, `204`. |
+| `GET /workspaces/invitations` (gateway `GET /api/v1/invitations`) | any user | Looks up the caller in identity (by user id). Unverified e-mail -> `200 {items: [], emailVerified: false}`. Else live PENDING invitations for that e-mail in non-deleted workspaces: `{id, workspaceId, workspaceName, invitedByName, expiresAt}`. |
+| `POST /workspaces/invitations/{invId}/accept` (gateway `/api/v1/invitations/{invId}/accept`) | invitee | Caller's verified canonical e-mail must equal the row's e-mail, else `404` (do not reveal). Unverified -> `409 EMAIL_NOT_VERIFIED`. Expired/REVOKED -> `410 INVITATION_GONE`. Workspace deleted -> `410`. Already a member -> mark ACCEPTED, `200` (idempotent). Else create MEMBER membership + `recordMemberAdded` + cache evict exactly like `AddMemberUseCase`, mark ACCEPTED, `200 {workspaceId}`. |
+| `POST /workspaces/invitations/{invId}/decline` (gateway `/api/v1/invitations/{invId}/decline`) | invitee | Same checks; PENDING -> DECLINED, `204`. |
 
-Workspace soft delete (`V7`): pending invitations of a deleted workspace are refused at accept (`410`) and hidden from `/me/invitations`; no extra delete step.
+Workspace soft delete (`V7`): pending invitations of a deleted workspace are refused at accept (`410`) and hidden from the invitee list; no extra delete step.
 
 Event `workspace.invitation.created` (v2 envelope via `WorkspaceNotificationRecorder`, recipients `[invitedBy]`), data: `{workspaceName, inviteeEmail, inviterName, expiresAt}`. Add the type to `packages/contracts/events/notification/event-v2.schema.json` + an example.
 
@@ -75,14 +75,14 @@ The internal directory user view (`/internal/directory/users…`, `InternalDirec
 
 ## 6. api-gateway + contracts (A1a)
 
-Gateway routes for the 7 endpoints (`/api/v1/workspaces/:id/invitations…`, `/api/v1/me/invitations…`), same auth/forwarding as the members routes; throttle create + resend (per user). `packages/contracts/http/workspace/openapi.yaml`: new paths and schemas. Contract/e2e tests for the new routes.
+Gateway routes for the 7 endpoints (`/api/v1/workspaces/:id/invitations…`, `/api/v1/invitations…`; workspace-service declares the literal `/workspaces/invitations` path, which Spring matches before `/workspaces/{workspaceId}`), same auth/forwarding as the members routes; throttle create + resend (per user). `packages/contracts/http/workspace/openapi.yaml`: new paths and schemas. Contract/e2e tests for the new routes.
 
 ## 7. Web (A1b)
 
 - Members tab: on `USER_NOT_FOUND` from add-member, show "Chưa có tài khoản Weav với email này. Gửi lời mời qua email?" with a "Gửi lời mời" button -> `POST invitations`. Map `INVITATION_EXISTS`, `INVITATION_LIMIT`, `USER_EXISTS`.
 - Members tab (owner): "Lời mời đang chờ" list: e-mail, sent/expiry, status (Expired badge), Resend, Revoke (confirm).
-- New route `/invitations` (signed-in): list from `GET /me/invitations`, Accept / Decline; after accept, switch to the workspace. If `emailVerified: false`: notice + link to Settings e-mail verification (already exists). Sign-in/up redirect back to `/invitations` when it was the target.
-- Entry point: a banner on the dashboard when `/me/invitations` is non-empty (one cached query).
+- New route `/invitations` (signed-in): list from `GET /api/v1/invitations`, Accept / Decline; after accept, switch to the workspace. If `emailVerified: false`: notice + link to Settings e-mail verification (already exists). No login redirect work: sign-in lands on `/dashboard`, whose banner links to `/invitations`.
+- Entry point: a banner on the dashboard when `GET /api/v1/invitations` is non-empty (one cached query).
 - i18n vi/en keys; no hard-coded strings.
 
 ## 8. Error handling and security
