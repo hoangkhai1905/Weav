@@ -130,7 +130,10 @@ public final class GoogleOidcAdapter implements OAuthProviderClient {
                 .additionalParameters(Map.of(
                         "nonce", nonce,
                         "code_challenge", OAuthProtocolPolicy.challengeForVerifier(verifier),
-                        "code_challenge_method", OAuthProtocolPolicy.S256
+                        "code_challenge_method", OAuthProtocolPolicy.S256,
+                        // Always show Google's account chooser, so a browser signed in to one Google account can
+                        // still sign in to Weav with another one instead of being sent straight back as the first.
+                        "prompt", "select_account"
                 ))
                 .build();
         return new AuthorizationUrl(URI.create(authorizationRequest.getAuthorizationRequestUri()));
