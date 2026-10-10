@@ -92,6 +92,7 @@ Gateway routes for the 7 endpoints (`/api/v1/workspaces/:id/invitations…`, `/a
 - Accept/decline never reveal invitations of other e-mails (`404`).
 - Rate limits: gateway throttle + 50 pending + 10-minute resend.
 - No secrets anywhere; e-mail addresses are personal data: not logged by any service.
+- Review additions (2026-10-10): at most 20 invitations created per workspace per rolling 24 h (abuse cap; the 50-pending limit counts only live invitations); inactive callers are refused; the inviter's inbox row says "invitation created" (the e-mail can still fail). Product decision: a pending invitation stays valid if its inviter later leaves the workspace or stops being OWNER (owners can revoke it).
 
 ## 9. Testing
 
