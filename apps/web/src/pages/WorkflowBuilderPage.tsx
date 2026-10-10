@@ -87,6 +87,7 @@ import { KeyValueEditor } from '../components/builder/KeyValueEditor';
 import { definitionBlockers } from '../lib/publishBlockers';
 import { VariablePicker } from '../components/builder/VariablePicker';
 import { DataSuggestions } from '../components/builder/DataSuggestions';
+import { MappingTextField } from '../components/builder/MappingTextField';
 import { fileSources, pathLabel, upstreamGroups, useFieldTarget } from '../lib/variablePaths';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
@@ -2062,8 +2063,8 @@ export const WorkflowBuilderPage: React.FC = () => {
                     );
                   })()}
                   <div>
-                    <label htmlFor="telegram-text" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.message')}</label>
-                    <textarea id="telegram-text" rows={4} value={String(selectedNodeConfig.text ?? '')} onChange={(event) => updateSelectedNodeConfig({ text: event.target.value })} placeholder={t('builder.cfg.tg_text_placeholder')} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    <label id="telegram-text-label" onClick={() => document.getElementById('telegram-text')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.message')}</label>
+                    <MappingTextField key={`${selectedNodeId}-text`} id="telegram-text" labelledBy="telegram-text-label" multiline value={String(selectedNodeConfig.text ?? '')} onChange={(text) => updateSelectedNodeConfig({ text })} groups={inspectorGroups} placeholder={t('builder.cfg.tg_text_placeholder')} />
                     {suggestionsFor('text', true)}
                   </div>
                   <details
@@ -2137,13 +2138,13 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <input id="email-to" value={String(selectedNodeConfig.to ?? '')} onChange={(event) => updateSelectedNodeConfig({ to: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
                   </div>
                   <div>
-                    <label htmlFor="email-subject" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.subject')}</label>
-                    <input id="email-subject" value={String(selectedNodeConfig.subject ?? '')} onChange={(event) => updateSelectedNodeConfig({ subject: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    <label id="email-subject-label" onClick={() => document.getElementById('email-subject')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.subject')}</label>
+                    <MappingTextField key={`${selectedNodeId}-subject`} id="email-subject" labelledBy="email-subject-label" value={String(selectedNodeConfig.subject ?? '')} onChange={(subject) => updateSelectedNodeConfig({ subject })} groups={inspectorGroups} />
                     {suggestionsFor('subject')}
                   </div>
                   <div>
-                    <label htmlFor="email-body" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.body')}</label>
-                    <textarea id="email-body" rows={3} value={String(selectedNodeConfig.body ?? '')} onChange={(event) => updateSelectedNodeConfig({ body: event.target.value })} className="w-full resize-y rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                    <label id="email-body-label" onClick={() => document.getElementById('email-body')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.body')}</label>
+                    <MappingTextField key={`${selectedNodeId}-body`} id="email-body" labelledBy="email-body-label" multiline value={String(selectedNodeConfig.body ?? '')} onChange={(body) => updateSelectedNodeConfig({ body })} groups={inspectorGroups} />
                     {suggestionsFor('body', true)}
                   </div>
                   {['bodyType', 'cc', 'bcc'].map((name) => configField(name))}
