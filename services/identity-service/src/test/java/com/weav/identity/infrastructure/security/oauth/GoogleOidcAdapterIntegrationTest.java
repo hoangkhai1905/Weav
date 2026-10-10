@@ -142,6 +142,7 @@ class GoogleOidcAdapterIntegrationTest {
         assertEquals(nonce, query.get("nonce"));
         assertEquals(OAuthProtocolPolicy.challengeForVerifier(verifier), query.get("code_challenge"));
         assertEquals("S256", query.get("code_challenge_method"));
+        assertEquals("select_account", query.get("prompt"));
         assertEquals(Set.of("openid", "email", "profile"), Set.of(query.get("scope").split(" ")));
         assertFalse(query.containsKey("access_type"));
         assertFalse(query.containsKey("code_verifier"));
