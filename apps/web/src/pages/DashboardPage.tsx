@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Plus, Play, RotateCw, Sparkles, ArrowRight, Activity, ShoppingCart, ArrowLeftRight, Headphones, Cloud } from 'lucide-react';
+import { Mail, Plus, Play, RotateCw, Sparkles, ArrowRight, Activity, ShoppingCart, ArrowLeftRight, Headphones, Cloud } from 'lucide-react';
 import type { WorkflowDefinition } from '../types/workflow.types';
 import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
 import { WorkflowActivityChart } from '../components/dashboard/WorkflowActivityChart';
@@ -16,7 +16,7 @@ import { useWorkspaceStore } from '../store/useWorkspaceStore';
 import { statusBadgeClass } from '../components/common/statusBadgeClass';
 import { formatRelativeTime } from '../lib/relativeTime';
 import { FirstWorkspaceCard } from '../components/onboarding/FirstWorkspaceCard';
-import { useWorkspaceListContext } from '../hooks/useWorkspace';
+import { useMyInvitations, useWorkspaceListContext } from '../hooks/useWorkspace';
 
 interface HttpDashboardContentProps {
   workflows: WorkflowDefinition[];
@@ -292,6 +292,20 @@ function HttpDashboardContent({ workflows, isLoading, error, actionError, onRetr
   );
 }
 
+function InvitationsBanner({ count }: { count: number }) {
+  const { t } = useI18nStore();
+  if (count <= 0) return null;
+  return (
+    <div data-testid="dashboard-invitations-banner" className="flex flex-col gap-2 rounded-lg border border-run/30 bg-run-bg p-3 text-xs sm:flex-row sm:items-center sm:justify-between" role="status">
+      <span className="flex items-center gap-2 font-semibold text-foreground">
+        <Mail size={15} className="text-run" aria-hidden="true" />
+        {t(count === 1 ? 'invitations.banner_one' : 'invitations.banner_other').replace('{count}', String(count))}
+      </span>
+      <Link to="/invitations" className="font-bold text-run underline">{t('invitations.banner_link')}</Link>
+    </div>
+  );
+}
+
 export function DashboardPage() {
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
@@ -304,6 +318,7 @@ export function DashboardPage() {
 
   const queryClient = useQueryClient();
   const { userId, workspacesQuery } = useWorkspaceListContext();
+  const pendingInvitations = useMyInvitations().data?.items.length ?? 0;
   // First run: a signed-in user with no workspace yet gets a create card instead of a failed data load.
   const hasNoWorkspace = !isWorkflowMockMode && workspacesQuery.isSuccess && workspacesQuery.data.items.length === 0;
   const loadData = useCallback(async () => {
@@ -340,6 +355,7 @@ export function DashboardPage() {
     return (
       <div className="mx-auto max-w-7xl space-y-6 pb-12">
         <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{t('dashboard.title')}</h1>
+        <InvitationsBanner count={pendingInvitations} />
         <FirstWorkspaceCard userId={userId} onCreated={() => void loadData()} />
       </div>
     );
@@ -377,6 +393,8 @@ export function DashboardPage() {
           </button>
         </div>
       </div>
+
+      <InvitationsBanner count={pendingInvitations} />
 
       {/* 2. QUICK ACTIONS */}
       <DashboardQuickActions prefersReducedMotion={prefersReducedMotion} />

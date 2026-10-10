@@ -132,11 +132,12 @@ test.describe('workspace members', () => {
     await expect(page.getByTestId(`workspace-member-manage-${USER_A}`)).toContainText('Pause/resume: Allowed');
     await page.getByTestId('workspace-member-email').fill('nobody@example.com');
     await page.getByTestId('workspace-member-add-submit').click();
-    await expect(page.getByTestId('workspace-member-error')).toHaveText('No account exists with this email.');
+    // W7-A1: an unknown e-mail now offers an email invitation instead of a dead-end error.
+    await expect(page.getByTestId('workspace-invite-prompt')).toContainText('No Weav account exists with this email');
     // A RESOURCE_NOT_FOUND 404 (caller lost access) must not claim the user does not exist.
     await page.getByTestId('workspace-member-email').fill('lost@example.com');
     await page.getByTestId('workspace-member-add-submit').click();
-    await expect(page.getByTestId('workspace-member-error')).not.toHaveText('No account exists with this email.');
+    await expect(page.getByTestId('workspace-invite-prompt')).toHaveCount(0);
     await expect(page.getByTestId('workspace-member-error')).toBeVisible();
   });
 

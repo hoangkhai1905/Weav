@@ -14,6 +14,8 @@ export const workspaceKeys = {
   list: (userId: string) => ['workspaces', userId, 'list'] as const,
   detail: (userId: string, workspaceId: string) => ['workspaces', userId, 'detail', workspaceId] as const,
   members: (userId: string, workspaceId: string) => ['workspaces', userId, 'members', workspaceId] as const,
+  invitations: (userId: string, workspaceId: string) => ['workspaces', userId, 'invitations', workspaceId] as const,
+  myInvitations: (userId: string) => ['workspaces', userId, 'my-invitations'] as const,
 };
 
 function shouldRetryWorkspaceQuery(failureCount: number, error: Error) {
@@ -118,4 +120,17 @@ export function useWorkspaceContext() {
     workspacesQuery,
     membersQuery,
   };
+}
+
+/** Invitations addressed to the signed-in user (dashboard banner and the /invitations page). */
+export function useMyInvitations() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const authenticated = useAuthStore((state) => state.isAuthenticated);
+  return useQuery({
+    queryKey: workspaceKeys.myInvitations(userId ?? 'anonymous'),
+    enabled: Boolean(authenticated && userId && (isWorkspaceMockMode || getStoredAuthToken())),
+    queryFn: ({ signal }) => workspaceApi.listMyInvitations(signal),
+    retry: shouldRetryWorkspaceQuery,
+    gcTime: 0,
+  });
 }
