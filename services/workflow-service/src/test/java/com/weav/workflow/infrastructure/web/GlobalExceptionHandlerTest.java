@@ -67,6 +67,16 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void mapsAMissingWorkspaceToNotFoundButAPlainDenialToForbidden() throws Exception {
+        mockMvc.perform(get("/test/workspace-missing"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
+        mockMvc.perform(get("/test/forbidden"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
+    }
+
+    @Test
     void mapsWorkspaceFailureToSanitizedServiceUnavailableResponse() throws Exception {
         mockMvc.perform(get("/test/workspace-unavailable")
                         .header(CorrelationIdFilter.HEADER_NAME, "workspace-error-42"))
@@ -106,6 +116,16 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/not-found")
         void notFound() {
             throw new ResourceNotFoundException("Workflow", 123);
+        }
+
+        @GetMapping("/test/workspace-missing")
+        void workspaceMissing() {
+            throw new com.weav.workflow.domain.exception.WorkspaceNotFoundException();
+        }
+
+        @GetMapping("/test/forbidden")
+        void forbidden() {
+            throw new com.weav.workflow.domain.exception.ForbiddenException();
         }
 
         @GetMapping("/test/workspace-unavailable")

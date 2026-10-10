@@ -161,7 +161,8 @@ class DefinitionValidatorTest {
         assertEquals(Set.of("trigger.manual", "trigger.schedule", "trigger.webhook", "trigger.telegram",
                 "http.request", "email.send", "google.sheets", "telegram.send_message", "logic.condition",
                 "ai.extract", "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive",
-                "logic.switch", "data.set", "ai.generate", "trigger.gmail"),
+                "logic.switch", "data.set", "ai.generate", "trigger.gmail", "weav.workflow",
+                "trigger.workflow_event", "discord.send_message"),
                 NodeCatalog.supportedTypes());
     }
 
@@ -705,6 +706,17 @@ class DefinitionValidatorTest {
         }
         assertTrue(has(validator.validateDraft(manualThen("set", "data.set", Map.of("fields", "text"))),
                 "INVALID_FIELD_TYPE"));
+    }
+
+    @Test
+    void runExpressionsAreAcceptedAsMappings() {
+        WorkflowDefinition definition = manualThen("call", "http.request", Map.of("method", "POST",
+                "url", "https://example.com", "body", "{{ workflow.name }} {{ workflow.id }} {{ run.id }} {{ now }}"));
+
+        assertFalse(validator.validatePublish(definition).stream().anyMatch(issue -> issue.code().equals("MAPPING_ERROR")));
+        assertTrue(validator.validatePublish(manualThen("call", "http.request", Map.of("method", "POST",
+                "url", "https://example.com", "body", "{{ run.nope }}"))).stream()
+                .anyMatch(issue -> issue.code().equals("MAPPING_ERROR")));
     }
 
     private static WorkflowDefinition definition(List<WorkflowDefinition.Node> nodes,

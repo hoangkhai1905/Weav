@@ -67,4 +67,47 @@ class WorkflowNotificationEventTest {
         assertThrows(IllegalArgumentException.class, () -> WorkflowNotificationEvent.lifecycle(
                 "workflow.deleted", workspaceId, actorId, workflowId, "Name", Instant.now()));
     }
+    @Test
+    void alertFactoriesBuildMonitorGatedExecutionEventsWithCountStrings() {
+        UUID workspaceId = UUID.randomUUID();
+        UUID recipientId = UUID.randomUUID();
+        UUID executionId = UUID.randomUUID();
+        UUID workflowId = UUID.randomUUID();
+
+        WorkflowNotificationEvent failures = WorkflowNotificationEvent.consecutiveFailuresAlert(
+                workspaceId, recipientId, executionId, workflowId, "Sync", " Rule ", 3, Instant.now());
+        WorkflowNotificationEvent slow = WorkflowNotificationEvent.longRunningAlert(
+                workspaceId, recipientId, executionId, workflowId, "Sync", "Slow", 125, 60, Instant.now());
+
+        assertEquals("monitoring.alert.consecutive_failures", failures.eventType());
+        assertEquals("EXECUTION", failures.entityKind());
+        assertEquals(executionId, failures.entityId());
+        assertEquals(true, failures.requiresMonitorAccess());
+        assertEquals("Rule", failures.data().get("ruleName"));
+        assertEquals("3", failures.data().get("failureCount"));
+        assertEquals("125", slow.data().get("durationSeconds"));
+        assertEquals("60", slow.data().get("thresholdSeconds"));
+    }
+
+    @Test
+    void alertEventsRejectWrongShapeOrUnboundedNumbers() {
+        UUID workspaceId = UUID.randomUUID();
+        UUID recipientId = UUID.randomUUID();
+        UUID executionId = UUID.randomUUID();
+        UUID workflowId = UUID.randomUUID();
+        java.util.Map<String, String> data = java.util.Map.of("ruleName", "R", "workflowName", "W",
+                "workflowId", workflowId.toString(), "failureCount", "x");
+
+        assertThrows(IllegalArgumentException.class, () -> new WorkflowNotificationEvent(
+                "monitoring.alert.consecutive_failures", Instant.now(), workspaceId, null, recipientId,
+                "EXECUTION", executionId, data, true));
+        assertThrows(IllegalArgumentException.class, () -> new WorkflowNotificationEvent(
+                "monitoring.alert.consecutive_failures", Instant.now(), workspaceId, null, recipientId,
+                "EXECUTION", executionId, java.util.Map.of("ruleName", "R", "workflowName", "W",
+                        "workflowId", workflowId.toString(), "failureCount", "3"), false));
+        assertThrows(IllegalArgumentException.class, () -> new WorkflowNotificationEvent(
+                "monitoring.alert.long_running", Instant.now(), workspaceId, null, recipientId,
+                "EXECUTION", executionId, java.util.Map.of("ruleName", "R", "workflowName", "W",
+                        "workflowId", workflowId.toString(), "failureCount", "3"), true));
+    }
 }

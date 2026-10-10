@@ -14,6 +14,7 @@ import java.util.Set;
 public final class MappingResolver {
     private static final String NODE_ROOT = "nodes.";
     private static final String OUTPUT_MARKER = ".output";
+    private static final Set<String> RUN_KEYS = Set.of("now", "run.id", "workflow.id", "workflow.name");
 
     /**
      * Resolves a JSON value using trigger input, successful active-path outputs, and definition variables.
@@ -127,6 +128,7 @@ public final class MappingResolver {
         Object current = switch (expression.root()) {
             case TRIGGER_INPUT -> context.triggerInput();
             case VARIABLES -> context.variables();
+            case RUN -> runValue(expression.nodeId(), context.run(), destinationNodeId, destinationField);
             case NODE_OUTPUT -> {
                 if (!context.outputs().containsKey(expression.nodeId())) {
                     throw new MappingException(destinationNodeId, destinationField, "The referenced output is unavailable.", true);
@@ -145,6 +147,20 @@ public final class MappingResolver {
             }
         }
         return current;
+    }
+
+    private Object runValue(String key, RunInfo run, String destinationNodeId, String destinationField) {
+        Object value = run == null ? null : switch (key) {
+            case "now" -> run.now() == null ? null : run.now().toString();
+            case "run.id" -> run.runId() == null ? null : run.runId().toString();
+            case "workflow.id" -> run.workflowId() == null ? null : run.workflowId().toString();
+            default -> run.workflowName();
+        };
+        if (value == null) {
+            throw new MappingException(destinationNodeId, destinationField,
+                    "The run value is not available outside a run.", true);
+        }
+        return value;
     }
 
     private void appendScalar(
@@ -196,6 +212,10 @@ public final class MappingResolver {
     }
 
     private ParsedExpression parseExpression(String expression, Set<String> knownNodeIds) {
+        if (RUN_KEYS.contains(expression)) {
+            // The key rides in the nodeId slot; RUN never counts as a node reference.
+            return new ParsedExpression(Root.RUN, expression, List.of());
+        }
         if (expression.equals("trigger.input")) {
             return new ParsedExpression(Root.TRIGGER_INPUT, null, List.of());
         }
@@ -329,7 +349,8 @@ public final class MappingResolver {
     private enum Root {
         TRIGGER_INPUT,
         NODE_OUTPUT,
-        VARIABLES
+        VARIABLES,
+        RUN
     }
 
     private record ParsedExpression(Root root, String nodeId, List<String> path) {

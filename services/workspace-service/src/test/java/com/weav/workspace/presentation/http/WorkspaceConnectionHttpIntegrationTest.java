@@ -989,6 +989,11 @@ class WorkspaceConnectionHttpIntegrationTest {
         }
 
         @Override
+        public int disableAllByWorkspaceId(UUID workspaceId) {
+            return delegate.disableAllByWorkspaceId(workspaceId);
+        }
+
+        @Override
         public void delete(com.weav.workspace.domain.model.Connection connection) {
             delegate.delete(connection);
         }

@@ -1,5 +1,6 @@
 package com.weav.workflow.infrastructure.persistence.repository;
 
+import com.weav.workflow.application.port.out.ExecutionFinishedListener;
 import com.weav.workflow.application.port.out.ExecutionRecoveryPort;
 import com.weav.workflow.application.port.out.ExecutionStatePort;
 import com.weav.workflow.application.notification.WorkflowNotificationEvent;
@@ -26,6 +27,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -60,6 +63,8 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     private static final String OUTCOME_UNKNOWN_ERROR = "{\"code\":\"OUTCOME_UNKNOWN\","
             + "\"message\":\"The worker stopped while this step was calling an external service. "
             + "The call may or may not have happened, so it was not repeated.\"}";
+    private static final String CANCELLED_ERROR = "{\"code\":\"CANCELLED_BY_USER\","
+            + "\"message\":\"The run was stopped by a user.\"}";
     private static final String INTERRUPTED_ERROR = "{\"code\":\"WORKER_INTERRUPTED\","
             + "\"message\":\"The worker stopped before the node attempt completed.\"}";
 
@@ -79,10 +84,18 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     private final WorkflowNotificationOutboxPort notificationOutbox;
     private final int maxRecoveries;
     private final java.time.Clock clock;
+    private final ExecutionFinishedListener finishedListener;
 
     public ExecutionStateAdapter(JdbcTemplate jdbc, ObjectMapper objectMapper,
                                  @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema) {
-        this(jdbc, objectMapper, schema, event -> { }, 5, java.time.Clock.systemUTC());
+        this(jdbc, objectMapper, schema, event -> { }, 5, java.time.Clock.systemUTC(), executionId -> { });
+    }
+
+    /** Without a finished-run listener (no alert evaluation); kept for callers that predate W6-A. */
+    public ExecutionStateAdapter(JdbcTemplate jdbc, ObjectMapper objectMapper, String schema,
+                                 WorkflowNotificationOutboxPort notificationOutbox, int maxRecoveries,
+                                 java.time.Clock clock) {
+        this(jdbc, objectMapper, schema, notificationOutbox, maxRecoveries, clock, executionId -> { });
     }
 
     @Autowired
@@ -91,7 +104,9 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
                                  WorkflowNotificationOutboxPort notificationOutbox,
                                  @Value("${weav.workflow.execution.max-recoveries:5}") int maxRecoveries,
                                  @org.springframework.beans.factory.annotation.Qualifier("workflowExecutionClock")
-                                 java.time.Clock clock) {
+                                 java.time.Clock clock,
+                                 ExecutionFinishedListener finishedListener) {
+        this.finishedListener = Objects.requireNonNull(finishedListener, "finishedListener must not be null");
         this.maxRecoveries = maxRecoveries;
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
@@ -193,7 +208,7 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     public Snapshot load(Lease lease) {
         Objects.requireNonNull(lease, "lease must not be null");
         List<SnapshotRow> rows = jdbc.query("""
-                SELECT e.workflow_id, w.workspace_id, e.workflow_version_id, e.trigger_id,
+                SELECT e.workflow_id, w.workspace_id, w.name AS workflow_name, e.workflow_version_id, e.trigger_id,
                        e.trigger_type, e.root_node_id, e.input::text AS input_json,
                        e.edge_states::text AS edge_states_json, e.correlation_id, e.traceparent, e.status,
                        v.workflow_id AS version_workflow_id, v.version_number,
@@ -233,7 +248,7 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
         Object input = jsonValue(parseJson(row.inputJson()));
         return new Snapshot(row.workflowId(), row.workspaceId(), version, definition, row.rootNodeId(), input,
                 graph, nodes, attempts, nextAttempts, row.correlationId(), row.traceparent(),
-                ExecutionStatus.valueOf(row.status()));
+                ExecutionStatus.valueOf(row.status()), row.workflowName());
     }
 
     @Override
@@ -319,8 +334,60 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
         }
         if (transition.status() == ExecutionStatus.SUCCESS || transition.status() == ExecutionStatus.FAILED) {
             recordTerminalNotification(lease.executionId(), transition.status(), transition.finishedAt());
+        } else if (transition.status() == ExecutionStatus.CANCELLED) {
+            // The user stopped it: no workflow.failed notification, but alert rules still see the finished run.
+            notifyFinishedAfterCommit(lease.executionId());
         }
         return true;
+    }
+
+    @Override
+    @Transactional
+    public CancelResult requestCancel(UUID workspaceId, UUID workflowId, UUID executionId, Instant at) {
+        Objects.requireNonNull(workspaceId, "workspaceId must not be null");
+        Objects.requireNonNull(workflowId, "workflowId must not be null");
+        Objects.requireNonNull(executionId, "executionId must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+        // Row lock: serialises with the runner's fenced commit, so a finished run is never overwritten.
+        List<String> rows = jdbc.query("""
+                SELECT e.status FROM %s e JOIN %s w ON w.id = e.workflow_id
+                WHERE e.id = ? AND e.workflow_id = ? AND w.workspace_id = ? FOR UPDATE OF e
+                """.formatted(executionTable, workflowTable), (rs, rowNum) -> rs.getString(1),
+                executionId, workflowId, workspaceId);
+        if (rows.isEmpty()) {
+            return CancelResult.NOT_FOUND;
+        }
+        String status = rows.getFirst();
+        if (ExecutionStatus.QUEUED.name().equals(status)) {
+            jdbc.update("""
+                    UPDATE %s SET status = 'CANCELLED', cancel_requested_at = ?, finished_at = ?,
+                        error = CAST(? AS jsonb), lease_owner = NULL, lease_until = NULL
+                    WHERE id = ? AND status = 'QUEUED'
+                    """.formatted(executionTable), Timestamp.from(at), Timestamp.from(at), CANCELLED_ERROR,
+                    executionId);
+            jdbc.update("""
+                    UPDATE %s SET status = 'CANCELLED', next_attempt_at = NULL, finished_at = ?
+                    WHERE execution_id = ? AND status NOT IN ('SUCCESS', 'SKIPPED', 'FAILED', 'CANCELLED')
+                    """.formatted(nodeTable), Timestamp.from(at), executionId);
+            notifyFinishedAfterCommit(executionId);
+            return CancelResult.CANCELLED;
+        }
+        if (ExecutionStatus.RUNNING.name().equals(status) || ExecutionStatus.WAITING.name().equals(status)) {
+            jdbc.update("""
+                    UPDATE %s SET cancel_requested_at = COALESCE(cancel_requested_at, ?)
+                    WHERE id = ? AND status IN ('RUNNING', 'WAITING')
+                    """.formatted(executionTable), Timestamp.from(at), executionId);
+            return CancelResult.REQUESTED;
+        }
+        return CancelResult.ALREADY_FINISHED;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isCancelRequested(UUID executionId) {
+        return Boolean.TRUE.equals(jdbc.query(
+                "SELECT cancel_requested_at IS NOT NULL FROM %s WHERE id = ?".formatted(executionTable),
+                (rs, rowNum) -> rs.getBoolean(1), executionId).stream().findFirst().orElse(false));
     }
 
     private void recordTerminalNotification(UUID executionId, ExecutionStatus status, Instant finishedAt) {
@@ -340,6 +407,31 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
         notificationOutbox.record(WorkflowNotificationEvent.terminal(eventType, recipient.workspaceId(),
                 actor, candidate, executionId, recipient.workflowId(),
                 recipient.workflowName(), finishedAt));
+        notifyFinishedAfterCommit(executionId);
+    }
+
+    /** W6-A: alert rules are judged once the terminal state is durable, outside this transaction. */
+    private void notifyFinishedAfterCommit(UUID executionId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            callFinishedListener(executionId);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                callFinishedListener(executionId);
+            }
+        });
+    }
+
+    /** The run is already committed: a listener failure is logged and never propagated. */
+    private void callFinishedListener(UUID executionId) {
+        try {
+            finishedListener.onExecutionFinished(executionId);
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Execution {} finished listener failed ({})", executionId,
+                    exception.getClass().getSimpleName());
+        }
     }
 
     @Override
@@ -721,6 +813,7 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
                 case WEBHOOK -> "WEBHOOK";
                 case TELEGRAM -> "TELEGRAM";
                 case GMAIL -> "GMAIL";
+                case WORKFLOW_EVENT -> "WORKFLOW_EVENT";
             };
         } catch (IllegalArgumentException exception) {
             return null;
@@ -832,6 +925,7 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
 
     private static final RowMapper<SnapshotRow> SNAPSHOT_ROW_MAPPER = (rs, rowNum) -> new SnapshotRow(
             rs.getObject("workflow_id", UUID.class), rs.getObject("workspace_id", UUID.class),
+            rs.getString("workflow_name"),
             rs.getObject("workflow_version_id", UUID.class), rs.getObject("trigger_id", UUID.class),
             rs.getString("trigger_type"), rs.getString("root_node_id"), rs.getString("input_json"),
             rs.getString("edge_states_json"), rs.getString("correlation_id"), rs.getString("traceparent"),
@@ -873,7 +967,7 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
                             String versionSchemaVersion, UUID publishedBy, Instant versionCreatedAt) {
     }
 
-    private record SnapshotRow(UUID workflowId, UUID workspaceId, UUID versionId, UUID triggerId,
+    private record SnapshotRow(UUID workflowId, UUID workspaceId, String workflowName, UUID versionId, UUID triggerId,
                                String triggerType, String rootNodeId, String inputJson, String edgeStatesJson,
                                String correlationId, String traceparent, String status, UUID versionWorkflowId,
                                Integer versionNumber, String versionDefinition, String versionSchemaVersion,

@@ -70,6 +70,7 @@ public class PinnedHttpTransport {
     public static final int MAX_CALL_BYTES = 32 * 1024 * 1024;
     private static final String GMAIL_MESSAGES_PATH = "/gmail/v1/users/me/messages";
     private static final Pattern GMAIL_MESSAGE_PATH = Pattern.compile("^/gmail/v1/users/me/messages/[0-9A-Fa-f]{1,32}$");
+    private static final Pattern DISCORD_WEBHOOK_PATH = Pattern.compile("/api/webhooks/[0-9]{1,24}/[A-Za-z0-9_-]{1,128}");
     private static final String TELEGRAM_HOST = "api.telegram.org";
     private static final Set<String> TELEGRAM_METHODS = Set.of("sendMessage", "setWebhook", "deleteWebhook", "getFile");
     private static final Pattern TELEGRAM_FILE_PATH = Pattern.compile(
@@ -247,6 +248,17 @@ public class PinnedHttpTransport {
         validateTelegramFileUri(uri);
         int responseCap = boundedCap(maxBytes);
         return download(targetPolicy.approve(uri), responseCap);
+    }
+
+    /**
+     * POSTs JSON to a Discord channel webhook. The host is fixed to discord.com or discordapp.com and the path to
+     * {@code /api/webhooks/<id>/<token>}; the token is part of the path, so the URI is never logged or echoed in a
+     * failure. DNS is approved and pinned here immediately before the request is sent.
+     */
+    public HttpResponse executeDiscordWebhook(URI uri, Object body) {
+        validateDiscordUri(uri);
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "POST", Map.of(), Map.of(), null, body, callTimeout);
     }
 
     /**
@@ -947,6 +959,24 @@ public class PinnedHttpTransport {
                 || path.contains("..") || path.contains("//")) {
             throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
                     "The Telegram destination is invalid.", false);
+        }
+    }
+
+    private void validateDiscordUri(URI uri) {
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !(uri.getHost().equalsIgnoreCase("discord.com") || uri.getHost().equalsIgnoreCase("discordapp.com"))
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawQuery() != null
+                || uri.getRawFragment() != null
+                || uri.getRawPath() == null
+                || !DISCORD_WEBHOOK_PATH.matcher(uri.getRawPath()).matches()) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Discord destination is invalid.", false);
         }
     }
 

@@ -1,8 +1,11 @@
 package com.weav.workspace.infrastructure.persistence.entity;
 
 import com.weav.workspace.domain.model.Workspace;
+import com.weav.workspace.domain.valueobject.WorkspaceStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
@@ -33,6 +36,16 @@ public class WorkspaceJpaEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private WorkspaceStatus status = WorkspaceStatus.ACTIVE;
+
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
+    @Column(name = "deleted_by")
+    private UUID deletedBy;
+
     protected WorkspaceJpaEntity() {
     }
 
@@ -59,6 +72,34 @@ public class WorkspaceJpaEntity {
         this.createdBy = Objects.requireNonNull(createdBy, "createdBy must not be null");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.updatedAt = Objects.requireNonNull(updatedAt, "updatedAt must not be null");
+    }
+
+    public WorkspaceJpaEntity(
+            UUID id,
+            String name,
+            String nameNormalized,
+            UUID createdBy,
+            Instant createdAt,
+            Instant updatedAt,
+            WorkspaceStatus status,
+            Instant deletedAt,
+            UUID deletedBy) {
+        this(id, name, nameNormalized, createdBy, createdAt, updatedAt);
+        this.status = Objects.requireNonNull(status, "status must not be null");
+        this.deletedAt = deletedAt;
+        this.deletedBy = deletedBy;
+    }
+
+    public WorkspaceStatus getStatus() {
+        return status;
+    }
+
+    public Instant getDeletedAt() {
+        return deletedAt;
+    }
+
+    public UUID getDeletedBy() {
+        return deletedBy;
     }
 
     public UUID getId() {

@@ -12,6 +12,7 @@ export interface SchemaProperty {
   maxLength?: number;
   'x-weav-template'?: boolean;
   'x-weav-connection'?: { provider: string };
+  'x-weav-personal'?: boolean;
 }
 
 export interface NodeSchema {

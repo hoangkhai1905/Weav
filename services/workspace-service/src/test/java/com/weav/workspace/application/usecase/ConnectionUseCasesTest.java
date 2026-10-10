@@ -79,7 +79,7 @@ class ConnectionUseCasesTest {
 
         ConnectionResponse response = new CreateConnectionUseCase(
                 connections, memberships, credentials, providerPolicy, configPolicy, assembler,
-                new RecordingTransactionRunner())
+                new RecordingTransactionRunner(), WorkspaceNotificationTestFixtures.unlocked())
                 .execute(new CreateConnectionCommand(
                         WORKSPACE, OWNER, "  HTTP\tAPI  ", ConnectionProvider.HTTP,
                         ConnectionAuthType.NONE, Map.of("baseUrl", "https://example.test")));
@@ -102,7 +102,7 @@ class ConnectionUseCasesTest {
 
         CreateConnectionUseCase useCase = new CreateConnectionUseCase(
                 connections, memberships, credentials, providerPolicy, configPolicy, assembler,
-                new RecordingTransactionRunner());
+                new RecordingTransactionRunner(), WorkspaceNotificationTestFixtures.unlocked());
         assertThrows(BadRequestException.class, () -> useCase.execute(new CreateConnectionCommand(
                 WORKSPACE, OWNER, "Gmail", ConnectionProvider.GMAIL, ConnectionAuthType.TOKEN, Map.of())));
         verify(connections, never()).existsByWorkspaceIdAndNameNormalized(any(), any(), any());
@@ -123,7 +123,7 @@ class ConnectionUseCasesTest {
 
         BadRequestException exception = assertThrows(BadRequestException.class, () -> new CreateConnectionUseCase(
                 connections, memberships, credentials, providerPolicy, configPolicy, assembler,
-                new RecordingTransactionRunner()).execute(new CreateConnectionCommand(
+                new RecordingTransactionRunner(), WorkspaceNotificationTestFixtures.unlocked()).execute(new CreateConnectionCommand(
                 WORKSPACE, OWNER, "HTTP", ConnectionProvider.HTTP, ConnectionAuthType.API_KEY,
                 Map.of("apiKey", "opaque-value"))));
 
@@ -147,7 +147,7 @@ class ConnectionUseCasesTest {
 
         CreateConnectionUseCase useCase = new CreateConnectionUseCase(
                 connections, memberships, credentials, providerPolicy, configPolicy, assembler,
-                new RecordingTransactionRunner());
+                new RecordingTransactionRunner(), WorkspaceNotificationTestFixtures.unlocked());
         for (Map<String, Object> invalidConfig : invalidConfigs) {
             BadRequestException exception = assertThrows(BadRequestException.class, () -> useCase.execute(
                     new CreateConnectionCommand(

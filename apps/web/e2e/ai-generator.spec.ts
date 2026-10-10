@@ -162,4 +162,51 @@ test.describe("Generate with AI panel in the builder", () => {
     expect((generates[1] as { prompt: string }).prompt).toBe(PROMPT);
     expect((generates[1] as { answers: unknown }).answers).toEqual({ "email.send.body": "Hello there" });
   });
+  test("pre-fills a missing recipient with the signed-in email and sends it unless edited", async ({ page }) => {
+    await installAuthFixture(page);
+    const ready = {
+      status: "ready",
+      name: "Notify me",
+      definition: {
+        schemaVersion: "1.0",
+        nodes: [
+          { id: "start", type: "trigger.manual", config: {} },
+          { id: "send_email", type: "email.send", config: { to: "owner@example.test", subject: "Hi", body: "Hello" } },
+        ],
+        edges: [{ id: "e1", source: "start", target: "send_email" }],
+        variables: {},
+      },
+      layout: { start: { x: 100, y: 100 }, send_email: { x: 400, y: 100 } },
+    };
+    const { generates } = await stubWorkflows(page, {
+      generate: (body) =>
+        (body.answers as Record<string, string> | undefined)?.["send_email.config.to"]
+          ? ready
+          : { status: "needs_input", questions: [{ code: "VALUE", field: "send_email.config.to" }] },
+    });
+    const dialog = await openGeneratePanel(page);
+    await dialog.getByRole("textbox").first().fill(PROMPT);
+    await dialog.getByRole("button", { name: "Generate", exact: true }).click();
+    const recipient = dialog.getByLabel("Which email address should it be sent to?");
+    await expect(recipient).toHaveValue("owner@example.test");
+    await recipient.fill("boss@example.test");
+    await expect(recipient).toHaveValue("boss@example.test");
+    await recipient.fill("owner@example.test");
+    await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    expect((generates[1] as { answers: unknown }).answers).toEqual({ "send_email.config.to": "owner@example.test" });
+  });
+  test("sends the prefilled recipient when Continue is clicked without touching it", async ({ page }) => {
+    await installAuthFixture(page);
+    const { generates } = await stubWorkflows(page, {
+      generate: () => ({ status: "needs_input", questions: [{ code: "VALUE", field: "send_email.config.to" }] }),
+    });
+    const dialog = await openGeneratePanel(page);
+    await dialog.getByRole("textbox").first().fill(PROMPT);
+    await dialog.getByRole("button", { name: "Generate", exact: true }).click();
+    await expect(dialog.getByLabel("Which email address should it be sent to?")).toHaveValue("owner@example.test");
+    await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+    await expect.poll(() => generates.length).toBe(2);
+    expect((generates[1] as { answers: unknown }).answers).toEqual({ "send_email.config.to": "owner@example.test" });
+  });
 });

@@ -153,6 +153,7 @@ Names and defaults from [gateway.config.ts](../../../services/api-gateway/src/co
 | `GATEWAY_OCR_RATE_LIMIT` | `10` | OCR per window per JWT subject |
 | `GATEWAY_WEBHOOK_RATE_LIMIT` | `60` | Webhook ingress per window per endpoint key |
 | `GATEWAY_ASSISTANT_RATE_LIMIT` | `20` | Assistant chat per window per user |
+| `GATEWAY_TEMPLATE_RATE_LIMIT` | `20` | Template changes and share-code lookups per window per user |
 | `GATEWAY_TRUST_PROXY_HOPS` | `0` | 0-10 trusted proxy hops; 0 disables `trustProxy` |
 | `GATEWAY_RATE_LIMIT_WINDOW_MS` | `60000` | Window and block duration |
 | `VALKEY_URL` | n/a | Set in `compose.yml`, not read by code |

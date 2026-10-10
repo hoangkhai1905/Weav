@@ -132,4 +132,65 @@ class WorkflowDraftServiceTest {
         verify(repository, never()).lockByWorkspaceAndId(WORKSPACE_ID, WORKFLOW_ID);
         verify(repository, never()).save(org.mockito.ArgumentMatchers.any());
     }
+
+    @Test
+    void createWithDraftStoresDefinitionInOneTransaction() {
+        WorkflowRepository repository = mock(WorkflowRepository.class);
+        when(repository.save(org.mockito.ArgumentMatchers.any(Workflow.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        com.weav.workflow.application.port.out.WorkflowNotificationOutboxPort outbox =
+                mock(com.weav.workflow.application.port.out.WorkflowNotificationOutboxPort.class);
+        int[] transactions = {0};
+        org.springframework.transaction.support.TransactionOperations counting =
+                new org.springframework.transaction.support.TransactionOperations() {
+                    @Override
+                    public <T> T execute(org.springframework.transaction.support.TransactionCallback<T> action) {
+                        transactions[0]++;
+                        return action.doInTransaction(null);
+                    }
+                };
+        WorkflowDraftService service = new WorkflowDraftService(new CreateWorkflowUseCase(repository), repository,
+                new WorkspaceAuthorization((workspace, user) -> new WorkspaceAccessPort.Access(
+                        workspace, user, "MEMBER", Set.of("WORKFLOW_CREATE"))),
+                mock(WorkspaceConnectionPort.class), Optional.empty(), outbox, counting);
+        WorkflowDefinition definition = new WorkflowDefinition("1.0", List.of(
+                new WorkflowDefinition.Node("mail", "email.send", Map.of("subject", "Hi"))), List.of(), Map.of());
+        Map<String, Object> editorState = Map.of("nodes", Map.of("mail", Map.of("name", "Gui mail")));
+
+        Workflow created = service.createWithDraft(new com.weav.workflow.application.dto.CreateWorkflowCommand(
+                WORKSPACE_ID, USER_ID, "From template", "desc"), definition, editorState);
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, transactions[0]);
+        org.junit.jupiter.api.Assertions.assertEquals("From template", created.getName());
+        org.junit.jupiter.api.Assertions.assertEquals("email.send",
+                ((Map<?, ?>) ((List<?>) created.getDraftDefinition().get("nodes")).get(0)).get("type"));
+        org.junit.jupiter.api.Assertions.assertEquals(editorState, created.getEditorState());
+        verify(outbox).record(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void createWithDraftRequiresCreateCapabilityAndRejectsConnectionReferences() {
+        WorkflowRepository repository = mock(WorkflowRepository.class);
+        WorkflowDraftService noCreate = new WorkflowDraftService(new CreateWorkflowUseCase(repository), repository,
+                new WorkspaceAuthorization((workspace, user) -> new WorkspaceAccessPort.Access(
+                        workspace, user, "MEMBER", Set.of("WORKFLOW_EDIT"))),
+                mock(WorkspaceConnectionPort.class), Optional.empty());
+        WorkflowDefinition plain = new WorkflowDefinition("1.0", List.of(
+                new WorkflowDefinition.Node("manual", "trigger.manual", Map.of())), List.of(), Map.of());
+        com.weav.workflow.application.dto.CreateWorkflowCommand command =
+                new com.weav.workflow.application.dto.CreateWorkflowCommand(WORKSPACE_ID, USER_ID, "X", null);
+
+        assertThrows(ForbiddenException.class, () -> noCreate.createWithDraft(command, plain, null));
+
+        WorkflowDraftService canCreate = new WorkflowDraftService(new CreateWorkflowUseCase(repository), repository,
+                new WorkspaceAuthorization((workspace, user) -> new WorkspaceAccessPort.Access(
+                        workspace, user, "MEMBER", Set.of("WORKFLOW_CREATE"))),
+                mock(WorkspaceConnectionPort.class), Optional.empty());
+        WorkflowDefinition withConnection = new WorkflowDefinition("1.0", List.of(
+                new WorkflowDefinition.Node("sheets", "google.sheets", Map.of(
+                        "connectionId", CONNECTION_ID.toString()))), List.of(), Map.of());
+
+        assertThrows(BadRequestException.class, () -> canCreate.createWithDraft(command, withConnection, null));
+        verify(repository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
 }

@@ -21,6 +21,7 @@ import java.util.regex.Pattern;
 /** Maps a WorkflowIntent 1:1 onto a WorkflowDefinition and reuses validatePublish as the only graph validator. */
 public final class IntentCompiler {
     private static final Pattern NODE_ID = Pattern.compile("^[a-z][a-z0-9_]{0,31}$");
+    private static final int MAX_STEP_NAME = 80;
 
     private final DefinitionValidator validator;
 
@@ -31,7 +32,12 @@ public final class IntentCompiler {
     public sealed interface Compilation permits Ready, NeedsConnections, NeedsValues, Invalid {
     }
 
-    public record Ready(String name, WorkflowDefinition definition, Map<String, Position> layout) implements Compilation {
+    /** {@code nodeNames}: the model's readable step titles by node id; only valid, non-blank ones. */
+    public record Ready(String name, WorkflowDefinition definition, Map<String, Position> layout,
+                        Map<String, String> nodeNames) implements Compilation {
+        public Ready(String name, WorkflowDefinition definition, Map<String, Position> layout) {
+            this(name, definition, layout, Map.of());
+        }
     }
 
     public record NeedsConnections(List<String> nodeTypes) implements Compilation {
@@ -66,6 +72,10 @@ public final class IntentCompiler {
             return new Invalid();
         }
         List<WorkflowDefinition.Node> nodes = new ArrayList<>();
+        Map<String, String> nodeNames = new LinkedHashMap<>();
+        List<String> ids = new ArrayList<>();
+        List<String> types = new ArrayList<>();
+        List<Map<String, Object>> configs = new ArrayList<>();
         for (Object raw : rawNodes) {
             if (!(raw instanceof Map<?, ?> node) || !(node.get("id") instanceof String id) || !NODE_ID.matcher(id).matches()
                     || !(node.get("type") instanceof String type) || !(node.get("config") instanceof Map<?, ?> rawConfig)
@@ -84,7 +94,17 @@ public final class IntentCompiler {
             if (connection != null && NodeCatalog.configFields(type).contains("connectionId")) {
                 config.put("connectionId", connection.toString());
             }
-            nodes.add(new WorkflowDefinition.Node(id, type, config));
+            ids.add(id);
+            types.add(type);
+            configs.add(config);
+            if (node.get("name") instanceof String title && !title.isBlank()
+                    && title.codePointCount(0, title.length()) <= MAX_STEP_NAME) {
+                nodeNames.put(id, title.strip());
+            }
+        }
+        fillDriftedAnswers(ids, types, configs, answers);
+        for (int i = 0; i < ids.size(); i++) {
+            nodes.add(new WorkflowDefinition.Node(ids.get(i), types.get(i), configs.get(i)));
         }
         List<WorkflowDefinition.Edge> edges = new ArrayList<>();
         for (int i = 0; i < rawEdges.size(); i++) {
@@ -130,7 +150,7 @@ public final class IntentCompiler {
             return values.isEmpty() ? new NeedsConnections(List.copyOf(connectionTypes))
                     : new NeedsValues(List.copyOf(values));
         }
-        return new Ready(name, definition, layout(nodes, edges));
+        return new Ready(name, definition, layout(nodes, edges), Map.copyOf(nodeNames));
     }
 
     private static void fillAnswers(String id, String type, Map<String, Object> config, Map<String, String> answers) {
@@ -140,6 +160,34 @@ public final class IntentCompiler {
             if (field != null && !value.isBlank() && askable(type, field)
                     && (config.get(field) == null || config.get(field) instanceof String text && text.isBlank())) {
                 config.put(field, value);
+            }
+        });
+    }
+
+    /**
+     * The model may rename node ids between turns, so an answer "&lt;oldId&gt;.config.&lt;field&gt;" whose id is gone
+     * goes to the one node that still has that field askable and empty (none or several: ignored).
+     */
+    private static void fillDriftedAnswers(List<String> ids, List<String> types, List<Map<String, Object>> configs,
+                                           Map<String, String> answers) {
+        answers.forEach((key, value) -> {
+            int cut = key.indexOf(".config.");
+            if (cut <= 0 || value.isBlank() || ids.contains(key.substring(0, cut))) {
+                return;
+            }
+            String field = key.substring(cut + ".config.".length());
+            int target = -1;
+            for (int i = 0; i < ids.size(); i++) {
+                Object current = configs.get(i).get(field);
+                if (askable(types.get(i), field) && (current == null || current instanceof String text && text.isBlank())) {
+                    if (target >= 0) {
+                        return;
+                    }
+                    target = i;
+                }
+            }
+            if (target >= 0) {
+                configs.get(target).put(field, value);
             }
         });
     }

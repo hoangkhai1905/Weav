@@ -8,6 +8,7 @@ import {
   Logger,
   Module,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -84,11 +85,85 @@ const manualExecutionSchema = z
   })
   .strict();
 
-type WorkflowMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+// W6-A monitoring: workspace run history, summary and alert rules.
+const executionStatusSchema = z.enum([
+  'QUEUED',
+  'RUNNING',
+  'WAITING',
+  'SUCCESS',
+  'FAILED',
+  'CANCELLED',
+]);
+const isoInstantSchema = z
+  .string()
+  .max(40)
+  .regex(/^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:\d{2})$/);
+const runHistoryQuerySchema = z
+  .object({
+    status: executionStatusSchema.optional(),
+    workflowId: uuidSchema.optional(),
+    from: isoInstantSchema.optional(),
+    to: isoInstantSchema.optional(),
+    page: queryInteger(0).optional(),
+    size: queryInteger(1, 100).optional(),
+  })
+  .strict();
+const summaryQuerySchema = z
+  .object({ days: queryInteger(1, 30).optional() })
+  .strict();
+const alertRuleSchema = z
+  .object({
+    name: z.string().min(1).max(120),
+    type: z.enum(['CONSECUTIVE_FAILURES', 'LONG_RUNNING']),
+    workflowId: uuidSchema.nullable().optional(),
+    threshold: z.number().int().min(1).max(86_400),
+    windowMinutes: z.number().int().min(1).max(10_080).nullable().optional(),
+    cooldownMinutes: z.number().int().min(0).max(10_080).optional(),
+    enabled: z.boolean().optional(),
+  })
+  .strict();
+
+// W6-C1 shared templates.
+const templateVisibilitySchema = z.enum(['PRIVATE', 'UNLISTED', 'PUBLIC']);
+const shareTemplateSchema = z
+  .object({
+    name: z.string().min(1).max(255),
+    // null means "absent" for the optional fields (clients serialise cleared inputs as null).
+    description: z.string().max(2000).nullable().optional(),
+    authorName: z.string().max(120).nullable().optional(),
+    visibility: templateVisibilitySchema,
+  })
+  .strict();
+const patchTemplateSchema = z
+  .object({
+    name: z.string().min(1).max(255).nullable().optional(),
+    description: z.string().max(2000).nullable().optional(),
+    visibility: templateVisibilitySchema.nullable().optional(),
+  })
+  .strict();
+const useTemplateSchema = z
+  .object({
+    workspaceId: uuidSchema,
+    name: z.string().min(1).max(255).nullable().optional(),
+  })
+  .strict();
+const templateListQuerySchema = z
+  .object({
+    scope: z.enum(['public', 'workspace', 'mine']).optional(),
+    workspaceId: uuidSchema.optional(),
+    q: z.string().max(100).optional(),
+    page: queryInteger(0).optional(),
+    size: queryInteger(1, 100).optional(),
+  })
+  .strict();
+// Share codes are typed by people: letters, digits, spaces and dashes (the service normalises them).
+const templateCodeSchema = z.string().regex(/^[A-Za-z0-9 -]{1,32}$/);
+
+type WorkflowMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 interface WorkflowForwardOptions {
   body?: unknown;
-  query?: Record<string, number>;
+  query?: Record<string, number | string>;
   /** Upstream deadline; defaults to 15 s. */
   timeoutMs?: number;
   /** Serialized JSON body cap; defaults to 1 MiB. */
@@ -112,7 +187,9 @@ const generateWorkflowSchema = z
     prompt: z.string().min(1).max(16_000),
     timezone: z.string().min(1).max(64).optional(),
     connections: z.record(z.string().max(128), z.string().uuid()).optional(),
-    answers: z.record(z.string().min(1).max(200), z.string().min(1).max(4_000)).optional(),
+    answers: z
+      .record(z.string().min(1).max(200), z.string().min(1).max(4_000))
+      .optional(),
   })
   .strict();
 
@@ -523,6 +600,271 @@ export class WorkflowProxyController {
       { query: parse(logQuerySchema, query) },
     );
   }
+
+  // W6-C3: stop a run (needs WORKFLOW_RUN; Workflow Service answers 202, 404 or 409).
+  @Post(':workflowId/executions/:executionId/cancel')
+  cancelExecution(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('workflowId') rawWorkflowId: string,
+    @Param('executionId') rawExecutionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    const workflow = workflowId(rawWorkflowId);
+    const execution = workflowId(rawExecutionId);
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/workspaces/${workspace}/workflows/${workflow}/executions/${execution}/cancel`,
+    );
+  }
+}
+
+/** Workspace-wide monitoring: run history, metrics summary and alert rules (W6-A). */
+@Controller('api/v1/workspaces/:workspaceId')
+@AuthPolicy('required')
+export class MonitoringProxyController {
+  constructor(private readonly proxy: WorkflowProxyService) {}
+
+  @Get('executions')
+  history(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Query() query: unknown,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      `/workspaces/${workspace}/executions`,
+      { query: parse(runHistoryQuerySchema, query) },
+    );
+  }
+
+  @Get('monitoring/summary')
+  summary(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Query() query: unknown,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      `/workspaces/${workspace}/monitoring/summary`,
+      { query: parse(summaryQuerySchema, query) },
+    );
+  }
+
+  @Get('alert-rules')
+  listRules(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      `/workspaces/${workspace}/alert-rules`,
+    );
+  }
+
+  @Post('alert-rules')
+  createRule(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/workspaces/${workspace}/alert-rules`,
+      { body: parse(alertRuleSchema, body) },
+    );
+  }
+
+  @Put('alert-rules/:ruleId')
+  updateRule(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('ruleId') rawRuleId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    const rule = workflowId(rawRuleId);
+    return this.proxy.forward(
+      'PUT',
+      request,
+      reply,
+      `/workspaces/${workspace}/alert-rules/${rule}`,
+      { body: parse(alertRuleSchema, body) },
+    );
+  }
+
+  @Delete('alert-rules/:ruleId')
+  deleteRule(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('ruleId') rawRuleId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    const rule = workflowId(rawRuleId);
+    return this.proxy.forward(
+      'DELETE',
+      request,
+      reply,
+      `/workspaces/${workspace}/alert-rules/${rule}`,
+    );
+  }
+}
+
+// ---- W6-C1 shared templates ------------------------------------------------
+
+@Controller('api/v1/workspaces/:workspaceId/workflows/:workflowId/template')
+@AuthPolicy('required')
+export class WorkflowTemplateProxyController {
+  constructor(private readonly proxy: WorkflowProxyService) {}
+
+  @Post('preview')
+  preview(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('workflowId') rawWorkflowId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    const workflow = workflowId(rawWorkflowId);
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/workspaces/${workspace}/workflows/${workflow}/template/preview`,
+    );
+  }
+
+  @Put()
+  share(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('workflowId') rawWorkflowId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    const workflow = workflowId(rawWorkflowId);
+    return this.proxy.forward(
+      'PUT',
+      request,
+      reply,
+      `/workspaces/${workspace}/workflows/${workflow}/template`,
+      { body: parse(shareTemplateSchema, body) },
+    );
+  }
+}
+
+@Controller('api/v1/templates')
+@AuthPolicy('required')
+export class TemplateProxyController {
+  constructor(private readonly proxy: WorkflowProxyService) {}
+
+  @Get()
+  list(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Query() query: unknown,
+  ) {
+    return this.proxy.forward('GET', request, reply, '/templates', {
+      query: parse(templateListQuerySchema, query),
+    });
+  }
+
+  @Get('by-code/:code')
+  byCode(
+    @Param('code') rawCode: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const code = parse(templateCodeSchema, rawCode);
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      `/templates/by-code/${encodeURIComponent(code)}`,
+    );
+  }
+
+  @Get(':id')
+  get(
+    @Param('id') rawId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      `/templates/${workflowId(rawId)}`,
+    );
+  }
+
+  @Patch(':id')
+  patch(
+    @Param('id') rawId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    return this.proxy.forward(
+      'PATCH',
+      request,
+      reply,
+      `/templates/${workflowId(rawId)}`,
+      { body: parse(patchTemplateSchema, body) },
+    );
+  }
+
+  @Delete(':id')
+  remove(
+    @Param('id') rawId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    return this.proxy.forward(
+      'DELETE',
+      request,
+      reply,
+      `/templates/${workflowId(rawId)}`,
+    );
+  }
+
+  @Post(':id/use')
+  use(
+    @Param('id') rawId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    return this.proxy.forward(
+      'POST',
+      request,
+      reply,
+      `/templates/${workflowId(rawId)}/use`,
+      { body: parse(useTemplateSchema, body) },
+    );
+  }
 }
 
 /**
@@ -622,6 +964,9 @@ export class TelegramWebhookProxyController {
 @Module({
   controllers: [
     WorkflowProxyController,
+    MonitoringProxyController,
+    WorkflowTemplateProxyController,
+    TemplateProxyController,
     WebhookProxyController,
     TelegramWebhookProxyController,
   ],

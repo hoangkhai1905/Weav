@@ -1,6 +1,7 @@
 package com.weav.workflow.application.service;
 
 import com.weav.workflow.application.port.out.ConnectionReferencePort;
+import com.weav.workflow.application.port.out.ControlBotStore;
 import com.weav.workflow.application.port.out.ConnectionReferenceUnavailableException;
 import com.weav.workflow.application.port.out.ScheduleValidationPort;
 import com.weav.workflow.application.port.out.TelegramWebhookPort;
@@ -65,6 +66,7 @@ public class WorkflowPublicationService {
     private final WorkflowNotificationOutboxPort notificationOutbox;
     private final TransactionOperations transactions;
     private final Optional<TelegramWebhookPort> telegram;
+    private final Optional<ControlBotStore> controlBot;
 
     public WorkflowPublicationService(
             WorkflowRepository workflowRepository,
@@ -110,7 +112,6 @@ public class WorkflowPublicationService {
                 Optional.empty());
     }
 
-    @Autowired
     public WorkflowPublicationService(
             WorkflowRepository workflowRepository,
             WorkflowVersionPort versions,
@@ -123,6 +124,26 @@ public class WorkflowPublicationService {
             WorkflowNotificationOutboxPort notificationOutbox,
             TransactionOperations transactions,
             Optional<TelegramWebhookPort> telegram) {
+        this(workflowRepository, versions, triggers, workspaceAuthorization, workspaceConnections,
+                connectionReferences, schedules, webhookSecrets, notificationOutbox, transactions, telegram,
+                Optional.empty());
+    }
+
+    @Autowired
+    public WorkflowPublicationService(
+            WorkflowRepository workflowRepository,
+            WorkflowVersionPort versions,
+            WorkflowTriggerPort triggers,
+            WorkspaceAuthorization workspaceAuthorization,
+            WorkspaceConnectionPort workspaceConnections,
+            Optional<ConnectionReferencePort> connectionReferences,
+            ScheduleValidationPort schedules,
+            WebhookSecretPort webhookSecrets,
+            WorkflowNotificationOutboxPort notificationOutbox,
+            TransactionOperations transactions,
+            Optional<TelegramWebhookPort> telegram,
+            Optional<ControlBotStore> controlBot) {
+        this.controlBot = Objects.requireNonNull(controlBot, "controlBot must not be null");
         this.telegram = Objects.requireNonNull(telegram, "telegram must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.workflowRepository = Objects.requireNonNull(workflowRepository, "workflowRepository must not be null");
@@ -153,6 +174,7 @@ public class WorkflowPublicationService {
         WorkflowDefinition validatedDefinition = definitionFor(beforeAuthorization);
         validateForPublish(validatedDefinition);
         requireTelegramTriggerLimit(validatedDefinition);
+        requireWatchedWorkflowsInWorkspace(workspaceId, validatedDefinition);
         Set<UUID> referencedConnections = connectionIds(validatedDefinition);
         for (UUID connectionId : referencedConnections) {
             workspaceConnections.authorizeAttachment(workspaceId, connectionId, actorId);
@@ -345,6 +367,36 @@ public class WorkflowPublicationService {
             throw new WorkflowDraftValidationException(List.of(new ValidationIssue(null, "nodes",
                     "TELEGRAM_TRIGGER_LIMIT_EXCEEDED",
                     "A workflow can have at most " + MAX_TELEGRAM_TRIGGERS + " Telegram triggers.")));
+        }
+    }
+
+    /** trigger.workflow_event may only watch workflows of this workspace (a stranger id is a validation error). */
+    private void requireWatchedWorkflowsInWorkspace(UUID workspaceId, WorkflowDefinition definition) {
+        if (controlBot.isEmpty()) {
+            return;
+        }
+        List<ValidationIssue> issues = new ArrayList<>();
+        for (WorkflowDefinition.Node node : definition.nodes()) {
+            if (node == null || !"trigger.workflow_event".equals(node.type())
+                    || !(node.config().get("workflowIds") instanceof List<?> ids) || ids.isEmpty()) {
+                continue;
+            }
+            Set<UUID> wanted = new LinkedHashSet<>();
+            boolean malformed = false;
+            for (Object id : ids) {
+                try {
+                    wanted.add(UUID.fromString(String.valueOf(id)));
+                } catch (IllegalArgumentException exception) {
+                    malformed = true;
+                }
+            }
+            if (malformed || !controlBot.get().existingWorkflowIds(workspaceId, wanted).containsAll(wanted)) {
+                issues.add(new ValidationIssue(node.id(), "config.workflowIds", "WORKFLOW_NOT_IN_WORKSPACE",
+                        "Every watched workflow must exist in this workspace."));
+            }
+        }
+        if (!issues.isEmpty()) {
+            throw new WorkflowDraftValidationException(issues);
         }
     }
 
@@ -696,6 +748,7 @@ public class WorkflowPublicationService {
             case "trigger.webhook" -> TriggerType.WEBHOOK;
             case "trigger.telegram" -> TriggerType.TELEGRAM;
             case "trigger.gmail" -> TriggerType.GMAIL;
+            case "trigger.workflow_event" -> TriggerType.WORKFLOW_EVENT;
             default -> null;
         };
     }

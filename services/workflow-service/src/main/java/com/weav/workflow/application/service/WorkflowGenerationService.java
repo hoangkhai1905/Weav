@@ -21,7 +21,7 @@ import java.util.function.BooleanSupplier;
 @Service
 public class WorkflowGenerationService {
     private static final Set<String> QUESTION_CODES = Set.of("URL", "SCHEDULE", "TIMEZONE", "VALUE");
-    private static final String ANSWERS_HEADER = "\n\nAnswers the user already gave:\n";
+    private static final String ANSWERS_HEADER = "\n\nAnswers the user already gave (reuse the node ids that appear in the answer keys):\n";
     private static final Set<String> REASON_CODES = Set.of("CAPABILITY_UNAVAILABLE", "OUT_OF_SCOPE", "AMBIGUOUS_REQUEST");
     private final WorkspaceAuthorization authorization;
     private final WorkspaceConnectionPort connections;
@@ -97,7 +97,12 @@ public class WorkflowGenerationService {
     }
     private static Map<String,Object> ready(IntentCompiler.Ready ready) {
         Map<String,Object> layout = new LinkedHashMap<>();
-        ready.layout().forEach((id,p) -> layout.put(id, Map.of("x",p.x(),"y",p.y())));
+        ready.layout().forEach((id,p) -> {
+            Map<String,Object> entry = new LinkedHashMap<>(Map.of("x",p.x(),"y",p.y()));
+            // N8: the web reads layout[nodeId].name as the step title; without one it labels the step by node type.
+            if (ready.nodeNames().containsKey(id)) entry.put("name", ready.nodeNames().get(id));
+            layout.put(id, entry);
+        });
         Map<String,Object> out = new LinkedHashMap<>(); out.put("status","ready"); out.put("name",ready.name());
         out.put("definition",ready.definition()); out.put("layout",layout); return out;
     }

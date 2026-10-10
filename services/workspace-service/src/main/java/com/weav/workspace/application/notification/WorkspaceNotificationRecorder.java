@@ -31,6 +31,18 @@ public final class WorkspaceNotificationRecorder {
 
     public void recordRenamed(
             UUID workspaceId, UUID actorUserId, String workspaceName, List<UUID> currentMemberIds) {
+        appendToOtherMembers("workspace.renamed", workspaceId, actorUserId, workspaceName, currentMemberIds);
+    }
+
+    /** Tells every other member (the deleting owner excluded) that the workspace is gone. */
+    public void recordDeleted(
+            UUID workspaceId, UUID actorUserId, String workspaceName, List<UUID> currentMemberIds) {
+        appendToOtherMembers("workspace.deleted", workspaceId, actorUserId, workspaceName, currentMemberIds);
+    }
+
+    private void appendToOtherMembers(
+            String eventType, UUID workspaceId, UUID actorUserId, String workspaceName,
+            List<UUID> currentMemberIds) {
         List<UUID> recipients = currentMemberIds.stream()
                 .filter(userId -> !userId.equals(actorUserId))
                 .distinct()
@@ -38,7 +50,7 @@ public final class WorkspaceNotificationRecorder {
                 .toList();
         for (int start = 0; start < recipients.size(); start += RECIPIENT_BATCH_SIZE) {
             List<UUID> batch = recipients.subList(start, Math.min(start + RECIPIENT_BATCH_SIZE, recipients.size()));
-            append("workspace.renamed", workspaceId, actorUserId, batch,
+            append(eventType, workspaceId, actorUserId, batch,
                     new WorkspaceNotificationEvent.WorkspaceNameData(summarizeName(workspaceName)));
         }
     }

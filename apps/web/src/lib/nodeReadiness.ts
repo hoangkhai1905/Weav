@@ -29,6 +29,7 @@ const CONNECTION_NODE_FIELDS: Record<string, (config: Record<string, unknown>) =
   'telegram.send_message': () => ['chatId', 'text'],
   'trigger.telegram': () => [],
   'trigger.gmail': () => [],
+  'discord.send_message': () => ['content'],
   // Upload with `content` (or nothing) needs a name; with `file` the name defaults to the file's own (S10).
   'google.drive': (config) => ['operation',
     ...(config.operation === 'upload' && isBlank(config.file) ? ['name'] : []),
@@ -83,6 +84,13 @@ export const getNodeReadinessBadge = (
       .filter(([, value]) => !isBlank(value)).map(([source]) => source);
     if (used.length !== 1) return NOT_CONFIGURED;
     if (!ocrSources.includes(used[0])) return unavailable;
+  }
+  if (nodeType === 'trigger.workflow_event' && !(Array.isArray(config.events) && config.events.length > 0)) return NOT_CONFIGURED;
+  if (nodeType === 'weav.workflow') {
+    const needs = config.operation === 'command' ? 'text' : config.operation === 'list_failures' ? '' : 'workflow';
+    if (isBlank(config.operation) || (needs && isBlank(config[needs]))) return NOT_CONFIGURED;
+    // A chat command is only accepted from listed senders: an empty allow-list is not publishable.
+    if (config.operation === 'command' && (isBlank(config.sender) || !(Array.isArray(config.allowedSenders) && config.allowedSenders.some((id) => !isBlank(id))))) return NOT_CONFIGURED;
   }
   const connectionFields = CONNECTION_NODE_FIELDS[nodeType]?.(config);
   if (connectionFields) {

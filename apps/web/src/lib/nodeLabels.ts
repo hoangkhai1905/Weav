@@ -21,6 +21,9 @@ export const NODE_NAME_KEYS: Record<string, string> = {
   'ai.summarize': 'builder.node.ai_summarize',
   'ai.generate': 'builder.node.ai_generate',
   'ocr.extract': 'builder.node.ocr',
+  'trigger.workflow_event': 'builder.node.workflow_event',
+  'discord.send_message': 'builder.node.discord_send',
+  'weav.workflow': 'builder.node.weav_workflow',
 };
 
 /** Localized node label; falls back to the schema title, then the raw type. */

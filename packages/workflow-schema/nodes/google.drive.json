@@ -35,7 +35,8 @@
       "type": "string",
       "title": "Drive file ID",
       "description": "The Drive file to download. Used by download. Regular files only (PDF, images, ...), up to 10 MiB; Google Docs, Sheets and Slides are not supported. The result is output.file, which can be passed to the OCR step.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-personal": true
     },
     "name": {
       "type": "string",
@@ -53,6 +54,7 @@
       "title": "File",
       "description": "A file from an earlier step (for example an email attachment: {{ trigger.input.attachments[0] }}), up to 5 MiB. Used by upload instead of content; the file name and type default to the file's own.",
       "x-weav-template": true,
+      "x-weav-personal": true,
       "oneOf": [
         {
           "type": "object"
@@ -72,7 +74,8 @@
       "type": "string",
       "title": "Folder ID",
       "description": "Upload into, or list only, this folder. Optional. With the drive.file permission only folders created or opened by Weav are accessible.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-personal": true
     },
     "nameContains": {
       "type": "string",

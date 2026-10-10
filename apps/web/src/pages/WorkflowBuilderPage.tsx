@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   ReactFlow,
@@ -49,11 +49,16 @@ import {
   Split,
   Braces,
   WandSparkles,
+  Share2,
+  Bot,
+  BellRing,
+  MessageSquare,
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
 import { OutputSchemaEditor } from '../components/builder/OutputSchemaEditor';
 import { GenerateWorkflowPanel } from '../components/builder/GenerateWorkflowPanel';
+import { ShareTemplateDialog } from '../components/templates/ShareTemplateDialog';
 import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
@@ -71,6 +76,7 @@ import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG, nextNodeId, nodeSourcePorts } from '../lib/constants/nodeCatalog';
 import { getNodeReadinessBadge, isConditionComplete } from '../lib/nodeReadiness';
 import { SchemaField } from '../components/builder/SchemaField';
+import { CharCounter, WeavWorkflowInspector, WorkflowEventInspector } from '../components/builder/ControlBotInspectors';
 import { ConditionEditor } from '../components/builder/ConditionEditor';
 import { AttachmentsEditor } from '../components/builder/AttachmentsEditor';
 import { SwitchEditor } from '../components/builder/SwitchEditor';
@@ -119,6 +125,9 @@ const PALETTE_PRESENTATION: Record<
   'logic.switch': { nameKey: 'builder.node.switch', descKey: 'builder.node.switch_desc', icon: Split },
   'data.set': { nameKey: 'builder.node.data_set', descKey: 'builder.node.data_set_desc', icon: Braces },
   'ai.generate': { nameKey: 'builder.node.ai_generate', descKey: 'builder.node.ai_generate_desc', icon: WandSparkles },
+  'trigger.workflow_event': { nameKey: 'builder.node.workflow_event', descKey: 'builder.node.workflow_event_desc', icon: BellRing },
+  'discord.send_message': { nameKey: 'builder.node.discord_send', descKey: 'builder.node.discord_send_desc', icon: MessageSquare },
+  'weav.workflow': { nameKey: 'builder.node.weav_workflow', descKey: 'builder.node.weav_workflow_desc', icon: Bot },
 };
 
 const PALETTE_CATEGORY_KEYS = {
@@ -175,10 +184,12 @@ const CONNECTION_STEP_MESSAGES: Record<string, [string, string, string]> = {
   'trigger.telegram': ['builder.cfg.msg_tg_select', 'builder.cfg.msg_tg_auth', 'builder.cfg.msg_tg_select'],
   'trigger.gmail': ['builder.cfg.msg_gmail_select', 'builder.cfg.msg_gmail_auth', 'builder.cfg.msg_gmail_select'],
   'google.drive': ['builder.cfg.msg_drive_select', 'builder.cfg.msg_drive_auth', 'builder.cfg.msg_drive_fields'],
+  'discord.send_message': ['builder.cfg.msg_discord_select', 'builder.cfg.msg_discord_auth', 'builder.cfg.msg_discord_fields'],
   'google.calendar': ['builder.cfg.msg_calendar_select', 'builder.cfg.msg_calendar_auth', 'builder.cfg.msg_calendar_fields'],
 };
-const PROVIDER_NAMES: Record<GoogleProvider | 'TELEGRAM', string> = {
+const PROVIDER_NAMES: Record<GoogleProvider | 'TELEGRAM' | 'DISCORD', string> = {
   TELEGRAM: 'Telegram',
+  DISCORD: 'Discord',
   GMAIL: 'Gmail',
   GOOGLE_SHEETS: 'Google Sheets',
   GOOGLE_CALENDAR: 'Google Calendar',
@@ -194,9 +205,10 @@ const FIELD_STEP_MESSAGES: Record<string, string> = {
 
 // Steps whose inspector is rendered from packages/workflow-schema (SchemaField), per operation.
 // trigger.telegram has no other field; it needs the workspace's Telegram bot connection.
-const SCHEMA_FORMS: Record<string, { provider?: GoogleProvider | 'TELEGRAM'; fields: (config: Record<string, unknown>) => string[]; multiline?: string[] }> = {
+const SCHEMA_FORMS: Record<string, { provider?: GoogleProvider | 'TELEGRAM' | 'DISCORD'; fields: (config: Record<string, unknown>) => string[]; multiline?: string[] }> = {
   'trigger.telegram': { provider: 'TELEGRAM', fields: () => [] },
   'trigger.gmail': { provider: 'GMAIL', fields: () => ['query', 'pollIntervalMinutes'] },
+  'discord.send_message': { provider: 'DISCORD', fields: () => ['content', 'username'], multiline: ['content'] },
   'google.drive': {
     provider: 'GOOGLE_DRIVE',
     fields: (config) => ['operation', ...(config.operation === 'list'
@@ -329,7 +341,6 @@ export const WorkflowBuilderPage: React.FC = () => {
   const refreshNotifications = useNotificationMilestoneRefresh();
   const { workflowId } = useParams<{ workflowId: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
   const queryClient = useQueryClient();
   const { theme } = useUIStore();
   const { language, t } = useI18nStore();
@@ -476,13 +487,8 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [publishedWebhooks, setPublishedWebhooks] = useState<WebhookProvisioning[]>([]);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null);
-  // Handed over once by the Create with AI page via router state; cleared below so a reload does not reopen it.
-  const [generateSeed] = useState(() => (location.state as { generatePrompt?: string } | null)?.generatePrompt ?? '');
-  const [isGeneratePanelOpen, setIsGeneratePanelOpen] = useState(Boolean(generateSeed));
-  useEffect(() => {
-    if (generateSeed) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
-  }, []);
+  const [isGeneratePanelOpen, setIsGeneratePanelOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
 
   // Inspector Form State (for selected node)
   const [ocrSourceMode, setOcrSourceMode] = useState<OcrSourceMode>('url');
@@ -1367,6 +1373,8 @@ export const WorkflowBuilderPage: React.FC = () => {
     scheduleExecutionStep(() => setIsPreviewing(false), edges.length * 500 + 300);
   };
 
+  const hasUnsavedChanges = !isSaved || (workflow !== null && (workflowTitle !== workflow.name || workflowDescription !== (workflow.description ?? '')));
+
   return (
     <div
       onPointerDownCapture={handleWorkspacePointerDown}
@@ -1464,6 +1472,17 @@ export const WorkflowBuilderPage: React.FC = () => {
             className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Sparkles size={15} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            data-testid="workflow-share-template"
+            onClick={() => setIsShareOpen(true)}
+            disabled={isLoadingWorkflow || !workflow || hasUnsavedChanges}
+            title={hasUnsavedChanges ? t('tpl.share.save_first') : t('tpl.share.menu')}
+            aria-label={t('tpl.share.menu')}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Share2 size={15} aria-hidden="true" />
           </button>
           <button
             data-testid="workflow-preview"
@@ -1600,7 +1619,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             workflow={workflow}
             name={workflowTitle}
             description={workflowDescription}
-            dirty={!isSaved || workflowTitle !== workflow.name || workflowDescription !== (workflow.description ?? '')}
+            dirty={hasUnsavedChanges}
             saving={isSavingWorkflow}
             workspaceName={activeWorkspace?.name ?? ''}
             onNameChange={(value) => {
@@ -1927,13 +1946,13 @@ export const WorkflowBuilderPage: React.FC = () => {
                     return (
                       <div>
                         {configField('connectionId', options)}
-                        {provider === 'TELEGRAM' ? (
+                        {provider === 'TELEGRAM' || provider === 'DISCORD' ? (
                           <>
                             {!isLoadingConnections && options.length === 0 && (
-                              <p className="mt-1 text-[10px] text-muted-foreground">{t('builder.cfg.no_telegram')}</p>
+                              <p className="mt-1 text-[10px] text-muted-foreground">{t(provider === 'DISCORD' ? 'builder.cfg.no_discord' : 'builder.cfg.no_telegram')}</p>
                             )}
-                            <Link to="/workspace/connections" data-testid="add-connection-TELEGRAM" className={addConnectionButtonCls}>
-                              <Plus size={12} aria-hidden="true" />{t('builder.cfg.connect_telegram')}
+                            <Link to="/workspace/connections" data-testid={`add-connection-${provider}`} className={addConnectionButtonCls}>
+                              <Plus size={12} aria-hidden="true" />{t(provider === 'DISCORD' ? 'builder.cfg.connect_discord' : 'builder.cfg.connect_telegram')}
                             </Link>
                           </>
                         ) : (
@@ -1965,7 +1984,12 @@ export const WorkflowBuilderPage: React.FC = () => {
                   })}
                   {selectedNodeType === 'trigger.telegram' && <p data-testid="telegram-trigger-hint" className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.telegram_trigger_hint')}</p>}
                   {selectedNodeType === 'google.drive' && <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.drive_hint')}</p>}
+                  {selectedNodeType === 'discord.send_message' && <CharCounter value={selectedNodeConfig.content} max={2000} />}
                 </div>
+              ) : selectedNodeType === 'weav.workflow' && selectedNodeId ? (
+                <WeavWorkflowInspector key={`control-bot:${selectedNodeId}`} nodeId={selectedNodeId} config={selectedNodeConfig} currentWorkflowId={workflow?.id} onChange={updateSelectedNodeConfig} />
+              ) : selectedNodeType === 'trigger.workflow_event' ? (
+                <WorkflowEventInspector key={`control-bot:${selectedNodeId}`} config={selectedNodeConfig} currentWorkflowId={workflow?.id} onChange={updateSelectedNodeConfig} />
               ) : selectedNodeType === 'logic.switch' ? (
                 <SwitchEditor config={selectedNodeConfig} onChange={updateSelectedNodeConfig} onCasesChange={updateSwitchCases} />
               ) : selectedNodeType === 'data.set' ? (
@@ -2831,10 +2855,17 @@ export const WorkflowBuilderPage: React.FC = () => {
       />
       <GenerateWorkflowPanel
         open={isGeneratePanelOpen}
-        initialPrompt={generateSeed}
         onClose={() => setIsGeneratePanelOpen(false)}
         onReady={handleGenerateReady}
       />
+      {isShareOpen && workflowId && workflow && (
+        <ShareTemplateDialog
+          workflowId={workflowId}
+          defaultName={workflow.name}
+          nodeNames={Object.fromEntries(nodes.map((node) => [node.id, String(node.data?.name ?? '')]))}
+          onClose={() => setIsShareOpen(false)}
+        />
+      )}
       {addConnectionFor && activeWorkspaceId && (
         <CreateConnectionDialog
           workspaceId={activeWorkspaceId}

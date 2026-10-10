@@ -17,4 +17,7 @@ public interface CredentialRepository {
     Optional<Credential> findByConnectionIdForUpdate(UUID connectionId);
 
     void deleteByConnectionId(UUID connectionId);
+
+    /** Deletes every credential of the workspace's connections (workspace delete); returns the rows removed. */
+    int deleteAllByWorkspaceId(UUID workspaceId);
 }

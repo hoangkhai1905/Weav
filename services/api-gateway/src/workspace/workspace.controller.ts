@@ -70,6 +70,14 @@ const renameWorkspaceBodySchema = z
   .object({ name: z.string().min(1).max(255) })
   .strict();
 
+// Typed confirmation: the workspace name. Workspace compares it with the stored name.
+const deleteWorkspaceBodySchema = z
+  .object({ name: z.string().min(1).max(255) })
+  .strict();
+
+// Workspace asks the Workflow Service to pause every workflow before it deletes (its own limit is 30 s).
+const DELETE_WORKSPACE_TIMEOUT_MS = 35_000;
+
 const addMemberBodySchema = z
   .object({ email: z.string().min(1).max(320) })
   .strict();
@@ -92,6 +100,7 @@ const createConnectionBodySchema = z
       'GOOGLE_SHEETS',
       'GOOGLE_CALENDAR',
       'GOOGLE_DRIVE',
+      'DISCORD',
     ]),
     authType: z.enum(['NONE', 'TOKEN', 'API_KEY', 'BASIC', 'OAUTH2']),
     config: connectionConfigSchema.optional(),
@@ -181,6 +190,20 @@ export class WorkspaceController {
     const id = workspaceId(rawWorkspaceId);
     return this.proxy.forward('PATCH', request, reply, `/${id}`, {
       body: parse(renameWorkspaceBodySchema, body),
+    });
+  }
+
+  @Delete(':workspaceId')
+  remove(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Body() body: unknown,
+  ) {
+    const id = workspaceId(rawWorkspaceId);
+    return this.proxy.forward('DELETE', request, reply, `/${id}`, {
+      body: parse(deleteWorkspaceBodySchema, body),
+      timeoutMs: DELETE_WORKSPACE_TIMEOUT_MS,
     });
   }
 

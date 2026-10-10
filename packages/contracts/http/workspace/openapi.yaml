@@ -126,6 +126,39 @@ paths:
           $ref: '#/components/responses/Conflict'
         '500':
           $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Workspaces]
+      operationId: deleteWorkspace
+      summary: Delete an owned workspace (soft delete)
+      description: >-
+        Owner only. The body carries the workspace name as a typed confirmation (compared trimmed and
+        case-insensitively like the unique-name rule). The Workflow Service is asked to pause every workflow
+        first; if that fails (or any workflow cannot be paused) the call returns 503 and the workspace is not
+        deleted, although some workflows may already be paused, so it can simply be retried. Then the
+        workspace is marked DELETED (hidden from every list and lookup, its name becomes reusable), all of
+        its connections are disabled, their credentials are deleted and every other member receives a
+        workspace.deleted notification. Deleting an already deleted workspace is 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteWorkspaceRequest'
+      responses:
+        '204':
+          description: Workspace deleted; no response body.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
 
   /workspaces/{workspaceId}/members:
     parameters:
@@ -1070,7 +1103,8 @@ components:
           format: date-time
     ConnectionProvider:
       type: string
-      enum: [TELEGRAM, HTTP, GMAIL, GOOGLE_SHEETS, GOOGLE_CALENDAR, GOOGLE_DRIVE]
+      description: DISCORD connections use authType TOKEN; the credential token is the channel webhook URL (write-only).
+      enum: [TELEGRAM, HTTP, GMAIL, GOOGLE_SHEETS, GOOGLE_CALENDAR, GOOGLE_DRIVE, DISCORD]
     ConnectionAuthType:
       type: string
       enum: [NONE, TOKEN, API_KEY, BASIC, OAUTH2]
@@ -1147,6 +1181,16 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+    DeleteWorkspaceRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: The workspace name, typed by the owner to confirm the deletion.
     AddMemberRequest:
       type: object
       additionalProperties: false

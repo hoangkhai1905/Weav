@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.regex.Pattern;
 
-/** Requires the independent Workspace service key on the one internal usage route. */
+/** Requires the independent Workspace service key on the internal usage and pause-all routes. */
 public final class InternalServiceKeyFilter extends OncePerRequestFilter {
 
     public static final String HEADER_NAME = "X-Internal-Service-Key";
@@ -21,6 +21,8 @@ public final class InternalServiceKeyFilter extends OncePerRequestFilter {
     private static final String USAGE_METHOD = "GET";
     private static final Pattern USAGE_PATH = Pattern.compile(
             "/internal/workspaces/[^/]+/connections/[^/]+/usage");
+    private static final String PAUSE_ALL_METHOD = "POST";
+    private static final Pattern PAUSE_ALL_PATH = Pattern.compile("/internal/workspaces/[^/]+/pause-all");
 
     private final byte[] expectedServiceKey;
     private final AuthenticationEntryPoint authenticationEntryPoint;
@@ -53,9 +55,11 @@ public final class InternalServiceKeyFilter extends OncePerRequestFilter {
 
     private boolean isInternalUsageRequest(HttpServletRequest request) {
         String servletPath = request.getServletPath();
-        return USAGE_METHOD.equals(request.getMethod())
-                && servletPath != null
-                && USAGE_PATH.matcher(servletPath).matches();
+        if (servletPath == null) {
+            return false;
+        }
+        return (USAGE_METHOD.equals(request.getMethod()) && USAGE_PATH.matcher(servletPath).matches())
+                || (PAUSE_ALL_METHOD.equals(request.getMethod()) && PAUSE_ALL_PATH.matcher(servletPath).matches());
     }
 
     private boolean isValid(String presentedServiceKey) {

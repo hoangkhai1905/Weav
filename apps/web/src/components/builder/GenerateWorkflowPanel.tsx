@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react';
 import { connectionApi, type ConnectionResponse } from '../../api/connection.api';
 import type { GenerationResponse } from '../../api/workflow-v1.api';
 import { useWorkflowGeneration, type ReadyGeneration } from '../ai/useWorkflowGeneration';
+import { useAuthStore } from '../../store/useAuthStore';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
 
@@ -9,6 +10,9 @@ type Question = Extract<GenerationResponse, { status: 'needs_input' }>['question
 
 /** Everything except a connection pick can be answered in words. */
 const isAnswerable = (question: Question) => question.code !== 'CONNECTION';
+
+/** A missing recipient is most often the user themselves, so offer their address (still editable). */
+const isRecipientField = (question: Question) => question.field.endsWith('.config.to');
 
 /** Plain-language question for a server question; never shows field paths or node ids. */
 function questionText(t: (key: string) => string, question: Question): string {
@@ -35,17 +39,16 @@ interface GenerateWorkflowPanelProps {
   open: boolean;
   onClose: () => void;
   onReady: (result: ReadyGeneration) => void;
-  /** Prefills the description (e.g. handed over from the Create with AI page). */
-  initialPrompt?: string;
 }
 
-export function GenerateWorkflowPanel({ open, onClose, onReady, initialPrompt = '' }: GenerateWorkflowPanelProps) {
+export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkflowPanelProps) {
   const { t } = useI18nStore();
+  const userEmail = useAuthStore((state) => state.user?.email ?? '');
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const promptId = useId();
   const sheetsConnectionId = useId();
   const emailConnectionId = useId();
-  const [prompt, setPrompt] = useState(initialPrompt);
+  const [prompt, setPrompt] = useState('');
   const [sheetsConnection, setSheetsConnection] = useState('');
   const [emailConnection, setEmailConnection] = useState('');
   const [connections, setConnections] = useState<ConnectionResponse[]>([]);
@@ -79,11 +82,14 @@ export function GenerateWorkflowPanel({ open, onClose, onReady, initialPrompt = 
   );
 
   const questions = result?.status === 'needs_input' ? result.questions.filter(isAnswerable) : [];
-  const canSubmit = !isPending && prompt.trim() !== '' && questions.every((question) => answers[question.field]?.trim());
+  const answerOf = (question: Question) => answers[question.field] ?? (isRecipientField(question) ? userEmail : '');
+  const canSubmit = !isPending && prompt.trim() !== '' && questions.every((question) => answerOf(question).trim());
 
   const handleGenerate = async () => {
     if (!canSubmit) return;
-    const given = Object.fromEntries(Object.entries(answers).filter(([, value]) => value.trim()));
+    const given = Object.fromEntries(
+      [...Object.entries(answers), ...questions.map((question) => [question.field, answerOf(question)] as const)].filter(([, value]) => value.trim()),
+    );
     const generated = await generate({
       prompt: prompt.trim(),
       answers: given,
@@ -157,7 +163,7 @@ export function GenerateWorkflowPanel({ open, onClose, onReady, initialPrompt = 
                       id={`${promptId}-q${index}`}
                       type="text"
                       maxLength={1000}
-                      value={answers[question.field] ?? ''}
+                      value={answerOf(question)}
                       onChange={(event) => setAnswers((current) => ({ ...current, [question.field]: event.target.value }))}
                       className="mt-1 w-full rounded border border-border bg-card px-2.5 py-1.5 text-xs text-foreground"
                     />

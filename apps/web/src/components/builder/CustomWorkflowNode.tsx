@@ -27,6 +27,8 @@ import {
   Split,
   Braces,
   WandSparkles,
+  BellRing,
+  MessageSquare,
 } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { NODE_CATALOG, nodeSourcePorts } from '../../lib/constants/nodeCatalog';
@@ -65,6 +67,9 @@ const ICON_MAP: Record<string, React.ElementType> = {
   'logic.switch': Split,
   'data.set': Braces,
   'ai.generate': WandSparkles,
+  'trigger.workflow_event': BellRing,
+  'discord.send_message': MessageSquare,
+  'weav.workflow': Bot,
 };
 
 export interface CustomNodeData {

@@ -38,6 +38,7 @@
       "title": "Spreadsheet ID",
       "description": "Identifier of the spreadsheet (the long id in its URL).",
       "x-weav-template": true,
+      "x-weav-personal": true,
       "minLength": 1
     },
     "range": {

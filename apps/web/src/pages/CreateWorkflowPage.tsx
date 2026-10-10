@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   FileText,
@@ -8,15 +8,21 @@ import {
   Zap,
   Plus,
   ArrowRight,
+  KeyRound,
 } from 'lucide-react';
 import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
 import { workflowV1Api } from '../api/workflow-v1.api';
 import { useI18nStore } from '../store/useI18nStore';
+import { useWorkspaceStore } from '../store/useWorkspaceStore';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
 import { showSuccessToast } from '../lib/feedback/toast';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
-import { NODE_SCHEMAS } from '../lib/nodeSchemas';
 import { nodeLabel } from '../lib/nodeLabels';
+import { copyTemplateToWorkspace, getTemplate, type TemplateDetail, type TemplateScope } from '../api/templates.api';
+import { TemplateGallery } from '../components/templates/TemplateGallery';
+import { TemplatePreviewDialog } from '../components/templates/TemplatePreviewDialog';
+import { EnterCodeDialog } from '../components/templates/EnterCodeDialog';
+import { connectionCount, nodeDot } from '../components/templates/templateStyles';
 import { WORKFLOW_TEMPLATES, templateToDraft, type TemplateCategory, type WorkflowTemplate } from '../lib/templates';
 
 const CATEGORY_FILTERS: Array<{ id: 'all' | TemplateCategory; key: string }> = [
@@ -26,21 +32,22 @@ const CATEGORY_FILTERS: Array<{ id: 'all' | TemplateCategory; key: string }> = [
   { id: 'ai', key: 'hp.create.filter.ai' },
 ];
 
-const nodeDot = (type: string) => {
-  if (type.startsWith('trigger.')) return 'bg-t-trigger';
-  if (type.startsWith('ai.')) return 'bg-t-ai';
-  if (type.startsWith('logic.') || type.startsWith('data.')) return 'bg-t-logic';
-  return 'bg-t-action';
-};
+const connectionNodeCount = (template: WorkflowTemplate) => connectionCount(template.nodes.map((node) => node.type));
 
-const connectionNodeCount = (template: WorkflowTemplate) =>
-  template.nodes.filter((node) => NODE_SCHEMAS[node.type]?.required.includes('connectionId')).length;
+type TemplateTab = 'builtin' | TemplateScope;
+const TEMPLATE_TABS: Array<{ id: TemplateTab; key: string }> = [
+  { id: 'builtin', key: 'tpl.tab.builtin' },
+  { id: 'public', key: 'tpl.tab.community' },
+  { id: 'workspace', key: 'tpl.tab.team' },
+  { id: 'mine', key: 'tpl.tab.mine' },
+];
 
 export const CreateWorkflowPage: React.FC = () => {
   const navigate = useNavigate();
   const { hash } = useLocation();
   const { t, language } = useI18nStore();
   const refreshNotifications = useNotificationMilestoneRefresh();
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
 
   const [selectedMethod, setSelectedMethod] = useState<'blank' | 'template' | 'ai'>('blank');
   const [activeCategory, setActiveCategory] = useState<'all' | TemplateCategory>('all');
@@ -48,6 +55,11 @@ export const CreateWorkflowPage: React.FC = () => {
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [blankName, setBlankName] = useState<string>('');
+  const [templateTab, setTemplateTab] = useState<TemplateTab>('builtin');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedCode = searchParams.get('code') ?? '';
+  const [codeDialogOpen, setCodeDialogOpen] = useState(linkedCode !== '');
+  const [previewTemplate, setPreviewTemplate] = useState<TemplateDetail | null>(null);
 
   // Links such as /workflows/new#templates-list land on the templates section.
   useEffect(() => {
@@ -88,6 +100,44 @@ export const CreateWorkflowPage: React.FC = () => {
       if (isWorkflowMockMode) return (await workflowApi.createWorkflow({ name: copy.name, description: copy.description })).id;
       return workflowV1Api.createWorkflowFromDefinition(templateToDraft(template, copy.name));
     });
+
+  const handleTabKeys = (event: React.KeyboardEvent) => {
+    const count = TEMPLATE_TABS.length;
+    const index = TEMPLATE_TABS.findIndex((tab) => tab.id === templateTab);
+    const next = event.key === 'ArrowRight' ? (index + 1) % count
+      : event.key === 'ArrowLeft' ? (index - 1 + count) % count
+      : event.key === 'Home' ? 0
+      : event.key === 'End' ? count - 1
+      : -1;
+    if (next < 0) return;
+    event.preventDefault();
+    setTemplateTab(TEMPLATE_TABS[next].id);
+    document.getElementById(`template-tab-${TEMPLATE_TABS[next].id}`)?.focus();
+  };
+
+  const closeCodeDialog = () => {
+    setCodeDialogOpen(false);
+    if (linkedCode) setSearchParams({}, { replace: true });
+  };
+
+  // Rejects on failure so the open dialog can show the error; success navigates away.
+  const handleUseSharedTemplate = async (template: TemplateDetail) => {
+    const mutationSession = captureNotificationSession();
+    const workflowId = await copyTemplateToWorkspace(template.id, undefined, activeWorkspaceId ?? undefined);
+    if (!isCurrentNotificationSession(mutationSession)) return;
+    showSuccessToast('toast.workflow.created', mutationSession);
+    refreshNotifications(mutationSession);
+    navigate(`/workflows/${workflowId}/builder`);
+  };
+
+  const openSharedTemplate = async (id: string) => {
+    setCreateError(null);
+    try {
+      setPreviewTemplate(await getTemplate(id));
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : t('tpl.error_load'));
+    }
+  };
 
   const handleGenerateAiCanvas = () => {
     if (!aiPrompt.trim()) {
@@ -298,22 +348,59 @@ export const CreateWorkflowPage: React.FC = () => {
             <p className="text-sm text-muted-foreground">{t('hp.create.select_template')}</p>
           </div>
 
-          <div className="flex items-center gap-1 self-start overflow-x-auto rounded-xl bg-muted p-1 sm:self-auto">
-            {CATEGORY_FILTERS.map((filter) => (
+          {!isWorkflowMockMode && (
+            <button
+              type="button"
+              data-testid="template-enter-code"
+              onClick={() => setCodeDialogOpen(true)}
+              className="flex h-9 items-center gap-1.5 self-start rounded-xl border border-border bg-card px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:self-auto"
+            >
+              <KeyRound size={14} aria-hidden="true" />
+              <span>{t('tpl.enter_code')}</span>
+            </button>
+          )}
+        </div>
+
+        {!isWorkflowMockMode && (
+          <div role="tablist" aria-label={t('tpl.tablist_label')} onKeyDown={handleTabKeys} className="flex items-center gap-1 self-start overflow-x-auto border-b border-border">
+            {TEMPLATE_TABS.map((tab) => (
               <button
-                key={filter.id}
-                onClick={() => setActiveCategory(filter.id)}
-                aria-pressed={activeCategory === filter.id}
-                className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                  activeCategory === filter.id
-                    ? 'bg-card text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
+                key={tab.id}
+                type="button"
+                role="tab"
+                id={`template-tab-${tab.id}`}
+                tabIndex={templateTab === tab.id ? 0 : -1}
+                aria-selected={templateTab === tab.id}
+                aria-controls="template-tabpanel"
+                onClick={() => setTemplateTab(tab.id)}
+                className={`-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${templateTab === tab.id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
               >
-                {t(filter.key)}
+                {t(tab.key)}
               </button>
             ))}
           </div>
+        )}
+
+        <div role="tabpanel" id="template-tabpanel" aria-labelledby={`template-tab-${templateTab}`} className="space-y-4">
+        {templateTab !== 'builtin' ? (
+          <TemplateGallery key={`${templateTab}-${activeWorkspaceId ?? ''}`} scope={templateTab} onOpen={(template) => void openSharedTemplate(template.id)} />
+        ) : (
+        <>
+        <div className="flex items-center gap-1 self-start overflow-x-auto rounded-xl bg-muted p-1">
+          {CATEGORY_FILTERS.map((filter) => (
+            <button
+              key={filter.id}
+              onClick={() => setActiveCategory(filter.id)}
+              aria-pressed={activeCategory === filter.id}
+              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                activeCategory === filter.id
+                  ? 'bg-card text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {t(filter.key)}
+            </button>
+          ))}
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -376,7 +463,17 @@ export const CreateWorkflowPage: React.FC = () => {
             );
           })}
         </div>
+        </>
+        )}
+        </div>
       </div>
+
+      {codeDialogOpen && (
+        <EnterCodeDialog initialCode={linkedCode} onClose={closeCodeDialog} onUse={handleUseSharedTemplate} />
+      )}
+      {previewTemplate && (
+        <TemplatePreviewDialog template={previewTemplate} onClose={() => setPreviewTemplate(null)} onUse={() => handleUseSharedTemplate(previewTemplate)} />
+      )}
     </div>
   );
 };

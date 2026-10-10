@@ -90,6 +90,7 @@ const signedAuthorization: Record<string, string> = Object.fromEntries(
     'connection-status-409-token',
     'connection-status-422-token',
     'connection-status-503-token',
+    'delete-workspace-503-token',
   ].map((label) => {
     const now = Math.floor(Date.now() / 1000);
     const claims = {
@@ -285,6 +286,18 @@ function handleFixtureRequest(
       return;
     }
 
+    if (
+      url.pathname === `/workspaces/${WORKSPACE_ID}` &&
+      request.method === 'DELETE' &&
+      authorization === signedAuthorization['delete-workspace-503-token']
+    ) {
+      writeJson(response, 503, {
+        code: 'DEPENDENCY_UNAVAILABLE',
+        message: 'A required dependency is temporarily unavailable',
+      });
+      return;
+    }
+
     switch (`${request.method} ${url.pathname}`) {
       case 'POST /workspaces':
         writeJson(response, 201, workspaceResponse, {
@@ -301,6 +314,10 @@ function handleFixtureRequest(
         writeJson(response, 200, workspaceResponse, {
           'x-upstream-secret': 'never-forward',
         });
+        return;
+      case `DELETE /workspaces/${WORKSPACE_ID}`:
+        response.writeHead(204, { 'x-upstream-secret': 'never-forward' });
+        response.end();
         return;
       case `GET /workspaces/${WORKSPACE_ID}/members`:
         writeJson(response, 200, page([memberResponse]), {
@@ -569,6 +586,13 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       },
       {
         method: 'DELETE',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}`,
+        upstreamPath: `/workspaces/${WORKSPACE_ID}`,
+        status: 204,
+        payload: { name: 'Demo workspace' },
+      },
+      {
+        method: 'DELETE',
         url: `/api/v1/workspaces/${WORKSPACE_ID}/members/${USER_ID}`,
         upstreamPath: `/workspaces/${WORKSPACE_ID}/members/${USER_ID}`,
         status: 204,
@@ -727,6 +751,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       'GOOGLE_SHEETS',
       'GOOGLE_CALENDAR',
       'GOOGLE_DRIVE',
+      'DISCORD',
     ] as const;
     const authTypes = ['NONE', 'TOKEN', 'API_KEY', 'BASIC', 'OAUTH2'] as const;
 
@@ -784,6 +809,22 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
         method: 'PATCH',
         url: `/api/v1/workspaces/${WORKSPACE_ID}`,
         payload: { name: '' },
+      },
+      { method: 'DELETE', url: `/api/v1/workspaces/${WORKSPACE_ID}` },
+      {
+        method: 'DELETE',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}`,
+        payload: { name: '' },
+      },
+      {
+        method: 'DELETE',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}`,
+        payload: { name: 'valid', unexpected: true },
+      },
+      {
+        method: 'DELETE',
+        url: '/api/v1/workspaces/not-a-uuid',
+        payload: { name: 'valid' },
       },
       {
         method: 'POST',
@@ -1300,7 +1341,30 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     ).toBe(true);
   });
 
-  it('keeps the gateway contract to exactly twenty Workspace method/path pairs and resolvable refs', () => {
+  it('preserves a Workspace 503 when deleting a workspace and forwards the typed name', async () => {
+    const response = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: 'DELETE',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}`,
+        headers: {
+          authorization: signedAuthorization['delete-workspace-503-token'],
+        },
+        payload: { name: 'Demo workspace' },
+      });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({
+      code: 'DEPENDENCY_UNAVAILABLE',
+      message: 'A required dependency is temporarily unavailable',
+    });
+    expect(JSON.parse(fixtureRequests.at(-1)?.body ?? '')).toEqual({
+      name: 'Demo workspace',
+    });
+  });
+
+  it('keeps the gateway contract to exactly twenty-one Workspace method/path pairs and resolvable refs', () => {
     const gatewayPath = resolve(
       __dirname,
       '../../../packages/contracts/http/gateway/openapi.yaml',
@@ -1311,6 +1375,7 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       'GET /api/v1/workspaces',
       'GET /api/v1/workspaces/{workspaceId}',
       'PATCH /api/v1/workspaces/{workspaceId}',
+      'DELETE /api/v1/workspaces/{workspaceId}',
       'GET /api/v1/workspaces/{workspaceId}/members',
       'POST /api/v1/workspaces/{workspaceId}/members',
       'PATCH /api/v1/workspaces/{workspaceId}/members/{userId}/permissions',

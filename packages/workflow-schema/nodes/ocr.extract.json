@@ -16,6 +16,7 @@
       "title": "Uploaded file",
       "description": "Identifier of an uploaded file. Use only one of Uploaded file, File URL or File from an earlier step.",
       "x-weav-template": true,
+      "x-weav-personal": true,
       "minLength": 1
     },
     "fileUrl": {
@@ -23,6 +24,7 @@
       "title": "File URL",
       "description": "Address of a file to read. Use only one of Uploaded file, File URL or File from an earlier step.",
       "x-weav-template": true,
+      "x-weav-personal": true,
       "minLength": 1
     },
     "file": {

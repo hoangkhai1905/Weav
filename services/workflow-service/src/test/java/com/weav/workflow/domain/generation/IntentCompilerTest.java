@@ -90,4 +90,56 @@ class IntentCompilerTest {
                 compiler.compile(sheets, Map.of("google.sheets", picked)));
         assertEquals(picked.toString(), ready.definition().nodes().get(1).config().get("connectionId"));
     }
+
+    private Map<String, Object> mail(Map<String, Object>... emails) {
+        List<Object> nodes = new java.util.ArrayList<>(List.of(node("start", "trigger.manual", Map.of())));
+        nodes.addAll(List.of(emails));
+        return intent(nodes, List.of(edge("start", (String) emails[0].get("id"))));
+    }
+
+    private Map<String, Object> mailNode(String id, Map<String, Object> config) {
+        return node(id, "email.send", config);
+    }
+
+    private Object toOf(IntentCompiler.Compilation c, int index) {
+        return assertInstanceOf(IntentCompiler.Ready.class, c).definition().nodes().get(index).config().get("to");
+    }
+
+    private static final Map<String, UUID> MAIL_CONNECTION = Map.of("email.send", UUID.randomUUID());
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void answerForARenamedNodeIdFillsTheOnlyNodeWithThatEmptyField() {
+        Map<String, Object> intent = mail(mailNode("gui_email", Map.of("subject", "Hi", "body", "b")));
+        assertEquals("a@example.test", toOf(compiler.compile(intent, MAIL_CONNECTION,
+                Map.of("send_email.config.to", "a@example.test")), 1));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void answerForAnUnknownNodeIdIsIgnoredWhenSeveralNodesQualify() {
+        Map<String, Object> intent = intent(
+                List.of(node("start", "trigger.manual", Map.of()),
+                        mailNode("m1", Map.of("subject", "Hi", "body", "b")),
+                        mailNode("m2", Map.of("subject", "Hi", "body", "b"))),
+                List.of(edge("start", "m1"), edge("m1", "m2")));
+        assertInstanceOf(IntentCompiler.NeedsValues.class,
+                compiler.compile(intent, MAIL_CONNECTION, Map.of("send_email.config.to", "a@example.test")));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void answerNeverOverwritesAFilledValueNorMatchesExactIdOrTypeKeysLess() {
+        Map<String, Object> intent = mail(mailNode("gui_email", Map.of("to", "keep@example.test", "subject", "Hi", "body", "b")));
+        assertEquals("keep@example.test", toOf(compiler.compile(intent, MAIL_CONNECTION,
+                Map.of("send_email.config.to", "a@example.test")), 1));
+        assertEquals("keep@example.test", toOf(compiler.compile(intent, MAIL_CONNECTION,
+                Map.of("gui_email.config.to", "a@example.test", "email.send.to", "b@example.test")), 1));
+
+        Map<String, Object> empty = mail(mailNode("gui_email", Map.of("subject", "Hi", "body", "b")));
+        assertEquals("a@example.test", toOf(compiler.compile(empty, MAIL_CONNECTION,
+                Map.of("gui_email.config.to", "a@example.test")), 1));
+        assertEquals("b@example.test", toOf(compiler.compile(empty, MAIL_CONNECTION,
+                Map.of("email.send.to", "b@example.test")), 1));
+    }
 }

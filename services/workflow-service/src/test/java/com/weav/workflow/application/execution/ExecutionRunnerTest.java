@@ -30,6 +30,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -673,6 +674,154 @@ class ExecutionRunnerTest {
         }
     }
 
+    @Test
+    void cancelRequestedAfterTheFirstNodeStopsTheRunWithoutCallingTheNextNode() {
+        AtomicBoolean cancel = new AtomicBoolean();
+        AtomicInteger secondCalls = new AtomicInteger();
+        NodeExecutor first = executor("http.request", (context, config) -> {
+            if ("first".equals(context.nodeId())) {
+                cancel.set(true);
+            } else {
+                secondCalls.incrementAndGet();
+            }
+            return new NodeExecutor.Result(Map.of("ok", true), null);
+        });
+        WorkflowDefinition definition = definition(
+                List.of(node("first", "http.request", Map.of()), node("second", "http.request", Map.of())),
+                List.of(edge("root-first", "root", "first", null), edge("first-second", "first", "second", null)));
+
+        try (Harness harness = harness(definition, Map.of(), List.of(first), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.state.cancelFlag = cancel;
+
+            harness.runner.run(harness.lease);
+
+            assertEquals(ExecutionStatus.CANCELLED, harness.state.snapshot().status(), harness.state::summary);
+            assertEquals(NodeExecutionStatus.SUCCESS, harness.state.snapshot().nodes().get("first").getStatus());
+            assertEquals(NodeExecutionStatus.CANCELLED, harness.state.snapshot().nodes().get("second").getStatus());
+            assertEquals(0, secondCalls.get());
+        }
+    }
+
+    @Test
+    void cancelRequestedBeforeAnythingRunsCancelsEveryNode() {
+        AtomicInteger calls = new AtomicInteger();
+        NodeExecutor action = executor("http.request", (context, config) -> {
+            calls.incrementAndGet();
+            return new NodeExecutor.Result(Map.of(), null);
+        });
+        WorkflowDefinition definition = definition(List.of(node("action", "http.request", Map.of())),
+                List.of(edge("root-action", "root", "action", null)));
+
+        try (Harness harness = harness(definition, Map.of(), List.of(action), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.state.cancelFlag.set(true);
+
+            harness.runner.run(harness.lease);
+
+            assertEquals(0, calls.get());
+            assertEquals(ExecutionStatus.CANCELLED, harness.state.snapshot().status(), harness.state::summary);
+            assertEquals(NodeExecutionStatus.CANCELLED, harness.state.snapshot().nodes().get("action").getStatus());
+        }
+    }
+
+    @Test
+    void aRecoveredRunThatAlreadyHasAStopRequestEndsCancelledOnItsFirstTurn() {
+        AtomicInteger calls = new AtomicInteger();
+        NodeExecutor action = executor("http.request", (context, config) -> {
+            calls.incrementAndGet();
+            return new NodeExecutor.Result(Map.of(), null);
+        });
+        WorkflowDefinition definition = definition(
+                List.of(node("first", "http.request", Map.of()), node("second", "http.request", Map.of())),
+                List.of(edge("root-first", "root", "first", null), edge("first-second", "first", "second", null)));
+
+        try (Harness harness = harness(definition, Map.of(), List.of(action), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.state.markRootDone();
+            harness.state.cancelFlag.set(true);
+
+            harness.runner.run(harness.lease);
+
+            assertEquals(0, calls.get());
+            assertEquals(ExecutionStatus.CANCELLED, harness.state.snapshot().status(), harness.state::summary);
+            assertEquals(NodeExecutionStatus.SUCCESS, harness.state.snapshot().nodes().get("root").getStatus());
+            assertEquals(NodeExecutionStatus.CANCELLED, harness.state.snapshot().nodes().get("first").getStatus());
+            assertEquals(NodeExecutionStatus.CANCELLED, harness.state.snapshot().nodes().get("second").getStatus());
+        }
+    }
+
+    @Test
+    void stopRequestedWhileTheLastNodeRunsAndSucceedsEndsSuccess() {
+        AtomicBoolean cancel = new AtomicBoolean();
+        NodeExecutor last = executor("http.request", (context, config) -> {
+            cancel.set(true);
+            return new NodeExecutor.Result(Map.of("ok", true), null);
+        });
+        WorkflowDefinition definition = definition(List.of(node("only", "http.request", Map.of())),
+                List.of(edge("root-only", "root", "only", null)));
+
+        try (Harness harness = harness(definition, Map.of(), List.of(last), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.state.cancelFlag = cancel;
+
+            harness.runner.run(harness.lease);
+
+            assertEquals(ExecutionStatus.SUCCESS, harness.state.snapshot().status(), harness.state::summary);
+        }
+    }
+
+    @Test
+    void stopRequestedDuringARetryWaitEndsCancelledWithoutRerunningTheNode() {
+        Instant base = Instant.parse("2026-09-22T00:00:00Z");
+        AtomicReference<Instant> now = new AtomicReference<>(base);
+        AtomicBoolean cancel = new AtomicBoolean();
+        AtomicInteger calls = new AtomicInteger();
+        List<Instant> waits = new ArrayList<>();
+        NodeExecutor flaky = executor("http.request", (context, config) -> {
+            calls.incrementAndGet();
+            throw new NodeExecutor.Failure("NETWORK_ERROR", "temporary provider failure", true);
+        });
+        WorkflowDefinition definition = definition(List.of(node("action", "http.request", Map.of())),
+                List.of(edge("root-action", "root", "action", null)));
+
+        try (Harness harness = harness(definition, Map.of(), List.of(flaky), 1, eligibleAt -> {
+            waits.add(eligibleAt);
+            now.set(eligibleAt);
+            cancel.set(true); // the user presses Stop while the run is backing off
+            return CompletableFuture.completedFuture(null);
+        }, mutableClock(now))) {
+            harness.state.cancelFlag = cancel;
+
+            harness.runner.run(harness.lease);
+
+            assertEquals(1, calls.get());
+            assertEquals(1, waits.size());
+            assertEquals(ExecutionStatus.CANCELLED, harness.state.snapshot().status(), harness.state::summary);
+            assertEquals(NodeExecutionStatus.CANCELLED, harness.state.snapshot().nodes().get("action").getStatus());
+        }
+    }
+
+    @Test
+    void nowAndRunIdResolveFromTheRunAndTheInjectedClock() {
+        AtomicReference<Map<String, Object>> resolved = new AtomicReference<>();
+        NodeExecutor action = executor("http.request", (context, config) -> {
+            resolved.set(config);
+            return new NodeExecutor.Result(Map.of(), null);
+        });
+        WorkflowDefinition definition = definition(
+                List.of(node("action", "http.request", Map.of("body", "{{ now }}|{{ run.id }}"))),
+                List.of(edge("root-action", "root", "action", null)));
+
+        try (Harness harness = harness(definition, Map.of(), List.of(action), 1,
+                eligibleAt -> CompletableFuture.completedFuture(null))) {
+            harness.runner.run(harness.lease);
+
+            assertEquals(ExecutionStatus.SUCCESS, harness.state.snapshot().status(), harness.state::summary);
+            assertEquals("2026-09-22T00:00:00Z|" + harness.lease.executionId(), resolved.get().get("body"));
+        }
+    }
+
     private static NodeExecutor executor(String type, Invoker invoker) {
         return new NodeExecutor() {
             @Override
@@ -791,6 +940,7 @@ class ExecutionRunnerTest {
         private volatile Snapshot snapshot;
         private final Lease lease;
         private volatile boolean leaseLive = true;
+        private volatile AtomicBoolean cancelFlag = new AtomicBoolean();
 
         private InMemoryState(Snapshot snapshot, Lease lease) {
             this.snapshot = snapshot;
@@ -825,8 +975,13 @@ class ExecutionRunnerTest {
             snapshot = new Snapshot(snapshot.workflowId(), snapshot.workspaceId(), snapshot.version(),
                     snapshot.definition(), snapshot.firingRoot(), snapshot.input(), transition.graph(), nodes,
                     transition.attempts(), transition.nextAttempts(), snapshot.correlationId(), snapshot.traceparent(),
-                    transition.status());
+                    transition.status(), snapshot.workflowName());
             return true;
+        }
+
+        @Override
+        public boolean isCancelRequested(UUID executionId) {
+            return cancelFlag.get();
         }
 
         @Override
@@ -853,6 +1008,23 @@ class ExecutionRunnerTest {
                     snapshot.definition(), snapshot.firingRoot(), snapshot.input(),
                     new GraphState(statuses, snapshot.graph().edges()), nodes, snapshot.attempts(),
                     snapshot.nextAttempts(), snapshot.correlationId(), snapshot.traceparent(), ExecutionStatus.RUNNING);
+        }
+
+        /** A run recovered after a crash: the trigger already finished, the rest never started. */
+        synchronized void markRootDone() {
+            NodeExecution root = snapshot.nodes().get("root");
+            Map<String, NodeExecution> nodes = new LinkedHashMap<>(snapshot.nodes());
+            nodes.put("root", new NodeExecution(root.getId(), root.getExecutionId(), "root", root.getNodeType(),
+                    NodeExecutionStatus.SUCCESS, root.getInput(), Map.of("input", Map.of()), null, 0,
+                    Instant.parse("2026-09-22T00:00:00Z"), Instant.parse("2026-09-22T00:00:00Z"),
+                    root.getCreatedAt(), null));
+            Map<String, NodeExecutionStatus> statuses = new LinkedHashMap<>(snapshot.graph().nodes());
+            statuses.put("root", NodeExecutionStatus.SUCCESS);
+            snapshot = new Snapshot(snapshot.workflowId(), snapshot.workspaceId(), snapshot.version(),
+                    snapshot.definition(), snapshot.firingRoot(), snapshot.input(),
+                    new GraphState(statuses, snapshot.graph().edges()), nodes, snapshot.attempts(),
+                    snapshot.nextAttempts(), snapshot.correlationId(), snapshot.traceparent(),
+                    ExecutionStatus.RUNNING, snapshot.workflowName());
         }
 
         Snapshot snapshot() {

@@ -63,6 +63,31 @@ const eventCases: EventCase[] = [
     data: { workflowName: 'Daily report', workflowId: ids.workflow },
   },
   {
+    eventType: 'monitoring.alert.consecutive_failures',
+    producer: 'workflow-service',
+    entityKind: 'EXECUTION',
+    workspaceRequired: true,
+    data: {
+      ruleName: 'Lỗi liên tiếp',
+      workflowName: 'Daily report',
+      workflowId: ids.workflow,
+      failureCount: '3',
+    },
+  },
+  {
+    eventType: 'monitoring.alert.long_running',
+    producer: 'workflow-service',
+    entityKind: 'EXECUTION',
+    workspaceRequired: true,
+    data: {
+      ruleName: 'Chạy quá lâu',
+      workflowName: 'Daily report',
+      workflowId: ids.workflow,
+      durationSeconds: '125',
+      thresholdSeconds: '60',
+    },
+  },
+  {
     eventType: 'workspace.created',
     producer: 'workspace-service',
     entityKind: 'WORKSPACE',
@@ -103,6 +128,13 @@ const eventCases: EventCase[] = [
     entityKind: 'WORKSPACE',
     workspaceRequired: true,
     data: { workspaceName: 'Đội vận hành', subjectUserId: ids.actor },
+  },
+  {
+    eventType: 'workspace.deleted',
+    producer: 'workspace-service',
+    entityKind: 'WORKSPACE',
+    workspaceRequired: true,
+    data: { workspaceName: 'Đội vận hành' },
   },
   {
     eventType: 'connection.connected',
@@ -211,7 +243,7 @@ describe('notification event v2 schema', () => {
     expect(() => require('./notification-event')).not.toThrow();
   });
 
-  it('accepts all 19 allowlisted event envelopes, including delayed delivery timestamps', () => {
+  it('accepts all 22 allowlisted event envelopes, including delayed delivery timestamps', () => {
     for (const spec of eventCases) {
       expect(schema().safeParse(eventOf(spec.eventType)).success).toBe(true);
     }
@@ -463,7 +495,45 @@ describe('notification event v2 schema', () => {
     ).toBe(true);
   });
 
-  it('matches the JSON Schema draft and all 19 event branches to the Zod fixture matrix', () => {
+  it('accepts only digit-string counts and exact data keys on monitoring alerts', () => {
+    rejects(
+      eventOf('monitoring.alert.consecutive_failures', {
+        data: { ...eventCases[6].data, failureCount: 3 },
+      }),
+    );
+    rejects(
+      eventOf('monitoring.alert.consecutive_failures', {
+        data: { ...eventCases[6].data, failureCount: '-1' },
+      }),
+    );
+    rejects(
+      eventOf('monitoring.alert.long_running', {
+        data: { ...eventCases[7].data, thresholdSeconds: undefined },
+      }),
+    );
+    rejects(
+      eventOf('monitoring.alert.long_running', {
+        data: { ...eventCases[7].data, message: 'untrusted' },
+      }),
+    );
+    rejects(
+      eventOf('monitoring.alert.long_running', {
+        data: { ...eventCases[7].data, ruleName: ' 	' },
+      }),
+    );
+    rejects(
+      eventOf('monitoring.alert.long_running', {
+        entity: { kind: 'WORKFLOW', id: ids.workflow },
+      }),
+    );
+    rejects(
+      eventOf('monitoring.alert.long_running', {
+        producer: 'workspace-service',
+      }),
+    );
+  });
+
+  it('matches the JSON Schema draft and all 22 event branches to the Zod fixture matrix', () => {
     const schemaDocument = JSON.parse(
       readFileSync(
         resolve(
@@ -517,7 +587,7 @@ describe('notification event v2 schema', () => {
     const branches = schemaDocument.allOf.find((entry: any) =>
       Array.isArray(entry.oneOf),
     )?.oneOf as any[];
-    expect(branches).toHaveLength(19);
+    expect(branches).toHaveLength(22);
     for (const spec of eventCases) {
       const branch = branches.find(
         (candidate) => candidate.properties.eventType.const === spec.eventType,

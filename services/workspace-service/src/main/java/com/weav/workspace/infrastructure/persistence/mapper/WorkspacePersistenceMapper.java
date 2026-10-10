@@ -14,7 +14,10 @@ public class WorkspacePersistenceMapper {
                 workspace.getNameNormalized(),
                 workspace.getCreatedBy(),
                 workspace.getCreatedAt(),
-                workspace.getUpdatedAt());
+                workspace.getUpdatedAt(),
+                workspace.getStatus(),
+                workspace.getDeletedAt(),
+                workspace.getDeletedBy());
     }
 
     public Workspace toDomain(WorkspaceJpaEntity entity) {
@@ -24,7 +27,10 @@ public class WorkspacePersistenceMapper {
                 entity.getNameNormalized(),
                 entity.getCreatedBy(),
                 entity.getCreatedAt(),
-                entity.getUpdatedAt());
+                entity.getUpdatedAt(),
+                entity.getStatus(),
+                entity.getDeletedAt(),
+                entity.getDeletedBy());
     }
 
     public MembershipJpaEntity toEntity(Membership membership) {

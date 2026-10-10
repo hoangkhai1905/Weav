@@ -94,12 +94,15 @@ const v2EventTypes = [
   'workflow.resumed',
   'workflow.completed',
   'workflow.failed',
+  'monitoring.alert.consecutive_failures',
+  'monitoring.alert.long_running',
   'workspace.created',
   'workspace.renamed',
   'workspace.member_added',
   'workspace.member_removed',
   'workspace.member_permissions_updated',
   'workspace.member_left',
+  'workspace.deleted',
   'connection.connected',
   'connection.disabled',
   'connection.invalid',
@@ -131,6 +134,17 @@ function v2EventFor(eventType, recipientUserId = randomUUID()) {
       entity = { kind: 'WORKFLOW', id: workflowId };
       data = { workflowName: 'Broker integration' };
     }
+  } else if (eventType.startsWith('monitoring.alert.')) {
+    producer = 'workflow-service';
+    entity = { kind: 'EXECUTION', id: randomUUID() };
+    data = {
+      ruleName: 'Broker rule',
+      workflowName: 'Broker integration',
+      workflowId,
+      ...(eventType.endsWith('long_running')
+        ? { durationSeconds: '125', thresholdSeconds: '60' }
+        : { failureCount: '3' }),
+    };
   } else if (eventType.startsWith('workspace.')) {
     producer = 'workspace-service';
     entity = { kind: 'WORKSPACE', id: workspaceId };
@@ -360,7 +374,7 @@ test(
           await until(
             async () => (await repo.unreadCount(e.payload.userId)) === 2,
           );
-          assert.equal(v2EventTypes.length, 19);
+          assert.equal(v2EventTypes.length, 22);
           for (const eventType of v2EventTypes) {
             const v2 = v2EventFor(eventType);
             v2Events.push(v2);

@@ -12,6 +12,7 @@ import { AiGeneratorPage } from './pages/AiGeneratorPage';
 import { AssistantPage } from './pages/AssistantPage';
 import { LiveWorkflowExecutionsPage } from './pages/LiveWorkflowExecutionsPage';
 import { LiveExecutionDetailPage } from './pages/LiveExecutionDetailPage';
+import { ExecutionsOverviewPage } from './pages/ExecutionsOverviewPage';
 import { ConnectionsPage } from './pages/ConnectionsPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 import { TelegramPage } from './pages/TelegramPage';
@@ -70,7 +71,7 @@ export function App() {
         <Route path="/workflows/:workflowId/executions" element={<LiveWorkflowExecutionsPage />} />
 
         {/* Executions */}
-        <Route path="/executions" element={<Navigate to="/workflows" replace />} />
+        <Route path="/executions" element={<ExecutionsOverviewPage />} />
         <Route path="/executions/:executionId" element={<LiveExecutionDetailPage />} />
 
         {/* Connections */}

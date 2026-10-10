@@ -297,6 +297,76 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     ],
     edges: chain('manual_trigger', 'fetch_data', 'prepare_message', 'send_email'),
   },
+  {
+    id: 'telegram-control-bot',
+    category: 'chat',
+    vi: {
+      name: 'Bot Telegram điều khiển quy trình',
+      description: 'Nhắn /status, /run, /pause, /resume hoặc /failures cho bot để điều khiển và xem tình trạng quy trình ngay trong Telegram.',
+    },
+    en: {
+      name: 'Telegram bot that controls workflows',
+      description: 'Message /status, /run, /pause, /resume or /failures to the bot to control and check workflows from Telegram.',
+    },
+    nodes: [
+      { id: 'telegram_trigger', type: 'trigger.telegram', name: 'Nhận lệnh Telegram', config: {} },
+      { id: 'control', type: 'weav.workflow', name: 'Điều khiển quy trình', config: { operation: 'command', text: '{{ trigger.input.message.text }}', sender: '{{ trigger.input.message.from.id }}' } },
+      {
+        id: 'send_reply',
+        type: 'telegram.send_message',
+        name: 'Trả lời kết quả',
+        config: { chatId: '{{ trigger.input.message.chat.id }}', text: '{{ nodes.control.output.reply }}' },
+      },
+    ],
+    edges: chain('telegram_trigger', 'control', 'send_reply'),
+  },
+  {
+    id: 'failure-alert-email',
+    category: 'chat',
+    vi: {
+      name: 'Cảnh báo lỗi qua email',
+      description: 'Khi một quy trình trong không gian làm việc chạy lỗi, gửi email báo tên quy trình và lý do lỗi. Nhập địa chỉ nhận sau khi tạo.',
+    },
+    en: {
+      name: 'Failure alert by email',
+      description: 'When a workflow in the workspace fails, email its name and the error. Enter the recipient after creating it.',
+    },
+    nodes: [
+      { id: 'workflow_event', type: 'trigger.workflow_event', name: 'Quy trình chạy lỗi', config: { events: ['FAILED'] } },
+      {
+        id: 'send_email',
+        type: 'email.send',
+        name: 'Gửi email cảnh báo',
+        config: {
+          subject: 'Quy trình "{{ trigger.input.workflowName }}" chạy lỗi',
+          body: 'Quy trình {{ trigger.input.workflowName }} lỗi lúc {{ trigger.input.finishedAt }}. Mã lỗi: {{ trigger.input.errorCode }}. {{ trigger.input.errorMessage }}',
+        },
+      },
+    ],
+    edges: chain('workflow_event', 'send_email'),
+  },
+  {
+    id: 'failure-alert-discord',
+    category: 'chat',
+    vi: {
+      name: 'Cảnh báo lỗi qua Discord',
+      description: 'Khi một quy trình trong không gian làm việc chạy lỗi, gửi tin nhắn vào kênh Discord qua webhook.',
+    },
+    en: {
+      name: 'Failure alert on Discord',
+      description: 'When a workflow in the workspace fails, post a message to a Discord channel through a webhook.',
+    },
+    nodes: [
+      { id: 'workflow_event', type: 'trigger.workflow_event', name: 'Quy trình chạy lỗi', config: { events: ['FAILED'] } },
+      {
+        id: 'send_discord',
+        type: 'discord.send_message',
+        name: 'Gửi tin nhắn Discord',
+        config: { content: 'Quy trình "{{ trigger.input.workflowName }}" chạy lỗi ({{ trigger.input.errorCode }}): {{ trigger.input.errorMessage }}' },
+      },
+    ],
+    edges: chain('workflow_event', 'send_discord'),
+  },
 ];
 
 /** Templates that use a Telegram node, linked from the Telegram page. */

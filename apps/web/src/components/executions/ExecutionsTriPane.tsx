@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Check, LoaderCircle, Minus, Play, RefreshCw, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, LoaderCircle, Minus, Play, RefreshCw, Square, X } from 'lucide-react';
 import { executionApi } from '../../api/execution.api';
 import { workflowApi } from '../../api/workflow.api';
 import type { ExecutionDetail, NodeExecutionResult, WorkflowDefinition } from '../../types/workflow.types';
 import { useI18nStore } from '../../store/useI18nStore';
 import { statusBadgeClass, type StatusTone } from '../common/statusBadgeClass';
+import { ConfirmModal } from '../common/ConfirmModal';
 import { failureOf, isLiveStatus, useLivePolling, type TickResult } from '../../lib/executions/useLivePolling';
 import { errorField, errorFieldLabel, friendlyErrorMessage, orderSteps, stepDidNotRun, triggerTypeLabel } from '../../lib/executions/runView';
 
@@ -100,6 +101,10 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [tab, setTab] = useState<DetailTab>('output');
   const [copied, setCopied] = useState(false);
+  // W6-C3: the stop button. `stopRequestedFor` keeps the "Stopping…" badge until a poll shows CANCELLED.
+  const [stopOpen, setStopOpen] = useState(false);
+  const [stopBusy, setStopBusy] = useState(false);
+  const [stopRequestedFor, setStopRequestedFor] = useState<string | null>(null);
 
   const activeId = selectedExecutionId ?? runs[0]?.id ?? null;
 
@@ -231,6 +236,29 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('runs.load_error'));
     }
+  };
+
+  const stop = async () => {
+    if (!detail) return;
+    setStopBusy(true);
+    setNotice(null);
+    try {
+      const result = await executionApi.cancelExecution(workflowId, detail.id);
+      if (result.status === 'CANCEL_REQUESTED') {
+        setStopRequestedFor(detail.id);
+        setNotice(t('runs.stop_requested'));
+      } else {
+        setNotice(t('runs.stopped_now'));
+      }
+    } catch (cause) {
+      const finished = typeof cause === 'object' && cause !== null && (cause as { status?: unknown }).status === 409;
+      if (finished) setNotice(t('runs.stop_finished'));
+      else setError(cause instanceof Error ? cause.message : t('runs.stop_error'));
+    } finally {
+      setStopBusy(false);
+      setStopOpen(false);
+    }
+    await Promise.all([loadRuns(), loadDetail(detail.id, true)]);
   };
 
   const selectRun = (id: string) => {
@@ -373,8 +401,16 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
                   <h2 className="text-base font-semibold text-foreground">
                     {t('runs.run')} <span className="font-mono tabular-nums">{shortId(detail.id)}</span>
                   </h2>
-                  <span className={statusBadgeClass(runTone(detail.status))}>{statusLabel(detail.status)}</span>
+                  <span data-testid="execution-status" className={statusBadgeClass(runTone(detail.status))}>
+                    {live && stopRequestedFor === detail.id ? t('runs.stopping') : statusLabel(detail.status)}
+                  </span>
                   <span className="ml-auto flex gap-2">
+                    {live && (
+                      <button type="button" data-testid="execution-stop" onClick={() => setStopOpen(true)} disabled={stopRequestedFor === detail.id} className={ctl}>
+                        <Square size={12} aria-hidden="true" />
+                        {t('runs.stop')}
+                      </button>
+                    )}
                     <Link to={`/workflows/${encodeURIComponent(workflowId)}/builder`} className={ctl}>{t('runs.open_editor')}</Link>
                     <button type="button" onClick={() => void rerun()} disabled={live} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-primary bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:border-primary-hover hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50">
                       <Play size={13} aria-hidden="true" />
@@ -512,6 +548,17 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
           )}
         </aside>
       </div>
+      <ConfirmModal
+        isOpen={stopOpen}
+        onClose={() => { if (!stopBusy) setStopOpen(false); }}
+        onConfirm={stop}
+        title={t('runs.stop_confirm_title')}
+        description={t('runs.stop_confirm_body')}
+        confirmText={t('runs.stop_confirm_yes')}
+        cancelText={t('runs.stop_confirm_no')}
+        variant="warning"
+        loading={stopBusy}
+      />
     </div>
   );
 }

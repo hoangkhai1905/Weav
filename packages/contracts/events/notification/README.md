@@ -31,12 +31,15 @@ The `producer` field is an event-family assertion, not publisher authentication.
 | `workflow.resumed`                     | `workflow-service`  | `WORKFLOW`    | `workflowName`                   | WORKFLOW / INFO      | workflow          |
 | `workflow.completed`                   | `workflow-service`  | `EXECUTION`   | `workflowName`, `workflowId`     | WORKFLOW / SUCCESS   | execution         |
 | `workflow.failed`                      | `workflow-service`  | `EXECUTION`   | `workflowName`, `workflowId`     | WORKFLOW / ERROR     | execution         |
+| `monitoring.alert.consecutive_failures` | `workflow-service`  | `EXECUTION`   | `ruleName`, `workflowName`, `workflowId`, `failureCount` | WORKFLOW / ERROR     | execution         |
+| `monitoring.alert.long_running`        | `workflow-service`  | `EXECUTION`   | `ruleName`, `workflowName`, `workflowId`, `durationSeconds`, `thresholdSeconds` | WORKFLOW / WARNING   | execution         |
 | `workspace.created`                    | `workspace-service` | `WORKSPACE`   | `workspaceName`                  | WORKSPACE / SUCCESS  | workspace         |
 | `workspace.renamed`                    | `workspace-service` | `WORKSPACE`   | `workspaceName`                  | WORKSPACE / INFO     | workspace         |
 | `workspace.member_added`               | `workspace-service` | `WORKSPACE`   | `workspaceName`, `subjectUserId` | WORKSPACE / INFO     | workspace         |
 | `workspace.member_removed`             | `workspace-service` | `WORKSPACE`   | `workspaceName`, `subjectUserId` | WORKSPACE / WARNING  | none              |
 | `workspace.member_permissions_updated` | `workspace-service` | `WORKSPACE`   | `workspaceName`, `subjectUserId` | WORKSPACE / INFO     | workspace         |
 | `workspace.member_left`                | `workspace-service` | `WORKSPACE`   | `workspaceName`, `subjectUserId` | WORKSPACE / INFO     | workspace         |
+| `workspace.deleted`                    | `workspace-service` | `WORKSPACE`   | `workspaceName`                  | WORKSPACE / WARNING  | none              |
 | `connection.connected`                 | `workspace-service` | `CONNECTION`  | `connectionName`                 | CONNECTION / SUCCESS | connection        |
 | `connection.disabled`                  | `workspace-service` | `CONNECTION`  | `connectionName`                 | CONNECTION / WARNING | connection        |
 | `connection.invalid`                   | `workspace-service` | `CONNECTION`  | `connectionName`                 | CONNECTION / ERROR   | connection        |
@@ -44,6 +47,8 @@ The `producer` field is an event-family assertion, not publisher authentication.
 | `identity.password_reset`              | `identity-service`  | `USER`        | none (`{}`)                      | SECURITY / WARNING   | security settings |
 | `identity.google_linked`               | `identity-service`  | `USER`        | none (`{}`)                      | SECURITY / INFO      | security settings |
 | `identity.google_unlinked`             | `identity-service`  | `USER`        | none (`{}`)                      | SECURITY / WARNING   | security settings |
+
+The two `monitoring.alert.*` events (W6-A) come from alert rules evaluated by Workflow when a run finishes: `entity` is the run that fired the rule, `ruleName` is the user-chosen rule name, and the counts (`failureCount`, `durationSeconds`, `thresholdSeconds`) are digit strings. Like `workflow.failed`, they are sent per recipient with a monitor-access recheck at publish time.
 
 For workflow targets, `workflowId` is `entity.id`; for execution targets, `executionId` is `entity.id` and `workflowId` is in data. Workspace and connection targets use their corresponding entity ID and `workspaceId`. Identity targets contain no IDs.
 
@@ -65,6 +70,7 @@ Names in braces are inserted unchanged as plain text. Consumers must render titl
 | `workspace.member_removed`             | Bạn đã bị xóa khỏi không gian làm việc     | Bạn không còn là thành viên của không gian làm việc “{workspaceName}”.                                               | Workspace access removed      | You are no longer a member of workspace “{workspaceName}”.                                |
 | `workspace.member_permissions_updated` | Quyền thành viên đã được cập nhật          | Quyền truy cập của bạn trong không gian làm việc “{workspaceName}” đã được cập nhật.                                 | Workspace permissions updated | Your access to workspace “{workspaceName}” was updated.                                   |
 | `workspace.member_left`                | Thành viên đã rời khỏi không gian làm việc | Một thành viên đã rời khỏi không gian làm việc “{workspaceName}”.                                                    | A member left the workspace   | A member left workspace “{workspaceName}”.                                                |
+| `workspace.deleted`                    | Không gian làm việc đã bị xóa              | Không gian làm việc “{workspaceName}” đã bị chủ sở hữu xóa. Các quy trình của nó đã dừng.                           | Workspace deleted             | Workspace “{workspaceName}” was deleted by its owner. Its workflows have been stopped.     |
 | `connection.connected`                 | Đã kết nối dịch vụ                         | Kết nối “{connectionName}” đã được xác nhận.                                                                         | Connection confirmed          | Connection “{connectionName}” was confirmed.                                              |
 | `connection.disabled`                  | Đã tắt kết nối                             | Kết nối “{connectionName}” đã bị tắt.                                                                                | Connection disabled           | Connection “{connectionName}” was disabled.                                               |
 | `connection.invalid`                   | Cần kết nối lại                            | Kết nối “{connectionName}” không hợp lệ. Hãy kết nối lại để tiếp tục.                                                | Reconnect required            | Connection “{connectionName}” is invalid. Reconnect it to continue.                       |

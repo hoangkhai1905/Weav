@@ -21,6 +21,11 @@ public record OAuthClientRegistration(
         Set<String> allowedOrigins
 ) {
 
+    /** Browser client: Origin-checked, refresh token in an HttpOnly cookie. */
+    public static final String WEB = "web";
+    /** Mobile app client: deep-link return target, tokens in the exchange response body. */
+    public static final String MOBILE = "mobile";
+
     public OAuthClientRegistration {
         requireLogicalId(clientId, "clientId");
         requireLogicalId(returnTargetId, "returnTargetId");
@@ -28,9 +33,9 @@ public record OAuthClientRegistration(
         requireBoundedAscii(providerClientId, "providerClientId", 1, 256);
         Objects.requireNonNull(providerCallbackUri, "providerCallbackUri must not be null");
         Objects.requireNonNull(returnTargetUri, "returnTargetUri must not be null");
-        if (allowedOrigins == null || allowedOrigins.isEmpty()) {
-            throw new IllegalArgumentException("allowedOrigins must not be empty");
-        }
+        // The web client always has origins (OAuthProperties enforces 1..16); the mobile client
+        // has none because no browser page calls the backend on its behalf.
+        Objects.requireNonNull(allowedOrigins, "allowedOrigins must not be null");
         allowedOrigins = Set.copyOf(allowedOrigins);
     }
 

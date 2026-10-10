@@ -32,6 +32,7 @@ import com.weav.workspace.infrastructure.persistence.SpringAfterCommitExecutor;
 import com.weav.workspace.infrastructure.provider.http.HttpConnectionProvider;
 import com.weav.workspace.infrastructure.provider.http.HttpTargetValidator;
 import com.weav.workspace.infrastructure.provider.http.PinnedHttpTransport;
+import com.weav.workspace.infrastructure.provider.discord.DiscordConnectionProvider;
 import com.weav.workspace.infrastructure.provider.telegram.TelegramConnectionProvider;
 import com.weav.workspace.infrastructure.workflow.WorkflowConnectionUsageClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -149,6 +150,35 @@ public class WorkspaceApplicationConfig {
             @Value("${weav.workflow.circuit-breaker.open-duration:10s}") Duration openFor,
             @Value("${weav.workflow.circuit-breaker.half-open-permits:3}") int halfOpenPermits) {
         return new WorkflowConnectionUsageClient(restClient, properties, objectMapper,
+                WorkflowConnectionUsageClient.circuitBreaker(window, failureRate, minimumCalls, openFor, halfOpenPermits));
+    }
+
+    /** Pausing every workflow (and unregistering Telegram bots) outlasts the 5 s usage-lookup read timeout. */
+    @Bean("workflowShutdownRestClient")
+    public RestClient workflowShutdownRestClient(
+            WorkflowServiceProperties properties,
+            @Value("${weav.workflow.shutdown-read-timeout:30s}") Duration readTimeout) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(properties.connectTimeout())
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(readTimeout);
+        return RestClient.builder().requestFactory(requestFactory).build();
+    }
+
+    @Bean
+    public com.weav.workspace.application.port.out.WorkflowShutdownPort workflowShutdownPort(
+            @Qualifier("workflowShutdownRestClient") RestClient restClient,
+            WorkflowServiceProperties properties,
+            ObjectMapper objectMapper,
+            @Value("${weav.workflow.circuit-breaker.window-size:20}") int window,
+            @Value("${weav.workflow.circuit-breaker.failure-rate-percent:50}") float failureRate,
+            @Value("${weav.workflow.circuit-breaker.minimum-calls:10}") int minimumCalls,
+            @Value("${weav.workflow.circuit-breaker.open-duration:10s}") Duration openFor,
+            @Value("${weav.workflow.circuit-breaker.half-open-permits:3}") int halfOpenPermits) {
+        return new com.weav.workspace.infrastructure.workflow.WorkflowShutdownClient(
+                restClient, properties, objectMapper,
                 WorkflowConnectionUsageClient.circuitBreaker(window, failureRate, minimumCalls, openFor, halfOpenPermits));
     }
 
@@ -271,8 +301,16 @@ public class WorkspaceApplicationConfig {
     }
 
     @Bean
+    public DiscordConnectionProvider discordConnectionProvider(
+            HttpTargetValidator targetValidator,
+            PinnedHttpTransport transport) {
+        return new DiscordConnectionProvider(targetValidator, transport);
+    }
+
+    @Bean
     public ConnectionProviderRegistry connectionProviderRegistry(
             TelegramConnectionProvider telegramConnectionProvider,
+            DiscordConnectionProvider discordConnectionProvider,
             HttpConnectionProvider httpConnectionProvider,
             @Qualifier("gmailConnectionProvider") GoogleConnectionProvider gmailConnectionProvider,
             @Qualifier("googleSheetsConnectionProvider") GoogleConnectionProvider googleSheetsConnectionProvider,
@@ -280,6 +318,7 @@ public class WorkspaceApplicationConfig {
             @Qualifier("googleDriveConnectionProvider") GoogleConnectionProvider googleDriveConnectionProvider) {
         return new ConnectionProviderRegistry(
                 telegramConnectionProvider,
+                discordConnectionProvider,
                 httpConnectionProvider,
                 gmailConnectionProvider,
                 googleSheetsConnectionProvider,

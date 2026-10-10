@@ -17,6 +17,7 @@ import com.weav.workflow.domain.execution.RetryPolicy;
 import com.weav.workflow.domain.mapping.MappingContext;
 import com.weav.workflow.domain.mapping.MappingException;
 import com.weav.workflow.domain.mapping.MappingResolver;
+import com.weav.workflow.domain.mapping.RunInfo;
 import com.weav.workflow.domain.model.aggregate.execution.ExecutionLog;
 import com.weav.workflow.domain.model.aggregate.execution.NodeExecution;
 import com.weav.workflow.domain.model.aggregate.execution.NodeExecutionAttempt;
@@ -60,6 +61,7 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
     private static final Duration DEFAULT_LEASE = Duration.ofSeconds(60);
     private static final Duration DEFAULT_HEARTBEAT = Duration.ofSeconds(15);
     private static final long LEASE_POLL_MILLIS = 1_000L;
+    private static final Duration RETRY_WAIT_SLICE = Duration.ofSeconds(2);
 
     private final ExecutionStatePort state;
     private final NodeAttemptRunner attempts;
@@ -158,6 +160,7 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
 
         CompletionService<NodeCompletion> completions = new ExecutorCompletionService<>(executor);
         boolean failureSeen = false;
+        boolean cancelSeen = false;
         Map<String, Object> failure = null;
         // A node already FAILED by recovery (OUTCOME_UNKNOWN, exhausted attempts) fails the run with its error.
         for (NodeExecution recovered : runtime.nodes.values()) {
@@ -171,17 +174,28 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
         }
 
         while (accepting.get() && !leaseLost.get()) {
-            promoteDueRetries(runtime, failureSeen);
-            if (!failureSeen) {
+            // W6-C3: a user asked to stop. Nodes already running finish; nothing new is scheduled.
+            // ponytail: one indexed read per loop turn; fine at thesis scale.
+            if (!cancelSeen && !failureSeen && state.isCancelRequested(lease.executionId())) {
+                cancelSeen = true;
+            }
+            boolean stopScheduling = failureSeen || cancelSeen;
+            promoteDueRetries(runtime, stopScheduling);
+            if (!stopScheduling) {
                 planner.ready(runtime.snapshot.definition(), runtime.graph);
             }
             persistPlannerChanges(lease, runtime, leaseLost);
 
-            if (!failureSeen) {
+            if (!stopScheduling) {
                 scheduleReadyNodes(lease, runtime, running, completions, leaseLost);
             }
 
             if (running.isEmpty()) {
+                // Stop requested while the last node ran and it succeeded: the work is done, so the run is SUCCESS.
+                if (cancelSeen && !allTerminal(runtime)) {
+                    finalizeCancelled(lease, runtime, leaseLost);
+                    return;
+                }
                 if (failureSeen) {
                     failure = failure == null ? runtime.error : failure;
                     finalizeFailure(lease, runtime, failure, leaseLost);
@@ -193,7 +207,9 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
                 }
                 Instant nextRetry = earliestRetry(runtime);
                 if (nextRetry != null) {
-                    retryWait.until(nextRetry).toCompletableFuture().join();
+                    // Wait in slices so a stop request is noticed (the loop re-checks the flag) during a long backoff.
+                    Instant sliceEnd = clock.instant().plus(RETRY_WAIT_SLICE);
+                    retryWait.until(nextRetry.isAfter(sliceEnd) ? sliceEnd : nextRetry).toCompletableFuture().join();
                     continue;
                 }
                 // A nonterminal graph with no ready/running/retry work is corrupt or unsupported.
@@ -374,8 +390,10 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
         Set<String> staticFields = NodeCatalog.staticFields(definitionNode.type());
         Map<String, Object> mapped = new LinkedHashMap<>(definitionNode.config());
         staticFields.forEach(mapped::remove);
-        MappingContext mappingContext =
-                new MappingContext(runtime.snapshot.input(), outputs, runtime.snapshot.definition().variables());
+        MappingContext mappingContext = new MappingContext(runtime.snapshot.input(), outputs,
+                runtime.snapshot.definition().variables(),
+                new RunInfo(runtime.executionId, runtime.snapshot.workflowId(), runtime.snapshot.workflowName(),
+                        clock.instant()));
         // Resolved field by field so a mapping failure can name the config field it came from.
         Map<String, Object> resolvedFields = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : mapped.entrySet()) {
@@ -534,6 +552,18 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
 
     private void finalizeFailure(ExecutionStatePort.Lease lease, RuntimeState runtime,
                                  Map<String, Object> failure, AtomicBoolean leaseLost) {
+        finalizeStopped(lease, runtime, ExecutionStatus.FAILED,
+                failure == null ? error("DEPENDENCY_NOT_CONFIGURED", "The execution failed.") : failure, leaseLost);
+    }
+
+    private void finalizeCancelled(ExecutionStatePort.Lease lease, RuntimeState runtime, AtomicBoolean leaseLost) {
+        finalizeStopped(lease, runtime, ExecutionStatus.CANCELLED,
+                error("CANCELLED_BY_USER", "The run was stopped by a user."), leaseLost);
+    }
+
+    /** Ends the run early: nodes that never started become CANCELLED and the run takes {@code status}. */
+    private void finalizeStopped(ExecutionStatePort.Lease lease, RuntimeState runtime, ExecutionStatus status,
+                                 Map<String, Object> error, AtomicBoolean leaseLost) {
         if (leaseLost.get()) {
             return;
         }
@@ -552,8 +582,8 @@ public final class ExecutionRunner implements com.weav.workflow.application.port
         runtime.nodes = updatedNodes;
         runtime.graph = new GraphState(statuses, runtime.graph.edges());
         runtime.nextAttempts.clear();
-        runtime.error = failure == null ? error("DEPENDENCY_NOT_CONFIGURED", "The execution failed.") : failure;
-        commit(lease, runtime, ExecutionStatus.FAILED, runtime.output, runtime.error, List.of(), leaseLost, now);
+        runtime.error = error;
+        commit(lease, runtime, status, runtime.output, runtime.error, List.of(), leaseLost, now);
     }
 
     private boolean commit(ExecutionStatePort.Lease lease, RuntimeState runtime, ExecutionStatus status,

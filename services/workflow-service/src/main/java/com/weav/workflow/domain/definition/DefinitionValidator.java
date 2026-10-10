@@ -42,7 +42,9 @@ public final class DefinitionValidator {
     private static final Map<String, Set<String>> LITERAL_ENUMS = Map.of(
             "telegram.send_message.parseMode", enumValues("telegram.send_message", "parseMode"),
             "google.sheets.valueInputOption", enumValues("google.sheets", "valueInputOption"),
-            "google.calendar.operation", enumValues("google.calendar", "operation"));
+            "google.calendar.operation", enumValues("google.calendar", "operation"),
+            "weav.workflow.operation", enumValues("weav.workflow", "operation"));
+    private static final Set<String> WORKFLOW_EVENTS = Set.of("FAILED", "SUCCEEDED");
     private static final Set<String> HTTP_METHODS = Set.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
 
     private final ScheduleValidation scheduleValidation;
@@ -243,6 +245,25 @@ public final class DefinitionValidator {
                         "Exactly one non-empty OCR source must be configured.");
             }
         }
+        if ("weav.workflow".equals(node.type()) && needsWorkflowTarget(config.get("operation"))
+                && !(config.get("workflow") instanceof String target && !target.isBlank())) {
+            add(issues, node.id(), "config.workflow", "REQUIRED_FIELD_MISSING",
+                    "A required configuration field is missing.");
+        }
+        if ("weav.workflow".equals(node.type()) && "command".equals(config.get("operation"))) {
+            if (!(config.get("sender") instanceof String sender) || sender.isBlank()) {
+                add(issues, node.id(), "config.sender", "REQUIRED_FIELD_MISSING",
+                        "A required configuration field is missing.");
+            }
+            if (!(config.get("allowedSenders") instanceof List<?> allowed) || allowed.isEmpty()) {
+                add(issues, node.id(), "config.allowedSenders", "REQUIRED_FIELD_MISSING",
+                        "At least one allowed sender is required for chat commands.");
+            }
+        }
+        if ("trigger.workflow_event".equals(node.type()) && config.get("events") instanceof List<?> events
+                && !WORKFLOW_EVENTS.containsAll(events)) {
+            add(issues, node.id(), "config.events", "INVALID_ENUM_VALUE", "The value is not supported.");
+        }
         validatePublishFieldValues(node, issues);
         validateUrlUserInfo(node, issues);
 
@@ -285,6 +306,11 @@ public final class DefinitionValidator {
                 validateOrderingOperand(node, "right", issues);
             }
         }
+    }
+
+    /** command and list_failures work without a target; a mapped or missing operation is treated as needing one. */
+    private static boolean needsWorkflowTarget(Object operation) {
+        return !(operation instanceof String op && ("command".equals(op) || "list_failures".equals(op)));
     }
 
     private static boolean isCalendarCreate(Object operation) {
@@ -457,7 +483,8 @@ public final class DefinitionValidator {
 
     /** Upper bounds of the numeric fields that also accept text (null: no upper bound). */
     private static final Map<String, Integer> TEXT_NUMBER_MAX = Map.of(
-            "google.sheets.limit", 100, "google.calendar.maxResults", 50, "telegram.send_message.replyToMessageId", 0);
+            "google.sheets.limit", 100, "google.calendar.maxResults", 50, "telegram.send_message.replyToMessageId", 0,
+            "weav.workflow.limit", 20);
 
     /** Literal (non-mapping) text in a numeric or boolean field must say a valid number or true/false. */
     private static boolean validLiteralString(String key, String text) {

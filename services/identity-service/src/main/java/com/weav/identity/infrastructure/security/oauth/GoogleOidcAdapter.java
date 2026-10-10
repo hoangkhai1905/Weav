@@ -391,7 +391,7 @@ public final class GoogleOidcAdapter implements OAuthProviderClient {
     }
 
     private OAuthClientRegistration requireConfiguredRegistration(OAuthClientRegistration requested) {
-        OAuthClientRegistration configured = configuration.webClient().orElseThrow(
+        OAuthClientRegistration configured = configuration.client(requested.clientId()).orElseThrow(
                 DependencyUnavailableException::new);
         if (!configured.equals(requested) || configured.provider() != OAuthProvider.GOOGLE) {
             throw new IllegalArgumentException("OAuth client registration does not match configured registration");

@@ -13,6 +13,7 @@ import {
   isOcrRequest,
   isOperationalRequest,
   isPublicAuthMutation,
+  isTemplateRequest,
   webhookEndpointKey,
   type GatewayRateLimitRequest,
 } from './gateway-throttler.guard';
@@ -79,6 +80,16 @@ function requestFromContext(context: {
               skipIf: (context: ExecutionContext) =>
                 skipOperational(context) ||
                 !isAssistantRequest(requestFromContext(context)),
+            },
+            {
+              // Per user: template changes and share-code lookups (W6-C shared templates).
+              name: 'template',
+              limit: gateway.limits.templatePerMinute,
+              ttl: gateway.limits.windowMs,
+              blockDuration: gateway.limits.windowMs,
+              skipIf: (context: ExecutionContext) =>
+                skipOperational(context) ||
+                !isTemplateRequest(requestFromContext(context)),
             },
             {
               // Per endpoint key, on top of the general per-IP bucket, so one

@@ -123,7 +123,7 @@ class ConnectionAuthorizationPolicyTest {
     private static boolean isAllowed(ConnectionProvider provider, ConnectionAuthType authType) {
         return switch (provider) {
             case GMAIL, GOOGLE_SHEETS, GOOGLE_CALENDAR, GOOGLE_DRIVE -> authType == ConnectionAuthType.OAUTH2;
-            case TELEGRAM -> authType == ConnectionAuthType.TOKEN;
+            case TELEGRAM, DISCORD -> authType == ConnectionAuthType.TOKEN;
             case HTTP -> authType == ConnectionAuthType.NONE
                     || authType == ConnectionAuthType.API_KEY
                     || authType == ConnectionAuthType.TOKEN
