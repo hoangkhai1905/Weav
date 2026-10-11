@@ -121,7 +121,8 @@ const styles = StyleSheet.create({
   body: { flex: 1, gap: Spacing.one, paddingBottom: Spacing.three },
   label: { fontWeight: '600' },
   meta: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two },
-  toggle: { minHeight: MinTouch, justifyContent: 'center', alignSelf: 'flex-start' },
+  // Full width: a shrink-wrapped bold label is measured too narrow on some Android fonts and loses its last word.
+  toggle: { minHeight: MinTouch, justifyContent: 'center' },
   details: { gap: Spacing.two },
   attempt: { borderWidth: 1, borderRadius: Radius.sm, padding: Spacing.two, gap: Spacing.two },
 });
