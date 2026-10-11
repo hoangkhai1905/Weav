@@ -42,7 +42,14 @@ class WorkspaceContractValidationTest {
             "completeGoogleConnectionOAuthAuthenticated",
             "authorizeConnectionAttachment",
             "resolveConnectionCredential",
-            "reportConnectionAuthFailure");
+            "reportConnectionAuthFailure",
+            "listWorkspaceInvitations",
+            "createWorkspaceInvitation",
+            "revokeWorkspaceInvitation",
+            "resendWorkspaceInvitation",
+            "listMyInvitations",
+            "acceptInvitation",
+            "declineInvitation");
 
     private static final Set<String> HTTP_METHODS = Set.of(
             "get", "post", "put", "patch", "delete", "head", "options", "trace");

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Bot, GitFork, List, Loader2, Plus, Send, Square, Trash2, Wrench } from 'lucide-react';
 import {
   AssistantApiError,
@@ -43,7 +43,9 @@ function errorKey(code: string, status = 0): string {
   return ERROR_KEYS[code] ?? (status === 429 ? 'assistant.error.rate_limit' : 'assistant.error.generic');
 }
 
-const isAbort = (error: unknown) => error instanceof DOMException && error.name === 'AbortError';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const isAbort =(error: unknown) => error instanceof DOMException && error.name === 'AbortError';
 
 function countNodes(definition: unknown): number {
   const nodes = (definition as { nodes?: unknown } | null)?.nodes;
@@ -53,6 +55,7 @@ function countNodes(definition: unknown): number {
 function AssistantChat({ activeWorkspaceId }: { activeWorkspaceId: string | null }) {
   const { t } = useI18nStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const [conversations, setConversations] = useState<AssistantConversation[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [listLoading, setListLoading] = useState(false);
@@ -138,8 +141,8 @@ function AssistantChat({ activeWorkspaceId }: { activeWorkspaceId: string | null
   const patchLast = (patch: (message: ChatMessage) => ChatMessage) =>
     setMessages((current) => current.map((message, index) => (index === current.length - 1 ? patch(message) : message)));
 
-  const send = async () => {
-    const text = input.trim();
+  const send = async (override?: string) => {
+    const text = (override ?? input).trim();
     if (!text || streaming || !activeWorkspaceId) return;
     const controller = new AbortController();
     abortRef.current = controller;
@@ -205,6 +208,27 @@ function AssistantChat({ activeWorkspaceId }: { activeWorkspaceId: string | null
       inputRef.current?.focus();
     }
   };
+
+  // "Ask AI why it failed" hands over {workflowId, executionId} through router state. Send one message, then clear the
+  // state so a reload or Back does not resend. The timer survives StrictMode's mount/unmount/mount (cleanup cancels it).
+  const explainRun = (location.state as { explainRun?: { workflowId?: string; executionId?: string } } | null)?.explainRun;
+  useEffect(() => {
+    if (!explainRun || !activeWorkspaceId || disabled) return;
+    const { workflowId = '', executionId = '' } = explainRun;
+    const valid = UUID.test(workflowId) && UUID.test(executionId);
+    const timer = window.setTimeout(() => {
+      navigate(location.pathname, { replace: true, state: null });
+      if (!valid) return;
+      // Function replacers: ids are inserted literally, never parsed for `$&` patterns.
+      void send(
+        t('executions.askAi.message')
+          .replace('{executionId}', () => executionId)
+          .replace('{workflowId}', () => workflowId),
+      );
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per navigation state; send/t are re-created every render
+  }, [explainRun, activeWorkspaceId, disabled]);
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();

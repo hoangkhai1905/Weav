@@ -50,15 +50,20 @@ import {
   Braces,
   WandSparkles,
   Share2,
+  Download,
   Bot,
   BellRing,
   MessageSquare,
+  CalendarClock,
+  Type,
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
 import { OutputSchemaEditor } from '../components/builder/OutputSchemaEditor';
 import { GenerateWorkflowPanel } from '../components/builder/GenerateWorkflowPanel';
 import { ShareTemplateDialog } from '../components/templates/ShareTemplateDialog';
+import { previewShare } from '../api/templates.api';
+import { buildWorkflowFile, workflowFileName } from '../lib/workflowTransfer';
 import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { createReactFlowAriaLabelConfig } from '../lib/i18n/react-flow-aria';
@@ -97,6 +102,7 @@ import { describeIssues, type WorkflowIssue } from '../lib/publishErrors';
 import { workflowToReactFlow, reactFlowToWorkflow } from '../lib/mappers/workflowMapper';
 import type { WorkflowDefinition } from '../types/workflow.types';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
+import { toast } from 'sonner';
 import { showErrorToast, showSuccessToast } from '../lib/feedback/toast';
 import { ConfirmModal } from '../components/common/ConfirmModal';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
@@ -129,6 +135,10 @@ const PALETTE_PRESENTATION: Record<
   'ai.generate': { nameKey: 'builder.node.ai_generate', descKey: 'builder.node.ai_generate_desc', icon: WandSparkles },
   'trigger.workflow_event': { nameKey: 'builder.node.workflow_event', descKey: 'builder.node.workflow_event_desc', icon: BellRing },
   'discord.send_message': { nameKey: 'builder.node.discord_send', descKey: 'builder.node.discord_send_desc', icon: MessageSquare },
+  'slack.send_message': { nameKey: 'builder.node.slack_send', descKey: 'builder.node.slack_send_desc', icon: MessageSquare },
+  'teams.send_message': { nameKey: 'builder.node.teams_send', descKey: 'builder.node.teams_send_desc', icon: MessageSquare },
+  'format.datetime': { nameKey: 'builder.node.format_datetime', descKey: 'builder.node.format_datetime_desc', icon: CalendarClock },
+  'format.text': { nameKey: 'builder.node.format_text', descKey: 'builder.node.format_text_desc', icon: Type },
   'weav.workflow': { nameKey: 'builder.node.weav_workflow', descKey: 'builder.node.weav_workflow_desc', icon: Bot },
 };
 
@@ -187,11 +197,19 @@ const CONNECTION_STEP_MESSAGES: Record<string, [string, string, string]> = {
   'trigger.gmail': ['builder.cfg.msg_gmail_select', 'builder.cfg.msg_gmail_auth', 'builder.cfg.msg_gmail_select'],
   'google.drive': ['builder.cfg.msg_drive_select', 'builder.cfg.msg_drive_auth', 'builder.cfg.msg_drive_fields'],
   'discord.send_message': ['builder.cfg.msg_discord_select', 'builder.cfg.msg_discord_auth', 'builder.cfg.msg_discord_fields'],
+  'slack.send_message': ['builder.cfg.msg_slack_select', 'builder.cfg.msg_slack_auth', 'builder.cfg.msg_slack_fields'],
+  'teams.send_message': ['builder.cfg.msg_teams_select', 'builder.cfg.msg_teams_auth', 'builder.cfg.msg_teams_fields'],
   'google.calendar': ['builder.cfg.msg_calendar_select', 'builder.cfg.msg_calendar_auth', 'builder.cfg.msg_calendar_fields'],
 };
-const PROVIDER_NAMES: Record<GoogleProvider | 'TELEGRAM' | 'DISCORD', string> = {
+type SchemaProvider = GoogleProvider | 'TELEGRAM' | 'DISCORD' | 'SLACK' | 'TEAMS';
+// Providers whose connection is a pasted secret (bot token or webhook URL), created on the Connections page.
+const isSecretProvider = (provider: SchemaProvider): provider is 'TELEGRAM' | 'DISCORD' | 'SLACK' | 'TEAMS' =>
+  provider === 'TELEGRAM' || provider === 'DISCORD' || provider === 'SLACK' || provider === 'TEAMS';
+const PROVIDER_NAMES: Record<SchemaProvider, string> = {
   TELEGRAM: 'Telegram',
   DISCORD: 'Discord',
+  SLACK: 'Slack',
+  TEAMS: 'Microsoft Teams',
   GMAIL: 'Gmail',
   GOOGLE_SHEETS: 'Google Sheets',
   GOOGLE_CALENDAR: 'Google Calendar',
@@ -203,14 +221,31 @@ const FIELD_STEP_MESSAGES: Record<string, string> = {
   'logic.switch': 'builder.cfg.msg_switch',
   'data.set': 'builder.cfg.msg_data_set',
   'ai.generate': 'builder.cfg.msg_ai_generate',
+  'format.datetime': 'builder.cfg.msg_format',
+  'format.text': 'builder.cfg.msg_format',
 };
 
 // Steps whose inspector is rendered from packages/workflow-schema (SchemaField), per operation.
 // trigger.telegram has no other field; it needs the workspace's Telegram bot connection.
-const SCHEMA_FORMS: Record<string, { provider?: GoogleProvider | 'TELEGRAM' | 'DISCORD'; fields: (config: Record<string, unknown>) => string[]; multiline?: string[] }> = {
+const SCHEMA_FORMS: Record<string, { provider?: SchemaProvider; fields: (config: Record<string, unknown>) => string[]; multiline?: string[] }> = {
   'trigger.telegram': { provider: 'TELEGRAM', fields: () => [] },
   'trigger.gmail': { provider: 'GMAIL', fields: () => ['query', 'pollIntervalMinutes'] },
   'discord.send_message': { provider: 'DISCORD', fields: () => ['content', 'username'], multiline: ['content'] },
+  'slack.send_message': { provider: 'SLACK', fields: () => ['text'], multiline: ['text'] },
+  'teams.send_message': { provider: 'TEAMS', fields: () => ['title', 'text'], multiline: ['text'] },
+  'format.datetime': {
+    fields: (config) => ['operation', ...(config.operation === 'now' ? [] : ['value']),
+      ...(config.operation === 'add' || config.operation === 'subtract' ? ['amount', 'unit'] : []),
+      ...(config.operation === 'format' ? ['pattern', 'locale'] : []), 'timezone'],
+  },
+  'format.text': {
+    fields: (config) => ['operation', 'value',
+      ...(config.operation === 'replace' ? ['search', 'replacement'] : []),
+      ...(config.operation === 'split' || config.operation === 'join' ? ['separator'] : []),
+      ...(config.operation === 'truncate' ? ['maxLength'] : []),
+      ...(config.operation === 'number_format' ? ['decimals', 'locale'] : [])],
+    multiline: ['value'],
+  },
   'google.drive': {
     provider: 'GOOGLE_DRIVE',
     fields: (config) => ['operation', ...(config.operation === 'list'
@@ -1387,6 +1422,31 @@ export const WorkflowBuilderPage: React.FC = () => {
     scheduleExecutionStep(() => setIsPreviewing(false), edges.length * 500 + 300);
   };
 
+  // Exports the sanitized saved draft (the server strips connections, chat ids, emails) as a downloadable JSON file.
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExportJson = async () => {
+    if (!workflowId || !workflow) return;
+    setIsExporting(true);
+    try {
+      const preview = await previewShare(workflowId);
+      const file = buildWorkflowFile(workflow, preview);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = workflowFileName(workflow.name);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      if (preview.warnings.length > 0) toast.warning(t('workflows.transfer.export_warning'));
+    } catch (error) {
+      if (error instanceof WorkflowApiError) toast.error(error.message);
+      else showErrorToast('workflows.transfer.export_failed');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const hasUnsavedChanges = !isSaved || (workflow !== null && (workflowTitle !== workflow.name || workflowDescription !== (workflow.description ?? '')));
 
   return (
@@ -1497,6 +1557,17 @@ export const WorkflowBuilderPage: React.FC = () => {
             className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Share2 size={15} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            data-testid="workflow-export-json"
+            onClick={() => void handleExportJson()}
+            disabled={isLoadingWorkflow || !workflow || hasUnsavedChanges || isExporting}
+            title={hasUnsavedChanges ? t('tpl.share.save_first') : t('workflows.transfer.export')}
+            aria-label={hasUnsavedChanges ? `${t('workflows.transfer.export')}. ${t('tpl.share.save_first')}` : t('workflows.transfer.export')}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download size={15} aria-hidden="true" />
           </button>
           <button
             data-testid="workflow-preview"
@@ -1961,13 +2032,13 @@ export const WorkflowBuilderPage: React.FC = () => {
                     return (
                       <div>
                         {configField('connectionId', options)}
-                        {provider === 'TELEGRAM' || provider === 'DISCORD' ? (
+                        {isSecretProvider(provider) ? (
                           <>
                             {!isLoadingConnections && options.length === 0 && (
-                              <p className="mt-1 text-[10px] text-muted-foreground">{t(provider === 'DISCORD' ? 'builder.cfg.no_discord' : 'builder.cfg.no_telegram')}</p>
+                              <p className="mt-1 text-[10px] text-muted-foreground">{t(`builder.cfg.no_${provider.toLowerCase()}`)}</p>
                             )}
                             <Link to="/workspace/connections" data-testid={`add-connection-${provider}`} className={addConnectionButtonCls}>
-                              <Plus size={12} aria-hidden="true" />{t(provider === 'DISCORD' ? 'builder.cfg.connect_discord' : 'builder.cfg.connect_telegram')}
+                              <Plus size={12} aria-hidden="true" />{t(`builder.cfg.connect_${provider.toLowerCase()}`)}
                             </Link>
                           </>
                         ) : (
@@ -2029,6 +2100,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     </div>
                   )}
                   {selectedNodeType === 'discord.send_message' && <CharCounter value={selectedNodeConfig.content} max={2000} />}
+                  {(selectedNodeType === 'slack.send_message' || selectedNodeType === 'teams.send_message') && <CharCounter value={selectedNodeConfig.text} max={4000} />}
                 </div>
               ) : selectedNodeType === 'weav.workflow' && selectedNodeId ? (
                 <WeavWorkflowInspector key={`control-bot:${selectedNodeId}`} nodeId={selectedNodeId} config={selectedNodeConfig} currentWorkflowId={workflow?.id} onChange={updateSelectedNodeConfig} />

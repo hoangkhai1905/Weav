@@ -15,6 +15,7 @@ import { LiveExecutionDetailPage } from './pages/LiveExecutionDetailPage';
 import { ExecutionsOverviewPage } from './pages/ExecutionsOverviewPage';
 import { ConnectionsPage } from './pages/ConnectionsPage';
 import { WorkspacePage } from './pages/WorkspacePage';
+import { InvitationsPage } from './pages/InvitationsPage';
 import { TelegramPage } from './pages/TelegramPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -82,6 +83,8 @@ export function App() {
         <Route path="/workspace/members" element={<WorkspacePage />} />
         <Route path="/workspace/settings" element={<WorkspacePage />} />
         <Route path="/workspace/connections" element={<WorkspaceConnectionsPage />} />
+
+        <Route path="/invitations" element={<InvitationsPage />} />
 
         {/* AI Generator */}
         <Route path="/ai" element={<Navigate to="/ai/workflow-generator" replace />} />

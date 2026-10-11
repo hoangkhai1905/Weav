@@ -13,6 +13,7 @@ servers:
 tags:
   - name: Workspaces
   - name: Members
+  - name: Invitations
   - name: Connections
   - name: OAuth
 security:
@@ -587,6 +588,152 @@ paths:
           { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
         "409":
           { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+
+  /api/v1/workspaces/{workspaceId}/invitations:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+    get:
+      tags: [Invitations]
+      operationId: gatewayListWorkspaceInvitations
+      summary: List pending invitations of a workspace (owner)
+      responses:
+        "200":
+          description: Pending invitations.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/OwnerInvitationListResponse"
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403": { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+    post:
+      tags: [Invitations]
+      operationId: gatewayCreateWorkspaceInvitation
+      summary: Invite an e-mail without a Weav account (owner; rate limited per user)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "../workspace/openapi.yaml#/components/schemas/CreateInvitationRequest"
+      responses:
+        "201":
+          description: Invitation created.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/OwnerInvitation"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403": { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "429": { $ref: "../workspace/openapi.yaml#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+  /api/v1/workspaces/{workspaceId}/invitations/{invitationId}:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+      - $ref: "../workspace/openapi.yaml#/components/parameters/InvitationId"
+    delete:
+      tags: [Invitations]
+      operationId: gatewayRevokeWorkspaceInvitation
+      summary: Revoke a pending invitation (owner)
+      responses:
+        "204":
+          description: Invitation revoked.
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403": { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+  /api/v1/workspaces/{workspaceId}/invitations/{invitationId}/resend:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/WorkspaceId"
+      - $ref: "../workspace/openapi.yaml#/components/parameters/InvitationId"
+    post:
+      tags: [Invitations]
+      operationId: gatewayResendWorkspaceInvitation
+      summary: Resend a live pending invitation (owner; rate limited per user)
+      responses:
+        "200":
+          description: Invitation re-sent.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/OwnerInvitation"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403": { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "404": { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "429": { $ref: "../workspace/openapi.yaml#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+  /api/v1/invitations:
+    get:
+      tags: [Invitations]
+      operationId: gatewayListMyInvitations
+      summary: Invitations addressed to the caller's verified e-mail
+      responses:
+        "200":
+          description: The caller's invitations.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/MyInvitationListResponse"
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+  /api/v1/invitations/{invitationId}/accept:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/InvitationId"
+    post:
+      tags: [Invitations]
+      operationId: gatewayAcceptInvitation
+      summary: Accept an invitation
+      responses:
+        "200":
+          description: Caller is now a member.
+          content:
+            application/json:
+              schema:
+                $ref: "../workspace/openapi.yaml#/components/schemas/AcceptInvitationResponse"
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "404": { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "410": { $ref: "../workspace/openapi.yaml#/components/responses/Gone" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+  /api/v1/invitations/{invitationId}/decline:
+    parameters:
+      - $ref: "../workspace/openapi.yaml#/components/parameters/InvitationId"
+    post:
+      tags: [Invitations]
+      operationId: gatewayDeclineInvitation
+      summary: Decline an invitation
+      responses:
+        "204":
+          description: Invitation declined.
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "404": { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
+        "409": { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
+        "410": { $ref: "../workspace/openapi.yaml#/components/responses/Gone" }
         "500": { $ref: "#/components/responses/GatewayInternalError" }
         "502": { $ref: "#/components/responses/GatewayBadGateway" }
         "503": { $ref: "#/components/responses/GatewayUnavailable" }

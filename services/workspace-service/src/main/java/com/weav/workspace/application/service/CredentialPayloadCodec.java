@@ -27,6 +27,9 @@ public final class CredentialPayloadCodec {
     /** The secret of a DISCORD connection is its webhook URL; anything else is rejected (SSRF). */
     public static final java.util.regex.Pattern DISCORD_WEBHOOK_URL = java.util.regex.Pattern.compile(
             "https://(discord\\.com|discordapp\\.com)/api/webhooks/\\d+/[A-Za-z0-9_-]+");
+    /** The secret of a SLACK connection is its incoming-webhook URL (host fixed, SSRF). */
+    public static final java.util.regex.Pattern SLACK_WEBHOOK_URL = java.util.regex.Pattern.compile(
+            "https://hooks\\.slack\\.com/services/T[A-Z0-9]{1,20}/B[A-Z0-9]{1,20}/[A-Za-z0-9]{1,64}");
     private static final Set<String> TOKEN_FIELDS = Set.of("token");
     private static final Set<String> API_KEY_FIELDS = Set.of("apiKey");
     private static final Set<String> BASIC_FIELDS = Set.of("username", "password");
@@ -142,7 +145,7 @@ public final class CredentialPayloadCodec {
         }
 
         Set<String> expectedFields = switch (provider) {
-            case TELEGRAM, DISCORD -> authType == ConnectionAuthType.TOKEN ? TOKEN_FIELDS : null;
+            case TELEGRAM, DISCORD, SLACK, TEAMS -> authType == ConnectionAuthType.TOKEN ? TOKEN_FIELDS : null;
             case HTTP -> switch (authType) {
                 case TOKEN -> TOKEN_FIELDS;
                 case API_KEY -> API_KEY_FIELDS;
@@ -162,6 +165,43 @@ public final class CredentialPayloadCodec {
                 && !DISCORD_WEBHOOK_URL.matcher((String) payload.get("token")).matches()) {
             throw invalidPayload();
         }
+        if (provider == ConnectionProvider.SLACK
+                && !SLACK_WEBHOOK_URL.matcher((String) payload.get("token")).matches()) {
+            throw invalidPayload();
+        }
+        if (provider == ConnectionProvider.TEAMS && !isTeamsWebhookUrl((String) payload.get("token"))) {
+            throw invalidPayload();
+        }
+    }
+
+    /**
+     * A TEAMS secret is a Power Automate "Workflows" webhook URL: https, port 443, host under
+     * {@code .logic.azure.com} or {@code .api.powerplatform.com} (dot boundary, lower-cased),
+     * path containing {@code /workflows/} and ending {@code /triggers/manual/paths/invoke},
+     * and a query with a non-empty {@code sig} parameter. The query is part of the secret.
+     */
+    public static boolean isTeamsWebhookUrl(String url) {
+        if (url == null || url.length() > 2048 || !url.chars().allMatch(c -> c > 0x20 && c < 0x7f)) {
+            return false;
+        }
+        java.net.URI uri;
+        try {
+            uri = new java.net.URI(url);
+        } catch (java.net.URISyntaxException exception) {
+            return false;
+        }
+        String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(java.util.Locale.ROOT);
+        String path = uri.getRawPath() == null ? "" : uri.getRawPath();
+        String query = uri.getRawQuery() == null ? "" : uri.getRawQuery();
+        boolean hostOk = (host.endsWith(".logic.azure.com") && host.length() > ".logic.azure.com".length()
+                || host.endsWith(".api.powerplatform.com") && host.length() > ".api.powerplatform.com".length())
+                && !host.startsWith(".") && !host.contains("..");
+        return "https".equals(uri.getScheme()) && hostOk
+                && uri.getUserInfo() == null && uri.getFragment() == null
+                && (uri.getPort() == -1 || uri.getPort() == 443)
+                && path.contains("/workflows/") && !path.contains("..")
+                && path.endsWith("/triggers/manual/paths/invoke")
+                && java.util.regex.Pattern.compile("(^|&)sig=[^&]+").matcher(query).find();
     }
 
     private void validateGoogleOAuthShape(

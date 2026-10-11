@@ -11,10 +11,15 @@ public record IdentityUserSummary(
         UUID userId,
         String email,
         String displayName,
-        boolean active) {
+        boolean active,
+        boolean emailVerified) {
 
     public IdentityUserSummary {
         Objects.requireNonNull(userId, "userId must not be null");
         Objects.requireNonNull(email, "email must not be null");
+    }
+
+    public IdentityUserSummary(UUID userId, String email, String displayName, boolean active) {
+        this(userId, email, displayName, active, false);
     }
 }

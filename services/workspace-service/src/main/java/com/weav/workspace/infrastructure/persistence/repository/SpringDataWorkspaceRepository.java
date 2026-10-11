@@ -20,6 +20,8 @@ public interface SpringDataWorkspaceRepository
 
     Optional<WorkspaceJpaEntity> findByIdAndStatus(UUID id, WorkspaceStatus status);
 
+    List<WorkspaceJpaEntity> findByIdInAndStatus(java.util.Collection<UUID> ids, WorkspaceStatus status);
+
     @Query(value = "select workspace as workspace, membership.role as role "
             + "from WorkspaceJpaEntity workspace "
             + "join MembershipJpaEntity membership on membership.workspaceId = workspace.id "

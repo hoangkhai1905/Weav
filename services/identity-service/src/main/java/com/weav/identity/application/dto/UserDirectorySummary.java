@@ -9,13 +9,15 @@ public record UserDirectorySummary(
         UUID userId,
         String email,
         String displayName,
-        boolean active) {
+        boolean active,
+        boolean emailVerified) {
 
     public static UserDirectorySummary from(User user) {
         return new UserDirectorySummary(
                 user.getId(),
                 user.getEmail(),
                 user.getDisplayName(),
-                user.getStatus() == UserStatus.ACTIVE);
+                user.getStatus() == UserStatus.ACTIVE,
+                user.getEmailVerifiedAt() != null);
     }
 }

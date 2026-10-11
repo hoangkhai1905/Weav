@@ -35,6 +35,7 @@
         "workspace.member_permissions_updated",
         "workspace.member_left",
         "workspace.deleted",
+        "workspace.invitation.created",
         "connection.connected",
         "connection.disabled",
         "connection.invalid",
@@ -411,6 +412,40 @@
                   "maxLength": 200,
                   "pattern": "\\S"
                 }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "eventType": { "const": "workspace.invitation.created" },
+            "producer": { "const": "workspace-service" },
+            "workspaceId": { "type": "string", "format": "uuid" },
+            "entity": { "properties": { "kind": { "const": "WORKSPACE" } } },
+            "data": {
+              "type": "object",
+              "required": ["workspaceName", "inviteeEmail", "inviterName", "expiresAt"],
+              "properties": {
+                "workspaceName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                },
+                "inviteeEmail": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 320,
+                  "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9.-]{1,255}$"
+                },
+                "inviterName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": "\\S"
+                },
+                "expiresAt": { "type": "string", "format": "date-time" }
               },
               "additionalProperties": false
             }

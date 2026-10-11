@@ -75,6 +75,16 @@ public final class WorkspaceNotificationRecorder {
                 leavingUserId);
     }
 
+    /** Tells the inviter (only) that an invitation e-mail is going out; notification-service sends the e-mail. */
+    public void recordInvitationCreated(
+            UUID workspaceId, UUID inviterUserId, String workspaceName, String inviteeEmail,
+            String inviterName, java.time.Instant expiresAt) {
+        append("workspace.invitation.created", workspaceId, inviterUserId, List.of(inviterUserId),
+                new WorkspaceNotificationEvent.InvitationData(
+                        summarizeName(workspaceName), inviteeEmail, summarizeName(inviterName),
+                        UTC_INSTANT.format(expiresAt)));
+    }
+
     private void recordMembership(
             String eventType, UUID workspaceId, UUID actorUserId, UUID subjectUserId, String workspaceName) {
         recordMembership(eventType, workspaceId, actorUserId, subjectUserId, workspaceName, subjectUserId);

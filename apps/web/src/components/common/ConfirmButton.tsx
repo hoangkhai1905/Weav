@@ -13,6 +13,7 @@ export interface ConfirmButtonProps {
   className?: string;
   dataTestId?: string;
   titleTooltip?: string;
+  ariaLabel?: string;
   disabled?: boolean;
 }
 
@@ -27,6 +28,7 @@ export function ConfirmButton({
   className = '',
   dataTestId,
   titleTooltip,
+  ariaLabel,
   disabled = false,
 }: ConfirmButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -58,6 +60,7 @@ export function ConfirmButton({
         disabled={disabled}
         data-testid={dataTestId}
         title={titleTooltip}
+        aria-label={ariaLabel}
         className={className}
       >
         {children}

@@ -23,6 +23,10 @@ export const NODE_NAME_KEYS: Record<string, string> = {
   'ocr.extract': 'builder.node.ocr',
   'trigger.workflow_event': 'builder.node.workflow_event',
   'discord.send_message': 'builder.node.discord_send',
+  'slack.send_message': 'builder.node.slack_send',
+  'teams.send_message': 'builder.node.teams_send',
+  'format.datetime': 'builder.node.format_datetime',
+  'format.text': 'builder.node.format_text',
   'weav.workflow': 'builder.node.weav_workflow',
 };
 

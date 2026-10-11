@@ -349,7 +349,8 @@ public final class IdentityDirectoryHttpClient implements IdentityDirectoryPort 
             throw new DependencyUnavailableException();
         }
         return new IdentityUserSummary(
-                payload.userId(), payload.email(), payload.displayName(), payload.active());
+                payload.userId(), payload.email(), payload.displayName(), payload.active(),
+                Boolean.TRUE.equals(payload.emailVerified()));
     }
 
     private String requiredServiceKey() {
@@ -446,7 +447,8 @@ public final class IdentityDirectoryHttpClient implements IdentityDirectoryPort 
             UUID userId,
             String email,
             String displayName,
-            boolean active) {}
+            boolean active,
+            Boolean emailVerified) {}
 
     private record DirectoryPagePayload(
             List<UserSummaryPayload> items,

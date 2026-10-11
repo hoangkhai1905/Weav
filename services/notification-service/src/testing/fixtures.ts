@@ -1,21 +1,25 @@
 import { randomUUID } from 'node:crypto';
 import { loadSettings } from '../config/settings';
+import type { Settings } from '../config/settings';
 import { DeliveryRepository, publicPayload } from '../domain/notification';
 import type { Delivery, ExecutionEvent } from '../domain/notification';
 
-export function testSettings() {
-  return loadSettings({
-    DB_HOST: '127.0.0.1',
-    DB_NAME: 'test',
-    DB_USERNAME: 'test',
-    DB_PASSWORD: 'test-only',
-    JWT_ACCESS_SECRET: 'test-only-key-not-for-production-123456',
-    RABBITMQ_USERNAME: 'test-only',
-    RABBITMQ_PASSWORD: 'test-only',
-    NOTIFICATION_TELEGRAM_ENABLED: 'true',
-    TELEGRAM_BOT_TOKEN: 'test-only',
-    NOTIFICATION_EXPO_ENABLED: 'true',
-  });
+export function testSettings(overrides: Partial<Settings> = {}): Settings {
+  return {
+    ...loadSettings({
+      DB_HOST: '127.0.0.1',
+      DB_NAME: 'test',
+      DB_USERNAME: 'test',
+      DB_PASSWORD: 'test-only',
+      JWT_ACCESS_SECRET: 'test-only-key-not-for-production-123456',
+      RABBITMQ_USERNAME: 'test-only',
+      RABBITMQ_PASSWORD: 'test-only',
+      NOTIFICATION_TELEGRAM_ENABLED: 'true',
+      TELEGRAM_BOT_TOKEN: 'test-only',
+      NOTIFICATION_EXPO_ENABLED: 'true',
+    }),
+    ...overrides,
+  };
 }
 export function testEvent(): ExecutionEvent {
   const id = randomUUID();
