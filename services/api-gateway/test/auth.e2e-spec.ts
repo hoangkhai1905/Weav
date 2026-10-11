@@ -11,6 +11,7 @@ describe('JWT route policy through real Fastify and HTTP upstream', () => {
   const jti = randomUUID();
   const workspace = randomUUID();
   const requests: IncomingHttpHeaders[] = [];
+  let upstreamRejectsBearer = false;
   const saved = { ...process.env };
   let server: Server;
   let app: NestFastifyApplication;
@@ -39,6 +40,14 @@ describe('JWT route policy through real Fastify and HTTP upstream', () => {
     server = createServer((req, res) => {
       requests.push(req.headers);
       req.resume();
+      if (upstreamRejectsBearer && req.headers.authorization) {
+        // Spring resource server: empty 401 for a Bearer it will not accept.
+        res.writeHead(401, {
+          'www-authenticate': 'Bearer error="invalid_token"',
+        });
+        res.end();
+        return;
+      }
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ upstream: true }));
     });
@@ -54,6 +63,8 @@ describe('JWT route policy through real Fastify and HTTP upstream', () => {
       JWT_AUDIENCE: 'weav-api',
       JWT_CLOCK_SKEW: '30s',
       OCR_ALLOW_UNAUTHENTICATED_DEV: 'false',
+      // Route policy, not throttling, is under test here (limits-health covers the auth limit).
+      GATEWAY_AUTH_RATE_LIMIT: '1000',
       IDENTITY_SERVICE_URL: url,
       WORKSPACE_SERVICE_URL: url,
       NOTIFICATION_SERVICE_URL: url,
@@ -77,6 +88,7 @@ describe('JWT route policy through real Fastify and HTTP upstream', () => {
   });
   beforeEach(() => {
     requests.length = 0;
+    upstreamRejectsBearer = false;
   });
   afterAll(async () => {
     await app?.close();
@@ -104,6 +116,60 @@ describe('JWT route policy through real Fastify and HTTP upstream', () => {
     });
     expect(response.statusCode).toBe(200);
     expect(requests).toHaveLength(1);
+  });
+  it.each([
+    'login',
+    'register',
+    'refresh',
+    'logout',
+    'forgot-password',
+    'reset-password',
+  ])('drops a stale Bearer instead of forwarding it on %s', async (path) => {
+    upstreamRejectsBearer = true;
+    for (const authorization of [
+      'Bearer abc.def.ghi',
+      `Bearer ${token({ exp: 1 })}`,
+      'Basic abc',
+    ]) {
+      const response = await app.inject({
+        method: 'POST',
+        url: `/api/auth/${path}`,
+        headers: { authorization },
+        payload: { refreshToken: 'x' },
+      });
+      expect(response.statusCode).toBe(200);
+    }
+    expect(requests).toHaveLength(3);
+    expect(requests.every((h) => h.authorization === undefined)).toBe(true);
+  });
+  it('drops a stale Bearer on the mobile OAuth exchange', async () => {
+    upstreamRejectsBearer = true;
+    const handle = 'a'.repeat(43);
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/oauth/mobile/exchange',
+      headers: { authorization: 'Bearer abc.def.ghi' },
+      payload: {
+        transactionId: handle,
+        handoffCode: handle,
+        codeVerifier: handle,
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(requests[0].authorization).toBeUndefined();
+  });
+  it('relays an empty upstream 401 as 401, not 502', async () => {
+    upstreamRejectsBearer = true;
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { authorization: `Bearer ${token()}` },
+    });
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toMatchObject({
+      error: { code: 'UNAUTHORIZED' },
+      status: 401,
+    });
   });
   const required: Array<['GET' | 'POST' | 'PATCH' | 'DELETE', string]> = [
     ['GET', '/api/auth/me'],

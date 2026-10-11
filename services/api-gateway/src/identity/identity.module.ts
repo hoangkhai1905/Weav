@@ -106,7 +106,11 @@ export class IdentityProxyService {
     };
 
     const authMode = options.auth ?? 'none';
-    const authorization = getRequestHeader(req.headers, 'authorization');
+    // Public routes never forward a Bearer: Identity's resource server rejects a stale one even on permitAll paths.
+    const authorization =
+      authMode === 'none'
+        ? undefined
+        : getRequestHeader(req.headers, 'authorization');
     if (authorization) {
       if (authorization.length > 8192 || !/^Bearer \S+$/i.test(authorization)) {
         return fail(401, 'UNAUTHORIZED', 'Bearer token required');
@@ -313,6 +317,10 @@ export class IdentityProxyService {
         await response.body?.cancel();
       } catch {
         // The upstream connection is already being discarded.
+      }
+      // Spring's Bearer entry point answers a rejected token with an empty 401; that is not a gateway fault.
+      if (response.status === 401) {
+        return fail(401, 'UNAUTHORIZED', 'Invalid or expired access token');
       }
       return fail(502, 'BAD_GATEWAY', 'Invalid Identity response');
     }
