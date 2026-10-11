@@ -109,7 +109,7 @@ test.describe('Vietnamese and English web localization', () => {
     const dialog = page.getByTestId('connection-create-dialog');
     await expect(dialog.getByRole('heading', { name: 'Thêm kết nối', exact: true })).toBeVisible();
     await expect(dialog.getByLabel('Tên kết nối')).toBeVisible();
-    await expect(dialog.getByLabel('Dịch vụ', { exact: true })).toBeVisible();
+    await expect(dialog.getByRole('group', { name: 'Chọn dịch vụ muốn kết nối' })).toBeVisible();
     await expect(dialog).not.toContainText('connections.create.');
   });
 

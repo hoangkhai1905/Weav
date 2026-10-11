@@ -176,3 +176,9 @@ Còn lại / rủi ro:
 - Ô nội dung vẫn hiện thẻ HTML thô (`<b>…</b>`), chưa có xem trước định dạng.
 - Thanh định dạng chưa có cho Teams (chưa kiểm cú pháp Adaptive Card).
 - Mục "Email/tin nhắn hệ thống" (OTP, lời mời do notification-service gửi) không làm vì thuộc backend.
+
+Kết quả e2e (Chromium, `VITE_API_MODE=http`):
+- Branch: honest-pages, navigation-structure, dashboard-real-data, workspace-connections, control-bot, w7-nodes, ai-generator, localization, workflow-ui → 105 pass / 34 fail.
+- Baseline `dev` (`32cbe8d`) với control-bot, localization, workflow-ui, workspace-connections → 33 fail, cùng tập lỗi cũ (workflow-ui gần như toàn bộ, localization, workspace-connections 401/`"TELEGRAM"`/readiness).
+- Chỉ fail trên branch: `localization:81` (tìm nhãn "Dịch vụ" của dropdown cũ) → đã sửa test, pass; `control-bot:179` chạy lại pass (flaky). Các test tạo connection (Discord/Slack/Teams/Telegram/Google) dùng `connection-provider-<PROVIDER>`.check() và đều pass.
+- GitNexus detect-changes: risk HIGH (29 file, 8 luồng qua WorkflowBuilderPage/ConnectionsPage/WorkflowsPage → auth token/workspace store); không đổi logic auth/workspace, các luồng này được e2e phủ.
