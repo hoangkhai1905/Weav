@@ -118,7 +118,7 @@ for (const spec of [
     await page.goto('/connections');
     await page.getByTestId('connections-create-open').click();
     await page.getByTestId('connection-create-name').fill('Team channel');
-    await page.getByTestId('connection-create-provider').selectOption(spec.provider);
+    await page.getByTestId(`connection-provider-${spec.provider}`).check();
     const url = page.getByTestId('connection-create-token');
     await expect(url).toHaveAttribute('type', 'password');
 
@@ -253,7 +253,7 @@ test('a Teams webhook URL without a sig parameter is rejected before anything is
   await page.goto('/connections');
   await page.getByTestId('connections-create-open').click();
   await page.getByTestId('connection-create-name').fill('Team channel');
-  await page.getByTestId('connection-create-provider').selectOption('TEAMS');
+  await page.getByTestId('connection-provider-TEAMS').check();
   for (const bad of [
     'https://prod-12.westus.logic.azure.com/workflows/abc123/triggers/manual/paths/invoke?api-version=2016-06-01',
     'https://prod-12.westus.logic.azure.com/workflows/abc123/triggers/manual/paths/invoke?sig=',

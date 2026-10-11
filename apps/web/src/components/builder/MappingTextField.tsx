@@ -1,6 +1,8 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Braces } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
+import { FormatToolbar } from './FormatToolbar';
+import { formatInsert, type FormatAction, type FormatSyntax } from '../../lib/formatInsert';
 import { describeMapping, mappingFieldInserts, mappingOf, pathLabel, RUN_PATHS, type VariableGroup } from '../../lib/variablePaths';
 
 interface MappingTextFieldProps {
@@ -18,6 +20,8 @@ interface MappingTextFieldProps {
   testId?: string;
   /** Classes for the outer wrapper, for example `min-w-0 flex-1` inside a row. */
   className?: string;
+  /** Shows bold/italic/link buttons above the field that write `syntax`. `onUse` may return a short note to show under them. */
+  format?: { syntax: FormatSyntax; actions: FormatAction[]; onUse?: () => string | void };
 }
 
 // Browsers keep typed spaces as non-breaking spaces in contenteditable.
@@ -34,18 +38,19 @@ const CHIP_UNKNOWN = `${CHIP} border-warn/40 bg-warn-bg text-warn`;
  * steps before at the caret; typing, pasting and "Insert variable" also work, and a mapping typed or pasted by
  * hand turns into a chip when the field loses focus.
  */
-export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelledBy, ariaLabel, value, onChange, groups, multiline, placeholder, testId, className }) => {
+export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelledBy, ariaLabel, value, onChange, groups, multiline, placeholder, testId, className, format }) => {
   const { t } = useI18nStore();
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [formatNote, setFormatNote] = useState('');
   const emitted = useRef<string | null>(null);
   // Where the caret was last inside this field: a menu or "Insert variable" takes focus away, so the live selection is gone.
   const caret = useRef<Range | null>(null);
   // Latest props for DOM handlers and the registered insert, which outlive a single render.
-  const live = useRef({ groups, t, onChange });
+  const live = useRef({ groups, t, onChange, format });
   useLayoutEffect(() => {
-    live.current = { groups, t, onChange };
+    live.current = { groups, t, onChange, format };
   });
 
   const chip = (inner: string) => {
@@ -82,7 +87,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
 
   const render = (text: string) => ref.current?.replaceChildren(...nodesFor(text));
 
-  const serialize = (): string => {
+  const serialize = (root: Node | null = ref.current): string => {
     let out = '';
     const walk = (parent: Node) => parent.childNodes.forEach((child) => {
       if (child.nodeType === Node.TEXT_NODE) out += (child.textContent ?? '').replace(NBSP, ' ');
@@ -95,7 +100,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
         walk(child);
       }
     });
-    if (ref.current) walk(ref.current);
+    if (root) walk(root);
     return multiline ? out : out.replace(/\n/g, ' ');
   };
 
@@ -136,6 +141,44 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
     }
     emit();
   };
+  /** Wraps the selected text (or a sample word) in the syntax of this field's format and keeps it selected. */
+  const applyFormat = (action: FormatAction) => {
+    const el = ref.current;
+    const current = live.current.format;
+    if (!el || !current) return;
+    let range = caret.current && el.contains(caret.current.startContainer) ? caret.current : null;
+    if (!range) {
+      range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+    }
+    const { before, inner, after } = formatInsert(current.syntax, action, serialize(range.cloneContents()), live.current.t('builder.format.sample'));
+    range.deleteContents();
+    const innerNodes = nodesFor(inner);
+    if (!innerNodes.length) innerNodes.push(document.createTextNode(''));
+    const nodes = [...nodesFor(before), ...innerNodes, ...nodesFor(after)];
+    const fragment = document.createDocumentFragment();
+    fragment.append(...nodes);
+    range.insertNode(fragment);
+    el.focus();
+    const selection = window.getSelection();
+    if (selection) {
+      const picked = document.createRange();
+      if (inner) {
+        picked.setStartBefore(innerNodes[0]);
+        picked.setEndAfter(innerNodes[innerNodes.length - 1]);
+      } else {
+        picked.setStartAfter(nodes[nodes.length - 1]);
+        picked.collapse(true);
+      }
+      selection.removeAllRanges();
+      selection.addRange(picked);
+      caret.current = picked.cloneRange();
+    }
+    emit();
+    setFormatNote(current.onUse?.() || '');
+  };
+
   const insertRef = useRef(insert);
   useLayoutEffect(() => {
     insertRef.current = insert;
@@ -192,6 +235,8 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
 
   return (
     <div className={`relative ${className ?? ''}`}>
+      {format && <FormatToolbar actions={format.actions} onAction={applyFormat} />}
+      {format && formatNote && <p data-testid="format-note" className="mb-1 text-[10px] leading-relaxed text-muted-foreground">{formatNote}</p>}
       <div
         ref={ref}
         id={id}

@@ -147,3 +147,32 @@
 1. Chạy thử với stack thật (Compose dev) và kiểm tra editor, lịch sử chạy, kết nối.
 2. Rà soát giao diện các trang còn lại ở light/dark.
 3. Thêm công tắc kích hoạt và tab Cài đặt khi backend có API.
+
+## 9. Dọn UI/UX theo Todo Notion (2026-10-11, nhánh `feature/web-ui-ux-cleanup`)
+
+Nguồn: mục "UI/UX" trong trang Notion KLTN > Todo. Chỉ sửa `apps/web`, không đụng backend.
+
+| Việc trong Todo | Đã làm | File chính |
+| --- | --- | --- |
+| Màu role xấu | Badge Member chữ xám trên nền xám (`bg-muted-foreground text-text-2`) → `bg-muted`; Owner đổi từ màu lỗi đỏ sang `run` (xanh), không xuống dòng | `pages/WorkspacePage.tsx` |
+| Hai chỗ Notification | Bỏ mục "Trung tâm thông báo" ở sidebar, giữ chuông ở topbar (có số chưa đọc) | `layout/Sidebar.tsx` |
+| Tab Telegram ở sidebar | Bỏ mục sidebar và xóa `TelegramPage`; `/telegram` chuyển hướng sang `/workspace/connections` (link cũ trong thông báo vẫn mở được). Danh sách bot đã có ở Kết nối, các bước tạo bot chuyển vào hướng dẫn | `App.tsx`, `pages/TelegramPage.tsx` (xóa) |
+| AI Generator ở sidebar → modal | Bỏ khỏi sidebar; mọi nút "Tạo bằng AI" (Dashboard, Quy trình, Tạo quy trình, Trợ giúp) mở `AiGeneratorDialog` qua `useUIStore.openAiGenerator(prompt?)`. Route `/ai/workflow-generator` giữ nguyên cho link cũ. `TemplateDialog` thêm prop `wide` | `components/ai/AiGeneratorDialog.tsx`, `pages/AiGeneratorPage.tsx`, `store/useUIStore.ts` |
+| Đổi logo | Logo SVG phẳng mới (W là một luồng node trên nền primary) cho topbar, trang đăng nhập/đăng ký và favicon; PNG cũ giữ trong `public/` | `public/weav-logo.svg`, `common/Logo.tsx`, `index.html` |
+| Tạo connection trực quan hơn | Dropdown dịch vụ → lưới thẻ có icon (radio, testid `connection-provider-<PROVIDER>`), kèm hướng dẫn từng bước có hình minh họa dựng bằng CSS (chat BotFather, ô URL webhook, màn hình cho phép của Google) | `pages/ConnectionsPage.tsx`, `components/connections/ConnectionGuide.tsx` |
+| Nút "?" ở node webhook/bot | Header inspector có nút "?" cho `trigger.telegram`, `telegram.send_message`, `discord/slack/teams.send_message`, `trigger.webhook`; mở cùng `ConnectionGuide` (webhook: POST `/api/v1/webhooks/<endpoint key>` + header `X-Webhook-Secret`) | `pages/WorkflowBuilderPage.tsx` |
+| Định dạng email/tin nhắn | Thanh B / I / link (email thêm danh sách, xuống dòng) trên ô nội dung. Email tự chuyển `bodyType` sang `html`; Telegram tự bật `parseMode: HTML` (nếu user chọn MarkdownV2 thì chèn cú pháp MarkdownV2); Discord Markdown, Slack mrkdwn. 4 template email đổi sang HTML | `builder/FormatToolbar.tsx`, `lib/formatInsert.ts` (+ `formatInsert.test.mjs`), `builder/MappingTextField.tsx`, `builder/SchemaField.tsx`, `lib/templates/index.ts` |
+
+Quyết định:
+- Template Telegram vẫn để text thường (chỉ thêm xuống dòng): biến tự do (dữ liệu fetch, tóm tắt AI, nội dung chuyển khoản) có thể chứa `<` hoặc `&`, mà backend không escape nên Telegram sẽ từ chối cả tin ở chế độ HTML.
+- Hướng dẫn dùng hình minh họa dựng bằng HTML/CSS thay ảnh chụp: theo theme sáng/tối, không phải cập nhật lại khi app bên ngoài đổi giao diện.
+
+Kiểm tra:
+- `tsc -p tsconfig.app.json` sạch; `pnpm build` qua; `node --test src/lib/formatInsert.test.mjs` 4/4; eslint trên các file đã sửa: chỉ còn 2 lỗi `set-state-in-effect` có sẵn (`WorkflowsPage:149`, `WorkflowBuilderPage:649`).
+- Stack thật (Vite 5173 + Gateway): sidebar còn 5 mục; modal AI mở từ Dashboard; dialog tạo connection (light/dark), thẻ Telegram/Discord kèm hướng dẫn; badge role; builder: bôi đen "test" → B ra `<b>test</b>`, `bodyType` chuyển HTML kèm ghi chú (không lưu); nút "?" ở `trigger.telegram`. Mọi request API 200.
+- Playwright: xem mục Kết quả e2e bên dưới.
+
+Còn lại / rủi ro:
+- Ô nội dung vẫn hiện thẻ HTML thô (`<b>…</b>`), chưa có xem trước định dạng.
+- Thanh định dạng chưa có cho Teams (chưa kiểm cú pháp Adaptive Card).
+- Mục "Email/tin nhắn hệ thống" (OTP, lời mời do notification-service gửi) không làm vì thuộc backend.

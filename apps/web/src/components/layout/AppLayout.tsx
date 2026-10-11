@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Outlet, Navigate, useMatch } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import { AiGeneratorDialog } from '../ai/AiGeneratorDialog';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useUIStore } from '../../store/useUIStore';
 import { useWorkspaceSessionCleanup } from '../../hooks/useWorkspace';
@@ -39,6 +40,7 @@ export const AppLayout: React.FC = () => {
           <Outlet />
         </main>
       </div>
+      <AiGeneratorDialog />
     </div>
   );
 };

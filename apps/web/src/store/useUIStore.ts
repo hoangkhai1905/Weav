@@ -15,6 +15,11 @@ interface UIState {
   setTheme: (theme: 'dark' | 'light') => void;
   toggleTheme: () => void;
   initTheme: () => void;
+  /** The "create with AI" dialog, opened from any page; `aiPrompt` pre-fills its prompt. */
+  aiGeneratorOpen: boolean;
+  aiPrompt: string;
+  openAiGenerator: (prompt?: string) => void;
+  closeAiGenerator: () => void;
 }
 
 const THEME_KEY = 'weav_theme_v1';
@@ -54,6 +59,10 @@ export const useUIStore = create<UIState>((set, get) => ({
   toggleMobileSearch: () => set((state) => ({ mobileSearchOpen: !state.mobileSearchOpen })),
   searchQuery: '',
   setSearchQuery: (searchQuery) => set({ searchQuery }),
+  aiGeneratorOpen: false,
+  aiPrompt: '',
+  openAiGenerator: (prompt = '') => set({ aiGeneratorOpen: true, aiPrompt: prompt }),
+  closeAiGenerator: () => set({ aiGeneratorOpen: false }),
   theme: initialTheme,
   initTheme: () => {
     const theme = get().theme;

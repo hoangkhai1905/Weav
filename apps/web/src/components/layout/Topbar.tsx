@@ -15,7 +15,6 @@ const getTopbarPageKey = (pathname: string) => {
   if (pathname.startsWith('/workspace')) return 'nav.workspace';
   if (pathname.startsWith('/ai')) return 'nav.ai_generator';
   if (pathname.startsWith('/assistant')) return 'nav.assistant';
-  if (pathname.startsWith('/telegram')) return 'nav.telegram';
   if (pathname.startsWith('/notifications')) return 'nav.notifications';
   if (pathname.startsWith('/settings')) return 'nav.settings';
   if (pathname.startsWith('/help')) return 'nav.help';
@@ -48,7 +47,7 @@ export function Topbar() {
           <Menu size={18} />
         </button>
 
-        <img src="/weav-logo-v2.png" alt="WEAV app logo" className="h-5 w-5 shrink-0 object-contain" />
+        <img src="/weav-logo.svg" alt="WEAV app logo" className="h-5 w-5 shrink-0" />
 
         <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
           <span>{t('topbar.home')}</span>

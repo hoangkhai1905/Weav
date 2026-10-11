@@ -17,6 +17,7 @@ import { NoWorkspaceNotice } from '../components/common/NoWorkspaceNotice';
 import { isNoWorkspaceError } from '../api/workflow-v1.api';
 import { REDUCED_MOTION_TRANSITION } from '../lib/motion';
 import { useI18nStore } from '../store/useI18nStore';
+import { useUIStore } from '../store/useUIStore';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
 import { showSuccessToast } from '../lib/feedback/toast';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
@@ -89,6 +90,7 @@ function computeStats(executions: ExecutionDetail[]): Record<string, RunStats> {
 export function WorkflowsPage() {
   const refreshNotifications = useNotificationMilestoneRefresh();
   const { language, t } = useI18nStore();
+  const openAiGenerator = useUIStore((state) => state.openAiGenerator);
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const menuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -436,10 +438,10 @@ export function WorkflowsPage() {
           </span>
         )}
         <span className="ml-auto flex flex-wrap gap-2">
-          <Link to="/ai/workflow-generator" className={btn}>
+          <button type="button" onClick={() => openAiGenerator()} className={btn}>
             <Sparkles size={14} aria-hidden="true" />
             {t('nav.ai_generator')}
-          </Link>
+          </button>
           <input
             ref={importInputRef}
             type="file"
@@ -648,10 +650,10 @@ export function WorkflowsPage() {
                 <button type="button" onClick={() => navigate('/workflows/new')} className={btnPrimary}>
                   {t('dashboard.new_workflow')}
                 </button>
-                <Link to="/ai/workflow-generator" className={btn}>
+                <button type="button" onClick={() => openAiGenerator()} className={btn}>
                   <Sparkles size={14} aria-hidden="true" />
                   {t('nav.ai_generator')}
-                </Link>
+                </button>
               </div>
             </div>
           </div>

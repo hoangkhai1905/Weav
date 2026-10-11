@@ -9,10 +9,11 @@ interface TemplateDialogProps {
   onClose: () => void;
   children: ReactNode;
   testId?: string;
+  wide?: boolean;
 }
 
 /** Modal shell for the template dialogs: labelled title, Esc to close, Tab stays inside, focus returns on close. */
-export function TemplateDialog({ title, onClose, children, testId }: TemplateDialogProps) {
+export function TemplateDialog({ title, onClose, children, testId, wide = false }: TemplateDialogProps) {
   const { t } = useI18nStore();
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -57,7 +58,7 @@ export function TemplateDialog({ title, onClose, children, testId }: TemplateDia
         aria-modal="true"
         aria-labelledby={titleId}
         data-testid={testId}
-        className="relative z-10 max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-lg border border-border bg-card p-5 shadow-pop"
+        className={`relative z-10 max-h-[90vh] w-full space-y-4 overflow-y-auto rounded-lg border border-border bg-card p-5 shadow-pop ${wide ? 'max-w-2xl' : 'max-w-lg'}`}
       >
         <div className="flex items-start justify-between gap-3">
           <h2 id={titleId} className="text-base font-semibold text-foreground">{title}</h2>

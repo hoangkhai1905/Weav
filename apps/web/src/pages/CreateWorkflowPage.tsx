@@ -14,6 +14,7 @@ import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
 import { workflowV1Api } from '../api/workflow-v1.api';
 import { useI18nStore } from '../store/useI18nStore';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
+import { useUIStore } from '../store/useUIStore';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
 import { showSuccessToast } from '../lib/feedback/toast';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
@@ -46,6 +47,7 @@ export const CreateWorkflowPage: React.FC = () => {
   const navigate = useNavigate();
   const { hash } = useLocation();
   const { t, language } = useI18nStore();
+  const openAiGenerator = useUIStore((state) => state.openAiGenerator);
   const refreshNotifications = useNotificationMilestoneRefresh();
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
 
@@ -140,11 +142,7 @@ export const CreateWorkflowPage: React.FC = () => {
   };
 
   const handleGenerateAiCanvas = () => {
-    if (!aiPrompt.trim()) {
-      navigate('/ai/workflow-generator');
-      return;
-    }
-    navigate('/ai/workflow-generator', { state: { initialPrompt: aiPrompt } });
+    openAiGenerator(aiPrompt.trim());
   };
 
   const filteredTemplates = WORKFLOW_TEMPLATES.filter((tpl) => activeCategory === 'all' || tpl.category === activeCategory);
@@ -329,13 +327,12 @@ export const CreateWorkflowPage: React.FC = () => {
           </div>
 
           <div className="relative mt-5">
-            <Link
-              to="/ai/workflow-generator"
+            <button type="button" onClick={() => openAiGenerator()}
               className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-semibold text-white transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Zap size={15} />
               <span>{t('create.synthesize')}</span>
-            </Link>
+            </button>
           </div>
         </div>
       </div>

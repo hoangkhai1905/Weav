@@ -293,7 +293,7 @@ const INITIAL_MEMBERS: WorkspaceMember[] = [
 const INITIAL_NOTIFICATIONS: NotificationItem[] = [
   { id: 'notif-1', type: 'WORKFLOW_COMPLETED', title: 'Execution Succeeded', message: 'Workflow "Invoice OCR → AI Extract → Google Sheets" finished successfully.', timestamp: '2026-08-28T11:15:04Z', read: false, link: '/executions/exec-101' },
   { id: 'notif-2', type: 'WORKFLOW_FAILED', title: 'Execution Failed', message: 'Workflow "Invoice OCR → AI Extract → Google Sheets" failed at OCR Extract PDF step.', timestamp: '2026-08-27T16:20:02Z', read: true, link: '/executions/exec-103' },
-  { id: 'notif-3', type: 'TELEGRAM_LINKED', title: 'Telegram Connected', message: 'Telegram Bot @weav_automation_bot linked to workspace.', timestamp: '2026-08-18T10:00:00Z', read: true, link: '/telegram' },
+  { id: 'notif-3', type: 'TELEGRAM_LINKED', title: 'Telegram Connected', message: 'Telegram Bot @weav_automation_bot linked to workspace.', timestamp: '2026-08-18T10:00:00Z', read: true, link: '/workspace/connections' },
 ];
 
 // Local Storage Helpers

@@ -183,7 +183,8 @@ test('keeps safe quick actions available in HTTP mode without demo workflow ids'
   await expect(actions.getByRole('link', { name: /^Create workflow\b/ })).toHaveAttribute('href', '/workflows/new');
   await expect(actions.getByRole('link', { name: /^Run test\b/ })).toHaveAttribute('href', '/workflows');
   await expect(actions.getByRole('link', { name: /^View executions\b/ })).toHaveAttribute('href', '/executions');
-  await expect(actions.getByRole('link', { name: /^Create with AI/ })).toHaveAttribute('href', '/ai/workflow-generator');
+  await actions.getByRole('button', { name: /^Create with AI/ }).click();
+  await expect(page.getByTestId('ai-generator-dialog')).toBeVisible();
   await expect(actions).not.toContainText('wf-prod-8492');
 });
 

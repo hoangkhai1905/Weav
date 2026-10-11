@@ -113,16 +113,10 @@ test.describe('honest pages', () => {
     expect(definition.edges).toHaveLength(1);
   });
 
-  test('the Telegram page lists the workspace bot connections and calls no /api/telegram endpoint', async ({ page }) => {
-    const requests = await setup(page, {
-      connections: [{ id: '20000000-0000-4000-8000-000000000003', workspaceId, createdBy: userId, name: 'Shop bot', provider: 'TELEGRAM', authType: 'TOKEN', status: 'ACTIVE', config: null, hasCredential: true, credentialExpiresAt: null, lastVerifiedAt: null, canManage: true, canAttach: true, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z' }],
-    });
+  test('the old Telegram page link opens Connections', async ({ page }) => {
+    await setup(page);
     await page.goto('/telegram');
-    await expect(page.getByRole('heading', { name: /Connect a Telegram bot/ })).toBeVisible();
-    await expect(page.getByText('Shop bot')).toBeVisible();
-    await expect(page.getByText('@BotFather', { exact: false }).first()).toBeVisible();
-    await expect(page.locator('body')).not.toContainText('/run wf-001');
-    expect(requests.filter((entry) => entry.path.startsWith('/api/telegram'))).toEqual([]);
+    await expect(page).toHaveURL(/\/workspace\/connections$/);
   });
 
   test('a user without a workspace sees the create card instead of a failed data load', async ({ page }) => {
@@ -137,12 +131,13 @@ test.describe('honest pages', () => {
     expect(requests.find((entry) => entry.method === 'POST' && entry.path === '/api/v1/workspaces')?.body).toMatchObject({ name: 'Team Alpha' });
   });
 
-  test('the sidebar links to Telegram and the notification center, and /assistant has its own breadcrumb', async ({ page }) => {
+  test('the sidebar keeps one notification entry (the top bar bell), and /assistant has its own breadcrumb', async ({ page }) => {
     await setup(page);
     await page.goto('/assistant');
     await expect(page.getByTestId('topbar-breadcrumb-current')).toHaveText('AI Assistant');
     const sidebar = page.getByTestId('app-sidebar');
-    await expect(sidebar.getByRole('link', { name: 'Telegram Bot', exact: true })).toHaveAttribute('href', '/telegram');
-    await expect(sidebar.getByRole('link', { name: 'Notification center', exact: true })).toHaveAttribute('href', '/notifications');
+    await expect(sidebar.getByRole('link', { name: 'Telegram Bot', exact: true })).toHaveCount(0);
+    await expect(sidebar.getByRole('link', { name: 'Notification center', exact: true })).toHaveCount(0);
+    await expect(page.locator('header a[href="/notifications"]')).toBeVisible();
   });
 });

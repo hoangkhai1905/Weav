@@ -11,6 +11,7 @@ import { NODE_NAME_KEYS, nodeLabel } from '../lib/nodeLabels';
 import { errorFieldLabel } from '../lib/executions/runView';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
 import { useAuthStore } from '../store/useAuthStore';
+import { useUIStore } from '../store/useUIStore';
 import { useI18nStore } from '../store/useI18nStore';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
 
@@ -41,7 +42,13 @@ const fieldClass = 'w-full rounded-md border border-border bg-subtle px-3 py-2 t
 const primaryButton = 'inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
 const secondaryButton = 'inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
 
-export function AiGeneratorPage() {
+interface AiGeneratorPageProps {
+  /** Rendered inside the "create with AI" dialog: no page header, the dialog gives the title. */
+  inDialog?: boolean;
+  initialPrompt?: string;
+}
+
+export function AiGeneratorPage({ inDialog = false, initialPrompt }: AiGeneratorPageProps = {}) {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useI18nStore();
@@ -51,7 +58,9 @@ export function AiGeneratorPage() {
   const promptId = useId();
   const { isPending, error, result, generate, reset } = useWorkflowGeneration();
 
-  const [prompt, setPrompt] = useState<string>((location.state as { initialPrompt?: string } | null)?.initialPrompt ?? '');
+  const [prompt, setPrompt] = useState<string>(
+    initialPrompt ?? (location.state as { initialPrompt?: string } | null)?.initialPrompt ?? '',
+  );
   const [connections, setConnections] = useState<ConnectionResponse[]>([]);
   // Answers typed for the current needs_input round, keyed by question index.
   const [answers, setAnswers] = useState<Record<number, string>>({});
@@ -134,6 +143,7 @@ export function AiGeneratorPage() {
       if (!isMounted() || !isCurrentNotificationSession(session)) return;
       showSuccessToast('toast.workflow.created', session);
       refreshNotifications(session);
+      useUIStore.getState().closeAiGenerator();
       navigate(`/workflows/${workflowId}/builder`);
     } catch (unknown) {
       if (isMounted() && isCurrentNotificationSession(session)) {
@@ -268,7 +278,10 @@ export function AiGeneratorPage() {
   };
 
   return (
-    <div data-testid="ai-generator-page" className="mx-auto max-w-3xl space-y-5 pb-16 font-sans text-foreground">
+    <div data-testid="ai-generator-page" className={inDialog ? 'space-y-4 text-foreground' : 'mx-auto max-w-3xl space-y-5 pb-16 font-sans text-foreground'}>
+      {inDialog ? (
+        <p className="text-sm text-muted-foreground">{t('ai_gen.simple_subtitle')}</p>
+      ) : (
       <div className="space-y-2">
         <Link to="/workflows/new" className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
           <ArrowLeft size={14} aria-hidden="true" />
@@ -280,8 +293,9 @@ export function AiGeneratorPage() {
         </h1>
         <p className="max-w-2xl text-sm text-muted-foreground">{t('ai_gen.simple_subtitle')}</p>
       </div>
+      )}
 
-      <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+      <div className={inDialog ? 'space-y-3' : 'space-y-3 rounded-lg border border-border bg-card p-4'}>
         <label htmlFor={promptId} className="block text-xs font-medium text-text-2">{t('ai_gen.prompt_label')}</label>
         <textarea
           id={promptId}

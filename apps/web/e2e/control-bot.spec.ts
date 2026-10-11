@@ -117,7 +117,7 @@ test('creating a Discord connection validates the webhook URL and stores it thro
   await page.goto('/connections');
   await page.getByTestId('connections-create-open').click();
   await page.getByTestId('connection-create-name').fill('Alerts channel');
-  await page.getByTestId('connection-create-provider').selectOption('DISCORD');
+  await page.getByTestId('connection-provider-DISCORD').check();
   const url = page.getByTestId('connection-create-token');
   await expect(url).toHaveAttribute('type', 'password');
 

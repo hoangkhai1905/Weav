@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { HelpCircle } from 'lucide-react';
 import { useI18nStore } from '../store/useI18nStore';
+import { useUIStore } from '../store/useUIStore';
 
 const TRIGGERS = ['manual', 'schedule', 'webhook', 'telegram', 'gmail'] as const;
 const NODES = ['http', 'email', 'sheets', 'drive', 'calendar', 'telegram', 'set', 'condition', 'switch', 'ai'] as const;
@@ -11,6 +12,7 @@ const code = 'rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foregrou
 
 export function HelpPage() {
   const { t } = useI18nStore();
+  const openAiGenerator = useUIStore((state) => state.openAiGenerator);
 
   return (
     <div data-testid="help-page" className="mx-auto max-w-4xl space-y-5 pb-10">
@@ -22,7 +24,7 @@ export function HelpPage() {
         <p className="mt-1 max-w-2xl text-xs text-text-2">{t('hp.help.subtitle')}</p>
         <p className="mt-2 flex flex-wrap gap-3 text-xs font-semibold text-run">
           <Link to="/workflows/new#templates-list" className="hover:underline">{t('hp.help.link_templates')}</Link>
-          <Link to="/ai/workflow-generator" className="hover:underline">{t('hp.help.link_ai')}</Link>
+          <button type="button" onClick={() => openAiGenerator()} className="hover:underline">{t('hp.help.link_ai')}</button>
           <Link to="/connections" className="hover:underline">{t('hp.help.link_connections')}</Link>
         </p>
       </div>

@@ -554,7 +554,7 @@ test.describe("workspace connection API adapter", () => {
     await gotoAuthenticatedConnections(page);
     await page.getByTestId("connections-create-open").click();
     await page.getByTestId("connection-create-name").fill("  Work Gmail  ");
-    await page.getByTestId("connection-create-provider").selectOption("GMAIL");
+    await page.getByTestId("connection-provider-GMAIL").check();
     await page.getByTestId("connection-create-submit").click();
 
     await expect(
@@ -618,7 +618,7 @@ test.describe("workspace connection API adapter", () => {
     await page.getByTestId("connections-create-open").click();
     await page.getByTestId("connection-create-name").fill("Support bot");
     await expect(page.getByTestId("connection-create-token")).toHaveCount(0);
-    await page.getByTestId("connection-create-provider").selectOption("TELEGRAM");
+    await page.getByTestId("connection-provider-TELEGRAM").check();
     const tokenInput = page.getByTestId("connection-create-token");
     await expect(tokenInput).toHaveAttribute("type", "password");
     await expect(tokenInput).toHaveAttribute("autocomplete", "off");
@@ -664,7 +664,7 @@ test.describe("workspace connection API adapter", () => {
     await gotoAuthenticatedConnections(page);
     await page.getByTestId("connections-create-open").click();
     await page.getByTestId("connection-create-name").fill("Support bot");
-    await page.getByTestId("connection-create-provider").selectOption("TELEGRAM");
+    await page.getByTestId("connection-provider-TELEGRAM").check();
     await page.getByTestId("connection-create-token").fill("   ");
     await page.getByTestId("connection-create-submit").click();
     await expect(page.getByTestId("connection-create-error")).toHaveText("Enter the Telegram bot token.");
@@ -1757,7 +1757,7 @@ test.describe("workflow builder connection readiness", () => {
     await page.locator(sheetsNode).click();
     await page.getByTestId("add-connection-GOOGLE_SHEETS").click();
     const dialog = page.getByTestId("connection-create-dialog");
-    await expect(dialog.getByTestId("connection-create-provider")).toHaveValue("GOOGLE_SHEETS");
+    await expect(dialog.getByTestId("connection-provider-GOOGLE_SHEETS")).toBeChecked();
     await dialog.getByTestId("connection-create-name").fill("Finance Sheets");
     await dialog.getByTestId("connection-create-submit").click();
 
@@ -2397,10 +2397,10 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(page.getByText(/invalid connection response/i)).toHaveCount(0);
 
     await page.getByTestId("connections-create-open").click();
-    const providers = await page.getByTestId("connection-create-provider").locator("option").evaluateAll((list) => list.map((item) => item.getAttribute("value")));
+    const providers = await page.getByTestId("connection-create-provider").locator("input[type=radio]").evaluateAll((list) => list.map((item) => item.getAttribute("value")));
     expect(providers).toEqual(expect.arrayContaining(["GOOGLE_CALENDAR", "GOOGLE_DRIVE"]));
     await page.getByTestId("connection-create-name").fill("Team Drive");
-    await page.getByTestId("connection-create-provider").selectOption("GOOGLE_DRIVE");
+    await page.getByTestId("connection-provider-GOOGLE_DRIVE").check();
     await page.getByTestId("connection-create-submit").click();
     await expect(page.getByTestId(`connection-status-${CONNECTION_DRIVE_ID}`)).toHaveAttribute("data-status", "DISABLED");
     expect(createBody.provider).toBe("GOOGLE_DRIVE");

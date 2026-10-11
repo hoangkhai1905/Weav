@@ -176,7 +176,6 @@ test.describe('Vietnamese and English web localization', () => {
       { path: '/notifications', vi: 'Thông báo', en: 'Notifications' },
       { path: '/settings/profile', vi: 'Cài đặt', en: 'Settings' },
       { path: '/ai/workflow-generator', vi: 'Tạo bằng AI', en: 'Create with AI' },
-      { path: '/telegram', vi: 'Kết nối bot Telegram', en: 'Connect a Telegram bot' },
       { path: '/help', vi: 'Trợ giúp & Tài liệu', en: 'Help & Docs' },
     ];
     const leakedKey = /\b(?:common|nav|topbar|dashboard|workflows|workspace|connections|executions|execution_detail|settings|auth|forgot|help|hp|telegram|notif|builder|ai_gen|status)\.[a-z][a-z0-9_.]*/gi;

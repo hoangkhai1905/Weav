@@ -58,14 +58,15 @@ async function setup(page: Page) {
 }
 
 test.describe('navigation structure', () => {
-  test('sidebar lists only Overview, Workflows, Workspace and AI, and toggles with Ctrl+B', async ({ page }) => {
+  test('sidebar lists only Overview, Workflows and Workspace (AI opens as a dialog), and toggles with Ctrl+B', async ({ page }) => {
     await setup(page);
     await page.goto('/dashboard');
     const sidebar = page.getByTestId('app-sidebar');
     await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
-    for (const name of ['Dashboard', 'Workflows', 'Workspace', 'AI Generator']) {
+    for (const name of ['Dashboard', 'Workflows', 'Workspace']) {
       await expect(sidebar.getByRole('link', { name, exact: true })).toBeVisible();
     }
+    await expect(sidebar.getByRole('link', { name: 'AI Generator', exact: true })).toHaveCount(0);
     await expect(sidebar.getByRole('link', { name: 'Connections', exact: true })).toHaveCount(0);
     await expect(sidebar.getByRole('link', { name: 'Executions', exact: true })).toHaveCount(0);
 
