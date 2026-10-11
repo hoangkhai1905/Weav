@@ -2,6 +2,7 @@ import type {
   Execution,
   ExecutionLogItem,
   ExecutionLogPage,
+  ExecutionCancelResult,
   ExecutionPage,
   ExecutionSummary,
   NodeAttempt,
@@ -115,4 +116,11 @@ export function mapExecution(value: unknown): Execution {
     nodes: arr(r, 'nodes', 'execution').map(mapNode),
     logs: mapLogPage(r.logs),
   };
+}
+
+const CANCEL_RESULTS = ['CANCELLED', 'CANCEL_REQUESTED'] as const;
+
+/** 202 body of the cancel call. */
+export function mapExecutionCancel(value: unknown): ExecutionCancelResult {
+  return oneOf(rec(value, 'cancel'), 'status', CANCEL_RESULTS, 'cancel');
 }

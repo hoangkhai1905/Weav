@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import {
   useInfiniteQuery,
   useQuery,
@@ -69,6 +70,7 @@ export interface NotificationListFilters {
 
 export function useNotifications(filters: NotificationListFilters) {
   const { scope, enabled } = useNotificationSession();
+  const queryClient = useQueryClient();
   const listKey = notificationListQueryKey(
     scope?.userId,
     scope?.generation ?? 0,
@@ -76,7 +78,7 @@ export function useNotifications(filters: NotificationListFilters) {
     filters.category,
     filters.unreadOnly,
   );
-  return useInfiniteQuery<
+  const query = useInfiniteQuery<
     NotificationInboxPage,
     unknown,
     NotificationItem[],
@@ -105,6 +107,16 @@ export function useNotifications(filters: NotificationListFilters) {
     retry: retryNotification,
     refetchInterval: 30000,
   });
+
+  // `workspace.deleted` has no target (the workspace is gone); refresh the workspace list so the app
+  // stops showing it. Keyed on the unread count of such rows, so it runs once per new arrival.
+  const unreadDeleted = (query.data ?? []).filter((n) => n.eventType === 'workspace.deleted' && !n.readAt).length;
+  const userId = scope?.userId;
+  useEffect(() => {
+    if (unreadDeleted > 0 && userId) void queryClient.invalidateQueries({ queryKey: ['workspaces', userId, 'list'] });
+  }, [unreadDeleted, userId, queryClient]);
+
+  return query;
 }
 
 export function useNotificationUnreadCount() {

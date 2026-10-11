@@ -140,6 +140,11 @@ export class MockWorkspaceRepository implements WorkspaceRepository {
     mockMembers = mockMembers.filter((candidate) => candidate.id !== userId);
   }
 
+  async deleteWorkspace(_workspaceId: string, _name: string): Promise<void> {
+    await delay(300);
+    throw { code: 'MOCK_UNSUPPORTED', message: 'Deleting a workspace is unavailable in explicit mock mode.' };
+  }
+
   async leaveWorkspace(_workspaceId: string): Promise<void> {
     await delay(300);
     throw { code: 'MOCK_UNSUPPORTED', message: 'Leaving a workspace is unavailable in explicit mock mode.' };

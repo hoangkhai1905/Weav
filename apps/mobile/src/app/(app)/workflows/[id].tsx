@@ -18,6 +18,7 @@ import { newIdempotencyKey } from '../../../infrastructure/http/workflow.http.co
 import { isUnknownOutcomeTimeout } from '../../../infrastructure/http/gateway-request';
 import { FlowList } from '../../../features/workflows/components/FlowList';
 import { PublishResultSheet } from '../../../features/workflows/components/PublishResultSheet';
+import { publishErrorKey } from '../../../features/workflows/publish-error';
 import { RunSheet } from '../../../features/workflows/components/RunSheet';
 import { TriggerList } from '../../../features/workflows/components/TriggerList';
 import { friendlyErrorMessage } from '../../../features/common/friendly-error';
@@ -112,7 +113,8 @@ export default function WorkflowDetailScreen() {
       setPublication(result);
     } catch (error) {
       setConfirmPublish(false);
-      showToast({ type: 'error', title: t('pub.failTitle'), message: friendlyErrorMessage(error) });
+      const key = publishErrorKey(error);
+      showToast({ type: 'error', title: t('pub.failTitle'), message: key ? t(key) : friendlyErrorMessage(error) });
     }
   };
 

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { aiEn, aiVi } from './i18n.ai';
 import { authEn, authVi } from './i18n.auth';
+import { runsEn, runsVi } from './i18n.runs';
 import { accountEn, accountVi } from './i18n.account';
 import { workflowsEn, workflowsVi } from './i18n.workflows';
 
@@ -145,7 +146,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'status.WAITING': 'Đang chờ',
     'status.SUCCESS': 'Thành công',
     'status.FAILED': 'Thất bại',
-    'status.CANCELLED': 'Đã hủy',
+    'status.CANCELLED': 'Đã dừng',
     'status.SKIPPED': 'Đã bỏ qua',
     'status.PENDING': 'Chưa tới lượt',
     'status.READY': 'Sẵn sàng',
@@ -200,6 +201,7 @@ export const translations: Record<Language, Record<string, string>> = {
     ...workflowsVi,
     ...aiVi,
     ...authVi,
+    ...runsVi,
     ...accountVi,
   },
   EN: {
@@ -340,7 +342,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'status.WAITING': 'Waiting',
     'status.SUCCESS': 'Succeeded',
     'status.FAILED': 'Failed',
-    'status.CANCELLED': 'Cancelled',
+    'status.CANCELLED': 'Stopped',
     'status.SKIPPED': 'Skipped',
     'status.PENDING': 'Not started',
     'status.READY': 'Ready',
@@ -395,6 +397,7 @@ export const translations: Record<Language, Record<string, string>> = {
     ...workflowsEn,
     ...aiEn,
     ...authEn,
+    ...runsEn,
     ...accountEn,
   },
 };

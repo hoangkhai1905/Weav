@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Building2, Check, LogOut, Plus, Search, UserPlus } from 'lucide-react-native';
+import { Building2, Check, LogOut, Plus, Search, Trash2, UserPlus } from 'lucide-react-native';
 import { useWorkspace } from '../../../features/workspace/hooks/useWorkspace';
 import { useSwitchWorkspace } from '../../../features/workspace/hooks/useSwitchWorkspace';
 import {
@@ -85,6 +85,7 @@ export default function WorkspaceScreen() {
     updateMemberPermissionsMutation,
     removeMemberMutation,
     leaveWorkspaceMutation,
+    deleteWorkspaceMutation,
   } = useWorkspace();
   const sessionUserId = useAuthStore((s) => s.user?.id ?? null);
 
@@ -99,6 +100,9 @@ export default function WorkspaceScreen() {
   const [inviteError, setInviteError] = React.useState<string | null>(null);
   const [confirmation, setConfirmation] = React.useState<Confirmation>(null);
   const [refreshing, setRefreshing] = React.useState(false);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [deleteName, setDeleteName] = React.useState('');
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
   const busyRef = React.useRef(false);
 
   React.useEffect(() => {
@@ -108,6 +112,9 @@ export default function WorkspaceScreen() {
     setInviteError(null);
     setSearch('');
     setConfirmation(null);
+    setDeleteOpen(false);
+    setDeleteName('');
+    setDeleteError(null);
   }, [activeWorkspace?.id, sessionUserId]);
 
   const me = members.find((m) => m.id === sessionUserId);
@@ -229,6 +236,36 @@ export default function WorkspaceScreen() {
         });
       },
     );
+  };
+
+  // Same rule as the server: trimmed and case-insensitive.
+  const deleteNameMatches =
+    deleteName.trim().toLowerCase() !== '' &&
+    deleteName.trim().toLowerCase() === (activeWorkspace?.name ?? '').trim().toLowerCase();
+
+  const handleDelete = async () => {
+    if (!activeWorkspaceId || !deleteNameMatches || deleteWorkspaceMutation.isPending) return;
+    try {
+      await deleteWorkspaceMutation.mutateAsync({ workspaceId: activeWorkspaceId, name: deleteName.trim() });
+      setDeleteOpen(false);
+      showToast({ type: 'success', title: t('ws.delete.done') });
+      router.replace('/(app)/(tabs)');
+    } catch (error) {
+      const status = (error as { status?: number } | null)?.status;
+      if (status === 400) {
+        setDeleteError(t('ws.delete.nameMismatch'));
+        return;
+      }
+      setDeleteOpen(false);
+      // 404: already gone; the mutation removed it locally.
+      if (status === 404) {
+        router.replace('/(app)/(tabs)');
+        return;
+      }
+      const message =
+        status === 503 ? t('ws.delete.err503') : status === 403 ? t('ws.delete.err403') : friendlyErrorMessage(error);
+      showToast({ type: 'error', title: t('ws.delete.failTitle'), message });
+    }
   };
 
   const onRefresh = async () => {
@@ -417,6 +454,19 @@ export default function WorkspaceScreen() {
             {isOwner ? (
               <Text style={[Typography.caption, { color: colors.textSubtle }]}>{t('ws.ownerCannotLeave')}</Text>
             ) : null}
+            {isOwner ? (
+              <Button
+                testID="workspace-delete"
+                variant="danger"
+                label={t('ws.delete')}
+                icon={<Trash2 size={16} color={colors.danger} />}
+                onPress={() => {
+                  setDeleteName('');
+                  setDeleteError(null);
+                  setDeleteOpen(true);
+                }}
+              />
+            ) : null}
           </View>
         ) : null}
       </ScrollView>
@@ -455,6 +505,33 @@ export default function WorkspaceScreen() {
           error={inviteError}
         />
         <Button label={t('ws.invite.submit')} busy={addMemberMutation.isPending} onPress={() => void handleInvite()} />
+      </Sheet>
+
+      <Sheet visible={deleteOpen} onClose={() => setDeleteOpen(false)} title={t('ws.delete.title')}>
+        <Text style={[Typography.body, { color: colors.text }]}>{t('ws.delete.consequences')}</Text>
+        <TextField
+          testID="workspace-delete-name"
+          label={t('ws.delete.typeName').replace('{workspace}', activeWorkspace?.name ?? '')}
+          value={deleteName}
+          onChangeText={(v) => {
+            setDeleteName(v);
+            setDeleteError(null);
+          }}
+          maxLength={255}
+          autoCapitalize="none"
+          autoCorrect={false}
+          error={deleteError}
+        />
+        <Button
+          variant="danger"
+          label={t('ws.delete.confirm')}
+          disabled={!deleteNameMatches}
+          busy={deleteWorkspaceMutation.isPending}
+          onPress={() => void handleDelete()}
+        />
+        {deleteWorkspaceMutation.isPending ? (
+          <Text style={[Typography.caption, { color: colors.textSubtle }]}>{t('ws.delete.wait')}</Text>
+        ) : null}
       </Sheet>
 
       <ConfirmSheet

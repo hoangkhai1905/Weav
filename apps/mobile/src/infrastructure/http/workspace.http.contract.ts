@@ -46,9 +46,11 @@ export interface WorkspaceRequestConfig {
     | CreateWorkspaceInput
     | RenameWorkspaceInput
     | AddWorkspaceMemberInput
-    | UpdateWorkspaceMemberPermissionsInput;
+    | UpdateWorkspaceMemberPermissionsInput
+    | { name: string };
   headers?: { Authorization: string };
   signal?: AbortSignal;
+  timeout?: number;
 }
 
 function buildMutationRequest(
@@ -148,6 +150,23 @@ export function buildLeaveWorkspaceRequest(
     token,
     signal,
   );
+}
+
+/**
+ * DELETE /api/v1/workspaces/:id with the typed name (owner only, 204). The server pauses every
+ * workflow first (up to ~30 s), so the timeout is longer than usual (web uses 40 s).
+ */
+export function buildDeleteWorkspaceRequest(
+  workspaceId: string,
+  name: string,
+  token: string | null,
+  signal?: AbortSignal,
+): WorkspaceRequestConfig {
+  return {
+    ...buildDeleteRequest(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}`, token, signal),
+    data: { name },
+    timeout: 40_000,
+  };
 }
 
 function buildDeleteRequest(

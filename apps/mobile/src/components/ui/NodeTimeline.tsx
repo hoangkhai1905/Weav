@@ -25,6 +25,8 @@ export interface NodeTimelineItem {
   attempts?: NodeTimelineAttempt[];
   output?: unknown;
   error?: unknown;
+  /** Readable one-line error (field label + friendly text), shown without expanding. */
+  errorSummary?: string | null;
 }
 
 const hasValue = (v: unknown) => v !== null && v !== undefined;
@@ -55,6 +57,9 @@ const Row: React.FC<{ item: NodeTimelineItem; last: boolean }> = ({ item, last }
             {t('ui.timeline.attempts')}: {item.attemptCount}
           </Text>
         </View>
+        {item.errorSummary ? (
+          <Text style={[Typography.caption, { color: colors.danger }]}>{item.errorSummary}</Text>
+        ) : null}
         {canExpand ? (
           <Pressable
             accessibilityRole="button"

@@ -106,3 +106,17 @@ test('maps WORKFLOW_EVENT runs without breaking the page', () => {
   const page = mapExecutionPage(pageOf([summary(), summary({ executionId: 'e2', triggerType: 'WORKFLOW_EVENT' })]));
   assert.equal(page.items[1].triggerType, 'WORKFLOW_EVENT');
 });
+
+test('cancel: request path and both 202 results', () => {
+  const { mapExecutionCancel } = require('./execution.mapper.ts');
+  const { buildExecutionCancelRequest } = require('./execution.http.contract.ts');
+  const id = '3fa85f64-5717-4562-b3fc-2c963f66afa6';
+  const wf = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+  const req = buildExecutionCancelRequest('9b2e1c4a-1f3d-4e5b-8a6c-7d8e9f0a1b2c', wf, id);
+  assert.equal(req.method, 'POST');
+  assert.match(req.url, new RegExp(`/workflows/${wf}/executions/${id}/cancel$`));
+  assert.throws(() => buildExecutionCancelRequest('9b2e1c4a-1f3d-4e5b-8a6c-7d8e9f0a1b2c', wf, '../x'));
+  assert.equal(mapExecutionCancel({ status: 'CANCELLED' }), 'CANCELLED');
+  assert.equal(mapExecutionCancel({ status: 'CANCEL_REQUESTED' }), 'CANCEL_REQUESTED');
+  assert.throws(() => mapExecutionCancel({ status: 'NOPE' }));
+});

@@ -75,6 +75,8 @@ export interface WorkspaceRepository {
     signal?: AbortSignal,
   ): Promise<PageResult<Workspace>>;
   getWorkspace(workspaceId: string, signal?: AbortSignal): Promise<Workspace>;
+  /** Owner only. `name` must match the workspace name (trimmed, case-insensitive) or the server answers 400. */
+  deleteWorkspace(workspaceId: string, name: string, signal?: AbortSignal): Promise<void>;
   createWorkspace(
     input: CreateWorkspaceInput,
     signal?: AbortSignal,

@@ -45,3 +45,13 @@ export function buildExecutionDetailRequest(
     ...(signal ? { signal } : {}),
   };
 }
+
+/** POST .../executions/{id}/cancel, no body. 202 {status: CANCELLED | CANCEL_REQUESTED}. */
+export function buildExecutionCancelRequest(
+  workspaceId: string,
+  workflowId: string,
+  executionId: string,
+): AxiosRequestConfig {
+  if (!isUuid(executionId)) throw new Error('Invalid execution id.');
+  return { method: 'POST', url: `${executionsPath(workspaceId, workflowId)}/${executionId}/cancel` };
+}

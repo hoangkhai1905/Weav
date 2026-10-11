@@ -28,6 +28,7 @@ import {
   buildRemoveMemberRequest,
   buildRenameWorkspaceRequest,
   buildUpdateMemberPermissionsRequest,
+  buildDeleteWorkspaceRequest,
   mapMemberResponse,
   type GatewayMemberView,
   type GatewayPage,
@@ -196,6 +197,11 @@ export class HttpWorkspaceRepository implements WorkspaceRepository {
       buildRemoveMemberRequest(workspace, user, null, signal),
       () => undefined,
     );
+  }
+
+  async deleteWorkspace(workspaceId: string, name: string, signal?: AbortSignal): Promise<void> {
+    const id = requireWorkspaceId(workspaceId);
+    await requestWorkspace<unknown, void>(buildDeleteWorkspaceRequest(id, name, null, signal), () => undefined);
   }
 
   async leaveWorkspace(workspaceId: string, signal?: AbortSignal): Promise<void> {

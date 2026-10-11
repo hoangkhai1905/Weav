@@ -24,6 +24,31 @@ httpClient.interceptors.request.use((config) => {
   return config;
 });
 
+/** Given the access token that got a 401, returns a usable token (refreshing at most once) or null. */
+type UnauthorizedHandler = (failedToken: string) => Promise<string | null>;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+/** Registered by the auth runtime; kept as a setter to avoid an import cycle with the repositories. */
+export const setUnauthorizedHandler = (handler: UnauthorizedHandler | null) => {
+  unauthorizedHandler = handler;
+};
+
+// Auth routes answer 401 for bad credentials or a dead refresh token: never refresh-and-retry them.
+const NO_REFRESH_URL = /\/api\/auth\/(login|register|refresh|logout|oauth\/)/;
+
+// Access tokens live 15 minutes: without this, the first 401 after that signed the user out.
+httpClient.interceptors.response.use(undefined, async (error: unknown) => {
+  if (!axios.isAxiosError(error) || error.response?.status !== 401 || !error.config || !unauthorizedHandler) throw error;
+  const config = error.config as typeof error.config & { _authRetried?: boolean };
+  const header = String(config.headers?.Authorization ?? '');
+  if (config._authRetried || !header.startsWith('Bearer ') || NO_REFRESH_URL.test(config.url ?? '')) throw error;
+  const token = await unauthorizedHandler(header.slice('Bearer '.length)).catch(() => null);
+  if (!token) throw error;
+  config._authRetried = true;
+  config.headers.Authorization = `Bearer ${token}`;
+  return httpClient.request(config);
+});
+
 type ErrorRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is ErrorRecord {

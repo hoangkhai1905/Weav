@@ -1,5 +1,6 @@
 import type {
   Execution,
+  ExecutionCancelResult,
   ExecutionDetailQuery,
   ExecutionListQuery,
   ExecutionPage,
@@ -9,10 +10,11 @@ import type {
 import {
   RECENT_EXECUTION_PAGE_SIZE,
   RECENT_EXECUTION_WORKFLOW_LIMIT,
+  buildExecutionCancelRequest,
   buildExecutionDetailRequest,
   buildExecutionListRequest,
 } from './execution.http.contract';
-import { mapExecution, mapExecutionPage } from './execution.mapper';
+import { mapExecution, mapExecutionCancel, mapExecutionPage } from './execution.mapper';
 import { requestGateway } from './gateway-request';
 import { buildWorkflowListRequest } from './workflow.http.contract';
 import { mapWorkflowPage } from './workflow.mapper';
@@ -106,5 +108,9 @@ export class HttpExecutionRepository implements ExecutionRepository {
     );
     if (hard) throw hard.reason;
     return null;
+  }
+
+  cancelExecution(workspaceId: string, workflowId: string, executionId: string): Promise<ExecutionCancelResult> {
+    return requestGateway(buildExecutionCancelRequest(workspaceId, workflowId, executionId), mapExecutionCancel);
   }
 }

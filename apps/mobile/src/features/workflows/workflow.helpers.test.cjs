@@ -99,3 +99,14 @@ test('vi and en define the same keys', () => {
   );
   assert.ok(vi.length > 0 && en.length > 0);
 });
+
+test('publish errors: trigger codes from details, other 400s ask for the web builder', () => {
+  const { publishErrorKey } = require('./publish-error.ts');
+  const issue = (message) => ({ status: 400, details: [{ field: 'nodes', message }] });
+  assert.equal(publishErrorKey(issue('TRIGGER_REQUIRED: A published definition requires at least one trigger.')), 'pub.err.TRIGGER_REQUIRED');
+  assert.equal(publishErrorKey(issue('MULTIPLE_MANUAL_TRIGGERS: one manual trigger.')), 'pub.err.MULTIPLE_MANUAL_TRIGGERS');
+  assert.equal(publishErrorKey(issue('INVALID_URL: bad url')), 'pub.err.invalid');
+  assert.equal(publishErrorKey({ status: 400 }), null);
+  assert.equal(publishErrorKey({ status: 403, details: [{ message: 'TRIGGER_REQUIRED: x' }] }), null);
+  assert.equal(publishErrorKey(null), null);
+});

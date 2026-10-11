@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { executionRepository } from '../../../infrastructure/repository-factory';
 import { ACTIVE_EXECUTION_STATUSES } from '../../../domain/execution/execution.types';
 import { useActiveWorkspaceId } from '../../workspace/active-workspace';
@@ -24,5 +24,15 @@ export function useExecutionDetail(workflowId: string, executionId: string, logP
       const status = query.state.data?.status;
       return status && ACTIVE_EXECUTION_STATUSES.includes(status) ? 2000 : false;
     },
+  });
+}
+
+/** Stop a run; refreshes the run so the 2 s poll picks up CANCELLED. */
+export function useCancelExecution(workflowId: string, executionId: string) {
+  const workspaceId = useActiveWorkspaceId();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => executionRepository.cancelExecution(workspaceId ?? '', workflowId, executionId),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['execution', workspaceId, workflowId, executionId] }),
   });
 }

@@ -401,6 +401,32 @@ export function useWorkspace() {
     },
   });
 
+  const deleteWorkspaceMutation = useMutation<
+    void,
+    unknown,
+    { workspaceId: string; name: string },
+    MemberMutationContext
+  >({
+    mutationFn: ({ workspaceId, name }) => workspaceRepository.deleteWorkspace(workspaceId, name),
+    retry: false,
+    onMutate: ({ workspaceId }) => ({
+      userId: useAuthStore.getState().user?.id ?? null,
+      sessionGeneration: useAuthStore.getState().sessionGeneration,
+      workspaceId,
+    }),
+    onSuccess: (_result, _variables, context) => {
+      if (!context || !isCurrentMemberMutationScope(context)) return;
+      removeWorkspaceAfterMembershipLoss(queryClient, context.userId as string, context.workspaceId);
+    },
+    onError: (error, _variables, context) => {
+      if (!context || !isCurrentMemberMutationScope(context)) return;
+      // 404: already deleted (or no access): drop it locally, no error.
+      if ((error as { status?: number } | null)?.status === 404) {
+        removeWorkspaceAfterMembershipLoss(queryClient, context.userId as string, context.workspaceId);
+      }
+    },
+  });
+
   useEffect(() => {
     createWorkspaceMutation.reset();
     renameWorkspaceMutation.reset();
@@ -408,11 +434,13 @@ export function useWorkspace() {
     updateMemberPermissionsMutation.reset();
     removeMemberMutation.reset();
     leaveWorkspaceMutation.reset();
+    deleteWorkspaceMutation.reset();
   }, [
     addMemberMutation.reset,
     createWorkspaceMutation.reset,
     isAuthenticated,
     leaveWorkspaceMutation.reset,
+    deleteWorkspaceMutation.reset,
     removeMemberMutation.reset,
     renameWorkspaceMutation.reset,
     updateMemberPermissionsMutation.reset,
@@ -480,6 +508,7 @@ export function useWorkspace() {
     updateMemberPermissionsMutation,
     removeMemberMutation,
     leaveWorkspaceMutation,
+    deleteWorkspaceMutation,
   };
 }
 
