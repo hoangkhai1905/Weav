@@ -9,6 +9,7 @@ datasource db {
 enum NotificationProvider {
   TELEGRAM
   EXPO_PUSH
+  EMAIL
   @@schema("notification")
 }
 enum NotificationStatus {

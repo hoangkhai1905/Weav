@@ -9,12 +9,35 @@ import type {
   WorkspaceMember,
   WorkspaceMemberListQuery,
   UpdateWorkspaceMemberPermissionsInput,
+  EmailVerificationReceipt,
+  MyInvitationList,
+  OwnerInvitation,
   WorkspaceRepository,
 } from '../../domain/workspace/workspace.types';
 import { useAuthStore } from '../../stores/auth.store';
 import { expirePersistedAuthSession } from '../auth/auth-session.persistence';
 import { httpClient, normalizeApiError } from './http-client';
 import { newIdempotencyKey } from './workflow.http.contract';
+import { requestGateway } from './gateway-request';
+import {
+  buildAcceptInvitationRequest,
+  buildCreateInvitationRequest,
+  buildDeclineInvitationRequest,
+  buildEmailVerificationRequest,
+  buildMyInvitationsRequest,
+  buildOwnerInvitationsRequest,
+  buildResendInvitationRequest,
+  buildRevokeInvitationRequest,
+  buildVerifyEmailRequest,
+} from './invitation.http.contract';
+import {
+  mapAcceptedInvitation,
+  mapEmailVerificationReceipt,
+  mapEmailVerified,
+  mapMyInvitationList,
+  mapOwnerInvitation,
+  mapOwnerInvitationList,
+} from './invitation.mapper';
 import {
   buildMemberListParams,
   buildWorkspaceListParams,
@@ -28,6 +51,7 @@ import {
   buildRemoveMemberRequest,
   buildRenameWorkspaceRequest,
   buildUpdateMemberPermissionsRequest,
+  buildDeleteWorkspaceRequest,
   mapMemberResponse,
   type GatewayMemberView,
   type GatewayPage,
@@ -198,11 +222,60 @@ export class HttpWorkspaceRepository implements WorkspaceRepository {
     );
   }
 
+  async deleteWorkspace(workspaceId: string, name: string, signal?: AbortSignal): Promise<void> {
+    const id = requireWorkspaceId(workspaceId);
+    await requestWorkspace<unknown, void>(buildDeleteWorkspaceRequest(id, name, null, signal), () => undefined);
+  }
+
   async leaveWorkspace(workspaceId: string, signal?: AbortSignal): Promise<void> {
     const id = requireWorkspaceId(workspaceId);
     await requestWorkspace<unknown, void>(
       buildLeaveWorkspaceRequest(id, null, signal),
       () => undefined,
     );
+  }
+
+  createInvitation(
+    workspaceId: string,
+    input: AddWorkspaceMemberInput,
+    signal?: AbortSignal,
+  ): Promise<OwnerInvitation> {
+    return requestGateway(buildCreateInvitationRequest(workspaceId, input.email, signal), mapOwnerInvitation);
+  }
+
+  listInvitations(workspaceId: string, signal?: AbortSignal): Promise<OwnerInvitation[]> {
+    return requestGateway(buildOwnerInvitationsRequest(workspaceId, signal), mapOwnerInvitationList);
+  }
+
+  async revokeInvitation(workspaceId: string, invitationId: string, signal?: AbortSignal): Promise<void> {
+    await requestGateway(buildRevokeInvitationRequest(workspaceId, invitationId, signal), () => undefined);
+  }
+
+  resendInvitation(
+    workspaceId: string,
+    invitationId: string,
+    signal?: AbortSignal,
+  ): Promise<OwnerInvitation> {
+    return requestGateway(buildResendInvitationRequest(workspaceId, invitationId, signal), mapOwnerInvitation);
+  }
+
+  listMyInvitations(signal?: AbortSignal): Promise<MyInvitationList> {
+    return requestGateway(buildMyInvitationsRequest(signal), mapMyInvitationList);
+  }
+
+  acceptInvitation(invitationId: string, signal?: AbortSignal): Promise<{ workspaceId: string }> {
+    return requestGateway(buildAcceptInvitationRequest(invitationId, signal), mapAcceptedInvitation);
+  }
+
+  async declineInvitation(invitationId: string, signal?: AbortSignal): Promise<void> {
+    await requestGateway(buildDeclineInvitationRequest(invitationId, signal), () => undefined);
+  }
+
+  requestEmailVerification(signal?: AbortSignal): Promise<EmailVerificationReceipt> {
+    return requestGateway(buildEmailVerificationRequest(signal), mapEmailVerificationReceipt);
+  }
+
+  async verifyEmail(challengeId: string, code: string, signal?: AbortSignal): Promise<void> {
+    await requestGateway(buildVerifyEmailRequest(challengeId, code, signal), mapEmailVerified);
   }
 }

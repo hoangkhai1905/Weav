@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-export const providerSchema = z.enum(['TELEGRAM', 'EXPO_PUSH']);
+export const providerSchema = z.enum(['TELEGRAM', 'EXPO_PUSH', 'EMAIL']);
+// v1 execution events can only target these; EMAIL rows come from the v2 invitation event.
+export const executionRecipientProviderSchema = z.enum([
+  'TELEGRAM',
+  'EXPO_PUSH',
+]);
 export const statusSchema = z.enum(['PENDING', 'SENDING', 'SENT', 'FAILED']);
 export const eventTypeSchema = z.enum([
   'workflow.completed',
@@ -32,7 +37,7 @@ export const executionEventSchema = z
       recipients: z
         .array(
           z.object({
-            provider: providerSchema,
+            provider: executionRecipientProviderSchema,
             destination: z.string().trim().min(1).max(512),
           }),
         )

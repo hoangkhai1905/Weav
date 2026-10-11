@@ -52,6 +52,32 @@ export interface UpdateWorkspaceMemberPermissionsInput {
   canManageWorkflowState: boolean;
 }
 
+export type InvitationStatus = 'PENDING' | 'EXPIRED' | 'ACCEPTED' | 'DECLINED' | 'REVOKED';
+
+export interface OwnerInvitation {
+  id: string;
+  workspaceId: string;
+  email: string;
+  status: InvitationStatus;
+  invitedBy: string;
+  createdAt: string;
+  expiresAt: string;
+  lastSentAt: string;
+}
+
+export interface MyInvitation {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  invitedByName: string;
+  expiresAt: string;
+}
+
+export interface MyInvitationList {
+  items: MyInvitation[];
+  emailVerified: boolean;
+}
+
 export interface WorkspacePage {
   items: WorkspaceSummary[];
   page: number;
@@ -303,6 +329,10 @@ function withPageDefaults(query: WorkspaceListQuery | WorkspaceMemberQuery) {
   };
 }
 
+function mockInvitationsUnavailable() {
+  return new WorkspaceApiError(503, 'WORKSPACE_UNAVAILABLE', tr('workspace.error.unavailable'));
+}
+
 export const workspaceApi = {
   async listWorkspaces(query: WorkspaceListQuery = {}, signal?: AbortSignal): Promise<WorkspacePage> {
     if (!isWorkspaceMockMode) {
@@ -526,5 +556,71 @@ export const workspaceApi = {
       throw new WorkspaceApiError(400, 'INVALID_REQUEST', tr('msg.please_check_the_workspace_details_and_try'));
     }
     mockWorkspaces = mockWorkspaces.filter((item) => item.id !== workspaceId);
+  },
+
+  // Invite by email. Mock mode has no invitation store: lists are empty, writes refuse.
+  async createInvitation(workspaceId: string, input: AddWorkspaceMemberInput): Promise<OwnerInvitation> {
+    if (isWorkspaceMockMode) throw mockInvitationsUnavailable();
+    return requestWorkspace<OwnerInvitation>({
+      method: 'POST',
+      url: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/invitations`,
+      data: { email: input.email.trim() },
+    });
+  },
+
+  async listInvitations(workspaceId: string, signal?: AbortSignal): Promise<OwnerInvitation[]> {
+    if (isWorkspaceMockMode) return [];
+    const result = await requestWorkspace<{ items?: OwnerInvitation[] }>({
+      method: 'GET',
+      url: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/invitations`,
+      signal,
+    });
+    return Array.isArray(result?.items) ? result.items : [];
+  },
+
+  async revokeInvitation(workspaceId: string, invitationId: string): Promise<void> {
+    if (isWorkspaceMockMode) throw mockInvitationsUnavailable();
+    await requestWorkspace<void>({
+      method: 'DELETE',
+      url: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/invitations/${encodeURIComponent(invitationId)}`,
+    });
+  },
+
+  async resendInvitation(workspaceId: string, invitationId: string): Promise<OwnerInvitation> {
+    if (isWorkspaceMockMode) throw mockInvitationsUnavailable();
+    return requestWorkspace<OwnerInvitation>({
+      method: 'POST',
+      url: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/invitations/${encodeURIComponent(invitationId)}/resend`,
+    });
+  },
+
+  async listMyInvitations(signal?: AbortSignal): Promise<MyInvitationList> {
+    if (isWorkspaceMockMode) return { items: [], emailVerified: true };
+    const result = await requestWorkspace<Partial<MyInvitationList>>({
+      method: 'GET',
+      url: '/api/v1/invitations',
+      signal,
+    });
+    return { items: Array.isArray(result?.items) ? result.items : [], emailVerified: result?.emailVerified !== false };
+  },
+
+  async acceptInvitation(invitationId: string): Promise<{ workspaceId: string }> {
+    if (isWorkspaceMockMode) throw mockInvitationsUnavailable();
+    const result = await requestWorkspace<{ workspaceId?: unknown }>({
+      method: 'POST',
+      url: `/api/v1/invitations/${encodeURIComponent(invitationId)}/accept`,
+    });
+    if (!isRecord(result) || typeof result.workspaceId !== 'string') {
+      throw new WorkspaceApiError(502, 'INVALID_RESPONSE', tr('msg.workspace_service_returned_an_invalid_workspace'));
+    }
+    return { workspaceId: result.workspaceId };
+  },
+
+  async declineInvitation(invitationId: string): Promise<void> {
+    if (isWorkspaceMockMode) throw mockInvitationsUnavailable();
+    await requestWorkspace<void>({
+      method: 'POST',
+      url: `/api/v1/invitations/${encodeURIComponent(invitationId)}/decline`,
+    });
   },
 };

@@ -2,8 +2,11 @@ import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { RefreshCw, TriangleAlert } from 'lucide-react-native';
-import { useExecutionDetail } from '../../../../features/executions/hooks/useExecutionDetail';
+import { RefreshCw, Square, TriangleAlert } from 'lucide-react-native';
+import { useCancelExecution, useExecutionDetail } from '../../../../features/executions/hooks/useExecutionDetail';
+import { friendlyErrorMessage } from '../../../../features/common/friendly-error';
+import { useUIStore } from '../../../../stores/ui.store';
+import { ConfirmSheet } from '../../../../components/ui/ConfirmSheet';
 import { useWorkflowDetail } from '../../../../features/workflows/hooks/useWorkflowDetail';
 import { useRunWorkflow } from '../../../../features/workflows/hooks/useRunWorkflow';
 import { completeWorkflowRunInCurrentSession } from '../../../../features/workflows/run-workflow.session';
@@ -11,6 +14,7 @@ import { useNodeLabel } from '../../../../features/workflows/components/FlowList
 import { orderFlowNodes } from '../../../../features/workflows/workflow-flow';
 import { fill } from '../../../../features/common/fill';
 import { logEventKey } from '../../../../features/executions/execution-log.copy';
+import { nodeErrorSummary } from '../../../../features/executions/node-error';
 import { durationBetween, formatClock, formatDateTime } from '../../../../features/common/time';
 import { Button } from '../../../../components/ui/Button';
 import { Group, SectionLabel } from '../../../../components/ui/Section';
@@ -44,6 +48,12 @@ export default function ExecutionDetailScreen() {
   // Node labels live in the workflow definition/editor state, not in the execution.
   const workflowQuery = useWorkflowDetail(workflowId);
   const runMutation = useRunWorkflow();
+  const cancelMutation = useCancelExecution(workflowId, executionId);
+  const showToast = useUIStore((s) => s.showToast);
+  const [confirmStop, setConfirmStop] = useState(false);
+  // The API does not report a pending stop, so "Stopping..." lives here until the poll sees the end.
+  const [stopRequested, setStopRequested] = useState(false);
+  const [stopDenied, setStopDenied] = useState(false);
   const workflow = workflowQuery.data;
   const execution = query.data;
 
@@ -70,6 +80,7 @@ export default function ExecutionDetailScreen() {
         attemptCount: n.attemptCount,
         output: n.output,
         error: n.error,
+        errorSummary: nodeErrorSummary(n.error, t),
         attempts: n.attempts.map((a) => ({
           id: a.attemptId,
           number: a.attemptNumber,
@@ -81,7 +92,22 @@ export default function ExecutionDetailScreen() {
       }));
     // labelForNode closes over labelOf/nodeInfo, which change with language and workflow.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [execution, nodeInfo, labelOf]);
+  }, [execution, nodeInfo, labelOf, t]);
+
+  const handleStop = async () => {
+    try {
+      const result = await cancelMutation.mutateAsync();
+      if (result === 'CANCEL_REQUESTED') setStopRequested(true);
+    } catch (error) {
+      const status = (error as { status?: number } | null)?.status;
+      if (status === 403) setStopDenied(true);
+      const message =
+        status === 409 ? t('exd.stop.finished') : status === 404 ? t('ui.error.NOT_FOUND') : friendlyErrorMessage(error);
+      showToast({ type: 'error', title: t('exd.stop.failTitle'), message });
+    } finally {
+      setConfirmStop(false);
+    }
+  };
 
   const handleBack = () => {
     if (router.canGoBack()) router.back();
@@ -179,6 +205,19 @@ export default function ExecutionDetailScreen() {
           </View>
         ) : null}
 
+        {active && !stopDenied ? (
+          <View style={styles.rerun}>
+            <Button
+              variant="danger"
+              label={stopRequested ? t('exd.stop.pending') : t('exd.stop')}
+              disabled={stopRequested}
+              busy={cancelMutation.isPending}
+              icon={cancelMutation.isPending || stopRequested ? undefined : <Square size={16} color={colors.danger} />}
+              onPress={() => setConfirmStop(true)}
+            />
+          </View>
+        ) : null}
+
         {workflow?.status === 'PUBLISHED' ? (
           <View style={styles.rerun}>
             <Button
@@ -231,6 +270,16 @@ export default function ExecutionDetailScreen() {
     <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={t('exd.title')} onBack={handleBack} />
       {body}
+      <ConfirmSheet
+        visible={confirmStop}
+        title={t('exd.stop.confirmTitle')}
+        message={t('exd.stop.confirmBody')}
+        confirmLabel={t('exd.stop')}
+        destructive
+        busy={cancelMutation.isPending}
+        onConfirm={() => void handleStop()}
+        onClose={() => setConfirmStop(false)}
+      />
     </SafeAreaView>
   );
 }

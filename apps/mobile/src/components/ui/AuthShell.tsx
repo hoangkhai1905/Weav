@@ -1,5 +1,5 @@
 import React from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { Logo } from '../common/Logo';
 import { Spacing, Typography } from '../../constants/theme';
@@ -15,7 +15,7 @@ export const AuthShell: React.FC<AuthShellProps> = ({ title, subtitle, children 
   const colors = useThemeColors();
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
       style={[styles.root, { backgroundColor: colors.bg }]}
     >
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">

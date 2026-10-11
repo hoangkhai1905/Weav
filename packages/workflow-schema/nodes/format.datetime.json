@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/format.datetime",
+  "title": "Format date and time",
+  "description": "Gets the current time, adds or subtracts time, converts the time zone or formats a date-time as text. Runs inside Weav and calls nothing outside.",
+  "x-weav-node": {
+    "type": "format.datetime",
+    "category": "logic",
+    "label": "Format date and time",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "operation": {
+      "title": "Operation",
+      "description": "now, add, subtract, format or convert.",
+      "type": "string",
+      "x-weav-template": true,
+      "minLength": 1,
+      "enum": [
+        "now",
+        "add",
+        "subtract",
+        "format",
+        "convert"
+      ]
+    },
+    "value": {
+      "title": "Date and time",
+      "description": "ISO-8601 date-time (2026-10-05T09:00:00+07:00) or date (2026-10-05), or epoch milliseconds. Required except for now.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "amount": {
+      "title": "Amount",
+      "description": "add and subtract: whole number from -100000 to 100000.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": -100000,
+          "maximum": 100000
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "unit": {
+      "title": "Unit",
+      "description": "add and subtract: minutes, hours, days, weeks, months or years.",
+      "type": "string",
+      "x-weav-template": true,
+      "enum": [
+        "minutes",
+        "hours",
+        "days",
+        "weeks",
+        "months",
+        "years"
+      ]
+    },
+    "pattern": {
+      "title": "Pattern",
+      "description": "format: Java DateTimeFormatter pattern such as dd/MM/yyyy HH:mm, at most 64 characters.",
+      "type": "string",
+      "x-weav-template": true,
+      "maxLength": 64
+    },
+    "timezone": {
+      "title": "Time zone",
+      "description": "IANA time zone name such as Asia/Ho_Chi_Minh. When empty, a value that carries an offset keeps it; a date, a date-time without offset or epoch milliseconds use UTC.",
+      "type": "string",
+      "x-weav-template": true
+    },
+    "locale": {
+      "title": "Language",
+      "description": "vi (default) or en, for month and day names.",
+      "type": "string",
+      "x-weav-template": true,
+      "enum": [
+        "vi",
+        "en"
+      ]
+    }
+  },
+  "required": [
+    "operation"
+  ],
+  "additionalProperties": false
+}

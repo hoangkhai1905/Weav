@@ -4,7 +4,10 @@ export type ConnectionProvider =
   | 'GOOGLE_CALENDAR'
   | 'GOOGLE_DRIVE'
   | 'TELEGRAM'
-  | 'HTTP';
+  | 'HTTP'
+  | 'DISCORD'
+  | 'SLACK'
+  | 'TEAMS';
 export type ConnectionAuthType = 'NONE' | 'TOKEN' | 'API_KEY' | 'BASIC' | 'OAUTH2';
 export type ConnectionStatus = 'ACTIVE' | 'INVALID' | 'DISABLED';
 export type ConnectionTestOutcome = 'VERIFIED' | 'AUTH_INVALID' | 'DEPENDENCY_FAILURE';

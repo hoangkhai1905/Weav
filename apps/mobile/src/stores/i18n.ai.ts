@@ -6,6 +6,9 @@ export const aiVi: Record<string, string> = {
   'provider.GOOGLE_DRIVE': 'Google Drive',
   'provider.TELEGRAM': 'Telegram',
   'provider.HTTP': 'Kết nối web (HTTP)',
+  'provider.DISCORD': 'Discord',
+  'provider.SLACK': 'Slack',
+  'provider.TEAMS': 'Microsoft Teams',
 
   'dash.greeting': 'Xin chào, {name}',
   'dash.greetingAnon': 'Xin chào',
@@ -200,6 +203,9 @@ export const aiEn: Record<string, string> = {
   'provider.GOOGLE_DRIVE': 'Google Drive',
   'provider.TELEGRAM': 'Telegram',
   'provider.HTTP': 'Web connection (HTTP)',
+  'provider.DISCORD': 'Discord',
+  'provider.SLACK': 'Slack',
+  'provider.TEAMS': 'Microsoft Teams',
 
   'dash.greeting': 'Hello, {name}',
   'dash.greetingAnon': 'Hello',

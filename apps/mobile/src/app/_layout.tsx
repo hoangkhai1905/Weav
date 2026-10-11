@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { AppState, Platform } from 'react-native';
 import { Stack } from 'expo-router';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ToastContainer } from '../components/ui/ToastContainer';
@@ -33,6 +34,13 @@ function WorkspaceRuntimeBoundary() {
 
 export default function RootLayout() {
   const colors = useThemeColors();
+  // React Query cannot see app focus on native: without this, refetchInterval polls (runs every 2 s,
+  // notifications) keep going while the app is in the background. The web build uses tab visibility.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const subscription = AppState.addEventListener('change', (state) => focusManager.setFocused(state === 'active'));
+    return () => subscription.remove();
+  }, []);
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>

@@ -1,6 +1,7 @@
 import type { AuthRepository } from '../domain/auth/auth.types';
 import type { AccountRepository } from '../domain/auth/account.types';
 import type { WorkflowRepository } from '../domain/workflow/workflow.types';
+import type { TemplateRepository } from '../domain/template/template.types';
 import type { ExecutionRepository } from '../domain/execution/execution.types';
 import type { WorkspaceRepository } from '../domain/workspace/workspace.types';
 import type { ConnectionRepository } from '../domain/connection/connection.types';
@@ -12,6 +13,7 @@ import { MockAuthRepository } from './mock/mock-auth.repository';
 import { HttpAuthRepository } from './http/http-auth.repository';
 
 import { HttpWorkflowRepository } from './http/http-workflow.repository';
+import { HttpTemplateRepository } from './http/http-template.repository';
 import { HttpExecutionRepository } from './http/http-execution.repository';
 import { HttpConnectionRepository } from './http/http-connection.repository';
 import { HttpAiRepository } from './http/http-ai.repository';
@@ -39,9 +41,10 @@ export const notificationRepository: NotificationRepository = isMockMode
   ? new MockNotificationRepository()
   : new HttpNotificationRepository();
 
-// Workflow, execution, connection, AI and assistant always use the real gateway (no mock
+// Workflow, template, execution, connection, AI and assistant always use the real gateway (no mock
 // layer): EXPO_PUBLIC_API_MODE=mock only fakes auth, workspace and notifications.
 export const workflowRepository: WorkflowRepository = new HttpWorkflowRepository();
+export const templateRepository: TemplateRepository = new HttpTemplateRepository();
 export const executionRepository: ExecutionRepository = new HttpExecutionRepository();
 export const connectionRepository: ConnectionRepository = new HttpConnectionRepository();
 export const aiRepository: AIRepository = new HttpAiRepository();

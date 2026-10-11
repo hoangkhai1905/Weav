@@ -1,8 +1,11 @@
 import { create } from 'zustand';
 import { aiEn, aiVi } from './i18n.ai';
 import { authEn, authVi } from './i18n.auth';
+import { runsEn, runsVi } from './i18n.runs';
 import { accountEn, accountVi } from './i18n.account';
 import { workflowsEn, workflowsVi } from './i18n.workflows';
+import { templatesEn, templatesVi } from './i18n.templates';
+import { invitationsEn, invitationsVi } from './i18n.invitations';
 
 export type Language = 'VI' | 'EN';
 
@@ -145,7 +148,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'status.WAITING': 'Đang chờ',
     'status.SUCCESS': 'Thành công',
     'status.FAILED': 'Thất bại',
-    'status.CANCELLED': 'Đã hủy',
+    'status.CANCELLED': 'Đã dừng',
     'status.SKIPPED': 'Đã bỏ qua',
     'status.PENDING': 'Chưa tới lượt',
     'status.READY': 'Sẵn sàng',
@@ -198,8 +201,11 @@ export const translations: Record<Language, Record<string, string>> = {
     'ui.json.showLess': 'Thu bớt',
     'ui.json.empty': 'Không có dữ liệu',
     ...workflowsVi,
+    ...templatesVi,
+    ...invitationsVi,
     ...aiVi,
     ...authVi,
+    ...runsVi,
     ...accountVi,
   },
   EN: {
@@ -340,7 +346,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'status.WAITING': 'Waiting',
     'status.SUCCESS': 'Succeeded',
     'status.FAILED': 'Failed',
-    'status.CANCELLED': 'Cancelled',
+    'status.CANCELLED': 'Stopped',
     'status.SKIPPED': 'Skipped',
     'status.PENDING': 'Not started',
     'status.READY': 'Ready',
@@ -393,8 +399,11 @@ export const translations: Record<Language, Record<string, string>> = {
     'ui.json.showLess': 'Show less',
     'ui.json.empty': 'No data',
     ...workflowsEn,
+    ...templatesEn,
+    ...invitationsEn,
     ...aiEn,
     ...authEn,
+    ...runsEn,
     ...accountEn,
   },
 };

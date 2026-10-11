@@ -50,7 +50,7 @@ public final class WorkspaceClient implements WorkspaceAccessPort, WorkspaceConn
     private static final int MAX_RESPONSE_BYTES = 16 * 1024;
 
     private static final Set<String> PROVIDERS = Set.of("TELEGRAM", "HTTP", "GMAIL", "GOOGLE_SHEETS",
-            "GOOGLE_CALENDAR", "GOOGLE_DRIVE", "DISCORD");
+            "GOOGLE_CALENDAR", "GOOGLE_DRIVE", "DISCORD", "SLACK", "TEAMS");
     private static final Map<String, Set<String>> AUTH_FIELDS = Map.of(
             "OAUTH2", Set.of("accessToken"),
             "TOKEN", Set.of("token"),

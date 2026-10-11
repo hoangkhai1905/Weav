@@ -45,6 +45,18 @@ export function parseGoogleCallback(url: string): GoogleCallback {
   return { kind: 'unavailable' };
 }
 
+const CALLBACK_PATH = /^(?:[a-z][a-z0-9+.-]*:\/\/|\/)?auth\/callback(?:[?#]|$)/i;
+
+/**
+ * Expo Router also receives the OAuth return deep link, but `openAuthSessionAsync` owns it, so the
+ * router must not navigate (there is no `auth/callback` screen). On a cold start the pending
+ * sign-in is gone, so the app opens at the root instead.
+ */
+export function routeForSystemPath(path: string, initial: boolean): string | null {
+  if (!CALLBACK_PATH.test(path)) return path;
+  return initial ? '/' : null;
+}
+
 /** i18n key for a failed exchange (handoff section A.4). Branches on HTTP status first, then code. */
 export function googleErrorKey(error: unknown): string {
   const { status, code } = (error ?? {}) as { status?: number; code?: string };

@@ -25,6 +25,8 @@ export interface NodeTimelineItem {
   attempts?: NodeTimelineAttempt[];
   output?: unknown;
   error?: unknown;
+  /** Readable one-line error (field label + friendly text), shown without expanding. */
+  errorSummary?: string | null;
 }
 
 const hasValue = (v: unknown) => v !== null && v !== undefined;
@@ -55,6 +57,9 @@ const Row: React.FC<{ item: NodeTimelineItem; last: boolean }> = ({ item, last }
             {t('ui.timeline.attempts')}: {item.attemptCount}
           </Text>
         </View>
+        {item.errorSummary ? (
+          <Text style={[Typography.caption, { color: colors.danger }]}>{item.errorSummary}</Text>
+        ) : null}
         {canExpand ? (
           <Pressable
             accessibilityRole="button"
@@ -116,7 +121,8 @@ const styles = StyleSheet.create({
   body: { flex: 1, gap: Spacing.one, paddingBottom: Spacing.three },
   label: { fontWeight: '600' },
   meta: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two },
-  toggle: { minHeight: MinTouch, justifyContent: 'center', alignSelf: 'flex-start' },
+  // Full width: a shrink-wrapped bold label is measured too narrow on some Android fonts and loses its last word.
+  toggle: { minHeight: MinTouch, justifyContent: 'center' },
   details: { gap: Spacing.two },
   attempt: { borderWidth: 1, borderRadius: Radius.sm, padding: Spacing.two, gap: Spacing.two },
 });

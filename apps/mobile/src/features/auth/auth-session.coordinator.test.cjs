@@ -262,3 +262,24 @@ test('secure storage write failure never reports a successful session', async ()
   assert.equal(h.state.authError, 'SESSION_STORAGE_UNAVAILABLE');
   assert.equal(h.storage.clears, 1);
 });
+
+test('an in-session refresh keeps the user signed in on a passing failure and signs out on a rejected token', async () => {
+  const flaky = harness({ storedRefreshToken: token('kept') });
+  flaky.store.setAuthSession(session('user-a', token('kept')).user, session('user-a', token('kept')).tokens);
+  flaky.repository.restoreSession = async () => {
+    throw { code: 'AUTH_ERROR', status: 502 };
+  };
+  await assert.rejects(flaky.coordinator.refresh());
+  assert.equal(flaky.state.isAuthenticated, true);
+  assert.equal(flaky.state.tokens.refreshToken, token('kept'));
+  assert.equal(flaky.storage.clears, 0);
+
+  const dead = harness({ storedRefreshToken: token('dead') });
+  dead.store.setAuthSession(session('user-a', token('dead')).user, session('user-a', token('dead')).tokens);
+  dead.repository.restoreSession = async () => {
+    throw { code: 'UNAUTHORIZED', status: 401 };
+  };
+  await assert.rejects(dead.coordinator.refresh());
+  assert.equal(dead.state.isAuthenticated, false);
+  assert.equal(dead.storage.clears, 1);
+});

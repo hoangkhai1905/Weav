@@ -137,6 +137,18 @@ const eventCases: EventCase[] = [
     data: { workspaceName: 'Đội vận hành' },
   },
   {
+    eventType: 'workspace.invitation.created',
+    producer: 'workspace-service',
+    entityKind: 'WORKSPACE',
+    workspaceRequired: true,
+    data: {
+      workspaceName: 'Đội vận hành',
+      inviterName: 'Nguyễn An',
+      inviteeEmail: 'new.member@example.com',
+      expiresAt: '2026-10-17T04:00:00Z',
+    },
+  },
+  {
     eventType: 'connection.connected',
     producer: 'workspace-service',
     entityKind: 'CONNECTION',
@@ -205,9 +217,11 @@ function eventOf(eventType: string, overrides: Record<string, unknown> = {}) {
   const recipientUserId =
     eventType === 'workspace.member_left'
       ? ids.recipient
-      : typeof subjectUserId === 'string'
-        ? subjectUserId
-        : ids.recipient;
+      : eventType === 'workspace.invitation.created'
+        ? ids.actor
+        : typeof subjectUserId === 'string'
+          ? subjectUserId
+          : ids.recipient;
 
   return {
     schemaVersion: 2,
@@ -243,10 +257,58 @@ describe('notification event v2 schema', () => {
     expect(() => require('./notification-event')).not.toThrow();
   });
 
-  it('accepts all 22 allowlisted event envelopes, including delayed delivery timestamps', () => {
+  it('accepts all 23 allowlisted event envelopes, including delayed delivery timestamps', () => {
     for (const spec of eventCases) {
       expect(schema().safeParse(eventOf(spec.eventType)).success).toBe(true);
     }
+  });
+
+  it('requires invitation events to target exactly the inviter and validates the example file', () => {
+    rejects(
+      eventOf('workspace.invitation.created', {
+        recipientUserIds: [ids.recipient],
+      }),
+    );
+    rejects(eventOf('workspace.invitation.created', { actorUserId: null }));
+    rejects(
+      eventOf('workspace.invitation.created', {
+        data: {
+          ...eventCases.find(
+            (c) => c.eventType === 'workspace.invitation.created',
+          )!.data,
+          extra: 'x',
+        },
+      }),
+    );
+    const example = JSON.parse(
+      readFileSync(
+        resolve(
+          __dirname,
+          '../../../../packages/contracts/events/notification/examples/workspace.invitation.created.json',
+        ),
+        'utf8',
+      ),
+    );
+    expect(schema().safeParse(example).success).toBe(true);
+  });
+
+  it.each([
+    'a,b@example.com',
+    'a;b@example.com',
+    '"a"@example.com',
+    '<a@example.com>',
+    'a b@example.com',
+    'a@example.com,b@example.com',
+    `${'a'.repeat(65)}@example.com`,
+  ])('rejects invitee address %s', (inviteeEmail) => {
+    const base = eventCases.find(
+      (c) => c.eventType === 'workspace.invitation.created',
+    )!;
+    rejects(
+      eventOf('workspace.invitation.created', {
+        data: { ...base.data, inviteeEmail },
+      }),
+    );
   });
 
   it('accepts timezone offsets and identity recovery events without an actor', () => {
@@ -533,7 +595,7 @@ describe('notification event v2 schema', () => {
     );
   });
 
-  it('matches the JSON Schema draft and all 22 event branches to the Zod fixture matrix', () => {
+  it('matches the JSON Schema draft and all 23 event branches to the Zod fixture matrix', () => {
     const schemaDocument = JSON.parse(
       readFileSync(
         resolve(
@@ -587,7 +649,7 @@ describe('notification event v2 schema', () => {
     const branches = schemaDocument.allOf.find((entry: any) =>
       Array.isArray(entry.oneOf),
     )?.oneOf as any[];
-    expect(branches).toHaveLength(22);
+    expect(branches).toHaveLength(23);
     for (const spec of eventCases) {
       const branch = branches.find(
         (candidate) => candidate.properties.eventType.const === spec.eventType,

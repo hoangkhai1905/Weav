@@ -33,6 +33,8 @@ import com.weav.workspace.infrastructure.provider.http.HttpConnectionProvider;
 import com.weav.workspace.infrastructure.provider.http.HttpTargetValidator;
 import com.weav.workspace.infrastructure.provider.http.PinnedHttpTransport;
 import com.weav.workspace.infrastructure.provider.discord.DiscordConnectionProvider;
+import com.weav.workspace.infrastructure.provider.slack.SlackConnectionProvider;
+import com.weav.workspace.infrastructure.provider.teams.TeamsConnectionProvider;
 import com.weav.workspace.infrastructure.provider.telegram.TelegramConnectionProvider;
 import com.weav.workspace.infrastructure.workflow.WorkflowConnectionUsageClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -308,9 +310,21 @@ public class WorkspaceApplicationConfig {
     }
 
     @Bean
+    public SlackConnectionProvider slackConnectionProvider() {
+        return new SlackConnectionProvider();
+    }
+
+    @Bean
+    public TeamsConnectionProvider teamsConnectionProvider() {
+        return new TeamsConnectionProvider();
+    }
+
+    @Bean
     public ConnectionProviderRegistry connectionProviderRegistry(
             TelegramConnectionProvider telegramConnectionProvider,
             DiscordConnectionProvider discordConnectionProvider,
+            SlackConnectionProvider slackConnectionProvider,
+            TeamsConnectionProvider teamsConnectionProvider,
             HttpConnectionProvider httpConnectionProvider,
             @Qualifier("gmailConnectionProvider") GoogleConnectionProvider gmailConnectionProvider,
             @Qualifier("googleSheetsConnectionProvider") GoogleConnectionProvider googleSheetsConnectionProvider,
@@ -319,6 +333,8 @@ public class WorkspaceApplicationConfig {
         return new ConnectionProviderRegistry(
                 telegramConnectionProvider,
                 discordConnectionProvider,
+                slackConnectionProvider,
+                teamsConnectionProvider,
                 httpConnectionProvider,
                 gmailConnectionProvider,
                 googleSheetsConnectionProvider,

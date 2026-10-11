@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
@@ -121,131 +121,133 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={t('tab.profile')} />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Group padded>
-          <View style={styles.identity}>
-            <Avatar name={shown?.name || shown?.email || '?'} size={64} uri={avatar.data} />
-            <View style={styles.identityText}>
-              <Text style={[Typography.title, { color: colors.text }]} numberOfLines={2}>
-                {shown?.name || t('prof.noName')}
-              </Text>
-              <Text selectable style={[Typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
-                {shown?.email ?? '-'}
-              </Text>
+      <KeyboardAvoidingView behavior="padding" style={styles.safe}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Group padded>
+            <View style={styles.identity}>
+              <Avatar name={shown?.name || shown?.email || '?'} size={64} uri={avatar.data} />
+              <View style={styles.identityText}>
+                <Text style={[Typography.title, { color: colors.text }]} numberOfLines={2}>
+                  {shown?.name || t('prof.noName')}
+                </Text>
+                <Text selectable style={[Typography.caption, { color: colors.textMuted }]} numberOfLines={1}>
+                  {shown?.email ?? '-'}
+                </Text>
+              </View>
             </View>
-          </View>
-          <Button
-            variant="secondary"
-            label={t(shown?.avatarPresent ? 'prof.avatar.change' : 'prof.avatar.choose')}
-            busy={uploadAvatar.isPending}
-            disabled={deleteAvatar.isPending}
-            onPress={() => void handlePickAvatar()}
-          />
-          {shown?.avatarPresent ? (
             <Button
               variant="secondary"
-              label={t('prof.avatar.delete')}
-              busy={deleteAvatar.isPending}
-              disabled={uploadAvatar.isPending}
-              onPress={() => setConfirm('avatar')}
+              label={t(shown?.avatarPresent ? 'prof.avatar.change' : 'prof.avatar.choose')}
+              busy={uploadAvatar.isPending}
+              disabled={deleteAvatar.isPending}
+              onPress={() => void handlePickAvatar()}
             />
-          ) : null}
-        </Group>
+            {shown?.avatarPresent ? (
+              <Button
+                variant="secondary"
+                label={t('prof.avatar.delete')}
+                busy={deleteAvatar.isPending}
+                disabled={uploadAvatar.isPending}
+                onPress={() => setConfirm('avatar')}
+              />
+            ) : null}
+          </Group>
 
-        <SectionLabel title={t('prof.info')} />
-        <Group padded>
-          {loadError ? (
-            <View style={styles.inline}>
-              <Text accessibilityRole="alert" style={[Typography.caption, styles.grow, { color: colors.danger }]}>
-                {t('prof.loadFailed')}
-              </Text>
-              <Button variant="secondary" label={t('ui.retry')} onPress={() => void retryLoad()} />
+          <SectionLabel title={t('prof.info')} />
+          <Group padded>
+            {loadError ? (
+              <View style={styles.inline}>
+                <Text accessibilityRole="alert" style={[Typography.caption, styles.grow, { color: colors.danger }]}>
+                  {t('prof.loadFailed')}
+                </Text>
+                <Button variant="secondary" label={t('ui.retry')} onPress={() => void retryLoad()} />
+              </View>
+            ) : null}
+            <TextField
+              testID="profile-display-name"
+              label={t('prof.name.label')}
+              value={displayName}
+              onChangeText={setDisplayName}
+              maxLength={120}
+              autoCapitalize="words"
+              editable={!isSaving}
+              error={localizeValidation(validationError) ?? (submitError ? t('prof.saveFailed') : null)}
+            />
+            <TextField label={t('prof.email.label')} value={shown?.email ?? ''} editable={false} hint={t('prof.email.hint')} />
+            <Button
+              label={t('prof.save')}
+              busy={isSaving}
+              disabled={!nameChanged}
+              onPress={() => void handleSave()}
+            />
+          </Group>
+
+          <SectionLabel title={t('prof.section.work')} />
+          <Group>
+            <ListItem
+              leading={<Building2 size={20} color={colors.textMuted} />}
+              title={activeWorkspace?.name ?? t('prof.ws.none')}
+              subtitle={t('prof.ws.sub')}
+              trailing={<ChevronRight size={18} color={colors.textSubtle} />}
+              onPress={() => router.push('/(app)/workspace')}
+            />
+            <ListItem
+              leading={<PlugZap size={20} color={colors.textMuted} />}
+              title={t('prof.conn')}
+              subtitle={t('prof.conn.sub')}
+              trailing={<ChevronRight size={18} color={colors.textSubtle} />}
+              onPress={() => router.push('/(app)/connections')}
+            />
+            <ListItem
+              leading={<Plus size={20} color={colors.textMuted} />}
+              title={t('prof.ai')}
+              subtitle={t('prof.ai.sub')}
+              trailing={<ChevronRight size={18} color={colors.textSubtle} />}
+              onPress={() => router.push('/(app)/ai/generator')}
+            />
+            <ListItem
+              leading={<MessageSquare size={20} color={colors.textMuted} />}
+              title={t('prof.assistant')}
+              subtitle={t('prof.assistant.sub')}
+              trailing={<ChevronRight size={18} color={colors.textSubtle} />}
+              onPress={() => router.push('/(app)/assistant')}
+            />
+          </Group>
+
+          <SectionLabel title={t('prof.section.look')} />
+          <Group padded>
+            <Text style={[Typography.label, { color: colors.text }]}>{t('prof.theme.label')}</Text>
+            <View style={styles.chips}>
+              <FilterChips options={themeOptions} value={themeMode} onChange={setThemeMode} accessibilityLabel={t('prof.theme.label')} />
             </View>
-          ) : null}
-          <TextField
-            testID="profile-display-name"
-            label={t('prof.name.label')}
-            value={displayName}
-            onChangeText={setDisplayName}
-            maxLength={120}
-            autoCapitalize="words"
-            editable={!isSaving}
-            error={localizeValidation(validationError) ?? (submitError ? t('prof.saveFailed') : null)}
-          />
-          <TextField label={t('prof.email.label')} value={shown?.email ?? ''} editable={false} hint={t('prof.email.hint')} />
-          <Button
-            label={t('prof.save')}
-            busy={isSaving}
-            disabled={!nameChanged}
-            onPress={() => void handleSave()}
-          />
-        </Group>
+            <Text style={[Typography.label, { color: colors.text }]}>{t('prof.language.label')}</Text>
+            <View style={styles.chips}>
+              <FilterChips options={languageOptions} value={language} onChange={setLanguage} accessibilityLabel={t('prof.language.label')} />
+            </View>
+          </Group>
 
-        <SectionLabel title={t('prof.section.work')} />
-        <Group>
+          <SectionLabel title={t('prof.section.security')} />
+          <Group>
           <ListItem
-            leading={<Building2 size={20} color={colors.textMuted} />}
-            title={activeWorkspace?.name ?? t('prof.ws.none')}
-            subtitle={t('prof.ws.sub')}
+            leading={<ShieldCheck size={20} color={colors.textMuted} />}
+            title={t('prof.security')}
+            subtitle={t('prof.security.sub')}
             trailing={<ChevronRight size={18} color={colors.textSubtle} />}
-            onPress={() => router.push('/(app)/workspace')}
+            onPress={() => router.push('/(app)/settings')}
           />
-          <ListItem
-            leading={<PlugZap size={20} color={colors.textMuted} />}
-            title={t('prof.conn')}
-            subtitle={t('prof.conn.sub')}
-            trailing={<ChevronRight size={18} color={colors.textSubtle} />}
-            onPress={() => router.push('/(app)/connections')}
-          />
-          <ListItem
-            leading={<Plus size={20} color={colors.textMuted} />}
-            title={t('prof.ai')}
-            subtitle={t('prof.ai.sub')}
-            trailing={<ChevronRight size={18} color={colors.textSubtle} />}
-            onPress={() => router.push('/(app)/ai/generator')}
-          />
-          <ListItem
-            leading={<MessageSquare size={20} color={colors.textMuted} />}
-            title={t('prof.assistant')}
-            subtitle={t('prof.assistant.sub')}
-            trailing={<ChevronRight size={18} color={colors.textSubtle} />}
-            onPress={() => router.push('/(app)/assistant')}
-          />
-        </Group>
+          </Group>
 
-        <SectionLabel title={t('prof.section.look')} />
-        <Group padded>
-          <Text style={[Typography.label, { color: colors.text }]}>{t('prof.theme.label')}</Text>
-          <View style={styles.chips}>
-            <FilterChips options={themeOptions} value={themeMode} onChange={setThemeMode} accessibilityLabel={t('prof.theme.label')} />
+          <View style={styles.logout}>
+            <Button
+              variant="danger"
+              label={t('profile.logout')}
+              icon={<LogOut size={16} color={colors.danger} />}
+              onPress={() => setConfirm('logout')}
+            />
           </View>
-          <Text style={[Typography.label, { color: colors.text }]}>{t('prof.language.label')}</Text>
-          <View style={styles.chips}>
-            <FilterChips options={languageOptions} value={language} onChange={setLanguage} accessibilityLabel={t('prof.language.label')} />
-          </View>
-        </Group>
-
-        <SectionLabel title={t('prof.section.security')} />
-        <Group>
-        <ListItem
-          leading={<ShieldCheck size={20} color={colors.textMuted} />}
-          title={t('prof.security')}
-          subtitle={t('prof.security.sub')}
-          trailing={<ChevronRight size={18} color={colors.textSubtle} />}
-          onPress={() => router.push('/(app)/settings')}
-        />
-        </Group>
-
-        <View style={styles.logout}>
-          <Button
-            variant="danger"
-            label={t('profile.logout')}
-            icon={<LogOut size={16} color={colors.danger} />}
-            onPress={() => setConfirm('logout')}
-          />
-        </View>
-        {deleteAvatar.isPending ? <ActivityIndicator color={colors.primary} /> : null}
-      </ScrollView>
+          {deleteAvatar.isPending ? <ActivityIndicator color={colors.primary} /> : null}
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <ConfirmSheet
         visible={confirm === 'logout'}

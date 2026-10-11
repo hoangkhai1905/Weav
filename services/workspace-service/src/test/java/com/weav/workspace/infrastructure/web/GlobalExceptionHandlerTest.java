@@ -1,5 +1,8 @@
 package com.weav.workspace.infrastructure.web;
 
+import com.weav.workspace.domain.exception.InvitationGoneException;
+import com.weav.workspace.domain.exception.InvitationNotFoundException;
+import com.weav.workspace.domain.exception.InvitationResendTooSoonException;
 import com.weav.workspace.domain.exception.ResourceNotFoundException;
 import com.weav.workspace.domain.exception.UserNotFoundException;
 import jakarta.validation.Valid;
@@ -62,8 +65,36 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.requestId").isNotEmpty());
     }
 
+    @Test
+    void mapsInvitationGoneTooManyRequestsAndNotFound() throws Exception {
+        mockMvc.perform(get("/test/gone"))
+                .andExpect(status().isGone())
+                .andExpect(jsonPath("$.code").value("INVITATION_GONE"));
+        mockMvc.perform(get("/test/too-many"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("INVITATION_RESEND_TOO_SOON"));
+        mockMvc.perform(get("/test/invitation-not-found"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("INVITATION_NOT_FOUND"));
+    }
+
     @RestController
     static class TestController {
+
+        @GetMapping("/test/gone")
+        void gone() {
+            throw new InvitationGoneException();
+        }
+
+        @GetMapping("/test/too-many")
+        void tooMany() {
+            throw new InvitationResendTooSoonException();
+        }
+
+        @GetMapping("/test/invitation-not-found")
+        void invitationNotFound() {
+            throw new InvitationNotFoundException();
+        }
 
         @PostMapping("/test/validation")
         void validation(@Valid @RequestBody TestRequest request) {

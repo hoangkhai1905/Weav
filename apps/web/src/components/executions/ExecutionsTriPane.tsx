@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, Check, LoaderCircle, Minus, Play, RefreshCw, Square, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, LoaderCircle, Minus, Play, RefreshCw, Sparkles, Square, X } from 'lucide-react';
+import { isAssistantMockMode } from '../../api/assistant.api';
 import { executionApi } from '../../api/execution.api';
 import { workflowApi } from '../../api/workflow.api';
 import type { ExecutionDetail, NodeExecutionResult, WorkflowDefinition } from '../../types/workflow.types';
@@ -409,6 +410,17 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
                       <button type="button" data-testid="execution-stop" onClick={() => setStopOpen(true)} disabled={stopRequestedFor === detail.id} className={ctl}>
                         <Square size={12} aria-hidden="true" />
                         {t('runs.stop')}
+                      </button>
+                    )}
+                    {detail.status === 'FAILED' && !isAssistantMockMode && (
+                      <button
+                        type="button"
+                        data-testid="execution-ask-ai"
+                        onClick={() => navigate('/assistant', { state: { explainRun: { workflowId, executionId: detail.id } } })}
+                        className={ctl}
+                      >
+                        <Sparkles size={12} aria-hidden="true" />
+                        {t('executions.askAi.button')}
                       </button>
                     )}
                     <Link to={`/workflows/${encodeURIComponent(workflowId)}/builder`} className={ctl}>{t('runs.open_editor')}</Link>

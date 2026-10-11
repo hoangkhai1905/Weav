@@ -3,6 +3,7 @@ import { authRepository } from '../../infrastructure/repository-factory';
 import { authSessionStorage } from '../../infrastructure/auth/expo-auth-session.storage';
 import { registerAuthSessionInvalidator } from '../../infrastructure/auth/auth-session.persistence';
 import { useAuthStore } from '../../stores/auth.store';
+import { setUnauthorizedHandler } from '../../infrastructure/http/http-client';
 import { createAuthSessionCoordinator } from './auth-session.coordinator';
 
 const isMockMode = process.env.EXPO_PUBLIC_API_MODE === 'mock';
@@ -25,6 +26,15 @@ const coordinator = createAuthSessionCoordinator({
 });
 
 registerAuthSessionInvalidator(coordinator.invalidate);
+
+// A 401 on an expired access token: reuse a token another request already refreshed, otherwise
+// refresh once (single-flight in the coordinator). A failed refresh expires the session there.
+setUnauthorizedHandler(async (failedToken) => {
+  const current = useAuthStore.getState().tokens?.accessToken ?? null;
+  if (current && current !== failedToken) return current;
+  const session = await coordinator.refresh();
+  return session?.tokens.accessToken ?? null;
+});
 
 export const bootstrapAuthSession = coordinator.bootstrap;
 export const retryBootstrapAuthSession = coordinator.retryBootstrap;

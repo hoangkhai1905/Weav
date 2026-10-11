@@ -1,5 +1,11 @@
+import { Logger } from '@nestjs/common';
 import { Expo } from 'expo-server-sdk';
-import { ExpoProvider, TelegramProvider } from './providers';
+import {
+  EmailProvider,
+  ExpoProvider,
+  renderInvitationEmail,
+  TelegramProvider,
+} from './providers';
 import { testDelivery, testSettings } from '../testing/fixtures';
 
 describe('provider adapters', () => {
@@ -157,5 +163,167 @@ describe('provider adapters', () => {
       code: 'EXPO_TIMEOUT',
       retryable: true,
     });
+  });
+});
+
+describe('invitation e-mail', () => {
+  const payload = {
+    workspaceName: 'Đội vận hành',
+    inviterName: 'Nguyễn An',
+    expiresAt: '2026-10-17T04:00:00Z',
+  };
+  const emailDelivery = (destination = 'new.member@example.com') => ({
+    ...testDelivery(),
+    provider: 'EMAIL' as const,
+    eventType: 'workspace.invitation.created',
+    destination,
+    payload,
+  });
+  const settings = (over: Record<string, unknown> = {}) =>
+    testSettings({
+      NOTIFICATION_EMAIL_ENABLED: true,
+      SMTP_HOST: 'smtp.test',
+      SMTP_FROM_ADDRESS: 'no-reply@weav.test',
+      NOTIFICATION_DETAIL_BASE_URL: 'https://weav.test/',
+      ...over,
+    });
+  function providerWith(sendMail: jest.Mock, over = {}) {
+    const provider = new EmailProvider(settings(over));
+    jest
+      .spyOn(provider, 'createTransport')
+      .mockReturnValue({ sendMail } as never);
+    return provider;
+  }
+
+  it('renders both languages with inviter, workspace, link and expiry', () => {
+    const { subject, text } = renderInvitationEmail(
+      payload,
+      'https://weav.test/',
+    );
+    expect(subject).toContain('Đội vận hành');
+    expect(text).toContain('Nguyễn An');
+    expect(text).toContain('https://weav.test/invitations');
+    expect(text).toContain('Sign up or sign in with this address');
+    expect(text).toContain('Hãy đăng ký hoặc đăng nhập');
+    expect(text).toMatch(/2026/);
+  });
+
+  it('is permanently disabled unless NOTIFICATION_EMAIL_ENABLED is set', async () => {
+    await expect(
+      new EmailProvider(settings({ NOTIFICATION_EMAIL_ENABLED: false })).send(
+        emailDelivery(),
+      ),
+    ).rejects.toMatchObject({ code: 'PROVIDER_DISABLED', retryable: false });
+  });
+
+  it.each([
+    'not-an-email',
+    'a b@example.com',
+    `${'a'.repeat(330)}@x.test`,
+    'a,b@example.com',
+    'a;b@example.com',
+    '"a"@example.com',
+    '<a@example.com>',
+    'a@example.com,b@example.com',
+  ])('rejects destination %#', async (destination) => {
+    const sendMail = jest.fn();
+    await expect(
+      providerWith(sendMail).send(emailDelivery(destination)),
+    ).rejects.toMatchObject({
+      code: 'INVALID_DESTINATION',
+      retryable: false,
+    });
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it('rejects any event type other than the invitation with a permanent INVALID_EVENT', async () => {
+    const sendMail = jest.fn();
+    await expect(
+      providerWith(sendMail).send({
+        ...emailDelivery(),
+        eventType: 'workflow.completed',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_EVENT', retryable: false });
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it('gives up after twice the provider timeout, closes the transport and retries later', async () => {
+    jest.useFakeTimers();
+    try {
+      const close = jest.fn();
+      const provider = new EmailProvider(
+        settings({ NOTIFICATION_TIMEOUT_MS: 500 }),
+      );
+      const sendMail = jest.fn(() => new Promise(() => undefined));
+      jest
+        .spyOn(provider, 'createTransport')
+        .mockReturnValue({ sendMail, close } as never);
+      const result = provider.send(emailDelivery());
+      const assertion = expect(result).rejects.toMatchObject({
+        code: 'SMTP_UNAVAILABLE',
+        retryable: true,
+      });
+      await jest.advanceTimersByTimeAsync(999);
+      expect(close).not.toHaveBeenCalled();
+      await jest.advanceTimersByTimeAsync(2);
+      await assertion;
+      expect(close).toHaveBeenCalledTimes(1);
+      // The stuck transport is dropped: the next send builds a new one.
+      const second = jest.fn().mockResolvedValue({});
+      jest
+        .spyOn(provider, 'createTransport')
+        .mockReturnValue({ sendMail: second, close } as never);
+      expect(await provider.send(emailDelivery())).toEqual({ kind: 'sent' });
+      expect(second).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('sends through the transport and reports sent', async () => {
+    const sendMail = jest.fn().mockResolvedValue({});
+    expect(await providerWith(sendMail).send(emailDelivery())).toEqual({
+      kind: 'sent',
+    });
+    expect(sendMail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: { name: '', address: 'new.member@example.com' },
+        from: { name: 'Weav', address: 'no-reply@weav.test' },
+      }),
+    );
+  });
+
+  it.each([
+    [450, true],
+    [421, true],
+    [550, false],
+    [535, false],
+    [undefined, true],
+  ])('classifies SMTP code %s (retryable=%s)', async (code, retryable) => {
+    const sendMail = jest.fn().mockRejectedValue(
+      Object.assign(new Error('secret new.member@example.com'), {
+        responseCode: code,
+      }),
+    );
+    await expect(
+      providerWith(sendMail).send(emailDelivery()),
+    ).rejects.toMatchObject({
+      code: `SMTP_${code ?? 'UNAVAILABLE'}`,
+      retryable,
+    });
+  });
+
+  it('never logs the destination or body', async () => {
+    const spies = (['log', 'warn', 'error', 'debug', 'verbose'] as const).map(
+      (level) =>
+        jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined),
+    );
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+    const sendMail = jest.fn().mockRejectedValue(new Error('boom'));
+    await providerWith(sendMail)
+      .send(emailDelivery())
+      .catch(() => undefined);
+    for (const spy of [...spies, consoleSpy])
+      expect(JSON.stringify(spy.mock.calls)).not.toContain('new.member');
   });
 });

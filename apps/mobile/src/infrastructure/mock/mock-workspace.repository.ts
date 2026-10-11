@@ -8,6 +8,9 @@ import type {
   WorkspaceMember,
   WorkspaceMemberListQuery,
   UpdateWorkspaceMemberPermissionsInput,
+  EmailVerificationReceipt,
+  MyInvitationList,
+  OwnerInvitation,
   WorkspaceRepository,
 } from '../../domain/workspace/workspace.types';
 import { MOCK_MEMBERS, MOCK_WORKSPACE } from './mock-data';
@@ -140,8 +143,67 @@ export class MockWorkspaceRepository implements WorkspaceRepository {
     mockMembers = mockMembers.filter((candidate) => candidate.id !== userId);
   }
 
+  async deleteWorkspace(_workspaceId: string, _name: string): Promise<void> {
+    await delay(300);
+    throw { code: 'MOCK_UNSUPPORTED', message: 'Deleting a workspace is unavailable in explicit mock mode.' };
+  }
+
   async leaveWorkspace(_workspaceId: string): Promise<void> {
     await delay(300);
     throw { code: 'MOCK_UNSUPPORTED', message: 'Leaving a workspace is unavailable in explicit mock mode.' };
+  }
+
+  // Invitations: explicit mock mode keeps no invitation store, so lists are empty.
+  async createInvitation(workspaceId: string, input: AddWorkspaceMemberInput): Promise<OwnerInvitation> {
+    await delay(300);
+    if (workspaceId !== mockWorkspace.id) throw { code: 'NOT_FOUND', message: 'Workspace not found.' };
+    const now = new Date();
+    return {
+      id: `mock-invitation-${now.getTime()}`,
+      workspaceId,
+      email: input.email.trim(),
+      status: 'PENDING',
+      invitedBy: mockWorkspace.createdBy,
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 7 * 24 * 3600 * 1000).toISOString(),
+      lastSentAt: now.toISOString(),
+    };
+  }
+
+  async listInvitations(_workspaceId: string): Promise<OwnerInvitation[]> {
+    await delay(200);
+    return [];
+  }
+
+  async revokeInvitation(_workspaceId: string, _invitationId: string): Promise<void> {
+    await delay(200);
+  }
+
+  async resendInvitation(_workspaceId: string, _invitationId: string): Promise<OwnerInvitation> {
+    await delay(200);
+    throw { code: 'INVITATION_NOT_FOUND', message: 'Invitation not found.', status: 404 };
+  }
+
+  async listMyInvitations(): Promise<MyInvitationList> {
+    await delay(200);
+    return { items: [], emailVerified: true };
+  }
+
+  async acceptInvitation(_invitationId: string): Promise<{ workspaceId: string }> {
+    await delay(200);
+    throw { code: 'INVITATION_NOT_FOUND', message: 'Invitation not found.', status: 404 };
+  }
+
+  async declineInvitation(_invitationId: string): Promise<void> {
+    await delay(200);
+  }
+
+  async requestEmailVerification(): Promise<EmailVerificationReceipt> {
+    await delay(200);
+    return { challengeId: 'mock-challenge', expiresIn: 300 };
+  }
+
+  async verifyEmail(_challengeId: string, _code: string): Promise<void> {
+    await delay(200);
   }
 }

@@ -5,11 +5,14 @@ import {
   CircleCheck,
   Globe,
   HardDrive,
+  Hash,
   Mail,
+  MessageCircle,
   PlugZap,
   Send,
   Sheet,
   TriangleAlert,
+  Users,
   type LucideIcon,
 } from 'lucide-react-native';
 import type { ConnectionItem, ConnectionProvider, ConnectionTestOutcome } from '../../../domain/connection/connection.types';
@@ -28,6 +31,9 @@ const ICONS: Record<ConnectionProvider, LucideIcon> = {
   GOOGLE_DRIVE: HardDrive,
   TELEGRAM: Send,
   HTTP: Globe,
+  DISCORD: MessageCircle,
+  SLACK: Hash,
+  TEAMS: Users,
 };
 
 /** Result of the last "Test" press: a verdict from the backend or a request failure message. */

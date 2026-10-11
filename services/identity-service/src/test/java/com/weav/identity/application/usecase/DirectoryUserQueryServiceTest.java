@@ -47,6 +47,19 @@ class DirectoryUserQueryServiceTest {
     }
 
     @Test
+    void summaryExposesEmailVerified() {
+        UserRepository repository = mock(UserRepository.class);
+        User verified = new User(FIRST, "v@example.com", "hash", null, null,
+                SystemRole.USER, UserStatus.ACTIVE, NOW, NOW, NOW);
+        User unverified = user(SECOND, "u@example.com", null, UserStatus.ACTIVE);
+        when(repository.findByEmail("v@example.com")).thenReturn(java.util.Optional.of(verified));
+        when(repository.findByEmail("u@example.com")).thenReturn(java.util.Optional.of(unverified));
+
+        assertTrue(service(repository).findByEmail("v@example.com").orElseThrow().emailVerified());
+        assertFalse(service(repository).findByEmail("u@example.com").orElseThrow().emailVerified());
+    }
+
+    @Test
     void candidateMatchingNeverReturnsIdsOutsideTheCandidateSet() {
         UserRepository repository = mock(UserRepository.class);
         when(repository.findAllByIds(anyCollection())).thenReturn(List.of(

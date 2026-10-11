@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/format.text",
+  "title": "Format text",
+  "description": "Changes case, trims, replaces, splits, joins, truncates text or formats a number. Runs inside Weav and calls nothing outside.",
+  "x-weav-node": {
+    "type": "format.text",
+    "category": "logic",
+    "label": "Format text",
+    "sideEffect": false
+  },
+  "type": "object",
+  "properties": {
+    "operation": {
+      "title": "Operation",
+      "description": "upper, lower, trim, replace, split, join, truncate or number_format.",
+      "type": "string",
+      "x-weav-template": true,
+      "minLength": 1,
+      "enum": [
+        "upper",
+        "lower",
+        "trim",
+        "replace",
+        "split",
+        "join",
+        "truncate",
+        "number_format"
+      ]
+    },
+    "value": {
+      "title": "Text",
+      "description": "The text to change (at most 100000 characters), or a list of texts for join. For number_format, the number written as text or mapped from an earlier step.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "search": {
+      "title": "Search",
+      "description": "replace: the exact text to find (not a pattern).",
+      "type": "string",
+      "x-weav-template": true
+    },
+    "replacement": {
+      "title": "Replacement",
+      "description": "replace: the text that replaces every match. Empty removes the match.",
+      "type": "string",
+      "x-weav-template": true
+    },
+    "separator": {
+      "title": "Separator",
+      "description": "split and join: at most 16 characters. Defaults to a comma.",
+      "type": "string",
+      "x-weav-template": true,
+      "maxLength": 16
+    },
+    "maxLength": {
+      "title": "Maximum length",
+      "description": "truncate: keep at most this many characters, 1 to 100000.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "decimals": {
+      "title": "Decimals",
+      "description": "number_format: digits after the decimal separator, 0 to 6. Defaults to 0.",
+      "x-weav-template": true,
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "locale": {
+      "title": "Number style",
+      "description": "number_format: vi gives 1.234.567,89 and en gives 1,234,567.89. Defaults to vi.",
+      "type": "string",
+      "x-weav-template": true,
+      "enum": [
+        "vi",
+        "en"
+      ]
+    }
+  },
+  "required": [
+    "operation"
+  ],
+  "additionalProperties": false
+}

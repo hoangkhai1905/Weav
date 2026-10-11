@@ -367,6 +367,54 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
     ],
     edges: chain('workflow_event', 'send_discord'),
   },
+  {
+    id: 'sepay-payment-to-sheets-telegram',
+    category: 'google',
+    vi: {
+      name: 'Nhận thanh toán SePay → Google Sheets + Telegram',
+      description: 'Mỗi giao dịch tiền vào được ghi thành một dòng trong Google Sheets và báo qua Telegram. Sau khi xuất bản, Weav hiển thị địa chỉ webhook và secret một lần: trong SePay > Webhooks, nhập địa chỉ đó, chọn kiểu xác thực "API Key" và dán secret của Weav làm khóa. Giữ bí mật cả hai. Chọn bảng tính và cuộc trò chuyện Telegram sau khi bấm "Dùng mẫu".',
+    },
+    en: {
+      name: 'SePay payment → Google Sheets + Telegram',
+      description: 'Each incoming transfer is logged as a Google Sheets row and announced on Telegram. After publishing, Weav shows the webhook URL and its secret once: in SePay > Webhooks set that URL, choose "API Key" authentication and paste the Weav secret as the key. Keep both private. Choose the spreadsheet and Telegram chat after you press "Use template".',
+    },
+    nodes: [
+      { id: 'sepay_webhook', type: 'trigger.webhook', name: 'Nhận webhook SePay', config: {} },
+      {
+        id: 'incoming_check',
+        type: 'logic.condition',
+        name: 'Là tiền vào?',
+        config: { left: '{{ trigger.input.transferType }}', operator: 'eq', right: 'in' },
+      },
+      {
+        id: 'append_payment',
+        type: 'google.sheets',
+        name: 'Ghi giao dịch vào Sheets',
+        config: {
+          operation: 'append',
+          range: 'A:E',
+          values: [[
+            '{{ trigger.input.transactionDate }}',
+            '{{ trigger.input.gateway }}',
+            '{{ trigger.input.transferAmount }}',
+            '{{ trigger.input.content }}',
+            '{{ trigger.input.referenceCode }}',
+          ]],
+        },
+      },
+      {
+        id: 'notify_telegram',
+        type: 'telegram.send_message',
+        name: 'Báo qua Telegram',
+        config: { text: 'Đã nhận {{ trigger.input.transferAmount }}đ từ {{ trigger.input.gateway }}: {{ trigger.input.content }}' },
+      },
+    ],
+    edges: [
+      { id: 'edge_1', source: 'sepay_webhook', target: 'incoming_check' },
+      { id: 'edge_2', source: 'incoming_check', target: 'append_payment', sourcePort: 'true' },
+      { id: 'edge_3', source: 'append_payment', target: 'notify_telegram' },
+    ],
+  },
 ];
 
 /** Templates that use a Telegram node, linked from the Telegram page. */

@@ -104,3 +104,13 @@ test('builds permission, remove and leave routes without inventing a response bo
     url: `/api/v1/workspaces/${WORKSPACE_ID}/members/me`,
   });
 });
+
+test('delete workspace sends the typed name as a JSON body with a long timeout', () => {
+  const { buildDeleteWorkspaceRequest } = require('./workspace.http.contract.ts');
+  const req = buildDeleteWorkspaceRequest('3fa85f64-5717-4562-b3fc-2c963f66afa6', 'Alpha team', null);
+  assert.equal(req.method, 'DELETE');
+  assert.equal(req.url, '/api/v1/workspaces/3fa85f64-5717-4562-b3fc-2c963f66afa6');
+  assert.deepEqual(req.data, { name: 'Alpha team' });
+  assert.equal(req.timeout, 40000);
+  assert.equal(req.headers, undefined);
+});

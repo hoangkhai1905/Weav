@@ -10,7 +10,11 @@ import { DeliveryWorker, PROVIDERS } from './application/delivery.worker';
 import { PrismaDeliveryRepository } from './infrastructure/prisma.repository';
 import { PrismaInboxRepository } from './infrastructure/prisma.inbox.repository';
 import { RabbitConsumer } from './infrastructure/rabbit.consumer';
-import { ExpoProvider, TelegramProvider } from './infrastructure/providers';
+import {
+  EmailProvider,
+  ExpoProvider,
+  TelegramProvider,
+} from './infrastructure/providers';
 import {
   AccessGuard,
   ApiErrorFilter,
@@ -36,13 +40,19 @@ import {
     RabbitConsumer,
     TelegramProvider,
     ExpoProvider,
+    EmailProvider,
     DeliveryWorker,
     {
       provide: PROVIDERS,
-      inject: [TelegramProvider, ExpoProvider],
-      useFactory: (telegram: TelegramProvider, expo: ExpoProvider) => ({
+      inject: [TelegramProvider, ExpoProvider, EmailProvider],
+      useFactory: (
+        telegram: TelegramProvider,
+        expo: ExpoProvider,
+        email: EmailProvider,
+      ) => ({
         TELEGRAM: telegram,
         EXPO_PUSH: expo,
+        EMAIL: email,
       }),
     },
     { provide: APP_FILTER, useClass: ApiErrorFilter },

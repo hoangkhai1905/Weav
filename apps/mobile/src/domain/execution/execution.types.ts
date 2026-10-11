@@ -107,6 +107,9 @@ export interface ExecutionDetailQuery {
 }
 
 /** The backend has no retry or cancel endpoint, so this repository has neither. */
+/** CANCELLED: it was still queued and ended at once; CANCEL_REQUESTED: the running step finishes first. */
+export type ExecutionCancelResult = 'CANCELLED' | 'CANCEL_REQUESTED';
+
 export interface ExecutionRepository {
   listWorkflowExecutions(
     workspaceId: string,
@@ -130,4 +133,6 @@ export interface ExecutionRepository {
    * resolves it, by probing the workspace's workflows. Returns null when not found.
    */
   findWorkflowIdForExecution(workspaceId: string, executionId: string): Promise<string | null>;
+  /** Stop a QUEUED/WAITING/RUNNING run (needs WORKFLOW_RUN). 409 EXECUTION_ALREADY_FINISHED when it ended first. */
+  cancelExecution(workspaceId: string, workflowId: string, executionId: string): Promise<ExecutionCancelResult>;
 }

@@ -18,15 +18,18 @@ export const ErrorState: React.FC<ErrorStateProps> = ({ error, onRetry }) => {
   const colors = useThemeColors();
   const { t, language } = useTranslation();
   const message = t(errorMessageKey(error, (key) => Boolean(translations[language][key])));
-  // 403: retrying cannot help, so show a calmer "no access" state without the retry button.
+  // 403, and 404 (non-member, deleted or missing workspace/workflow): retrying cannot help, so
+  // show a calmer state without the retry button.
   const forbidden = isForbiddenError(error);
+  const notFound = !forbidden && error?.status === 404;
+  const calm = forbidden || notFound;
 
   return (
     <View accessibilityRole="alert" style={styles.wrap}>
       <TriangleAlert size={32} color={colors.danger} />
-      <Text style={[Typography.title, styles.center, { color: colors.text }]}>{forbidden ? t('ui.forbidden.title') : t('ui.error.title')}</Text>
+      <Text style={[Typography.title, styles.center, { color: colors.text }]}>{forbidden ? t('ui.forbidden.title') : notFound ? t('ui.notFound.title') : t('ui.error.title')}</Text>
       <Text style={[Typography.body, styles.center, { color: colors.textMuted }]}>{message}</Text>
-      {onRetry && !forbidden ? (
+      {onRetry && !calm ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t('ui.retry')}

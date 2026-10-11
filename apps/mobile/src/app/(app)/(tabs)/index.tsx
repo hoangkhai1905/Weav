@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CircleAlert,
   Link2Off,
+  Mail,
   MessageCircle,
   PauseCircle,
   Plus,
@@ -17,6 +18,7 @@ import {
 import { useAuthStore } from '../../../stores/auth.store';
 import { selectActiveWorkspace, useWorkspaceStore } from '../../../stores/workspace.store';
 import { useSwitchWorkspace } from '../../../features/workspace/hooks/useSwitchWorkspace';
+import { useMyInvitations } from '../../../features/workspace/hooks/useInvitations';
 import { useWorkflowNames } from '../../../features/workflows/hooks/useWorkflows';
 import { useNotificationUnreadCount } from '../../../features/notifications/hooks/useNotifications';
 import { useDashboard, TRIGGER_CHECK_LIMIT } from '../../../features/dashboard/hooks/useDashboard';
@@ -50,6 +52,8 @@ export default function HomeScreen() {
   const { data: unread = 0 } = useNotificationUnreadCount();
   const names = useWorkflowNames();
   const dash = useDashboard();
+  // Once a minute while this tab is in front; a failed check just hides the banner.
+  const invitationCount = useMyInvitations({ poll: true }).data?.items.length ?? 0;
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const nameOf = (id: string) => names.get(id) ?? t('exl.unknownWorkflow');
@@ -88,6 +92,27 @@ export default function HomeScreen() {
       </Pressable>
     </View>
   );
+
+  const invitationBanner =
+    invitationCount > 0 ? (
+      <Pressable
+        testID="home-invitations-banner"
+        accessibilityRole="button"
+        accessibilityLabel={fill(t(invitationCount === 1 ? 'inv.banner.one' : 'inv.banner'), { count: invitationCount })}
+        accessibilityHint={t('inv.banner.hint')}
+        onPress={() => router.push('/(app)/invitations')}
+        style={[styles.banner, { backgroundColor: colors.tones.info.bg, borderColor: colors.tones.info.border }]}
+      >
+        <Mail size={20} color={colors.tones.info.fg} />
+        <View style={styles.bannerText}>
+          <Text style={[Typography.body, { color: colors.text }]}>
+            {fill(t(invitationCount === 1 ? 'inv.banner.one' : 'inv.banner'), { count: invitationCount })}
+          </Text>
+          <Text style={[Typography.label, { color: colors.tones.info.fg }]}>{t('inv.banner.action')}</Text>
+        </View>
+        <ChevronRight size={18} color={colors.tones.info.fg} />
+      </Pressable>
+    ) : null;
 
   const switcher = (
     <Sheet visible={pickerOpen} onClose={() => setPickerOpen(false)} title={t('dash.workspace.pick')}>
@@ -273,6 +298,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       {header}
+      {invitationBanner}
       {body}
       {switcher}
     </SafeAreaView>
@@ -394,6 +420,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   choiceText: { flex: 1 },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    minHeight: MinTouch,
+    margin: Spacing.three,
+    marginBottom: 0,
+    padding: Spacing.three,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+  },
+  bannerText: { flex: 1, gap: Spacing.half },
   content: { paddingBottom: Spacing.six },
   greeting: { paddingHorizontal: Spacing.three, paddingTop: Spacing.three, paddingBottom: Spacing.three },
   stats: { flexDirection: 'row', borderTopWidth: 1, borderBottomWidth: 1 },

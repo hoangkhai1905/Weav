@@ -7,7 +7,9 @@ public enum ConnectionProvider {
     HTTP,
     GOOGLE_CALENDAR,
     GOOGLE_DRIVE,
-    DISCORD;
+    DISCORD,
+    SLACK,
+    TEAMS;
 
     /** True for providers connected through the shared Google OAuth flow. */
     public boolean isGoogleOAuth() {

@@ -233,13 +233,8 @@ export function createAuthSessionCoordinator({
           isCurrent(operation) &&
           store.getState().tokens?.refreshToken === refreshToken
         ) {
-          if (isUnauthorized(error) || isStorageError(error)) {
-            await expire();
-          } else {
-            // A transient refresh failure must not erase the rotated material.
-            store.clearAuthSession();
-            store.setAuthError('SESSION_REFRESH_UNAVAILABLE');
-          }
+          // A transient refresh failure keeps the session (memory and storage): the next request retries.
+          if (isUnauthorized(error) || isStorageError(error)) await expire();
         }
         throw error;
       } finally {

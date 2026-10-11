@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   AlertCircle,
   Check,
   Loader2,
+  Mail,
   RefreshCw,
   ShieldCheck,
   UserPlus,
@@ -16,6 +17,7 @@ import type { WorkspaceMember } from '../types/workflow.types';
 import {
   type WorkspacePage as WorkspacePageResult,
   type WorkspaceMemberPage,
+  type OwnerInvitation,
   type WorkspaceSummary,
   WorkspaceApiError,
   validateWorkspaceMemberEmail,
@@ -50,6 +52,13 @@ function getWorkspaceErrorMessage(error: unknown, t: (key: string) => string): s
       RATE_LIMITED: 'workspace.error.rate_limited',
       INVALID_RESPONSE: 'workspace.error.invalid_response',
       WORKSPACE_UNAVAILABLE: 'workspace.error.unavailable',
+      USER_EXISTS: 'workspace.invitations.error.user_exists',
+      USER_INACTIVE: 'workspace.invitations.error.user_inactive',
+      INVITATION_EXISTS: 'workspace.invitations.error.exists',
+      INVITATION_LIMIT: 'workspace.invitations.error.limit',
+      INVITATION_RESEND_TOO_SOON: 'workspace.invitations.error.resend_too_soon',
+      INVITATION_NOT_PENDING: 'workspace.invitations.error.not_pending',
+      INVITATION_NOT_FOUND: 'workspace.invitations.error.not_pending',
     };
     const statusKeys: Record<number, string> = {
       400: 'workspace.error.invalid',
@@ -184,6 +193,7 @@ export function WorkspacePage() {
   const workspaceAccessError = useWorkspaceStore((state) => state.workspaceAccessError);
   const [inviteEmail, setInviteEmail] = useState('');
   const [memberActionError, setMemberActionError] = useState('');
+  const [invitePromptEmail, setInvitePromptEmail] = useState<string | null>(null);
   const [memberMutationKey, setMemberMutationKey] = useState<string | null>(null);
   const [createName, setCreateName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -205,6 +215,14 @@ export function WorkspacePage() {
   const currentMember = userId ? members.find((member) => member.id === userId) ?? null : null;
   const canManageMembers = currentMember?.role === 'OWNER';
   const memberActionsDisabled = Boolean(memberMutationKey) || !canManageMembers;
+  const invitationsQuery = useQuery({
+    queryKey: workspaceKeys.invitations(userId ?? 'anonymous', activeWorkspaceId ?? 'none'),
+    enabled: Boolean(userId && activeWorkspaceId && canManageMembers && tab === 'members'),
+    queryFn: ({ signal }) => workspaceApi.listInvitations(activeWorkspaceId!, signal),
+    retry: false,
+    gcTime: 0,
+  });
+  const invitations = invitationsQuery.data ?? [];
 
   useEffect(() => {
     const error = membersQuery.error;
@@ -377,6 +395,7 @@ export function WorkspacePage() {
     const mutationSession = captureNotificationSession();
     setMemberMutationKey(`add:${workspaceId}`);
     setMemberActionError('');
+    setInvitePromptEmail(null);
     try {
       await workspaceApi.addMember(workspaceId, { email: inviteEmail.trim() });
       if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) {
@@ -387,12 +406,59 @@ export function WorkspacePage() {
     } catch (error) {
       if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) {
         const noSuchUser = error instanceof WorkspaceApiError && error.code === 'USER_NOT_FOUND';
-        setMemberActionError(noSuchUser ? t('w5c.user_not_found') : getWorkspaceErrorMessage(error, t));
+        if (noSuchUser) setInvitePromptEmail(inviteEmail.trim());
+        else setMemberActionError(getWorkspaceErrorMessage(error, t));
       }
     } finally {
       setMemberMutationKey(null);
     }
   };
+
+  /** Runs one invitation mutation, then refreshes the pending list. */
+  const runInvitationMutation = async (key: string, action: (workspaceId: string) => Promise<unknown>, onSuccess?: () => void) => {
+    if (!activeWorkspaceId || !canManageMembers || memberMutationKey || !userId) return;
+    const mutationUserId = userId;
+    const workspaceId = activeWorkspaceId;
+    const mutationSession = captureNotificationSession();
+    setMemberMutationKey(key);
+    setMemberActionError('');
+    try {
+      await action(workspaceId);
+      if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) onSuccess?.();
+    } catch (error) {
+      if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) {
+        setMemberActionError(getWorkspaceErrorMessage(error, t));
+        if (error instanceof WorkspaceApiError && (error.code === 'USER_EXISTS' || error.code === 'USER_INACTIVE')) setInvitePromptEmail(null);
+      }
+    } finally {
+      if (isCurrentMemberContext(mutationUserId, workspaceId, mutationSession)) {
+        await queryClient.invalidateQueries({ queryKey: workspaceKeys.invitations(mutationUserId, workspaceId) });
+      }
+      setMemberMutationKey(null);
+    }
+  };
+
+  const handleSendInvitation = (email: string) => runInvitationMutation(
+    `invite:${email}`,
+    (workspaceId) => workspaceApi.createInvitation(workspaceId, { email }),
+    () => {
+      showSuccessToast('workspace.invitations.sent');
+      setInvitePromptEmail(null);
+      setInviteEmail('');
+    },
+  );
+
+  const handleResendInvitation = (invitation: OwnerInvitation) => runInvitationMutation(
+    `resend:${invitation.id}`,
+    (workspaceId) => workspaceApi.resendInvitation(workspaceId, invitation.id),
+    () => showSuccessToast('workspace.invitations.resent'),
+  );
+
+  const handleRevokeInvitation = (invitation: OwnerInvitation) => runInvitationMutation(
+    `revoke:${invitation.id}`,
+    (workspaceId) => workspaceApi.revokeInvitation(workspaceId, invitation.id),
+    () => showSuccessToast('workspace.invitations.revoked'),
+  );
 
   const handleRemove = async (memberId: string) => {
     if (!activeWorkspaceId || !canManageMembers || memberMutationKey) return;
@@ -716,6 +782,7 @@ export function WorkspacePage() {
                 onChange={(event) => {
                   setInviteEmail(event.target.value);
                   setMemberActionError('');
+                  setInvitePromptEmail(null);
                 }}
                 disabled={memberActionsDisabled}
                 title={memberActionsDisabled ? t('workspace.owner_manage_locked') : undefined}
@@ -746,6 +813,80 @@ export function WorkspacePage() {
             </p>
           )}
           {memberActionError && <p data-testid="workspace-member-error" className="text-xs text-err" role="alert">{memberActionError}</p>}
+          {invitePromptEmail && canManageMembers && (
+            <div data-testid="workspace-invite-prompt" className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-foreground" role="status">{t('workspace.invitations.prompt')}</p>
+              <button
+                type="button"
+                data-testid="workspace-invite-send"
+                onClick={() => void handleSendInvitation(invitePromptEmail)}
+                disabled={Boolean(memberMutationKey)}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Mail size={14} aria-hidden="true" />
+                <span>{memberMutationKey?.startsWith('invite:') ? t('workspace.invitations.sending') : t('workspace.invitations.send')}</span>
+              </button>
+            </div>
+          )}
+          {canManageMembers && invitationsQuery.isError && (
+            <div data-testid="workspace-invitations-error" className="flex items-center gap-3 text-xs text-err" role="alert">
+              <span>{getWorkspaceErrorMessage(invitationsQuery.error, t)}</span>
+              <button type="button" data-testid="workspace-invitations-retry" onClick={() => void invitationsQuery.refetch()} className="rounded-lg border border-border-strong px-2.5 py-1 text-[11px] font-semibold text-text-2 hover:bg-subtle">
+                {t('workspace.invitations.retry')}
+              </button>
+            </div>
+          )}
+          {canManageMembers && invitations.length > 0 && (
+            <section data-testid="workspace-invitations" className="overflow-hidden rounded-2xl border border-border bg-card" aria-label={t('workspace.invitations.title')}>
+              <div className="border-b border-border px-5 py-4">
+                <h2 className="text-sm font-bold text-foreground">{t('workspace.invitations.title')}</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">{t('workspace.invitations.help')}</p>
+              </div>
+              <ul className="divide-y divide-border">
+                {invitations.map((invitation) => (
+                  <li key={invitation.id} data-testid="workspace-invitation-row" className="flex flex-col gap-2 px-5 py-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="truncate font-bold text-foreground">{invitation.email}</p>
+                      <p className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <span>{t('workspace.invitations.expires')} {new Date(invitation.expiresAt).toLocaleDateString(appLocale())}</span>
+                        {invitation.status === 'EXPIRED' && (
+                          <span data-testid="workspace-invitation-expired" className="rounded-full border border-warn/30 bg-warn-bg px-2 py-0.5 text-[10px] font-bold text-warn">{t('workspace.invitations.expired')}</span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {invitation.status === 'PENDING' && (
+                        <button
+                          type="button"
+                          data-testid="workspace-invitation-resend"
+                          aria-label={`${t('workspace.invitations.resend')} ${invitation.email}`}
+                          onClick={() => void handleResendInvitation(invitation)}
+                          disabled={memberActionsDisabled}
+                          className="rounded-lg border border-border-strong px-2.5 py-1 text-[11px] font-semibold text-text-2 transition-colors hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {t('workspace.invitations.resend')}
+                        </button>
+                      )}
+                      <ConfirmButton
+                        onConfirm={() => handleRevokeInvitation(invitation)}
+                        title={t('workspace.invitations.revoke')}
+                        description={t('workspace.invitations.revoke_description').replace('{email}', invitation.email)}
+                        confirmText={t('workspace.invitations.revoke')}
+                        cancelText={t('workspace.cancel')}
+                        variant="danger"
+                        dataTestId="workspace-invitation-revoke"
+                        ariaLabel={`${t('workspace.invitations.revoke')} ${invitation.email}`}
+                        disabled={memberActionsDisabled}
+                        className="rounded-lg border border-err-border bg-err-bg px-2.5 py-1 text-[11px] font-semibold text-err transition-colors hover:bg-err-bg disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {t('workspace.invitations.revoke')}
+                      </ConfirmButton>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <motion.section variants={itemMotion} className="overflow-hidden rounded-2xl border border-border bg-card">
             <div className="flex items-center justify-between border-b border-border px-5 py-4">

@@ -103,6 +103,19 @@ export function isTemplateRequest(request: GatewayRateLimitRequest): boolean {
   );
 }
 
+const INVITATION_CREATE_PATH = /^\/api\/v1\/workspaces\/[^/]+\/invitations$/;
+const INVITATION_RESEND_PATH =
+  /^\/api\/v1\/workspaces\/[^/]+\/invitations\/[^/]+\/resend$/;
+
+/** W7-A1 invite by e-mail: creating and re-sending send real e-mail, so they get their own per-user bucket. */
+export function isInvitationRequest(request: GatewayRateLimitRequest): boolean {
+  if (request.method?.toUpperCase() !== 'POST') {
+    return false;
+  }
+  const path = requestPath(request);
+  return INVITATION_CREATE_PATH.test(path) || INVITATION_RESEND_PATH.test(path);
+}
+
 // Covers /webhooks/<key> and the Telegram variant /webhooks/telegram/<key>; keys are random, so one bucket each.
 const WEBHOOK_PATH_PATTERN = /^\/api\/v1\/webhooks\/(?:telegram\/)?([^/]+)$/;
 
@@ -187,7 +200,8 @@ export class GatewayThrottlerGuard extends ThrottlerGuard {
     if (
       (isOcrRequest(request) ||
         isAssistantRequest(request) ||
-        isTemplateRequest(request)) &&
+        isTemplateRequest(request) ||
+        isInvitationRequest(request)) &&
       !request.principal?.sub
     ) {
       const token = authorizationToken(request);
@@ -213,7 +227,8 @@ export class GatewayThrottlerGuard extends ThrottlerGuard {
     if (
       (isOcrRequest(request) ||
         isAssistantRequest(request) ||
-        isTemplateRequest(request)) &&
+        isTemplateRequest(request) ||
+        isInvitationRequest(request)) &&
       request.principal?.sub
     ) {
       return Promise.resolve(`subject:${request.principal.sub}`);
