@@ -10,7 +10,7 @@ import type {
 import { arr, bool, durationMs, int, oneOf, rec, recOrEmpty, str, strOrNull } from './mapper-utils';
 
 const STATUSES = ['QUEUED', 'RUNNING', 'WAITING', 'SUCCESS', 'FAILED', 'CANCELLED'] as const;
-const TRIGGERS = ['MANUAL', 'SCHEDULE', 'WEBHOOK', 'TELEGRAM', 'GMAIL'] as const;
+const TRIGGERS = ['MANUAL', 'SCHEDULE', 'WEBHOOK', 'TELEGRAM', 'GMAIL', 'WORKFLOW_EVENT'] as const;
 const NODE_STATUSES = [
   'PENDING',
   'READY',

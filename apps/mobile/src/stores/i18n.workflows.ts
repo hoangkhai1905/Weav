@@ -55,6 +55,7 @@ export const workflowsVi: Record<string, string> = {
   'trigger.type.WEBHOOK': 'Nhận dữ liệu từ web (Webhook)',
   'trigger.type.TELEGRAM': 'Khi có tin nhắn Telegram',
   'trigger.type.GMAIL': 'Khi có email Gmail mới',
+  'trigger.type.WORKFLOW_EVENT': 'Khi một quy trình khác chạy xong',
   'trigger.next': 'Lần chạy tới: {time}',
   'trigger.last': 'Kích hoạt gần nhất: {time}',
   'trigger.never': 'Chưa từng được kích hoạt',
@@ -146,6 +147,7 @@ export const workflowsVi: Record<string, string> = {
   'execution.trigger.WEBHOOK': 'Webhook',
   'execution.trigger.TELEGRAM': 'Telegram',
   'execution.trigger.GMAIL': 'Gmail',
+  'execution.trigger.WORKFLOW_EVENT': 'Quy trình khác',
 
   'exd.title': 'Chi tiết lượt chạy',
   'exd.workflow': 'Quy trình',
@@ -235,6 +237,7 @@ export const workflowsEn: Record<string, string> = {
   'trigger.type.WEBHOOK': 'Receives data from the web (Webhook)',
   'trigger.type.TELEGRAM': 'When a Telegram message arrives',
   'trigger.type.GMAIL': 'When a new Gmail email arrives',
+  'trigger.type.WORKFLOW_EVENT': 'When another workflow finishes',
   'trigger.next': 'Next run: {time}',
   'trigger.last': 'Last triggered: {time}',
   'trigger.never': 'Never triggered',
@@ -326,6 +329,7 @@ export const workflowsEn: Record<string, string> = {
   'execution.trigger.WEBHOOK': 'Webhook',
   'execution.trigger.TELEGRAM': 'Telegram',
   'execution.trigger.GMAIL': 'Gmail',
+  'execution.trigger.WORKFLOW_EVENT': 'Another workflow',
 
   'exd.title': 'Run details',
   'exd.workflow': 'Workflow',

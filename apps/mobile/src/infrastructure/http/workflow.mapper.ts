@@ -14,7 +14,7 @@ import { arr, int, invalid, oneOf, oneOfOrNull, rec, recOrEmpty, str, strOrNull 
 import type { Rec } from './mapper-utils';
 
 const STATUSES = ['DRAFT', 'PUBLISHED', 'PAUSED'] as const;
-const TRIGGER_TYPES = ['SCHEDULE', 'WEBHOOK', 'TELEGRAM', 'GMAIL'] as const;
+const TRIGGER_TYPES = ['SCHEDULE', 'WEBHOOK', 'TELEGRAM', 'GMAIL', 'WORKFLOW_EVENT'] as const;
 const TRIGGER_STATUSES = ['ACTIVE', 'DISABLED'] as const;
 const REASON_CODES = [
   'DEPENDENCY_NOT_CONFIGURED',

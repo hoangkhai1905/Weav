@@ -12,7 +12,7 @@ export const ACTIVE_EXECUTION_STATUSES: readonly ExecutionStatus[] = [
   'WAITING',
 ];
 
-export type ExecutionTriggerType = 'MANUAL' | 'SCHEDULE' | 'WEBHOOK' | 'TELEGRAM' | 'GMAIL';
+export type ExecutionTriggerType = 'MANUAL' | 'SCHEDULE' | 'WEBHOOK' | 'TELEGRAM' | 'GMAIL' | 'WORKFLOW_EVENT';
 
 export type NodeExecutionStatus =
   | 'PENDING'

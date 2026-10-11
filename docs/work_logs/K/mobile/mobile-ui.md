@@ -6,7 +6,7 @@
 
 | Trường | Giá trị |
 | --- | --- |
-| Cập nhật gần nhất | 2026-10-07 (Asia/Saigon) |
+| Cập nhật gần nhất | 2026-10-11 (Asia/Saigon) |
 | Dự án | Weav, `apps/mobile` (Expo SDK 57) |
 | Nhánh | `feature/mobile-ui` |
 | Người thực hiện | AI agent (theo yêu cầu của K) |
@@ -223,6 +223,13 @@ Lý do: người dùng thấy giao diện cũ "xấu quá", trông như do AI l�
 - Ô nhập (`TextInput` thô ở 5 file) dùng viền focus cam mặc định của trình duyệt; đổi sang `outlineColor: colors.primary` (giữ vòng focus cho trợ năng).
 - Web: kiểm trong Browser pane, trình duyệt ưu tiên tối + chưa lưu lựa chọn -> `class="light"`.
 - Lưu ý kiểm thử: khi cửa sổ Claude bị che (`visibilityState: hidden`), Chrome dừng animation/rAF nên sheet và chuyển màn bị kẹt; không phải lỗi app.
+
+### Commit 5: `fix(mobile): accept WORKFLOW_EVENT trigger type` (nhánh `fix/mobile-workflow-event-trigger`, 2026-10-11)
+- Rà handoff tuần 5/6/7: backend có thêm `WORKFLOW_EVENT` (`ExecutionTriggerType`, `TriggerType`, openapi), nhưng mapper mobile kiểm `triggerType`/`type` bằng `oneOf` chặt. Hệ quả: một lượt chạy `WORKFLOW_EVENT` làm hỏng cả trang danh sách lượt chạy (tab Lượt chạy, Trang chủ); workflow có trigger này lỗi màn chi tiết.
+- Sửa: thêm `WORKFLOW_EVENT` vào `execution.mapper.ts`, `workflow.mapper.ts`, `execution.types.ts`, `workflow.types.ts`; nhãn vi/en `trigger.type.WORKFLOW_EVENT`, `execution.trigger.WORKFLOW_EVENT` trong `i18n.workflows.ts`; 2 test hồi quy trong `execution.mapper.test.cjs`, `workflow.mapper.test.cjs`.
+- Kiểm: `npx tsc --noEmit -p .` sạch; `node --test` toàn bộ `*.test.cjs`: 183/183 qua. GitNexus không index `apps/mobile` (impact `UNKNOWN`), người gọi xác nhận bằng text search: chỉ `http-execution.repository.ts` và `mapWorkflow`.
+- Chưa kiểm trên app chạy thật (cần một workflow có `trigger.workflow_event` đã chạy).
+- Còn lại từ handoff tuần 5/6 (chưa làm): thông báo `TRIGGER_REQUIRED`, hiện tên trường lỗi `error.details.field`, dừng poll khi app ở nền (`focusManager` + `AppState`), đăng nhập Google, xóa workspace, mẫu chia sẻ, nút Dừng lượt chạy, nhãn node `discord.send_message`/`weav.workflow`/`trigger.workflow_event`, 404 như "không có quyền" trong `ErrorState`. Handoff OCR tuần 7 (presigned R2) đã lỗi thời: workflow-service gửi file bằng multipart + JWT dịch vụ.
 
 ### Để sau
 - Đăng nhập Google trên mobile: luồng hiện có chỉ cho web (gọi thẳng identity-service :8082, kiểm Origin + cookie + CSRF, quay về `/auth/callback` của web; gateway chưa có route). Cần client OAuth cho mobile (PKCE + deep link `weav://auth/callback`) + route gateway + `expo-auth-session`. Người dùng quyết định để sau (2026-10-08).
