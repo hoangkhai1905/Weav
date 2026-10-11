@@ -2,7 +2,7 @@ import React from 'react';
 import { KeyboardAvoidingView, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Building2, Check, LogOut, Plus, Search, Trash2, UserPlus } from 'lucide-react-native';
+import { Building2, Check, ChevronRight, LogOut, Mail, Plus, Search, Trash2, UserPlus } from 'lucide-react-native';
 import { useWorkspace } from '../../../features/workspace/hooks/useWorkspace';
 import { useSwitchWorkspace } from '../../../features/workspace/hooks/useSwitchWorkspace';
 import {
@@ -13,6 +13,9 @@ import {
   validateWorkspaceName,
 } from '../../../features/workspace/workspace.mutations';
 import { MemberCard } from '../../../features/workspace/components/MemberCard';
+import { OwnerInvitations } from '../../../features/workspace/components/OwnerInvitations';
+import { useInvitationActions, useMyInvitations } from '../../../features/workspace/hooks/useInvitations';
+import { invitationErrorKey, isUserNotFound } from '../../../features/workspace/invitation.helpers';
 import { normalizeSearch } from '../../../features/workflows/workflow.filter';
 import { friendlyErrorMessage } from '../../../features/common/friendly-error';
 import { localizeValidation } from '../../../features/common/validation-copy';
@@ -88,6 +91,8 @@ export default function WorkspaceScreen() {
     deleteWorkspaceMutation,
   } = useWorkspace();
   const sessionUserId = useAuthStore((s) => s.user?.id ?? null);
+  const { invite: inviteMutation } = useInvitationActions();
+  const myInvitationCount = useMyInvitations().data?.items.length ?? 0;
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [inviteOpen, setInviteOpen] = React.useState(false);
@@ -98,6 +103,8 @@ export default function WorkspaceScreen() {
   const [createError, setCreateError] = React.useState<string | null>(null);
   const [renameError, setRenameError] = React.useState<string | null>(null);
   const [inviteError, setInviteError] = React.useState<string | null>(null);
+  /** Set when the typed address has no Weav account: the sheet then offers an e-mail invitation. */
+  const [inviteFallbackEmail, setInviteFallbackEmail] = React.useState<string | null>(null);
   const [confirmation, setConfirmation] = React.useState<Confirmation>(null);
   const [refreshing, setRefreshing] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
@@ -110,6 +117,7 @@ export default function WorkspaceScreen() {
     setRenameError(null);
     setMemberEmail('');
     setInviteError(null);
+    setInviteFallbackEmail(null);
     setSearch('');
     setConfirmation(null);
     setDeleteOpen(false);
@@ -189,9 +197,45 @@ export default function WorkspaceScreen() {
           return;
         }
         setInviteError(null);
-        await addMemberMutation.mutateAsync({ email: memberEmail.trim() });
+        setInviteFallbackEmail(null);
+        try {
+          await addMemberMutation.mutateAsync({ email: memberEmail.trim() });
+        } catch (error) {
+          if (isUserNotFound(error)) {
+            setInviteFallbackEmail(memberEmail.trim());
+            return;
+          }
+          throw error;
+        }
         setMemberEmail('');
         setInviteOpen(false);
+      },
+      setInviteError,
+    );
+
+  const closeInvite = () => {
+    setInviteOpen(false);
+    setInviteFallbackEmail(null);
+  };
+
+  const handleSendInvitation = () =>
+    guarded(
+      async () => {
+        const email = inviteFallbackEmail;
+        if (!email) return;
+        try {
+          await inviteMutation.mutateAsync({ workspaceId: activeWorkspaceId as string, email });
+        } catch (error) {
+          const code = (error as { code?: string } | null)?.code;
+          // An account exists (or is disabled): the offer no longer applies, only the explanation does.
+          if (code === 'USER_EXISTS' || code === 'USER_INACTIVE') setInviteFallbackEmail(null);
+          setInviteError(t(invitationErrorKey(error, 'invite')));
+          return;
+        }
+        setMemberEmail('');
+        setInviteFallbackEmail(null);
+        setInviteOpen(false);
+        showToast({ type: 'success', title: t('inv.sent') });
       },
       setInviteError,
     );
@@ -359,6 +403,31 @@ export default function WorkspaceScreen() {
             </>
           )}
 
+          <Pressable
+            testID="workspace-my-invitations"
+            accessibilityRole="button"
+            accessibilityLabel={t('inv.title')}
+            accessibilityHint={t('inv.row.sub')}
+            onPress={() => router.push('/(app)/invitations')}
+            style={[styles.option, { backgroundColor: colors.card, borderColor: colors.border }]}
+          >
+            <Mail size={20} color={colors.textSubtle} />
+            <View style={styles.rowText}>
+              <Text style={[Typography.body, { color: colors.text, fontWeight: '600' }]} numberOfLines={1}>
+                {t('inv.title')}
+              </Text>
+              <Text style={[Typography.caption, { color: colors.textMuted }]} numberOfLines={2}>
+                {t('inv.row.sub')}
+              </Text>
+            </View>
+            {myInvitationCount > 0 ? (
+              <View style={[styles.countPill, { backgroundColor: colors.primary }]}>
+                <Text style={[Typography.caption, { color: colors.onPrimary, fontWeight: '700' }]}>{myInvitationCount}</Text>
+              </View>
+            ) : null}
+            <ChevronRight size={18} color={colors.textSubtle} />
+          </Pressable>
+
           {activeWorkspace ? (
             <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>
@@ -444,6 +513,8 @@ export default function WorkspaceScreen() {
                 </View>
               )}
 
+              {isOwner ? <OwnerInvitations /> : null}
+
               {me && !isOwner ? (
                 <Button
                   variant="danger"
@@ -490,7 +561,7 @@ export default function WorkspaceScreen() {
         <Button label={t('ws.create.submit')} busy={createWorkspaceMutation.isPending} onPress={() => void handleCreate()} />
       </Sheet>
 
-      <Sheet visible={inviteOpen} onClose={() => setInviteOpen(false)} title={t('ws.invite')}>
+      <Sheet visible={inviteOpen} onClose={closeInvite} title={t('ws.invite')}>
         <Text style={[Typography.body, { color: colors.textMuted }]}>{t('ws.invite.desc')}</Text>
         <TextField
           testID="workspace-member-email"
@@ -503,10 +574,26 @@ export default function WorkspaceScreen() {
           onChangeText={(v) => {
             setMemberEmail(v);
             setInviteError(null);
+            setInviteFallbackEmail(null);
           }}
           error={inviteError}
         />
-        <Button label={t('ws.invite.submit')} busy={addMemberMutation.isPending} onPress={() => void handleInvite()} />
+        {inviteFallbackEmail ? (
+          <>
+            <Text testID="workspace-invite-fallback" accessibilityRole="alert" style={[Typography.body, { color: colors.text }]}>
+              {t('inv.fallback.message')}
+            </Text>
+            <Button
+              testID="workspace-invite-send"
+              label={t('inv.fallback.send')}
+              icon={<Mail size={16} color={colors.onPrimary} />}
+              busy={inviteMutation.isPending}
+              onPress={() => void handleSendInvitation()}
+            />
+          </>
+        ) : (
+          <Button label={t('ws.invite.submit')} busy={addMemberMutation.isPending} onPress={() => void handleInvite()} />
+        )}
       </Sheet>
 
       <Sheet visible={deleteOpen} onClose={() => setDeleteOpen(false)} title={t('ws.delete.title')}>
@@ -569,6 +656,8 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
   },
   optionName: { flex: 1, fontWeight: '600' },
+  rowText: { flex: 1, gap: Spacing.half },
+  countPill: { minWidth: 22, height: 22, paddingHorizontal: Spacing.one, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   selectedMark: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
   card: { gap: Spacing.three, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.lg },
   membersWrap: { gap: Spacing.three },

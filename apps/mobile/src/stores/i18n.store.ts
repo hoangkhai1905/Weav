@@ -5,6 +5,7 @@ import { runsEn, runsVi } from './i18n.runs';
 import { accountEn, accountVi } from './i18n.account';
 import { workflowsEn, workflowsVi } from './i18n.workflows';
 import { templatesEn, templatesVi } from './i18n.templates';
+import { invitationsEn, invitationsVi } from './i18n.invitations';
 
 export type Language = 'VI' | 'EN';
 
@@ -201,6 +202,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'ui.json.empty': 'Không có dữ liệu',
     ...workflowsVi,
     ...templatesVi,
+    ...invitationsVi,
     ...aiVi,
     ...authVi,
     ...runsVi,
@@ -398,6 +400,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'ui.json.empty': 'No data',
     ...workflowsEn,
     ...templatesEn,
+    ...invitationsEn,
     ...aiEn,
     ...authEn,
     ...runsEn,

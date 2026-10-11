@@ -34,6 +34,7 @@ export default function AppLayout() {
       <Stack.Screen name="executions/lookup/[executionId]" options={{ presentation: 'card' }} />
       <Stack.Screen name="connections/index" options={{ presentation: 'card' }} />
       <Stack.Screen name="workspace/index" options={{ presentation: 'card' }} />
+      <Stack.Screen name="invitations/index" options={{ presentation: 'card' }} />
       <Stack.Screen name="ai/generator" options={{ presentation: 'modal' }} />
       <Stack.Screen name="assistant/index" options={{ presentation: 'card' }} />
       <Stack.Screen name="assistant/chat" options={{ presentation: 'card' }} />

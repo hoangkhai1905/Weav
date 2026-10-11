@@ -127,7 +127,7 @@ function showWorkspaceMilestone(
   });
 }
 
-async function loadWorkspaces(
+export async function loadWorkspaces(
   userId: string,
   signal: AbortSignal,
 ): Promise<PageResult<Workspace>> {
