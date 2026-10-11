@@ -5,6 +5,7 @@ import type {
   AuthTokens,
   AuthRepositoryError,
   AuthSessionPage,
+  GoogleHandoff,
   PasswordResetReceipt,
   PasswordResetVerification,
 } from '../../domain/auth/auth.types';
@@ -210,6 +211,33 @@ export class HttpAuthRepository implements AuthRepository {
         data: { email, password },
       }),
     );
+  }
+
+  /** Public route: no Authorization header; the body is strict (exactly these three fields). */
+  async exchangeGoogleHandoff(handoff: GoogleHandoff): Promise<AuthSession> {
+    try {
+      const { data } = await httpClient.request<IdentityTokens>({
+        method: 'POST',
+        url: '/api/auth/oauth/mobile/exchange',
+        data: {
+          transactionId: handoff.transactionId,
+          handoffCode: handoff.handoffCode,
+          codeVerifier: handoff.codeVerifier,
+        },
+      });
+      return mapSession(data);
+    } catch (error) {
+      if (!axios.isAxiosError(error)) throw error;
+      // Keep the backend code: 409 ACCOUNT_LINK_REQUIRED and CONFLICT need different copy.
+      const { code, status, requestId } = normalizeApiError(error);
+      const authError: AuthRepositoryError = {
+        code,
+        message: 'Google sign-in failed.',
+        status,
+        ...(requestId ? { requestId } : {}),
+      };
+      throw authError;
+    }
   }
 
   async register(

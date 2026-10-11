@@ -46,8 +46,16 @@ export interface PasswordResetVerification {
   expiresIn: number;
 }
 
+export interface GoogleHandoff {
+  transactionId: string;
+  handoffCode: string;
+  codeVerifier: string;
+}
+
 export interface AuthRepository {
   login(email: string, password: string): Promise<AuthSession>;
+  /** Mobile Google sign-in: trades the deep-link handoff for a session (single use, 60 s). */
+  exchangeGoogleHandoff(handoff: GoogleHandoff): Promise<AuthSession>;
   register(email: string, name: string, password: string): Promise<AuthSession>;
   logout(refreshToken?: string): Promise<void>;
   getCurrentUser(): Promise<UserProfile | null>;
