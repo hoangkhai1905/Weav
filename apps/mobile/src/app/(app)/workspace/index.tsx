@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Building2, Check, LogOut, Plus, Search, Trash2, UserPlus } from 'lucide-react-native';
@@ -296,180 +296,182 @@ export default function WorkspaceScreen() {
           </Pressable>
         }
       />
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-      >
-        {showSkeleton ? (
-          <ListSkeleton rows={3} />
-        ) : workspaceError && workspaces.length === 0 ? (
-          <ErrorState error={workspaceError as unknown as ApiError} onRetry={() => void retryWorkspace()} />
-        ) : workspaces.length === 0 ? (
-          <EmptyState
-            icon={<Building2 size={32} color={colors.textSubtle} />}
-            title={t('ws.empty.title')}
-            description={t('ws.empty.desc')}
-            actionLabel={t('ws.create')}
-            onAction={() => setCreateOpen(true)}
-          />
-        ) : (
-          <>
-            <Text style={[Typography.label, { color: colors.textMuted }]}>{t('ws.pick')}</Text>
-            <View testID="workspace-list" style={styles.list}>
-              {workspaces.map((workspace) => {
-                const selected = workspace.id === activeWorkspaceId;
-                return (
-                  <Pressable
-                    key={workspace.id}
-                    testID={`workspace-option-${workspace.id}`}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected }}
-                    accessibilityLabel={workspace.name}
-                    onPress={() => switchWorkspace(workspace.id)}
-                    style={[
-                      styles.option,
-                      {
-                        backgroundColor: colors.card,
-                        borderColor: selected ? colors.primary : colors.border,
-                      },
-                    ]}
-                  >
-                    <Building2 size={20} color={selected ? colors.primary : colors.textSubtle} />
-                    <Text style={[Typography.body, styles.optionName, { color: colors.text }]} numberOfLines={1}>
-                      {workspace.name}
-                    </Text>
-                    {selected ? (
-                      <View style={styles.selectedMark}>
-                        <Check size={16} color={colors.primary} />
-                        <Text style={[Typography.caption, { color: colors.primary, fontWeight: '600' }]}>
-                          {t('ws.current')}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </Pressable>
-                );
-              })}
-            </View>
-            {workspaceAccessError ? (
-              <Text accessibilityRole="alert" style={[Typography.caption, { color: colors.warning }]}>
-                {t('ws.unavailable')}
-              </Text>
-            ) : null}
-          </>
-        )}
+      <KeyboardAvoidingView behavior="padding" style={styles.safe}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+        >
+          {showSkeleton ? (
+            <ListSkeleton rows={3} />
+          ) : workspaceError && workspaces.length === 0 ? (
+            <ErrorState error={workspaceError as unknown as ApiError} onRetry={() => void retryWorkspace()} />
+          ) : workspaces.length === 0 ? (
+            <EmptyState
+              icon={<Building2 size={32} color={colors.textSubtle} />}
+              title={t('ws.empty.title')}
+              description={t('ws.empty.desc')}
+              actionLabel={t('ws.create')}
+              onAction={() => setCreateOpen(true)}
+            />
+          ) : (
+            <>
+              <Text style={[Typography.label, { color: colors.textMuted }]}>{t('ws.pick')}</Text>
+              <View testID="workspace-list" style={styles.list}>
+                {workspaces.map((workspace) => {
+                  const selected = workspace.id === activeWorkspaceId;
+                  return (
+                    <Pressable
+                      key={workspace.id}
+                      testID={`workspace-option-${workspace.id}`}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={workspace.name}
+                      onPress={() => switchWorkspace(workspace.id)}
+                      style={[
+                        styles.option,
+                        {
+                          backgroundColor: colors.card,
+                          borderColor: selected ? colors.primary : colors.border,
+                        },
+                      ]}
+                    >
+                      <Building2 size={20} color={selected ? colors.primary : colors.textSubtle} />
+                      <Text style={[Typography.body, styles.optionName, { color: colors.text }]} numberOfLines={1}>
+                        {workspace.name}
+                      </Text>
+                      {selected ? (
+                        <View style={styles.selectedMark}>
+                          <Check size={16} color={colors.primary} />
+                          <Text style={[Typography.caption, { color: colors.primary, fontWeight: '600' }]}>
+                            {t('ws.current')}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {workspaceAccessError ? (
+                <Text accessibilityRole="alert" style={[Typography.caption, { color: colors.warning }]}>
+                  {t('ws.unavailable')}
+                </Text>
+              ) : null}
+            </>
+          )}
 
-        {activeWorkspace ? (
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>
-              {t('ws.settings')}
-            </Text>
-            {isOwner ? (
-              <>
-                <TextField
-                  testID="workspace-rename-name"
-                  label={t('ws.rename.label')}
-                  value={renameName}
-                  onChangeText={(v) => {
-                    setRenameName(v);
-                    setRenameError(null);
-                  }}
-                  maxLength={255}
-                  autoCapitalize="sentences"
-                  error={renameError}
-                />
-                <Button
-                  label={t('ws.rename.save')}
-                  busy={renameWorkspaceMutation.isPending}
-                  disabled={!renameName.trim() || renameName.trim() === activeWorkspace.name}
-                  onPress={() => void handleRename()}
-                />
-              </>
-            ) : (
-              <Text style={[Typography.body, { color: colors.textMuted }]}>
-                {me ? t('ws.memberNote') : t('ws.permLoading')}
-              </Text>
-            )}
-          </View>
-        ) : null}
-
-        {activeWorkspaceId ? (
-          <View testID="workspace-members-section" style={styles.membersWrap}>
-            <View style={styles.membersHead}>
-              <Text accessibilityRole="header" style={[Typography.title, styles.membersTitle, { color: colors.text }]}>
-                {t('ws.members')} {members.length ? `(${members.length})` : ''}
+          {activeWorkspace ? (
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>
+                {t('ws.settings')}
               </Text>
               {isOwner ? (
+                <>
+                  <TextField
+                    testID="workspace-rename-name"
+                    label={t('ws.rename.label')}
+                    value={renameName}
+                    onChangeText={(v) => {
+                      setRenameName(v);
+                      setRenameError(null);
+                    }}
+                    maxLength={255}
+                    autoCapitalize="sentences"
+                    error={renameError}
+                  />
+                  <Button
+                    label={t('ws.rename.save')}
+                    busy={renameWorkspaceMutation.isPending}
+                    disabled={!renameName.trim() || renameName.trim() === activeWorkspace.name}
+                    onPress={() => void handleRename()}
+                  />
+                </>
+              ) : (
+                <Text style={[Typography.body, { color: colors.textMuted }]}>
+                  {me ? t('ws.memberNote') : t('ws.permLoading')}
+                </Text>
+              )}
+            </View>
+          ) : null}
+
+          {activeWorkspaceId ? (
+            <View testID="workspace-members-section" style={styles.membersWrap}>
+              <View style={styles.membersHead}>
+                <Text accessibilityRole="header" style={[Typography.title, styles.membersTitle, { color: colors.text }]}>
+                  {t('ws.members')} {members.length ? `(${members.length})` : ''}
+                </Text>
+                {isOwner ? (
+                  <Button
+                    label={t('ws.invite')}
+                    icon={<UserPlus size={16} color={colors.onPrimary} />}
+                    onPress={() => setInviteOpen(true)}
+                  />
+                ) : null}
+              </View>
+
+              {members.length > 1 ? (
+                <TextField
+                  testID="workspace-member-search"
+                  label={t('ws.search.label')}
+                  placeholder={t('ws.search.placeholder')}
+                  icon={Search}
+                  value={search}
+                  onChangeText={setSearch}
+                />
+              ) : null}
+
+              {isLoadingMembers && members.length === 0 ? (
+                <ListSkeleton rows={3} />
+              ) : membersError && members.length === 0 ? (
+                <ErrorState error={membersError as unknown as ApiError} onRetry={() => void retryMembers()} />
+              ) : members.length === 0 ? (
+                <EmptyState title={t('ws.members.empty')} />
+              ) : visibleMembers.length === 0 ? (
+                <Text style={[Typography.body, { color: colors.textMuted }]}>{t('ws.search.none')}</Text>
+              ) : (
+                <View testID="workspace-members-list" style={styles.list}>
+                  {visibleMembers.map((member) => (
+                    <MemberCard
+                      key={member.id}
+                      member={member}
+                      isSelf={member.id === sessionUserId}
+                      canManage={isOwner}
+                      busy={membersBusy}
+                      onTogglePublish={() => void handleToggle(member, 'canPublishWorkflow')}
+                      onToggleState={() => void handleToggle(member, 'canManageWorkflowState')}
+                      onRemove={() => setConfirmation({ kind: 'remove', member })}
+                    />
+                  ))}
+                </View>
+              )}
+
+              {me && !isOwner ? (
                 <Button
-                  label={t('ws.invite')}
-                  icon={<UserPlus size={16} color={colors.onPrimary} />}
-                  onPress={() => setInviteOpen(true)}
+                  variant="danger"
+                  label={t('ws.leave')}
+                  icon={<LogOut size={16} color={colors.danger} />}
+                  onPress={() => setConfirmation({ kind: 'leave' })}
+                />
+              ) : null}
+              {isOwner ? (
+                <Text style={[Typography.caption, { color: colors.textSubtle }]}>{t('ws.ownerCannotLeave')}</Text>
+              ) : null}
+              {isOwner ? (
+                <Button
+                  testID="workspace-delete"
+                  variant="danger"
+                  label={t('ws.delete')}
+                  icon={<Trash2 size={16} color={colors.danger} />}
+                  onPress={() => {
+                    setDeleteName('');
+                    setDeleteError(null);
+                    setDeleteOpen(true);
+                  }}
                 />
               ) : null}
             </View>
-
-            {members.length > 1 ? (
-              <TextField
-                testID="workspace-member-search"
-                label={t('ws.search.label')}
-                placeholder={t('ws.search.placeholder')}
-                icon={Search}
-                value={search}
-                onChangeText={setSearch}
-              />
-            ) : null}
-
-            {isLoadingMembers && members.length === 0 ? (
-              <ListSkeleton rows={3} />
-            ) : membersError && members.length === 0 ? (
-              <ErrorState error={membersError as unknown as ApiError} onRetry={() => void retryMembers()} />
-            ) : members.length === 0 ? (
-              <EmptyState title={t('ws.members.empty')} />
-            ) : visibleMembers.length === 0 ? (
-              <Text style={[Typography.body, { color: colors.textMuted }]}>{t('ws.search.none')}</Text>
-            ) : (
-              <View testID="workspace-members-list" style={styles.list}>
-                {visibleMembers.map((member) => (
-                  <MemberCard
-                    key={member.id}
-                    member={member}
-                    isSelf={member.id === sessionUserId}
-                    canManage={isOwner}
-                    busy={membersBusy}
-                    onTogglePublish={() => void handleToggle(member, 'canPublishWorkflow')}
-                    onToggleState={() => void handleToggle(member, 'canManageWorkflowState')}
-                    onRemove={() => setConfirmation({ kind: 'remove', member })}
-                  />
-                ))}
-              </View>
-            )}
-
-            {me && !isOwner ? (
-              <Button
-                variant="danger"
-                label={t('ws.leave')}
-                icon={<LogOut size={16} color={colors.danger} />}
-                onPress={() => setConfirmation({ kind: 'leave' })}
-              />
-            ) : null}
-            {isOwner ? (
-              <Text style={[Typography.caption, { color: colors.textSubtle }]}>{t('ws.ownerCannotLeave')}</Text>
-            ) : null}
-            {isOwner ? (
-              <Button
-                testID="workspace-delete"
-                variant="danger"
-                label={t('ws.delete')}
-                icon={<Trash2 size={16} color={colors.danger} />}
-                onPress={() => {
-                  setDeleteName('');
-                  setDeleteError(null);
-                  setDeleteOpen(true);
-                }}
-              />
-            ) : null}
-          </View>
-        ) : null}
-      </ScrollView>
+          ) : null}
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <Sheet visible={createOpen} onClose={() => setCreateOpen(false)} title={t('ws.create')}>
         <TextField
