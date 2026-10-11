@@ -93,7 +93,8 @@ export const OwnerInvitations: React.FC = () => {
                   {invitation.email}
                 </Text>
                 <View style={[styles.pill, { backgroundColor: tone.bg, borderColor: tone.border }]}>
-                  <Text style={[Typography.caption, { color: tone.fg, fontWeight: '600' }]}>
+                  {/* "simple": Android's default line breaking measures this label too narrow on MIUI and drops a word. */}
+                  <Text textBreakStrategy="simple" numberOfLines={1} style={[Typography.caption, { color: tone.fg, fontWeight: '600' }]}>
                     {t(`inv.owner.status.${invitation.status}`)}
                   </Text>
                 </View>
@@ -153,7 +154,8 @@ const styles = StyleSheet.create({
   card: { gap: Spacing.two, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.md },
   top: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   email: { flex: 1, fontWeight: '600' },
-  pill: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.half, borderWidth: 1, borderRadius: Radius.sm },
+  // Never shrink: the email takes the rest of the row and truncates instead.
+  pill: { flexShrink: 0, paddingHorizontal: Spacing.two, paddingVertical: Spacing.half, borderWidth: 1, borderRadius: Radius.sm },
   actions: { flexDirection: 'row', gap: Spacing.two, minHeight: MinTouch },
   action: { flex: 1 },
 });
