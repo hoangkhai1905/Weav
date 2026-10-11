@@ -1,6 +1,7 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LayoutDashboard, GitFork, Activity, Bell, User } from 'lucide-react-native';
 import { useNotificationUnreadCount } from '../../../features/notifications/hooks/useNotifications';
 import { useThemeColors } from '../../../hooks/useThemeColors';
@@ -10,6 +11,9 @@ export default function TabsLayout() {
   const colors = useThemeColors();
   const { t } = useTranslation();
   const { data: unreadCount = 0 } = useNotificationUnreadCount();
+  // A fixed height overrides the navigator's own inset handling; Android 15 draws edge-to-edge,
+  // so add the system navigation bar height or the tabs sit under its buttons.
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
@@ -21,8 +25,8 @@ export default function TabsLayout() {
           backgroundColor: colors.tabBg,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          height: 66,
-          paddingBottom: 10,
+          height: 66 + insets.bottom,
+          paddingBottom: 10 + insets.bottom,
           paddingTop: 6,
         },
         tabBarLabelStyle: {
