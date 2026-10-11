@@ -21,7 +21,7 @@ const INTEGER_MIN: Record<string, number> = {
   'format.text.maxLength': 1,
 };
 
-// Chat steps whose text field understands Markdown: the field gets format buttons and a preview (email and Telegram have their own).
+// Chat steps whose text field understands Markdown: the field is edited visually with format buttons (email and Telegram have their own).
 const FORMAT_FIELDS: Record<string, { name: string; syntax: FormatSyntax; actions: FormatAction[] }> = {
   'discord.send_message': { name: 'content', syntax: 'markdown', actions: ['bold', 'italic', 'link', 'list'] },
   'slack.send_message': { name: 'text', syntax: 'slack', actions: ['bold', 'italic', 'link'] },
@@ -96,7 +96,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
         multiline={multiline}
         value={text}
         groups={groups}
-        format={FORMAT_FIELDS[nodeType]?.name === name ? { syntax: FORMAT_FIELDS[nodeType].syntax, actions: FORMAT_FIELDS[nodeType].actions, preview: true } : undefined}
+        format={FORMAT_FIELDS[nodeType]?.name === name ? { syntax: FORMAT_FIELDS[nodeType].syntax, actions: FORMAT_FIELDS[nodeType].actions, rich: true } : undefined}
         onChange={(next) => onChange(next === '' ? undefined : textValue(next))}
       />
     );

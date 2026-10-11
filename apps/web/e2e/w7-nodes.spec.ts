@@ -159,7 +159,7 @@ test('the Slack and Teams steps pick a connection, count text and save their con
   expect(teams?.config).toMatchObject({ connectionId: teamsConnectionId, title: 'Alert', text: 'Build failed' });
 });
 
-test('the Teams message toolbar writes Adaptive Card Markdown and previews it', async ({ page }) => {
+test('the Teams message is edited visually, saved as Adaptive Card Markdown, and editable as code', async ({ page }) => {
   const backend = await stubBackend(page, [connection(teamsConnectionId, 'TEAMS', 'Teams alerts', 'ACTIVE', true)]);
   await openBuilder(page);
   await addNode(page, 'teams.send_message');
@@ -169,9 +169,14 @@ test('the Teams message toolbar writes Adaptive Card Markdown and previews it', 
   await text.click();
   await page.keyboard.press('ControlOrMeta+a');
   await page.getByTestId('format-bold').click();
+  // The field itself shows the formatting; no markup is visible.
+  await expect(text.locator('b')).toHaveText('Build failed');
+  await expect(text).not.toContainText('**');
+  await expect(page.getByTestId('format-preview')).toHaveCount(0);
+  // "</> Markdown" shows the source, with the preview under it.
+  await page.getByTestId('format-code-toggle').click();
   await expect(text).toHaveText('**Build failed**');
   await expect(page.getByTestId('format-preview').locator('b')).toHaveText('Build failed');
-  await expect(page.getByTestId('format-preview')).not.toContainText('**');
   const teams = await savedNode(page, backend.drafts, 'teams.send_message');
   expect(teams?.config).toMatchObject({ text: '**Build failed**' });
 });

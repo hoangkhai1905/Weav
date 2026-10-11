@@ -128,6 +128,22 @@ function parseMarkdown(syntax: FormatSyntax, text: string): PreviewNode[] {
   return out;
 }
 
+// Tags the visual editor can write back unchanged; anything else (tables, images, styles, comments) is code only.
+const EDITABLE_TAGS = new Set(['b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'a', 'br', 'ul', 'ol', 'li', 'code']);
+
+/** True when the visual editor can show `text` and save it back without losing anything the author wrote. */
+export function richEditable(syntax: FormatSyntax, text: string): boolean {
+  if (syntax !== 'html' && syntax !== 'telegramHtml') return true;
+  if (/<[!?]/.test(text)) return false;
+  for (const match of text.matchAll(/<\/?([a-z][a-z0-9]*)\b([^>]*)>/gi)) {
+    const tag = match[1].toLowerCase();
+    if (!EDITABLE_TAGS.has(tag)) return false;
+    const attrs = match[2].replace(/\/\s*$/, '').trim();
+    if (attrs && !(tag === 'a' && /^href\s*=\s*("[^"]*"|'[^']*')$/i.test(attrs))) return false;
+  }
+  return true;
+}
+
 /** What the receiver will show for `text` written in `syntax`, as a tree that is safe to render. */
 export function formatPreview(syntax: FormatSyntax, text: string): PreviewNode[] {
   return syntax === 'html' || syntax === 'telegramHtml' ? parseHtml(text) : parseMarkdown(syntax, text);

@@ -4,6 +4,8 @@ import { useI18nStore } from '../../store/useI18nStore';
 import { FormatToolbar } from './FormatToolbar';
 import { FormatPreview } from './FormatPreview';
 import { formatInsert, type FormatAction, type FormatSyntax } from '../../lib/formatInsert';
+import { formatPreview, richEditable } from '../../lib/formatPreview';
+import { buildRich, serializeRich } from './richText';
 import { describeMapping, mappingFieldInserts, mappingOf, pathLabel, RUN_PATHS, type VariableGroup } from '../../lib/variablePaths';
 
 interface MappingTextFieldProps {
@@ -21,9 +23,12 @@ interface MappingTextFieldProps {
   testId?: string;
   /** Classes for the outer wrapper, for example `min-w-0 flex-1` inside a row. */
   className?: string;
-  /** Shows bold/italic/link buttons above the field that write `syntax`. `onUse` may return a short note to show under them. */
-  /** `preview`: also show below the field how the receiver will display the text (only when that mode renders formatting). */
-  format?: { syntax: FormatSyntax; actions: FormatAction[]; onUse?: () => string | void; preview?: boolean };
+  /**
+   * Format buttons above the field that write `syntax`; `onUse` (first use) may switch the step to a formatted mode and
+   * return a short note. `rich`: the step's mode shows formatting, so the field is edited visually, with a "</> code"
+   * switch to the source for people who want it.
+   */
+  format?: { syntax: FormatSyntax; actions: FormatAction[]; onUse?: () => string | void; rich?: boolean };
 }
 
 // Browsers keep typed spaces as non-breaking spaces in contenteditable.
@@ -46,13 +51,18 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [formatNote, setFormatNote] = useState('');
+  // Source code instead of the visual editor: chosen by the user, or forced when the visual editor would lose markup.
+  const [codeMode, setCodeMode] = useState(() => Boolean(format?.rich) && !richEditable(format!.syntax, value));
+  const rich = Boolean(format?.rich) && !codeMode;
   const emitted = useRef<string | null>(null);
+  // Whether the field's DOM currently holds the visual editor (formatting elements) or plain text and chips.
+  const shownRich = useRef<boolean | null>(null);
   // Where the caret was last inside this field: a menu or "Insert variable" takes focus away, so the live selection is gone.
   const caret = useRef<Range | null>(null);
   // Latest props for DOM handlers and the registered insert, which outlive a single render.
-  const live = useRef({ groups, t, onChange, format });
+  const live = useRef({ groups, t, onChange, format, rich });
   useLayoutEffect(() => {
-    live.current = { groups, t, onChange, format };
+    live.current = { groups, t, onChange, format, rich };
   });
 
   const chip = (inner: string) => {
@@ -87,9 +97,14 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
     return nodes;
   };
 
-  const render = (text: string) => ref.current?.replaceChildren(...nodesFor(text));
+  const render = (text: string) => {
+    const syntax = live.current.format?.syntax;
+    ref.current?.replaceChildren(...(live.current.rich && syntax ? buildRich(formatPreview(syntax, text), syntax, nodesFor) : nodesFor(text)));
+  };
 
   const serialize = (root: Node | null = ref.current): string => {
+    const syntax = live.current.format?.syntax;
+    if (live.current.rich && syntax && root && root === ref.current) return serializeRich(root, syntax);
     let out = '';
     const walk = (parent: Node) => parent.childNodes.forEach((child) => {
       if (child.nodeType === Node.TEXT_NODE) out += (child.textContent ?? '').replace(NBSP, ' ');
@@ -143,8 +158,59 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
     }
     emit();
   };
-  /** Wraps the selected text (or a sample word) in the syntax of this field's format and keeps it selected. */
+  /** A format button: formats the selection visually, or (source code) wraps it in the syntax. */
   const applyFormat = (action: FormatAction) => {
+    const el = ref.current;
+    const current = live.current.format;
+    if (!el || !current) return;
+    if (codeMode) {
+      applySource(action);
+      return;
+    }
+    if (!live.current.rich) {
+      // First format in a plain step (text email, Telegram without a parse mode): switch the step, then edit visually.
+      setFormatNote(current.onUse?.() || '');
+      live.current.rich = true;
+      shownRich.current = true;
+      // Typed line breaks would collapse in an HTML email, so they become <br> first.
+      if (current.syntax === 'html') {
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        const texts: Text[] = [];
+        while (walker.nextNode()) texts.push(walker.currentNode as Text);
+        texts.filter((node) => node.data.includes('\n')).forEach((node) => {
+          const parts = node.data.split('\n');
+          node.replaceWith(...parts.flatMap((part, index) => (index ? [document.createElement('br'), part] : [part])));
+        });
+      }
+    }
+    el.focus();
+    const selection = window.getSelection();
+    if (selection && caret.current && el.contains(caret.current.startContainer)) {
+      selection.removeAllRanges();
+      selection.addRange(caret.current);
+    }
+    document.execCommand('styleWithCSS', false, 'false');
+    if (action === 'bold') document.execCommand('bold');
+    else if (action === 'italic') document.execCommand('italic');
+    else if (action === 'list') document.execCommand('insertUnorderedList');
+    else if (action === 'lineBreak') document.execCommand('insertLineBreak');
+    else if (selection) {
+      const selected = selection.toString().trim();
+      const url = /^https?:\/\/\S+$/.test(selected) ? selected : window.prompt(live.current.t('builder.format.link_prompt'), 'https://')?.trim();
+      if (!url || !/^https?:\/\/\S+$/.test(url)) return;
+      if (selection.isCollapsed) {
+        // Nothing selected: the address itself becomes the link text.
+        document.execCommand('insertText', false, url);
+        const { focusNode, focusOffset } = selection;
+        if (focusNode && focusOffset >= url.length) selection.setBaseAndExtent(focusNode, focusOffset - url.length, focusNode, focusOffset);
+      }
+      document.execCommand('createLink', false, url);
+    }
+    emit();
+  };
+
+  /** Source code: wraps the selected text (or a sample word) in the syntax of this field's format and keeps it selected. */
+  const applySource = (action: FormatAction) => {
     const el = ref.current;
     const current = live.current.format;
     if (!el || !current) return;
@@ -186,13 +252,24 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
     insertRef.current = insert;
   });
 
-  // Rebuild the chips only when the value changed from outside (another step, a quick insert), never while typing.
+  // Rebuild the field only when the value changed from outside (another step, a quick insert) or the editor switched
+  // between visual and source, never while typing.
   useLayoutEffect(() => {
-    if (value !== emitted.current) {
+    if (value !== emitted.current || shownRich.current !== rich) {
       render(value);
       emitted.current = value;
+      shownRich.current = rich;
     }
   });
+
+  const toggleCode = () => {
+    if (codeMode && format && !richEditable(format.syntax, value)) {
+      setFormatNote(t('builder.format.code_only'));
+      return;
+    }
+    setFormatNote('');
+    setCodeMode(!codeMode);
+  };
 
   // Chip names follow the steps before; refresh them when those change and the user is not typing here.
   const groupsKey = groups.map((group) => `${group.key}:${group.label}:${group.paths.join(',')}`).join('|');
@@ -237,7 +314,14 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
 
   return (
     <div className={`relative ${className ?? ''}`}>
-      {format && <FormatToolbar actions={format.actions} onAction={applyFormat} />}
+      {format && (
+        <FormatToolbar
+          // Enter already breaks the line in the visual editor.
+          actions={rich ? format.actions.filter((action) => action !== 'lineBreak') : format.actions}
+          onAction={applyFormat}
+          code={format.rich ? { label: format.syntax === 'html' || format.syntax === 'telegramHtml' ? 'HTML' : 'Markdown', active: codeMode, onToggle: toggleCode } : undefined}
+        />
+      )}
       {format && formatNote && <p data-testid="format-note" className="mb-1 text-[10px] leading-relaxed text-muted-foreground">{formatNote}</p>}
       <div
         ref={ref}
@@ -258,11 +342,17 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
         onInput={emit}
         // Turn a {{ ... }} typed or pasted by hand into a chip; otherwise leave the nodes (and the remembered caret) alone.
         onBlur={() => {
-          const typed = [...(ref.current?.childNodes ?? [])].some((node) => node.nodeType === Node.TEXT_NODE && HAS_TOKEN.test(node.textContent ?? ''));
+          const el = ref.current;
+          if (!el) return;
+          const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+          let typed = false;
+          while (!typed && walker.nextNode()) typed = HAS_TOKEN.test(walker.currentNode.textContent ?? '');
           if (typed) render(serialize());
         }}
         onKeyDown={(event) => {
           if (event.key !== 'Enter') return;
+          // In a visual list, Enter starts the next item (and leaves the list on an empty one), as in any editor.
+          if (rich && window.getSelection()?.anchorNode?.parentElement?.closest('li')) return;
           event.preventDefault();
           if (multiline) document.execCommand('insertLineBreak');
         }}
@@ -281,7 +371,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
           remove.closest('[data-mapping]')?.remove();
           emit();
         }}
-        className={`w-full cursor-text rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs leading-6 text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] ${multiline ? 'min-h-[6rem] whitespace-pre-wrap break-words' : 'min-h-[2rem] overflow-x-auto whitespace-pre'}`}
+        className={`w-full cursor-text rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs leading-6 text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] ${multiline ? `min-h-[6rem] break-words ${rich && format?.syntax === 'html' ? 'whitespace-normal' : 'whitespace-pre-wrap'}` : 'min-h-[2rem] overflow-x-auto whitespace-pre'} [&_a]:text-run [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5`}
       />
       <div ref={menuRef} className="mt-0.5 flex justify-end">
         <button
@@ -326,7 +416,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
           </div>
         )}
       </div>
-      {format?.preview && <FormatPreview syntax={format.syntax} text={value} groups={groups} />}
+      {format?.rich && codeMode && <FormatPreview syntax={format.syntax} text={value} groups={groups} />}
     </div>
   );
 };
