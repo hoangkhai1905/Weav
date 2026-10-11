@@ -83,3 +83,23 @@ test('a 401 refreshes once and retries with the new token; auth routes and secon
     httpClient.defaults.adapter = previousAdapter;
   }
 });
+
+test('public auth routes never get the stored access token (an expired bearer made refresh fail with 502)', async () => {
+  const previousAdapter = httpClient.defaults.adapter;
+  const sent = [];
+  httpClient.defaults.adapter = async (config) => {
+    sent.push({ url: config.url, auth: config.headers.Authorization });
+    return { data: {}, status: 200, statusText: 'OK', headers: {}, config };
+  };
+  try {
+    setHttpClientToken('expired-token');
+    for (const url of ['/api/auth/refresh', '/api/auth/logout', '/api/auth/login', '/api/auth/oauth/mobile/exchange']) {
+      await httpClient.post(url, {});
+    }
+    await httpClient.get('/api/v2/notifications/unread-count');
+    assert.deepEqual(sent.map((s) => s.auth), [undefined, undefined, undefined, undefined, 'Bearer expired-token']);
+  } finally {
+    setHttpClientToken(null);
+    httpClient.defaults.adapter = previousAdapter;
+  }
+});

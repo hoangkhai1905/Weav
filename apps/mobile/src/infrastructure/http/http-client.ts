@@ -17,8 +17,13 @@ export const setHttpClientToken = (token: string | null) => {
   authToken = token;
 };
 
+// Public auth routes: login, register, refresh, logout (body token) and the OAuth exchange.
+const PUBLIC_AUTH_URL = /\/api\/auth\/(login|register|refresh|logout|oauth\/)/;
+
+// Never attach the access token to public auth routes: Identity rejects an expired bearer even
+// there, and the gateway turns that into a 502, so the refresh after 15 minutes always failed.
 httpClient.interceptors.request.use((config) => {
-  if (authToken && !config.headers?.Authorization) {
+  if (authToken && !config.headers?.Authorization && !PUBLIC_AUTH_URL.test(config.url ?? '')) {
     config.headers.Authorization = `Bearer ${authToken}`;
   }
   return config;
@@ -34,14 +39,12 @@ export const setUnauthorizedHandler = (handler: UnauthorizedHandler | null) => {
 };
 
 // Auth routes answer 401 for bad credentials or a dead refresh token: never refresh-and-retry them.
-const NO_REFRESH_URL = /\/api\/auth\/(login|register|refresh|logout|oauth\/)/;
-
 // Access tokens live 15 minutes: without this, the first 401 after that signed the user out.
 httpClient.interceptors.response.use(undefined, async (error: unknown) => {
   if (!axios.isAxiosError(error) || error.response?.status !== 401 || !error.config || !unauthorizedHandler) throw error;
   const config = error.config as typeof error.config & { _authRetried?: boolean };
   const header = String(config.headers?.Authorization ?? '');
-  if (config._authRetried || !header.startsWith('Bearer ') || NO_REFRESH_URL.test(config.url ?? '')) throw error;
+  if (config._authRetried || !header.startsWith('Bearer ') || PUBLIC_AUTH_URL.test(config.url ?? '')) throw error;
   const token = await unauthorizedHandler(header.slice('Bearer '.length)).catch(() => null);
   if (!token) throw error;
   config._authRetried = true;
