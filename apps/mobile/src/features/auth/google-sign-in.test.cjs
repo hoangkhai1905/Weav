@@ -59,3 +59,13 @@ test('exchange errors map by status first, then code', () => {
   assert.equal(googleErrorKey({ status: 400, code: 'BAD_REQUEST' }), 'au.google.err.unavailable');
   assert.equal(googleErrorKey(new Error('offline')), 'au.err.network');
 });
+
+test('the router ignores the OAuth return link and passes every other path through', () => {
+  const { routeForSystemPath } = require('./google-sign-in.ts');
+  for (const url of [`weav://auth/callback?transaction_id=${ID}`, 'mobile://auth/callback?oauth_error=cancelled', '/auth/callback']) {
+    assert.equal(routeForSystemPath(url, false), null);
+    assert.equal(routeForSystemPath(url, true), '/');
+  }
+  assert.equal(routeForSystemPath('weav://workflows/1', false), 'weav://workflows/1');
+  assert.equal(routeForSystemPath('weav://auth/callbacks', false), 'weav://auth/callbacks');
+});
