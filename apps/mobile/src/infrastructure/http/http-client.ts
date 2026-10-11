@@ -45,12 +45,33 @@ httpClient.interceptors.response.use(undefined, async (error: unknown) => {
   const config = error.config as typeof error.config & { _authRetried?: boolean };
   const header = String(config.headers?.Authorization ?? '');
   if (config._authRetried || !header.startsWith('Bearer ') || PUBLIC_AUTH_URL.test(config.url ?? '')) throw error;
-  const token = await unauthorizedHandler(header.slice('Bearer '.length)).catch(() => null);
+  let token: string | null;
+  try {
+    token = await unauthorizedHandler(header.slice('Bearer '.length));
+  } catch (refreshError) {
+    // A passing failure (offline, gateway or Identity restarting) keeps the session: report it as 503
+    // so the screen offers "try again". A rejected refresh token already ended the session: keep the 401.
+    if (!isTransientRefreshFailure(refreshError)) throw error;
+    throw new axios.AxiosError('Session refresh unavailable.', 'ERR_BAD_RESPONSE', config, error.request, {
+      ...error.response,
+      status: 503,
+      statusText: 'Service Unavailable',
+      data: { code: 'SESSION_REFRESH_UNAVAILABLE', message: 'Session refresh unavailable.' },
+    });
+  }
   if (!token) throw error;
   config._authRetried = true;
   config.headers.Authorization = `Bearer ${token}`;
   return httpClient.request(config);
 });
+
+/** No HTTP status (network) or a 429/5xx answer: the refresh may succeed on the next request. */
+function isTransientRefreshFailure(error: unknown): boolean {
+  const { status, code } = (error ?? {}) as { status?: unknown; code?: unknown };
+  // The session could not be saved on the device: the coordinator already signed out.
+  if (typeof code === 'string' && code.startsWith('AUTH_STORAGE')) return false;
+  return status === undefined || status === 429 || (typeof status === 'number' && status >= 500);
+}
 
 type ErrorRecord = Record<string, unknown>;
 

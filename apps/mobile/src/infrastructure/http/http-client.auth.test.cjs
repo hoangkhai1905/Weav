@@ -103,3 +103,36 @@ test('public auth routes never get the stored access token (an expired bearer ma
     httpClient.defaults.adapter = previousAdapter;
   }
 });
+
+test('a passing refresh failure becomes a 503 (keep the session); a rejected refresh keeps the 401', async () => {
+  const { setUnauthorizedHandler } = require('./http-client.ts');
+  const previousAdapter = httpClient.defaults.adapter;
+  httpClient.defaults.adapter = async (config) => {
+    const error = new Error('status 401');
+    error.isAxiosError = true;
+    error.config = config;
+    error.response = { status: 401, data: {}, headers: {}, config };
+    throw error;
+  };
+  try {
+    setUnauthorizedHandler(async () => {
+      throw { code: 'AUTH_ERROR', status: 502 };
+    });
+    await assert.rejects(httpClient.get('/api/v1/x', { headers: { Authorization: 'Bearer old' } }), (e) => {
+      assert.equal(e.response.status, 503);
+      assert.equal(e.response.data.code, 'SESSION_REFRESH_UNAVAILABLE');
+      return true;
+    });
+    setUnauthorizedHandler(async () => {
+      throw { code: 'UNAUTHORIZED', status: 401 };
+    });
+    await assert.rejects(httpClient.get('/api/v1/x', { headers: { Authorization: 'Bearer old' } }), (e) => e.response.status === 401);
+    setUnauthorizedHandler(async () => {
+      throw { code: 'AUTH_STORAGE_WRITE_FAILED' };
+    });
+    await assert.rejects(httpClient.get('/api/v1/x', { headers: { Authorization: 'Bearer old' } }), (e) => e.response.status === 401);
+  } finally {
+    setUnauthorizedHandler(null);
+    httpClient.defaults.adapter = previousAdapter;
+  }
+});
