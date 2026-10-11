@@ -159,6 +159,23 @@ test('the Slack and Teams steps pick a connection, count text and save their con
   expect(teams?.config).toMatchObject({ connectionId: teamsConnectionId, title: 'Alert', text: 'Build failed' });
 });
 
+test('the Teams message toolbar writes Adaptive Card Markdown and previews it', async ({ page }) => {
+  const backend = await stubBackend(page, [connection(teamsConnectionId, 'TEAMS', 'Teams alerts', 'ACTIVE', true)]);
+  await openBuilder(page);
+  await addNode(page, 'teams.send_message');
+  await page.getByTestId('field-connectionId').selectOption(teamsConnectionId);
+  const text = page.getByTestId('field-text');
+  await text.fill('Build failed');
+  await text.click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.getByTestId('format-bold').click();
+  await expect(text).toHaveText('**Build failed**');
+  await expect(page.getByTestId('format-preview').locator('b')).toHaveText('Build failed');
+  await expect(page.getByTestId('format-preview')).not.toContainText('**');
+  const teams = await savedNode(page, backend.drafts, 'teams.send_message');
+  expect(teams?.config).toMatchObject({ text: '**Build failed**' });
+});
+
 test('the Format date and time step shows the fields of its operation and saves them', async ({ page }) => {
   const backend = await stubBackend(page);
   await openBuilder(page);

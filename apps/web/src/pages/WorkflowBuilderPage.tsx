@@ -2223,6 +2223,8 @@ export const WorkflowBuilderPage: React.FC = () => {
                       format={{
                         // MarkdownV2 stays as the user chose it; otherwise formatting turns on Telegram's HTML.
                         syntax: selectedNodeConfig.parseMode === 'MarkdownV2' ? 'telegramMarkdown' : 'telegramHtml',
+                        // Without a parse mode Telegram shows the text exactly as typed, so there is nothing to preview.
+                        preview: selectedNodeConfig.parseMode === 'HTML' || selectedNodeConfig.parseMode === 'MarkdownV2',
                         actions: ['bold', 'italic', 'link'],
                         onUse: () => {
                           if (selectedNodeConfig.parseMode === 'HTML' || selectedNodeConfig.parseMode === 'MarkdownV2') return;
@@ -2353,6 +2355,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       groups={inspectorGroups}
                       format={{
                         syntax: 'html',
+                        preview: selectedNodeConfig.bodyType === 'html',
                         actions: ['bold', 'italic', 'link', 'list', 'lineBreak'],
                         onUse: () => {
                           if (selectedNodeConfig.bodyType === 'html') return;

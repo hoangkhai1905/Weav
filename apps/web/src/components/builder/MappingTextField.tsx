@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Braces } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { FormatToolbar } from './FormatToolbar';
+import { FormatPreview } from './FormatPreview';
 import { formatInsert, type FormatAction, type FormatSyntax } from '../../lib/formatInsert';
 import { describeMapping, mappingFieldInserts, mappingOf, pathLabel, RUN_PATHS, type VariableGroup } from '../../lib/variablePaths';
 
@@ -21,7 +22,8 @@ interface MappingTextFieldProps {
   /** Classes for the outer wrapper, for example `min-w-0 flex-1` inside a row. */
   className?: string;
   /** Shows bold/italic/link buttons above the field that write `syntax`. `onUse` may return a short note to show under them. */
-  format?: { syntax: FormatSyntax; actions: FormatAction[]; onUse?: () => string | void };
+  /** `preview`: also show below the field how the receiver will display the text (only when that mode renders formatting). */
+  format?: { syntax: FormatSyntax; actions: FormatAction[]; onUse?: () => string | void; preview?: boolean };
 }
 
 // Browsers keep typed spaces as non-breaking spaces in contenteditable.
@@ -324,6 +326,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
           </div>
         )}
       </div>
+      {format?.preview && <FormatPreview syntax={format.syntax} text={value} groups={groups} />}
     </div>
   );
 };
