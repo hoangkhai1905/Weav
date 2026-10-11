@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { GitFork, Plus, Search, X } from 'lucide-react-native';
+import { GitFork, LayoutTemplate, Plus, Search, X } from 'lucide-react-native';
 import { useInfiniteWorkflows } from '../../../features/workflows/hooks/useWorkflows';
 import { filterWorkflows, type WorkflowStatusFilter } from '../../../features/workflows/workflow.filter';
 import { fill } from '../../../features/common/fill';
@@ -164,14 +164,24 @@ export default function WorkflowsScreen() {
         title={t('wfl.title')}
         subtitle={query.data ? fill(t('wfl.count'), { n: total }) : undefined}
         trailing={
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('wfl.create.ai')}
-            onPress={openAi}
-            style={styles.ai}
-          >
-            <Plus size={22} color={colors.primary} />
-          </Pressable>
+          <View style={styles.actions}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('tpl.title')}
+              onPress={() => router.push('/(app)/templates')}
+              style={styles.ai}
+            >
+              <LayoutTemplate size={22} color={colors.primary} />
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('wfl.create.ai')}
+              onPress={openAi}
+              style={styles.ai}
+            >
+              <Plus size={22} color={colors.primary} />
+            </Pressable>
+          </View>
         }
       />
       {body}
@@ -204,6 +214,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   note: { textAlign: 'center' },
+  actions: { flexDirection: 'row' },
   ai: {
     width: MinTouch,
     height: MinTouch,

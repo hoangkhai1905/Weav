@@ -24,7 +24,10 @@ function isAccountScopedQuery(query: { queryKey: readonly unknown[] }): boolean 
     query.queryKey[0] === 'workspaces' ||
     query.queryKey[0] === 'notifications' ||
     query.queryKey[0] === 'current-user' ||
-    query.queryKey[0] === 'auth-sessions'
+    query.queryKey[0] === 'auth-sessions' ||
+    // Templates carry `owned` and the share code, so their keys are [name, userId, ...].
+    query.queryKey[0] === 'templates' ||
+    query.queryKey[0] === 'template'
   );
 }
 

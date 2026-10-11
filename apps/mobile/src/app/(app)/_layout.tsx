@@ -28,6 +28,8 @@ export default function AppLayout() {
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="workflows/[id]" options={{ presentation: 'card' }} />
+      <Stack.Screen name="templates/index" options={{ presentation: 'card' }} />
+      <Stack.Screen name="templates/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="executions/[workflowId]/[executionId]" options={{ presentation: 'card' }} />
       <Stack.Screen name="executions/lookup/[executionId]" options={{ presentation: 'card' }} />
       <Stack.Screen name="connections/index" options={{ presentation: 'card' }} />
