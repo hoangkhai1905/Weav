@@ -11,6 +11,9 @@ const PROVIDERS = [
   'GOOGLE_DRIVE',
   'TELEGRAM',
   'HTTP',
+  'DISCORD',
+  'SLACK',
+  'TEAMS',
 ] as const;
 const AUTH_TYPES = ['NONE', 'TOKEN', 'API_KEY', 'BASIC', 'OAUTH2'] as const;
 const STATUSES = ['ACTIVE', 'INVALID', 'DISABLED'] as const;

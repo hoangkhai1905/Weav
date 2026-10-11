@@ -1,7 +1,15 @@
 // Pure (no react-native import) so Node tests can load it.
 
 /** Steps that need a connection the user must pick again after copying a template. */
-const NEEDS_CONNECTION = new Set(['email.send', 'telegram.send_message', 'trigger.gmail', 'trigger.telegram']);
+const NEEDS_CONNECTION = new Set([
+  'email.send',
+  'telegram.send_message',
+  'discord.send_message',
+  'slack.send_message',
+  'teams.send_message',
+  'trigger.gmail',
+  'trigger.telegram',
+]);
 
 export function reconnectCount(nodes: readonly { type: string }[]): number {
   return nodes.filter((n) => NEEDS_CONNECTION.has(n.type) || n.type.startsWith('google.')).length;

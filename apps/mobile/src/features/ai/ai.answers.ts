@@ -41,6 +41,12 @@ export function providerForNodeType(nodeType: string): ConnectionProvider | null
       return 'TELEGRAM';
     case 'http.request':
       return 'HTTP';
+    case 'discord.send_message':
+      return 'DISCORD';
+    case 'slack.send_message':
+      return 'SLACK';
+    case 'teams.send_message':
+      return 'TEAMS';
     default:
       return null;
   }

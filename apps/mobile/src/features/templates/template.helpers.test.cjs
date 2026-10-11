@@ -8,6 +8,7 @@ const nodes = (...types) => types.map((type, i) => ({ id: `n${i}`, type }));
 test('reconnectCount counts the steps that need a connection', () => {
   assert.equal(reconnectCount([]), 0);
   assert.equal(reconnectCount(nodes('trigger.manual', 'http.request', 'transform.set')), 0);
+  assert.equal(reconnectCount(nodes('discord.send_message', 'slack.send_message', 'teams.send_message', 'format.text')), 3);
   assert.equal(
     reconnectCount(
       nodes('trigger.gmail', 'trigger.telegram', 'email.send', 'telegram.send_message', 'google.sheets.append_row', 'google.calendar.create_event'),

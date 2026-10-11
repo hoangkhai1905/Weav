@@ -38,3 +38,8 @@ test('maps all three test outcomes including DEPENDENCY_FAILURE', () => {
   }
   assert.throws(() => mapConnectionTestOutcome({ outcome: 'OK' }), /outcome/);
 });
+
+test('accepts the webhook providers added in the contract (Discord, Slack, Teams)', () => {
+  const items = mapConnectionList(['DISCORD', 'SLACK', 'TEAMS'].map((provider) => dto({ provider, authType: 'TOKEN' })));
+  assert.deepEqual(items.map((i) => i.provider), ['DISCORD', 'SLACK', 'TEAMS']);
+});
