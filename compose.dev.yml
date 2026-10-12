@@ -113,7 +113,9 @@ services:
       - ${WEAV_SERVICE_KEYS_DIR:-./tmp/service-keys}/identity:/run/identity-keys:ro
 
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]
+      # Liveness, not readiness: readiness runs a DB query, and a 15 s probe would keep Neon from ever suspending.
+      # Liveness is UP only after startup, which needs the database (Flyway), so depends_on ordering still holds.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/liveness | grep -q '\"status\":\"UP\"'"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -245,7 +247,9 @@ services:
           path: ./services/workspace-service/pom.xml
 
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]
+      # Liveness, not readiness: readiness runs a DB query, and a 15 s probe would keep Neon from ever suspending.
+      # Liveness is UP only after startup, which needs the database (Flyway), so depends_on ordering still holds.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/liveness | grep -q '\"status\":\"UP\"'"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -435,7 +439,9 @@ services:
           path: ./services/workflow-service/pom.xml
 
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/readiness | grep -q '\"status\":\"UP\"'"]
+      # Liveness, not readiness: readiness runs a DB query, and a 15 s probe would keep Neon from ever suspending.
+      # Liveness is UP only after startup, which needs the database (Flyway), so depends_on ordering still holds.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health/liveness | grep -q '\"status\":\"UP\"'"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -643,7 +649,8 @@ services:
         condition: service_healthy
 
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      # /health, not /ready: /ready runs a DB query, and a 15 s probe would keep Neon from ever suspending.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5
