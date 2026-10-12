@@ -30,6 +30,7 @@ import {
   setResponseRequestId,
   type RequestContextCarrier,
 } from '../common/request-context';
+import { MAX_UPSTREAM_JSON_BYTES, readCapped } from '../common/read-capped';
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -41,7 +42,7 @@ interface NotificationProxyTransportApi {
     version: 'v1' | 'v2',
     path: string,
     query?: string,
-  ): Promise<unknown> | unknown;
+  ): Promise<unknown>;
 }
 
 @Controller(['api/v1/notifications', 'api/notifications'])
@@ -78,12 +79,7 @@ export class NotificationProxyController {
   ) {
     return this.forward(req, res, '/read-all');
   }
-  async forward(
-    req: FastifyRequest,
-    reply: FastifyReply,
-    path: string,
-    query = '',
-  ) {
+  forward(req: FastifyRequest, reply: FastifyReply, path: string, query = '') {
     return this.transport.forward(req, reply, 'v1', path, query);
   }
 }
@@ -251,7 +247,11 @@ export class NotificationProxyTransport {
       }
       setResponseRequestId(reply, requestId);
       try {
-        const body = (await response.json()) as unknown;
+        const text = await readCapped(response, MAX_UPSTREAM_JSON_BYTES);
+        if (text === null) {
+          return fail(502, 'BAD_GATEWAY', 'Invalid Notification response');
+        }
+        const body = JSON.parse(text) as unknown;
         return reply.code(response.status).send(body);
       } catch {
         return fail(502, 'BAD_GATEWAY', 'Invalid Notification response');

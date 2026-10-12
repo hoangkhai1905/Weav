@@ -80,6 +80,7 @@ const signedAuthorization: Record<string, string> = Object.fromEntries(
     'redirect-token',
     'slow-token',
     'slow-body-token',
+    'oversized-body-token',
     'mutation-failure-token',
     'status-401-token',
     'status-403-token',
@@ -234,6 +235,20 @@ function handleFixtureRequest(
         }
       }, 11_000);
       pendingTimers.add(timer);
+      return;
+    }
+
+    if (
+      url.pathname === `/workspaces/${WORKSPACE_ID}` &&
+      authorization === signedAuthorization['oversized-body-token']
+    ) {
+      // Chunked (no content-length), larger than the gateway's 1 MiB JSON cap.
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.write('{"padding":"');
+      for (let index = 0; index < 20; index += 1) {
+        response.write('x'.repeat(65_536));
+      }
+      response.end('"}');
       return;
     }
 
@@ -1270,6 +1285,23 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     expect(response.payload).not.toContain('"id"');
     await waitFor(() => fixtureRequests.some(({ aborted }) => aborted));
     expect(fixtureRequests[0].aborted).toBe(true);
+  });
+
+  it('maps an upstream response over the size cap to a clean 502', async () => {
+    const response = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        url: `/api/v1/workspaces/${WORKSPACE_ID}`,
+        headers: { authorization: signedAuthorization['oversized-body-token'] },
+      });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toMatchObject({
+      error: { code: 'BAD_GATEWAY', message: 'Invalid Workspace response' },
+      status: 502,
+    });
+    expect(response.payload).not.toContain('xxxx');
   });
 
   it('cancels the upstream request when the client disconnects', async () => {

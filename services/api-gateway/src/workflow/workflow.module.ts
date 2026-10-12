@@ -33,6 +33,7 @@ import {
   setResponseRequestId,
   type RequestContextCarrier,
 } from '../common/request-context';
+import { readCapped } from '../common/read-capped';
 
 const MAX_WORKFLOW_REQUEST_BYTES = 1_048_576;
 const uuidSchema = z.string().uuid();
@@ -207,8 +208,14 @@ function workflowId(value: string): string {
   return parse(uuidSchema, value);
 }
 
+// Execution details (up to 100 logs with 8 KiB strings) and definitions (up to
+// 1 MiB each) are the largest legitimate Workflow payloads; stay well above.
+const MAX_WORKFLOW_RESPONSE_BYTES = 8 * 1024 * 1024;
+
 async function readJson(response: Response): Promise<unknown> {
-  return response.json() as Promise<unknown>;
+  const text = await readCapped(response, MAX_WORKFLOW_RESPONSE_BYTES);
+  if (text === null) throw new Error('Workflow response exceeds the size cap');
+  return JSON.parse(text) as unknown;
 }
 
 @Injectable()

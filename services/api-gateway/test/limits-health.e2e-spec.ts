@@ -187,6 +187,10 @@ function authorizationFor(
   return `Bearer ${input}.${createHmac('sha256', secret).update(input).digest('base64url')}`;
 }
 
+function adminAuth(): string {
+  return authorizationFor(randomUUID(), JWT_SECRET, { system_role: 'ADMIN' });
+}
+
 function errorCode(response: { json(): unknown }): unknown {
   const payload = response.json();
   if (!payload || typeof payload !== 'object') {
@@ -476,12 +480,42 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
     identityState.mode = 'up';
   });
 
+  it('restricts /ready/upstreams to authenticated administrators without probing upstreams', async () => {
+    const anonymous = await inject(
+      { method: 'GET', url: '/ready/upstreams' },
+      '198.51.100.40',
+    );
+    expect(anonymous.statusCode).toBe(401);
+
+    const user = await inject(
+      {
+        method: 'GET',
+        url: '/ready/upstreams',
+        headers: { authorization: authorizationFor(randomUUID()) },
+      },
+      '198.51.100.41',
+    );
+    expect(user.statusCode).toBe(403);
+    expect(user.payload).not.toContain(identityUrl);
+    expect(identityState.calls).toBe(0);
+    expect(workspaceState.calls).toBe(0);
+
+    const publicProbes = await Promise.all(
+      ['/health', '/ready'].map((url) =>
+        inject({ method: 'GET', url }, '198.51.100.42'),
+      ),
+    );
+    expect(publicProbes.map((response) => response.statusCode)).toEqual([
+      200, 200,
+    ]);
+  });
+
   it('returns sanitized /ready/upstreams status for parallel upstream probes and recovers from a down service', async () => {
     const ready = await inject(
       {
         method: 'GET',
         url: '/ready/upstreams',
-        headers: { 'x-request-id': 'ready-up' },
+        headers: { 'x-request-id': 'ready-up', authorization: adminAuth() },
       },
       '198.51.100.17',
     );
@@ -506,7 +540,11 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
 
     identityState.mode = 'down';
     const down = await inject(
-      { method: 'GET', url: '/ready/upstreams' },
+      {
+        method: 'GET',
+        url: '/ready/upstreams',
+        headers: { authorization: adminAuth() },
+      },
       '198.51.100.18',
     );
     expect(down.statusCode).toBe(503);
@@ -523,7 +561,11 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
 
     identityState.mode = 'up';
     const recovered = await inject(
-      { method: 'GET', url: '/ready/upstreams' },
+      {
+        method: 'GET',
+        url: '/ready/upstreams',
+        headers: { authorization: adminAuth() },
+      },
       '198.51.100.19',
     );
     expect(recovered.statusCode).toBe(200);
@@ -534,7 +576,11 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
     workspaceState.mode = 'up';
     const startedAt = Date.now();
     const stalled = await inject(
-      { method: 'GET', url: '/ready/upstreams' },
+      {
+        method: 'GET',
+        url: '/ready/upstreams',
+        headers: { authorization: adminAuth() },
+      },
       '198.51.100.20',
     );
     const elapsed = Date.now() - startedAt;
@@ -547,8 +593,22 @@ describe('Gateway rate limits and health endpoints (Fastify e2e)', () => {
 
     identityState.mode = 'up';
     const recovered = await Promise.all([
-      inject({ method: 'GET', url: '/ready/upstreams' }, '198.51.100.21'),
-      inject({ method: 'GET', url: '/ready/upstreams' }, '198.51.100.22'),
+      inject(
+        {
+          method: 'GET',
+          url: '/ready/upstreams',
+          headers: { authorization: adminAuth() },
+        },
+        '198.51.100.21',
+      ),
+      inject(
+        {
+          method: 'GET',
+          url: '/ready/upstreams',
+          headers: { authorization: adminAuth() },
+        },
+        '198.51.100.22',
+      ),
     ]);
     expect(recovered.map((response) => response.statusCode)).toEqual([
       200, 200,

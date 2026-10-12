@@ -146,6 +146,23 @@ describe('notification gateway routes', () => {
     expect((await app.inject('/api/notifications')).statusCode).toBe(401);
     expect(request).not.toHaveBeenCalled();
   });
+  it('maps an upstream response over the 1 MiB cap to a clean 502', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ blob: 'x'.repeat(1_100_000) }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    const response = await app.inject({
+      url: '/api/notifications',
+      headers: { authorization: 'Bearer token' },
+    });
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toMatchObject({
+      error: { code: 'BAD_GATEWAY', message: 'Invalid Notification response' },
+      status: 502,
+    });
+    expect(response.body).not.toContain('xxxx');
+  });
   it('sanitizes upstream failures', async () => {
     jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('private-url'));
     const response = await app.inject({

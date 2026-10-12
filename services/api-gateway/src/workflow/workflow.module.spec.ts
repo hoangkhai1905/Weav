@@ -403,6 +403,39 @@ describe('workflow gateway routes', () => {
     expect(response.statusCode).toBe(503);
     expect(response.body).not.toContain('private-url');
   });
+  it('relays a large legitimate response but maps one over the 8 MiB cap to 502', async () => {
+    const url = `/api/v1/workspaces/${workspaceId}/workflows`;
+    const headers = { authorization: 'Bearer opaque-token' };
+    const jsonResponse = (text: string, extra: Record<string, string> = {}) =>
+      new Response(text, {
+        headers: { 'content-type': 'application/json', ...extra },
+      });
+    const big = JSON.stringify({ blob: 'x'.repeat(6 * 1024 * 1024) });
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(big))
+      .mockResolvedValueOnce(
+        jsonResponse(JSON.stringify({ blob: 'x'.repeat(9 * 1024 * 1024) })),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse('{}', { 'content-length': String(9 * 1024 * 1024) }),
+      );
+
+    const ok = await app.inject({ url, headers });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.body).toBe(big);
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const tooLarge = await app.inject({ url, headers });
+      expect(tooLarge.statusCode).toBe(502);
+      expect(tooLarge.json()).toMatchObject({
+        error: { code: 'BAD_GATEWAY', message: 'Invalid Workflow response' },
+        status: 502,
+      });
+      expect(tooLarge.body).not.toContain('xxxx');
+    }
+  });
+
   describe('stop a run (W6-C3)', () => {
     const executionId = '00000000-0000-4000-8000-0000000000e1';
     const auth = { authorization: 'Bearer opaque-token' };
@@ -417,10 +450,13 @@ describe('workflow gateway routes', () => {
           }),
         )
         .mockResolvedValueOnce(
-          new Response(JSON.stringify({ error: { code: 'EXECUTION_ALREADY_FINISHED' } }), {
-            status: 409,
-            headers: { 'content-type': 'application/json' },
-          }),
+          new Response(
+            JSON.stringify({ error: { code: 'EXECUTION_ALREADY_FINISHED' } }),
+            {
+              status: 409,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
         );
       const url = `/api/v1/workspaces/${workspaceId}/workflows/${workflowId}/executions/${executionId}/cancel`;
 

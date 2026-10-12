@@ -33,6 +33,7 @@ import {
   setResponseRequestId,
   type RequestContextCarrier,
 } from '../common/request-context';
+import { MAX_UPSTREAM_JSON_BYTES, readCapped } from '../common/read-capped';
 
 type AuthMode = 'none' | 'optional' | 'required';
 
@@ -324,7 +325,11 @@ export class IdentityProxyService {
     setResponseRequestId(reply, requestId);
     reply.header('Cache-Control', 'no-store');
     try {
-      return reply.code(response.status).send(await response.json());
+      const text = await readCapped(response, MAX_UPSTREAM_JSON_BYTES);
+      if (text === null) {
+        return fail(502, 'BAD_GATEWAY', 'Invalid Identity response');
+      }
+      return reply.code(response.status).send(JSON.parse(text));
     } catch {
       return fail(502, 'BAD_GATEWAY', 'Invalid Identity response');
     }
