@@ -31,13 +31,6 @@ export interface InboxQuery {
   category?: NotificationCategory;
 }
 
-export interface ReconcileResult {
-  scannedGroups: number;
-  createdItems: number;
-  linkedDeliveries: number;
-  skippedGroups: number;
-}
-
 export abstract class InboxRepository {
   abstract ready(): Promise<boolean>;
   abstract ingest(event: NotificationEventV2): Promise<void>;
@@ -45,7 +38,6 @@ export abstract class InboxRepository {
   abstract unreadCount(userId: string): Promise<number>;
   abstract markRead(userId: string, id: string): Promise<InboxItem | null>;
   abstract markAllRead(userId: string): Promise<number>;
-  abstract reconcileLegacy(batchSize: number): Promise<ReconcileResult>;
 }
 
 const uuidSchema = z.uuid();

@@ -196,13 +196,6 @@ WORKFLOW_DB_USERNAME=
 WORKFLOW_DB_PASSWORD=
 WORKFLOW_DB_SSL_MODE=require
 
-BOT_DB_HOST=
-BOT_DB_PORT=5432
-BOT_DB_NAME=
-BOT_DB_USERNAME=
-BOT_DB_PASSWORD=
-BOT_DB_SSL_MODE=require
-
 NOTIFICATION_DB_HOST=
 NOTIFICATION_DB_PORT=5432
 NOTIFICATION_DB_NAME=
@@ -253,12 +246,7 @@ RABBITMQ_MANAGEMENT_PORT=15672
 
 ### AI Provider
 
-Có thể để trống nếu chưa làm AI:
-
-```env
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-```
+AI Service dùng DeepSeek và mặc định tắt. Xem `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` trong `.env.example` và mục AI Service trong `CLAUDE.md`.
 
 > Không commit `.env`.
 

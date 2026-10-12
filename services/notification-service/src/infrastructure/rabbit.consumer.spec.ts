@@ -16,7 +16,6 @@ describe('RabbitMQ acknowledgment contract', () => {
     markRead: jest.fn(),
     markAllRead: jest.fn(),
     ready: jest.fn(),
-    reconcileLegacy: jest.fn(),
   } as unknown as InboxRepository;
   const service = Reflect.construct(Notifications, [
     repo,

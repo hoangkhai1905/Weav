@@ -29,7 +29,6 @@
 	<properties>
 		<java.version>25</java.version>
 		<resilience4j.version>2.3.0</resilience4j.version>
-		<org.mapstruct.version>1.6.3</org.mapstruct.version>
 		<httpclient5.version>5.6.1</httpclient5.version>
 		<!-- Keep 2.29.x: R2 rejects the default CRC32 request checksums of SDK >= 2.30 unless
 		     requestChecksumCalculation(WHEN_REQUIRED) is set. -->
@@ -49,11 +48,6 @@
 		<dependency>
 			<groupId>com.github.ben-manes.caffeine</groupId>
 			<artifactId>caffeine</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.mapstruct</groupId>
-			<artifactId>mapstruct</artifactId>
-			<version>${org.mapstruct.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -200,19 +194,6 @@
 			</resource>
 		</resources>
 		<plugins>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-compiler-plugin</artifactId>
-				<configuration>
-					<annotationProcessorPaths>
-						<path>
-							<groupId>org.mapstruct</groupId>
-							<artifactId>mapstruct-processor</artifactId>
-							<version>${org.mapstruct.version}</version>
-						</path>
-					</annotationProcessorPaths>
-				</configuration>
-			</plugin>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>

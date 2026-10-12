@@ -47,7 +47,6 @@ describe('notification HTTP (real Nest + Fastify)', () => {
     markRead: jest.fn(),
     markAllRead: jest.fn(),
     ready: jest.fn(),
-    reconcileLegacy: jest.fn(),
   };
   const settings = testSettings();
   const userId = randomUUID();
