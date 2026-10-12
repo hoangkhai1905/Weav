@@ -19,10 +19,7 @@ describe('RabbitMQ acknowledgment contract', () => {
     markAllRead: jest.fn(),
     ready: jest.fn(),
   } as unknown as InboxRepository;
-  const service = Reflect.construct(Notifications, [
-    repo,
-    inboxRepository,
-  ]) as Notifications;
+  const service = Reflect.construct(Notifications, [repo, inboxRepository]);
   const consumer = new RabbitConsumer(service, testSettings());
   consumer.sleep = jest.fn().mockResolvedValue(undefined);
   const ack = jest.fn();

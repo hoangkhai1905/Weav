@@ -10,10 +10,10 @@ import { codePointLength, truncateGraphemes } from '../domain/text/unicode';
 class FakeProvider implements LlmProvider {
   calls: LlmRequest[] = [];
   constructor(private readonly result: Record<string, unknown> | AiError) {}
-  async completeJson(request: LlmRequest) {
+  completeJson(request: LlmRequest) {
     this.calls.push(request);
-    if (this.result instanceof AiError) throw this.result;
-    return structuredClone(this.result);
+    if (this.result instanceof AiError) return Promise.reject(this.result);
+    return Promise.resolve(structuredClone(this.result));
   }
 }
 const signal = AbortSignal.timeout(1000);

@@ -6,14 +6,14 @@ const WS = 'w1';
 function setup(status: number | Error = 200) {
   let t = 1_000_000;
   const calls: { url: string; auth: string }[] = [];
-  const fetchImpl = (async (url: string, init: RequestInit) => {
+  const fetchImpl = (url: string, init: RequestInit) => {
     calls.push({
       url,
       auth: (init.headers as Record<string, string>).authorization,
     });
-    if (status instanceof Error) throw status;
-    return new Response('{}', { status });
-  }) as unknown as typeof fetch;
+    if (status instanceof Error) return Promise.reject(status);
+    return Promise.resolve(new Response('{}', { status }));
+  };
   return {
     m: new WorkspaceMembership('http://ws', fetchImpl, () => t),
     calls,

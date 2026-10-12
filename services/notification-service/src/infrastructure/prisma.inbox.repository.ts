@@ -24,9 +24,6 @@ const uuidSchema = z.uuid();
 const invitationEventType = 'workspace.invitation.created';
 
 type InboxRecord = Prisma.NotificationInboxGetPayload<Record<string, never>>;
-type DeliveryRecord = Prisma.NotificationDeliveryGetPayload<
-  Record<string, never>
->;
 
 function canonicalUuid(value: string): string {
   return uuidSchema.parse(value).toLowerCase();

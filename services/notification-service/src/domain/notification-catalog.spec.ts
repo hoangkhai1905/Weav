@@ -1,3 +1,4 @@
+import { renderNotification } from './notification-catalog';
 const ids = {
   actor: '00000000-0000-4000-8000-000000000002',
   workspace: '00000000-0000-4000-8000-000000000003',
@@ -244,20 +245,16 @@ function eventOf(eventType: string, overrides: Record<string, unknown> = {}) {
 }
 
 function render() {
-  return (
-    require('./notification-catalog') as {
-      renderNotification: (
-        event: unknown,
-        locale?: string,
-      ) => {
-        category: string;
-        severity: string;
-        title: string;
-        message: string;
-        target: Record<string, unknown>;
-      };
-    }
-  ).renderNotification;
+  return renderNotification as unknown as (
+    event: unknown,
+    locale?: string,
+  ) => {
+    category: string;
+    severity: string;
+    title: string;
+    message: string;
+    target: Record<string, unknown>;
+  };
 }
 
 function expectedTarget(targetKind: CatalogCase['targetKind']) {
@@ -307,7 +304,7 @@ describe('notification catalog', () => {
   });
 
   it('exports a pure notification renderer', () => {
-    expect(() => require('./notification-catalog')).not.toThrow();
+    expect(renderNotification).toBeInstanceOf(Function);
   });
 
   it('renders both locales with the specified metadata and target for all 23 event types', () => {

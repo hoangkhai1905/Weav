@@ -191,7 +191,7 @@ async function start(rounds: Round[], env: Record<string, string> = {}) {
           audience: 'weav-api',
           clockSkewSeconds: 30,
         },
-        (async () => new Response(keys.jwks)) as unknown as typeof fetch,
+        () => Promise.resolve(new Response(keys.jwks)),
       ),
     },
   });
@@ -527,7 +527,7 @@ const sse = async (res: Response) => parseSse(await res.text());
 async function converse(
   token: string,
   extra: Record<string, unknown> = {},
-  workspaceId = WS,
+  workspaceId: string = WS,
 ) {
   const res = await chat(body({ workspaceId, ...extra }), token);
   const events = res.status === 200 ? await sse(res) : [];

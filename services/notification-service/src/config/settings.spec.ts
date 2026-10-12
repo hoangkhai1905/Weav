@@ -51,7 +51,11 @@ describe('notification configuration validation', () => {
       SMTP_FROM_ADDRESS: 'no-reply@weav.test',
     };
     it('requires NOTIFICATION_DETAIL_BASE_URL when e-mail is enabled', () => {
-      const { NOTIFICATION_DETAIL_BASE_URL: _omit, ...rest } = email;
+      const rest = Object.fromEntries(
+        Object.entries(email).filter(
+          ([key]) => key !== 'NOTIFICATION_DETAIL_BASE_URL',
+        ),
+      );
       expect(() => loadSettings(env(rest))).toThrow(
         'NOTIFICATION_DETAIL_BASE_URL',
       );

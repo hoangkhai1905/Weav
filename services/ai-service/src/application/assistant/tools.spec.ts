@@ -9,10 +9,10 @@ const NOW = new Date('2026-10-06T20:00:00Z');
 type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
 function ctx(handler: Handler, extra: Partial<ToolContext> = {}) {
   const seen: { url: string; init: RequestInit }[] = [];
-  const fetchImpl = (async (url: string, init: RequestInit) => {
+  const fetchImpl = async (url: string, init: RequestInit) => {
     seen.push({ url, init });
     return handler(url, init);
-  }) as unknown as typeof fetch;
+  };
   const context: ToolContext = {
     workspaceId: WS,
     authorization: 'Bearer user-token',

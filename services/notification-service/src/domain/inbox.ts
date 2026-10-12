@@ -61,6 +61,7 @@ export function inboxDedupKey(
 }
 
 export function inboxIdForKey(dedupKey: string): string {
+  // eslint-disable-next-line no-control-regex -- the ASCII range \x00-\x7F is intentional: keys must be 7-bit ASCII.
   if (dedupKey.length > 128 || !/^[\x00-\x7F]+$/.test(dedupKey)) {
     throw new Error('Inbox deduplication key must be at most 128 ASCII bytes');
   }

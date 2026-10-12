@@ -6,15 +6,16 @@ import { mockRepository, testDelivery, testEvent } from '../testing/fixtures';
 
 describe('notification use cases', () => {
   const repo = mockRepository();
-  const inboxRepository = {
+  const inboxMock = {
     ingest: jest.fn().mockResolvedValue(undefined),
     list: jest.fn(),
     unreadCount: jest.fn(),
     markRead: jest.fn(),
     markAllRead: jest.fn(),
     ready: jest.fn(),
-  } as unknown as InboxRepository;
-  const service = Reflect.construct(Notifications, [repo, inboxRepository]) as Notifications;
+  };
+  const inboxRepository = inboxMock as unknown as InboxRepository;
+  const service = Reflect.construct(Notifications, [repo, inboxRepository]);
   beforeEach(() => jest.resetAllMocks());
   it('awaits durable ingestion and propagates failures to the consumer', async () => {
     repo.ingest.mockRejectedValue(new Error('offline'));
@@ -42,11 +43,11 @@ describe('notification use cases', () => {
 
     await service.consume(event);
 
-    expect(inboxRepository.ingest).toHaveBeenCalledWith(event);
+    expect(inboxMock.ingest).toHaveBeenCalledWith(event);
     expect(repo.ingest).not.toHaveBeenCalled();
   });
   it('skips the inbox for a workflow lifecycle event whose only recipient is its actor', async () => {
-    const ingest = (inboxRepository as unknown as { ingest: jest.Mock }).ingest;
+    const ingest = inboxMock.ingest;
     const actor = randomUUID();
     const workflowId = randomUUID();
     const event = (recipient: string) => ({
@@ -74,7 +75,7 @@ describe('notification use cases', () => {
     ).rejects.toThrow();
 
     expect(repo.ingest).not.toHaveBeenCalled();
-    expect(inboxRepository.ingest).not.toHaveBeenCalled();
+    expect(inboxMock.ingest).not.toHaveBeenCalled();
   });
   it('treats UUID casing variants as the same legacy execution identity', () => {
     const event = testEvent();
