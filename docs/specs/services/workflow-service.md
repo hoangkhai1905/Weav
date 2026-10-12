@@ -175,6 +175,7 @@ Names and defaults from [application.properties](../../../services/workflow-serv
 - Partial: AI generation and AI nodes are off by default; OCR gated; `email.send` not yet run against real Gmail; Gateway generate route pending partner handoff.
 - Worker is disabled by default in the dev overlay; enable on an intended worker deployment only.
 - No Workflow-specific metrics or alert thresholds; webhook limiter is per instance.
+- Telegram `setWebhook` runs inside the publish/resume transaction (`WorkflowPublicationService`), so the workflow row lock and a DB connection are held for the Bot API round trip (review D1, 2026-10). A failed call rolls the publish back by design; moving registration after commit is a tracked follow-up.
 - Empty scaffolds: `packages/workflow-schema/*` and `packages/contracts/events/workflow` contain only `.gitkeep`; the definition schema lives in `contracts/http/workflow/definition.schema.json`.
 - Environment-only test errors listed under Testing.
 

@@ -69,7 +69,11 @@ public final class ExecutionOutboxPublisher {
     @Scheduled(fixedDelayString = "${weav.workflow.execution-outbox.poll-interval:1000}",
             initialDelayString = "${weav.workflow.execution-outbox.initial-delay:1000}")
     public void publishPendingOnSchedule() {
-        publishPending();
+        try {
+            publishPending();
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Execution outbox poll failed ({})", exception.getClass().getSimpleName());
+        }
     }
 
     public int publishPending() {

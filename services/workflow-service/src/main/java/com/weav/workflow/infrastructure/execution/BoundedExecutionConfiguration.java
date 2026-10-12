@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -14,6 +15,25 @@ import java.util.concurrent.TimeUnit;
 @Configuration(proxyBeanMethods = false)
 @EnableScheduling
 public class BoundedExecutionConfiguration {
+
+    /**
+     * Dedicated pool for {@code @Scheduled} jobs. Declared explicitly because the
+     * {@code workflowExecutionTimer} bean below is a {@link ScheduledExecutorService}, which makes
+     * Spring Boot back off its own TaskScheduler auto-configuration; without this bean every
+     * scheduled job would share the two runner timer threads with node retries and timeouts.
+     */
+    @Bean(name = "taskScheduler")
+    ThreadPoolTaskScheduler taskScheduler(
+            @Value("${weav.workflow.scheduling.pool-size:4}") int poolSize) {
+        if (poolSize < 1 || poolSize > 32) {
+            throw new IllegalArgumentException("Workflow scheduler pool size must be between one and 32");
+        }
+        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+        scheduler.setPoolSize(poolSize);
+        scheduler.setThreadNamePrefix("workflow-scheduling-");
+        scheduler.setDaemon(true);
+        return scheduler;
+    }
 
     @Bean(name = "workflowExecutionExecutor", destroyMethod = "shutdown")
     ThreadPoolExecutor workflowExecutionExecutor(

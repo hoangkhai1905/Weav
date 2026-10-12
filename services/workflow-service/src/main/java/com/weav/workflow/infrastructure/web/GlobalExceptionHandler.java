@@ -6,6 +6,7 @@ import com.weav.workflow.domain.exception.ForbiddenException;
 import com.weav.workflow.domain.exception.WorkspaceNotFoundException;
 import com.weav.workflow.domain.exception.IdempotencyKeyReusedException;
 import com.weav.workflow.domain.exception.InvalidStateException;
+import com.weav.workflow.domain.exception.ManualRunLimitExceededException;
 import com.weav.workflow.domain.exception.RateLimitExceededException;
 import com.weav.workflow.domain.exception.ResourceNotFoundException;
 import com.weav.workflow.domain.exception.UnauthorizedException;
@@ -251,6 +252,9 @@ public class GlobalExceptionHandler {
             return HttpStatus.TOO_MANY_REQUESTS;
         }
         if (exception instanceof WebhookRateLimitExceededException) {
+            return HttpStatus.TOO_MANY_REQUESTS;
+        }
+        if (exception instanceof ManualRunLimitExceededException) {
             return HttpStatus.TOO_MANY_REQUESTS;
         }
         if (exception instanceof AiQuotaExceededException) return HttpStatus.TOO_MANY_REQUESTS;

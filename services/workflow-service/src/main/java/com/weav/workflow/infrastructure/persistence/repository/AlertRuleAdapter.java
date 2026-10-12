@@ -151,6 +151,12 @@ public class AlertRuleAdapter implements AlertRuleStore {
     @Override
     @Transactional(readOnly = true)
     public List<OverdueRun> overdueRuns(Instant now, int limit) {
+        // Most workspaces have no LONG_RUNNING rule: skip the rules x workflows x live-runs join entirely.
+        if (!Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM %s WHERE enabled AND rule_type = 'LONG_RUNNING')".formatted(rules),
+                Boolean.class))) {
+            return List.of();
+        }
         return jdbc.query("""
                 SELECT %s, e.id AS execution_id, e.workflow_id AS run_workflow_id, e.status AS run_status,
                        e.started_at AS run_started_at, w.name AS workflow_name, w.created_by AS workflow_created_by

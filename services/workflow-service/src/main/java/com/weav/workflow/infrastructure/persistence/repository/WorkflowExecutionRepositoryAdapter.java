@@ -5,6 +5,7 @@ import com.weav.workflow.domain.definition.WorkflowDefinition;
 import com.weav.workflow.domain.exception.BadRequestException;
 import com.weav.workflow.domain.exception.IdempotencyKeyReusedException;
 import com.weav.workflow.domain.exception.InvalidStateException;
+import com.weav.workflow.domain.exception.ManualRunLimitExceededException;
 import com.weav.workflow.domain.exception.ResourceNotFoundException;
 import com.weav.workflow.domain.model.aggregate.execution.WorkflowExecution;
 import com.weav.workflow.domain.model.aggregate.workflow.OutboxEvent;
@@ -26,6 +27,7 @@ import com.weav.workflow.infrastructure.persistence.mapper.ExecutionPersistenceM
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -51,11 +53,19 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
 
     private final ExecutionPersistenceMapper mapper;
     private final DefinitionJsonCodec definitionCodec;
+    private final int manualActiveRunLimit;
 
-    public WorkflowExecutionRepositoryAdapter(ExecutionPersistenceMapper mapper, ObjectMapper objectMapper) {
+    public WorkflowExecutionRepositoryAdapter(
+            ExecutionPersistenceMapper mapper,
+            ObjectMapper objectMapper,
+            @Value("${weav.workflow.execution.manual-active-run-limit:10}") int manualActiveRunLimit) {
         this.mapper = Objects.requireNonNull(mapper, "mapper must not be null");
         this.definitionCodec = new DefinitionJsonCodec(Objects.requireNonNull(objectMapper,
                 "objectMapper must not be null"));
+        if (manualActiveRunLimit < 1 || manualActiveRunLimit > 1000) {
+            throw new IllegalArgumentException("Manual active run limit must be between one and 1000");
+        }
+        this.manualActiveRunLimit = manualActiveRunLimit;
     }
 
     @Override
@@ -100,6 +110,7 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
             return replay.get();
         }
         requirePublished(workflow);
+        requireManualCapacity(workflow.getId());
         WorkflowVersionJpaEntity version = currentVersion(workflow);
         WorkflowDefinition definition = definition(version);
         // A manual trigger wins; otherwise a manual run starts at the first trigger node in definition order.
@@ -108,6 +119,21 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
                 .orElseThrow(() -> new InvalidStateException("The published workflow has no trigger"));
         return persistAdmission(workflow, version, command, ExecutionTriggerType.MANUAL,
                 null, rootNodeId, null, definition);
+    }
+
+    /** The caller holds the workflow row lock, so concurrent manual admissions count each other's rows. */
+    private void requireManualCapacity(UUID workflowId) {
+        Long active = entityManager.createQuery(
+                        "select count(execution) from WorkflowExecutionJpaEntity execution "
+                                + "where execution.workflowId = :workflowId and execution.status in :statuses",
+                        Long.class)
+                .setParameter("workflowId", workflowId)
+                .setParameter("statuses", List.of(
+                        ExecutionStatus.QUEUED, ExecutionStatus.RUNNING, ExecutionStatus.WAITING))
+                .getSingleResult();
+        if (active >= manualActiveRunLimit) {
+            throw new ManualRunLimitExceededException();
+        }
     }
 
     private static Optional<String> firstTrigger(WorkflowDefinition definition,

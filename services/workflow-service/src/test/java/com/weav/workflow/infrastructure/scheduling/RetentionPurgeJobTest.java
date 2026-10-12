@@ -173,12 +173,12 @@ class RetentionPurgeJobTest {
         when(store.configured()).thenReturn(true);
         when(store.purgeExpired(anyInt())).thenReturn(100, 100, 40);
 
-        new RetentionPurgeJob(jdbc, transactions, "workflow", 7, 14, 0, store).purgeNow();
+        new RetentionPurgeJob(jdbc, transactions, "workflow", 7, 14, 0, 30, store).purgeNow();
         verify(store, times(3)).purgeExpired(100);
 
         WorkflowFileStore unconfigured = mock(WorkflowFileStore.class);
         when(unconfigured.configured()).thenReturn(false);
-        new RetentionPurgeJob(jdbc, transactions, "workflow", 7, 14, 0, unconfigured).purgeNow();
+        new RetentionPurgeJob(jdbc, transactions, "workflow", 7, 14, 0, 30, unconfigured).purgeNow();
         verify(unconfigured, never()).purgeExpired(anyInt());
     }
 
@@ -189,9 +189,49 @@ class RetentionPurgeJobTest {
         when(store.purgeExpired(anyInt())).thenThrow(new IllegalStateException("db down"));
         UUID oldPublished = outbox(UUID.randomUUID(), "PUBLISHED", 10);
 
-        new RetentionPurgeJob(jdbc, transactions, "workflow", 7, 14, 0, store).purgeNow();
+        new RetentionPurgeJob(jdbc, transactions, "workflow", 7, 14, 0, 30, store).purgeNow();
 
         assertEquals(0, count("outbox_events", oldPublished));
+    }
+
+    /** G8: old firings go, but the newest per (rule, workflow) and any firing of a still-active run stay. */
+    @Test
+    void purgesOldAlertFiringsButKeepsTheCooldownAnchorAndActiveRuns() {
+        UUID workflow = UUID.randomUUID();
+        UUID version = UUID.randomUUID();
+        UUID actor = UUID.randomUUID();
+        UUID workspace = UUID.randomUUID();
+        jdbc.update("insert into workflow.workflows (id, workspace_id, name, status, schema_version, "
+                + "draft_definition, created_by) values (?, ?, 'Alerts', 'PUBLISHED', '1.0', "
+                + "cast(? as jsonb), ?)", workflow, workspace, DEFINITION, actor);
+        jdbc.update("insert into workflow.workflow_versions (id, workflow_id, version_number, definition, "
+                + "schema_version, published_by) values (?, ?, 1, cast(? as jsonb), '1.0', ?)",
+                version, workflow, DEFINITION, actor);
+        UUID rule = UUID.randomUUID();
+        jdbc.update("insert into workflow.alert_rules (id, workspace_id, workflow_id, name, rule_type, threshold, "
+                + "created_by) values (?, ?, ?, 'Slow', 'LONG_RUNNING', 60, ?)", rule, workspace, workflow, actor);
+        UUID oldFinished = firing(rule, workflow, execution(workflow, version, "SUCCESS", 50), 50);
+        UUID oldActive = firing(rule, workflow, execution(workflow, version, "RUNNING", -1), 45);
+        UUID newestButOld = firing(rule, workflow, execution(workflow, version, "FAILED", 40), 40);
+        UUID otherRule = UUID.randomUUID();
+        jdbc.update("insert into workflow.alert_rules (id, workspace_id, workflow_id, name, rule_type, threshold, "
+                + "created_by) values (?, ?, ?, 'Slow 2', 'LONG_RUNNING', 60, ?)", otherRule, workspace, workflow, actor);
+        UUID onlyFiringOfOtherRule = firing(otherRule, workflow, execution(workflow, version, "SUCCESS", 60), 60);
+
+        new RetentionPurgeJob(jdbc, transactions, "workflow", 7, 14, 0, 30, null).purgeNow();
+
+        assertEquals(0, count("alert_rule_firings", oldFinished));
+        assertEquals(1, count("alert_rule_firings", oldActive));
+        assertEquals(1, count("alert_rule_firings", newestButOld));
+        assertEquals(1, count("alert_rule_firings", onlyFiringOfOtherRule));
+    }
+
+    private UUID firing(UUID rule, UUID workflow, UUID execution, int firedDaysAgo) {
+        UUID id = UUID.randomUUID();
+        jdbc.update("insert into workflow.alert_rule_firings (id, rule_id, workflow_id, execution_id, fired_at) "
+                + "values (?, ?, ?, ?, CURRENT_TIMESTAMP - (? * INTERVAL '1 day'))",
+                id, rule, workflow, execution, firedDaysAgo);
+        return id;
     }
 
     private int count(String table, UUID id) {
