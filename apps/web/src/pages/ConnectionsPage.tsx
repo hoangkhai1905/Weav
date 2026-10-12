@@ -2,7 +2,8 @@ import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, MoreHorizontal, Plus, RefreshCw, X } from "lucide-react";
+import { CalendarDays, FileSpreadsheet, HardDrive, LoaderCircle, Mail, MessageSquare, MoreHorizontal, Plus, RefreshCw, Send, X } from "lucide-react";
+import { ConnectionGuide } from "../components/connections/ConnectionGuide";
 import {
   ConnectionApiError,
   connectionApi,
@@ -424,6 +425,17 @@ function isValidWebhookUrl(provider: WebhookProvider, value: string): boolean {
   return isTeamsWebhookUrl(value);
 }
 
+const PROVIDER_TILES: { value: GoogleProvider | TokenProvider; icon: React.ElementType }[] = [
+  { value: "GMAIL", icon: Mail },
+  { value: "GOOGLE_SHEETS", icon: FileSpreadsheet },
+  { value: "GOOGLE_CALENDAR", icon: CalendarDays },
+  { value: "GOOGLE_DRIVE", icon: HardDrive },
+  { value: "TELEGRAM", icon: Send },
+  { value: "DISCORD", icon: MessageSquare },
+  { value: "SLACK", icon: MessageSquare },
+  { value: "TEAMS", icon: MessageSquare },
+];
+
 /** "New connection" dialog, shared by the Connections page and the builder inspector. */
 export function CreateConnectionDialog({
   workspaceId,
@@ -493,13 +505,13 @@ export function CreateConnectionDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/30 p-4 pt-[14vh]">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-foreground/30 p-4 pt-[6vh]">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="connection-create-title"
         data-testid="connection-create-dialog"
-        className="w-full max-w-[520px] rounded-lg border border-border bg-card p-4 shadow-pop"
+        className="max-h-[88vh] w-full max-w-[560px] overflow-y-auto rounded-lg border border-border bg-card p-4 shadow-pop"
       >
         <div className="flex items-center justify-between gap-3">
           <h2
@@ -522,6 +534,36 @@ export function CreateConnectionDialog({
           onSubmit={handleCreate}
           className="mt-4 flex flex-col gap-4"
         >
+          <fieldset>
+            <legend className="mb-1.5 block text-xs font-medium text-text-2">
+              {t("connections.create.pick_provider")}
+            </legend>
+            <div data-testid="connection-create-provider" className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {PROVIDER_TILES.map(({ value, icon: Icon }) => (
+                <label
+                  key={value}
+                  className={`relative flex cursor-pointer flex-col items-center gap-1 rounded-md border px-2 py-2.5 text-center text-[11px] font-medium transition-colors focus-within:ring-2 focus-within:ring-ring ${
+                    provider === value ? "border-primary bg-run-bg text-run" : "border-border bg-card text-text-2 hover:bg-subtle"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="connection-create-provider"
+                    value={value}
+                    data-testid={`connection-provider-${value}`}
+                    checked={provider === value}
+                    onChange={() => {
+                      setProvider(value);
+                      setCreateError("");
+                    }}
+                    className="absolute inset-0 cursor-pointer appearance-none rounded-md opacity-0"
+                  />
+                  <Icon size={18} aria-hidden="true" />
+                  <span className="leading-tight">{PROVIDER_LABELS[value]}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <div>
             <label
               htmlFor="connection-create-name"
@@ -543,32 +585,7 @@ export function CreateConnectionDialog({
               className={fieldCls}
             />
           </div>
-          <div>
-            <label
-              htmlFor="connection-create-provider"
-              className="mb-1.5 block text-xs font-medium text-text-2"
-            >
-              {t("connections.create.provider")}
-            </label>
-            <select
-              id="connection-create-provider"
-              data-testid="connection-create-provider"
-              value={provider}
-              onChange={(event) =>
-                setProvider(event.target.value as GoogleProvider | TokenProvider)
-              }
-              className={fieldCls}
-            >
-              <option value="GMAIL">Gmail</option>
-              <option value="GOOGLE_SHEETS">Google Sheets</option>
-              <option value="GOOGLE_CALENDAR">Google Calendar</option>
-              <option value="GOOGLE_DRIVE">Google Drive</option>
-              <option value="TELEGRAM">{t("connections.create.telegram_option")}</option>
-              <option value="DISCORD">{t("connections.create.discord_option")}</option>
-              <option value="SLACK">{t("connections.create.slack_option")}</option>
-              <option value="TEAMS">{t("connections.create.teams_option")}</option>
-            </select>
-          </div>
+          <ConnectionGuide topic={isToken ? (provider as TokenProvider) : "GOOGLE"} />
           {isToken && (
             <div>
               <label

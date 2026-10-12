@@ -118,7 +118,7 @@ for (const spec of [
     await page.goto('/connections');
     await page.getByTestId('connections-create-open').click();
     await page.getByTestId('connection-create-name').fill('Team channel');
-    await page.getByTestId('connection-create-provider').selectOption(spec.provider);
+    await page.getByTestId(`connection-provider-${spec.provider}`).check();
     const url = page.getByTestId('connection-create-token');
     await expect(url).toHaveAttribute('type', 'password');
 
@@ -157,6 +157,28 @@ test('the Slack and Teams steps pick a connection, count text and save their con
   await page.getByTestId('field-text').fill('Build failed');
   const teams = await savedNode(page, backend.drafts, 'teams.send_message');
   expect(teams?.config).toMatchObject({ connectionId: teamsConnectionId, title: 'Alert', text: 'Build failed' });
+});
+
+test('the Teams message is edited visually, saved as Adaptive Card Markdown, and editable as code', async ({ page }) => {
+  const backend = await stubBackend(page, [connection(teamsConnectionId, 'TEAMS', 'Teams alerts', 'ACTIVE', true)]);
+  await openBuilder(page);
+  await addNode(page, 'teams.send_message');
+  await page.getByTestId('field-connectionId').selectOption(teamsConnectionId);
+  const text = page.getByTestId('field-text');
+  await text.fill('Build failed');
+  await text.click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.getByTestId('format-bold').click();
+  // The field itself shows the formatting; no markup is visible.
+  await expect(text.locator('b')).toHaveText('Build failed');
+  await expect(text).not.toContainText('**');
+  await expect(page.getByTestId('format-preview')).toHaveCount(0);
+  // "</> Markdown" shows the source, with the preview under it.
+  await page.getByTestId('format-code-toggle').click();
+  await expect(text).toHaveText('**Build failed**');
+  await expect(page.getByTestId('format-preview').locator('b')).toHaveText('Build failed');
+  const teams = await savedNode(page, backend.drafts, 'teams.send_message');
+  expect(teams?.config).toMatchObject({ text: '**Build failed**' });
 });
 
 test('the Format date and time step shows the fields of its operation and saves them', async ({ page }) => {
@@ -253,7 +275,7 @@ test('a Teams webhook URL without a sig parameter is rejected before anything is
   await page.goto('/connections');
   await page.getByTestId('connections-create-open').click();
   await page.getByTestId('connection-create-name').fill('Team channel');
-  await page.getByTestId('connection-create-provider').selectOption('TEAMS');
+  await page.getByTestId('connection-provider-TEAMS').check();
   for (const bad of [
     'https://prod-12.westus.logic.azure.com/workflows/abc123/triggers/manual/paths/invoke?api-version=2016-06-01',
     'https://prod-12.westus.logic.azure.com/workflows/abc123/triggers/manual/paths/invoke?sig=',

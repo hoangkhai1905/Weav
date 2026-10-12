@@ -147,3 +147,51 @@
 1. Chạy thử với stack thật (Compose dev) và kiểm tra editor, lịch sử chạy, kết nối.
 2. Rà soát giao diện các trang còn lại ở light/dark.
 3. Thêm công tắc kích hoạt và tab Cài đặt khi backend có API.
+
+## 9. Dọn UI/UX theo Todo Notion (2026-10-11, nhánh `feature/web-ui-ux-cleanup`)
+
+Nguồn: mục "UI/UX" trong trang Notion KLTN > Todo. Chỉ sửa `apps/web`, không đụng backend.
+
+| Việc trong Todo | Đã làm | File chính |
+| --- | --- | --- |
+| Màu role xấu | Badge Member chữ xám trên nền xám (`bg-muted-foreground text-text-2`) → `bg-muted`; Owner đổi từ màu lỗi đỏ sang `run` (xanh), không xuống dòng | `pages/WorkspacePage.tsx` |
+| Hai chỗ Notification | Bỏ mục "Trung tâm thông báo" ở sidebar, giữ chuông ở topbar (có số chưa đọc) | `layout/Sidebar.tsx` |
+| Tab Telegram ở sidebar | Bỏ mục sidebar và xóa `TelegramPage`; `/telegram` chuyển hướng sang `/workspace/connections` (link cũ trong thông báo vẫn mở được). Danh sách bot đã có ở Kết nối, các bước tạo bot chuyển vào hướng dẫn | `App.tsx`, `pages/TelegramPage.tsx` (xóa) |
+| AI Generator ở sidebar → modal | Bỏ khỏi sidebar; mọi nút "Tạo bằng AI" (Dashboard, Quy trình, Tạo quy trình, Trợ giúp) mở `AiGeneratorDialog` qua `useUIStore.openAiGenerator(prompt?)`. Route `/ai/workflow-generator` giữ nguyên cho link cũ. `TemplateDialog` thêm prop `wide` | `components/ai/AiGeneratorDialog.tsx`, `pages/AiGeneratorPage.tsx`, `store/useUIStore.ts` |
+| Đổi logo | Logo SVG phẳng mới (W là một luồng node trên nền primary) cho topbar, trang đăng nhập/đăng ký và favicon; PNG cũ giữ trong `public/` | `public/weav-logo.svg`, `common/Logo.tsx`, `index.html` |
+| Tạo connection trực quan hơn | Dropdown dịch vụ → lưới thẻ có icon (radio, testid `connection-provider-<PROVIDER>`), kèm hướng dẫn từng bước có hình minh họa dựng bằng CSS (chat BotFather, ô URL webhook, màn hình cho phép của Google) | `pages/ConnectionsPage.tsx`, `components/connections/ConnectionGuide.tsx` |
+| Nút "?" ở node webhook/bot | Header inspector có nút "?" cho `trigger.telegram`, `telegram.send_message`, `discord/slack/teams.send_message`, `trigger.webhook`; mở cùng `ConnectionGuide` (webhook: POST `/api/v1/webhooks/<endpoint key>` + header `X-Webhook-Secret`) | `pages/WorkflowBuilderPage.tsx` |
+| Định dạng email/tin nhắn | Thanh B / I / link (email thêm danh sách, xuống dòng) trên ô nội dung. Email tự chuyển `bodyType` sang `html`; Telegram tự bật `parseMode: HTML` (nếu user chọn MarkdownV2 thì chèn cú pháp MarkdownV2); Discord Markdown, Slack mrkdwn. 4 template email đổi sang HTML | `builder/FormatToolbar.tsx`, `lib/formatInsert.ts` (+ `formatInsert.test.mjs`), `builder/MappingTextField.tsx`, `builder/SchemaField.tsx`, `lib/templates/index.ts` |
+
+Quyết định:
+- Template Telegram vẫn để text thường (chỉ thêm xuống dòng): biến tự do (dữ liệu fetch, tóm tắt AI, nội dung chuyển khoản) có thể chứa `<` hoặc `&`, mà backend không escape nên Telegram sẽ từ chối cả tin ở chế độ HTML.
+- Hướng dẫn dùng hình minh họa dựng bằng HTML/CSS thay ảnh chụp: theo theme sáng/tối, không phải cập nhật lại khi app bên ngoài đổi giao diện.
+
+Kiểm tra:
+- `tsc -p tsconfig.app.json` sạch; `pnpm build` qua; `node --test src/lib/formatInsert.test.mjs` 4/4; eslint trên các file đã sửa: chỉ còn 2 lỗi `set-state-in-effect` có sẵn (`WorkflowsPage:149`, `WorkflowBuilderPage:649`).
+- Stack thật (Vite 5173 + Gateway): sidebar còn 5 mục; modal AI mở từ Dashboard; dialog tạo connection (light/dark), thẻ Telegram/Discord kèm hướng dẫn; badge role; builder: bôi đen "test" → B ra `<b>test</b>`, `bodyType` chuyển HTML kèm ghi chú (không lưu); nút "?" ở `trigger.telegram`. Mọi request API 200.
+- Playwright: xem mục Kết quả e2e bên dưới.
+
+Còn lại / rủi ro:
+- Ô nội dung vẫn hiện thẻ HTML thô (`<b>…</b>`), chưa có xem trước định dạng.
+- Thanh định dạng chưa có cho Teams (chưa kiểm cú pháp Adaptive Card).
+- Mục "Email/tin nhắn hệ thống" (OTP, lời mời do notification-service gửi) không làm vì thuộc backend.
+
+Kết quả e2e (Chromium, `VITE_API_MODE=http`):
+- Branch: honest-pages, navigation-structure, dashboard-real-data, workspace-connections, control-bot, w7-nodes, ai-generator, localization, workflow-ui → 105 pass / 34 fail.
+- Baseline `dev` (`32cbe8d`) với control-bot, localization, workflow-ui, workspace-connections → 33 fail, cùng tập lỗi cũ (workflow-ui gần như toàn bộ, localization, workspace-connections 401/`"TELEGRAM"`/readiness).
+- Chỉ fail trên branch: `localization:81` (tìm nhãn "Dịch vụ" của dropdown cũ) → đã sửa test, pass; `control-bot:179` chạy lại pass (flaky). Các test tạo connection (Discord/Slack/Teams/Telegram/Google) dùng `connection-provider-<PROVIDER>`.check() và đều pass.
+- GitNexus detect-changes: risk HIGH (29 file, 8 luồng qua WorkflowBuilderPage/ConnectionsPage/WorkflowsPage → auth token/workspace store); không đổi logic auth/workspace, các luồng này được e2e phủ.
+
+### 9.1 Xem trước định dạng và thanh định dạng cho Teams (2026-10-11)
+
+- Ô "Xem trước khi gửi" dưới ô nội dung: `lib/formatPreview.ts` chuyển nội dung thành cây phần tử an toàn (danh sách thẻ cho phép; thẻ lạ như `<script>` giữ nguyên dạng chữ; link chỉ nhận `http(s)` hoặc `{{ biến }}`), còn `components/builder/FormatPreview.tsx` render bằng React (không dùng `innerHTML`); biến hiện thành chip có tên dễ đọc. Chỉ hiện khi chế độ gửi thực sự hiển thị định dạng: email `bodyType: html`, Telegram `parseMode` HTML/MarkdownV2, Discord/Slack/Teams luôn hiện. Email HTML gộp xuống dòng như trình duyệt; chat giữ xuống dòng.
+- Teams: node gửi `TextBlock` của Adaptive Card (`TeamsSendMessageNodeExecutor`, chỉ đọc để kiểm tra) → cú pháp `teams`: `**đậm**`, `_nghiêng_`, `[chữ](url)`, danh sách `- `. Discord có thêm nút danh sách.
+- Kiểm tra: `node --test src/lib/formatPreview.test.mjs src/lib/formatInsert.test.mjs` 9/9; tsc, eslint (file đã sửa) sạch; e2e mới "Teams message toolbar…" trong `w7-nodes` pass, `w7-nodes` + `control-bot` 18/18; `workspace-connections` 62 pass / 4 fail đúng baseline. Stack thật: email "test email 1" (không lưu) → B và danh sách ra `<ul><li>…</li></ul><b>…</b>`, ô xem trước hiện chấm đầu dòng và chữ đậm, chỉ xuất hiện sau khi chuyển sang HTML. Node Teams trên stack thật không thử được vì workspace chưa có kết nối Teams (trường nội dung chỉ hiện khi đã chọn kết nối), nên phủ bằng e2e.
+
+### 9.2 Soạn trực quan (WYSIWYG) ngay trong ô nội dung, nút `</> HTML` (2026-10-11)
+
+- Theo phản hồi của user: ô nhập hiện thẳng định dạng thay vì thẻ thô + khung xem trước. Khi chế độ gửi có hiển thị định dạng (email `bodyType: html`, Telegram có parse mode, Discord/Slack/Teams), `MappingTextField` (prop `format.rich`) dựng DOM từ cây an toàn của `formatPreview` (`components/builder/richText.ts` → `buildRich`) và ghi ngược bằng `serializeRich`: HTML có escape `& < >`, Telegram HTML dùng `\n` (Telegram không nhận `<br>`), MarkdownV2 có escape ký tự đặc biệt, Discord `**`, Slack mrkdwn, Teams Markdown của Adaptive Card. Nút dùng `document.execCommand` (đậm, nghiêng, danh sách, link qua `prompt` chỉ nhận `http(s)`); Enter trong danh sách tạo mục mới. Biến vẫn là chip.
+- Lần định dạng đầu ở bước text thường: chuyển bước sang HTML/parse mode rồi định dạng luôn; xuống dòng đã gõ của email đổi thành `<br>`.
+- Nút `</> HTML` (`</> Markdown` cho chat) chuyển sang sửa mã nguồn, có khung xem trước bên dưới. Nội dung có thẻ/thuộc tính mà trình soạn trực quan không giữ được (bảng, ảnh, style, comment…) mở thẳng ở chế độ mã và không cho quay về (`richEditable`), tránh mất code người dùng tự viết.
+- Kiểm tra: tsc, eslint, build qua; unit 9/9; e2e Teams viết lại (đậm hiện trong ô, `</> Markdown` ra `**Build failed**`, xem trước ở chế độ mã, lưu `**Build failed**`); `w7-nodes` + `control-bot` + `workspace-connections` 79 pass / 5 fail = 3 baseline cũ + `2124`, `2608` pass khi chạy lại (flaky). Stack thật ("test email 1", không lưu): bôi đen → B ra `<b>…</b>` hiển thị đậm trong ô, email tự sang HTML; Enter, danh sách 2 mục, nghiêng → `<b>test xin chao</b><br><ul><li>muc <i>mot</i></li><li>muc hai</li></ul>`; `</> HTML` hiện mã + xem trước; thêm `<img>` ở chế độ mã → không quay về trực quan, hiện giải thích.

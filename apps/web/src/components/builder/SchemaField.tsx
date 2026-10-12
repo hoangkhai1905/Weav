@@ -5,6 +5,7 @@ import { toLocalInput, withLocalOffset } from '../../lib/localOffset';
 import type { VariableGroup } from '../../lib/variablePaths';
 import { idFromGoogleLink } from '../../lib/googleLinks';
 import { MappingTextField } from './MappingTextField';
+import type { FormatAction, FormatSyntax } from '../../lib/formatInsert';
 
 // The executors reject more than this even where the schema has no maximum.
 const INTEGER_CAP: Record<string, number> = {
@@ -18,6 +19,13 @@ const INTEGER_CAP: Record<string, number> = {
 const INTEGER_MIN: Record<string, number> = {
   'format.datetime.amount': -100000,
   'format.text.maxLength': 1,
+};
+
+// Chat steps whose text field understands Markdown: the field is edited visually with format buttons (email and Telegram have their own).
+const FORMAT_FIELDS: Record<string, { name: string; syntax: FormatSyntax; actions: FormatAction[] }> = {
+  'discord.send_message': { name: 'content', syntax: 'markdown', actions: ['bold', 'italic', 'link', 'list'] },
+  'slack.send_message': { name: 'text', syntax: 'slack', actions: ['bold', 'italic', 'link'] },
+  'teams.send_message': { name: 'text', syntax: 'teams', actions: ['bold', 'italic', 'link', 'list'] },
 };
 
 const inputCls = 'w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
@@ -88,6 +96,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
         multiline={multiline}
         value={text}
         groups={groups}
+        format={FORMAT_FIELDS[nodeType]?.name === name ? { syntax: FORMAT_FIELDS[nodeType].syntax, actions: FORMAT_FIELDS[nodeType].actions, rich: true } : undefined}
         onChange={(next) => onChange(next === '' ? undefined : textValue(next))}
       />
     );

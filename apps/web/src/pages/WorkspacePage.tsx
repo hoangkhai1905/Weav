@@ -960,7 +960,7 @@ export function WorkspacePage() {
                             <span>{member.name}</span>
                           </td>
                           <td className="px-5 py-4 text-muted-foreground">{member.email}</td>
-                          <td className="px-5 py-4"><span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${member.role === 'OWNER' ? 'border-err-border bg-err-bg text-err' : 'border-border bg-muted-foreground text-text-2'}`}>{member.role === 'OWNER' ? t('workspace.owner') : t('workspace.role_member')}</span></td>
+                          <td className="px-5 py-4"><span className={`whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${member.role === 'OWNER' ? 'border-run/30 bg-run-bg text-run' : 'border-border bg-muted text-text-2'}`}>{member.role === 'OWNER' ? t('workspace.owner') : t('workspace.role_member')}</span></td>
                           <td className="px-5 py-4">
                             <button
                               type="button"

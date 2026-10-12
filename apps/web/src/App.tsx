@@ -16,7 +16,6 @@ import { ExecutionsOverviewPage } from './pages/ExecutionsOverviewPage';
 import { ConnectionsPage } from './pages/ConnectionsPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 import { InvitationsPage } from './pages/InvitationsPage';
-import { TelegramPage } from './pages/TelegramPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
@@ -92,8 +91,8 @@ export function App() {
 
         <Route path="/assistant" element={<AssistantPage />} />
 
-        {/* Telegram */}
-        <Route path="/telegram" element={<TelegramPage />} />
+        {/* Old Telegram page links (notifications) */}
+        <Route path="/telegram" element={<Navigate to="/workspace/connections" replace />} />
 
         {/* Notifications & Settings & Help */}
         <Route path="/notifications" element={<NotificationsPage />} />

@@ -15,6 +15,7 @@ import { fetchWorkflowList } from '../lib/queries/workflows';
 import { monitoringApi } from '../api/monitoring.api';
 import { runTone } from '../lib/monitoring/format';
 import { useWorkspaceStore } from '../store/useWorkspaceStore';
+import { useUIStore } from '../store/useUIStore';
 import { statusBadgeClass } from '../components/common/statusBadgeClass';
 import { formatRelativeTime } from '../lib/relativeTime';
 import { FirstWorkspaceCard } from '../components/onboarding/FirstWorkspaceCard';
@@ -36,6 +37,7 @@ interface DashboardQuickActionsProps {
 
 function DashboardQuickActions({ prefersReducedMotion }: DashboardQuickActionsProps) {
   const { t } = useI18nStore();
+  const openAiGenerator = useUIStore((state) => state.openAiGenerator);
 
   return (
     <motion.section
@@ -75,8 +77,7 @@ function DashboardQuickActions({ prefersReducedMotion }: DashboardQuickActionsPr
           </span>
         </Link>
 
-        <Link
-          to="/ai/workflow-generator"
+        <button type="button" onClick={() => openAiGenerator()}
           className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-run-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-run/30"
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-run-bg text-run transition-transform duration-200 group-hover:-translate-y-0.5">
@@ -89,7 +90,7 @@ function DashboardQuickActions({ prefersReducedMotion }: DashboardQuickActionsPr
             </span>
             <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">{t('dashboard.create_ai_desc')}</span>
           </span>
-        </Link>
+        </button>
 
         <Link
           to={isWorkflowMockMode ? '/workflows/wf-prod-8492/builder' : '/workflows'}

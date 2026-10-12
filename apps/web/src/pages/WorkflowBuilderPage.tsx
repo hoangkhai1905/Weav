@@ -56,6 +56,7 @@ import {
   MessageSquare,
   CalendarClock,
   Type,
+  HelpCircle,
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
@@ -75,6 +76,7 @@ import { useAttachableConnectionIds, useConnections, useStartGoogleOAuth } from 
 import { useOcrSources } from '../hooks/useNodeCapabilities';
 import type { ConnectionResponse, GoogleProvider } from '../api/connection.api';
 import { CreateConnectionDialog } from './ConnectionsPage';
+import { ConnectionGuide, type GuideTopic } from '../components/connections/ConnectionGuide';
 import { storeOAuthPendingContext } from '../lib/oauthPending';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
@@ -109,6 +111,16 @@ import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilesto
 import { tr } from '../lib/i18n/tr';
 
 const SUPPORTED_NODE_TYPES = new Set(NODE_CATALOG.map((item) => item.type));
+
+// Nodes that need a token, webhook URL or endpoint from another app get a "?" guide in the inspector.
+const NODE_GUIDE_TOPIC: Record<string, GuideTopic> = {
+  'trigger.telegram': 'TELEGRAM',
+  'telegram.send_message': 'TELEGRAM',
+  'discord.send_message': 'DISCORD',
+  'slack.send_message': 'SLACK',
+  'teams.send_message': 'TEAMS',
+  'trigger.webhook': 'WEBHOOK',
+};
 
 const PALETTE_PRESENTATION: Record<
   string,
@@ -507,6 +519,8 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [showMinimap, setShowMinimap] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectorTab, setInspectorTab] = useState<'config' | 'input' | 'output' | 'logs'>('config');
+  // The node whose "?" guide is open; selecting another node closes it.
+  const [guideNodeId, setGuideNodeId] = useState<string | null>(null);
   // The step is captured on open: clicking the dialog closes the inspector and clears the selection.
   const [addConnectionFor, setAddConnectionFor] = useState<{ provider: GoogleProvider; nodeId: string } | null>(null);
   const startGoogleOAuth = useStartGoogleOAuth();
@@ -1962,6 +1976,19 @@ export const WorkflowBuilderPage: React.FC = () => {
               >
                 <Copy size={12} aria-hidden="true" />
               </button>
+              {NODE_GUIDE_TOPIC[selectedNodeType] && (
+                <button
+                  type="button"
+                  data-testid="inspector-guide-toggle"
+                  aria-label={t('guide.toggle')}
+                  title={t('guide.toggle')}
+                  aria-expanded={guideNodeId === selectedNode.id}
+                  onClick={() => setGuideNodeId((current) => (current === selectedNode.id ? null : selectedNode.id))}
+                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${guideNodeId === selectedNode.id ? 'bg-run-bg text-run' : 'text-muted-foreground hover:bg-subtle hover:text-foreground'}`}
+                >
+                  <HelpCircle size={14} aria-hidden="true" />
+                </button>
+              )}
             </div>
             <span className={selectedNodeReadiness?.state === 'ready'
               ? 'shrink-0 rounded bg-ok-bg px-1.5 py-0.5 text-[11px] font-medium text-ok'
@@ -1978,6 +2005,11 @@ export const WorkflowBuilderPage: React.FC = () => {
             >
               {selectedNodeReadinessMessage}
               {isUnsupportedNode && <span className="block">{t('builder.cfg.preserved_readonly')}</span>}
+            </div>
+          )}
+          {guideNodeId === selectedNode.id && NODE_GUIDE_TOPIC[selectedNodeType] && (
+            <div className="max-h-[45vh] shrink-0 overflow-y-auto border-b border-border bg-subtle p-3">
+              <ConnectionGuide topic={NODE_GUIDE_TOPIC[selectedNodeType]} />
             </div>
           )}
           {selectedNodeType === 'trigger.webhook' && (
@@ -2179,7 +2211,28 @@ export const WorkflowBuilderPage: React.FC = () => {
                   })()}
                   <div>
                     <label id="telegram-text-label" onClick={() => document.getElementById('telegram-text')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.message')}</label>
-                    <MappingTextField key={`${selectedNodeId}-text`} id="telegram-text" labelledBy="telegram-text-label" multiline value={String(selectedNodeConfig.text ?? '')} onChange={(text) => updateSelectedNodeConfig({ text })} groups={inspectorGroups} placeholder={t('builder.cfg.tg_text_placeholder')} />
+                    <MappingTextField
+                      key={`${selectedNodeId}-text`}
+                      id="telegram-text"
+                      labelledBy="telegram-text-label"
+                      multiline
+                      value={String(selectedNodeConfig.text ?? '')}
+                      onChange={(text) => updateSelectedNodeConfig({ text })}
+                      groups={inspectorGroups}
+                      placeholder={t('builder.cfg.tg_text_placeholder')}
+                      format={{
+                        // MarkdownV2 stays as the user chose it; otherwise formatting turns on Telegram's HTML.
+                        syntax: selectedNodeConfig.parseMode === 'MarkdownV2' ? 'telegramMarkdown' : 'telegramHtml',
+                        // Without a parse mode Telegram shows the text exactly as typed, so it stays plain text.
+                        rich: selectedNodeConfig.parseMode === 'HTML' || selectedNodeConfig.parseMode === 'MarkdownV2',
+                        actions: ['bold', 'italic', 'link'],
+                        onUse: () => {
+                          if (selectedNodeConfig.parseMode === 'HTML' || selectedNodeConfig.parseMode === 'MarkdownV2') return;
+                          updateSelectedNodeConfig({ parseMode: 'HTML' });
+                          return t('builder.format.switched_telegram_html');
+                        },
+                      }}
+                    />
                     {suggestionsFor('text', true)}
                   </div>
                   <details
@@ -2292,7 +2345,25 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </div>
                   <div>
                     <label id="email-body-label" onClick={() => document.getElementById('email-body')?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.body')}</label>
-                    <MappingTextField key={`${selectedNodeId}-body`} id="email-body" labelledBy="email-body-label" multiline value={String(selectedNodeConfig.body ?? '')} onChange={(body) => updateSelectedNodeConfig({ body })} groups={inspectorGroups} />
+                    <MappingTextField
+                      key={`${selectedNodeId}-body`}
+                      id="email-body"
+                      labelledBy="email-body-label"
+                      multiline
+                      value={String(selectedNodeConfig.body ?? '')}
+                      onChange={(body) => updateSelectedNodeConfig({ body })}
+                      groups={inspectorGroups}
+                      format={{
+                        syntax: 'html',
+                        rich: selectedNodeConfig.bodyType === 'html',
+                        actions: ['bold', 'italic', 'link', 'list', 'lineBreak'],
+                        onUse: () => {
+                          if (selectedNodeConfig.bodyType === 'html') return;
+                          updateSelectedNodeConfig({ bodyType: 'html' });
+                          return t('builder.format.switched_html');
+                        },
+                      }}
+                    />
                     {suggestionsFor('body', true)}
                   </div>
                   {['bodyType', 'cc', 'bcc'].map((name) => configField(name))}
