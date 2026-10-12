@@ -63,6 +63,30 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /workspaces/{workspaceId}/workflows/node-capabilities:
+    get:
+      tags: [Workflows]
+      operationId: getNodeCapabilities
+      summary: Report which optional workflow nodes this deployment can run
+      description: >-
+        Static segment: it takes precedence over /workflows/{workflowId}. Requires WORKSPACE_VIEW. Today only
+        `ocr.extract` is reported; clients must ignore node types they do not know. `sources` lists the OCR input
+        sources currently usable (`url`, `artifact`, and `file` when a workflow file store is configured) and is
+        empty when `available` is false. The API Gateway exposes this operation at
+        /api/v1/workspaces/{workspaceId}/workflows/node-capabilities.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+      responses:
+        '200':
+          description: Per-node runtime availability.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NodeCapabilities' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /workspaces/{workspaceId}/workflows/{workflowId}:
     get:
       tags: [Workflows]
@@ -1104,6 +1128,22 @@ components:
       properties:
         workflowId: { type: string, format: uuid }
         status: { type: string, enum: [DRAFT, PUBLISHED, PAUSED] }
+    NodeCapabilities:
+      type: object
+      required: [nodes]
+      properties:
+        nodes:
+          type: object
+          description: Availability keyed by node type (currently only `ocr.extract`).
+          additionalProperties: { $ref: '#/components/schemas/NodeCapability' }
+    NodeCapability:
+      type: object
+      required: [available, sources]
+      properties:
+        available: { type: boolean, description: True when at least one source is usable. }
+        sources:
+          type: array
+          items: { type: string, enum: [url, artifact, file] }
     WorkflowPage:
       type: object
       required: [items, page, size, totalElements]

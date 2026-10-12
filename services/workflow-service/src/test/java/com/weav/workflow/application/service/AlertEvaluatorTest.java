@@ -189,6 +189,30 @@ class AlertEvaluatorTest {
         assertEquals(0, assertDoesNotThrow(() -> evaluator.sweepOverdue(200)));
     }
 
+    /** Batch 7: the live sweep (LongRunningAlertSweeper delegates here) honours the per-(rule, workflow) cooldown and the one-firing-per-run guard. */
+    @Test
+    void longRunningSweepRespectsTheCooldownAcrossLiveRuns() {
+        AlertRule slowRule = rule(AlertRuleType.LONG_RUNNING, 60, null, 60, true, null);
+        FinishedRun first = liveRun(Duration.ofMinutes(10));
+        FinishedRun second = liveRun(Duration.ofMinutes(5));
+        store.overdue.add(new AlertRuleStore.OverdueRun(slowRule, first));
+        store.overdue.add(new AlertRuleStore.OverdueRun(slowRule, second));
+        assertEquals(1, evaluator.sweepOverdue(200), "the second run is inside the cooldown of the first firing");
+
+        clock.set(T0.plus(Duration.ofMinutes(30)));
+        assertEquals(0, evaluator.sweepOverdue(200), "still cooling down; the first run never fires twice");
+
+        clock.set(T0.plus(Duration.ofMinutes(61)));
+        assertEquals(1, evaluator.sweepOverdue(200), "after the cooldown only the run that has not fired yet fires");
+        assertEquals(List.of(slowRule.id(), slowRule.id()), store.firedRules);
+    }
+
+    private FinishedRun liveRun(Duration runningFor) {
+        UUID id = UUID.randomUUID();
+        return new FinishedRun(id, WORKFLOW, WORKSPACE, "Nightly sync", WORKFLOW_CREATOR, ExecutionStatus.RUNNING,
+                T0.minus(runningFor), null);
+    }
+
     @Test
     void oneBrokenRuleDoesNotStopTheOthers() {
         rule(AlertRuleType.CONSECUTIVE_FAILURES, 1, null, 0, true, null); // window missing: throws in the evaluator
@@ -232,6 +256,7 @@ class AlertEvaluatorTest {
         final java.util.Map<UUID, FinishedRun> runs = new java.util.LinkedHashMap<>();
         final List<WorkflowNotificationEvent> events = new ArrayList<>();
         final List<UUID> firedRules = new ArrayList<>();
+        final List<AlertRuleStore.OverdueRun> overdue = new ArrayList<>();
         private final List<Object[]> firings = new ArrayList<>();
         boolean failOnFire;
         boolean failOnLookup;
@@ -265,7 +290,7 @@ class AlertEvaluatorTest {
             if (failOnLookup) {
                 throw new IllegalStateException("database down");
             }
-            return List.of();
+            return overdue.stream().limit(limit).toList();
         }
 
         @Override
