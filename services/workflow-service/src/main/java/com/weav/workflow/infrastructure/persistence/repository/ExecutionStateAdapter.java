@@ -455,6 +455,14 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public boolean hasActiveExecutions() {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM %s WHERE status IN ('QUEUED', 'RUNNING', 'WAITING'))"
+                        .formatted(executionTable), Boolean.class));
+    }
+
+    @Override
     @Transactional
     public int enqueueRecoverable(int batchSize, Duration queuedDeliveryAge, Duration outboxCooldown) {
         if (batchSize < 1 || batchSize > 1_000) {

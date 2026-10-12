@@ -27,6 +27,7 @@ import com.weav.workflow.infrastructure.persistence.mapper.ExecutionPersistenceM
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
+import com.weav.workflow.infrastructure.scheduling.ActivitySignal;
 import com.weav.workflow.infrastructure.scheduling.OutboxWakeup;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -58,6 +59,7 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
     private final DefinitionJsonCodec definitionCodec;
     private final int manualActiveRunLimit;
     private OutboxWakeup wakeup;
+    private ActivitySignal activity;
 
     public WorkflowExecutionRepositoryAdapter(
             ExecutionPersistenceMapper mapper,
@@ -76,6 +78,12 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
     @Autowired(required = false)
     void setOutboxWakeup(@Qualifier("executionOutboxWakeup") OutboxWakeup wakeup) {
         this.wakeup = wakeup;
+    }
+
+    /** Optional: wakes the idle maintenance pollers (recovery, long-running sweep) after an admission commits. */
+    @Autowired(required = false)
+    void setExecutionActivity(ActivitySignal activity) {
+        this.activity = activity;
     }
 
     @Override
@@ -241,6 +249,9 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
         entityManager.persist(mapper.toEntity(outbox));
         if (wakeup != null) {
             wakeup.signalAfterCommit();
+        }
+        if (activity != null) {
+            activity.signalAfterCommit();
         }
         entityManager.flush();
         return new Admission(execution.getId(), execution.getWorkflowId(), execution.getWorkflowVersionId(),
