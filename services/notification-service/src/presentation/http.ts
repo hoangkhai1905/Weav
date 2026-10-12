@@ -11,6 +11,7 @@ import {
   HttpException,
   Inject,
   Injectable,
+  Logger,
   Param,
   Patch,
   Post,
@@ -273,31 +274,57 @@ export class HealthController {
 }
 @Catch()
 export class ApiErrorFilter implements ExceptionFilter {
+  private readonly logger = new Logger(ApiErrorFilter.name);
   catch(exception: unknown, host: ArgumentsHost) {
     const http = host.switchToHttp();
     const request = http.getRequest<FastifyRequest>();
     const reply = http.getResponse<FastifyReply>();
+    // Fastify's own errors (e.g. FST_ERR_CTP_BODY_TOO_LARGE) are not HttpExceptions but carry statusCode.
+    const statusCode = (exception as { statusCode?: unknown } | null)
+      ?.statusCode;
     const status =
-      exception instanceof HttpException ? exception.getStatus() : 500;
+      exception instanceof HttpException
+        ? exception.getStatus()
+        : typeof statusCode === 'number' &&
+            Number.isInteger(statusCode) &&
+            statusCode >= 400 &&
+            statusCode < 500
+          ? statusCode
+          : 500;
     const codes: Record<number, string> = {
       400: 'BAD_REQUEST',
       401: 'UNAUTHORIZED',
       403: 'FORBIDDEN',
       404: 'NOT_FOUND',
+      413: 'PAYLOAD_TOO_LARGE',
+      429: 'TOO_MANY_REQUESTS',
       503: 'SERVICE_UNAVAILABLE',
     };
+    const path = request.url.split('?')[0];
+    if (status >= 500)
+      this.logger.error({
+        event: 'notification_http_error',
+        status,
+        path,
+        errorClass:
+          exception instanceof Error ? exception.name : typeof exception,
+      });
     void reply.code(status).send({
       error: {
-        code: codes[status] ?? 'INTERNAL_ERROR',
+        code:
+          codes[status] ??
+          (status >= 400 && status < 500 ? 'BAD_REQUEST' : 'INTERNAL_ERROR'),
         message:
           status >= 500
             ? 'Service temporarily unavailable'
-            : (exception as HttpException).message,
+            : exception instanceof Error
+              ? exception.message
+              : 'Request failed',
         details: [],
       },
       status,
       timestamp: new Date().toISOString(),
-      path: request.url.split('?')[0],
+      path,
     });
   }
 }

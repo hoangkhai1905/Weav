@@ -1398,6 +1398,84 @@ test(
           for (const e of [a, b, c, d]) await cleanup(e.eventId);
         },
       );
+
+      // Last on purpose: the purge removes every old terminal row in this shared database.
+      await t.test(
+        'G5 retention purge deletes old terminal deliveries first, then unreferenced old inbox rows',
+        async () => {
+          const old = new Date(Date.now() - 120 * 86400000);
+          const userId = randomUUID();
+          const purgedInbox = await seedInbox(repo, { userId, createdAt: old });
+          const keptInbox = await seedInbox(repo, { userId, createdAt: old });
+          const link = (id, inboxId, data) =>
+            deliveryRepo.client.notificationDelivery.update({
+              where: { id },
+              data: { inboxId, ...data },
+            });
+          const oldSent = await seedDelivery(deliveryRepo, {
+            userId,
+            status: 'SENT',
+            createdAt: old,
+          });
+          await link(oldSent.id, purgedInbox.id, {});
+          const oldTerminalFailed = await seedDelivery(deliveryRepo, {
+            status: 'FAILED',
+            createdAt: old,
+          });
+          await link(oldTerminalFailed.id, null, { scheduledAt: null });
+          const oldRetrying = await seedDelivery(deliveryRepo, {
+            status: 'FAILED',
+            createdAt: old,
+          });
+          await link(oldRetrying.id, null, {
+            scheduledAt: new Date(Date.now() + 3600000),
+          });
+          const oldPending = await seedDelivery(deliveryRepo, {
+            userId,
+            status: 'PENDING',
+            createdAt: old,
+          });
+          await link(oldPending.id, keptInbox.id, {});
+          const recentSent = await seedDelivery(deliveryRepo, {
+            status: 'SENT',
+            createdAt: new Date(),
+          });
+
+          assert((await deliveryRepo.purgeDeliveries(90, 1000)) >= 2);
+          assert((await deliveryRepo.purgeInbox(90, 1000)) >= 1);
+
+          const remaining = new Set(
+            (
+              await deliveryRepo.client.notificationDelivery.findMany({
+                where: {
+                  id: {
+                    in: [
+                      oldSent.id,
+                      oldTerminalFailed.id,
+                      oldRetrying.id,
+                      oldPending.id,
+                      recentSent.id,
+                    ],
+                  },
+                },
+                select: { id: true },
+              })
+            ).map((row) => row.id),
+          );
+          assert.deepEqual(
+            remaining,
+            new Set([oldRetrying.id, oldPending.id, recentSent.id]),
+          );
+          const inboxLeft = await repo.client.notificationInbox.findMany({
+            where: { id: { in: [purgedInbox.id, keptInbox.id] } },
+            select: { id: true },
+          });
+          assert.deepEqual(
+            inboxLeft.map((row) => row.id),
+            [keptInbox.id],
+          );
+        },
+      );
     } finally {
       if (repo) await repo.onModuleDestroy().catch(() => {});
       if (deliveryRepo) await deliveryRepo.onModuleDestroy().catch(() => {});

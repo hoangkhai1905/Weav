@@ -28,8 +28,15 @@ const listQuery = z
       .datetime({ offset: true })
       .transform((value) => new Date(value))
       .optional(),
+    // Tie-breaker of the keyset cursor: the conversationId of the last item of the previous page.
+    // Optional, so cursors that carry only `before` keep working.
+    beforeId: z
+      .uuid()
+      .transform((v) => v.toLowerCase())
+      .optional(),
   })
-  .strict();
+  .strict()
+  .refine((q) => q.beforeId === undefined || q.before !== undefined);
 
 /** Per-user chat history. Every lookup is owner-filtered by the store; a miss is always 404. */
 @Controller('v1/assistant/conversations')
@@ -51,6 +58,7 @@ export class AssistantHistoryController {
     const rows = await store.listConversations(userId, query.data.workspaceId, {
       limit: query.data.limit,
       before: query.data.before,
+      beforeId: query.data.beforeId,
     });
     return {
       items: rows.map((c) => ({

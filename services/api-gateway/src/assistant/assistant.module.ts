@@ -46,11 +46,15 @@ const chatSchema = z
   })
   .strict();
 
-const listSchema = z.object({
-  workspaceId: z.string().uuid(),
-  limit: z.coerce.number().int().min(1).max(50).optional(),
-  before: z.string().datetime({ offset: true }).optional(),
-});
+const listSchema = z
+  .object({
+    workspaceId: z.string().uuid(),
+    limit: z.coerce.number().int().min(1).max(50).optional(),
+    before: z.string().datetime({ offset: true }).optional(),
+    // Keyset tie-breaker (the last item's id); only meaningful with `before`.
+    beforeId: z.string().uuid().optional(),
+  })
+  .refine((q) => q.beforeId === undefined || q.before !== undefined);
 const idSchema = z.string().uuid();
 
 const JSON_TIMEOUT_MS = 10_000;
@@ -202,6 +206,7 @@ export class AssistantController {
     if (parsed.data.limit !== undefined)
       search.set('limit', String(parsed.data.limit));
     if (parsed.data.before) search.set('before', parsed.data.before);
+    if (parsed.data.beforeId) search.set('beforeId', parsed.data.beforeId);
     return this.proxyJson(request, reply, 'GET', `conversations?${search}`);
   }
 

@@ -15,6 +15,7 @@ import type {
   ListQuery,
   Payload,
 } from '../domain/notification';
+import { RetentionRepository } from '../application/retention.purger';
 import {
   assertDeliveryEventIdentity,
   assertInboxEventIdentity,
@@ -47,7 +48,7 @@ function normalizeLegacyEvent(event: ExecutionEvent): ExecutionEvent {
 @Injectable()
 export class PrismaDeliveryRepository
   extends DeliveryRepository
-  implements OnModuleDestroy
+  implements OnModuleDestroy, RetentionRepository
 {
   readonly client: PrismaClient;
   constructor(@Inject(SETTINGS) settings: Settings) {
@@ -230,5 +231,39 @@ export class PrismaDeliveryRepository
             : (patch.lastError as Prisma.InputJsonObject | undefined),
       },
     });
+  }
+  /** One short transaction per batch; the xact advisory lock is released on commit. null = lock busy. */
+  private purgeBatch(
+    run: (tx: Prisma.TransactionClient) => Promise<number>,
+  ): Promise<number | null> {
+    return this.client.$transaction(
+      async (tx) => {
+        const [row] = await tx.$queryRaw<{ locked: boolean }[]>`
+          SELECT pg_try_advisory_xact_lock(hashtextextended('notification.retention.purge', 0)) AS locked`;
+        return row?.locked ? run(tx) : null;
+      },
+      { timeout: 9000 },
+    );
+  }
+  purgeDeliveries(retentionDays: number, limit: number) {
+    return this.purgeBatch(
+      (tx) => tx.$executeRaw`
+        DELETE FROM notification.notification_deliveries
+        WHERE id IN (SELECT id FROM notification.notification_deliveries
+          WHERE (status='SENT' OR (status='FAILED' AND scheduled_at IS NULL))
+            AND created_at < NOW() - (${retentionDays} * INTERVAL '1 day')
+          LIMIT ${limit} FOR UPDATE SKIP LOCKED)`,
+    );
+  }
+  purgeInbox(retentionDays: number, limit: number) {
+    return this.purgeBatch(
+      (tx) => tx.$executeRaw`
+        DELETE FROM notification.notification_inbox
+        WHERE id IN (SELECT i.id FROM notification.notification_inbox i
+          WHERE i.created_at < NOW() - (${retentionDays} * INTERVAL '1 day')
+            AND NOT EXISTS (SELECT 1 FROM notification.notification_deliveries d
+              WHERE d.inbox_id = i.id AND d.user_id = i.user_id)
+          LIMIT ${limit} FOR UPDATE OF i SKIP LOCKED)`,
+    );
   }
 }

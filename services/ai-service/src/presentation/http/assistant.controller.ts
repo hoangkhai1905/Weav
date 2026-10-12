@@ -16,6 +16,7 @@ import {
   conversationTitle,
   isUuid,
   MAX_MESSAGE_CHARS,
+  type ConversationStore,
 } from '../../application/assistant/conversation-store';
 import { AiError } from '../../domain/errors';
 import { Admission } from '../../infrastructure/admission';
@@ -48,6 +49,13 @@ const bodySchema = z
     timezone: z.string().min(1).max(64).refine(validTimezone).optional(),
   })
   .strict();
+
+/** Failures that leave the user with nothing: the turn is rolled back when no text reached them. */
+const ROLLBACK_OUTCOMES = new Set([
+  'AI_PROVIDER_UNAVAILABLE',
+  'AI_TIMEOUT',
+  'ABORTED',
+]);
 
 /** Streams one assistant turn as SSE (events: conversation, delta, tool_call, tool_result, draft, done, error). */
 @Controller('v1/assistant')
@@ -91,6 +99,13 @@ export class AssistantController {
     if (!release) throw new AiError('AI_BUSY');
 
     let id: string;
+    let userMessageId: string | undefined;
+    // The same day is used to refund, even if the turn ends after UTC midnight.
+    const usageInput = {
+      day: new Date().toISOString().slice(0, 10),
+      workspaceId,
+      userId,
+    };
     let history: { role: 'user' | 'assistant'; content: string }[];
     try {
       // Membership first: a non-member must never count against, or write into, a workspace.
@@ -105,11 +120,7 @@ export class AssistantController {
         if (!existing || existing.workspaceId !== workspaceId)
           throw new AiError('NOT_FOUND');
       }
-      const usage = await store.recordUsage({
-        day: new Date().toISOString().slice(0, 10),
-        workspaceId,
-        userId,
-      });
+      const usage = await store.recordUsage(usageInput);
       if (
         usage.userCalls > config.AI_ASSISTANT_DAILY_USER_LIMIT ||
         usage.workspaceCalls > config.AI_ASSISTANT_DAILY_WORKSPACE_LIMIT
@@ -124,7 +135,7 @@ export class AssistantController {
             title: conversationTitle(message),
           })
         ).id;
-      await store.appendMessages(id, userId, [
+      [userMessageId] = await store.appendMessages(id, userId, [
         { role: 'user', content: message },
       ]);
       // Only role and content go to the model (no timestamps or ids).
@@ -154,6 +165,9 @@ export class AssistantController {
         raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
     let outcome = 'OK';
+    // Once any text reached the client the turn is spent: no refund, no rollback.
+    let streamed = false;
+    let rolledBack = false;
     try {
       reply.hijack();
       raw.writeHead(200, {
@@ -183,7 +197,10 @@ export class AssistantController {
         },
         signal,
       )) {
-        if (item.event === 'delta') answer += item.data.text;
+        if (item.event === 'delta') {
+          answer += item.data.text;
+          streamed = true;
+        }
         if (item.event === 'done') {
           finished = true;
           // Stored only after a successful turn, and before `done` so a failed save becomes an error event.
@@ -209,9 +226,21 @@ export class AssistantController {
         error instanceof AiError ? error : new AiError('INTERNAL_ERROR');
       outcome = failure.code;
       if (failure.code === 'INTERNAL_ERROR')
-        this.logger.error({ errorClass: (error as Error)?.constructor?.name });
+        this.logger.error({
+          correlationId: request.correlationId,
+          conversationId: id,
+          errorClass: (error as Error)?.constructor?.name,
+        });
       send('error', { code: failure.code, message: failure.message });
     } finally {
+      // Before release(), so a quick client retry cannot overtake the rollback.
+      if (!streamed && ROLLBACK_OUTCOMES.has(outcome))
+        rolledBack = await this.rollbackTurn(store, {
+          ...usageInput,
+          conversationId: id,
+          messageId: userMessageId,
+          correlationId: request.correlationId,
+        });
       release();
       raw.end();
       this.logger.log({
@@ -220,8 +249,42 @@ export class AssistantController {
         workspaceId,
         conversationId: id,
         outcome,
+        rolledBack,
         durationMs: Date.now() - startedAt,
       });
     }
+  }
+
+  /**
+   * Gives back the quota unit and removes the user message of a turn that produced nothing, so a client
+   * retry neither burns quota nor duplicates the question. Best effort: failures are logged, never thrown.
+   */
+  private async rollbackTurn(
+    store: ConversationStore,
+    turn: {
+      day: string;
+      workspaceId: string;
+      userId: string;
+      conversationId: string;
+      messageId: string | undefined;
+      correlationId: string | undefined;
+    },
+  ): Promise<boolean> {
+    const { conversationId, messageId, correlationId, ...usage } = turn;
+    const results = await Promise.allSettled([
+      store.refundUsage(usage),
+      messageId
+        ? store.deleteMessage(conversationId, usage.userId, messageId)
+        : Promise.resolve(true),
+    ]);
+    for (const result of results)
+      if (result.status === 'rejected')
+        this.logger.warn({
+          message: 'turn rollback step failed',
+          correlationId,
+          conversationId,
+          errorClass: (result.reason as Error)?.constructor?.name,
+        });
+    return results.every((r) => r.status === 'fulfilled');
   }
 }

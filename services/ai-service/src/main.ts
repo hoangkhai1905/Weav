@@ -2,7 +2,10 @@ import { Logger } from '@nestjs/common';
 import { createAiApp } from './app';
 import { loadAiConfig, missingAssistantDbVars } from './config/ai-config';
 import { loadVerifier } from './infrastructure/auth/load-verifier';
-import { CircuitBreakerProvider } from './infrastructure/llm/circuit-breaker-provider';
+import {
+  CircuitBreakerChatProvider,
+  CircuitBreakerProvider,
+} from './infrastructure/llm/circuit-breaker-provider';
 import { UserJwtVerifier } from './infrastructure/auth/user-jwt-verifier';
 import { DeepSeekChatProvider } from './infrastructure/llm/deepseek/deepseek-chat-provider';
 import { DeepSeekProvider } from './infrastructure/llm/deepseek/deepseek-provider';
@@ -63,12 +66,14 @@ async function bootstrap() {
         },
         provider:
           config.DEEPSEEK_API_KEY && config.DEEPSEEK_MODEL
-            ? new DeepSeekChatProvider({
-                apiKey: config.DEEPSEEK_API_KEY,
-                model: config.DEEPSEEK_MODEL,
-                baseUrl: config.DEEPSEEK_BASE_URL,
-                maxResponseBytes: 1024 * 1024,
-              })
+            ? new CircuitBreakerChatProvider(
+                new DeepSeekChatProvider({
+                  apiKey: config.DEEPSEEK_API_KEY,
+                  model: config.DEEPSEEK_MODEL,
+                  baseUrl: config.DEEPSEEK_BASE_URL,
+                  maxResponseBytes: 1024 * 1024,
+                }),
+              )
             : null,
         verifier: config.JWT_JWKS_URI
           ? new UserJwtVerifier({

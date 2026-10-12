@@ -43,6 +43,7 @@ model NotificationDelivery {
   @@index([userId, readAt, createdAt])
   @@index([status, scheduledAt])
   @@index([inboxId], map: "notification_deliveries_inbox_id_idx")
+  @@index([status, createdAt])
   @@map("notification_deliveries")
   @@schema("notification")
 }
@@ -67,6 +68,7 @@ model NotificationInbox {
   @@unique([id, userId], map: "notification_inbox_id_user_id_key")
   @@index([userId, createdAt, id], map: "notification_inbox_user_id_created_at_id_idx")
   @@index([userId, readAt, createdAt], map: "notification_inbox_user_id_read_at_created_at_idx")
+  @@index([createdAt])
   @@map("notification_inbox")
   @@schema("notification")
 }

@@ -1,8 +1,10 @@
+import { Logger } from '@nestjs/common';
 import { connect } from 'amqplib';
 import type { ConfirmChannel, ConsumeMessage } from 'amqplib';
 jest.mock('amqplib', () => ({ connect: jest.fn() }));
 import { RabbitConsumer } from './rabbit.consumer';
 import { Notifications } from '../application/notifications';
+import type { DeliveryWorker } from '../application/delivery.worker';
 import { InboxRepository } from '../domain/inbox';
 import { mockRepository, testEvent, testSettings } from '../testing/fixtures';
 import { InboxPersistenceConflictError } from './inbox.persistence';
@@ -193,5 +195,91 @@ describe('RabbitMQ topology', () => {
       settings.NOTIFICATION_QUEUE,
     ]);
     expect(consumer.isReady).toBe(true);
+    expect(calls.prefetch).toEqual([[5]]);
+  });
+  it('uses the configured prefetch', async () => {
+    const channel = {
+      on: jest.fn(),
+      assertExchange: jest.fn().mockResolvedValue({}),
+      assertQueue: jest.fn().mockResolvedValue({}),
+      bindQueue: jest.fn().mockResolvedValue({}),
+      unbindQueue: jest.fn().mockResolvedValue({}),
+      prefetch: jest.fn().mockResolvedValue({}),
+      consume: jest.fn().mockResolvedValue({}),
+    };
+    (connect as jest.Mock).mockResolvedValue({
+      on: jest.fn(),
+      createConfirmChannel: jest.fn().mockResolvedValue(channel),
+      close: jest.fn().mockResolvedValue(undefined),
+    });
+    const consumer = new RabbitConsumer(
+      {} as Notifications,
+      testSettings({ NOTIFICATION_CONSUMER_PREFETCH: 12 }),
+    );
+    await (consumer as unknown as { open(): Promise<void> }).open();
+    expect(channel.prefetch).toHaveBeenCalledWith(12);
+  });
+  it('logs the error class, then closes the connection, when a handler crashes', async () => {
+    let onMessage!: (m: ConsumeMessage | null) => void;
+    const channel = {
+      on: jest.fn(),
+      assertExchange: jest.fn().mockResolvedValue({}),
+      assertQueue: jest.fn().mockResolvedValue({}),
+      bindQueue: jest.fn().mockResolvedValue({}),
+      unbindQueue: jest.fn().mockResolvedValue({}),
+      prefetch: jest.fn().mockResolvedValue({}),
+      consume: jest.fn((_q: string, cb: typeof onMessage) => {
+        onMessage ??= cb;
+        return Promise.resolve({});
+      }),
+    };
+    const connection = {
+      on: jest.fn(),
+      createConfirmChannel: jest.fn().mockResolvedValue(channel),
+      close: jest.fn().mockResolvedValue(undefined),
+    };
+    (connect as jest.Mock).mockResolvedValue(connection);
+    const consumer = new RabbitConsumer({} as Notifications, testSettings());
+    await (consumer as unknown as { open(): Promise<void> }).open();
+    connection.close.mockClear();
+    jest
+      .spyOn(consumer, 'handle')
+      .mockRejectedValue(new TypeError('secret body'));
+    const log = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    onMessage({
+      fields: { routingKey: 'workflow.completed' },
+    } as ConsumeMessage);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(log).toHaveBeenCalledWith({
+      event: 'notification_consumer_handler_crashed',
+      routingKey: 'workflow.completed',
+      errorClass: 'TypeError',
+    });
+    expect(connection.close).toHaveBeenCalled();
+    log.mockRestore();
+  });
+  it('wakes the delivery worker after a successful ack only', async () => {
+    const wake = jest.fn();
+    const notifications = {
+      consume: jest.fn().mockResolvedValue(undefined),
+    } as unknown as Notifications;
+    const consumer = new RabbitConsumer(notifications, testSettings(), {
+      wake,
+    } as unknown as DeliveryWorker);
+    const ack = jest.fn();
+    const channel = { ack, reject: jest.fn(), nack: jest.fn() };
+    const event = testEvent();
+    await consumer.handle(
+      {
+        content: Buffer.from(JSON.stringify(event)),
+        fields: { routingKey: 'workflow.completed' },
+        properties: { headers: {} },
+      } as unknown as ConsumeMessage,
+      channel as unknown as ConfirmChannel,
+    );
+    expect(ack).toHaveBeenCalled();
+    expect(wake).toHaveBeenCalledTimes(1);
   });
 });

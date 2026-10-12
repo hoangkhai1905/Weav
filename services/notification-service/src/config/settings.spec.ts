@@ -184,4 +184,23 @@ describe('notification configuration validation', () => {
       'NOTIFICATION_LEASE_MS',
     );
   });
+  it('defaults and validates worker backoff, prefetch and retention', () => {
+    const s = loadSettings(env());
+    expect(s.NOTIFICATION_WORKER_IDLE_MAX_MS).toBe(30000);
+    expect(s.NOTIFICATION_CONSUMER_PREFETCH).toBe(5);
+    expect(s.NOTIFICATION_RETENTION_DAYS).toBe(90);
+    expect(
+      loadSettings(env({ NOTIFICATION_RETENTION_DAYS: '0' }))
+        .NOTIFICATION_RETENTION_DAYS,
+    ).toBe(0);
+    for (const bad of [
+      { NOTIFICATION_WORKER_IDLE_MAX_MS: '999' },
+      { NOTIFICATION_WORKER_IDLE_MAX_MS: '600001' },
+      { NOTIFICATION_CONSUMER_PREFETCH: '0' },
+      { NOTIFICATION_CONSUMER_PREFETCH: '51' },
+      { NOTIFICATION_RETENTION_DAYS: '-1' },
+      { NOTIFICATION_RETENTION_DAYS: 'abc' },
+    ])
+      expect(() => loadSettings(env(bad))).toThrow(Object.keys(bad)[0]);
+  });
 });
