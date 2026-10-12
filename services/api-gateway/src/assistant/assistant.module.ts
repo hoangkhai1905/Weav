@@ -30,6 +30,7 @@ import {
   setResponseRequestId,
   type RequestContextCarrier,
 } from '../common/request-context';
+import { readCapped } from '../common/read-capped';
 
 const MAX_REQUEST_BYTES = 262_144;
 // Above ai-service's own 60 s deadline, so the upstream reports its error event first.
@@ -45,11 +46,15 @@ const chatSchema = z
   })
   .strict();
 
-const listSchema = z.object({
-  workspaceId: z.string().uuid(),
-  limit: z.coerce.number().int().min(1).max(50).optional(),
-  before: z.string().datetime({ offset: true }).optional(),
-});
+const listSchema = z
+  .object({
+    workspaceId: z.string().uuid(),
+    limit: z.coerce.number().int().min(1).max(50).optional(),
+    before: z.string().datetime({ offset: true }).optional(),
+    // Keyset tie-breaker (the last item's id); only meaningful with `before`.
+    beforeId: z.string().uuid().optional(),
+  })
+  .refine((q) => q.beforeId === undefined || q.before !== undefined);
 const idSchema = z.string().uuid();
 
 const JSON_TIMEOUT_MS = 10_000;
@@ -73,38 +78,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   PAYLOAD_TOO_LARGE: 'Request too large',
 };
 
-// Reads at most `max` bytes; returns null (and cancels the body) when the upstream sends more.
-async function readCapped(
-  response: Response,
-  max = MAX_JSON_BYTES,
-): Promise<string | null> {
-  const declared = Number(response.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > max) {
-    await response.body?.cancel().catch(() => undefined);
-    return null;
-  }
-  if (!response.body) return '';
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > max) {
-      await reader.cancel().catch(() => undefined);
-      return null;
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString('utf8');
-}
-
 async function upstreamFailure(response: Response): Promise<HttpException> {
   const status = mapStatus(response.status);
   let code: unknown;
   try {
-    const text = await readCapped(response);
+    const text = await readCapped(response, MAX_JSON_BYTES);
     code = (JSON.parse(text ?? '') as { error?: { code?: unknown } }).error
       ?.code;
   } catch {
@@ -228,6 +206,7 @@ export class AssistantController {
     if (parsed.data.limit !== undefined)
       search.set('limit', String(parsed.data.limit));
     if (parsed.data.before) search.set('before', parsed.data.before);
+    if (parsed.data.beforeId) search.set('beforeId', parsed.data.beforeId);
     return this.proxyJson(request, reply, 'GET', `conversations?${search}`);
   }
 
@@ -297,7 +276,8 @@ export class AssistantController {
         `${gateway.upstreams.ai.replace(/\/+$/, '')}/v1/assistant/${path}`,
         { method, headers, redirect: 'error', signal: abort.signal },
       );
-      if (response.status === 200) text = await readCapped(response);
+      if (response.status === 200)
+        text = await readCapped(response, MAX_JSON_BYTES);
       else if (response.status !== 204) throw await upstreamFailure(response);
     } catch (error) {
       if (error instanceof HttpException) throw error;

@@ -309,6 +309,12 @@ export function validateGatewayEnvironment(
     appEnv,
   );
 
+  // Behind a proxy, 0 hops makes every client share the proxy's IP, which
+  // collapses per-client rate limiting; fail fast instead of running degraded.
+  if (appEnv === 'production' && parsed.data.GATEWAY_TRUST_PROXY_HOPS === 0) {
+    throw configurationError(['GATEWAY_TRUST_PROXY_HOPS']);
+  }
+
   const jwt = {
     issuer: parsed.data.JWT_ISSUER,
     audience: parsed.data.JWT_AUDIENCE,

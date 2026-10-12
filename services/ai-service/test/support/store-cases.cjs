@@ -46,6 +46,76 @@ function storeCases({ test, assert, makeStore }) {
     assert.equal(capped.length, 50);
   });
 
+  test('list: keyset paging by (updated_at, id) shows every conversation once, ties included', async () => {
+    const store = makeStore();
+    const me = ids();
+    const made = [];
+    for (let i = 0; i < 7; i++) made.push((await create(store, me, `c${i}`)).id);
+    const seen = [];
+    let cursor = {};
+    for (let page = 0; page < 10; page++) {
+      const rows = await store.listConversations(me.userId, me.workspaceId, { limit: 2, ...cursor });
+      if (rows.length === 0) break;
+      seen.push(...rows.map((c) => c.id));
+      const last = rows[rows.length - 1];
+      cursor = { before: last.updatedAt, beforeId: last.id };
+    }
+    assert.equal(seen.length, 7);
+    assert.deepEqual([...seen].sort(), [...made].sort());
+    // Newest first; rows sharing one updated_at come out by id, descending.
+    const all = await store.listConversations(me.userId, me.workspaceId, { limit: 10 });
+    assert.deepEqual(seen, all.map((c) => c.id));
+    // A cursor with only `before` (legacy) stays strict: nothing at or after that instant.
+    const legacy = await store.listConversations(me.userId, me.workspaceId, {
+      limit: 10,
+      before: all[0].updatedAt,
+    });
+    assert.ok(legacy.every((c) => c.updatedAt < all[0].updatedAt));
+  });
+
+  test('appendMessages returns the new ids; deleteMessage removes exactly one message of the owner', async () => {
+    const store = makeStore();
+    const me = ids();
+    const { id } = await create(store, me);
+    const other = await create(store, me);
+    const [m1, m2] = await store.appendMessages(id, me.userId, [
+      { role: 'user', content: 'keep' },
+      { role: 'user', content: 'drop' },
+    ]);
+    assert.ok(m1 && m2 && m1 !== m2);
+    assert.deepEqual(await store.appendMessages(id, me.userId, []), []);
+    // Wrong conversation, wrong user, malformed and unknown ids delete nothing.
+    assert.equal(await store.deleteMessage(other.id, me.userId, m2), false);
+    assert.equal(await store.deleteMessage(id, randomUUID(), m2), false);
+    assert.equal(await store.deleteMessage(id, me.userId, 'not-a-uuid'), false);
+    assert.equal(await store.deleteMessage('not-a-uuid', me.userId, m2), false);
+    assert.equal(await store.deleteMessage(id, me.userId, randomUUID()), false);
+    const text = async () =>
+      (await store.recentMessages(id, me.userId, { maxMessages: 10, maxChars: 1000 })).map((m) => m.content);
+    assert.deepEqual(await text(), ['keep', 'drop']);
+    assert.equal(await store.deleteMessage(id, me.userId, m2), true);
+    assert.equal(await store.deleteMessage(id, me.userId, m2), false);
+    assert.deepEqual(await text(), ['keep']);
+  });
+
+  test('refundUsage: gives one call back, never below 0, only for that user and day', async () => {
+    const store = makeStore();
+    const me = ids();
+    const day = '2026-10-06';
+    await store.recordUsage({ day, ...me });
+    await store.recordUsage({ day, ...me });
+    await store.refundUsage({ day, ...me });
+    assert.deepEqual(await store.recordUsage({ day, ...me }), { userCalls: 2, workspaceCalls: 2 });
+    // Nothing recorded for this user/day: a refund is a no-op, not a negative count.
+    await store.refundUsage({ day: '2026-10-07', ...me });
+    await store.refundUsage({ day, workspaceId: me.workspaceId, userId: randomUUID() });
+    assert.deepEqual(await store.recordUsage({ day: '2026-10-07', ...me }), { userCalls: 1, workspaceCalls: 1 });
+    // Drain to 0 and refund again: stays 0.
+    for (let i = 0; i < 5; i++) await store.refundUsage({ day, ...me });
+    assert.deepEqual(await store.recordUsage({ day, ...me }), { userCalls: 1, workspaceCalls: 1 });
+    await assert.rejects(store.refundUsage({ day: 'today', ...me }));
+  });
+
   test('appendMessages: bumps updated_at, keeps order, rejects bad input', async () => {
     const store = makeStore();
     const me = ids();

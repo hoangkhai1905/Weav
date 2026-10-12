@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call */
 import { strict as assert } from 'node:assert';
+import { randomUUID } from 'node:crypto';
 import {
   boundRecent,
   conversationTitle,
@@ -14,6 +15,48 @@ describe('InMemoryConversationStore (same cases as the Postgres store)', () => {
     test,
     assert,
     makeStore: () => new InMemoryConversationStore(),
+  });
+});
+
+describe('InMemoryConversationStore keyset paging with equal updated_at', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('returns rows sharing one updated_at by id descending, none skipped or repeated', async () => {
+    jest.useFakeTimers({ now: new Date('2026-10-06T10:00:00.000Z') });
+    const store = new InMemoryConversationStore();
+    const userId = randomUUID();
+    const workspaceId = randomUUID();
+    for (let i = 0; i < 5; i++)
+      await store.createConversation({ userId, workspaceId, title: `c${i}` });
+    const all = await store.listConversations(userId, workspaceId, {
+      limit: 10,
+    });
+    expect(new Set(all.map((c) => c.updatedAt.getTime())).size).toBe(1);
+    expect(all.map((c) => c.id)).toEqual(
+      [...all.map((c) => c.id)].sort().reverse(),
+    );
+
+    const seen: string[] = [];
+    let cursor: { before?: Date; beforeId?: string } = {};
+    for (let page = 0; page < 10; page++) {
+      const rows = await store.listConversations(userId, workspaceId, {
+        limit: 2,
+        ...cursor,
+      });
+      if (rows.length === 0) break;
+      seen.push(...rows.map((c) => c.id));
+      const last = rows[rows.length - 1];
+      cursor = { before: last.updatedAt, beforeId: last.id };
+    }
+    expect(seen).toEqual(all.map((c) => c.id));
+
+    // Legacy cursor (no id): strictly older only, so the whole tie group is excluded.
+    expect(
+      await store.listConversations(userId, workspaceId, {
+        limit: 10,
+        before: all[0].updatedAt,
+      }),
+    ).toEqual([]);
   });
 });
 

@@ -12,7 +12,7 @@ import type {
 import type { NotificationEventV2 } from '../domain/notification-event';
 import { notificationEventV2Schema } from '../domain/notification-event';
 import { InboxRepository, inboxDedupKey, inboxIdForKey } from '../domain/inbox';
-import type { InboxItem, InboxQuery, ReconcileResult } from '../domain/inbox';
+import type { InboxItem, InboxQuery } from '../domain/inbox';
 import {
   assertDeliveryEventIdentity,
   assertInboxEventIdentity,
@@ -22,18 +22,8 @@ import {
 
 const uuidSchema = z.uuid();
 const invitationEventType = 'workspace.invitation.created';
-const reconciliationLockNamespace = 1313821769;
-
-type CandidateGroup = {
-  sourceEventId: string | null;
-  userId: string;
-  legacyDeliveryId: string | null;
-};
 
 type InboxRecord = Prisma.NotificationInboxGetPayload<Record<string, never>>;
-type DeliveryRecord = Prisma.NotificationDeliveryGetPayload<
-  Record<string, never>
->;
 
 function canonicalUuid(value: string): string {
   return uuidSchema.parse(value).toLowerCase();
@@ -333,74 +323,5 @@ export class PrismaInboxRepository
       `;
       return count;
     });
-  }
-
-  async reconcileLegacy(batchSize: number): Promise<ReconcileResult> {
-    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 1000)
-      throw new RangeError(
-        'Legacy reconciliation batch size must be 1 to 1000',
-      );
-
-    return this.client.$transaction(
-      async (tx) => {
-        await tx.$executeRaw`
-          SELECT pg_advisory_xact_lock(${reconciliationLockNamespace}, 1)
-        `;
-        const groups = await tx.$queryRaw<CandidateGroup[]>`
-          SELECT source_event_id AS "sourceEventId",
-                 user_id AS "userId",
-                 CASE WHEN source_event_id IS NULL THEN id ELSE NULL::uuid END
-                   AS "legacyDeliveryId"
-          FROM notification.notification_deliveries
-          WHERE inbox_id IS NULL
-          GROUP BY source_event_id, user_id,
-                   CASE WHEN source_event_id IS NULL THEN id ELSE NULL::uuid END
-          ORDER BY MIN(created_at) ASC,
-                   source_event_id ASC NULLS FIRST,
-                   user_id ASC,
-                   CASE WHEN source_event_id IS NULL THEN id ELSE NULL::uuid END
-                     ASC NULLS FIRST
-          LIMIT ${batchSize}
-        `;
-        const result: ReconcileResult = {
-          scannedGroups: groups.length,
-          createdItems: 0,
-          linkedDeliveries: 0,
-          skippedGroups: 0,
-        };
-
-        for (const candidate of groups) {
-          const sourceEventId = nullableUuid(candidate.sourceEventId);
-          const userId = canonicalUuid(candidate.userId);
-          if (sourceEventId !== null)
-            await tx.$executeRaw`
-              SELECT pg_advisory_xact_lock(
-                hashtextextended(${sourceEventId}, 0)
-              )
-            `;
-
-          const rows = await tx.notificationDelivery.findMany({
-            where:
-              sourceEventId === null
-                ? {
-                    id: canonicalUuid(candidate.legacyDeliveryId!),
-                    userId,
-                    sourceEventId: null,
-                  }
-                : { sourceEventId, userId },
-            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-          });
-          if (rows.every((row) => row.inboxId !== null)) continue;
-          const persisted = await persistLegacyInboxGroup(tx, rows, 'skip');
-          if (persisted.skipped) result.skippedGroups++;
-          else {
-            result.createdItems += persisted.createdItems;
-            result.linkedDeliveries += persisted.linkedDeliveries;
-          }
-        }
-        return result;
-      },
-      { maxWait: 10000, timeout: 60000 },
-    );
   }
 }

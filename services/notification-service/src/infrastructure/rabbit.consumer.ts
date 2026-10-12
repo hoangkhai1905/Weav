@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { connect } from 'amqplib';
 import type { ChannelModel, ConfirmChannel, ConsumeMessage } from 'amqplib';
 import { ZodError } from 'zod';
 import { Notifications } from '../application/notifications';
+import { DeliveryWorker } from '../application/delivery.worker';
 import { SETTINGS } from '../config/settings';
 import type { Settings } from '../config/settings';
 import { notificationEventTypes } from '../domain/notification-event';
@@ -51,6 +53,8 @@ export class RabbitConsumer implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly notifications: Notifications,
     @Inject(SETTINGS) private readonly settings: Settings,
+    // Optional so the consumer stays constructible without the worker (tests).
+    @Optional() private readonly worker?: DeliveryWorker,
   ) {}
   onModuleInit() {
     this.launch();
@@ -119,7 +123,7 @@ export class RabbitConsumer implements OnModuleInit, OnModuleDestroy {
       });
       for (const key of notificationEventTypes)
         await channel.bindQueue(queue, s.NOTIFICATION_EXCHANGE, key);
-      await channel.prefetch(1);
+      await channel.prefetch(s.NOTIFICATION_CONSUMER_PREFETCH);
       const listen = (name: string, legacy: boolean) =>
         channel.consume(
           name,
@@ -128,9 +132,17 @@ export class RabbitConsumer implements OnModuleInit, OnModuleDestroy {
               void connection.close().catch(() => undefined);
               return;
             }
-            void this.handle(message, channel, legacy).catch(() => {
-              void connection.close().catch(() => undefined);
-            });
+            void this.handle(message, channel, legacy).catch(
+              (error: unknown) => {
+                this.logger.error({
+                  event: 'notification_consumer_handler_crashed',
+                  routingKey: message.fields.routingKey,
+                  errorClass:
+                    error instanceof Error ? error.name : typeof error,
+                });
+                void connection.close().catch(() => undefined);
+              },
+            );
           },
           { noAck: false },
         );
@@ -207,6 +219,7 @@ export class RabbitConsumer implements OnModuleInit, OnModuleDestroy {
         throw new SyntaxError('Routing key mismatch');
       await this.notifications.consume(value);
       channel.ack(message);
+      this.worker?.wake();
     } catch (error) {
       if (isPermanent(error)) {
         channel.nack(message, false, false);

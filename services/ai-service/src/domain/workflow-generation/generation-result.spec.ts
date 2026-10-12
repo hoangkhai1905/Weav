@@ -32,14 +32,33 @@ const ready = (
 describe('generationResultSchema node names', () => {
   it('keeps an optional readable step name and rejects an empty or overlong one', () => {
     const named = ready(
-      [{ ...start, name: 'Chạy thủ công' }, { ...http('one'), name: 'Gọi API' }],
+      [
+        { ...start, name: 'Chạy thủ công' },
+        { ...http('one'), name: 'Gọi API' },
+      ],
       [{ from: 'start', to: 'one' }],
     );
     expect(named.success).toBe(true);
-    expect(named.success && named.data.status === 'ready' && named.data.intent.nodes[1].name).toBe('Gọi API');
-    expect(ready([{ ...start, name: '' }, http('one')], [{ from: 'start', to: 'one' }]).success).toBe(false);
-    expect(ready([{ ...start, name: 'x'.repeat(81) }, http('one')], [{ from: 'start', to: 'one' }]).success).toBe(false);
-    expect(ready([start, http('one')], [{ from: 'start', to: 'one' }]).success).toBe(true);
+    expect(
+      named.success &&
+        named.data.status === 'ready' &&
+        named.data.intent.nodes[1].name,
+    ).toBe('Gọi API');
+    expect(
+      ready(
+        [{ ...start, name: '' }, http('one')],
+        [{ from: 'start', to: 'one' }],
+      ).success,
+    ).toBe(false);
+    expect(
+      ready(
+        [{ ...start, name: 'x'.repeat(81) }, http('one')],
+        [{ from: 'start', to: 'one' }],
+      ).success,
+    ).toBe(false);
+    expect(
+      ready([start, http('one')], [{ from: 'start', to: 'one' }]).success,
+    ).toBe(true);
   });
 });
 

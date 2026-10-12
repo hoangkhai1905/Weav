@@ -2,6 +2,9 @@ package com.weav.workflow.infrastructure.persistence.repository;
 
 import com.weav.workflow.application.notification.WorkflowNotificationEvent;
 import com.weav.workflow.application.port.out.WorkflowNotificationOutboxStore;
+import com.weav.workflow.infrastructure.scheduling.OutboxWakeup;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -32,6 +35,7 @@ public class WorkflowNotificationOutboxAdapter implements WorkflowNotificationOu
     private final ObjectMapper objectMapper;
     private final String table;
     private final int maxAttempts;
+    private OutboxWakeup wakeup;
 
     public WorkflowNotificationOutboxAdapter(
             JdbcTemplate jdbc,
@@ -45,6 +49,12 @@ public class WorkflowNotificationOutboxAdapter implements WorkflowNotificationOu
             throw new IllegalArgumentException("The configured workflow schema name is invalid");
         }
         table = "\"" + schema + "\".notification_outbox";
+    }
+
+    /** Optional: wakes an idle publisher once the writing transaction commits. */
+    @Autowired(required = false)
+    void setOutboxWakeup(@Qualifier("notificationOutboxWakeup") OutboxWakeup wakeup) {
+        this.wakeup = wakeup;
     }
 
     @Override
@@ -63,6 +73,9 @@ public class WorkflowNotificationOutboxAdapter implements WorkflowNotificationOu
                 """.formatted(table), eventId, event.eventType(), timestamp(event.occurredAt()),
                 event.workspaceId(), event.actorUserId(), event.recipientUserId(), event.entityKind(),
                 event.entityId(), event.requiresMonitorAccess(), payload, status, reason);
+        if (payload != null && wakeup != null) {
+            wakeup.signalAfterCommit();
+        }
     }
 
     @Override

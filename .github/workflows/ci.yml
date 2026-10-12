@@ -123,15 +123,15 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile --filter ./services/${{ matrix.service }}
-      # Read-only lint (pnpm lint runs --fix). Non-blocking for every service while dev has pre-existing errors: api-gateway 2, ai-service 140, notification-service 46 (2026-10-03). Make a service blocking here once it is clean.
-      - name: Lint
-        working-directory: services/${{ matrix.service }}
-        continue-on-error: true
-        run: pnpm exec eslint "{src,test}/**/*.ts"
-      # Build before tests: notification-service's build runs `prisma generate`, which its tests need.
+      # Build before lint and tests: the ai/notification builds run `prisma generate`; type-aware lint and the tests
+      # need the generated client (without it every Prisma call reads as an unresolved type).
       - name: Build
         working-directory: services/${{ matrix.service }}
         run: pnpm build
+      # Read-only lint (pnpm lint runs --fix). Blocking: all three services were brought to 0 problems on 2026-10-12.
+      - name: Lint
+        working-directory: services/${{ matrix.service }}
+        run: pnpm exec eslint "{src,test}/**/*.ts"
       - name: Unit tests
         working-directory: services/${{ matrix.service }}
         run: pnpm test

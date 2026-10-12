@@ -8,7 +8,10 @@ export function parseStrictJson(bytes: Uint8Array, maxDepth: number): unknown {
   let value: unknown;
   try {
     value = JSON.parse(decoder.decode(bytes), (key, v: unknown) => {
-      if (FORBIDDEN_KEYS.has(key) || (typeof v === 'number' && !Number.isFinite(v))) {
+      if (
+        FORBIDDEN_KEYS.has(key) ||
+        (typeof v === 'number' && !Number.isFinite(v))
+      ) {
         throw new AiError('INVALID_REQUEST');
       }
       return v;

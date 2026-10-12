@@ -14,6 +14,7 @@ import {
   setResponseRequestId,
   type RequestContextCarrier,
 } from '../common/request-context';
+import { MAX_UPSTREAM_JSON_BYTES } from '../common/read-capped';
 
 type WorkspaceMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -24,16 +25,24 @@ export interface WorkspaceForwardOptions {
   timeoutMs?: number;
 }
 
+// Returns null (and cancels the body) when the upstream exceeds the size cap.
 async function readUpstreamResponseBody(
   response: Response,
   signal: AbortSignal,
-): Promise<string> {
+  maxBytes = MAX_UPSTREAM_JSON_BYTES,
+): Promise<string | null> {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await response.body?.cancel().catch(() => undefined);
+    return null;
+  }
   if (!response.body) {
     return '';
   }
 
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
+  let total = 0;
   const onAbort = () => {
     void reader.cancel().catch(() => undefined);
   };
@@ -52,6 +61,11 @@ async function readUpstreamResponseBody(
         break;
       }
       if (value) {
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel().catch(() => undefined);
+          return null;
+        }
         chunks.push(value);
       }
     }
@@ -185,7 +199,7 @@ export class WorkspaceProxyService {
         return fail(502, 'BAD_GATEWAY', 'Invalid Workspace response');
       }
 
-      let responseText: string;
+      let responseText: string | null;
       try {
         responseText = await readUpstreamResponseBody(
           response,
@@ -207,6 +221,9 @@ export class WorkspaceProxyService {
 
       if (abortHandle.signal.aborted) {
         throw new Error('Workspace upstream request aborted after body read');
+      }
+      if (responseText === null) {
+        return fail(502, 'BAD_GATEWAY', 'Invalid Workspace response');
       }
 
       let responseBody: unknown;

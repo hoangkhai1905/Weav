@@ -19,19 +19,21 @@ const delta = (d: unknown) => ({ choices: [{ delta: d }] });
 
 /** Streams `body` in `size`-byte pieces so lines and JSON are split mid-token. */
 function fetchOf(body: string, size: number, status = 200): typeof fetch {
-  return (async () => {
+  return () => {
     const bytes = new TextEncoder().encode(body);
     let at = 0;
-    return new Response(
-      new ReadableStream({
-        pull(controller) {
-          if (at >= bytes.length) return controller.close();
-          controller.enqueue(bytes.slice(at, (at += size)));
-        },
-      }),
-      { status },
+    return Promise.resolve(
+      new Response(
+        new ReadableStream({
+          pull(controller) {
+            if (at >= bytes.length) return controller.close();
+            controller.enqueue(bytes.slice(at, (at += size)));
+          },
+        }),
+        { status },
+      ),
     );
-  }) as typeof fetch;
+  };
 }
 
 async function collect(
@@ -111,10 +113,10 @@ describe('DeepSeekChatProvider', () => {
 
   it('sends tools, stream:true and the bearer key, and omits tools when none are given', async () => {
     const seen: { url: string; init: RequestInit }[] = [];
-    const fetchImpl = (async (url: string, init: RequestInit) => {
+    const fetchImpl = (url: string, init: RequestInit) => {
       seen.push({ url, init });
-      return new Response('data: [DONE]\n\n', { status: 200 });
-    }) as unknown as typeof fetch;
+      return Promise.resolve(new Response('data: [DONE]\n\n', { status: 200 }));
+    };
     const provider = new DeepSeekChatProvider(config, fetchImpl);
     const signal = new AbortController().signal;
     for await (const _ of provider.stream(
@@ -132,7 +134,7 @@ describe('DeepSeekChatProvider', () => {
     ))
       void _;
     expect(seen[0].url).toBe('https://x.test/chat/completions');
-    const first = JSON.parse(seen[0].init.body as string);
+    const first = JSON.parse(seen[0].init.body as string) as unknown;
     expect(first).toMatchObject({
       stream: true,
       max_tokens: 5,
@@ -141,7 +143,9 @@ describe('DeepSeekChatProvider', () => {
     expect((seen[0].init.headers as Record<string, string>).authorization).toBe(
       'Bearer k',
     );
-    expect(JSON.parse(seen[1].init.body as string).tools).toBeUndefined();
+    expect(
+      (JSON.parse(seen[1].init.body as string) as { tools?: unknown }).tools,
+    ).toBeUndefined();
   });
 
   it.each([
@@ -171,9 +175,7 @@ describe('DeepSeekChatProvider', () => {
   it('maps an aborted request to AI_TIMEOUT and a network failure to unavailable', async () => {
     const abort = new AbortController();
     abort.abort();
-    const failing = (async () => {
-      throw new Error('boom');
-    }) as typeof fetch;
+    const failing = (() => Promise.reject(new Error('boom'))) as typeof fetch;
     await expect(
       collect(new DeepSeekChatProvider(config, failing), abort.signal),
     ).rejects.toMatchObject({ code: 'AI_TIMEOUT' });

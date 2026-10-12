@@ -257,6 +257,44 @@ describe('validateGatewayEnvironment', () => {
     }
   });
 
+  it('requires at least one trusted proxy hop in production only', () => {
+    const production = {
+      ...developmentEnvironment(),
+      APP_ENV: 'production',
+      CORS_ALLOWED_ORIGINS: 'https://app.example.test',
+    };
+
+    expect(() =>
+      validateGatewayEnvironment({
+        ...production,
+        GATEWAY_TRUST_PROXY_HOPS: '0',
+      }),
+    ).toThrow('GATEWAY_TRUST_PROXY_HOPS');
+    expect(() => validateGatewayEnvironment(production)).toThrow(
+      'GATEWAY_TRUST_PROXY_HOPS',
+    );
+    expect(() =>
+      validateGatewayEnvironment({
+        ...production,
+        APP_ENV: undefined,
+        NODE_ENV: 'production',
+        GATEWAY_TRUST_PROXY_HOPS: '0',
+      }),
+    ).toThrow('GATEWAY_TRUST_PROXY_HOPS');
+    expect(
+      validateGatewayEnvironment({
+        ...production,
+        GATEWAY_TRUST_PROXY_HOPS: '1',
+      }).trustProxyHops,
+    ).toBe(1);
+    expect(
+      validateGatewayEnvironment({
+        ...developmentEnvironment(),
+        GATEWAY_TRUST_PROXY_HOPS: '0',
+      }).trustProxyHops,
+    ).toBe(0);
+  });
+
   it('validates the bounded rate-limit window and exposes test-sized overrides', () => {
     const config = validateGatewayEnvironment({
       ...developmentEnvironment(),
@@ -285,6 +323,7 @@ describe('validateGatewayEnvironment', () => {
       ...developmentEnvironment(),
       APP_ENV: 'production',
       CORS_ALLOWED_ORIGINS: 'https://app.example.test',
+      GATEWAY_TRUST_PROXY_HOPS: '1',
     });
 
     expect(config.appEnv).toBe('production');

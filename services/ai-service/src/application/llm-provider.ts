@@ -5,5 +5,8 @@ export interface LlmRequest {
 
 /** Outbound port. Implementations make exactly one provider call and throw AiError on any failure. */
 export interface LlmProvider {
-  completeJson(request: LlmRequest, signal: AbortSignal): Promise<Record<string, unknown>>;
+  completeJson(
+    request: LlmRequest,
+    signal: AbortSignal,
+  ): Promise<Record<string, unknown>>;
 }

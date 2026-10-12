@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { Logger } from '@nestjs/common';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createAiApp } from '../src/app';
 import { loadAiConfig } from '../src/config/ai-config';
@@ -190,7 +191,7 @@ async function start(rounds: Round[], env: Record<string, string> = {}) {
           audience: 'weav-api',
           clockSkewSeconds: 30,
         },
-        (async () => new Response(keys.jwks)) as unknown as typeof fetch,
+        () => Promise.resolve(new Response(keys.jwks)),
       ),
     },
   });
@@ -526,7 +527,7 @@ const sse = async (res: Response) => parseSse(await res.text());
 async function converse(
   token: string,
   extra: Record<string, unknown> = {},
-  workspaceId = WS,
+  workspaceId: string = WS,
 ) {
   const res = await chat(body({ workspaceId, ...extra }), token);
   const events = res.status === 200 ? await sse(res) : [];
@@ -1012,6 +1013,254 @@ describe('request deadline', () => {
       maxMessages: 10,
       maxChars: 100000,
     });
-    expect(stored.map((m) => m.role)).toEqual(['user']);
+    // No text reached the client, so the question is not kept and the quota is given back.
+    expect(stored).toEqual([]);
+    expect(await usageAfter(uid)).toBe(1);
+  });
+});
+
+const today = () => new Date().toISOString().slice(0, 10);
+/** Records one more call for the user and returns their count: 1 means nothing was held before. */
+const usageAfter = async (userId: string) =>
+  (await store.recordUsage({ day: today(), workspaceId: WS, userId }))
+    .userCalls;
+const storedOf = (conversationId: string, userId: string) =>
+  store
+    .recentMessages(conversationId, userId, {
+      maxMessages: 20,
+      maxChars: 100_000,
+    })
+    .then((rows) => rows.map((m) => `${m.role}:${m.content}`));
+
+describe('turn rollback when the provider fails before any text', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it.each(['AI_PROVIDER_UNAVAILABLE', 'AI_TIMEOUT'] as const)(
+    '%s: refunds the quota and removes the question, so a retry does not duplicate it',
+    async (code) => {
+      await start([new AiError(code), [text('ok'), end()]], {
+        AI_ASSISTANT_DAILY_USER_LIMIT: '1',
+      });
+      const uid = randomUUID();
+      const token = asUser(uid);
+      const failed = await converse(token, { message: 'first try' });
+      expect(failed.events.map((e) => e.event)).toEqual([
+        'conversation',
+        'error',
+      ]);
+      expect(failed.events[1].data.code).toBe(code);
+      expect(await storedOf(failed.conversationId!, uid)).toEqual([]);
+
+      // The daily limit is 1: the retry only fits because the failed turn was refunded.
+      const retry = await converse(token, {
+        message: 'first try',
+        conversationId: failed.conversationId,
+      });
+      expect(retry.res.status).toBe(200);
+      expect(retry.events.map((e) => e.event)).toEqual([
+        'conversation',
+        'delta',
+        'done',
+      ]);
+      expect(await storedOf(failed.conversationId!, uid)).toEqual([
+        'user:first try',
+        'assistant:ok',
+      ]);
+      // And the successful turn really is counted.
+      expect((await converse(token)).res.status).toBe(429);
+    },
+  );
+
+  it('keeps the question and the quota once any text was streamed', async () => {
+    await start([
+      [text('partial'), end(call('c1', 'list_workflows', {}))],
+      new AiError('AI_PROVIDER_UNAVAILABLE'),
+    ]);
+    const uid = randomUUID();
+    const { events, conversationId } = await converse(asUser(uid));
+    expect(events.map((e) => e.event)).toContain('delta');
+    expect(events[events.length - 1].data.code).toBe('AI_PROVIDER_UNAVAILABLE');
+    expect(await storedOf(conversationId!, uid)).toEqual(['user:what failed?']);
+    expect(await usageAfter(uid)).toBe(2);
+  });
+
+  it('does not roll back other failures (invalid provider output)', async () => {
+    await start([new AiError('AI_OUTPUT_INVALID')]);
+    const uid = randomUUID();
+    const { events, conversationId } = await converse(asUser(uid));
+    expect(events[1].data.code).toBe('AI_OUTPUT_INVALID');
+    expect(await storedOf(conversationId!, uid)).toEqual(['user:what failed?']);
+    expect(await usageAfter(uid)).toBe(2);
+  });
+
+  it('rolls back when the client hangs up before any text', async () => {
+    await start([]);
+    jest.spyOn(provider, 'stream').mockImplementation(
+      // eslint-disable-next-line require-yield
+      async function* (_request, signal) {
+        await new Promise<void>((resolve) =>
+          signal.addEventListener('abort', () => resolve(), { once: true }),
+        );
+        throw new AiError('AI_TIMEOUT');
+      },
+    );
+    const uid = randomUUID();
+    const abort = new AbortController();
+    const res = await post(
+      '/v1/assistant/chat',
+      body(),
+      asUser(uid),
+      abort.signal,
+    );
+    const reader = res.body!.getReader();
+    const first = new TextDecoder().decode((await reader.read()).value);
+    const conversationId = (
+      parseSse(first)[0].data as { conversationId: string }
+    ).conversationId;
+    expect(await storedOf(conversationId, uid)).toEqual(['user:what failed?']);
+    abort.abort();
+    await reader.cancel().catch(() => undefined);
+    for (
+      let i = 0;
+      i < 50 && (await storedOf(conversationId, uid)).length > 0;
+      i++
+    )
+      await new Promise((r) => setTimeout(r, 20));
+    expect(await storedOf(conversationId, uid)).toEqual([]);
+    expect(await usageAfter(uid)).toBe(1);
+  });
+
+  it('still answers and logs the failure when the rollback itself fails', async () => {
+    await start([new AiError('AI_PROVIDER_UNAVAILABLE')]);
+    jest
+      .spyOn(store, 'refundUsage')
+      .mockRejectedValue(new Error('db down: secret-dsn'));
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const uid = randomUUID();
+    const { events, conversationId } = await converse(asUser(uid));
+    expect(events[1].data.code).toBe('AI_PROVIDER_UNAVAILABLE');
+    // The other step still ran.
+    expect(await storedOf(conversationId!, uid)).toEqual([]);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('secret-dsn');
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'AI_PROVIDER_UNAVAILABLE',
+        rolledBack: false,
+      }),
+    );
+  });
+});
+
+describe('failure logs carry the correlation id', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const chatWithCorrelation = (correlation: string) =>
+    fetch(`${baseUrl}/v1/assistant/chat`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${asUser(randomUUID())}`,
+        'x-correlation-id': correlation,
+      },
+      body: body(),
+    });
+
+  it('puts it on the final outcome line of a rolled back turn', async () => {
+    await start([new AiError('AI_PROVIDER_UNAVAILABLE')]);
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const res = await chatWithCorrelation('corr-abc-1');
+    await res.text();
+    expect(log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        correlationId: 'corr-abc-1',
+        outcome: 'AI_PROVIDER_UNAVAILABLE',
+        rolledBack: true,
+      }),
+    );
+  });
+
+  it('puts it on the INTERNAL_ERROR log, without the message or the prompt', async () => {
+    await start([[text('a'), end()]]);
+    const real = store.appendMessages.bind(store);
+    let calls = 0;
+    jest.spyOn(store, 'appendMessages').mockImplementation((...args) => {
+      if (++calls === 2)
+        return Promise.reject(new Error('db down with a prompt'));
+      return real(...args);
+    });
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const res = await chatWithCorrelation('corr-abc-2');
+    await res.text();
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        correlationId: 'corr-abc-2',
+        errorClass: 'Error',
+      }),
+    );
+    expect(JSON.stringify(error.mock.calls)).not.toMatch(/prompt|what failed/);
+  });
+});
+
+describe('history list keyset cursor', () => {
+  it('pages conversations that share one updated_at without skipping or repeating any', async () => {
+    await start([]);
+    const uid = randomUUID();
+    const token = asUser(uid);
+    const created: string[] = [];
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1_790_000_000_000);
+    try {
+      for (let i = 0; i < 5; i++) {
+        const { id } = await store.createConversation({
+          userId: uid,
+          workspaceId: WS,
+          title: `c${i}`,
+        });
+        // appendMessages stamps updated_at from Date.now(): all five end up identical.
+        await store.appendMessages(id, uid, [{ role: 'user', content: 'x' }]);
+        created.push(id);
+      }
+    } finally {
+      nowSpy.mockRestore();
+    }
+    const api = `${baseUrl}/v1/assistant/conversations`;
+    const get = (query: string) =>
+      fetch(`${api}?workspaceId=${WS}&${query}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+    type Page = { items: { conversationId: string; updatedAt: string }[] };
+
+    const seen: string[] = [];
+    let query = 'limit=2';
+    for (let page = 0; page < 10; page++) {
+      const { items } = (await (await get(query)).json()) as Page;
+      if (items.length === 0) break;
+      seen.push(...items.map((i) => i.conversationId));
+      const last = items[items.length - 1];
+      query = `limit=2&before=${encodeURIComponent(last.updatedAt)}&beforeId=${last.conversationId}`;
+    }
+    expect([...seen].sort()).toEqual([...created].sort());
+    expect(seen).toEqual([...created].sort().reverse());
+
+    // Old cursors (only `before`) are still accepted.
+    const legacy = await get(
+      `before=${encodeURIComponent('2030-01-01T00:00:00Z')}`,
+    );
+    expect(legacy.status).toBe(200);
+    const tie = (await (await get('limit=1')).json()) as Page;
+    const strictlyOlder = await get(
+      `before=${encodeURIComponent(tie.items[0].updatedAt)}`,
+    );
+    expect(((await strictlyOlder.json()) as Page).items).toEqual([]);
+
+    // beforeId alone, or a malformed one, is a validation error.
+    expect((await get(`beforeId=${created[0]}`)).status).toBe(400);
+    expect(
+      (
+        await get(
+          `before=${encodeURIComponent(tie.items[0].updatedAt)}&beforeId=nope`,
+        )
+      ).status,
+    ).toBe(400);
   });
 });

@@ -149,6 +149,12 @@ paths:
           in: query
           description: ISO-8601 cursor; pass the last item's updatedAt for the next page.
           schema: {type: string, format: date-time}
+        - name: beforeId
+          in: query
+          description: >-
+            Optional tie-breaker for `before` (the last item's id): items strictly before
+            (updatedAt, id) are returned. Requires `before`; 400 without it.
+          schema: {type: string, format: uuid}
       responses:
         '200':
           description: Conversations ordered by updatedAt descending

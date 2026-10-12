@@ -47,6 +47,7 @@ const content = (
 ): NotificationContent => ({ category, severity, title, message, target });
 
 function unreachable(event: never): never {
+  void event;
   throw new Error('Unsupported notification event');
 }
 

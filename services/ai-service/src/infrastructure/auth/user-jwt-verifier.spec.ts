@@ -35,9 +35,9 @@ const bearer = (
 
 function verifier(jwks = keys.jwks, status = 200) {
   let fetches = 0;
-  const fetchImpl = (async () => {
+  const fetchImpl = (() => {
     fetches++;
-    return new Response(jwks, { status });
+    return Promise.resolve(new Response(jwks, { status }));
   }) as unknown as typeof fetch;
   return { v: new UserJwtVerifier(config, fetchImpl), fetches: () => fetches };
 }
@@ -140,9 +140,9 @@ describe('UserJwtVerifier', () => {
     function staleVerifier(maxStaleMs?: number) {
       let t = Date.now();
       let up = true;
-      const fetchImpl = (async () => {
-        if (!up) throw new Error('identity down');
-        return new Response(keys.jwks);
+      const fetchImpl = (() => {
+        if (!up) return Promise.reject(new Error('identity down'));
+        return Promise.resolve(new Response(keys.jwks));
       }) as unknown as typeof fetch;
       const v = new UserJwtVerifier(
         { ...config, maxStaleMs },

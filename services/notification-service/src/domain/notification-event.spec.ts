@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { notificationEventV2Schema } from './notification-event';
 
 const ids = {
   event: '00000000-0000-4000-8000-000000000001',
@@ -239,13 +240,35 @@ function eventOf(eventType: string, overrides: Record<string, unknown> = {}) {
 }
 
 function schema() {
+  return notificationEventV2Schema;
+}
+
+// Minimal shape of the JSON Schema documents inspected by these tests. The
+// documents are trusted repository files, so `properties` and `required` are
+// typed as present and each test only reads keys that exist.
+type JsonSchema = {
+  $schema?: string;
+  type?: string;
+  const?: unknown;
+  enum?: unknown[];
+  format?: string;
+  pattern?: string;
+  maxLength?: number;
+  required: string[];
+  additionalProperties?: boolean;
+  properties: Record<string, JsonSchema>;
+  oneOf?: JsonSchema[];
+  allOf?: JsonSchema[];
+};
+
+function readJson(relativePath: string): unknown {
+  return JSON.parse(readFileSync(resolve(__dirname, relativePath), 'utf8'));
+}
+
+function eventBranches(document: JsonSchema): JsonSchema[] {
   return (
-    require('./notification-event') as {
-      notificationEventV2Schema: {
-        safeParse(value: unknown): { success: boolean };
-      };
-    }
-  ).notificationEventV2Schema;
+    document.allOf?.find((entry) => Array.isArray(entry.oneOf))?.oneOf ?? []
+  );
 }
 
 function rejects(value: unknown) {
@@ -254,7 +277,7 @@ function rejects(value: unknown) {
 
 describe('notification event v2 schema', () => {
   it('exports the v2 event schema', () => {
-    expect(() => require('./notification-event')).not.toThrow();
+    expect(notificationEventV2Schema).toBeDefined();
   });
 
   it('accepts all 23 allowlisted event envelopes, including delayed delivery timestamps', () => {
@@ -280,14 +303,8 @@ describe('notification event v2 schema', () => {
         },
       }),
     );
-    const example = JSON.parse(
-      readFileSync(
-        resolve(
-          __dirname,
-          '../../../../packages/contracts/events/notification/examples/workspace.invitation.created.json',
-        ),
-        'utf8',
-      ),
+    const example = readJson(
+      '../../../../packages/contracts/events/notification/examples/workspace.invitation.created.json',
     );
     expect(schema().safeParse(example).success).toBe(true);
   });
@@ -596,23 +613,11 @@ describe('notification event v2 schema', () => {
   });
 
   it('matches the JSON Schema draft and all 23 event branches to the Zod fixture matrix', () => {
-    const schemaDocument = JSON.parse(
-      readFileSync(
-        resolve(
-          __dirname,
-          '../../../../packages/contracts/events/notification/event-v2.schema.json',
-        ),
-        'utf8',
-      ),
-    ) as Record<string, any>;
-    const fixture = JSON.parse(
-      readFileSync(
-        resolve(
-          __dirname,
-          '../../../../packages/contracts/events/notification/examples/workspace-created.json',
-        ),
-        'utf8',
-      ),
+    const schemaDocument = readJson(
+      '../../../../packages/contracts/events/notification/event-v2.schema.json',
+    ) as JsonSchema;
+    const fixture = readJson(
+      '../../../../packages/contracts/events/notification/examples/workspace-created.json',
     );
     expect(schemaDocument.$schema).toBe(
       'https://json-schema.org/draft/2020-12/schema',
@@ -646,14 +651,12 @@ describe('notification event v2 schema', () => {
     });
     expect(schemaDocument.properties.entity.additionalProperties).toBe(false);
 
-    const branches = schemaDocument.allOf.find((entry: any) =>
-      Array.isArray(entry.oneOf),
-    )?.oneOf as any[];
+    const branches = eventBranches(schemaDocument);
     expect(branches).toHaveLength(23);
     for (const spec of eventCases) {
       const branch = branches.find(
         (candidate) => candidate.properties.eventType.const === spec.eventType,
-      );
+      )!;
       expect(branch).toBeDefined();
       expect(branch.properties.producer.const).toBe(spec.producer);
       expect(branch.properties.entity.properties.kind.const).toBe(
@@ -688,18 +691,10 @@ describe('notification event v2 schema', () => {
   });
 
   it('keeps each name bound and non-whitespace constraint aligned in JSON Schema', () => {
-    const schemaDocument = JSON.parse(
-      readFileSync(
-        resolve(
-          __dirname,
-          '../../../../packages/contracts/events/notification/event-v2.schema.json',
-        ),
-        'utf8',
-      ),
-    ) as any;
-    const branches = schemaDocument.allOf.find((entry: any) =>
-      Array.isArray(entry.oneOf),
-    ).oneOf as any[];
+    const schemaDocument = readJson(
+      '../../../../packages/contracts/events/notification/event-v2.schema.json',
+    ) as JsonSchema;
+    const branches = eventBranches(schemaDocument);
     for (const eventType of [
       'workflow.created',
       'workspace.created',
@@ -707,10 +702,8 @@ describe('notification event v2 schema', () => {
     ]) {
       const branch = branches.find(
         (candidate) => candidate.properties.eventType.const === eventType,
-      );
-      const nameProperty = Object.values(
-        branch.properties.data.properties,
-      )[0] as any;
+      )!;
+      const nameProperty = Object.values(branch.properties.data.properties)[0];
       expect(nameProperty).toMatchObject({
         type: 'string',
         maxLength: 200,

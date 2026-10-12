@@ -7,6 +7,10 @@ import { InboxRepository } from './domain/inbox';
 import { Notifications } from './application/notifications';
 import { InboxNotifications } from './application/inbox-notifications';
 import { DeliveryWorker, PROVIDERS } from './application/delivery.worker';
+import {
+  RetentionPurger,
+  RetentionRepository,
+} from './application/retention.purger';
 import { PrismaDeliveryRepository } from './infrastructure/prisma.repository';
 import { PrismaInboxRepository } from './infrastructure/prisma.inbox.repository';
 import { RabbitConsumer } from './infrastructure/rabbit.consumer';
@@ -33,6 +37,7 @@ import {
   providers: [
     { provide: SETTINGS, useFactory: () => loadSettings() },
     { provide: DeliveryRepository, useClass: PrismaDeliveryRepository },
+    { provide: RetentionRepository, useExisting: DeliveryRepository },
     { provide: InboxRepository, useClass: PrismaInboxRepository },
     Notifications,
     InboxNotifications,
@@ -42,6 +47,7 @@ import {
     ExpoProvider,
     EmailProvider,
     DeliveryWorker,
+    RetentionPurger,
     {
       provide: PROVIDERS,
       inject: [TelegramProvider, ExpoProvider, EmailProvider],

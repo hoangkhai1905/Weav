@@ -19,6 +19,7 @@ import { SETTINGS } from '../src/config/settings';
 import { DeliveryRepository } from '../src/domain/notification';
 import { InboxRepository } from '../src/domain/inbox';
 import { DeliveryWorker } from '../src/application/delivery.worker';
+import { RetentionPurger } from '../src/application/retention.purger';
 import { RabbitConsumer } from '../src/infrastructure/rabbit.consumer';
 import {
   mockRepository,
@@ -47,7 +48,6 @@ describe('notification HTTP (real Nest + Fastify)', () => {
     markRead: jest.fn(),
     markAllRead: jest.fn(),
     ready: jest.fn(),
-    reconcileLegacy: jest.fn(),
   };
   const settings = testSettings();
   const userId = randomUUID();
@@ -87,6 +87,8 @@ describe('notification HTTP (real Nest + Fastify)', () => {
       .overrideProvider(RabbitConsumer)
       .useValue(rabbit)
       .overrideProvider(DeliveryWorker)
+      .useValue({})
+      .overrideProvider(RetentionPurger)
       .useValue({})
       .compile();
     app = module.createNestApplication<NestFastifyApplication>(

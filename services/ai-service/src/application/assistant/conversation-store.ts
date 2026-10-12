@@ -47,18 +47,28 @@ export interface ConversationStore {
     id: string,
     userId: string,
   ): Promise<ConversationRecord | null>;
-  /** Newest first (updated_at); `limit` is clamped to 1..50. */
+  /**
+   * Newest first (updated_at, then id); `limit` is clamped to 1..50. Keyset paging: with `before`
+   * alone rows strictly older than it are returned (legacy cursor); with `beforeId` too, rows after
+   * the (updated_at, id) pair, so conversations sharing one updated_at are neither skipped nor repeated.
+   */
   listConversations(
     userId: string,
     workspaceId: string,
-    opts: { limit: number; before?: Date },
+    opts: { limit: number; before?: Date; beforeId?: string },
   ): Promise<ConversationRecord[]>;
-  /** One transaction; also bumps updated_at. Throws (writing nothing) on an unknown or foreign conversation. */
+  /** One transaction; also bumps updated_at. Throws (writing nothing) on an unknown or foreign conversation. Returns the new message ids in order. */
   appendMessages(
     conversationId: string,
     userId: string,
     messages: NewMessage[],
-  ): Promise<void>;
+  ): Promise<string[]>;
+  /** Removes one message, only when it belongs to this conversation and the conversation to this user. */
+  deleteMessage(
+    conversationId: string,
+    userId: string,
+    messageId: string,
+  ): Promise<boolean>;
   /** Oldest-first tail within both bounds, always keeping the latest; [] for a foreign conversation. */
   recentMessages(
     conversationId: string,
@@ -72,6 +82,12 @@ export interface ConversationStore {
     workspaceId: string;
     userId: string;
   }): Promise<UsageCounts>;
+  /** Gives back one admitted call (e.g. the provider failed before answering); never goes below 0. */
+  refundUsage(input: {
+    day: string;
+    workspaceId: string;
+    userId: string;
+  }): Promise<void>;
   /** Conversations by updated_at, usage rows by day. */
   purge(now: Date, opts: PurgeOptions): Promise<PurgeResult>;
 }

@@ -3,13 +3,19 @@ package com.weav.workflow.infrastructure.scheduling;
 import com.weav.workflow.application.trigger.GmailTriggerService;
 import com.weav.workflow.application.trigger.ScheduleTriggerService;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Objects;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/** Spring entry point for the bounded durable schedule scanner. */
+/**
+ * Spring entry point for the bounded durable schedule scanner. Both scans back off while idle (see
+ * {@link IdleBackoff}) so Neon can scale to zero: after empty scans the next one waits up to the idle maximum
+ * (default 30 s). Trade-off: a schedule that becomes due during an idle stretch can start up to that long late;
+ * any due slot found resets the scan to the base interval.
+ */
 @Component
 @ConditionalOnProperty(prefix = "weav.workflow.schedule.scanner", name = "enabled",
         havingValue = "true", matchIfMissing = true)
@@ -20,12 +26,16 @@ public class WorkflowScheduleScanner {
     private final GmailTriggerService gmail;
     private final boolean gmailEnabled;
     private final int gmailBatchSize;
+    private final IdleBackoff scheduleBackoff;
+    private final IdleBackoff gmailBackoff;
 
     public WorkflowScheduleScanner(ScheduleTriggerService schedules, Clock workflowExecutionClock,
                                    @Value("${weav.workflow.schedule.scanner.batch-size:100}") int batchSize,
                                    GmailTriggerService gmail,
                                    @Value("${weav.workflow.gmail.poller.enabled:true}") boolean gmailEnabled,
-                                   @Value("${weav.workflow.gmail.poller.batch-size:10}") int gmailBatchSize) {
+                                   @Value("${weav.workflow.gmail.poller.batch-size:10}") int gmailBatchSize,
+                                   @Value("${weav.workflow.schedule.scanner.poll-interval-ms:1000}") long pollIntervalMillis,
+                                   @Value("${weav.workflow.schedule.scanner.idle-max-delay:PT30S}") Duration idleMaxDelay) {
         this.schedules = Objects.requireNonNull(schedules);
         this.clock = Objects.requireNonNull(workflowExecutionClock);
         if (batchSize < 1 || batchSize > 1_000) {
@@ -38,12 +48,30 @@ public class WorkflowScheduleScanner {
         this.gmail = Objects.requireNonNull(gmail);
         this.gmailEnabled = gmailEnabled;
         this.gmailBatchSize = gmailBatchSize;
+        Duration base = Duration.ofMillis(pollIntervalMillis);
+        Duration max = idleMaxDelay.compareTo(base) < 0 ? base : idleMaxDelay;
+        this.scheduleBackoff = new IdleBackoff(base, max);
+        this.gmailBackoff = new IdleBackoff(base, max);
     }
 
+    /** Scheduled tick: scans unless idle backoff says the last scans were empty and the wait has not elapsed. */
     @Scheduled(fixedDelayString = "${weav.workflow.schedule.scanner.poll-interval-ms:1000}",
             initialDelayString = "${weav.workflow.schedule.scanner.initial-delay-ms:1000}")
-    public void scan() {
-        schedules.scan(clock.instant(), batchSize);
+    public void scanOnSchedule() {
+        if (!scheduleBackoff.shouldPoll()) {
+            return;
+        }
+        boolean found = false;
+        try {
+            found = scan().selected() > 0;
+        } finally {
+            scheduleBackoff.record(found);
+        }
+    }
+
+    /** One bounded schedule scan, always run (direct callers bypass the idle backoff). */
+    public ScheduleTriggerService.ScanResult scan() {
+        return schedules.scan(clock.instant(), batchSize);
     }
 
     /**
@@ -52,6 +80,19 @@ public class WorkflowScheduleScanner {
      */
     @Scheduled(fixedDelayString = "${weav.workflow.schedule.scanner.poll-interval-ms:1000}",
             initialDelayString = "${weav.workflow.schedule.scanner.initial-delay-ms:1000}")
+    public void scanGmailOnSchedule() {
+        if (!gmailEnabled || !gmailBackoff.shouldPoll()) {
+            return;
+        }
+        boolean found = false;
+        try {
+            found = gmail.scan(clock.instant(), gmailBatchSize).selected() > 0;
+        } finally {
+            gmailBackoff.record(found);
+        }
+    }
+
+    /** One bounded Gmail scan, always run when enabled (direct callers bypass the idle backoff). */
     public void scanGmail() {
         if (gmailEnabled) {
             gmail.scan(clock.instant(), gmailBatchSize);

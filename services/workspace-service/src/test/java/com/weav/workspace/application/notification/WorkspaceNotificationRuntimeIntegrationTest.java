@@ -584,6 +584,32 @@ class WorkspaceNotificationRuntimeIntegrationTest {
                 .send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
     }
 
+    /** P3: the confirm wait holds no outbox row lock (and no pooled connection); the row is settled afterwards. */
+    @Test
+    void publisherHoldsNoRowLockWhileWaitingForTheBrokerConfirm() {
+        WorkspaceResponse workspace = createWorkspace.execute(
+                new CreateWorkspaceCommand(UUID.randomUUID(), "No lock during confirm"));
+        UUID eventId = latestEvent(workspace.id()).eventId();
+        jdbc.update("update workspace.notification_outbox set published_at = current_timestamp "
+                + "where published_at is null and event_id <> ?", eventId);
+        java.util.concurrent.atomic.AtomicReference<UUID> lockedDuringSend = new java.util.concurrent.atomic.AtomicReference<>();
+        RabbitTemplate ackTemplate = mock(RabbitTemplate.class);
+        doAnswer(invocation -> {
+            // Autocommit query on another pooled connection: NOWAIT fails at once if the publisher still held the row.
+            lockedDuringSend.set(jdbc.queryForObject("select event_id from workspace.notification_outbox "
+                    + "where event_id = ? for update nowait", UUID.class, eventId));
+            CorrelationData correlation = invocation.getArgument(3);
+            correlation.getFuture().complete(new CorrelationData.Confirm(true, null));
+            return null;
+        }).when(ackTemplate).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
+
+        assertThat(publisher(EXCHANGE, ackTemplate).publishPending()).isEqualTo(1);
+
+        assertThat(lockedDuringSend.get()).isEqualTo(eventId);
+        assertThat(jdbc.queryForObject("select published_at is not null from workspace.notification_outbox "
+                + "where event_id = ?", Boolean.class, eventId)).isTrue();
+    }
+
     @Test
     void retentionPurgeKeepsFailedAndRecentRowsAndDeletesOldPublishedOnes() {
         UUID oldPublished = insertOutboxRow("published_at = current_timestamp - interval '20 days'");

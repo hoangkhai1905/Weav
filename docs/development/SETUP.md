@@ -196,13 +196,6 @@ WORKFLOW_DB_USERNAME=
 WORKFLOW_DB_PASSWORD=
 WORKFLOW_DB_SSL_MODE=require
 
-BOT_DB_HOST=
-BOT_DB_PORT=5432
-BOT_DB_NAME=
-BOT_DB_USERNAME=
-BOT_DB_PASSWORD=
-BOT_DB_SSL_MODE=require
-
 NOTIFICATION_DB_HOST=
 NOTIFICATION_DB_PORT=5432
 NOTIFICATION_DB_NAME=
@@ -253,12 +246,7 @@ RABBITMQ_MANAGEMENT_PORT=15672
 
 ### AI Provider
 
-Có thể để trống nếu chưa làm AI:
-
-```env
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-```
+AI Service dùng DeepSeek và mặc định tắt. Xem `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL` trong `.env.example` và mục AI Service trong `CLAUDE.md`.
 
 > Không commit `.env`.
 
@@ -549,10 +537,13 @@ pnpm --dir services/api-gateway build
 pnpm --dir services/api-gateway exec eslint "{src,test}/**/*.ts"
 ```
 
-`GET /health` là liveness public và không gọi Identity/Workspace. `GET /ready`
-là readiness public, probe song song hai service này qua
+`GET /health` và `GET /ready` là liveness/readiness public của chính Gateway và
+không gọi Identity/Workspace. `GET /ready/upstreams` (cần access token có
+`system_role=ADMIN`) probe song song hai service này qua
 `/actuator/health/readiness`, đọc cả response body trong deadline hai giây và
-trả aggregate `200`/`503` đã được sanitize. Notification và OCR không làm
+trả aggregate `200`/`503` đã được sanitize. Healthcheck trong `compose.dev.yml`
+dùng liveness (Spring `/actuator/health/liveness`, Notification `/health`) vì
+readiness chạy query DB mỗi 15 giây và giữ Neon compute không bao giờ suspend. Notification và OCR không làm
 Gateway unready. Rate limiter dùng in-memory storage cho một Gateway replica;
 không coi đây là enforcement phân tán khi scale nhiều replica.
 

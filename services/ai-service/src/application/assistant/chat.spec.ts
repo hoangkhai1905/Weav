@@ -19,7 +19,7 @@ function setup(
   responses: Record<string, { status: number; body?: unknown }> = {},
 ) {
   const seen: Seen[] = [];
-  const fetchImpl = (async (url: string, init: RequestInit) => {
+  const fetchImpl = (url: string, init: RequestInit) => {
     seen.push({
       url,
       authorization: (init.headers as Record<string, string>).authorization,
@@ -27,11 +27,12 @@ function setup(
     const hit = Object.entries(responses).find(([k]) =>
       url.includes(k),
     )?.[1] ?? { status: 404 };
-    return new Response(
-      hit.body === undefined ? null : JSON.stringify(hit.body),
-      { status: hit.status },
+    return Promise.resolve(
+      new Response(hit.body === undefined ? null : JSON.stringify(hit.body), {
+        status: hit.status,
+      }),
     );
-  }) as unknown as typeof fetch;
+  };
   const input = (signal = new AbortController().signal) => ({
     messages: [{ role: 'user' as const, content: 'hi' }],
     maxTokens: 100,
@@ -57,7 +58,12 @@ async function run(
 const toolMessages = (p: ScriptedChatProvider, request: number) =>
   p.requests[request].messages
     .filter((m) => m.role === 'tool')
-    .map((m) => JSON.parse((m as { content: string }).content));
+    .map(
+      (m) =>
+        JSON.parse((m as { content: string }).content) as {
+          untrusted_data: { failedNode?: unknown; error?: unknown };
+        },
+    );
 
 describe('runAssistant', () => {
   it('plain answer: deltas then done, tools offered', async () => {
@@ -324,7 +330,7 @@ describe('runAssistant', () => {
       '/workflows?': {
         status: 200,
         body: {
-          items: Array.from({ length: 50 }, (_, i) => ({
+          items: Array.from({ length: 50 }, () => ({
             workflowId: WF,
             name: '"'.repeat(120),
             status: 'PUBLISHED',

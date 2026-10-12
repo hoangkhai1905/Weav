@@ -231,6 +231,8 @@ public class WorkflowPublicationService {
         // bot, so a bot that is registered again simply replaces the retired one. After a rollback (failed call or
         // failed commit) a retired trigger that is active again gets its webhook restored with a new secret, and
         // bots nobody serves any more are cleared; after a commit, bots this workflow no longer uses are cleared.
+        // Known trade-off (review D1): the Bot API setWebhook call runs inside this transaction, so the workflow row
+        // lock and a pooled DB connection are held for the HTTP round trip. Moving it after commit is a follow-up.
         List<WorkflowTrigger> activeTelegram = newTriggers.stream()
                 .filter(trigger -> trigger.getType() == TriggerType.TELEGRAM
                         && trigger.getStatus() == com.weav.workflow.domain.valueobject.TriggerStatus.ACTIVE)
@@ -318,6 +320,7 @@ public class WorkflowPublicationService {
                 // Without a public https URL Telegram cannot deliver: keep the trigger off like a publish would.
                 telegramToResume.forEach(trigger -> triggers.disableTelegramNotConfigured(trigger.getId()));
             } else {
+                // Same trade-off as publish (review D1): setWebhook runs inside the resume transaction.
                 reRegisterTelegram(workspaceId, telegramToResume);
             }
         }

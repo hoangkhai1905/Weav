@@ -1,5 +1,7 @@
 package com.weav.workspace.infrastructure.messaging.notification;
 
+import com.weav.workspace.infrastructure.scheduling.IdleBackoff;
+import com.weav.workspace.infrastructure.scheduling.OutboxWakeup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -7,6 +9,7 @@ import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -17,6 +20,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -24,7 +33,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
 
-/** Publishes stored payloads with confirms while holding only that outbox row's lock. */
+/**
+ * Publishes stored payloads with confirms. P3: claim a batch in a short transaction (lease by bumping
+ * next_attempt_at, SKIP LOCKED), publish while holding no connection or row lock, then settle every row in a
+ * second short transaction, mirroring Identity's publisher. A crash or settle failure between publish and settle
+ * only lets the lease expire and the row be re-sent (at-least-once; consumers dedupe on messageId = eventId).
+ */
 @Component
 @ConditionalOnProperty(prefix = "weav.workspace.notification-outbox", name = "publisher-enabled",
         havingValue = "true", matchIfMissing = true)
@@ -43,6 +57,9 @@ public final class NotificationOutboxPublisher {
     private final Duration confirmTimeout;
     private final Duration maxRetryDelay;
     private final int maxAttempts;
+    private final long leaseMillis;
+    private volatile IdleBackoff idleBackoff;
+    private volatile OutboxWakeup wakeup;
 
     public NotificationOutboxPublisher(
             JdbcTemplate jdbcTemplate,
@@ -67,6 +84,8 @@ public final class NotificationOutboxPublisher {
         this.confirmTimeout = Objects.requireNonNull(confirmTimeout);
         this.maxRetryDelay = Objects.requireNonNull(maxRetryDelay);
         this.maxAttempts = maxAttempts;
+        // Claim lease: outlasts one confirm wait plus margin, so a live publisher never races its own rows.
+        this.leaseMillis = confirmTimeout.toMillis() * 2 + 10_000;
         if (maxAttempts < 1 || maxAttempts > 1000) {
             throw new IllegalArgumentException("Workspace notification outbox bounds are invalid");
         }
@@ -81,80 +100,140 @@ public final class NotificationOutboxPublisher {
     @Scheduled(fixedDelayString = "${weav.workspace.notification-outbox.poll-interval:1000}",
             initialDelayString = "${weav.workspace.notification-outbox.initial-delay:1000}")
     public void publishPendingOnSchedule() {
-        publishPending();
+        IdleBackoff backoff = idleBackoff;
+        if (backoff != null) {
+            OutboxWakeup signal = wakeup;
+            if (signal != null && signal.consume()) {
+                backoff.wake();
+            }
+            if (!backoff.shouldPoll()) {
+                return;
+            }
+        }
+        int published = publishPending();
+        if (backoff != null) {
+            backoff.record(published > 0);
+        }
+    }
+
+    /** Idle backoff (scale-to-zero friendly polling); without it every tick polls, as before. */
+    @Autowired
+    void configureIdleBackoff(
+            @Value("${weav.workspace.notification-outbox.poll-interval:1000}") long pollIntervalMillis,
+            @Value("${weav.workspace.notification-outbox.idle-max-delay:PT30S}") Duration idleMaxDelay,
+            OutboxWakeup outboxWakeup) {
+        Duration base = Duration.ofMillis(pollIntervalMillis);
+        this.idleBackoff = new IdleBackoff(base, idleMaxDelay.compareTo(base) < 0 ? base : idleMaxDelay);
+        this.wakeup = outboxWakeup;
     }
 
     public int publishPending() {
-        int published = 0;
-        for (int processed = 0; processed < batchSize; processed++) {
-            try {
-                Boolean didPublish = transactionTemplate.execute(status -> dispatchOne());
-                if (!Boolean.TRUE.equals(didPublish)) {
-                    break;
-                }
-                published++;
-            } catch (RuntimeException exception) {
-                LOGGER.warn("Workspace notification outbox dispatch transaction failed ({})",
-                        exception.getClass().getSimpleName());
-                break;
-            }
-        }
-        return published;
-    }
-
-    private boolean dispatchOne() {
-        return jdbcTemplate.query("select event_id, event_type, payload::text, attempts from " + table
-                        + " where published_at is null and failed_at is null and next_attempt_at <= current_timestamp "
-                        + "order by next_attempt_at, created_at, event_id for update skip locked limit 1",
-                resultSet -> {
-                    if (!resultSet.next()) {
-                        return false;
-                    }
-                    UUID eventId = resultSet.getObject(1, UUID.class);
-                    String eventType = resultSet.getString(2);
-                    String payload = resultSet.getString(3);
-                    int attempts = resultSet.getInt(4);
-                    return publishLocked(eventId, eventType, payload, attempts);
-                });
-    }
-
-    private boolean publishLocked(UUID eventId, String eventType, String payload, int attempts) {
+        List<Claimed> claimed;
         try {
-            CorrelationData correlation = new CorrelationData(eventId.toString());
-            MessageProperties properties = new MessageProperties();
-            properties.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
-            properties.setContentType("application/json");
-            properties.setMessageId(eventId.toString());
-            Message message = new Message(payload.getBytes(StandardCharsets.UTF_8), properties);
-            rabbitTemplate.send(exchange, eventType, message, correlation);
-            CorrelationData.Confirm confirm = correlation.getFuture()
-                    .get(confirmTimeout.toMillis(), TimeUnit.MILLISECONDS);
-            if (!confirm.ack()) {
-                scheduleRetry(eventId, attempts, "nack");
-                return false;
-            }
-            if (correlation.getReturned() != null) {
-                scheduleRetry(eventId, attempts, "unroutable");
-                return false;
-            }
-            int updated = jdbcTemplate.update("update " + table
-                            + " set published_at = current_timestamp, last_failure_code = null "
-                            + "where event_id = ? and published_at is null", eventId);
-            if (updated != 1) {
-                throw new IllegalStateException("Outbox row was not marked published");
-            }
-            return true;
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            scheduleRetry(eventId, attempts, "interrupted");
-            return false;
-        } catch (ExecutionException | TimeoutException exception) {
-            scheduleRetry(eventId, attempts, exception instanceof TimeoutException ? "confirm-timeout" : "confirm-failed");
-            return false;
+            claimed = transactionTemplate.execute(status -> claimBatch());
         } catch (RuntimeException exception) {
-            scheduleRetry(eventId, attempts, "transport-failed");
-            return false;
+            LOGGER.warn("Workspace notification outbox claim failed ({})", exception.getClass().getSimpleName());
+            return 0;
         }
+        if (claimed == null || claimed.isEmpty()) {
+            return 0;
+        }
+
+        List<Settlement> settlements = publishWithConfirms(claimed);
+        try {
+            transactionTemplate.executeWithoutResult(status -> settlements.forEach(this::settle));
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Workspace notification outbox settle failed; lease expiry will retry ({})",
+                    exception.getClass().getSimpleName());
+            return 0;
+        }
+        return (int) settlements.stream().filter(value -> value.failureCode() == null).count();
+    }
+
+    private List<Claimed> claimBatch() {
+        List<Claimed> rows = jdbcTemplate.query("update " + table
+                        + " set next_attempt_at = current_timestamp + (? * interval '1 millisecond') "
+                        + "where event_id in (select event_id from " + table
+                        + " where published_at is null and failed_at is null and next_attempt_at <= current_timestamp "
+                        + "order by next_attempt_at, created_at, event_id for update skip locked limit ?) "
+                        + "returning event_id, event_type, payload::text, attempts, created_at",
+                (resultSet, rowNumber) -> new Claimed(
+                        resultSet.getObject(1, UUID.class),
+                        resultSet.getString(2),
+                        resultSet.getString(3),
+                        resultSet.getInt(4),
+                        resultSet.getTimestamp(5).toInstant()),
+                leaseMillis, batchSize);
+        List<Claimed> ordered = new ArrayList<>(rows);
+        ordered.sort(Comparator.comparing(Claimed::createdAt).thenComparing(Claimed::eventId));
+        return ordered;
+    }
+
+    private List<Settlement> publishWithConfirms(List<Claimed> claimed) {
+        List<Settlement> settlements = new ArrayList<>(claimed.size());
+        Map<Claimed, CorrelationData> inFlight = new LinkedHashMap<>();
+        for (Claimed row : claimed) {
+            try {
+                CorrelationData correlation = new CorrelationData(row.eventId().toString());
+                MessageProperties properties = new MessageProperties();
+                properties.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
+                properties.setContentType("application/json");
+                properties.setMessageId(row.eventId().toString());
+                Message message = new Message(row.payload().getBytes(StandardCharsets.UTF_8), properties);
+                rabbitTemplate.send(exchange, row.eventType(), message, correlation);
+                inFlight.put(row, correlation);
+            } catch (RuntimeException exception) {
+                settlements.add(new Settlement(row, "transport-failed"));
+            }
+        }
+        long deadline = System.nanoTime() + confirmTimeout.toNanos();
+        boolean interrupted = false;
+        for (Map.Entry<Claimed, CorrelationData> entry : inFlight.entrySet()) {
+            Claimed row = entry.getKey();
+            CorrelationData correlation = entry.getValue();
+            if (interrupted) {
+                settlements.add(new Settlement(row, "interrupted"));
+                continue;
+            }
+            try {
+                long remaining = Math.max(0, deadline - System.nanoTime());
+                CorrelationData.Confirm confirm = correlation.getFuture().get(remaining, TimeUnit.NANOSECONDS);
+                if (confirm == null || !confirm.ack()) {
+                    settlements.add(new Settlement(row, "nack"));
+                } else if (correlation.getReturned() != null) {
+                    settlements.add(new Settlement(row, "unroutable"));
+                } else {
+                    settlements.add(new Settlement(row, null));
+                }
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                interrupted = true;
+                settlements.add(new Settlement(row, "interrupted"));
+            } catch (ExecutionException | TimeoutException exception) {
+                settlements.add(new Settlement(row,
+                        exception instanceof TimeoutException ? "confirm-timeout" : "confirm-failed"));
+            } catch (RuntimeException exception) {
+                settlements.add(new Settlement(row, "transport-failed"));
+            }
+        }
+        return settlements;
+    }
+
+    private void settle(Settlement settlement) {
+        Claimed row = settlement.row();
+        if (settlement.failureCode() != null) {
+            scheduleRetry(row.eventId(), row.attempts(), settlement.failureCode());
+            return;
+        }
+        jdbcTemplate.update("update " + table
+                        + " set published_at = current_timestamp, last_failure_code = null "
+                        + "where event_id = ? and published_at is null", row.eventId());
+    }
+
+    private record Claimed(UUID eventId, String eventType, String payload, int attempts, Instant createdAt) {
+    }
+
+    private record Settlement(Claimed row, String failureCode) {
     }
 
     private void scheduleRetry(UUID eventId, int attempts, String failureCode) {

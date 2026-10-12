@@ -7,10 +7,17 @@ export async function classify(
   input: { text: string; categories: string[] },
   signal: AbortSignal,
 ): Promise<{ category: string; confidence: number }> {
-  const output = await provider.completeJson({ system: CLASSIFY_SYSTEM, user: JSON.stringify(input) }, signal);
+  const output = await provider.completeJson(
+    { system: CLASSIFY_SYSTEM, user: JSON.stringify(input) },
+    signal,
+  );
   const { category, confidence } = output;
-  if (typeof category !== 'string' || !input.categories.includes(category)
-      || typeof confidence !== 'number' || !(confidence >= 0 && confidence <= 1)) {
+  if (
+    typeof category !== 'string' ||
+    !input.categories.includes(category) ||
+    typeof confidence !== 'number' ||
+    !(confidence >= 0 && confidence <= 1)
+  ) {
     throw new AiError('AI_OUTPUT_INVALID');
   }
   return { category, confidence };

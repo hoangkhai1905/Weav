@@ -31,6 +31,7 @@ public class RetentionPurgeJob {
     private final int outboxDays;
     private final int notificationOutboxDays;
     private final int executionDays;
+    private final int alertFiringDays;
     private final String executions;
     private final String nodes;
     private final String attempts;
@@ -40,6 +41,7 @@ public class RetentionPurgeJob {
     private final String outbox;
     private final String notificationOutbox;
     private final String aiUsage;
+    private final String alertFirings;
     private final WorkflowFileStore fileStore;
 
     @Autowired
@@ -48,11 +50,12 @@ public class RetentionPurgeJob {
                              @Value("${weav.workflow.retention.outbox-days:7}") int outboxDays,
                              @Value("${weav.workflow.retention.notification-outbox-days:14}") int notificationOutboxDays,
                              @Value("${weav.workflow.retention.execution-days:0}") int executionDays,
+                             @Value("${weav.workflow.retention.alert-firing-days:30}") int alertFiringDays,
                              WorkflowFileStore fileStore) {
         if (schema == null || !SQL_IDENTIFIER.matcher(schema).matches()) {
             throw new IllegalArgumentException("The configured workflow schema name is invalid");
         }
-        if (outboxDays < 1 || notificationOutboxDays < 1 || executionDays < 0) {
+        if (outboxDays < 1 || notificationOutboxDays < 1 || executionDays < 0 || alertFiringDays < 1) {
             throw new IllegalArgumentException("Retention days must be positive (execution days may be zero to keep all)");
         }
         this.fileStore = fileStore;
@@ -61,6 +64,7 @@ public class RetentionPurgeJob {
         this.outboxDays = outboxDays;
         this.notificationOutboxDays = notificationOutboxDays;
         this.executionDays = executionDays;
+        this.alertFiringDays = alertFiringDays;
         String q = "\"" + schema + "\".";
         executions = q + "workflow_executions";
         nodes = q + "node_executions";
@@ -71,12 +75,13 @@ public class RetentionPurgeJob {
         outbox = q + "outbox_events";
         notificationOutbox = q + "notification_outbox";
         aiUsage = q + "ai_usage";
+        alertFirings = q + "alert_rule_firings";
     }
 
     /** Without a file store (tests): file purging is skipped. */
     public RetentionPurgeJob(JdbcTemplate jdbc, PlatformTransactionManager transactionManager, String schema,
                              int outboxDays, int notificationOutboxDays, int executionDays) {
-        this(jdbc, transactionManager, schema, outboxDays, notificationOutboxDays, executionDays, null);
+        this(jdbc, transactionManager, schema, outboxDays, notificationOutboxDays, executionDays, 30, null);
     }
 
     @Scheduled(fixedDelayString = "${weav.workflow.retention.purge-interval:PT1H}",
@@ -85,26 +90,58 @@ public class RetentionPurgeJob {
         purgeNow();
     }
 
-    /** Runs every purge; stops quietly if another node holds the lock. */
+    /**
+     * Runs every purge; stops quietly if another node holds the lock. Each step is isolated: a failing step is
+     * logged and the remaining steps still run (the next scheduled run retries it).
+     */
     public void purgeNow() {
         purgeFiles();
-        boolean held = inBatches("outbox_events", () -> jdbc.update("""
+        boolean held = step("outbox_events", () -> jdbc.update("""
                 DELETE FROM %1$s WHERE id IN (
                     SELECT id FROM %1$s
                     WHERE status = 'PUBLISHED' AND published_at < CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
                     LIMIT ?)
                 """.formatted(outbox), outboxDays, BATCH_SIZE));
-        held = held && inBatches("notification_outbox", () -> jdbc.update("""
+        held = held && step("notification_outbox", () -> jdbc.update("""
                 DELETE FROM %1$s WHERE sequence_id IN (
                     SELECT sequence_id FROM %1$s
                     WHERE status = 'PUBLISHED' AND published_at < CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
                     LIMIT ?)
                 """.formatted(notificationOutbox), notificationOutboxDays, BATCH_SIZE));
-        held = held && inBatches("ai_usage", () -> jdbc.update(
+        held = held && step("ai_usage", () -> jdbc.update(
                 "DELETE FROM %s WHERE usage_date < (now() AT TIME ZONE 'UTC')::date - 30".formatted(aiUsage)));
+        held = held && step("alert_rule_firings", this::purgeAlertFiringBatch);
         if (held && executionDays > 0) {
-            inBatches("workflow_executions", this::purgeExecutionBatch);
+            step("workflow_executions", this::purgeExecutionBatch);
         }
+    }
+
+    /** One purge step; a failure is logged (class only, no row data) and does not stop the following steps. */
+    private boolean step(String what, IntSupplier batch) {
+        try {
+            return inBatches(what, batch);
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Retention purge of {} failed: {}", what, exception.getClass().getSimpleName());
+            return true;
+        }
+    }
+
+    /**
+     * Old alert firings. The newest firing per (rule, workflow) is always kept because the cooldown lookup reads it,
+     * and so is any firing whose run is still active, so its per-run uniqueness keeps the watchdog from re-firing.
+     */
+    private int purgeAlertFiringBatch() {
+        return jdbc.update("""
+                DELETE FROM %1$s WHERE id IN (
+                    SELECT f.id FROM %1$s f
+                    WHERE f.fired_at < CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
+                      AND EXISTS (SELECT 1 FROM %1$s newer
+                                  WHERE newer.rule_id = f.rule_id AND newer.workflow_id = f.workflow_id
+                                    AND newer.fired_at > f.fired_at)
+                      AND NOT EXISTS (SELECT 1 FROM %2$s e WHERE e.id = f.execution_id
+                                      AND e.status IN ('QUEUED', 'RUNNING', 'WAITING'))
+                    LIMIT ?)
+                """.formatted(alertFirings, executions), alertFiringDays, BATCH_SIZE);
     }
 
     /**
@@ -159,7 +196,8 @@ public class RetentionPurgeJob {
                 SELECT e.id FROM %1$s e
                 WHERE e.status IN ('SUCCESS', 'FAILED', 'CANCELLED')
                   AND e.finished_at < CURRENT_TIMESTAMP - (? * INTERVAL '1 day')
-                  AND NOT EXISTS (SELECT 1 FROM %2$s o WHERE o.aggregate_id = e.id AND o.status <> 'PUBLISHED')
+                  AND NOT EXISTS (SELECT 1 FROM %2$s o WHERE o.aggregate_type = 'WORKFLOW_EXECUTION'
+                                  AND o.aggregate_id = e.id AND o.status <> 'PUBLISHED')
                   AND NOT EXISTS (SELECT 1 FROM %3$s n WHERE n.entity_id = e.id
                                   AND n.status NOT IN ('PUBLISHED', 'SKIPPED'))
                   AND NOT EXISTS (SELECT 1 FROM %1$s c WHERE c.parent_execution_id = e.id)

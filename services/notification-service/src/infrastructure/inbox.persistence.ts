@@ -41,7 +41,7 @@ function nullableUuid(value: string | null): string | null {
 
 function jsonObject(value: Prisma.JsonValue): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
+    ? value
     : null;
 }
 

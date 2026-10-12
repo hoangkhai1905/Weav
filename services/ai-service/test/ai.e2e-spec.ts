@@ -8,10 +8,13 @@ import { AiError } from '../src/domain/errors';
 import { signJwt, testKeys } from './support/jwt';
 
 const keys = testKeys();
+interface ErrorBody {
+  error: { code: string };
+}
 class Fake implements LlmProvider {
   calls: LlmRequest[] = [];
-  next: (signal: AbortSignal) => Promise<Record<string, unknown>> =
-    async () => ({ summary: 'ok' });
+  next: (signal: AbortSignal) => Promise<Record<string, unknown>> = () =>
+    Promise.resolve({ summary: 'ok' });
   completeJson(r: LlmRequest, s: AbortSignal) {
     this.calls.push(r);
     return this.next(s);
@@ -100,7 +103,10 @@ describe('AI HTTP', () => {
     it('bounds the output to maxLength', async () => {
       provider.next = () => Promise.resolve({ text: 'abcdef' });
       const res = await call('prompt', { prompt: 'p', maxLength: 3 });
-      expect(res.json().result).toEqual({ text: 'abc', truncated: true });
+      expect(res.json<{ result: unknown }>().result).toEqual({
+        text: 'abc',
+        truncated: true,
+      });
     });
 
     it('rejects a summarize-scoped token for the prompt route', async () => {
@@ -126,7 +132,7 @@ describe('AI HTTP', () => {
     ])('rejects %s as INVALID_REQUEST', async (_n, body) => {
       const res = await call('prompt', body);
       expect(res.statusCode).toBe(400);
-      expect(res.json().error.code).toBe('INVALID_REQUEST');
+      expect(res.json<ErrorBody>().error.code).toBe('INVALID_REQUEST');
       expect(provider.calls).toHaveLength(0);
     });
   });
@@ -164,7 +170,7 @@ describe('AI HTTP', () => {
   it('returns 401 UNAUTHENTICATED when Authorization and X-Request-ID are both missing', async () => {
     const res = await raw('{}', { 'content-type': 'application/json' });
     expect(res.statusCode).toBe(401);
-    expect(res.json().error.code).toBe('UNAUTHENTICATED');
+    expect(res.json<ErrorBody>().error.code).toBe('UNAUTHENTICATED');
   });
 
   it.each([
@@ -205,7 +211,7 @@ describe('AI HTTP', () => {
         }),
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error.code).toBe('INVALID_REQUEST');
+      expect(res.json<ErrorBody>().error.code).toBe('INVALID_REQUEST');
       expect(provider.calls).toHaveLength(0);
     },
   );
@@ -220,7 +226,7 @@ describe('AI HTTP', () => {
   ])('rejects %s as INVALID_REQUEST', async (_n, body) => {
     const res = await call('summarize', body);
     expect(res.statusCode).toBe(400);
-    expect(res.json().error.code).toBe('INVALID_REQUEST');
+    expect(res.json<ErrorBody>().error.code).toBe('INVALID_REQUEST');
   });
 
   it('rejects a prototype key, a non-JSON media type, and an oversized body', async () => {
@@ -236,7 +242,7 @@ describe('AI HTTP', () => {
         await raw('x'.repeat(300 * 1024), {
           'content-type': 'application/json',
         })
-      ).json().error.code,
+      ).json<ErrorBody>().error.code,
     ).toBe('PAYLOAD_TOO_LARGE');
   });
 
@@ -253,7 +259,7 @@ describe('AI HTTP', () => {
       call('summarize', { ...summarizeBody, workspaceId }),
     ]);
     expect([a.statusCode, b.statusCode]).toEqual([504, 504]);
-    provider.next = async () => ({ summary: 'ok' });
+    provider.next = () => Promise.resolve({ summary: 'ok' });
     expect(
       (await call('summarize', { ...summarizeBody, workspaceId })).statusCode,
     ).toBe(200);
@@ -273,8 +279,9 @@ describe('AI HTTP', () => {
     ];
     await new Promise((r) => setTimeout(r, 20));
     expect(
-      (await call('summarize', { ...summarizeBody, workspaceId })).json().error
-        .code,
+      (
+        await call('summarize', { ...summarizeBody, workspaceId })
+      ).json<ErrorBody>().error.code,
     ).toBe('AI_BUSY');
     const other = call('summarize', summarizeBody); // a different tenant still gets a slot (3 of 4)
     release();
@@ -283,15 +290,13 @@ describe('AI HTTP', () => {
   });
 
   it('never echoes provider or model detail in errors', async () => {
-    provider.next = async () => {
-      throw new AiError('AI_OUTPUT_INVALID');
-    };
+    provider.next = () => Promise.reject(new AiError('AI_OUTPUT_INVALID'));
     const res = await call('summarize', summarizeBody);
     expect(res.json()).toEqual({
       error: {
         code: 'AI_OUTPUT_INVALID',
         message: 'The AI provider returned an invalid result.',
-        requestId: expect.any(String),
+        requestId: expect.any(String) as string,
       },
     });
   });
@@ -347,7 +352,7 @@ describe('AI HTTP', () => {
       payload: '{}',
     });
     expect(res.statusCode).toBe(401); // AI-8: no config leak before auth
-    expect(res.json().error.code).toBe('UNAUTHENTICATED');
+    expect(res.json<ErrorBody>().error.code).toBe('UNAUTHENTICATED');
     await unready.close();
   });
 });

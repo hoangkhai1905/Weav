@@ -408,11 +408,36 @@ describe('Gateway assistant SSE route (e2e)', () => {
       });
     });
 
+    it('forwards the beforeId keyset tie-breaker with before', async () => {
+      const before = '2026-10-01T00:00:00.000Z';
+      const beforeId = '33333333-3333-4333-8333-333333333333';
+      const response = await call(
+        'GET',
+        `/conversations?workspaceId=${WORKSPACE_ID}&before=${before}&beforeId=${beforeId}`,
+        bearer(),
+      );
+      expect(response.status).toBe(200);
+      const url = new URL(seen[0].path, 'http://x');
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        workspaceId: WORKSPACE_ID,
+        before,
+        beforeId,
+      });
+    });
+
     it.each([
       ['missing workspaceId', ''],
       ['bad workspaceId', '?workspaceId=nope'],
       ['limit too big', `?workspaceId=${WORKSPACE_ID}&limit=51`],
       ['bad before', `?workspaceId=${WORKSPACE_ID}&before=yesterday`],
+      [
+        'beforeId without before',
+        `?workspaceId=${WORKSPACE_ID}&beforeId=33333333-3333-4333-8333-333333333333`,
+      ],
+      [
+        'bad beforeId',
+        `?workspaceId=${WORKSPACE_ID}&before=2026-10-01T00:00:00.000Z&beforeId=nope`,
+      ],
     ])('rejects list with %s', async (_name, query) => {
       expect(
         (await call('GET', `/conversations${query}`, bearer())).status,

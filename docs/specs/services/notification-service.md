@@ -117,7 +117,7 @@ Internal API (service-to-service): none. Operational: `GET /health` (liveness) a
 
 - Implemented: consumer, DLQ, both ingestion paths, inbox v2 API, legacy v1 API, delivery worker, Telegram and Expo adapters, readiness.
 - Partial: the README describes only `workflow.completed`/`workflow.failed` routing keys, but code binds all 19 v2 types. Telegram/Expo delivery is driven only by legacy envelopes with explicit `recipients`; v2 events are inbox-only, so BR09/UC020 Telegram notifications depend on Workflow still emitting legacy recipients (not verified).
-- Rollout: legacy-to-inbox backfill and cutover are manual operator steps (`db:reconcile-inbox`); v1 and v2 read states are independent.
+- Rollout: the one-off legacy-to-inbox backfill tool (`db:reconcile-inbox`) was removed in the 2026-10 backend review; v1 and v2 read states are independent.
 - Producer-side integration with a real Workflow publisher is called out as pending in the README; a Workflow test that needs the built notification `dist` is environment-only.
 - No Bot integration: Notification sends Telegram messages itself with its own token.
 - Delivery is at least once (duplicates possible).

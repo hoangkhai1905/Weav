@@ -351,6 +351,26 @@ class MonitoringHttpTest {
                 + "where event_type = 'monitoring.alert.long_running' and entity_id = ?", Integer.class, slow));
     }
 
+    /** Batch 7: the live sweeper fires once per cooldown window per (rule, workflow), never twice per run. */
+    @Test
+    void longRunningSweeperHonoursTheCooldownForLiveRuns() throws Exception {
+        UUID workflowId = workflow(workspaceId, "Still running");
+        UUID ruleId = createRule("{\"name\":\"Live watchdog\",\"type\":\"LONG_RUNNING\",\"threshold\":60,"
+                + "\"cooldownMinutes\":60}");
+        execution(workflowId, "RUNNING", "MANUAL", Instant.now().minusSeconds(600), 0, null);
+        execution(workflowId, "RUNNING", "MANUAL", Instant.now().minusSeconds(300), 0, null);
+
+        // The scheduled sweeper is disabled in tests; drive the same component directly.
+        var longRunningSweeper = new com.weav.workflow.infrastructure.scheduling.LongRunningAlertSweeper(
+                alertEvaluator, 200);
+        longRunningSweeper.sweepNow();
+        longRunningSweeper.sweepNow();
+
+        assertEquals(1, jdbc.queryForObject("select count(*) from workflow.alert_rule_firings where rule_id = ?",
+                Integer.class, ruleId), "the second overdue run is inside the cooldown of the first firing");
+        assertEquals(1, alertNotifications());
+    }
+
     @Test
     void zeroCooldownStillFiresOnceForTheSameRunEvaluatedTwice() throws Exception {
         UUID workflowId = workflow(workspaceId, "Flaky");

@@ -1,5 +1,7 @@
 package com.weav.identity.infrastructure.messaging.notification;
 
+import com.weav.identity.infrastructure.scheduling.IdleBackoff;
+import com.weav.identity.infrastructure.scheduling.OutboxWakeup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -7,6 +9,7 @@ import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -53,6 +56,9 @@ public final class IdentityNotificationOutboxPublisher {
     private final Duration confirmTimeout;
     private final Duration maxRetryDelay;
     private final long leaseMillis;
+    private final long pollIntervalMillis;
+    private volatile IdleBackoff idleBackoff;
+    private volatile OutboxWakeup wakeup;
 
     public IdentityNotificationOutboxPublisher(
             JdbcTemplate jdbcTemplate,
@@ -79,6 +85,7 @@ public final class IdentityNotificationOutboxPublisher {
         this.maxRetryDelay = Objects.requireNonNull(maxRetryDelay);
         // Claim lease: outlasts one confirm wait plus margin, so a live publisher never races its own rows.
         this.leaseMillis = confirmTimeout.toMillis() * 2 + 10_000;
+        this.pollIntervalMillis = pollIntervalMillis;
         if (batchSize < 1 || batchSize > 250
                 || confirmTimeout.toMillis() < 1
                 || confirmTimeout.compareTo(MAX_CONFIRM_TIMEOUT) > 0
@@ -95,7 +102,30 @@ public final class IdentityNotificationOutboxPublisher {
     @Scheduled(fixedDelayString = "${weav.identity.notification-outbox.poll-interval:1000}",
             initialDelayString = "${weav.identity.notification-outbox.initial-delay:1000}")
     public void publishPendingOnSchedule() {
-        publishPending();
+        IdleBackoff backoff = idleBackoff;
+        if (backoff != null) {
+            OutboxWakeup signal = wakeup;
+            if (signal != null && signal.consume()) {
+                backoff.wake();
+            }
+            if (!backoff.shouldPoll()) {
+                return;
+            }
+        }
+        int published = publishPending();
+        if (backoff != null) {
+            backoff.record(published > 0);
+        }
+    }
+
+    /** Idle backoff (scale-to-zero friendly polling); without it every tick polls, as before. */
+    @Autowired
+    void configureIdleBackoff(
+            @Value("${weav.identity.notification-outbox.idle-max-delay:PT30S}") Duration idleMaxDelay,
+            OutboxWakeup outboxWakeup) {
+        this.idleBackoff = new IdleBackoff(Duration.ofMillis(pollIntervalMillis),
+                idleMaxDelay.toMillis() < pollIntervalMillis ? Duration.ofMillis(pollIntervalMillis) : idleMaxDelay);
+        this.wakeup = outboxWakeup;
     }
 
     /**

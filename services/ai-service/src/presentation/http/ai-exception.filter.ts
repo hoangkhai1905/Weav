@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { AiError, AiErrorCode } from '../../domain/errors';
+import './request-signal';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -33,17 +34,21 @@ export class AiExceptionFilter implements ExceptionFilter {
               ? 'NOT_FOUND'
               : this.codeFor(exception),
           );
+    const header = request.headers['x-request-id'];
+    const requestId =
+      typeof header === 'string' && UUID.test(header) ? header : null;
+    // Ids only: never the body, headers or message, which may hold prompts or tokens.
     if (error.code === 'INTERNAL_ERROR')
       this.logger.error({
+        correlationId: request.correlationId,
+        requestId,
         errorClass: (exception as Error)?.constructor?.name,
       });
-    const header = request.headers['x-request-id'];
     return reply.status(error.status).send({
       error: {
         code: error.code,
         message: error.message,
-        requestId:
-          typeof header === 'string' && UUID.test(header) ? header : null,
+        requestId,
       },
     });
   }

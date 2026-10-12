@@ -4,6 +4,8 @@ import com.weav.workflow.domain.model.aggregate.execution.WorkflowExecution;
 import com.weav.workflow.domain.model.aggregate.workflow.OutboxEvent;
 import com.weav.workflow.domain.port.out.OutboxEventRepository;
 import com.weav.workflow.domain.port.out.WorkflowExecutionRepository;
+import com.weav.workflow.infrastructure.scheduling.IdleBackoff;
+import com.weav.workflow.infrastructure.scheduling.OutboxWakeup;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -19,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -40,6 +43,8 @@ public final class ExecutionOutboxPublisher {
     private final Duration leaseDuration;
     private final Duration confirmTimeout;
     private final Duration maxRetryDelay;
+    private volatile IdleBackoff idleBackoff;
+    private volatile OutboxWakeup wakeup;
 
     public ExecutionOutboxPublisher(OutboxEventRepository outboxEvents,
                                     WorkflowExecutionRepository executions,
@@ -69,7 +74,36 @@ public final class ExecutionOutboxPublisher {
     @Scheduled(fixedDelayString = "${weav.workflow.execution-outbox.poll-interval:1000}",
             initialDelayString = "${weav.workflow.execution-outbox.initial-delay:1000}")
     public void publishPendingOnSchedule() {
-        publishPending();
+        IdleBackoff backoff = idleBackoff;
+        if (backoff != null) {
+            OutboxWakeup signal = wakeup;
+            if (signal != null && signal.consume()) {
+                backoff.wake();
+            }
+            if (!backoff.shouldPoll()) {
+                return;
+            }
+        }
+        int published = 0;
+        try {
+            published = publishPending();
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Execution outbox poll failed ({})", exception.getClass().getSimpleName());
+        }
+        if (backoff != null) {
+            backoff.record(published > 0);
+        }
+    }
+
+    /** Idle backoff (scale-to-zero friendly polling); without it every tick polls, as before. */
+    @Autowired
+    void configureIdleBackoff(
+            @Value("${weav.workflow.execution-outbox.poll-interval:1000}") long pollIntervalMillis,
+            @Value("${weav.workflow.poller.idle-max-delay:PT30S}") Duration idleMaxDelay,
+            @Qualifier("executionOutboxWakeup") OutboxWakeup outboxWakeup) {
+        Duration base = Duration.ofMillis(pollIntervalMillis);
+        this.idleBackoff = new IdleBackoff(base, idleMaxDelay.compareTo(base) < 0 ? base : idleMaxDelay);
+        this.wakeup = outboxWakeup;
     }
 
     public int publishPending() {
