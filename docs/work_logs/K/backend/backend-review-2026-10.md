@@ -113,6 +113,7 @@
 | `NOTIFICATION_WORKER_IDLE_MAX_MS` | 30000 | notification |
 | `NOTIFICATION_CONSUMER_PREFETCH` | 5 | notification |
 | `NOTIFICATION_RETENTION_DAYS` | 90 (0 disables) | notification |
+| `WORKFLOW_MAINTENANCE_IDLE_MAX_DELAY` | PT10M | workflow (recovery scanner, long-running sweep; session 2) |
 
 `WORKFLOW_SCHEDULER_POOL_SIZE` (existing) now actually sizes the scheduler. `WORKFLOW_EXECUTION_RETENTION_DAYS` stays 0 in code; set 30 in env.
 
@@ -142,7 +143,7 @@ Regression found and fixed in this session: batch 5 first broke workflow context
 - Live Compose stack against Neon, real Rabbit confirms with Neon latency, Playwright (no `.env`/secrets here).
 - `prisma migrate deploy` / Flyway V16 on Neon (owner applies; Flyway runs on service start).
 - Neon pooled endpoint behaviour with the new `socketTimeout`/query timeout (driver-side; expected to work, not observed).
-- Idle backoff effect on Neon compute suspension (needs a live stack; the alert sweeper (60 s) and recovery scanner (30 s) still poll and keep compute awake, see follow-ups).
+- Idle backoff effect on Neon compute suspension (needs a live stack; the 30 s outbox/scanner caps still keep compute awake, see section 12).
 
 ## 10. Sự cố, rủi ro và blocker
 
@@ -152,7 +153,7 @@ Regression found and fixed in this session: batch 5 first broke workflow context
 | Trung bình | Notification retention deletes data 60 s after boot (default 90 days) | real-Postgres integration case; `NOTIFICATION_RETENTION_DAYS=0` disables | owner decides before deploy |
 | Thấp | `/ready/upstreams` now needs an ADMIN token | documented | update any external monitor |
 | Thấp | Production gateway must set `GATEWAY_TRUST_PROXY_HOPS=1` (compose default stays 0 for dev) | fail-fast message names the var | set in prod env |
-| Thấp | Lint baseline still red (api-gateway now 0; ai 148, notification 51, unchanged per file) | no new problems | separate lint cleanup |
+| Thấp | Lint was red on `dev` (ai 148, notification 51) | fixed in session 2, CI lint now blocking | none |
 
 ## 11. Trạng thái bàn giao
 
@@ -169,9 +170,16 @@ Regression found and fixed in this session: batch 5 first broke workflow context
 - Remove HS256 token acceptance.
 - DLQ consumer and alerting.
 - Placeholder folders (`packages/shared`, `infrastructure/`, `examples/`, `tests/`, `docs/handoff` vs `docs/handoffs`, `bot-service.md`).
-- Scale-to-zero: `LongRunningAlertSweeper` (60 s) and `ExecutionRecoveryScanner` (30 s) still query every tick; Neon's 5-minute suspend needs them backed off too.
-- Pre-existing lint debt in ai-service (148) and notification-service (51).
+- Scale-to-zero: outbox/scanner idle caps (PT30S) still keep Neon awake; see section 12 for options. Schedule scanner "sleep until next due" is a follow-up.
 - Identity `notification_outbox` has no `published_at` index (workspace has one); fine at current size.
+
+## 12. Session 2 (2026-10-12): follow-ups 1 and 2, PR
+
+- **Maintenance pollers** (`85759da`): `ExecutionRecoveryScanner` (30 s) and `LongRunningAlertSweeper` (60 s) back off up to `WORKFLOW_MAINTENANCE_IDLE_MAX_DELAY` (default PT10M) while no run is QUEUED/RUNNING/WAITING (`ExecutionRecoveryPort.hasActiveExecutions`, a cheap `EXISTS`), stay at the base interval while runs are active, and wake via `ActivitySignal` after a local admission commits. Direct `scanNow()`/`sweepNow()` stay ungated.
+- **Compose healthchecks** (`f0c7132`): found while checking what else keeps Neon awake. Identity/workspace/workflow probed `/actuator/health/readiness` (includes the db indicator) and notification probed `/ready` (Prisma count) every 15 s, so Neon could never suspend. Switched to liveness (`/actuator/health/liveness`, `/health`). Spring liveness needs a completed startup (Flyway hit the DB), so `depends_on` ordering is kept; notification `/health` no longer reflects DB reachability. SETUP.md gateway `/ready` paragraph corrected (it no longer probes upstreams).
+- **Remaining scale-to-zero gap (not changed, owner decision):** the outbox publishers and the schedule/Gmail scans still cap at PT30S, as specified for batch 5. Neon suspends only after ~5 idle minutes, so those still keep compute awake while the stack runs. Options: raise `WORKFLOW_POLLER_IDLE_MAX_DELAY`, `IDENTITY_/WORKSPACE_NOTIFICATION_OUTBOX_IDLE_MAX_DELAY` and `NOTIFICATION_WORKER_IDLE_MAX_MS` to ≥ 6 min (local writes still wake them at once; only cross-instance writes and broker retries wait longer), and make the schedule scanner sleep until the next `next_run_at` instead of a fixed cap (follow-up).
+- **Lint cleanup**: `eslint --fix` (formatting, redundant assertions) plus hand fixes in ai-service and notification-service so `pnpm exec eslint "{src,test}/**/*.ts"` is 0 in all three Node services; CI lint made blocking (`continue-on-error` removed).
+- **PR** opened to `dev` at the owner's request (the team normally merges with `--no-ff`; the owner still verifies locally before merging).
 
 ## 13. Kết thúc session
 
