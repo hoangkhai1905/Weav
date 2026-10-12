@@ -3,6 +3,8 @@ package com.weav.identity.infrastructure.persistence.notification;
 import com.weav.identity.application.notification.IdentityNotificationEvent;
 import com.weav.identity.application.notification.NotificationOutboxWriteException;
 import com.weav.identity.application.port.out.IdentityNotificationOutboxPort;
+import com.weav.identity.infrastructure.scheduling.OutboxWakeup;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -19,6 +21,7 @@ public class JdbcIdentityNotificationOutboxAdapter implements IdentityNotificati
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final String qualifiedTable;
+    private OutboxWakeup wakeup;
 
     public JdbcIdentityNotificationOutboxAdapter(
             JdbcTemplate jdbcTemplate,
@@ -30,6 +33,12 @@ public class JdbcIdentityNotificationOutboxAdapter implements IdentityNotificati
             throw new IllegalArgumentException("DB_SCHEMA must be a simple PostgreSQL schema identifier");
         }
         this.qualifiedTable = '"' + schema + '"' + ".notification_outbox";
+    }
+
+    /** Optional: wakes an idle publisher once the appending transaction commits. */
+    @Autowired(required = false)
+    void setOutboxWakeup(OutboxWakeup wakeup) {
+        this.wakeup = wakeup;
     }
 
     @Override
@@ -46,6 +55,9 @@ public class JdbcIdentityNotificationOutboxAdapter implements IdentityNotificati
                     event.eventId(), event.eventType(), payload);
             if (inserted != 1) {
                 throw new IllegalStateException("Identity notification outbox row was not inserted");
+            }
+            if (wakeup != null) {
+                wakeup.signalAfterCommit();
             }
         } catch (Exception exception) {
             throw new NotificationOutboxWriteException();

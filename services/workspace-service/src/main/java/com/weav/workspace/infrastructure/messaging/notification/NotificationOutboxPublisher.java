@@ -1,5 +1,7 @@
 package com.weav.workspace.infrastructure.messaging.notification;
 
+import com.weav.workspace.infrastructure.scheduling.IdleBackoff;
+import com.weav.workspace.infrastructure.scheduling.OutboxWakeup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -7,6 +9,7 @@ import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -55,6 +58,8 @@ public final class NotificationOutboxPublisher {
     private final Duration maxRetryDelay;
     private final int maxAttempts;
     private final long leaseMillis;
+    private volatile IdleBackoff idleBackoff;
+    private volatile OutboxWakeup wakeup;
 
     public NotificationOutboxPublisher(
             JdbcTemplate jdbcTemplate,
@@ -95,7 +100,31 @@ public final class NotificationOutboxPublisher {
     @Scheduled(fixedDelayString = "${weav.workspace.notification-outbox.poll-interval:1000}",
             initialDelayString = "${weav.workspace.notification-outbox.initial-delay:1000}")
     public void publishPendingOnSchedule() {
-        publishPending();
+        IdleBackoff backoff = idleBackoff;
+        if (backoff != null) {
+            OutboxWakeup signal = wakeup;
+            if (signal != null && signal.consume()) {
+                backoff.wake();
+            }
+            if (!backoff.shouldPoll()) {
+                return;
+            }
+        }
+        int published = publishPending();
+        if (backoff != null) {
+            backoff.record(published > 0);
+        }
+    }
+
+    /** Idle backoff (scale-to-zero friendly polling); without it every tick polls, as before. */
+    @Autowired
+    void configureIdleBackoff(
+            @Value("${weav.workspace.notification-outbox.poll-interval:1000}") long pollIntervalMillis,
+            @Value("${weav.workspace.notification-outbox.idle-max-delay:PT30S}") Duration idleMaxDelay,
+            OutboxWakeup outboxWakeup) {
+        Duration base = Duration.ofMillis(pollIntervalMillis);
+        this.idleBackoff = new IdleBackoff(base, idleMaxDelay.compareTo(base) < 0 ? base : idleMaxDelay);
+        this.wakeup = outboxWakeup;
     }
 
     public int publishPending() {

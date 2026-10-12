@@ -27,6 +27,9 @@ import com.weav.workflow.infrastructure.persistence.mapper.ExecutionPersistenceM
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
+import com.weav.workflow.infrastructure.scheduling.OutboxWakeup;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,6 +57,7 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
     private final ExecutionPersistenceMapper mapper;
     private final DefinitionJsonCodec definitionCodec;
     private final int manualActiveRunLimit;
+    private OutboxWakeup wakeup;
 
     public WorkflowExecutionRepositoryAdapter(
             ExecutionPersistenceMapper mapper,
@@ -66,6 +70,12 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
             throw new IllegalArgumentException("Manual active run limit must be between one and 1000");
         }
         this.manualActiveRunLimit = manualActiveRunLimit;
+    }
+
+    /** Optional: wakes an idle publisher once the writing transaction commits. */
+    @Autowired(required = false)
+    void setOutboxWakeup(@Qualifier("executionOutboxWakeup") OutboxWakeup wakeup) {
+        this.wakeup = wakeup;
     }
 
     @Override
@@ -229,6 +239,9 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
                     null, null, null, null));
         }
         entityManager.persist(mapper.toEntity(outbox));
+        if (wakeup != null) {
+            wakeup.signalAfterCommit();
+        }
         entityManager.flush();
         return new Admission(execution.getId(), execution.getWorkflowId(), execution.getWorkflowVersionId(),
                 ExecutionStatus.QUEUED);

@@ -19,10 +19,12 @@ import com.weav.workflow.domain.valueobject.ExecutionTriggerType;
 import com.weav.workflow.domain.valueobject.LogLevel;
 import com.weav.workflow.domain.valueobject.NodeExecutionStatus;
 import com.weav.workflow.infrastructure.definition.DefinitionJsonCodec;
+import com.weav.workflow.infrastructure.scheduling.OutboxWakeup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -85,6 +87,7 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
     private final int maxRecoveries;
     private final java.time.Clock clock;
     private final ExecutionFinishedListener finishedListener;
+    private OutboxWakeup wakeup;
 
     public ExecutionStateAdapter(JdbcTemplate jdbc, ObjectMapper objectMapper,
                                  @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema) {
@@ -445,6 +448,12 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
                 """.formatted(executionTable), lease.executionId(), lease.owner(), lease.token());
     }
 
+    /** Optional: wakes an idle execution outbox publisher once recovery rows are committed. */
+    @Autowired(required = false)
+    void setOutboxWakeup(@Qualifier("executionOutboxWakeup") OutboxWakeup wakeup) {
+        this.wakeup = wakeup;
+    }
+
     @Override
     @Transactional
     public int enqueueRecoverable(int batchSize, Duration queuedDeliveryAge, Duration outboxCooldown) {
@@ -487,6 +496,9 @@ public class ExecutionStateAdapter implements ExecutionStatePort, ExecutionRecov
                     VALUES (?, ?, ?, ?, CAST(? AS jsonb), 'PENDING', CURRENT_TIMESTAMP, 0, CURRENT_TIMESTAMP)
                     """.formatted(outboxTable), UUID.randomUUID(), RECOVERY_AGGREGATE, executionId,
                     RECOVERY_EVENT, writeJson(Map.of("executionId", executionId.toString())));
+        }
+        if (!candidates.isEmpty() && wakeup != null) {
+            wakeup.signalAfterCommit();
         }
         return candidates.size();
     }

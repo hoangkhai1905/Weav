@@ -55,6 +55,8 @@ const schema = z
     NOTIFICATION_RETRY_BASE_MS: integer(1000),
     NOTIFICATION_RETRY_MAX_MS: integer(300000),
     NOTIFICATION_POLL_MS: integer(1000),
+    // Idle polling backs off (doubling) up to this cap; resets to NOTIFICATION_POLL_MS on work.
+    NOTIFICATION_WORKER_IDLE_MAX_MS: integer(30000, 1000, 600000),
     NOTIFICATION_LEASE_MS: integer(60000),
     NOTIFICATION_TIMEOUT_MS: integer(10000, 100, 30000),
     NOTIFICATION_TELEGRAM_ENABLED: flag('false'),

@@ -20,42 +20,101 @@ import { SETTINGS } from '../config/settings';
 import type { Settings } from '../config/settings';
 
 export const PROVIDERS = Symbol('NOTIFICATION_PROVIDERS');
+// Upper bound on rows handled in one drain so a backlog cannot starve shutdown or the event loop.
+export const MAX_DRAIN_PER_TICK = 50;
+const errorClass = (error: unknown) =>
+  error instanceof Error ? error.name : typeof error;
 @Injectable()
 export class DeliveryWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DeliveryWorker.name);
   private timer?: NodeJS.Timeout;
   private active?: Promise<void>;
   private stopped = false;
+  private running = false;
+  // Current wait before the next poll: base interval while busy, doubled up to the cap while idle.
+  private delay: number;
   constructor(
     private readonly repo: DeliveryRepository,
     @Inject(SETTINGS) private readonly settings: Settings,
     @Inject(PROVIDERS)
     private readonly providers: Record<Provider, NotificationProvider>,
-  ) {}
+  ) {
+    this.delay = settings.NOTIFICATION_POLL_MS;
+  }
   onModuleInit() {
     this.schedule();
   }
+  private get maxDelay() {
+    return Math.max(
+      this.settings.NOTIFICATION_POLL_MS,
+      this.settings.NOTIFICATION_WORKER_IDLE_MAX_MS,
+    );
+  }
+  /** Current wait before the next poll (exposed for tests and diagnostics). */
+  get currentDelayMs() {
+    return this.delay;
+  }
   private schedule() {
     if (this.stopped) return;
+    clearTimeout(this.timer);
     this.timer = setTimeout(() => {
+      this.timer = undefined;
+      this.running = true;
       this.active = this.tick()
-        .catch(() =>
-          this.logger.error({ event: 'notification_worker_unavailable' }),
-        )
-        .finally(() => this.schedule());
-    }, this.settings.NOTIFICATION_POLL_MS);
+        .then((processed) => this.adjustDelay(processed))
+        .catch((error: unknown) => {
+          this.adjustDelay(0);
+          this.logger.error({
+            event: 'notification_worker_unavailable',
+            errorClass: errorClass(error),
+          });
+        })
+        .finally(() => {
+          this.running = false;
+          this.schedule();
+        });
+    }, this.delay);
+  }
+  /** Reset to the base interval when work was found, otherwise double up to the idle cap. */
+  private adjustDelay(processed: number) {
+    this.delay =
+      processed > 0
+        ? this.settings.NOTIFICATION_POLL_MS
+        : Math.min(this.delay * 2, this.maxDelay);
+  }
+  /** New work was just stored: poll at the base interval again instead of waiting out an idle backoff. */
+  wake() {
+    if (this.stopped) return;
+    this.delay = this.settings.NOTIFICATION_POLL_MS;
+    if (!this.running && this.timer) this.schedule();
   }
   async onModuleDestroy() {
     this.stopped = true;
     clearTimeout(this.timer);
     await this.active;
   }
+  /** Drains due rows (bounded, stops on shutdown) and returns how many were handled. */
   async tick() {
-    const d = await this.repo.claim(
-      this.settings.NOTIFICATION_MAX_ATTEMPTS,
-      this.settings.NOTIFICATION_LEASE_MS,
-    );
-    if (d) await this.deliver(d);
+    let processed = 0;
+    while (processed < MAX_DRAIN_PER_TICK && !this.stopped) {
+      const d = await this.repo.claim(
+        this.settings.NOTIFICATION_MAX_ATTEMPTS,
+        this.settings.NOTIFICATION_LEASE_MS,
+      );
+      if (!d) break;
+      processed++;
+      try {
+        await this.deliver(d);
+      } catch (error) {
+        this.logger.error({
+          event: 'notification_delivery_unexpected_error',
+          deliveryId: d.id,
+          errorClass: errorClass(error),
+        });
+        throw error;
+      }
+    }
+    return processed;
   }
   // The provider already accepted the message: retry only this DB write, never the send.
   // Delivery to Telegram/Expo stays at-least-once by design; if all writes fail the lease
