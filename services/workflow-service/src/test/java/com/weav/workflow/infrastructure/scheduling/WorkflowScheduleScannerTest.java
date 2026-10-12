@@ -31,13 +31,16 @@ class WorkflowScheduleScannerTest {
                 Clock.fixed(Instant.parse("2026-10-12T00:00:00Z"), ZoneOffset.UTC), 100, gmail, true, 10,
                 1_000, Duration.ofSeconds(30));
 
-        scanner.scan(); // finds a due slot
-        scanner.scan(); // polls again at once, finds nothing
-        scanner.scan(); // backing off: skipped
+        scanner.scanOnSchedule(); // finds a due slot
+        scanner.scanOnSchedule(); // polls again at once, finds nothing
+        scanner.scanOnSchedule(); // backing off: skipped
         verify(schedules, times(2)).scan(any(Instant.class), anyInt());
 
-        scanner.scanGmail();
-        scanner.scanGmail();
+        scanner.scanGmailOnSchedule();
+        scanner.scanGmailOnSchedule();
         verify(gmail, times(1)).scan(any(Instant.class), anyInt());
+
+        scanner.scan(); // direct callers always scan
+        verify(schedules, times(3)).scan(any(Instant.class), anyInt());
     }
 }

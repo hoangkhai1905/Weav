@@ -54,18 +54,24 @@ public class WorkflowScheduleScanner {
         this.gmailBackoff = new IdleBackoff(base, max);
     }
 
+    /** Scheduled tick: scans unless idle backoff says the last scans were empty and the wait has not elapsed. */
     @Scheduled(fixedDelayString = "${weav.workflow.schedule.scanner.poll-interval-ms:1000}",
             initialDelayString = "${weav.workflow.schedule.scanner.initial-delay-ms:1000}")
-    public void scan() {
+    public void scanOnSchedule() {
         if (!scheduleBackoff.shouldPoll()) {
             return;
         }
         boolean found = false;
         try {
-            found = schedules.scan(clock.instant(), batchSize).selected() > 0;
+            found = scan().selected() > 0;
         } finally {
             scheduleBackoff.record(found);
         }
+    }
+
+    /** One bounded schedule scan, always run (direct callers bypass the idle backoff). */
+    public ScheduleTriggerService.ScanResult scan() {
+        return schedules.scan(clock.instant(), batchSize);
     }
 
     /**
@@ -74,7 +80,7 @@ public class WorkflowScheduleScanner {
      */
     @Scheduled(fixedDelayString = "${weav.workflow.schedule.scanner.poll-interval-ms:1000}",
             initialDelayString = "${weav.workflow.schedule.scanner.initial-delay-ms:1000}")
-    public void scanGmail() {
+    public void scanGmailOnSchedule() {
         if (!gmailEnabled || !gmailBackoff.shouldPoll()) {
             return;
         }
@@ -83,6 +89,13 @@ public class WorkflowScheduleScanner {
             found = gmail.scan(clock.instant(), gmailBatchSize).selected() > 0;
         } finally {
             gmailBackoff.record(found);
+        }
+    }
+
+    /** One bounded Gmail scan, always run when enabled (direct callers bypass the idle backoff). */
+    public void scanGmail() {
+        if (gmailEnabled) {
+            gmail.scan(clock.instant(), gmailBatchSize);
         }
     }
 }

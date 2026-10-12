@@ -25,8 +25,10 @@ public final class IdleBackoff {
     IdleBackoff(Duration base, Duration max, LongSupplier nowMillis) {
         Objects.requireNonNull(base, "base must not be null");
         Objects.requireNonNull(max, "max must not be null");
-        if (base.toMillis() < 1 || max.compareTo(base) < 0 || max.compareTo(MAX_ALLOWED) > 0) {
-            throw new IllegalArgumentException("Idle backoff needs 1 ms <= base <= max <= 10 minutes");
+        // A base above the ceiling (a poller effectively switched off, e.g. in tests) simply never backs off.
+        if (base.toMillis() < 1 || max.compareTo(base) < 0
+                || max.compareTo(MAX_ALLOWED) > 0 && max.compareTo(base) > 0) {
+            throw new IllegalArgumentException("Idle backoff needs 1 ms <= base <= max <= max(base, 10 minutes)");
         }
         this.baseMillis = base.toMillis();
         this.maxMillis = max.toMillis();

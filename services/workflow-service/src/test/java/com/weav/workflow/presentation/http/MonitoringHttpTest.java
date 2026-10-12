@@ -72,8 +72,6 @@ class MonitoringHttpTest {
     private AlertEvaluator alertEvaluator;
     @Autowired
     private com.weav.workflow.application.port.out.AlertRuleStore alertRuleStore;
-    @Autowired
-    private com.weav.workflow.infrastructure.scheduling.LongRunningAlertSweeper longRunningSweeper;
 
     private UUID workspaceId;
     private MockMvc mockMvc;
@@ -362,10 +360,12 @@ class MonitoringHttpTest {
         execution(workflowId, "RUNNING", "MANUAL", Instant.now().minusSeconds(600), 0, null);
         execution(workflowId, "RUNNING", "MANUAL", Instant.now().minusSeconds(300), 0, null);
 
+        // The scheduled sweeper is disabled in tests; drive the same component directly.
+        var longRunningSweeper = new com.weav.workflow.infrastructure.scheduling.LongRunningAlertSweeper(
+                alertEvaluator, 200);
         longRunningSweeper.sweepNow();
         longRunningSweeper.sweepNow();
 
-        // Counted from the database: the background sweep may also have run, the guards make that harmless.
         assertEquals(1, jdbc.queryForObject("select count(*) from workflow.alert_rule_firings where rule_id = ?",
                 Integer.class, ruleId), "the second overdue run is inside the cooldown of the first firing");
         assertEquals(1, alertNotifications());

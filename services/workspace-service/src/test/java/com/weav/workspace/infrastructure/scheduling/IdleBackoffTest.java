@@ -67,6 +67,13 @@ class IdleBackoffTest {
     }
 
     @Test
+    void aBaseAboveTheCeilingIsAcceptedAndNeverGrows() {
+        IdleBackoff slow = new IdleBackoff(Duration.ofHours(1), Duration.ofHours(1), now::get);
+        slow.record(false);
+        assertEquals(3_600_000, slow.currentDelayMillis());
+    }
+
+    @Test
     void wakeupIsRaisedOnlyAfterCommit() {
         OutboxWakeup wakeup = new OutboxWakeup();
         TransactionSynchronizationManager.initSynchronization();
