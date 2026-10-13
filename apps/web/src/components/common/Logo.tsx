@@ -22,14 +22,11 @@ export function Logo({ collapsed = false, size = 'md', showSubtitle = true }: Lo
 
   return (
     <Link to="/dashboard" className="flex items-center gap-3 overflow-hidden cursor-pointer select-none group">
-      <div className="relative shrink-0">
-        <img
-          src="/weav-logo-v2.png"
-          alt={t('common.logo_alt')}
-          className={`${imgSize} rounded-xl object-cover border border-run/30 group-hover:scale-105 transition-transform duration-300`}
-        />
-        <div className="absolute inset-0 rounded-xl ring-1 ring-white/20 pointer-events-none" />
-      </div>
+      <img
+        src="/weav-mark.svg"
+        alt={t('common.logo_alt')}
+        className={`${imgSize} shrink-0 group-hover:scale-105 transition-transform duration-300`}
+      />
 
       {!collapsed && (
         <div className="flex flex-col">
