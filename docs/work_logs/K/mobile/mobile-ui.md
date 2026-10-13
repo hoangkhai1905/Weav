@@ -291,3 +291,12 @@ Xem thêm `docs/work_logs/K/web/ui-redesign.md` mục 10.
 - Impact (CLI): TabsLayout, AppLayout (mobile), NotificationsScreen, HomeScreen, ProfileScreen, WorkflowsScreen, ExecutionsScreen đều LOW, 0 caller (route file-based, đã grep các `router.navigate('/(app)/(tabs)/notifications')` và đổi).
 - Lệnh: `npx tsc --noEmit -p .` sạch; `node --test` palette.contrast 6/6, tab-bar 2/2, i18n.nav 2/2, i18n.account 3/3, ui.store 1/1.
 - Rủi ro: typed routes (`.expo/types`) sinh lại khi chạy Metro; `router.navigate` từ màn chi tiết về tab dựa vào hành vi "pop về route đã có" của expo-router, cần xác nhận trên máy.
+
+### Lane 2.2: Trang chủ (xong, chưa kiểm thiết bị)
+- `app/(app)/(tabs)/index.tsx` viết lại theo `MHome`: header (nhóm làm việc + sáng/tối + chuông), lời chào theo giờ + thứ/ngày, thẻ đỏ "N lượt chạy lỗi cần xem" (mở Lịch sử với `filter=failed`), 4 ô số, "Lượt chạy gần đây", "Tạo quy trình mới" (Mô tả bằng lời → AI, Dùng mẫu có sẵn → Quy trình, `segment=templates`). Giữ banner lời mời, đổi nhóm, EmptyState, mục "Cần chú ý" chỉ còn điều kiện kích hoạt tắt và kết nối hỏng (lượt lỗi đã nằm ở thẻ đỏ).
+- Số liệu: chỉ lấy từ API sẵn có, tính trên mẫu các lượt chạy gần nhất (không có API 7 ngày). Bỏ ô "Lượt chạy, 7 ngày". 4 ô: Thành công (%), Bị lỗi, Đang bật (x / tổng quy trình), Đang chạy. Dòng chú thích "Tính trên N lượt chạy gần nhất."
+- Ô loại bước của lượt chạy là icon theo nguồn kích hoạt (`TriggerTile`), không dùng mã chữ.
+- Thành phần mới: `StepTile`/`StepTileText`, `TriggerTile`; `StatusBadge` thành pill (bo 999, font Medium); `time.ts` thêm `formatHourMinute`, `formatWeekdayDate`, `dayPart` (có test).
+- i18n: `stores/i18n.home.ts` (+ test, 20 khóa VI/EN).
+- Lệnh: `npx tsc --noEmit -p .` sạch; `node --test` i18n.home 2/2, i18n.nav 2/2, time 4/4. StatusBadge dùng ở 8 file, chỉ đổi kiểu.
+- Việc cho bước sau: màn Lịch sử phải đọc param `filter` (`failed`/`running`), màn Quy trình đọc `segment=templates`.

@@ -36,3 +36,22 @@ export function durationBetween(start: string | null | undefined, end: string | 
   const b = parse(end);
   return a && b ? Math.max(0, b.getTime() - a.getTime()) : null;
 }
+
+/** "09:40" for run lists. */
+export function formatHourMinute(iso: string | null | undefined): string {
+  const d = parse(iso);
+  return d ? format(d, 'HH:mm') : '-';
+}
+
+/** "Thứ Hai, 12/10" / "Monday, 12/10" for the home greeting. */
+export function formatWeekdayDate(language: Language, now: Date = new Date()): string {
+  return format(now, 'EEEE, dd/MM', { locale: LOCALES[language] });
+}
+
+export type DayPart = 'morning' | 'afternoon' | 'evening';
+
+/** Before 12:00 morning, before 18:00 afternoon, otherwise evening (device clock). */
+export function dayPart(now: Date = new Date()): DayPart {
+  const h = now.getHours();
+  return h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening';
+}

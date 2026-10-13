@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Radius } from '../../constants/theme';
+import { FontFamily, Radius } from '../../constants/theme';
 import { statusInfo } from './status';
 
 interface StatusBadgeProps {
@@ -37,10 +37,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    borderRadius: Radius.sm,
+    borderRadius: Radius.pill,
   },
-  sm: { paddingHorizontal: 8, paddingVertical: 2, gap: 6 },
-  md: { paddingHorizontal: 10, paddingVertical: 4, gap: 6 },
+  sm: { paddingHorizontal: 8, minHeight: 22, gap: 6 },
+  md: { paddingHorizontal: 10, minHeight: 26, gap: 6 },
   dot: { width: 6, height: 6, borderRadius: 3 },
-  text: { fontWeight: '500' },
+  text: { fontFamily: FontFamily.medium },
 });

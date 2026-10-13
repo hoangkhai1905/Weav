@@ -7,6 +7,7 @@ import { workflowsEn, workflowsVi } from './i18n.workflows';
 import { templatesEn, templatesVi } from './i18n.templates';
 import { invitationsEn, invitationsVi } from './i18n.invitations';
 import { navEn, navVi } from './i18n.nav';
+import { homeEn, homeVi } from './i18n.home';
 
 export type Language = 'VI' | 'EN';
 
@@ -209,6 +210,7 @@ export const translations: Record<Language, Record<string, string>> = {
     ...runsVi,
     ...accountVi,
     ...navVi,
+    ...homeVi,
   },
   EN: {
     // Navigation Tabs
@@ -408,6 +410,7 @@ export const translations: Record<Language, Record<string, string>> = {
     ...runsEn,
     ...accountEn,
     ...navEn,
+    ...homeEn,
   },
 };
 
