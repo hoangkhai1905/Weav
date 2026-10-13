@@ -113,6 +113,15 @@ import { tr } from '../lib/i18n/tr';
 
 const SUPPORTED_NODE_TYPES = new Set(NODE_CATALOG.map((item) => item.type));
 
+// Public base SePay & co. must reach (a tunnel in dev); falls back to the gateway the app itself calls.
+const WEBHOOK_BASE_URL = (
+  import.meta.env.VITE_PUBLIC_WEBHOOK_BASE_URL ||
+  import.meta.env.VITE_API_GATEWAY_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  'http://localhost:3000'
+).replace(/\/+$/, '');
+const webhookUrl = (endpointKey: string) => `${WEBHOOK_BASE_URL}/api/v1/webhooks/${encodeURIComponent(endpointKey)}`;
+
 // Nodes that need a token, webhook URL or endpoint from another app get a "?" guide in the inspector.
 const NODE_GUIDE_TOPIC: Record<string, GuideTopic> = {
   'trigger.telegram': 'TELEGRAM',
@@ -553,6 +562,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   // Validation issues of the last rejected save/publish, kept together with the message they belong to.
   const [issueState, setIssueState] = useState<{ message: string; issues: WorkflowIssue[] } | null>(null);
   const [publishedWebhooks, setPublishedWebhooks] = useState<WebhookProvisioning[]>([]);
+  const [webhookUnchanged, setWebhookUnchanged] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null);
   const [isGeneratePanelOpen, setIsGeneratePanelOpen] = useState(false);
@@ -775,6 +785,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     setWorkflowError(null);
     const mutationSession = captureNotificationSession();
     setPublishedWebhooks([]);
+    setWebhookUnchanged(false);
     setIsSavingWorkflow(true);
     try {
       await renameRef.current;
@@ -786,6 +797,8 @@ export const WorkflowBuilderPage: React.FC = () => {
       void invalidateWorkflowQueries(queryClient);
       setIsSaved(true);
       setPublishedWebhooks(publication.webhooks);
+      // An unchanged republish keeps the existing webhook, so no URL/secret comes back: say so instead of nothing.
+      setWebhookUnchanged(publication.webhooks.length === 0 && nodes.some((node) => node.data?.nodeType === 'trigger.webhook'));
       showSuccessToast('toast.workflow.published', mutationSession);
       refreshNotifications(mutationSession);
       return publication.webhooks;
@@ -1685,15 +1698,34 @@ export const WorkflowBuilderPage: React.FC = () => {
             <p className="font-medium">{t('builder.webhook_credentials_notice')}</p>
             <button type="button" onClick={() => setPublishedWebhooks([])} className="rounded px-2 py-1 hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('builder.dismiss')}</button>
           </div>
-          {publishedWebhooks.map((webhook) => (
-            <div key={webhook.triggerId} className="flex flex-wrap items-center gap-2 font-mono">
-              <span>{t('builder.endpoint_key')}: {webhook.endpointKey}</span>
-              <span>{t('builder.secret')}: {webhook.secret}</span>
-              <button type="button" onClick={() => void navigator.clipboard.writeText(webhook.secret)} className="inline-flex items-center gap-1 rounded border border-border-strong bg-card px-2 py-1 hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                <Copy size={12} /> {t('builder.copy_secret')}
-              </button>
-            </div>
-          ))}
+          {publishedWebhooks.map((webhook) => {
+            const url = webhookUrl(webhook.endpointKey);
+            return (
+              <div key={webhook.triggerId} className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{t('builder.webhook_url')}:</span>
+                  <code data-testid="webhook-url" className="break-all font-mono">{url}</code>
+                  <button type="button" onClick={() => void navigator.clipboard.writeText(url)} className="inline-flex items-center gap-1 rounded border border-border-strong bg-card px-2 py-1 hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <Copy size={12} /> {t('builder.copy_url')}
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 font-mono">
+                  <span>{t('builder.endpoint_key')}: {webhook.endpointKey}</span>
+                  <span>{t('builder.secret')}: {webhook.secret}</span>
+                  <button type="button" onClick={() => void navigator.clipboard.writeText(webhook.secret)} className="inline-flex items-center gap-1 rounded border border-border-strong bg-card px-2 py-1 font-sans hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <Copy size={12} /> {t('builder.copy_secret')}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          <p className="text-text-2">{t('builder.webhook_secret_hint')}</p>
+        </section>
+      )}
+      {webhookUnchanged && (
+        <section role="status" data-testid="webhook-unchanged" className="flex shrink-0 items-start justify-between gap-3 border-b border-border bg-subtle px-3 py-2 text-xs text-foreground">
+          <p>{t('builder.webhook_unchanged')}</p>
+          <button type="button" onClick={() => setWebhookUnchanged(false)} className="rounded px-2 py-1 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('builder.dismiss')}</button>
         </section>
       )}
 
