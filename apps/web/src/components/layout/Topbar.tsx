@@ -1,11 +1,11 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Bell, Menu, Moon, Sun } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Bell, Menu } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useUIStore } from '../../store/useUIStore';
+import { LanguageSwitch, ThemeToggle } from './ShellControls';
 import { useNotificationUnreadCount } from '../../hooks/useNotifications';
 import { useAuthStore } from '../../store/useAuthStore';
-import { FOCUS_RING, ICON_BTN } from '../../lib/uiClasses';
+import { ICON_BTN } from '../../lib/uiClasses';
 
 const getTopbarPageKey = (pathname: string) => {
   if (pathname.startsWith('/workflows')) return 'nav.workflows';
@@ -23,8 +23,8 @@ const getTopbarPageKey = (pathname: string) => {
 };
 
 export function Topbar() {
-  const { theme, toggleTheme, toggleMobileSidebar } = useUIStore();
-  const { language, setLanguage, t } = useI18nStore();
+  const toggleMobileSidebar = useUIStore((state) => state.toggleMobileSidebar);
+  const { t } = useI18nStore();
   const user = useAuthStore((state) => state.user);
   const location = useLocation();
   const { data: unreadCount = 0, isError: unreadError } = useNotificationUnreadCount();
@@ -64,36 +64,9 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-1.5">
-        <div role="group" aria-label={t('topbar.language')} className="inline-flex overflow-hidden rounded-md border border-border-strong">
-          {(['VI', 'EN'] as const).map((code) => (
-            <button
-              key={code}
-              type="button"
-              aria-pressed={language === code}
-              aria-label={language === code ? undefined : code === 'EN' ? t('topbar.switch_to_english') : t('topbar.switch_to_vietnamese')}
-              onClick={() => setLanguage(code)}
-              className={`h-[30px] px-2.5 text-xs font-semibold transition-colors ${FOCUS_RING} focus-visible:ring-offset-0 ${
-                language === code ? 'bg-subtle text-foreground' : 'text-text-2 hover:bg-muted'
-              }`}
-            >
-              {code}
-            </button>
-          ))}
-        </div>
+        <LanguageSwitch />
 
-        <button onClick={toggleTheme} className={ICON_BTN} title={t('topbar.toggle_theme')} aria-label={t('topbar.toggle_theme')}>
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={theme}
-              initial={{ opacity: 0, rotate: -90, scale: 0.8 }}
-              animate={{ opacity: 1, rotate: 0, scale: 1 }}
-              exit={{ opacity: 0, rotate: 90, scale: 0.8 }}
-              transition={{ duration: 0.15 }}
-            >
-              {theme === 'dark' ? <Sun size={18} strokeWidth={1.75} /> : <Moon size={18} strokeWidth={1.75} />}
-            </motion.div>
-          </AnimatePresence>
-        </button>
+        <ThemeToggle />
 
         <Link
           to="/notifications"

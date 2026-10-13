@@ -9,3 +9,7 @@ export const ICON_BTN = `relative inline-flex h-9 w-9 shrink-0 items-center just
 export const CARD = 'rounded-xl border border-border bg-card';
 export const LINK = `rounded-sm font-medium text-accent-ink hover:underline ${FOCUS}`;
 export const FOCUS_RING = FOCUS;
+/** Large (44px) controls of the sign-in / register forms. */
+export const BTN_LG = 'h-11 w-full';
+export const INPUT = `h-9 w-full rounded-md border border-border-strong bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground ${FOCUS}`;
+export const INPUT_LG = `h-11 w-full rounded-md border border-border-strong bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground ${FOCUS}`;

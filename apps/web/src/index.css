@@ -374,3 +374,22 @@ body {
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--run) 20%, transparent);
   }
 }
+
+/* Auth / landing showcase: nodes bob out of phase, wires dash, data dots travel along the wires, the centre node pulses. */
+@keyframes wv-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes wv-float2 { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(6px); } }
+@keyframes wv-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+@keyframes wv-dash { to { stroke-dashoffset: -16; } }
+@keyframes wv-pk { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+@keyframes wv-spin { to { transform: rotate(360deg); } }
+.wv-float { animation: wv-float 4s ease-in-out infinite; }
+.wv-float2 { animation: wv-float2 4.5s ease-in-out 0.5s infinite; }
+.wv-float3 { animation: wv-float 3.8s ease-in-out 0.2s infinite; }
+.wv-float4 { animation: wv-float2 4.2s ease-in-out 0.7s infinite; }
+.wv-pulse { animation: wv-pulse 3s ease-in-out infinite; }
+.wv-wire { fill: none; stroke-width: 2; stroke-dasharray: 4 4; animation: wv-dash 1s linear infinite; }
+.wv-packet { position: absolute; left: 0; top: 0; width: 8px; height: 8px; border-radius: 9999px; animation: wv-pk 2.4s linear infinite; }
+.wv-spin { transform-origin: 50% 50%; animation: wv-spin 6s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .wv-float, .wv-float2, .wv-float3, .wv-float4, .wv-pulse, .wv-wire, .wv-packet, .wv-spin { animation: none; }
+}

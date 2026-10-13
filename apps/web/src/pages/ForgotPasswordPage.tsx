@@ -4,6 +4,8 @@ import { ArrowLeft, LoaderCircle, Mail, ShieldCheck } from 'lucide-react';
 import { authApi, getAuthApiErrorStatus } from '../api/auth.api';
 import { useI18nStore } from '../store/useI18nStore';
 import { showSuccessToast } from '../lib/feedback/toast';
+import { AuthLayout } from '../components/auth/AuthLayout';
+import { FOCUS_RING } from '../lib/uiClasses';
 import { tr } from '../lib/i18n/tr';
 
 type RecoveryStep = 'request' | 'verify';
@@ -243,35 +245,35 @@ export function ForgotPasswordPage() {
   };
 
   return (
-    <main data-testid="password-recovery-page" className="grid min-h-screen place-items-center bg-subtle px-4">
-      <section className="w-full max-w-md rounded-3xl border border-border bg-card p-8 shadow-pop">
-        <Link to="/login" className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-run"><ArrowLeft size={14} />{t('forgot.back_to_sign_in')}</Link>
-        <div className="mt-6 flex size-11 items-center justify-center rounded-2xl bg-run-bg text-run"><ShieldCheck size={22} /></div>
-        <h1 className="mt-5 text-2xl font-bold text-foreground">{t('forgot.title')}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t('forgot.subtitle')}</p>
+    <AuthLayout>
+      <section data-testid="password-recovery-page" className="w-full max-w-[380px]">
+        <Link to="/login" className={`inline-flex items-center gap-1.5 rounded-sm text-[13px] font-medium text-text-2 hover:text-foreground ${FOCUS_RING}`}><ArrowLeft size={16} strokeWidth={1.75} />{t('forgot.back_to_sign_in')}</Link>
+        <div className="mt-6 flex size-11 items-center justify-center rounded-md bg-run-bg text-run"><ShieldCheck size={22} strokeWidth={1.75} /></div>
+        <h1 className="mt-5 text-[28px] font-semibold leading-tight tracking-tight text-foreground">{t('forgot.title')}</h1>
+        <p className="mt-2 text-text-2">{t('forgot.subtitle')}</p>
 
         {step === 'request' ? (
           <form onSubmit={(event) => void requestCode(event)} className="mt-6 space-y-4">
-            <label className="block text-xs font-semibold text-text-2" htmlFor="reset-email">{t('forgot.email')}</label>
-            <div className="flex items-center gap-2 rounded-xl border border-border bg-subtle px-3.5"><Mail size={15} className="text-muted-foreground" /><input id="reset-email" aria-label={t('forgot.email')} type="email" required value={email} onChange={(event) => setEmail(event.target.value)} className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none" /></div>
-            <button data-testid="request-reset-button" type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:bg-primary disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.request_code')}</button>
-            {resumable && <button data-testid="resume-reset-button" type="button" onClick={resumeChallenge} className="w-full text-center text-xs font-semibold text-run hover:underline">{t('w5c.have_code')}</button>}
+            <label className="block text-[13px] font-medium text-foreground" htmlFor="reset-email">{t('forgot.email')}</label>
+            <div className="flex items-center gap-2 rounded-md border border-border-strong bg-card px-3 focus-within:ring-2 focus-within:ring-ring"><Mail size={15} className="text-muted-foreground" /><input id="reset-email" aria-label={t('forgot.email')} type="email" required value={email} onChange={(event) => setEmail(event.target.value)} className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>
+            <button data-testid="request-reset-button" type="submit" disabled={loading} className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.request_code')}</button>
+            {resumable && <button data-testid="resume-reset-button" type="button" onClick={resumeChallenge} className="w-full text-center text-[13px] font-medium text-accent-ink hover:underline">{t('w5c.have_code')}</button>}
           </form>
         ) : (
           <form onSubmit={(event) => void resetPassword(event)} className="mt-6 space-y-4">
-            <label className="block text-xs font-semibold text-text-2" htmlFor="reset-code">{t('forgot.verification_code')}</label>
-            <input id="reset-code" aria-label={t('forgot.verification_code')} required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={t('forgot.code_placeholder')} className="w-full rounded-xl border border-border bg-subtle px-3.5 py-3 text-sm outline-none" />
-            <label className="block text-xs font-semibold text-text-2" htmlFor="reset-new-password">{t('forgot.new_password')}</label>
-            <input id="reset-new-password" aria-label={t('forgot.new_password')} required minLength={8} maxLength={72} type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="w-full rounded-xl border border-border bg-subtle px-3.5 py-3 text-sm outline-none" />
-            <label className="block text-xs font-semibold text-text-2" htmlFor="reset-confirm-password">{t('forgot.confirm_password')}</label>
-            <input id="reset-confirm-password" aria-label={t('forgot.confirm_password')} required minLength={8} maxLength={72} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="w-full rounded-xl border border-border bg-subtle px-3.5 py-3 text-sm outline-none" />
+            <label className="block text-[13px] font-medium text-foreground" htmlFor="reset-code">{t('forgot.verification_code')}</label>
+            <input id="reset-code" aria-label={t('forgot.verification_code')} required inputMode="numeric" pattern="[0-9]{6}" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={t('forgot.code_placeholder')} className="h-11 w-full rounded-md border border-border-strong bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            <label className="block text-[13px] font-medium text-foreground" htmlFor="reset-new-password">{t('forgot.new_password')}</label>
+            <input id="reset-new-password" aria-label={t('forgot.new_password')} required minLength={8} maxLength={72} type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="h-11 w-full rounded-md border border-border-strong bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            <label className="block text-[13px] font-medium text-foreground" htmlFor="reset-confirm-password">{t('forgot.confirm_password')}</label>
+            <input id="reset-confirm-password" aria-label={t('forgot.confirm_password')} required minLength={8} maxLength={72} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="h-11 w-full rounded-md border border-border-strong bg-card px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
             <p className="text-xs text-muted-foreground">{t('forgot.code_help')} {expiresIn !== null && `${expiresIn} ${t('forgot.seconds')}`}</p>
-            <button data-testid="complete-reset-button" type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:bg-primary disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.reset_password')}</button>
+            <button data-testid="complete-reset-button" type="submit" disabled={loading} className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.reset_password')}</button>
             <div className="flex items-center justify-between gap-3 text-xs">
-              <button data-testid="resend-reset-button" type="button" disabled={loading || cooldownRemaining > 0} onClick={() => void requestCode()} className="font-semibold text-run hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline">
+              <button data-testid="resend-reset-button" type="button" disabled={loading || cooldownRemaining > 0} onClick={() => void requestCode()} className="font-medium text-accent-ink hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline">
                 {cooldownRemaining > 0 ? t('forgot.resend_unavailable') : t('forgot.resend')}
               </button>
-              <button type="button" disabled={loading} onClick={startOver} className="font-semibold text-muted-foreground hover:text-run disabled:cursor-not-allowed">{t('forgot.use_different_email')}</button>
+              <button type="button" disabled={loading} onClick={startOver} className="font-medium text-text-2 hover:text-foreground disabled:cursor-not-allowed">{t('forgot.use_different_email')}</button>
             </div>
             <p data-testid="cooldown-message" className="text-xs text-muted-foreground" aria-live="polite">
               {cooldownRemaining > 0 ? `${t('forgot.cooldown_prefix')} ${cooldownRemaining} ${t('forgot.cooldown_suffix')}` : t('forgot.resend_available')}
@@ -281,6 +283,6 @@ export function ForgotPasswordPage() {
         {message && <p className="mt-4 text-xs font-medium text-ok">{message}</p>}
         {error && <p role="alert" className="mt-4 text-xs font-medium text-err">{error}</p>}
       </section>
-    </main>
+    </AuthLayout>
   );
 }

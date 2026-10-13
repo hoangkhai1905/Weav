@@ -32,6 +32,7 @@ import { useWorkspaceStore } from "../store/useWorkspaceStore";
 import { captureNotificationSession, isCurrentNotificationSession } from "../lib/notifications/session";
 import { showSuccessToast } from "../lib/feedback/toast";
 import { useNotificationMilestoneRefresh } from "../hooks/useNotificationMilestoneRefresh";
+import { BTN_PRIMARY, BTN_SECONDARY, BTN_SM, FOCUS_RING } from "../lib/uiClasses";
 import {
   OAUTH_PENDING_CONTEXT_KEY,
   OAUTH_PENDING_CONTEXT_MAX_AGE_MS,
@@ -87,12 +88,22 @@ const STATUS_TONES: Record<ConnectionStatus, StatusTone> = {
   INVALID: "err",
 };
 
-const ctl =
-  "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
-const ctlPrimary =
-  "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:border-primary-hover hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-wait disabled:opacity-60";
-const fieldCls =
-  "h-8 w-full rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring";
+const ctl = `${BTN_SECONDARY} ${BTN_SM}`;
+const ctlPrimary = `${BTN_PRIMARY} ${BTN_SM}`;
+const fieldCls = `h-9 w-full rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground ${FOCUS_RING}`;
+
+/** Two-letter tile code per provider, as in the design's connection list. */
+const PROVIDER_CODES: Record<string, string> = {
+  GMAIL: "Gm",
+  GOOGLE_SHEETS: "Sh",
+  GOOGLE_CALENDAR: "Ca",
+  GOOGLE_DRIVE: "Dr",
+  TELEGRAM: "Tg",
+  DISCORD: "Ds",
+  SLACK: "Sl",
+  TEAMS: "Te",
+  HTTP: "Wh",
+};
 
 function getErrorMessage(error: unknown, t: (key: string) => string): string {
   if (error instanceof ConnectionApiError) {
@@ -184,7 +195,7 @@ function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" && !open) { event.preventDefault(); setOpen(true); }
         }}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-strong bg-card text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className={`inline-flex h-[30px] w-[30px] items-center justify-center rounded-md border border-border-strong bg-card text-text-2 transition-colors hover:bg-subtle hover:text-foreground ${FOCUS_RING}`}
       >
         <MoreHorizontal size={16} aria-hidden="true" />
       </button>
@@ -194,7 +205,7 @@ function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
           role="menu"
           aria-label={label}
           onKeyDown={onMenuKeyDown}
-          className="absolute right-0 top-9 z-30 flex w-48 flex-col rounded-lg border border-border bg-popover p-1 text-[13px] shadow-pop"
+          className="absolute right-0 top-9 z-30 flex w-48 flex-col rounded-xl border border-border bg-popover p-1 text-[13px] shadow-pop"
         >
           {items.map((item, index) => (
             <div key={item.key} className="contents">
@@ -262,25 +273,15 @@ function ConnectionRow({
   return (
     <li
       data-testid={`connection-row-${connection.id}`}
-      className="flex flex-col gap-2 border-b border-border px-5 py-3 transition-colors hover:bg-subtle sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+      className="flex flex-wrap items-center gap-3.5 border-b border-border px-[18px] py-3.5 transition-colors last:border-b-0 hover:bg-subtle"
     >
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-text-2">
-            {PROVIDER_LABELS[connection.provider] ?? connection.provider}
-          </span>
-          <h2 className="truncate text-[13px] font-medium text-foreground">
-            {connection.name}
-          </h2>
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span
-            data-testid={`connection-status-${connection.id}`}
-            data-status={connection.status}
-            className={statusBadgeClass(neverConnected ? "pause" : STATUS_TONES[connection.status])}
-          >
-            {neverConnected ? t("w5c.not_connected") : t(STATUS_KEYS[connection.status])}
-          </span>
+      <span aria-hidden="true" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-t-trigger-bg text-[11px] font-semibold text-t-trigger">
+        {PROVIDER_CODES[connection.provider] ?? connection.provider.slice(0, 2)}
+      </span>
+      <div className="flex min-w-0 flex-[1_1_220px] flex-col gap-0.5">
+        <h3 className="truncate font-medium text-foreground">{connection.name}</h3>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[13px] text-text-2">
+          <span>{PROVIDER_LABELS[connection.provider] ?? connection.provider}</span>
           {!neverConnected && (
             <span title={connection.lastVerifiedAt ?? undefined}>
               {connection.lastVerifiedAt
@@ -297,11 +298,16 @@ function ConnectionRow({
           )}
         </div>
       </div>
-      <div className="shrink-0 text-xs text-muted-foreground">
-        {connection.canManage
-          ? t("connections.manage_access")
-          : t("connections.metadata_only")}
-      </div>
+      <span className="min-w-[110px] shrink-0 text-[13px] text-muted-foreground">
+        {connection.canManage ? t("connections.manage_access") : t("connections.metadata_only")}
+      </span>
+      <span
+        data-testid={`connection-status-${connection.id}`}
+        data-status={connection.status}
+        className={statusBadgeClass(neverConnected ? "pause" : STATUS_TONES[connection.status])}
+      >
+        {neverConnected ? t("w5c.not_connected") : t(STATUS_KEYS[connection.status])}
+      </span>
       {connection.canManage && (
         <div className="flex flex-wrap items-center gap-2">
           {isRenaming ? (
@@ -320,7 +326,7 @@ function ConnectionRow({
                 maxLength={120}
                 required
                 autoFocus
-                className="h-8 rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+                className={`h-[30px] rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground ${FOCUS_RING}`}
               />
               <button
                 type="submit"
@@ -349,7 +355,7 @@ function ConnectionRow({
                   data-testid={`connection-oauth-${connection.id}`}
                   onClick={onStartOAuth}
                   disabled={isWorking}
-                  className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border border-run px-3 text-[13px] font-medium text-accent-ink transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  className={`${BTN_PRIMARY} ${BTN_SM}`}
                 >
                   {isWorking ? t("connections.oauth.starting") : neverConnected ? t("w5c.connect") : t("connections.oauth.start")}
                 </button>
@@ -942,13 +948,18 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
   return (
     <main
       data-testid="connections-page"
-      className={embedded ? "flex min-h-0 flex-col rounded-lg border border-border bg-card" : "-m-4 flex h-[calc(100%+2rem)] min-h-0 flex-col overflow-y-auto bg-card sm:-m-5 sm:h-[calc(100%+2.5rem)]"}
+      className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card"
     >
-      <header className="flex min-h-14 shrink-0 flex-col gap-2 border-b border-border px-5 py-2 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex min-h-14 shrink-0 flex-col gap-2 border-b border-border px-[18px] py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
-          <h1 className="text-base font-semibold text-foreground">
-            {t("connections.title")}
-          </h1>
+          {embedded ? (
+            <h2 className="text-[15px] font-semibold text-foreground">
+              {t("connections.title")}
+              {connectionsQuery.data && <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">{connectionsQuery.data.length}</span>}
+            </h2>
+          ) : (
+            <h1 className="text-[15px] font-semibold text-foreground">{t("connections.title")}</h1>
+          )}
           <p className="text-xs text-muted-foreground">
             {t("connections.workspace_scope")}
           </p>
@@ -968,7 +979,7 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
             onClick={() => setIsCreateOpen(true)}
             className={ctlPrimary}
           >
-            <Plus size={16} aria-hidden="true" />
+            <Plus size={16} strokeWidth={1.75} aria-hidden="true" />
             {t("connections.new_conn")}
           </button>
         )}

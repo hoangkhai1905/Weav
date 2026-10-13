@@ -1,170 +1,97 @@
-import { motion } from 'framer-motion';
-import { Play, Webhook, Mail, Sparkles, Send, CheckCircle2, Zap, Layers } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { CheckCircle2, Layers, Link2, Mail, Play, Send, Zap } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
 
+const DIAGRAM_W = 520;
+const DIAGRAM_H = 260;
+
+/** A node tile: coloured square + label. Position is fixed inside the 520x260 diagram. */
+function Node({ left, top, className, tone, icon, label }: { left: number; top: number; className: string; tone: string; icon: ReactNode; label: string }) {
+  return (
+    <div className={`absolute flex w-[140px] items-center gap-2.5 rounded-xl border border-border-strong bg-card p-2.5 ${className}`} style={{ left, top }}>
+      <span className={`inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[7px] ${tone}`}>{icon}</span>
+      <span className="min-w-0 text-xs font-semibold leading-snug text-foreground">{label}</span>
+    </div>
+  );
+}
+
+/**
+ * Right-hand panel of the sign-in / register screens: two inputs -> "AI compiler" -> two outputs. Dashed wires keep
+ * moving, data dots travel along them, nodes bob out of phase and the centre node pulses (all off for reduced motion).
+ * Decorative, so hidden from assistive tech; the diagram scales down on narrow panels instead of being clipped.
+ */
 export function AnimatedWorkflowShowcase() {
   const { t } = useI18nStore();
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(([entry]) => {
+      setScale(Math.min(1, entry.contentRect.width / DIAGRAM_W));
+    });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
+
+  const features = [
+    { icon: Layers, tone: 'text-run', title: 'auth.showcase.drag_canvas', hint: 'auth.showcase.nodes_hint' },
+    { icon: CheckCircle2, tone: 'text-ok', title: 'auth.showcase.run_history', hint: 'auth.showcase.run_history_hint' },
+    { icon: Zap, tone: 'text-warn', title: 'auth.showcase.ai_generate', hint: 'auth.showcase.ai_generate_hint' },
+  ];
+
   return (
-    <div className="w-full h-full flex flex-col justify-between p-6 bg-subtle rounded-lg border border-border relative overflow-hidden select-none">
-      {/* Ambient background particles */}
+    <div
+      aria-hidden="true"
+      className="flex h-full min-h-[560px] flex-col items-center justify-center gap-7 border-l border-border bg-subtle px-8 py-12 [background-image:radial-gradient(var(--border)_1px,transparent_1px)] [background-size:20px_20px]"
+    >
+      <div className="flex w-full max-w-[568px] flex-col gap-[22px]">
+        <h2 className="text-[22px] font-semibold leading-snug tracking-tight text-foreground">{t('auth.showcase.subtitle')}</h2>
 
-      {/* Top Header Label */}
-      <div className="relative z-10 space-y-2">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-run-bg text-run border border-run/30 text-xs font-bold">
-          <Sparkles size={14} className="text-run animate-spin" />
-          <span>{t('auth.showcase.title')}</span>
-        </div>
-        <h2 className="text-xl font-extrabold text-foreground tracking-tight">
-          {t('auth.showcase.subtitle')}
-        </h2>
-      </div>
+        <div className="overflow-hidden rounded-[14px] border border-border bg-card p-6">
+          <div ref={frameRef} className="w-full" style={{ height: DIAGRAM_H * scale }}>
+            <div className="relative origin-top-left" style={{ width: DIAGRAM_W, height: DIAGRAM_H, transform: `scale(${scale})` }}>
+              <svg viewBox={`0 0 ${DIAGRAM_W} ${DIAGRAM_H}`} className="absolute inset-0" style={{ width: DIAGRAM_W, height: DIAGRAM_H }}>
+                <path className="wv-wire" d="M140,66 C165,66 165,130 190,130" stroke="var(--run)" />
+                <path className="wv-wire" d="M140,194 C165,194 165,130 190,130" stroke="var(--err)" />
+                <path className="wv-wire" d="M330,130 C355,130 355,66 380,66" stroke="var(--run)" />
+                <path className="wv-wire" d="M330,130 C355,130 355,194 380,194" stroke="var(--ok)" />
+              </svg>
+              <span className="wv-packet" style={{ background: 'var(--run)', offsetPath: "path('M140,66 C165,66 165,130 190,130')" }} />
+              <span className="wv-packet" style={{ background: 'var(--ok)', offsetPath: "path('M330,130 C355,130 355,194 380,194')", animationDelay: '1.2s' }} />
 
-      {/* Interactive Live Animated Node Graph */}
-      <div className="relative z-10 my-6 py-6 px-4 bg-card/60 rounded-2xl border border-border shadow-pop min-h-[260px] flex items-center justify-center">
-        {/* SVG Connecting Paths with Animated Flow Packets */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
-          {/* Bezier Path 1 (Manual Trigger to AI Extract) */}
-          <path
-            d="M 70,75 C 130,75 130,135 190,135"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="text-run"
-            strokeDasharray="4 4"
-          />
-          {/* Bezier Path 2 (Webhook to AI Extract) */}
-          <path
-            d="M 70,195 C 130,195 130,135 190,135"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="text-err"
-            strokeDasharray="4 4"
-          />
-          {/* Bezier Path 3 (AI Extract to Telegram) */}
-          <path
-            d="M 290,135 C 330,135 330,75 370,75"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="text-run"
-            strokeDasharray="4 4"
-          />
-          {/* Bezier Path 4 (AI Extract to Email) */}
-          <path
-            d="M 290,135 C 330,135 330,195 370,195"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="text-ok"
-            strokeDasharray="4 4"
-          />
-        </svg>
+              <Node left={0} top={41} className="wv-float" tone="bg-t-trigger-bg text-t-trigger" icon={<Play size={15} strokeWidth={1.75} />} label={t('auth.showcase.manual_run')} />
+              <Node left={0} top={169} className="wv-float2" tone="bg-t-trigger-bg text-t-trigger" icon={<Link2 size={15} strokeWidth={1.75} />} label={t('auth.showcase.webhook_in')} />
 
-        {/* Floating Animated Nodes */}
-        <div className="relative z-10 w-full flex items-center justify-between px-2">
-          {/* Left Triggers Column */}
-          <div className="flex flex-col gap-8">
-            {/* Node 1: Manual Trigger */}
-            <motion.div
-              animate={{ y: [0, -6, 0] }}
-              transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-              className="p-2.5 bg-card border-l-4 border-l-err-border border border-border rounded-xl flex items-center gap-2.5 w-36"
-            >
-              <div className="p-1.5 rounded-lg bg-err-bg text-err shrink-0">
-                <Play size={14} />
+              <div className="wv-pulse absolute left-[190px] top-[71px] flex w-[140px] flex-col items-center gap-1.5 rounded-xl border border-border-strong bg-card px-2.5 pb-3 pt-[18px] text-center shadow-pop">
+                <span className="absolute -top-2.5 whitespace-nowrap rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                  {t('auth.showcase.ai_compiler')}
+                </span>
+                <span className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-[7px] bg-t-ai-bg text-t-ai">
+                  <svg viewBox="0 0 24 24" className="wv-spin h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="7" strokeDasharray="3 3" />
+                    <circle cx="12" cy="12" r="2.5" />
+                  </svg>
+                </span>
+                <span className="text-xs font-semibold leading-snug text-foreground">{t('auth.showcase.invoice_node')}</span>
               </div>
-              <div className="truncate">
-                <div className="text-[11px] font-bold text-foreground truncate">{t('auth.showcase.manual_run')}</div>
-                <div className="text-[9px] text-muted-foreground font-mono">trigger.manual</div>
-              </div>
-            </motion.div>
 
-            {/* Node 2: Webhook Trigger */}
-            <motion.div
-              animate={{ y: [0, 6, 0] }}
-              transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-              className="p-2.5 bg-card border-l-4 border-l-err-border border border-border rounded-xl flex items-center gap-2.5 w-36"
-            >
-              <div className="p-1.5 rounded-lg bg-err-bg text-err shrink-0">
-                <Webhook size={14} />
-              </div>
-              <div className="truncate">
-                <div className="text-[11px] font-bold text-foreground truncate">{t('auth.showcase.webhook_in')}</div>
-                <div className="text-[9px] text-muted-foreground font-mono">trigger.webhook</div>
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Center AI Processing Node */}
-          <motion.div
-            animate={{ scale: [1, 1.04, 1] }}
-            transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-            className="p-3 bg-card border-l-4 border-l-run/30 border border-border rounded-2xl shadow-pop flex flex-col items-center gap-1.5 w-40 text-center relative"
-          >
-            <span className="absolute -top-2.5 px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-[9px] font-bold shadow">
-              {t('auth.showcase.ai_compiler')}
-            </span>
-            <div className="p-2 rounded-xl bg-run-bg text-run mt-1">
-              <Sparkles size={20} className="animate-spin" />
+              <Node left={380} top={41} className="wv-float3" tone="bg-t-action-bg text-t-action" icon={<Send size={15} strokeWidth={1.75} />} label={t('auth.showcase.telegram_alert')} />
+              <Node left={380} top={169} className="wv-float4" tone="bg-ok-bg text-ok" icon={<Mail size={15} strokeWidth={1.75} />} label={t('auth.showcase.send_email')} />
             </div>
-            <div className="text-xs font-bold text-foreground">{t('auth.showcase.invoice_node')}</div>
-            <div className="text-[9px] text-muted-foreground font-mono">ai.extract</div>
-          </motion.div>
-
-          {/* Right Output Actions Column */}
-          <div className="flex flex-col gap-8">
-            {/* Node 3: Telegram Bot */}
-            <motion.div
-              animate={{ y: [0, -6, 0] }}
-              transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut', delay: 0.2 }}
-              className="p-2.5 bg-card border-l-4 border-l-run/30 border border-border rounded-xl flex items-center gap-2.5 w-36"
-            >
-              <div className="p-1.5 rounded-lg bg-run-bg text-run shrink-0">
-                <Send size={14} />
-              </div>
-              <div className="truncate">
-                <div className="text-[11px] font-bold text-foreground truncate">{t('auth.showcase.telegram_alert')}</div>
-                <div className="text-[9px] text-muted-foreground font-mono">telegram.send</div>
-              </div>
-            </motion.div>
-
-            {/* Node 4: Email Send */}
-            <motion.div
-              animate={{ y: [0, 6, 0] }}
-              transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut', delay: 0.7 }}
-              className="p-2.5 bg-card border-l-4 border-l-ok/30 border border-border rounded-xl flex items-center gap-2.5 w-36"
-            >
-              <div className="p-1.5 rounded-lg bg-ok-bg text-ok shrink-0">
-                <Mail size={14} />
-              </div>
-              <div className="truncate">
-                <div className="text-[11px] font-bold text-foreground truncate">{t('auth.showcase.send_email')}</div>
-                <div className="text-[9px] text-muted-foreground font-mono">email.send</div>
-              </div>
-            </motion.div>
           </div>
         </div>
-      </div>
 
-      {/* Feature Highlights Grid */}
-      <div className="relative z-10 grid grid-cols-3 gap-2 pt-2">
-        <div className="p-2.5 bg-card/70 border border-border rounded-xl text-center">
-          <Layers size={16} className="mx-auto mb-1 text-run" />
-          <span className="block text-[11px] font-bold text-foreground">{t('auth.showcase.drag_canvas')}</span>
-          <span className="text-[9px] text-muted-foreground">{t('auth.showcase.nodes_hint')}</span>
-        </div>
-
-        <div className="p-2.5 bg-card/70 border border-border rounded-xl text-center">
-          <CheckCircle2 size={16} className="mx-auto mb-1 text-ok" />
-          <span className="block text-[11px] font-bold text-foreground">{t('auth.showcase.run_history')}</span>
-          <span className="text-[9px] text-muted-foreground">{t('auth.showcase.run_history_hint')}</span>
-        </div>
-
-        <div className="p-2.5 bg-card/70 border border-border rounded-xl text-center">
-          <Zap size={16} className="mx-auto mb-1 text-warn" />
-          <span className="block text-[11px] font-bold text-foreground">{t('auth.showcase.ai_generate')}</span>
-          <span className="text-[9px] text-muted-foreground">{t('auth.showcase.ai_generate_hint')}</span>
+        <div className="grid grid-cols-3 gap-2.5">
+          {features.map(({ icon: Icon, tone, title, hint }) => (
+            <div key={title} className="flex flex-col items-center gap-1 rounded-[10px] border border-border bg-card px-2 py-3 text-center">
+              <Icon size={18} strokeWidth={1.75} className={tone} />
+              <span className="text-xs font-semibold text-foreground">{t(title)}</span>
+              <span className="text-[11px] text-muted-foreground">{t(hint)}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
