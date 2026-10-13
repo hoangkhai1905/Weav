@@ -28,7 +28,7 @@ const FORMAT_FIELDS: Record<string, { name: string; syntax: FormatSyntax; action
   'teams.send_message': { name: 'text', syntax: 'teams', actions: ['bold', 'italic', 'link', 'list'] },
 };
 
-const inputCls = 'w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring';
+const inputCls = 'w-full rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring';
 
 interface SchemaFieldProps {
   nodeType: string;
@@ -69,7 +69,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
 
   if (types.includes('boolean')) {
     return (
-      <label htmlFor={id} className="flex items-center gap-2 text-[11px] font-medium text-text-2">
+      <label htmlFor={id} className="flex items-center gap-2 text-[13px] font-medium text-foreground">
         <input id={id} data-testid={`field-${name}`} type="checkbox" checked={value === true || value === 'true'} onChange={(event) => onChange(event.target.checked || undefined)} className="h-3.5 w-3.5 accent-primary" />
         {label}
         {hint && <span className="font-normal text-muted-foreground">({hint})</span>}
@@ -178,7 +178,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
   const isCalendarTime = nodeType === 'google.calendar' && (name === 'start' || name === 'end');
   return (
     <div>
-      <label id={`${id}-label`} htmlFor={id} onClick={chipText ? () => document.getElementById(id)?.focus() : undefined} className="mb-1 block text-[11px] font-medium text-text-2">{label}</label>
+      <label id={`${id}-label`} htmlFor={id} onClick={chipText ? () => document.getElementById(id)?.focus() : undefined} className="mb-1 block text-[13px] font-medium text-foreground">{label}</label>
       {isCalendarTime ? (
         <div className="flex items-start gap-1.5">
           <div className="min-w-0 flex-1">{control}</div>
@@ -192,7 +192,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
           />
         </div>
       ) : control}
-      {hint && <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{hint}</p>}
+      {hint && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{hint}</p>}
     </div>
   );
 };

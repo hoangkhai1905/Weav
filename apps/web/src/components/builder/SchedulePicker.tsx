@@ -13,9 +13,9 @@ import {
   type Weekday,
 } from '../../lib/schedule';
 
-const fieldCls = 'w-full min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring';
-const labelCls = 'mb-1 block text-[11px] font-medium text-text-2';
-const hintCls = 'text-[10px] leading-relaxed text-muted-foreground';
+const fieldCls = 'w-full min-w-0 rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring';
+const labelCls = 'mb-1 block text-[13px] font-medium text-foreground';
+const hintCls = 'text-xs leading-relaxed text-muted-foreground';
 
 const MODES: ScheduleMode[] = ['minutes', 'hours', 'daily', 'weekly', 'monthly', 'advanced'];
 // [IANA id, i18n key of the friendly name]
@@ -154,7 +154,7 @@ export const SchedulePicker: React.FC<SchedulePickerProps> = ({ cron, timezone, 
           />
           <p className={`mt-1 ${hintCls}`}>{t('builder.schedule.cron_hint')}</p>
           <details className="mt-1">
-            <summary className="cursor-pointer text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('builder.schedule.cron_help_title')}</summary>
+            <summary className="cursor-pointer text-xs font-medium text-accent-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('builder.schedule.cron_help_title')}</summary>
             <p className={`mt-1 ${hintCls}`}>{t('builder.schedule.cron_help')}</p>
           </details>
         </div>
@@ -189,7 +189,7 @@ export const SchedulePicker: React.FC<SchedulePickerProps> = ({ cron, timezone, 
         )}
       </div>
 
-      {summary && <p data-testid="schedule-summary" className="rounded border border-border bg-subtle px-2.5 py-2 text-[11px] leading-relaxed text-text-2">{summary}</p>}
+      {summary && <p data-testid="schedule-summary" className="rounded border border-border bg-subtle px-2.5 py-2 text-xs leading-relaxed text-text-2">{summary}</p>}
     </div>
   );
 };

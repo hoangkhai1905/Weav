@@ -3,7 +3,7 @@ import { Plus, X } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { isCredentialKey } from '../../lib/mappingGrammar';
 
-const inputCls = 'min-w-0 rounded-md border border-border-strong bg-card px-2 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring';
+const inputCls = 'min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring';
 
 interface Row {
   id: number;
@@ -45,8 +45,8 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({ label, testId, v
   if (typeof value === 'string') {
     return (
       <div data-testid={testId} className="space-y-1">
-        <p className="text-[11px] font-medium text-text-2">{label}</p>
-        <code className="block truncate rounded border border-border bg-subtle px-2 py-1.5 font-mono text-[10px] text-muted-foreground">{value}</code>
+        <p className="text-[13px] font-medium text-foreground">{label}</p>
+        <code className="block truncate rounded border border-border bg-subtle px-2 py-1.5 font-mono text-xs text-muted-foreground">{value}</code>
       </div>
     );
   }
@@ -62,7 +62,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({ label, testId, v
 
   return (
     <fieldset data-testid={testId} className="space-y-1.5">
-      <legend className="mb-1 block text-[11px] font-medium text-text-2">{label}</legend>
+      <legend className="mb-1 block text-[13px] font-medium text-foreground">{label}</legend>
       {rows.map((row, index) => {
         const name = row.key.trim();
         const credential = name !== '' && isCredentialKey(name);
@@ -83,7 +83,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({ label, testId, v
                 className={`${inputCls} w-28 shrink-0 font-mono`}
               />
               {'raw' in row ? (
-                <code data-testid={`${testId}-value`} className="min-w-0 flex-1 truncate rounded border border-border bg-subtle px-2 py-1.5 font-mono text-[10px] text-muted-foreground">{row.value}</code>
+                <code data-testid={`${testId}-value`} className="min-w-0 flex-1 truncate rounded border border-border bg-subtle px-2 py-1.5 font-mono text-xs text-muted-foreground">{row.value}</code>
               ) : (
                 <input
                   aria-label={`${label}: ${t('builder.cfg.kv_value')} ${index + 1}`}
@@ -115,7 +115,7 @@ export const KeyValueEditor: React.FC<KeyValueEditorProps> = ({ label, testId, v
           focusId.current = id;
           setRows([...rows, { id, key: '', value: '' }]);
         }}
-        className="flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex items-center gap-1 rounded text-xs font-medium text-accent-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Plus size={12} aria-hidden="true" />{t('builder.cfg.kv_add')}
       </button>

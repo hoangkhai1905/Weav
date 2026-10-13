@@ -29,15 +29,15 @@ export const VariablePicker: React.FC<VariablePickerProps> = ({ groups, insert }
         aria-controls={panelId}
         onClick={() => setOpen(!open)}
         onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false); }}
-        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-text-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-[13px] font-medium text-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <Braces size={13} aria-hidden="true" />{t('builder.var.insert')}
       </button>
       {open && (
         <div id={panelId} role="group" aria-label={t('builder.var.title')} onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false); }} className="space-y-2 border-t border-border p-2.5">
-          <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.var.hint')}</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.var.hint')}</p>
           <p role="status" aria-live="polite" className={`text-[10px] font-medium ${notice.ok ? 'text-ok' : 'text-warn'}`}>{notice.text}</p>
-          {groups.length === 0 && <p className="text-[10px] text-muted-foreground">{t('builder.var.empty')}</p>}
+          {groups.length === 0 && <p className="text-xs text-muted-foreground">{t('builder.var.empty')}</p>}
           {groups.map((group) => (
             // The step id stays the group's accessible name and is shown next to the step name, so two steps of
             // the same kind (two HTTP requests) can still be told apart.

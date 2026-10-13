@@ -393,3 +393,14 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .wv-float, .wv-float2, .wv-float3, .wv-float4, .wv-pulse, .wv-wire, .wv-packet, .wv-spin { animation: none; }
 }
+
+/* Landing hero: the four demo steps light up one after another and dashes flow between them. */
+@keyframes wv-run { 0%, 22% { border-color: var(--run); box-shadow: 0 0 0 3px var(--run-bg); } 26%, 100% { border-color: var(--border-strong); box-shadow: none; } }
+@keyframes wv-flow { from { background-position: 0 0; } to { background-position: 0 8px; } }
+@keyframes wv-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.wv-step { animation: wv-run 6s linear infinite; }
+.wv-flow { background-image: repeating-linear-gradient(to bottom, var(--run) 0 4px, transparent 4px 8px); animation: wv-flow 0.8s linear infinite; }
+.wv-blink { animation: wv-blink 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .wv-step, .wv-flow, .wv-blink { animation: none; }
+}

@@ -4,9 +4,9 @@ import { useI18nStore } from '../../store/useI18nStore';
 import { fileSources, mappingOf, pathLabel, type VariableGroup } from '../../lib/variablePaths';
 import { MappingTextField } from './MappingTextField';
 
-const fieldCls = 'min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring';
+const fieldCls = 'min-w-0 rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring';
 const inputCls = `${fieldCls} w-full font-mono`;
-const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
+const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-xs font-medium text-accent-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
 
 // docs/api/week4-node-contracts.md: at most 5 usable attachments per email.
 const MAX_ATTACHMENTS = 5;
@@ -36,7 +36,7 @@ export const AttachmentsEditor: React.FC<AttachmentsEditorProps> = ({ value, onC
 
   return (
     <fieldset data-testid="email-attachments" className="space-y-2">
-      <legend className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.field.email.send.attachments')}</legend>
+      <legend className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.field.email.send.attachments')}</legend>
       <select
         aria-label={t('builder.cfg.attach_mode')}
         data-testid="attachments-mode"
@@ -124,7 +124,7 @@ export const AttachmentsEditor: React.FC<AttachmentsEditorProps> = ({ value, onC
           </button>
         </>
       )}
-      <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.attach_hint')}</p>
+      <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.attach_hint')}</p>
     </fieldset>
   );
 };

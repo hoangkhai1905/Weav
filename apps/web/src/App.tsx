@@ -21,6 +21,8 @@ import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { LandingPage } from './pages/LandingPage';
+import { useAuthStore } from './store/useAuthStore';
 import { Toaster } from 'sonner';
 import { useEffect } from 'react';
 import { useI18nStore } from './store/useI18nStore';
@@ -30,6 +32,12 @@ import { useUIStore } from './store/useUIStore';
 function RedirectKeepQuery({ to }: { to: string }) {
   const location = useLocation();
   return <Navigate to={{ pathname: to, search: location.search, hash: location.hash }} state={location.state} replace />;
+}
+
+/** `/`: visitors who are not signed in see the landing page; signed-in users go straight to the dashboard. */
+function HomeRoute() {
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  return isAuthenticated ? <Navigate to="/dashboard" replace /> : <LandingPage />;
 }
 
 function WorkspaceConnectionsPage() {
@@ -52,6 +60,9 @@ export function App() {
     <>
       <Toaster position="top-right" offset={{ top: 64, right: 16 }} richColors closeButton containerAriaLabel={t('toast.region')} />
       <Routes>
+      {/* Public */}
+      <Route path="/" element={<HomeRoute />} />
+
       {/* Auth Routes */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
@@ -60,7 +71,6 @@ export function App() {
 
       {/* Main Protected Application Layout */}
       <Route element={<AppLayout />}>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
 
         {/* Workflows */}

@@ -15,9 +15,9 @@ interface FormatToolbarProps {
 /** Buttons that format the selected text of a message field, plus an optional switch to edit the source. */
 export const FormatToolbar: React.FC<FormatToolbarProps> = ({ actions, onAction, code }) => {
   const { t } = useI18nStore();
-  const button = 'inline-flex h-6 items-center justify-center rounded text-text-2 hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  const button = 'inline-flex h-7 min-w-7 items-center justify-center rounded text-text-2 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
   return (
-    <div role="toolbar" aria-label={t('builder.format.toolbar')} data-testid="format-toolbar" className="mb-1 flex items-center gap-0.5">
+    <div role="toolbar" aria-label={t('builder.format.toolbar')} data-testid="format-toolbar" className="flex items-center gap-0.5 border-b border-border p-1">
       {actions.map((action) => {
         const Icon = ICONS[action];
         const label = t(`builder.format.${action}`);
@@ -31,9 +31,9 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({ actions, onAction,
             // Keeps the selection in the message field while the button is pressed.
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onAction(action)}
-            className={`${button} w-6`}
+            className={button}
           >
-            <Icon size={13} aria-hidden="true" />
+            <Icon size={16} strokeWidth={1.75} aria-hidden="true" />
           </button>
         );
       })}
@@ -45,9 +45,9 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({ actions, onAction,
           title={t(code.active ? 'builder.format.code_off' : 'builder.format.code_on')}
           onMouseDown={(event) => event.preventDefault()}
           onClick={code.onToggle}
-          className={`${button} ml-auto gap-1 px-1.5 font-mono text-[10px] font-medium ${code.active ? 'bg-run-bg text-run' : ''}`}
+          className={`${button} ml-auto gap-1 px-2 font-mono text-[11px] font-medium ${code.active ? 'bg-run-bg text-run' : ''}`}
         >
-          <Code2 size={12} aria-hidden="true" />{code.label}
+          <Code2 size={14} strokeWidth={1.75} aria-hidden="true" />{code.label}
         </button>
       )}
     </div>

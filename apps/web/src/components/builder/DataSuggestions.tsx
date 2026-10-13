@@ -18,7 +18,7 @@ export const DataSuggestions: React.FC<DataSuggestionsProps> = ({ groups, value,
   const text = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
   return (
     <div data-testid="data-suggestions" className="mt-1 flex flex-wrap items-center gap-1">
-      <span className="text-[10px] text-muted-foreground">{t('builder.var.suggest')}</span>
+      <span className="text-xs text-muted-foreground">{t('builder.var.suggest')}</span>
       {items.map((item) => (
         <button
           key={item.mapping}

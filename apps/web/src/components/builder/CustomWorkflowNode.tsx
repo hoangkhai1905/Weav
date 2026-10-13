@@ -116,7 +116,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
   const isLogic = nodeType.startsWith('logic');
 
   const badge = (tone: string, children: React.ReactNode) => (
-    <span className={`inline-flex h-[18px] max-w-[110px] shrink-0 items-center gap-1 truncate rounded px-1.5 text-[11px] font-medium ${tone}`}>
+    <span className={`inline-flex h-[18px] max-w-[110px] shrink-0 items-center gap-1 truncate rounded-full px-2 text-[11px] font-medium ${tone}`}>
       {children}
     </span>
   );
@@ -164,7 +164,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
       <span
         data-testid="workflow-node-readiness"
         data-readiness={readiness.state}
-        className={`inline-flex h-[18px] max-w-[110px] shrink-0 items-center truncate rounded px-1.5 text-[11px] font-medium ${readinessClass}`}
+        className={`inline-flex h-[18px] max-w-[110px] shrink-0 items-center truncate rounded-full px-2 text-[11px] font-medium ${readinessClass}`}
       >
         {t(readiness.labelKey)}
       </span>
@@ -181,8 +181,9 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
     borderStyle = 'border-err';
   }
 
-  // Type stripe: 3px on the left edge, colour = step type
-  const stripeClass = isTrigger ? 'bg-t-trigger' : isAI ? 'bg-t-ai' : isLogic ? 'bg-t-logic' : 'bg-t-action';
+  // Step-type tile (trigger / action / logic / AI): soft background + matching icon colour, as in the design.
+  const kind = isTrigger ? 'trigger' : isAI ? 'ai' : isLogic ? 'logic' : 'action';
+  const tileClass = { trigger: 'bg-t-trigger-bg text-t-trigger', ai: 'bg-t-ai-bg text-t-ai', logic: 'bg-t-logic-bg text-t-logic', action: 'bg-t-action-bg text-t-action' }[kind];
   const handleClass = '!h-2 !w-2 !rounded-full !border-[1.5px] !border-muted-foreground !bg-card cursor-crosshair transition-colors hover:!border-run hover:!bg-run';
 
   const iconMotion = prefersReducedMotion
@@ -206,9 +207,8 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: prefersReducedMotion ? 0.01 : 0.15, ease: [0.16, 1, 0.3, 1] }}
       style={portCount > 2 ? { minHeight: portCount * 26 + 16 } : undefined}
-      className={`relative w-[232px] select-none rounded-lg border bg-card py-2.5 pl-[15px] pr-3 transition-[border-color,box-shadow] duration-150 ${borderStyle}`}
+      className={`relative w-[232px] select-none rounded-xl border bg-card px-3 py-2.5 transition-[border-color,box-shadow] duration-150 ${borderStyle}`}
     >
-      <span aria-hidden="true" className={`pointer-events-none absolute -bottom-px -left-px -top-px w-[3px] rounded-l-lg ${stripeClass}`} />
       {isNodeSelected && (
         <button
           type="button"
@@ -241,17 +241,14 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
           data-testid="workflow-node-icon"
           animate={iconMotion}
           transition={iconTransition}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-subtle text-text-2"
+          className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[7px] ${tileClass}`}
         >
-          <Icon size={15} aria-hidden="true" />
+          <Icon size={16} strokeWidth={1.75} aria-hidden="true" />
         </motion.div>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[13px] font-medium text-foreground">{name}</span>
-          <span className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
-            {isTrigger ? `${t('builder.status.trigger')} · ` : ''}
-            {id}
-          </span>
+          <span className="truncate text-xs text-muted-foreground">{t(`step.kind.${kind}`)}</span>
+          <span className="truncate text-sm font-semibold text-foreground">{name}</span>
         </div>
       </div>
 
@@ -259,14 +256,13 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
         <div
           data-testid="unsupported-node-warning"
           role="note"
-          className="mt-1.5 rounded bg-err-bg px-2 py-0.5 text-[10px] font-medium text-err"
+          className="mt-1.5 rounded bg-err-bg px-2 py-0.5 text-xs font-medium text-err"
         >
           {t('builder.node.unsupported_note')}
         </div>
       )}
 
-      <div className="mt-1.5 flex items-center justify-between gap-2">
-        <span className="truncate font-mono text-[11px] text-muted-foreground">{nodeType}</span>
+      <div className="mt-2 flex items-center justify-end gap-2">
         {renderStatusBadge()}
       </div>
 

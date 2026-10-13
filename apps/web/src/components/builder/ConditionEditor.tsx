@@ -4,8 +4,8 @@ import { useI18nStore } from '../../store/useI18nStore';
 import type { VariableGroup } from '../../lib/variablePaths';
 import { MappingTextField } from './MappingTextField';
 
-const inputCls = 'w-full min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring';
-const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
+const inputCls = 'w-full min-w-0 rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring';
+const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-xs font-medium text-accent-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
 
 const CONDITION_OPERATORS = [
   { value: 'eq', labelKey: 'builder.cfg.op_eq' },
@@ -87,7 +87,7 @@ export const ConditionEditor: React.FC<ConditionEditorProps> = ({ config, onChan
 
       {multi && (
         <div>
-          <label htmlFor="condition-combinator" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_combinator')}</label>
+          <label htmlFor="condition-combinator" className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.cond_combinator')}</label>
           <select id="condition-combinator" data-testid="condition-combinator" value={String(config.combinator ?? 'and')} onChange={(event) => onChange({ combinator: event.target.value })} className={inputCls}>
             <option value="and">{t('builder.cfg.cond_and')}</option>
             <option value="or">{t('builder.cfg.cond_or')}</option>
@@ -115,17 +115,17 @@ export const ConditionEditor: React.FC<ConditionEditorProps> = ({ config, onChan
               </div>
             )}
             <div>
-              <label id={`condition-left${suffix}-label`} onClick={() => document.getElementById(`condition-left${suffix}`)?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_left')}</label>
+              <label id={`condition-left${suffix}-label`} onClick={() => document.getElementById(`condition-left${suffix}`)?.focus()} className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.cond_left')}</label>
               <MappingTextField id={`condition-left${suffix}`} labelledBy={`condition-left${suffix}-label`} testId="condition-left" value={String(condition.left ?? '')} placeholder={t('builder.cfg.cond_left_placeholder')} groups={groups} onChange={(left) => update(index, { left })} />
             </div>
             <div>
-              <label htmlFor={`condition-operator${suffix}`} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_operator')}</label>
+              <label htmlFor={`condition-operator${suffix}`} className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.cond_operator')}</label>
               <select id={`condition-operator${suffix}`} data-testid="condition-operator" value={String(condition.operator ?? 'eq')} onChange={(event) => update(index, { operator: event.target.value })} className={inputCls}>
                 {CONDITION_OPERATORS.map((operator) => <option key={operator.value} value={operator.value}>{t(operator.labelKey)}</option>)}
               </select>
             </div>
             <div>
-              <label id={`condition-right${suffix}-label`} onClick={() => document.getElementById(`condition-right${suffix}`)?.focus()} className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.cond_right')}</label>
+              <label id={`condition-right${suffix}-label`} onClick={() => document.getElementById(`condition-right${suffix}`)?.focus()} className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.cond_right')}</label>
               <MappingTextField id={`condition-right${suffix}`} labelledBy={`condition-right${suffix}-label`} testId="condition-right" value={String(condition.right ?? '')} placeholder={t('builder.cfg.cond_right_placeholder')} groups={groups} onChange={(right) => update(index, { right })} />
             </div>
           </fieldset>
@@ -137,7 +137,7 @@ export const ConditionEditor: React.FC<ConditionEditorProps> = ({ config, onChan
           <Plus size={12} aria-hidden="true" />{t('builder.cfg.cond_add')}
         </button>
       )}
-      <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.cond_hint')}</p>
+      <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.cond_hint')}</p>
     </div>
   );
 };

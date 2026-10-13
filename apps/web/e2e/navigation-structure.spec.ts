@@ -58,7 +58,7 @@ async function setup(page: Page) {
 }
 
 test.describe('navigation structure', () => {
-  test('sidebar lists only Overview, Workflows and Workspace (AI opens as a dialog), and toggles with Ctrl+B', async ({ page }) => {
+  test('sidebar lists Overview, Workflows, Executions and Workspace (AI opens as a dialog; the assistant is the floating bot), and toggles with Ctrl+B', async ({ page }) => {
     await setup(page);
     await page.goto('/dashboard');
     const sidebar = page.getByTestId('app-sidebar');
@@ -68,7 +68,7 @@ test.describe('navigation structure', () => {
     }
     await expect(sidebar.getByRole('link', { name: 'AI Generator', exact: true })).toHaveCount(0);
     await expect(sidebar.getByRole('link', { name: 'Connections', exact: true })).toHaveCount(0);
-    await expect(sidebar.getByRole('link', { name: 'Executions', exact: true })).toHaveCount(0);
+    await expect(sidebar.getByRole('link', { name: 'Executions', exact: true })).toBeVisible();
 
     await page.getByTestId('sidebar-toggle').click();
     await expect(sidebar).toHaveAttribute('data-collapsed', 'false');
@@ -124,17 +124,17 @@ test.describe('navigation structure', () => {
     await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
     const before = await main.boundingBox();
     const railWidth = (await sidebar.boundingBox())?.width;
-    expect(railWidth).toBe(56);
+    expect(railWidth).toBe(64);
 
     await sidebar.hover();
     await expect(sidebar).toHaveAttribute('data-collapsed', 'false');
-    await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(220);
+    await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(248);
     await expect(sidebar).toHaveAttribute('data-pinned', 'false');
     expect((await main.boundingBox())?.x).toBe(before?.x);
 
     await page.mouse.move(800, 400);
     await expect(sidebar).toHaveAttribute('data-collapsed', 'true');
-    await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(56);
+    await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(64);
     expect((await main.boundingBox())?.x).toBe(before?.x);
 
     // keyboard focus expands it too, and blur collapses it
