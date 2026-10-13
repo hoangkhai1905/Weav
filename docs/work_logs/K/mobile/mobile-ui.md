@@ -334,3 +334,11 @@ Xem thêm `docs/work_logs/K/web/ui-redesign.md` mục 10.
 - Impact: ExecutionDetailScreen, WorkflowDetailScreen, nodeErrorSummary LOW; NodeTimeline UNKNOWN (ambiguous), đã grep: chỉ `executions/[workflowId]/[executionId].tsx` dùng.
 - Lệnh: `npx tsc --noEmit -p .` sạch; `node --test "src/**/*.test.cjs"` 248/248.
 - Rủi ro/việc cho thiết bị: nhấn bước trong thẻ có JsonViewer lồng (nút lồng trong Pressable) cần thử trên máy; `Ellipsis` icon của lucide 1.34.
+
+### Lane 2.6: Tài khoản "Tôi" (xong, chưa kiểm thiết bị)
+- `(tabs)/profile.tsx` viết lại theo `MProfile`: tiêu đề "Tài khoản" + sáng/tối + chuông; thẻ hồ sơ (ảnh 64 có nút máy ảnh góc dưới để đổi ảnh, tên, email, "Chủ không gian/Thành viên · tên nhóm", nút chữ "Xóa ảnh đại diện" khi có ảnh); "Thông tin cá nhân" (tên, email khóa màu xám + ghi chú "Email không đổi được.", nút Lưu ink); "Công việc" (Không gian làm việc, Lời mời vào nhóm với badge số + dòng "A mời bạn vào nhóm B", Kết nối dịch vụ, Tạo quy trình bằng AI, Trợ lý); "Giao diện" (Sáng / Tối / Theo điện thoại và Tiếng Việt / English bằng `SegmentedControl`); "Bảo mật" (mở màn mật khẩu và thiết bị); Đăng xuất (có xác nhận như cũ).
+- Giữ nguyên toàn bộ logic: `useProfile`, tải/xóa ảnh (`ImagePicker`, `checkAvatarImage`), lưu tên, đăng xuất, testID `profile-display-name`.
+- Vai trò: `Workspace` không có trường role, nên "Chủ không gian" suy ra từ `workspace.createdBy === user.id`.
+- Phụ: `TextField` ô khóa (`editable=false`) có nền xám + chữ nhạt; `Avatar` dùng font SemiBold; i18n `prof.*` mới (`prof.title`, `prof.role.line`, `prof.ws.*`, `prof.inv*`).
+- Impact: ProfileScreen LOW; `TextField` CRITICAL theo đồ thị (9 file dùng), nhưng chỉ đổi giao diện ô khóa, chữ ký không đổi; Avatar UNKNOWN (ambiguous), chỉ đổi font.
+- Lệnh: `npx tsc --noEmit -p .` sạch; `node --test "src/**/*.test.cjs"` 248/248 (i18n.screens thêm profile).

@@ -22,10 +22,11 @@ export const TextField: React.FC<TextFieldProps> = ({ label, error, hint, icon: 
   const [focused, setFocused] = useState(false);
   const [visible, setVisible] = useState(false);
   const border = error ? colors.danger : focused ? colors.primary : colors.borderStrong;
+  const locked = input.editable === false;
   return (
     <View style={styles.group}>
       <Text style={[Typography.label, { color: colors.textMuted }]}>{label}</Text>
-      <View style={[styles.box, { backgroundColor: colors.card, borderColor: border }]}>
+      <View style={[styles.box, { backgroundColor: locked ? colors.cardSecondary : colors.card, borderColor: border }]}>
         {Icon ? <Icon size={18} color={focused ? colors.primary : colors.textSubtle} /> : null}
         <TextInput
           accessibilityLabel={label}
@@ -42,7 +43,7 @@ export const TextField: React.FC<TextFieldProps> = ({ label, error, hint, icon: 
             setFocused(false);
             input.onBlur?.(e);
           }}
-          style={[Typography.body, styles.input, { color: colors.text }]}
+          style={[Typography.body, styles.input, { color: locked ? colors.textSubtle : colors.text }]}
         />
         {secure ? (
           <Pressable

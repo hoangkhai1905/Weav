@@ -142,6 +142,14 @@ export const accountVi: Record<string, string> = {
   'prof.security.sub': 'Đổi mật khẩu, đăng xuất thiết bị lạ',
   'prof.logout.title': 'Đăng xuất?',
   'prof.logout.message': 'Bạn cần đăng nhập lại để tiếp tục dùng Weav trên thiết bị này.',
+  'prof.title': 'Tài khoản',
+  'prof.role.line': '{role} · {workspace}',
+  'prof.ws.title': 'Không gian làm việc',
+  'prof.ws.line': '{name} · đổi không gian, thành viên và quyền',
+  'prof.inv': 'Lời mời vào nhóm',
+  'prof.inv.sub': '{name} mời bạn vào nhóm {workspace}',
+  'prof.inv.none': 'Chưa có lời mời nào',
+  'prof.inv.count': '{count} lời mời đang chờ',
 
   // Security
   'sec.title': 'Bảo mật',
@@ -348,6 +356,14 @@ export const accountEn: Record<string, string> = {
   'prof.security.sub': 'Change password, sign out unknown devices',
   'prof.logout.title': 'Sign out?',
   'prof.logout.message': 'You will need to sign in again to keep using Weav on this device.',
+  'prof.title': 'Account',
+  'prof.role.line': '{role} · {workspace}',
+  'prof.ws.title': 'Workspace',
+  'prof.ws.line': '{name} · switch workspace, members and permissions',
+  'prof.inv': 'Workspace invitations',
+  'prof.inv.sub': '{name} invited you to {workspace}',
+  'prof.inv.none': 'No invitations right now',
+  'prof.inv.count': '{count} pending invitations',
 
   // Security
   'sec.title': 'Security',
