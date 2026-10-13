@@ -9,26 +9,35 @@ import { useUIStore } from '../../stores/ui.store';
 import { fill } from '../../features/common/fill';
 import { MinTouch, Radius } from '../../constants/theme';
 
+/** Light/dark switch alone, for screens that are themselves the notification list. */
+export const ThemeToggleButton: React.FC = () => {
+  const colors = useThemeColors();
+  const { t } = useTranslation();
+  const setThemeMode = useUIStore((s) => s.setThemeMode);
+  const ThemeIcon = colors.isDark ? Sun : Moon;
+  return (
+    <Pressable
+      testID="header-theme-toggle"
+      accessibilityRole="button"
+      accessibilityLabel={t(colors.isDark ? 'nav.theme.toLight' : 'nav.theme.toDark')}
+      onPress={() => setThemeMode(colors.isDark ? 'light' : 'dark')}
+      style={styles.button}
+    >
+      <ThemeIcon size={20} strokeWidth={1.75} color={colors.textMuted} />
+    </Pressable>
+  );
+};
+
 /** Light/dark switch and the notification bell (red dot while something is unread), shared by the main screens' headers. */
 export const HeaderActions: React.FC = () => {
   const router = useRouter();
   const colors = useThemeColors();
   const { t } = useTranslation();
-  const setThemeMode = useUIStore((s) => s.setThemeMode);
   const { data: unread = 0 } = useNotificationUnreadCount();
-  const ThemeIcon = colors.isDark ? Sun : Moon;
 
   return (
     <View style={styles.row}>
-      <Pressable
-        testID="header-theme-toggle"
-        accessibilityRole="button"
-        accessibilityLabel={t(colors.isDark ? 'nav.theme.toLight' : 'nav.theme.toDark')}
-        onPress={() => setThemeMode(colors.isDark ? 'light' : 'dark')}
-        style={styles.button}
-      >
-        <ThemeIcon size={20} strokeWidth={1.75} color={colors.textMuted} />
-      </Pressable>
+      <ThemeToggleButton />
       <Pressable
         testID="header-notifications"
         accessibilityRole="button"

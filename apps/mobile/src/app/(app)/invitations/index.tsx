@@ -20,7 +20,7 @@ import { EmptyState } from '../../../components/ui/EmptyState';
 import { ErrorState } from '../../../components/ui/ErrorState';
 import { ListSkeleton } from '../../../components/ui/ListSkeleton';
 import { ScreenHeader } from '../../../components/ui/ScreenHeader';
-import { Radius, Spacing, Typography } from '../../../constants/theme';
+import { FontFamily, Radius, Spacing, Typography } from '../../../constants/theme';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
 import { useUIStore } from '../../../stores/ui.store';
@@ -180,7 +180,7 @@ const styles = StyleSheet.create({
   card: { gap: Spacing.three, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.lg },
   top: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.two },
   who: { flex: 1, gap: Spacing.half },
-  name: { fontWeight: '600' },
+  name: { fontFamily: FontFamily.semibold },
   actions: { flexDirection: 'row', gap: Spacing.two },
   action: { flex: 1 },
 });

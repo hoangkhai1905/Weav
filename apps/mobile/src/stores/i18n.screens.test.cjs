@@ -13,6 +13,7 @@ const FILES = [
   'app/(app)/(tabs)/workflows.tsx',
   'app/(app)/(tabs)/executions.tsx',
   'app/(app)/(tabs)/profile.tsx',
+  'app/(app)/notifications.tsx',
   'app/(app)/executions/[workflowId]/[executionId].tsx',
   'app/(app)/workflows/[id].tsx',
   'components/ui/NodeTimeline.tsx',
@@ -25,7 +26,7 @@ const FILES = [
   'features/templates/components/TemplatesPane.tsx',
   'features/templates/components/TemplateCard.tsx',
 ];
-const PREFIXES = ['wfl', 'tpl', 'hm', 'nav', 'ui', 'tab', 'dash', 'inv', 'exl', 'rl', 'ntf', 'rd', 'exd', 'wfd', 'pub', 'del', 'log', 'execution', 'prof', 'profile', 'ws'];
+const PREFIXES = ['wfl', 'tpl', 'hm', 'nav', 'ui', 'tab', 'dash', 'inv', 'exl', 'rl', 'ntf', 'rd', 'exd', 'wfd', 'pub', 'del', 'log', 'execution', 'prof', 'profile', 'ws', 'notif'];
 
 test('every i18n key used by the v2 screens resolves in both languages', () => {
   const root = path.join(__dirname, '..');

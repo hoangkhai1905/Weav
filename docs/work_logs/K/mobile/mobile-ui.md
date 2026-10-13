@@ -342,3 +342,13 @@ Xem thêm `docs/work_logs/K/web/ui-redesign.md` mục 10.
 - Phụ: `TextField` ô khóa (`editable=false`) có nền xám + chữ nhạt; `Avatar` dùng font SemiBold; i18n `prof.*` mới (`prof.title`, `prof.role.line`, `prof.ws.*`, `prof.inv*`).
 - Impact: ProfileScreen LOW; `TextField` CRITICAL theo đồ thị (9 file dùng), nhưng chỉ đổi giao diện ô khóa, chữ ký không đổi; Avatar UNKNOWN (ambiguous), chỉ đổi font.
 - Lệnh: `npx tsc --noEmit -p .` sạch; `node --test "src/**/*.test.cjs"` 248/248 (i18n.screens thêm profile).
+
+### Lane 2.7: Thông báo + dọn font (xong, chưa kiểm thiết bị)
+- `app/(app)/notifications.tsx` (đã chuyển khỏi tab ở lane 2.1) theo `MNotifications`: header có nút quay lại, tiêu đề, sáng/tối (`ThemeToggleButton` tách ra từ `HeaderActions`), nút "đánh dấu tất cả đã đọc"; thanh 2 đoạn "Tất cả / Chưa đọc (n)"; giữ chip lọc theo nhóm (workflow/workspace/kết nối/bảo mật) bên dưới; nhóm theo ngày; mỗi thông báo là thẻ bo 12 có icon tròn theo mức độ, tiêu đề đậm + chấm xanh nếu chưa đọc, nội dung, thời gian mono. Giữ nguyên toàn bộ logic mở/đánh dấu đọc, banner lỗi, phân trang, testID.
+- Chưa làm: nút "Chấp nhận / Từ chối" ngay trong thẻ lời mời (thông báo không mang `invitationId`, lời mời xử lý ở màn Lời mời, bấm thông báo sẽ mở màn đó nếu target cho phép).
+- Dọn font: thay `fontWeight` rời ở 15 file còn lại bằng `FontFamily.*` (Android không tổng hợp độ đậm cho font tùy chỉnh): ListItem, ToastContainer, Logo, FlowList, TriggerList, MemberCard, OwnerInvitations, ConnectionCard, MessageText, invitations, workspace, ai/generator, lookup, login, register. Không còn `fontWeight` ngoài `themed-text.tsx` (file mẫu Expo không dùng).
+- Impact: NotificationsScreen LOW. Lệnh: `npx tsc --noEmit -p .` sạch; `node --test "apps/mobile/src/**/*.test.cjs"` 248/248.
+
+### Tổng kết mobile v2 (chưa kiểm thiết bị, chưa push)
+- Việc cần máy thật: thanh dưới + `router.navigate` từ màn chi tiết về tab; phím tắt Home (`filter`, `segment`); công tắc quy trình; chọn ảnh đại diện; JsonViewer lồng trong bước; hiển thị font Be Vietnam Pro trên Android; kiểm tương phản bằng mắt ở chế độ tối.
+- Câu hỏi cho chủ dự án: (1) nhóm việc của mẫu suy từ trigger vì API không có category; (2) hàng "Của nhóm" không có dãy ô bước vì danh sách không trả bước; (3) bỏ bộ chọn lọc theo quy trình ở Lịch sử (ô tìm kiếm thay thế); (4) nút trợ lý chuyển từ header Lịch sử sang mục Công việc ở "Tôi".

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { useThemeColors } from '../../hooks/useThemeColors';
-import { MinTouch, Spacing, Typography } from '../../constants/theme';
+import { FontFamily, MinTouch, Spacing, Typography } from '../../constants/theme';
 
 interface ListItemProps {
   title: string;
@@ -73,5 +73,5 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   main: { flex: 1, gap: Spacing.half },
-  title: { fontWeight: '500' },
+  title: { fontFamily: FontFamily.medium },
 });

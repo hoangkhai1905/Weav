@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useThemeColors } from '../../hooks/useThemeColors';
+import { FontFamily } from '../../constants/theme';
 
 interface LogoProps {
   size?: 'sm' | 'md' | 'lg';
@@ -48,19 +49,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   markText: {
-    fontWeight: '700',
+    fontFamily: FontFamily.bold,
   },
   textGroup: {
     justifyContent: 'center',
   },
   title: {
-    fontWeight: '700',
+    fontFamily: FontFamily.bold,
     letterSpacing: 1.5,
     lineHeight: 18,
   },
   subtitle: {
     fontSize: 11,
-    fontWeight: '500',
+    fontFamily: FontFamily.medium,
     marginTop: 2,
   },
 });

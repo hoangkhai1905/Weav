@@ -6,7 +6,7 @@ import { Button } from '../../../components/ui/Button';
 import { ConfirmSheet } from '../../../components/ui/ConfirmSheet';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
-import { MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
+import { FontFamily, MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
 import type { StatusTone } from '../../../constants/palette';
 import { useUIStore } from '../../../stores/ui.store';
 import { fill } from '../../common/fill';
@@ -94,7 +94,7 @@ export const OwnerInvitations: React.FC = () => {
                 </Text>
                 <View style={[styles.pill, { backgroundColor: tone.bg, borderColor: tone.border }]}>
                   {/* "simple": Android's default line breaking measures this label too narrow on MIUI and drops a word. */}
-                  <Text textBreakStrategy="simple" numberOfLines={1} style={[Typography.caption, { color: tone.fg, fontWeight: '600' }]}>
+                  <Text textBreakStrategy="simple" numberOfLines={1} style={[Typography.caption, { color: tone.fg, fontFamily: FontFamily.semibold }]}>
                     {t(`inv.owner.status.${invitation.status}`)}
                   </Text>
                 </View>
@@ -153,7 +153,7 @@ const styles = StyleSheet.create({
   list: { gap: Spacing.two },
   card: { gap: Spacing.two, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.md },
   top: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  email: { flex: 1, fontWeight: '600' },
+  email: { flex: 1, fontFamily: FontFamily.semibold },
   // Never shrink: the email takes the rest of the row and truncates instead.
   pill: { flexShrink: 0, paddingHorizontal: Spacing.two, paddingVertical: Spacing.half, borderWidth: 1, borderRadius: Radius.sm },
   actions: { flexDirection: 'row', gap: Spacing.two, minHeight: MinTouch },

@@ -23,7 +23,7 @@ import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
 import { useUIStore } from '../../../stores/ui.store';
 import { useWorkspaceStore } from '../../../stores/workspace.store';
-import { MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
+import { FontFamily, MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
 import type { ApiError } from '../../../domain/common/error.types';
 import type { AiGenerationResult } from '../../../domain/ai/ai.types';
 import type { WorkflowPublication } from '../../../domain/workflow/workflow.types';
@@ -351,7 +351,7 @@ const GeneratingProgress: React.FC = () => {
               <Text
                 style={[
                   Typography.body,
-                  { color: active ? colors.text : done ? colors.textMuted : colors.textSubtle, fontWeight: active ? '700' : '400' },
+                  { color: active ? colors.text : done ? colors.textMuted : colors.textSubtle, fontFamily: active ? FontFamily.bold : FontFamily.regular },
                 ]}
               >
                 {t(`aig.stage.${i + 1}`)}

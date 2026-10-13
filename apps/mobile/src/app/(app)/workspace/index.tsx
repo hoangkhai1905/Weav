@@ -29,7 +29,7 @@ import { ScreenHeader } from '../../../components/ui/ScreenHeader';
 import { Sheet } from '../../../components/ui/Sheet';
 import { TextField } from '../../../components/ui/TextField';
 import type { ApiError } from '../../../domain/common/error.types';
-import { MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
+import { FontFamily, MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
 import { useAuthStore } from '../../../stores/auth.store';
@@ -386,7 +386,7 @@ export default function WorkspaceScreen() {
                       {selected ? (
                         <View style={styles.selectedMark}>
                           <Check size={16} color={colors.primary} />
-                          <Text style={[Typography.caption, { color: colors.primary, fontWeight: '600' }]}>
+                          <Text style={[Typography.caption, { color: colors.primary, fontFamily: FontFamily.semibold }]}>
                             {t('ws.current')}
                           </Text>
                         </View>
@@ -413,7 +413,7 @@ export default function WorkspaceScreen() {
           >
             <Mail size={20} color={colors.textSubtle} />
             <View style={styles.rowText}>
-              <Text style={[Typography.body, { color: colors.text, fontWeight: '600' }]} numberOfLines={1}>
+              <Text style={[Typography.body, { color: colors.text, fontFamily: FontFamily.semibold }]} numberOfLines={1}>
                 {t('inv.title')}
               </Text>
               <Text style={[Typography.caption, { color: colors.textMuted }]} numberOfLines={2}>
@@ -422,7 +422,7 @@ export default function WorkspaceScreen() {
             </View>
             {myInvitationCount > 0 ? (
               <View style={[styles.countPill, { backgroundColor: colors.primary }]}>
-                <Text style={[Typography.caption, { color: colors.onPrimary, fontWeight: '700' }]}>{myInvitationCount}</Text>
+                <Text style={[Typography.caption, { color: colors.onPrimary, fontFamily: FontFamily.bold }]}>{myInvitationCount}</Text>
               </View>
             ) : null}
             <ChevronRight size={18} color={colors.textSubtle} />
@@ -655,7 +655,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: Radius.md,
   },
-  optionName: { flex: 1, fontWeight: '600' },
+  optionName: { flex: 1, fontFamily: FontFamily.semibold },
   rowText: { flex: 1, gap: Spacing.half },
   countPill: { minWidth: 22, height: 22, paddingHorizontal: Spacing.one, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   selectedMark: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },

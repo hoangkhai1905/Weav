@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useThemeColors } from '../../../hooks/useThemeColors';
-import { Fonts, Radius, Spacing, Typography } from '../../../constants/theme';
+import { FontFamily, Fonts, Radius, Spacing, Typography } from '../../../constants/theme';
 import { parseMessage } from '../assistant.chat';
 
 /** Assistant/user text with minimal formatting (bold, inline code, bullet lines); no markdown library. */
@@ -37,6 +37,6 @@ const styles = StyleSheet.create({
   line: { flexDirection: 'row', gap: Spacing.one },
   marker: { minWidth: 18 },
   text: { flex: 1 },
-  bold: { fontWeight: '700' },
+  bold: { fontFamily: FontFamily.bold },
   code: { fontFamily: Fonts?.mono, fontSize: 13, borderRadius: Radius.sm },
 });

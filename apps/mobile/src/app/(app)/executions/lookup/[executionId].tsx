@@ -6,6 +6,7 @@ import { executionRepository } from '../../../../infrastructure/repository-facto
 import { useActiveWorkspaceId } from '../../../../features/workspace/active-workspace';
 import { useThemeColors } from '../../../../hooks/useThemeColors';
 import { useTranslation } from '../../../../hooks/useTranslation';
+import { FontFamily } from '../../../../constants/theme';
 
 /**
  * Entry point for EXECUTION notifications, which carry no workflowId. Resolves it with the
@@ -62,5 +63,5 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
   text: { fontSize: 13, textAlign: 'center' },
-  link: { fontSize: 14, fontWeight: '600' },
+  link: { fontSize: 14, fontFamily: FontFamily.semibold },
 });

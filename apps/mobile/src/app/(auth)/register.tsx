@@ -12,7 +12,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { AuthShell } from '../../components/ui/AuthShell';
 import { TextField } from '../../components/ui/TextField';
 import { Button } from '../../components/ui/Button';
-import { MinTouch, Spacing, Typography } from '../../constants/theme';
+import { FontFamily, MinTouch, Spacing, Typography } from '../../constants/theme';
 
 type Errors = { name?: string; email?: string; password?: string };
 
@@ -112,7 +112,7 @@ export default function RegisterScreen() {
         style={styles.link}
       >
         <Text style={[Typography.body, { color: colors.textMuted }]}>
-          {t('au.haveAccount')} <Text style={{ color: colors.primary, fontWeight: '600' }}>{t('au.signInLink')}</Text>
+          {t('au.haveAccount')} <Text style={{ color: colors.primary, fontFamily: FontFamily.semibold }}>{t('au.signInLink')}</Text>
         </Text>
       </Pressable>
     </AuthShell>
