@@ -341,7 +341,7 @@ export default function WorkspaceScreen() {
         }
       />
       <KeyboardAvoidingView behavior="padding" style={styles.safe}>
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         >

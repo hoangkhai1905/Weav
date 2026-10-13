@@ -18,7 +18,7 @@ export const AuthShell: React.FC<AuthShellProps> = ({ title, subtitle, children 
       behavior="padding"
       style={[styles.root, { backgroundColor: colors.bg }]}
     >
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.inner}>
           <View style={styles.brand}>
             <Logo size="md" showSubtitle />

@@ -49,7 +49,7 @@ export const Sheet: React.FC<SheetProps> = ({ visible, onClose, title, children 
               <X size={20} color={colors.textMuted} />
             </Pressable>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
             {children}
           </ScrollView>
         </View>

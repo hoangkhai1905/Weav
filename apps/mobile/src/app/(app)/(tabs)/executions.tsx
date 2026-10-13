@@ -108,7 +108,7 @@ export default function ExecutionsScreen() {
     );
   } else {
     body = (
-      <FlatList
+      <FlatList showsVerticalScrollIndicator={false}
         data={visible}
         keyExtractor={(e) => e.executionId}
         renderItem={renderItem}

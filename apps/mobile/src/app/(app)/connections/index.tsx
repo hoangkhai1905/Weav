@@ -82,7 +82,7 @@ export default function ConnectionsScreen() {
       ) : query.isError ? (
         <ErrorState error={query.error as unknown as ApiError} onRetry={() => void query.refetch()} />
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={connections}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}

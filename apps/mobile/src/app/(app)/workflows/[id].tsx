@@ -165,7 +165,7 @@ export default function WorkflowDetailScreen() {
     const stateBusy = pauseMutation.isPending || resumeMutation.isPending;
 
     body = (
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl

@@ -74,7 +74,7 @@ export default function AssistantListScreen() {
     );
   } else {
     body = (
-      <FlatList
+      <FlatList showsVerticalScrollIndicator={false}
         data={items}
         keyExtractor={(c) => c.conversationId}
         ItemSeparatorComponent={Separator}

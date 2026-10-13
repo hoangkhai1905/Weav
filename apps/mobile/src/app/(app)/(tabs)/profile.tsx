@@ -123,7 +123,7 @@ export default function ProfileScreen() {
     <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={t('tab.profile')} trailing={<HeaderActions />} />
       <KeyboardAvoidingView behavior="padding" style={styles.safe}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Group padded>
             <View style={styles.identity}>
               <Avatar name={shown?.name || shown?.email || '?'} size={64} uri={avatar.data} />

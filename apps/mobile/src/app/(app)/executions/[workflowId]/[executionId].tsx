@@ -152,7 +152,7 @@ export default function ExecutionDetailScreen() {
     }));
 
     body = (
-      <ScrollView
+      <ScrollView showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl refreshing={query.isRefetching && !active} onRefresh={() => void query.refetch()} tintColor={colors.primary} />

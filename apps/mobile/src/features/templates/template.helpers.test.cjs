@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 require('../../../test-support/register-typescript.cjs');
-const { reconnectCount, templateErrorKey } = require('./template.helpers.ts');
+const { reconnectCount, templateErrorKey, templateGroup } = require('./template.helpers.ts');
 
 const nodes = (...types) => types.map((type, i) => ({ id: `n${i}`, type }));
 
@@ -35,4 +35,14 @@ test('templateErrorKey maps status and phase to a friendly key', () => {
   assert.equal(templateErrorKey(undefined, 'use'), 'au.err.network');
   // A malformed body also has no status but is not a network problem.
   assert.equal(templateErrorKey({ code: 'INVALID_RESPONSE' }, 'lookup'), 'tpl.err.lookupFailed');
+});
+
+test('templates are grouped by what starts them', () => {
+  assert.equal(templateGroup(['trigger.gmail', 'ai.extract', 'google.sheets']), 'email');
+  assert.equal(templateGroup(['trigger.telegram', 'telegram.send_message']), 'chat');
+  assert.equal(templateGroup(['trigger.schedule', 'email.send']), 'schedule');
+  assert.equal(templateGroup(['trigger.webhook']), 'webhook');
+  assert.equal(templateGroup(['trigger.manual', 'http.request']), 'other');
+  assert.equal(templateGroup(['http.request']), 'other');
+  assert.equal(templateGroup([]), 'other');
 });

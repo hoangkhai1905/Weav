@@ -236,7 +236,7 @@ export default function NotificationsScreen() {
       ) : notificationsQuery.isError && rows.length === 0 ? (
         <ErrorState error={notificationsQuery.error as unknown as ApiError} onRetry={() => void onRefresh()} />
       ) : (
-        <FlatList
+        <FlatList showsVerticalScrollIndicator={false}
           data={rows}
           keyExtractor={(row) => (row.kind === 'header' ? `h-${row.group.key}` : row.item.id)}
           renderItem={renderRow}

@@ -69,7 +69,7 @@ export default function AssistantChatScreen() {
     <SafeAreaView edges={['top', 'bottom']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={history.data?.title || t('asst.title')} onBack={back} />
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           ref={scroller}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"

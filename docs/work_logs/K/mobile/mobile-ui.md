@@ -300,3 +300,18 @@ Xem thêm `docs/work_logs/K/web/ui-redesign.md` mục 10.
 - i18n: `stores/i18n.home.ts` (+ test, 20 khóa VI/EN).
 - Lệnh: `npx tsc --noEmit -p .` sạch; `node --test` i18n.home 2/2, i18n.nav 2/2, time 4/4. StatusBadge dùng ở 8 file, chỉ đổi kiểu.
 - Việc cho bước sau: màn Lịch sử phải đọc param `filter` (`failed`/`running`), màn Quy trình đọc `segment=templates`.
+
+### Lane 2.3: Quy trình (Của nhóm / Mẫu có sẵn) và mẫu (xong, chưa kiểm thiết bị)
+- `(tabs)/workflows.tsx` viết lại theo `MWorkflows`: tiêu đề + sáng/tối + chuông + nút "+" (ink, mở tạo bằng AI), thanh 2 đoạn "Của nhóm" / "Mẫu có sẵn" (`SegmentedControl`).
+  - "Của nhóm" (`features/workflows/components/TeamWorkflowsPane.tsx`, `WorkflowCard.tsx`): ô tìm kiếm, chip lọc Tất cả / Đang bật / Tạm dừng / Bản nháp kèm số đếm (tính trên các trang đã tải), công tắc bật/tắt từng dòng gọi `usePauseWorkflow`/`useResumeWorkflow`. Bản nháp không có công tắc. Công tắc bị khóa nếu thiếu quyền `canManageState` (có ghi chú). Công tắc đổi ngay, hoàn lại và báo lỗi nếu gọi thất bại.
+  - "Mẫu có sẵn" (`features/templates/components/TemplatesPane.tsx`, `TemplateCard.tsx`): tìm kiếm phía server (có debounce, dùng `useInfiniteTemplates('public', q)`), chip nhóm việc, thẻ mẫu có icon các bước + nút "Dùng mẫu" (mở `templates/[id]` để xem rồi tạo bản nháp bằng luồng sẵn có), liên kết "Nhập mã mẫu hoặc xem mẫu của tôi" mở lại `templates/index`.
+  - Home mở tab này ở đoạn mẫu bằng param `segment=templates` (đọc rồi xóa param).
+- Quyết định và giới hạn dữ liệu (cần chủ dự án biết):
+  - Mẫu trong API KHÔNG có trường "nhóm việc" (Kế toán, Khách hàng...). Chip lọc nhóm theo "việc bắt đầu quy trình" suy từ bước trigger đầu tiên (`templateGroup`: email / tin nhắn / theo lịch / dữ liệu gửi tới / khác).
+  - Danh sách quy trình (`WorkflowSummary`) không có danh sách bước, nên hàng "Của nhóm" hiện mô tả một dòng + trạng thái + giờ cập nhật thay cho dãy ô bước; chỉ thẻ mẫu (có `nodeTypes`) mới hiện ô bước. Không gọi chi tiết từng quy trình để khỏi tốn N request.
+  - Ô bước dùng icon theo loại node (`NodeTile`, `step-kind.ts`), không hiện mã node.
+- Thành phần dùng chung mới/đổi: `FilterChips` thành pill (đang chọn = nền ink, có `count` tùy chọn), `SegmentedControl`, `SearchField`, `Toggle` (xanh thành công), `SwitchRow` đổi màu bật sang xanh thành công.
+- Ẩn thanh cuộn: quét toàn bộ `ScrollView`/`FlatList` dọc trong `src` (15 file) thêm `showsVerticalScrollIndicator={false}`; hàng chip ngang đã tắt từ trước.
+- i18n: thêm `wfl.*`, `tpl.*` (VI/EN) vào `i18n.workflows.ts`, `i18n.templates.ts`; `stores/i18n.screens.test.cjs` kiểm mọi khóa literal của các màn v2 có đủ hai ngôn ngữ (sẽ nối thêm file ở các bước sau).
+- Impact (CLI): WorkflowsScreen LOW; `FilterChips` CRITICAL theo đồ thị (7 caller trực tiếp: lịch sử, chi tiết lượt chạy, thông báo, AI generator, hồ sơ, mẫu, quy trình), nhưng chỉ đổi kiểu và thêm prop tùy chọn `count`, chữ ký cũ giữ nguyên. `SwitchRow` UNKNOWN: đã grep, dùng ở `ScheduleField`, `MemberCard`, `profile.tsx`; chỉ đổi màu thanh bật.
+- Lệnh: `npx tsc --noEmit -p .` sạch; `node --test "src/**/*.test.cjs"` 241/241 (gồm template.helpers + test nhóm mẫu, i18n.screens, step-kind, palette.contrast).

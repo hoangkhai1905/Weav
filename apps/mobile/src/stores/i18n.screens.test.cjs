@@ -1,0 +1,45 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+require('../../test-support/register-typescript.cjs');
+const { translations } = require('./i18n.store.ts');
+const { TEMPLATE_GROUPS } = require('../features/templates/template.helpers.ts');
+
+// v2 redesign screens: every literal i18n key they reference must exist in both languages.
+const FILES = [
+  'app/(app)/(tabs)/index.tsx',
+  'app/(app)/(tabs)/workflows.tsx',
+  'components/ui/AppTabBar.tsx',
+  'components/ui/HeaderActions.tsx',
+  'components/ui/SearchField.tsx',
+  'features/workflows/components/TeamWorkflowsPane.tsx',
+  'features/workflows/components/WorkflowCard.tsx',
+  'features/templates/components/TemplatesPane.tsx',
+  'features/templates/components/TemplateCard.tsx',
+];
+const PREFIXES = ['wfl', 'tpl', 'hm', 'nav', 'ui', 'tab', 'dash', 'inv', 'exl'];
+
+test('every i18n key used by the v2 screens resolves in both languages', () => {
+  const root = path.join(__dirname, '..');
+  const missing = [];
+  let checked = 0;
+  for (const file of FILES) {
+    const source = fs.readFileSync(path.join(root, file), 'utf8');
+    for (const match of source.matchAll(/'([a-z]+\.[A-Za-z0-9_.]+)'/g)) {
+      const key = match[1];
+      if (!PREFIXES.includes(key.split('.')[0])) continue;
+      checked += 1;
+      if (!translations.VI[key] || !translations.EN[key]) missing.push(`${file}: ${key}`);
+    }
+  }
+  assert.ok(checked > 40, `only ${checked} keys found`);
+  assert.deepEqual(missing, []);
+});
+
+test('run-time built keys exist: template groups', () => {
+  for (const group of TEMPLATE_GROUPS) {
+    assert.ok(translations.VI[`tpl.group.${group}`] && translations.EN[`tpl.group.${group}`], group);
+  }
+  assert.ok(translations.VI['tpl.group.all'] && translations.EN['tpl.group.all']);
+});

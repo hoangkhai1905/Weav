@@ -72,7 +72,7 @@ export default function TemplateDetailScreen() {
     const reconnect = reconnectCount(template.nodes);
     body = (
       <>
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
           refreshControl={
             <RefreshControl
