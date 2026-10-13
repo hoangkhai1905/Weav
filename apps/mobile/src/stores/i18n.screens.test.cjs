@@ -5,11 +5,13 @@ const path = require('node:path');
 require('../../test-support/register-typescript.cjs');
 const { translations } = require('./i18n.store.ts');
 const { TEMPLATE_GROUPS } = require('../features/templates/template.helpers.ts');
+const { RUN_FILTERS } = require('../features/executions/run-list.ts');
 
 // v2 redesign screens: every literal i18n key they reference must exist in both languages.
 const FILES = [
   'app/(app)/(tabs)/index.tsx',
   'app/(app)/(tabs)/workflows.tsx',
+  'app/(app)/(tabs)/executions.tsx',
   'components/ui/AppTabBar.tsx',
   'components/ui/HeaderActions.tsx',
   'components/ui/SearchField.tsx',
@@ -18,7 +20,7 @@ const FILES = [
   'features/templates/components/TemplatesPane.tsx',
   'features/templates/components/TemplateCard.tsx',
 ];
-const PREFIXES = ['wfl', 'tpl', 'hm', 'nav', 'ui', 'tab', 'dash', 'inv', 'exl'];
+const PREFIXES = ['wfl', 'tpl', 'hm', 'nav', 'ui', 'tab', 'dash', 'inv', 'exl', 'rl', 'ntf'];
 
 test('every i18n key used by the v2 screens resolves in both languages', () => {
   const root = path.join(__dirname, '..');
@@ -42,4 +44,17 @@ test('run-time built keys exist: template groups', () => {
     assert.ok(translations.VI[`tpl.group.${group}`] && translations.EN[`tpl.group.${group}`], group);
   }
   assert.ok(translations.VI['tpl.group.all'] && translations.EN['tpl.group.all']);
+});
+
+test('run-time built keys exist: run filters', () => {
+  for (const filter of RUN_FILTERS) {
+    assert.ok(translations.VI[`rl.filter.${filter}`] && translations.EN[`rl.filter.${filter}`], filter);
+  }
+});
+
+test('history strings exist in both languages with the same placeholders', () => {
+  const { historyVi, historyEn } = require('./i18n.history.ts');
+  assert.deepEqual(Object.keys(historyVi).sort(), Object.keys(historyEn).sort());
+  const holders = (s) => (s.match(/\{\w+\}/g) ?? []).sort().join(',');
+  for (const key of Object.keys(historyVi)) assert.equal(holders(historyVi[key]), holders(historyEn[key]), key);
 });

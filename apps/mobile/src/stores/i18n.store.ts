@@ -8,6 +8,7 @@ import { templatesEn, templatesVi } from './i18n.templates';
 import { invitationsEn, invitationsVi } from './i18n.invitations';
 import { navEn, navVi } from './i18n.nav';
 import { homeEn, homeVi } from './i18n.home';
+import { historyEn, historyVi } from './i18n.history';
 
 export type Language = 'VI' | 'EN';
 
@@ -211,6 +212,7 @@ export const translations: Record<Language, Record<string, string>> = {
     ...accountVi,
     ...navVi,
     ...homeVi,
+    ...historyVi,
   },
   EN: {
     // Navigation Tabs
@@ -411,6 +413,7 @@ export const translations: Record<Language, Record<string, string>> = {
     ...accountEn,
     ...navEn,
     ...homeEn,
+    ...historyEn,
   },
 };
 

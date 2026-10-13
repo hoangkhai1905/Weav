@@ -315,3 +315,11 @@ Xem thêm `docs/work_logs/K/web/ui-redesign.md` mục 10.
 - i18n: thêm `wfl.*`, `tpl.*` (VI/EN) vào `i18n.workflows.ts`, `i18n.templates.ts`; `stores/i18n.screens.test.cjs` kiểm mọi khóa literal của các màn v2 có đủ hai ngôn ngữ (sẽ nối thêm file ở các bước sau).
 - Impact (CLI): WorkflowsScreen LOW; `FilterChips` CRITICAL theo đồ thị (7 caller trực tiếp: lịch sử, chi tiết lượt chạy, thông báo, AI generator, hồ sơ, mẫu, quy trình), nhưng chỉ đổi kiểu và thêm prop tùy chọn `count`, chữ ký cũ giữ nguyên. `SwitchRow` UNKNOWN: đã grep, dùng ở `ScheduleField`, `MemberCard`, `profile.tsx`; chỉ đổi màu thanh bật.
 - Lệnh: `npx tsc --noEmit -p .` sạch; `node --test "src/**/*.test.cjs"` 241/241 (gồm template.helpers + test nhóm mẫu, i18n.screens, step-kind, palette.contrast).
+
+### Lane 2.4: Lịch sử chạy (xong, chưa kiểm thiết bị)
+- `(tabs)/executions.tsx` viết lại theo `MRuns`: tiêu đề "Lịch sử chạy" + sáng/tối + chuông, ô tìm kiếm (tên quy trình, không phân biệt dấu, hoặc một phần mã lượt chạy), chip Tất cả / Lỗi / Thành công / Đang chạy kèm số đếm, danh sách nhóm theo ngày (Hôm nay / Hôm qua / dd/MM/yyyy, dùng lại `groupByDay`), mỗi hàng: ô icon nguồn kích hoạt, tên quy trình, giờ + thời lượng (mono) hoặc "đang chạy", pill trạng thái. Bấm hàng mở chi tiết, nút quay lại về danh sách.
+- "Đang chạy" gồm cả QUEUED/WAITING; lượt CANCELLED chỉ hiện ở "Tất cả". Logic lọc nằm ở `features/executions/run-list.ts` (có test).
+- Home mở tab này kèm `filter=failed|running` (màn đọc param rồi xóa).
+- Bỏ: bộ chọn "lọc theo quy trình" (ô tìm theo tên thay thế) và nút trợ lý ở header (trợ lý sẽ nằm trong mục Công việc của "Tôi").
+- i18n: `stores/i18n.history.ts` (`rl.*`), thêm file vào `i18n.screens.test.cjs`.
+- Lệnh: `npx tsc --noEmit -p .` sạch; `i18n.screens` 4/4, `run-list` 3/3. Impact ExecutionsScreen LOW.
