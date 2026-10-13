@@ -2911,17 +2911,20 @@ export const WorkflowBuilderPage: React.FC = () => {
                               const setRow = (row: unknown[]) => setSheetsRows(sheetsRows.map((current, i) => (i === rowIndex ? row : current)));
                               return (
                                 <div key={index} className="flex items-center gap-1.5">
-                                  <label htmlFor={`google-cell-${rowIndex}-${index}`} className="w-14 shrink-0 text-[11px] text-text-2">
+                                  <label id={`google-cell-${rowIndex}-${index}-label`} onClick={() => document.getElementById(`google-cell-${rowIndex}-${index}`)?.focus()} className="w-14 shrink-0 text-[11px] text-text-2">
                                     {t('builder.google.cell').replace('{col}', column)}
                                   </label>
-                                  <input
+                                  {/* Chips show data by name ("Ngày giao dịch"), not as {{ trigger.input.transactionDate }}. */}
+                                  <MappingTextField
+                                    key={`${selectedNodeId}-cell-${rowIndex}-${index}`}
                                     id={`google-cell-${rowIndex}-${index}`}
-                                    data-testid="google-cell"
-                                    type="text"
+                                    labelledBy={`google-cell-${rowIndex}-${index}-label`}
+                                    testId="google-cell"
+                                    className="min-w-0 flex-1"
                                     value={String(cell ?? '')}
                                     placeholder={index === 0 && rowIndex === 0 ? t('builder.google.cell_placeholder') : ''}
-                                    onChange={(event) => setRow(sheetsRow.map((value, i) => (i === index ? event.target.value : value)))}
-                                    className="min-w-0 flex-1 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
+                                    onChange={(next) => setRow(sheetsRow.map((value, i) => (i === index ? next : value)))}
+                                    groups={inspectorGroups}
                                   />
                                   <button
                                     type="button"
