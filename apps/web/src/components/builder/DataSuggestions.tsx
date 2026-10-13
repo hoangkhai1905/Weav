@@ -27,7 +27,7 @@ export const DataSuggestions: React.FC<DataSuggestionsProps> = ({ groups, value,
           data-path={item.path}
           title={`${item.group.label}: ${item.mapping}`}
           onClick={() => onChange(`${text}${text && !/\s$/.test(text) ? (multiline ? '\n' : ' ') : ''}${item.mapping}`)}
-          className="rounded border border-border-strong bg-card px-1.5 py-0.5 text-[10px] font-medium text-text-2 hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded border border-border-strong bg-card px-1.5 py-0.5 text-[10px] font-medium text-text-2 hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           + {pathLabel(item.group, item.path, t) ?? item.path}
         </button>

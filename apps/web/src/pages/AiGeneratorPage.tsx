@@ -38,7 +38,7 @@ const splitQuestionField = (field: string) => {
 const STARTER_KEYS = ['gmail_drive', 'webhook_sheets', 'schedule_telegram', 'telegram_reply'] as const;
 const RECIPIENT_FIELD = /(^|[._])(to|cc|bcc|recipient|recipients)$/i;
 
-const fieldClass = 'w-full rounded-md border border-border bg-subtle px-3 py-2 text-sm text-foreground focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/10';
+const fieldClass = 'w-full rounded-md border border-border bg-subtle px-3 py-2 text-sm text-foreground focus:border-ring/40 focus:outline-none focus:ring-2 focus:ring-ring/10';
 const primaryButton = 'inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
 const secondaryButton = 'inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50';
 

@@ -3,7 +3,7 @@ import { Plus, X } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { isCredentialKey } from '../../lib/mappingGrammar';
 
-const inputCls = 'min-w-0 rounded-md border border-border-strong bg-card px-2 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
+const inputCls = 'min-w-0 rounded-md border border-border-strong bg-card px-2 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring';
 
 interface Row {
   id: number;

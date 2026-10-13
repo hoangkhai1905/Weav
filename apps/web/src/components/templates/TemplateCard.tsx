@@ -16,7 +16,7 @@ export function TemplateCard({ template, onOpen, actions }: TemplateCardProps) {
   return (
     <div
       data-testid={`shared-template-${template.id}`}
-      className="flex flex-col justify-between rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/25"
+      className="flex flex-col justify-between rounded-2xl border border-border bg-card p-4 transition-colors hover:border-border-strong"
     >
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
@@ -24,7 +24,7 @@ export function TemplateCard({ template, onOpen, actions }: TemplateCardProps) {
           <span className="font-mono">{t('tpl.used_count').replace('{n}', String(template.usageCount))}</span>
         </div>
         <h4 className="pt-1 text-sm font-semibold text-foreground">
-          <button type="button" onClick={onOpen} className="text-left hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <button type="button" onClick={onOpen} className="text-left hover:text-accent-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             {template.name}
           </button>
         </h4>

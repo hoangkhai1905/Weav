@@ -14,6 +14,8 @@ export interface ThemeColors {
   textSubtle: string;
   primary: string;
   onPrimary: string;
+  button: string;
+  onButton: string;
   primaryBg: string;
   primaryBorder: string;
   success: string;
@@ -45,6 +47,8 @@ function toThemeColors(p: ColorPalette, isDark: boolean): ThemeColors {
     textSubtle: p.textSubtle,
     primary: p.primary,
     onPrimary: p.onPrimary,
+    button: p.button,
+    onButton: p.onButton,
     primaryBg: info.bg,
     primaryBorder: info.border,
     success: success.fg,

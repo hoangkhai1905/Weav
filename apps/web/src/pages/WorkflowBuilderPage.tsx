@@ -1494,7 +1494,7 @@ export const WorkflowBuilderPage: React.FC = () => {
               if (e.key === 'Escape' && workflow) { skipCommitRef.current = true; setWorkflowTitle(workflow.name); e.currentTarget.blur(); }
             }}
             title={workflowTitle}
-            className="h-7 min-w-[3rem] flex-1 truncate rounded-md border border-transparent bg-transparent px-1.5 text-sm font-semibold text-foreground transition-colors hover:border-border focus:border-primary focus:bg-card focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60"
+            className="h-7 min-w-[3rem] flex-1 truncate rounded-md border border-transparent bg-transparent px-1.5 text-sm font-semibold text-foreground transition-colors hover:border-border focus:border-ring focus:bg-card focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
           />
           {/* Narrow screens keep only the dot so the name never spills over the tabs and actions. */}
           <span
@@ -2124,7 +2124,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                               field?.setSelectionRange(next.length, next.length);
                             }, 0);
                           }}
-                          className="rounded border border-border-strong bg-card px-1.5 py-0.5 text-[10px] font-medium text-text-2 hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="rounded border border-border-strong bg-card px-1.5 py-0.5 text-[10px] font-medium text-text-2 hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           {t(labelKey)}
                         </button>
@@ -2165,7 +2165,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     id="manual-button-label"
                     value={String(selectedNodeConfig.buttonLabel ?? '')}
                     onChange={(event) => updateSelectedNodeConfig({ buttonLabel: event.target.value })}
-                    className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                    className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                   />
                 </div>
               ) : selectedNodeType === 'telegram.send_message' ? (
@@ -2192,7 +2192,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                               data-testid="telegram-chat-target"
                               value={replying ? 'reply' : 'custom'}
                               onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value === 'reply' ? TELEGRAM_REPLY_CHAT : '' })}
-                              className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                              className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                             >
                               <option value="reply">{t('builder.cfg.tg_target_reply')}</option>
                               <option value="custom">{t('builder.cfg.tg_target_custom')}</option>
@@ -2202,7 +2202,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         {!replying && (
                           <div>
                             <label htmlFor="telegram-chat-id" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.chat_id')}</label>
-                            <input id="telegram-chat-id" value={chatId} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} placeholder="123456789" className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary" />
+                            <input id="telegram-chat-id" value={chatId} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} placeholder="123456789" className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring" />
                             <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.tg_chat_hint')}</p>
                           </div>
                         )}
@@ -2251,7 +2251,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                 <div data-testid="http-request-config" className="space-y-3">
                   <div>
                     <label htmlFor="http-method" className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.cfg.method')}</label>
-                    <select id="http-method" value={String(selectedNodeConfig.method ?? 'GET')} onChange={(event) => updateSelectedNodeConfig({ method: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary">
+                    <select id="http-method" value={String(selectedNodeConfig.method ?? 'GET')} onChange={(event) => updateSelectedNodeConfig({ method: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring">
                       {['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map((method) => <option key={method}>{method}</option>)}
                     </select>
                   </div>
@@ -2292,7 +2292,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       // Omit the key when cleared: the Workflow Service rejects an empty connectionId even in drafts.
                       onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value || undefined })}
                       disabled={isLoadingConnections}
-                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-60"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring disabled:opacity-60"
                     >
                       <option value="">{isLoadingConnections ? t('builder.cfg.loading_connections') : t('builder.cfg.select_gmail')}</option>
                       {gmailConnections.map((connection) => (
@@ -2324,7 +2324,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           data-testid="email-target"
                           value={selectedNodeConfig.to === GMAIL_REPLY_TO ? 'sender' : 'custom'}
                           onChange={(event) => updateSelectedNodeConfig({ to: event.target.value === 'sender' ? GMAIL_REPLY_TO : '' })}
-                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                         >
                           <option value="sender">{t('builder.cfg.mail_target_sender')}</option>
                           <option value="custom">{t('builder.cfg.mail_target_custom')}</option>
@@ -2431,7 +2431,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         setOcrSourceMode(event.target.value as OcrSourceMode);
                         updateSelectedNodeConfig({ fileUrl: undefined, artifactId: undefined, file: undefined });
                       }}
-                      className="w-full rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                      className="w-full rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                     >
                       {/* A source the server has not enabled is hidden, unless this step already uses it. */}
                       {(['url', 'file', 'artifact'] as const).filter((source) => !ocrSources || ocrSources.includes(source) || source !== 'artifact' || ocrSourceMode === 'artifact').map((source) => (
@@ -2449,7 +2449,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           data-testid="ocr-artifact-id"
                           value={String(selectedNodeConfig.artifactId ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value || undefined, fileUrl: undefined, file: undefined })}
-                          className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                          className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                         />
                       </div>
                     )}
@@ -2462,7 +2462,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           value={String(selectedNodeConfig.fileUrl ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value || undefined, artifactId: undefined, file: undefined })}
                           placeholder="https://..."
-                          className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                          className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                         />
                       </div>
                     )}
@@ -2485,7 +2485,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                                 setOcrFileCustom(custom);
                                 updateSelectedNodeConfig({ file: custom ? undefined : event.target.value || undefined, fileUrl: undefined, artifactId: undefined });
                               }}
-                              className="w-full rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                              className="w-full rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                             >
                               <option value="">{t('builder.cfg.ocr_file_choose')}</option>
                               {ocrFileOptions.map((option) => (
@@ -2509,7 +2509,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           value={typeof selectedNodeConfig.file === 'object' && selectedNodeConfig.file !== null ? JSON.stringify(selectedNodeConfig.file) : String(selectedNodeConfig.file ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ file: event.target.value || undefined, fileUrl: undefined, artifactId: undefined })}
                           placeholder="{{ trigger.input.attachments[0] }}"
-                          className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                          className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                         />
                         <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.ocr_file_hint')}</p>
                       </div>
@@ -2535,7 +2535,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           setOcrLanguage(event.target.value);
                           updateSelectedNodeConfig({ language: event.target.value });
                         }}
-                        className="w-full rounded-md border border-border-strong bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        className="w-full rounded-md border border-border-strong bg-card px-2 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                       >
                         <option value="vi+en">{t('builder.language.vi_en')}</option>
                         <option value="vi">{t('settings.vietnamese')}</option>
@@ -2734,7 +2734,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       // Omit the key when cleared: the Workflow Service rejects an empty connectionId even in drafts.
                       onChange={(event) => updateSelectedNodeConfig({ connectionId: event.target.value || undefined })}
                       disabled={isLoadingConnections}
-                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-60"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring disabled:opacity-60"
                     >
                       <option value="">{isLoadingConnections ? t('builder.cfg.loading_connections') : t('builder.cfg.select_sheets')}</option>
                       {sheetsConnections.map((connection) => (
@@ -2766,7 +2766,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       id="google-operation"
                       value={googleOperation}
                       onChange={(event) => updateSelectedNodeConfig({ operation: event.target.value })}
-                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                      className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                     >
                       {isGoogleSheetsNode ? (
                         <>
@@ -2797,7 +2797,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           value={String(selectedNodeConfig.spreadsheetId ?? '')}
                           // A pasted Sheets link is reduced to the id inside it.
                           onChange={(event) => updateSelectedNodeConfig({ spreadsheetId: idFromGoogleLink(event.target.value) })}
-                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                         />
                       </div>
 
@@ -2811,7 +2811,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           value={String(selectedNodeConfig.range ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ range: event.target.value })}
                           aria-describedby="google-range-hint"
-                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                         />
                         <p id="google-range-hint" className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
                           {t(`builder.google.range_hint_${['append', 'update', 'lookup'].includes(googleOperation) ? googleOperation : 'read'}`)}
@@ -2864,7 +2864,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                                     value={String(cell ?? '')}
                                     placeholder={index === 0 && rowIndex === 0 ? t('builder.google.cell_placeholder') : ''}
                                     onChange={(event) => setRow(sheetsRow.map((value, i) => (i === index ? event.target.value : value)))}
-                                    className="min-w-0 flex-1 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                                    className="min-w-0 flex-1 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                                   />
                                   <button
                                     type="button"
@@ -2903,7 +2903,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         type="text"
                         value={String(selectedNodeConfig.title ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ title: event.target.value })}
-                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                       />
                     </div>
                   )}
@@ -2918,7 +2918,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         type="text"
                         value={String(selectedNodeConfig.documentId ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ documentId: event.target.value })}
-                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                       />
                     </div>
                   )}
@@ -2933,7 +2933,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         type="text"
                         value={String(selectedNodeConfig.contentVariable ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ contentVariable: event.target.value })}
-                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                       />
                     </div>
                   )}

@@ -28,7 +28,7 @@ const FORMAT_FIELDS: Record<string, { name: string; syntax: FormatSyntax; action
   'teams.send_message': { name: 'text', syntax: 'teams', actions: ['bold', 'italic', 'link', 'list'] },
 };
 
-const inputCls = 'w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
+const inputCls = 'w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring';
 
 interface SchemaFieldProps {
   nodeType: string;

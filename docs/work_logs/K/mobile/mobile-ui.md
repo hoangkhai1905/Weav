@@ -271,3 +271,13 @@ Lý do: người dùng thấy giao diện cũ "xấu quá", trông như do AI l�
 
 ### Để sau
 - (Đã làm 2026-10-11, xem mục trên) Đăng nhập Google trên mobile: luồng hiện có chỉ cho web (gọi thẳng identity-service :8082, kiểm Origin + cookie + CSRF, quay về `/auth/callback` của web; gateway chưa có route). Cần client OAuth cho mobile (PKCE + deep link `weav://auth/callback`) + route gateway + `expo-auth-session`. Người dùng quyết định để sau (2026-10-08).
+
+## Giao diện v2 theo Claude Design (nhánh `feature/ui-redesign-v2`, từ 2026-10-13)
+
+Xem thêm `docs/work_logs/K/web/ui-redesign.md` mục 10.
+
+### Lane 1: token, font (xong)
+- `palette.ts`: giá trị mới theo Theme.dc.html; thêm `button`/`onButton` (nút chính màu mực), `primary` giữ vai trò nhấn xanh (link, tab đang chọn). `Button`, `ConfirmSheet`, `EmptyState`, `RunSheet`, `PublishResultSheet`, bong bóng chat và icon trên nút chính dùng `button`/`onButton`. `useThemeColors` thêm 2 trường. Test tương phản thêm `onButton` trên `button`.
+- Font: `@expo-google-fonts/be-vietnam-pro` (400/500/600/700) + `jetbrains-mono` 400, nạp bằng `useFonts` trong `app/_layout.tsx` (import theo từng weight để không gói cả 18 file). `Typography.*` có `fontFamily` theo weight; `Fonts.mono` = JetBrains Mono. `Radius.lg` 8 → 12 (thẻ).
+- Giới hạn: chữ đặt `fontWeight` riêng mà không dùng `Typography` vẫn dùng family Regular (Android có thể tô đậm giả). Các lane màn hình sẽ dùng `Typography`.
+- Kiểm tra: `npx tsc --noEmit -p .` sạch; `node --test src/constants/palette.contrast.test.cjs` 4/4. Chưa kiểm thiết bị.

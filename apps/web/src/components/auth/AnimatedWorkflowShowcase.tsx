@@ -102,7 +102,7 @@ export function AnimatedWorkflowShowcase() {
             transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
             className="p-3 bg-card border-l-4 border-l-run/30 border border-border rounded-2xl shadow-pop flex flex-col items-center gap-1.5 w-40 text-center relative"
           >
-            <span className="absolute -top-2.5 px-2 py-0.5 rounded-full bg-primary text-white text-[9px] font-bold shadow">
+            <span className="absolute -top-2.5 px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-[9px] font-bold shadow">
               {t('auth.showcase.ai_compiler')}
             </span>
             <div className="p-2 rounded-xl bg-run-bg text-run mt-1">

@@ -151,8 +151,8 @@ export const CreateWorkflowPage: React.FC = () => {
   const optionCard = (method: typeof selectedMethod) =>
     `group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border bg-card p-5 transition-all ${
       selectedMethod === method
-        ? 'border-primary/50 shadow-pop ring-1 ring-primary/20'
-        : 'border-border hover:-translate-y-0.5 hover:border-primary/25'
+        ? 'border-run/50 ring-1 ring-run/20'
+        : 'border-border hover:-translate-y-0.5 hover:border-border-strong'
     }`;
 
   return (
@@ -192,7 +192,7 @@ export const CreateWorkflowPage: React.FC = () => {
       <div className="rounded-lg border border-border bg-card">
         <div className="flex flex-col items-stretch gap-3 rounded-lg p-4 sm:flex-row sm:items-center">
           <div className="flex shrink-0 items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
               <Sparkles size={17} />
             </span>
             <span className="text-sm font-semibold text-foreground">{t('create.quick_prompt')}</span>
@@ -207,12 +207,12 @@ export const CreateWorkflowPage: React.FC = () => {
             }}
             placeholder={t('create.prompt_placeholder')}
             aria-label={t('create.quick_prompt')}
-            className="h-10 w-full flex-1 rounded-xl border border-border bg-muted/50 px-3.5 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:bg-card focus:outline-none focus:ring-4 focus:ring-primary/10"
+            className="h-10 w-full flex-1 rounded-xl border border-border bg-muted/50 px-3.5 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus:border-ring/40 focus:bg-card focus:outline-none focus:ring-4 focus:ring-ring/10"
           />
 
           <button
             onClick={handleGenerateAiCanvas}
-            className="flex h-10 w-full shrink-0 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-white transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto"
+            className="flex h-10 w-full shrink-0 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto"
           >
             <span>{t('create.generate_canvas')}</span>
             <ArrowRight size={15} />
@@ -253,7 +253,7 @@ export const CreateWorkflowPage: React.FC = () => {
               placeholder={t('create.blank_default_name')}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => setBlankName(e.target.value)}
-              className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+              className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
             />
             <button
               onClick={(e) => {
@@ -307,7 +307,7 @@ export const CreateWorkflowPage: React.FC = () => {
         <div onClick={() => setSelectedMethod('ai')} className={optionCard('ai')}>
           <div className="relative space-y-3">
             <div className="flex items-center justify-between">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-white">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
                 <Sparkles size={20} />
               </div>
               <span className="rounded-md bg-accent px-2 py-0.5 text-[10px] font-semibold text-accent-ink">
@@ -328,7 +328,7 @@ export const CreateWorkflowPage: React.FC = () => {
 
           <div className="relative mt-5">
             <button type="button" onClick={() => openAiGenerator()}
-              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-semibold text-white transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground transition-[filter] hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Zap size={15} />
               <span>{t('create.synthesize')}</span>
@@ -408,7 +408,7 @@ export const CreateWorkflowPage: React.FC = () => {
               <div
                 key={tpl.id}
                 data-testid={`template-${tpl.id}`}
-                className="group flex flex-col justify-between rounded-2xl border border-border bg-card p-4 transition-all hover:-translate-y-0.5 hover:border-primary/25"
+                className="group flex flex-col justify-between rounded-2xl border border-border bg-card p-4 transition-all hover:-translate-y-0.5 hover:border-border-strong"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
@@ -420,7 +420,7 @@ export const CreateWorkflowPage: React.FC = () => {
                     ) : null}
                   </div>
 
-                  <h4 className="pt-1 text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
+                  <h4 className="pt-1 text-sm font-semibold text-foreground transition-colors group-hover:text-accent-ink">
                     {copy.name}
                   </h4>
                   <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">

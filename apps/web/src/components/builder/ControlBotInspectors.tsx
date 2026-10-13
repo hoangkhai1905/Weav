@@ -6,7 +6,7 @@ import { useI18nStore } from '../../store/useI18nStore';
 import { SchemaField } from './SchemaField';
 import { CommaListInput } from './CommaListInput';
 
-const inputCls = 'w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
+const inputCls = 'w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring';
 const labelCls = 'mb-1 block text-[11px] font-medium text-text-2';
 const hintCls = 'mt-1 text-[10px] leading-relaxed text-muted-foreground';
 const OPERATIONS = ['run', 'pause', 'resume', 'status', 'list_failures', 'command'] as const;

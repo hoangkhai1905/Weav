@@ -195,3 +195,13 @@ Kết quả e2e (Chromium, `VITE_API_MODE=http`):
 - Lần định dạng đầu ở bước text thường: chuyển bước sang HTML/parse mode rồi định dạng luôn; xuống dòng đã gõ của email đổi thành `<br>`.
 - Nút `</> HTML` (`</> Markdown` cho chat) chuyển sang sửa mã nguồn, có khung xem trước bên dưới. Nội dung có thẻ/thuộc tính mà trình soạn trực quan không giữ được (bảng, ảnh, style, comment…) mở thẳng ở chế độ mã và không cho quay về (`richEditable`), tránh mất code người dùng tự viết.
 - Kiểm tra: tsc, eslint, build qua; unit 9/9; e2e Teams viết lại (đậm hiện trong ô, `</> Markdown` ra `**Build failed**`, xem trước ở chế độ mã, lưu `**Build failed**`); `w7-nodes` + `control-bot` + `workspace-connections` 79 pass / 5 fail = 3 baseline cũ + `2124`, `2608` pass khi chạy lại (flaky). Stack thật ("test email 1", không lưu): bôi đen → B ra `<b>…</b>` hiển thị đậm trong ô, email tự sang HTML; Enter, danh sách 2 mục, nghiêng → `<b>test xin chao</b><br><ul><li>muc <i>mot</i></li><li>muc hai</li></ul>`; `</> HTML` hiện mã + xem trước; thêm `<img>` ở chế độ mã → không quay về trực quan, hiện giải thích.
+
+## 10. Giao diện v2 theo Claude Design (nhánh `feature/ui-redesign-v2`, từ 2026-10-13)
+
+Nguồn: artifact Claude Design `Q6Z6MhT3rKQwPuPYgT6Y88` (`project/*.dc.html`), prompt `weav-ui-redesign-agent-prompt.md`. Quyết định của chủ dự án (2026-10-13): landing ở `/` cho khách, người đã đăng nhập vào `/dashboard`; trình tạo chỉ restyle, giữ canvas.
+
+### Lane 1: token, font, theme (xong)
+- `index.css`: đổi giá trị token sáng/tối theo Theme.dc.html (giữ tên biến). `--primary` = nút chính màu mực (`#1d1b18` / `#ece9e4`), xanh `#2456c7`/`#8eaef3` chỉ cho `--ring`, `--run`, `--accent-ink`. Bo góc `xl`/`2xl` = 10px. Font: Be Vietnam Pro 400–700 + JetBrains Mono (qua `@fontsource`), bỏ Geist.
+- Vì primary không còn xanh: `focus:border/ring-primary` → `ring` (xanh), viền hover thẻ → `border-strong`, trạng thái chọn/đang chạy → `run`, link `text-primary` → `text-accent-ink`, `text-white` trên `bg-primary` → `text-primary-foreground` (tránh chữ trắng trên nền ngà ở chế độ tối). 41 file, chỉ đổi class.
+- Kiểm tra: tsc sạch; build qua; eslint còn 3 lỗi `set-state-in-effect` có sẵn (LiveWorkflowExecutionsPage:92, WorkflowBuilderPage:649, WorkflowsPage:149), không do lane này. Browser `/login`: font Be Vietnam Pro có dấu (`document.fonts.check` true), nền `#f6f5f2`, nút chính `#1d1b18`/trắng; tối: nền `#131211`, nút `#ece9e4`/`#131211`; console không lỗi. Stack backend chưa chạy nên chưa xem trang cần đăng nhập.
+- GitNexus detect-changes: 63 file, risk low, 0 luồng bị ảnh hưởng.

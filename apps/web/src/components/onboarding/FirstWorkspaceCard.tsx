@@ -60,7 +60,7 @@ export function FirstWorkspaceCard({ userId, onCreated }: FirstWorkspaceCardProp
           value={name}
           onChange={(event) => setName(event.target.value)}
           placeholder={t('hp.onboarding.name_placeholder')}
-          className="h-10 w-full rounded-xl border border-border bg-subtle px-3.5 text-sm text-foreground focus:border-primary/40 focus:outline-none focus:ring-4 focus:ring-primary/10"
+          className="h-10 w-full rounded-xl border border-border bg-subtle px-3.5 text-sm text-foreground focus:border-ring/40 focus:outline-none focus:ring-4 focus:ring-ring/10"
         />
         {error ? <p role="alert" className="text-xs text-err">{error}</p> : null}
         <button

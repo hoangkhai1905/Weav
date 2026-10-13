@@ -59,9 +59,9 @@ export const PublishResultSheet: React.FC<PublishResultSheetProps> = ({ publicat
             accessibilityRole="button"
             accessibilityLabel={t('pub.done.close')}
             onPress={onClose}
-            style={[styles.close, { backgroundColor: colors.primary }]}
+            style={[styles.close, { backgroundColor: colors.button }]}
           >
-            <Text style={[Typography.label, { color: colors.onPrimary }]}>{t('pub.done.close')}</Text>
+            <Text style={[Typography.label, { color: colors.onButton }]}>{t('pub.done.close')}</Text>
           </Pressable>
         </>
       ) : null}

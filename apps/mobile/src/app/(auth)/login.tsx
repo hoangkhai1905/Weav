@@ -106,7 +106,7 @@ export default function LoginScreen() {
       {general ? (
         <Text accessibilityRole="alert" style={[Typography.caption, { color: colors.danger }]}>{general}</Text>
       ) : null}
-      <Button label={t('au.signIn')} icon={<LogIn size={18} color={colors.onPrimary} />} busy={loading} disabled={googleBusy} onPress={() => { void handleLogin(); }} />
+      <Button label={t('au.signIn')} icon={<LogIn size={18} color={colors.onButton} />} busy={loading} disabled={googleBusy} onPress={() => { void handleLogin(); }} />
       {googleSignInAvailable ? (
         <>
           <Text style={[Typography.caption, styles.or, { color: colors.textMuted }]}>{t('au.or')}</Text>

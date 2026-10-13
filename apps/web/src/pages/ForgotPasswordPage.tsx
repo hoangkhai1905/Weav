@@ -254,7 +254,7 @@ export function ForgotPasswordPage() {
           <form onSubmit={(event) => void requestCode(event)} className="mt-6 space-y-4">
             <label className="block text-xs font-semibold text-text-2" htmlFor="reset-email">{t('forgot.email')}</label>
             <div className="flex items-center gap-2 rounded-xl border border-border bg-subtle px-3.5"><Mail size={15} className="text-muted-foreground" /><input id="reset-email" aria-label={t('forgot.email')} type="email" required value={email} onChange={(event) => setEmail(event.target.value)} className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none" /></div>
-            <button data-testid="request-reset-button" type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.request_code')}</button>
+            <button data-testid="request-reset-button" type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:bg-primary disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.request_code')}</button>
             {resumable && <button data-testid="resume-reset-button" type="button" onClick={resumeChallenge} className="w-full text-center text-xs font-semibold text-run hover:underline">{t('w5c.have_code')}</button>}
           </form>
         ) : (
@@ -266,7 +266,7 @@ export function ForgotPasswordPage() {
             <label className="block text-xs font-semibold text-text-2" htmlFor="reset-confirm-password">{t('forgot.confirm_password')}</label>
             <input id="reset-confirm-password" aria-label={t('forgot.confirm_password')} required minLength={8} maxLength={72} type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="w-full rounded-xl border border-border bg-subtle px-3.5 py-3 text-sm outline-none" />
             <p className="text-xs text-muted-foreground">{t('forgot.code_help')} {expiresIn !== null && `${expiresIn} ${t('forgot.seconds')}`}</p>
-            <button data-testid="complete-reset-button" type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.reset_password')}</button>
+            <button data-testid="complete-reset-button" type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:bg-primary disabled:opacity-60">{loading && <LoaderCircle size={16} className="animate-spin" />}{t('forgot.reset_password')}</button>
             <div className="flex items-center justify-between gap-3 text-xs">
               <button data-testid="resend-reset-button" type="button" disabled={loading || cooldownRemaining > 0} onClick={() => void requestCode()} className="font-semibold text-run hover:underline disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline">
                 {cooldownRemaining > 0 ? t('forgot.resend_unavailable') : t('forgot.resend')}

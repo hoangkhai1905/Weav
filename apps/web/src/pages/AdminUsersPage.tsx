@@ -73,7 +73,7 @@ export function AdminUsersPage() {
           <option value="ACTIVE">{t('settings.status_active')}</option>
           <option value="DISABLED">{t('settings.status_disabled')}</option>
         </select>
-        <button type="submit" className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white">{t('w5c.admin_search_button')}</button>
+        <button type="submit" className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground">{t('w5c.admin_search_button')}</button>
       </form>
       {error && <p role="alert" className="text-xs font-medium text-err">{error}</p>}
       {loading && !data && <p className="flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle size={14} className="animate-spin" />{t('settings.loading')}</p>}

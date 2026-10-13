@@ -13,7 +13,7 @@ import {
   type Weekday,
 } from '../../lib/schedule';
 
-const fieldCls = 'w-full min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
+const fieldCls = 'w-full min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring';
 const labelCls = 'mb-1 block text-[11px] font-medium text-text-2';
 const hintCls = 'text-[10px] leading-relaxed text-muted-foreground';
 

@@ -200,7 +200,7 @@ export default function WorkflowDetailScreen() {
             {canRun ? (
               <ActionButton
                 label={t('wfd.run')}
-                icon={<Play size={18} color={colors.onPrimary} />}
+                icon={<Play size={18} color={colors.onButton} />}
                 variant="primary"
                 onPress={() => setShowRunModal(true)}
               />
@@ -208,7 +208,7 @@ export default function WorkflowDetailScreen() {
             {canPublish ? (
               <ActionButton
                 label={t('wfd.publish')}
-                icon={<Upload size={18} color={colors.onPrimary} />}
+                icon={<Upload size={18} color={colors.onButton} />}
                 variant="primary"
                 onPress={() => setConfirmPublish(true)}
               />
@@ -358,7 +358,7 @@ interface ActionButtonProps {
 const ActionButton: React.FC<ActionButtonProps> = ({ label, icon, variant, onPress, busy = false }) => {
   const colors = useThemeColors();
   const palette = {
-    primary: { bg: colors.primary, border: colors.primary, fg: colors.onPrimary },
+    primary: { bg: colors.button, border: colors.button, fg: colors.onButton },
     secondary: { bg: colors.card, border: colors.borderStrong, fg: colors.text },
     danger: { bg: colors.card, border: colors.tones.danger.border, fg: colors.danger },
   }[variant];

@@ -169,7 +169,7 @@ export function LoginPage() {
                 <button
                   type="submit"
                   disabled={loading || googleLoading}
-                  className="w-full py-3 bg-primary text-white text-xs font-bold rounded-xl shadow-pop transition-all flex items-center justify-center gap-2 cursor-pointer border border-run/30"
+                  className="w-full py-3 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow-pop transition-all flex items-center justify-center gap-2 cursor-pointer border border-run/30"
                 >
                   <span>{loading ? t('auth.logging_in') : t('auth.sign_in')}</span>
                   <ArrowRight size={16} />

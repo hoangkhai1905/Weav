@@ -181,7 +181,7 @@ export function RegisterPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3 bg-primary text-white text-xs font-bold rounded-xl shadow-pop transition-all flex items-center justify-center gap-2 cursor-pointer border border-run/30 mt-2"
+                  className="w-full py-3 bg-primary text-primary-foreground text-xs font-bold rounded-xl shadow-pop transition-all flex items-center justify-center gap-2 cursor-pointer border border-run/30 mt-2"
                 >
                   <span>{loading ? t('auth.creating_account') : t('auth.create_account_submit')}</span>
                   <ArrowRight size={16} />

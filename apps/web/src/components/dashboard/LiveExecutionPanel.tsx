@@ -15,7 +15,7 @@ export const LiveExecutionPanel: React.FC = () => {
               {t('dashboard.live_execution')}
             </h2>
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-run-bg text-run font-semibold text-[11px]">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
+              <span className="w-1.5 h-1.5 rounded-full bg-run animate-ping" />
               {t('dashboard.running')}
             </span>
           </div>

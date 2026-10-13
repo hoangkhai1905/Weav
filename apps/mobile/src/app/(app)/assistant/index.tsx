@@ -84,7 +84,7 @@ export default function AssistantListScreen() {
         }
         ListHeaderComponent={
           <View style={styles.header}>
-            <Button label={t('asst.new')} icon={<Plus size={18} color={colors.onPrimary} />} onPress={() => startChat()} />
+            <Button label={t('asst.new')} icon={<Plus size={18} color={colors.onButton} />} onPress={() => startChat()} />
             <QuickQuestions onPick={startChat} />
             <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>
               {t('asst.list.title')}

@@ -471,7 +471,7 @@ export default function WorkspaceScreen() {
                 {isOwner ? (
                   <Button
                     label={t('ws.invite')}
-                    icon={<UserPlus size={16} color={colors.onPrimary} />}
+                    icon={<UserPlus size={16} color={colors.onButton} />}
                     onPress={() => setInviteOpen(true)}
                   />
                 ) : null}
@@ -586,7 +586,7 @@ export default function WorkspaceScreen() {
             <Button
               testID="workspace-invite-send"
               label={t('inv.fallback.send')}
-              icon={<Mail size={16} color={colors.onPrimary} />}
+              icon={<Mail size={16} color={colors.onButton} />}
               busy={inviteMutation.isPending}
               onPress={() => void handleSendInvitation()}
             />

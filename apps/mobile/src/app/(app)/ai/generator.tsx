@@ -241,7 +241,7 @@ export default function AiGeneratorScreen() {
           label={save.isError ? t('aig.ready.saveRetry') : t('aig.ready.save')}
           busy={save.isPending}
           disabled={emptyName}
-          icon={<Check size={18} color={colors.onPrimary} />}
+          icon={<Check size={18} color={colors.onButton} />}
           onPress={() => void saveDraft(result)}
         />
         <Button label={t('aig.regenerate')} variant="secondary" onPress={() => void run(collected)} />

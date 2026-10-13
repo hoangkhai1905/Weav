@@ -198,7 +198,7 @@ export default function ForgotPasswordScreen() {
           <View testID="password-recovery-request">
             <Button
               label={t('au.forgot.sendCode')}
-              icon={<Send size={18} color={colors.onPrimary} />}
+              icon={<Send size={18} color={colors.onButton} />}
               busy={isPending}
               onPress={() => { void handleRequestCode(); }}
             />
@@ -245,7 +245,7 @@ export default function ForgotPasswordScreen() {
           <View testID="password-recovery-submit">
             <Button
               label={t('au.forgot.reset')}
-              icon={<KeyRound size={18} color={colors.onPrimary} />}
+              icon={<KeyRound size={18} color={colors.onButton} />}
               busy={isPending}
               disabled={grantConsumed}
               onPress={() => { void handleResetPassword(); }}

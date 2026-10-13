@@ -174,7 +174,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
   // Node container styling based on selection and status
   let borderStyle = 'border-border-strong hover:border-muted-foreground';
   if (isNodeSelected) {
-    borderStyle = status === 'error' ? 'border-err ring-1 ring-err' : 'border-primary ring-1 ring-primary';
+    borderStyle = status === 'error' ? 'border-err ring-1 ring-err' : 'border-run ring-1 ring-run';
   } else if (status === 'processing') {
     borderStyle = 'border-run motion-safe:animate-[weav-node-pulse_1.4s_ease-in-out_infinite]';
   } else if (status === 'error') {
@@ -183,7 +183,7 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
 
   // Type stripe: 3px on the left edge, colour = step type
   const stripeClass = isTrigger ? 'bg-t-trigger' : isAI ? 'bg-t-ai' : isLogic ? 'bg-t-logic' : 'bg-t-action';
-  const handleClass = '!h-2 !w-2 !rounded-full !border-[1.5px] !border-muted-foreground !bg-card cursor-crosshair transition-colors hover:!border-primary hover:!bg-primary';
+  const handleClass = '!h-2 !w-2 !rounded-full !border-[1.5px] !border-muted-foreground !bg-card cursor-crosshair transition-colors hover:!border-run hover:!bg-run';
 
   const iconMotion = prefersReducedMotion
     ? { scale: 1 }

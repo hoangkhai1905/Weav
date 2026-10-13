@@ -88,7 +88,7 @@ function TypedConfirmDialogBody({
                 onChange={(event) => setTyped(event.target.value)}
                 placeholder={phrase}
                 autoComplete="off"
-                className="h-8 w-full rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                className="h-8 w-full rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
               />
             </label>
             <div className="mt-4 flex justify-end gap-2">

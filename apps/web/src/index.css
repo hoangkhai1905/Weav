@@ -1,15 +1,18 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
-@import "@fontsource-variable/geist-mono";
+@import "@fontsource/be-vietnam-pro/400.css";
+@import "@fontsource/be-vietnam-pro/500.css";
+@import "@fontsource/be-vietnam-pro/600.css";
+@import "@fontsource/be-vietnam-pro/700.css";
+@import "@fontsource-variable/jetbrains-mono";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --sans: 'Geist Variable', system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: 'Geist Variable', system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: 'Geist Mono Variable', ui-monospace, Consolas, monospace;
+  --sans: 'Be Vietnam Pro', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: 'Be Vietnam Pro', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono Variable', ui-monospace, Consolas, monospace;
 
   color-scheme: light;
   font: 16px/1.45 var(--sans);
@@ -20,65 +23,65 @@
   -moz-osx-font-smoothing: grayscale;
 
   /* Weav light tokens (docs: Tokens.dc.html) */
-  --background: #fafaf9;
-  --foreground: #1c1917;
+  --background: #f6f5f2;
+  --foreground: #1d1b18;
 
   --card: #ffffff;
-  --card-foreground: #1c1917;
+  --card-foreground: #1d1b18;
 
   --popover: #ffffff;
-  --popover-foreground: #1c1917;
+  --popover-foreground: #1d1b18;
 
-  --primary: #2b5fd9;
-  --primary-hover: #234fb8;
+  --primary: #1d1b18;
+  --primary-hover: #3a3631;
   --primary-foreground: #ffffff;
-  --accent-ink: #2b5fd9;
+  --accent-ink: #2456c7;
 
-  --secondary: #f5f5f4;
-  --secondary-foreground: #1c1917;
+  --secondary: #f1efeb;
+  --secondary-foreground: #1d1b18;
 
-  --subtle: #f5f5f4;
-  --muted: #efeeec;
-  --muted-foreground: #6f6862;
-  --text-2: #57534e;
+  --subtle: #f1efeb;
+  --muted: #ece9e4;
+  --muted-foreground: #6b655d;
+  --text-2: #54504a;
 
-  --accent: #eef3fd;
-  --accent-foreground: #234fb8;
+  --accent: #e9effb;
+  --accent-foreground: #2456c7;
 
-  --destructive: #b91c1c;
+  --destructive: #a1302a;
 
-  --border: #e7e5e4;
-  --border-strong: #d6d3d1;
-  --input: #d6d3d1;
-  --ring: #2b5fd9;
+  --border: #e6e3de;
+  --border-strong: #d3cec6;
+  --input: #d3cec6;
+  --ring: #2456c7;
 
-  --sidebar: #f5f5f4;
-  --sidebar-foreground: #1c1917;
-  --sidebar-muted: #6f6862;
-  --sidebar-active: #efeeec;
+  --sidebar: #f1efeb;
+  --sidebar-foreground: #1d1b18;
+  --sidebar-muted: #6b655d;
+  --sidebar-active: #ece9e4;
 
   /* Status */
-  --ok: #15803d;
-  --ok-bg: #edf7f0;
-  --run: #2b5fd9;
-  --run-bg: #eef3fd;
-  --warn: #b45309;
-  --warn-bg: #fdf4e7;
-  --err: #b91c1c;
-  --err-bg: #fdeeee;
-  --err-border: #f0c4c4;
-  --pause: #6f6862;
-  --pause-bg: #f1f0ee;
+  --ok: #2b6a37;
+  --ok-bg: #e5f0e3;
+  --run: #2456c7;
+  --run-bg: #e9effb;
+  --warn: #7f5300;
+  --warn-bg: #f6eccf;
+  --err: #a1302a;
+  --err-bg: #fae7e5;
+  --err-border: #efc4bf;
+  --pause: #6b655d;
+  --pause-bg: #f1efeb;
 
   /* Step type stripes */
-  --t-trigger: #57534e;
-  --t-action: #3f5e8c;
-  --t-logic: #0f766e;
-  --t-ai: #86198f;
+  --t-trigger: #5a534b;
+  --t-action: #33578e;
+  --t-logic: #0e6a62;
+  --t-ai: #7a2983;
 
   /* Legacy brand helpers are flat accent now (no gradients) */
-  --brand-from: #2b5fd9;
-  --brand-to: #2b5fd9;
+  --brand-from: #2456c7;
+  --brand-to: #2456c7;
   --canvas-dot: rgba(28, 25, 23, 0.12);
 
   --pop: 0 8px 24px -6px rgba(28, 25, 23, 0.18), 0 2px 6px rgba(28, 25, 23, 0.08);
@@ -91,62 +94,62 @@
 
 .dark {
   color-scheme: dark;
-  --background: #121110;
-  --foreground: #edebe9;
+  --background: #131211;
+  --foreground: #ece9e4;
 
-  --card: #1a1918;
-  --card-foreground: #edebe9;
+  --card: #1a1917;
+  --card-foreground: #ece9e4;
 
-  --popover: #1a1918;
-  --popover-foreground: #edebe9;
+  --popover: #1a1917;
+  --popover-foreground: #ece9e4;
 
-  --primary: #3768d6;
-  --primary-hover: #4677e0;
-  --primary-foreground: #ffffff;
-  --accent-ink: #8fb0f5;
+  --primary: #ece9e4;
+  --primary-hover: #d3cec6;
+  --primary-foreground: #131211;
+  --accent-ink: #8eaef3;
 
-  --secondary: #211f1e;
-  --secondary-foreground: #edebe9;
+  --secondary: #211f1d;
+  --secondary-foreground: #ece9e4;
 
-  --subtle: #211f1e;
-  --muted: #292725;
-  --muted-foreground: #958f89;
-  --text-2: #b5b0ab;
+  --subtle: #211f1d;
+  --muted: #272522;
+  --muted-foreground: #968f86;
+  --text-2: #b5afa7;
 
-  --accent: #1c2436;
-  --accent-foreground: #8fb0f5;
+  --accent: #1c2538;
+  --accent-foreground: #8eaef3;
 
-  --destructive: #f08a80;
+  --destructive: #f2948a;
 
-  --border: #2e2c2a;
-  --border-strong: #3d3a37;
-  --input: #3d3a37;
-  --ring: #8fb0f5;
+  --border: #2c2926;
+  --border-strong: #3a3632;
+  --input: #3a3632;
+  --ring: #8eaef3;
 
-  --sidebar: #1a1918;
-  --sidebar-foreground: #edebe9;
-  --sidebar-muted: #958f89;
-  --sidebar-active: #292725;
+  --sidebar: #1a1917;
+  --sidebar-foreground: #ece9e4;
+  --sidebar-muted: #968f86;
+  --sidebar-active: #272522;
 
-  --ok: #5bc98a;
-  --ok-bg: #16241b;
-  --run: #8fb0f5;
-  --run-bg: #1c2436;
-  --warn: #e8a657;
-  --warn-bg: #2a2116;
-  --err: #f08a80;
-  --err-bg: #2c1a19;
-  --err-border: #5c2b28;
-  --pause: #a8a29e;
-  --pause-bg: #262422;
+  --ok: #86c595;
+  --ok-bg: #18271c;
+  --run: #8eaef3;
+  --run-bg: #1c2538;
+  --warn: #e3b860;
+  --warn-bg: #2a2214;
+  --err: #f2948a;
+  --err-bg: #2e1a18;
+  --err-border: #5a2e29;
+  --pause: #968f86;
+  --pause-bg: #211f1d;
 
-  --t-trigger: #a8a29e;
-  --t-action: #7d9bc9;
-  --t-logic: #3fb8a8;
-  --t-ai: #cf7ad6;
+  --t-trigger: #c2bbb2;
+  --t-action: #9db8e8;
+  --t-logic: #6fcfc3;
+  --t-ai: #dca2e3;
 
-  --brand-from: #3768d6;
-  --brand-to: #3768d6;
+  --brand-from: #8eaef3;
+  --brand-to: #8eaef3;
   --canvas-dot: rgba(237, 235, 233, 0.09);
 
   --pop: 0 8px 24px -6px rgba(0, 0, 0, 0.6), 0 0 0 1px #3d3a37;
@@ -279,14 +282,14 @@ body {
 }
 
 ::selection {
-  color: var(--primary-foreground);
-  background: var(--primary);
+  color: var(--foreground);
+  background: var(--accent);
 }
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: 'Geist Variable', system-ui, sans-serif;
-  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --font-sans: 'Be Vietnam Pro', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -333,8 +336,8 @@ body {
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
-  --radius-xl: 8px;
-  --radius-2xl: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 10px;
   --radius-3xl: 8px;
 }
 

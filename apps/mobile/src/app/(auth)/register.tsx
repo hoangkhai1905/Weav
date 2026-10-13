@@ -104,7 +104,7 @@ export default function RegisterScreen() {
       {general ? (
         <Text accessibilityRole="alert" style={[Typography.caption, { color: colors.danger }]}>{general}</Text>
       ) : null}
-      <Button label={t('au.register.submit')} icon={<UserPlus size={18} color={colors.onPrimary} />} busy={loading} onPress={() => { void handleRegister(); }} />
+      <Button label={t('au.register.submit')} icon={<UserPlus size={18} color={colors.onButton} />} busy={loading} onPress={() => { void handleRegister(); }} />
       <Pressable
         accessibilityRole="link"
         accessibilityLabel={`${t('au.haveAccount')} ${t('au.signInLink')}`}

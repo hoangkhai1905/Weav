@@ -31,9 +31,9 @@ export const ConfirmSheet: React.FC<ConfirmSheetProps> = ({
   const colors = useThemeColors();
   const { t } = useTranslation();
   // Destructive = red text on white with a red hairline; never a large red block.
-  const bg = destructive ? colors.card : colors.primary;
-  const border = destructive ? colors.tones.danger.border : colors.primary;
-  const fg = destructive ? colors.danger : colors.onPrimary;
+  const bg = destructive ? colors.card : colors.button;
+  const border = destructive ? colors.tones.danger.border : colors.button;
+  const fg = destructive ? colors.danger : colors.onButton;
   return (
     <Sheet visible={visible} onClose={onClose} title={title}>
       <Text style={[Typography.body, { color: colors.textMuted }]}>{message}</Text>

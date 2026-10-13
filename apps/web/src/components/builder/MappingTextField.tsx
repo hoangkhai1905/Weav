@@ -371,7 +371,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
           remove.closest('[data-mapping]')?.remove();
           emit();
         }}
-        className={`w-full cursor-text rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs leading-6 text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] ${multiline ? `min-h-[6rem] break-words ${rich && format?.syntax === 'html' ? 'whitespace-normal' : 'whitespace-pre-wrap'}` : 'min-h-[2rem] overflow-x-auto whitespace-pre'} [&_a]:text-run [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5`}
+        className={`w-full cursor-text rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs leading-6 text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] ${multiline ? `min-h-[6rem] break-words ${rich && format?.syntax === 'html' ? 'whitespace-normal' : 'whitespace-pre-wrap'}` : 'min-h-[2rem] overflow-x-auto whitespace-pre'} [&_a]:text-run [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5`}
       />
       <div ref={menuRef} className="mt-0.5 flex justify-end">
         <button

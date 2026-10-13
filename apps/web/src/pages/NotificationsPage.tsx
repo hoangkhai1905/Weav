@@ -118,7 +118,7 @@ export function NotificationsPage() {
       {inbox.authRequired ? (
         <div role="status" className="rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground">
           <p>{t('notif.sign_in_required')}</p>
-          <Link to="/login" className="mt-3 inline-block font-semibold text-primary underline">{t('notif.sign_in')}</Link>
+          <Link to="/login" className="mt-3 inline-block font-semibold text-accent-ink underline">{t('notif.sign_in')}</Link>
         </div>
       ) : (
         <>

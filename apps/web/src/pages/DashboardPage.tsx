@@ -65,7 +65,7 @@ function DashboardQuickActions({ prefersReducedMotion }: DashboardQuickActionsPr
           to="/workflows/new"
           className="group flex items-start gap-3 p-4 text-left transition-colors hover:bg-run-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-run/30"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-white transition-transform duration-200 group-hover:-translate-y-0.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-transform duration-200 group-hover:-translate-y-0.5">
             <Plus size={17} />
           </span>
           <span className="min-w-0">
@@ -401,7 +401,7 @@ export function DashboardPage() {
 
           <button
             onClick={() => navigate('/workflows/new')}
-            className="px-4 py-2 bg-primary hover:bg-primary text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            className="px-4 py-2 bg-primary hover:bg-primary text-primary-foreground text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shadow-2xs"
           >
             <Plus size={15} />
             <span>{t('dashboard.new_workflow')}</span>
@@ -468,8 +468,8 @@ export function DashboardPage() {
               {t('dashboard.metric_running')}
             </span>
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-run opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-run" />
             </span>
           </div>
           <div className="flex items-baseline gap-2 mt-2">
@@ -545,7 +545,7 @@ export function DashboardPage() {
                 </td>
                 <td className="py-3 px-3">
                   <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-run-bg text-run font-semibold text-[11px]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-run animate-ping" />
                     {t('status.running')}
                   </span>
                 </td>

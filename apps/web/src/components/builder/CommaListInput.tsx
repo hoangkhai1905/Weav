@@ -21,7 +21,7 @@ export const CommaListInput: React.FC<CommaListInputProps> = ({ id, label, value
           onChange(event.target.value.split(',').map((item) => item.trim()).filter(Boolean));
         }}
         onBlur={() => setText((current) => current.split(',').map((item) => item.trim()).filter(Boolean).join(', '))}
-        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
       />
     </div>
   );

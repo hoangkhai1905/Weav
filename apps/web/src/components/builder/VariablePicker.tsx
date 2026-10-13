@@ -58,7 +58,7 @@ export const VariablePicker: React.FC<VariablePickerProps> = ({ groups, insert }
                       onMouseDown={keepFocus}
                       onClick={() => add(mappingOf(group, path))}
                       title={mappingOf(group, path)}
-                      className="flex flex-col items-start rounded border border-border-strong bg-card px-1.5 py-0.5 text-left text-[10px] text-foreground hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex flex-col items-start rounded border border-border-strong bg-card px-1.5 py-0.5 text-left text-[10px] text-foreground hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {friendly && <span className="font-medium">{friendly}</span>}
                       <span className={friendly ? 'font-mono text-[9px] text-muted-foreground' : 'font-mono'}>{path}</span>
@@ -102,7 +102,7 @@ export const VariablePicker: React.FC<VariablePickerProps> = ({ groups, insert }
                   onMouseDown={keepFocus}
                   onClick={() => add(`{{ ${path} }}`)}
                   title={`{{ ${path} }} · ${t(labelKey)}`}
-                  className="rounded border border-border-strong bg-card px-1.5 py-0.5 font-mono text-[10px] text-foreground hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="rounded border border-border-strong bg-card px-1.5 py-0.5 font-mono text-[10px] text-foreground hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {path}
                 </button>

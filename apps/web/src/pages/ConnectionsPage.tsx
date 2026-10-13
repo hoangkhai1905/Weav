@@ -92,7 +92,7 @@ const ctl =
 const ctlPrimary =
   "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:border-primary-hover hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-wait disabled:opacity-60";
 const fieldCls =
-  "h-8 w-full rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary";
+  "h-8 w-full rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring";
 
 function getErrorMessage(error: unknown, t: (key: string) => string): string {
   if (error instanceof ConnectionApiError) {
@@ -320,7 +320,7 @@ function ConnectionRow({
                 maxLength={120}
                 required
                 autoFocus
-                className="h-8 rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                className="h-8 rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
               />
               <button
                 type="submit"
@@ -349,7 +349,7 @@ function ConnectionRow({
                   data-testid={`connection-oauth-${connection.id}`}
                   onClick={onStartOAuth}
                   disabled={isWorking}
-                  className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border border-primary px-3 text-[13px] font-medium text-accent-ink transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border border-run px-3 text-[13px] font-medium text-accent-ink transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isWorking ? t("connections.oauth.starting") : neverConnected ? t("w5c.connect") : t("connections.oauth.start")}
                 </button>
@@ -543,7 +543,7 @@ export function CreateConnectionDialog({
                 <label
                   key={value}
                   className={`relative flex cursor-pointer flex-col items-center gap-1 rounded-md border px-2 py-2.5 text-center text-[11px] font-medium transition-colors focus-within:ring-2 focus-within:ring-ring ${
-                    provider === value ? "border-primary bg-run-bg text-run" : "border-border bg-card text-text-2 hover:bg-subtle"
+                    provider === value ? "border-run bg-run-bg text-run" : "border-border bg-card text-text-2 hover:bg-subtle"
                   }`}
                 >
                   <input

@@ -28,5 +28,6 @@ for (const mode of ['light', 'dark']) {
     }
     assert.ok(ratio(p.onPrimary, p.primary) >= 4.5, `onPrimary ${ratio(p.onPrimary, p.primary).toFixed(2)}`);
     assert.ok(ratio(p.primary, p.card) >= 4.5, 'primary link text on card');
+    assert.ok(ratio(p.onButton, p.button) >= 4.5, `onButton ${ratio(p.onButton, p.button).toFixed(2)}`);
   });
 }

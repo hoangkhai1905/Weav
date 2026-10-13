@@ -18,59 +18,67 @@ export interface ColorPalette {
   text: string;
   textMuted: string;
   textSubtle: string;
+  /** Accent: links, active tab, focus, "running". */
   primary: string;
   onPrimary: string;
+  /** Main action button: ink fill, not the accent. */
+  button: string;
+  onButton: string;
   skeleton: string;
   overlay: string;
   headerBg: string;
   tones: Record<StatusTone, ToneColors>;
 }
 
-// Minimal direction: neutral grays, hairline borders, one deep-blue accent.
+// Warm neutrals, hairline borders, one blue accent for links/selection; main buttons are ink.
 // Status tones are flat tints (soft background + coloured text); WCAG AA is locked by palette.contrast.test.cjs.
 export const palette: { light: ColorPalette; dark: ColorPalette } = {
   light: {
-    bg: '#fafafa',
+    bg: '#f6f5f2',
     card: '#ffffff',
-    cardSecondary: '#f4f4f5',
-    border: '#e5e7eb',
-    borderStrong: '#d1d5db',
-    text: '#0a0a0a',
-    textMuted: '#52525b',
-    textSubtle: '#686873',
-    primary: '#2563eb',
+    cardSecondary: '#f1efeb',
+    border: '#e6e3de',
+    borderStrong: '#d3cec6',
+    text: '#1d1b18',
+    textMuted: '#54504a',
+    textSubtle: '#6b655d',
+    primary: '#2456c7',
     onPrimary: '#ffffff',
-    skeleton: '#ececee',
-    overlay: 'rgba(10, 10, 10, 0.4)',
+    button: '#1d1b18',
+    onButton: '#ffffff',
+    skeleton: '#ece9e4',
+    overlay: 'rgba(29, 27, 24, 0.4)',
     headerBg: '#ffffff',
     tones: {
-      neutral: { fg: '#52525b', bg: '#f4f4f5', border: '#e5e7eb' },
-      info: { fg: '#1d4ed8', bg: '#eff4ff', border: '#cddcfb' },
-      warning: { fg: '#92400e', bg: '#fdf6e7', border: '#f3dfb0' },
-      success: { fg: '#166534', bg: '#edf8f1', border: '#c3e6d0' },
-      danger: { fg: '#b91c1c', bg: '#fdf1f1', border: '#f4cccc' },
+      neutral: { fg: '#54504a', bg: '#f1efeb', border: '#e6e3de' },
+      info: { fg: '#2456c7', bg: '#e9effb', border: '#c9d7f4' },
+      warning: { fg: '#7f5300', bg: '#f6eccf', border: '#e8d59e' },
+      success: { fg: '#2b6a37', bg: '#e5f0e3', border: '#c3dcc0' },
+      danger: { fg: '#a1302a', bg: '#fae7e5', border: '#efc4bf' },
     },
   },
   dark: {
-    bg: '#0b0b0c',
-    card: '#131314',
-    cardSecondary: '#1b1b1d',
-    border: '#27272a',
-    borderStrong: '#3f3f46',
-    text: '#f4f4f5',
-    textMuted: '#a1a1aa',
-    textSubtle: '#8e8e98',
-    primary: '#6b9bff',
-    onPrimary: '#0a0a0a',
-    skeleton: '#232326',
+    bg: '#131211',
+    card: '#1a1917',
+    cardSecondary: '#211f1d',
+    border: '#2c2926',
+    borderStrong: '#3a3632',
+    text: '#ece9e4',
+    textMuted: '#b5afa7',
+    textSubtle: '#968f86',
+    primary: '#8eaef3',
+    onPrimary: '#131211',
+    button: '#ece9e4',
+    onButton: '#131211',
+    skeleton: '#272522',
     overlay: 'rgba(0, 0, 0, 0.6)',
-    headerBg: '#131314',
+    headerBg: '#1a1917',
     tones: {
-      neutral: { fg: '#b4b4bd', bg: '#1b1b1d', border: '#2f2f33' },
-      info: { fg: '#8db0ff', bg: '#161d30', border: '#26335a' },
-      warning: { fg: '#e8b75a', bg: '#26200f', border: '#4a3d18' },
-      success: { fg: '#6fcf97', bg: '#102319', border: '#1f4a31' },
-      danger: { fg: '#f28b8b', bg: '#2a1414', border: '#552424' },
+      neutral: { fg: '#b5afa7', bg: '#211f1d', border: '#3a3632' },
+      info: { fg: '#8eaef3', bg: '#1c2538', border: '#2c3b5c' },
+      warning: { fg: '#e3b860', bg: '#2a2214', border: '#4a3d1e' },
+      success: { fg: '#86c595', bg: '#18271c', border: '#2a4a33' },
+      danger: { fg: '#f2948a', bg: '#2e1a18', border: '#5a2e29' },
     },
   },
 };

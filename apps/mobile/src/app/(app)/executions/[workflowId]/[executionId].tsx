@@ -224,7 +224,7 @@ export default function ExecutionDetailScreen() {
               label={t('exd.rerun')}
               accessibilityHint={t('exd.rerun.hint')}
               busy={runMutation.isPending}
-              icon={runMutation.isPending ? undefined : <RefreshCw size={16} color={colors.onPrimary} />}
+              icon={runMutation.isPending ? undefined : <RefreshCw size={16} color={colors.onButton} />}
               onPress={() => void handleRerun()}
             />
             <Text style={[Typography.caption, { color: colors.textSubtle }]}>{t('exd.rerun.hint')}</Text>

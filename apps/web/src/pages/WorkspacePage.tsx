@@ -653,7 +653,7 @@ export function WorkspacePage() {
             type="submit"
             data-testid="workspace-create-submit"
             disabled={isCreating || !userId}
-            className="mt-6 inline-flex items-center justify-center rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60 sm:mt-6"
+            className="mt-6 inline-flex items-center justify-center rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60 sm:mt-6"
           >
             {isCreating ? t('workspace.creating') : t('workspace.create')}
           </button>
@@ -795,7 +795,7 @@ export function WorkspacePage() {
                 variants={buttonPress}
                 whileHover="hover"
                 whileTap="tap"
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <UserPlus size={14} aria-hidden="true" />
                 <span>{memberMutationKey?.startsWith('add:') ? t('workspace.adding') : t('workspace.add_member')}</span>
@@ -821,7 +821,7 @@ export function WorkspacePage() {
                 data-testid="workspace-invite-send"
                 onClick={() => void handleSendInvitation(invitePromptEmail)}
                 disabled={Boolean(memberMutationKey)}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Mail size={14} aria-hidden="true" />
                 <span>{memberMutationKey?.startsWith('invite:') ? t('workspace.invitations.sending') : t('workspace.invitations.send')}</span>

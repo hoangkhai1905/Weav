@@ -17,7 +17,7 @@ interface Props {
 }
 
 const field =
-  'w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-60';
+  'w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring disabled:opacity-60';
 
 /** Only fields the draft PUT persists (name, description) plus read-only workflow info. */
 export function WorkflowSettingsPanel({
