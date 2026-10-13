@@ -2,22 +2,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  Activity,
-  Bot,
+  Building2,
   GitFork,
   HelpCircle,
+  History,
   LayoutDashboard,
   LogOut,
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
-  Users,
   X,
 } from "lucide-react";
 import { MOTION_TRANSITION, REDUCED_MOTION_TRANSITION } from "../../lib/motion";
 import { useAuthStore } from "../../store/useAuthStore";
 import { useI18nStore } from "../../store/useI18nStore";
 import { useUIStore } from "../../store/useUIStore";
+import { WeavMark } from "../common/WeavMark";
+import { FOCUS_RING } from "../../lib/uiClasses";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 interface NavItem {
@@ -34,9 +35,8 @@ const MAIN_NAV_ITEMS: NavItem[] = [
     icon: LayoutDashboard,
   },
   { translationKey: "nav.workflows", path: "/workflows", icon: GitFork },
-  { translationKey: "nav.monitoring", path: "/executions", icon: Activity, testId: "sidebar-monitoring" },
-  { translationKey: "nav.workspace", path: "/workspace", icon: Users },
-  { translationKey: "nav.assistant", path: "/assistant", icon: Bot, testId: "sidebar-assistant" },
+  { translationKey: "nav.executions", path: "/executions", icon: History, testId: "sidebar-monitoring" },
+  { translationKey: "nav.workspace", path: "/workspace", icon: Building2 },
 ];
 
 const BOTTOM_NAV_ITEMS: NavItem[] = [
@@ -108,8 +108,8 @@ export function Sidebar() {
           title={rail ? t(item.translationKey) : undefined}
           aria-label={t(item.translationKey)}
           className={({ isActive }) =>
-            `group relative flex h-8 items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-3 text-[13px] font-medium outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring ${
-              isActive ? "bg-sidebar-active text-foreground" : "text-text-2 hover:bg-subtle hover:text-foreground"
+            `group relative isolate flex h-9 items-center gap-2.5 overflow-hidden whitespace-nowrap rounded-md px-[13px] text-sm font-medium transition-colors duration-150 ${FOCUS_RING} ${
+              isActive ? "text-foreground" : "text-text-2 hover:bg-muted hover:text-foreground"
             }`
           }
         >
@@ -119,15 +119,15 @@ export function Sidebar() {
                 <motion.span
                   layoutId="sidebar-active-indicator"
                   data-testid="active-nav-indicator"
-                  className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-sm bg-primary"
+                  className="absolute inset-0 -z-10 rounded-md bg-card ring-1 ring-border"
                   transition={activeTransition}
                 />
               )}
               <Icon
-                size={16}
+                size={18}
                 strokeWidth={1.75}
                 aria-hidden="true"
-                className={isActive ? "shrink-0 text-foreground" : "shrink-0 text-muted-foreground group-hover:text-foreground"}
+                className={isActive ? "shrink-0 text-foreground" : "shrink-0 text-text-2 group-hover:text-foreground"}
               />
               <span className={`truncate ${fade} ${rail ? "opacity-0" : "opacity-100"}`}>{t(item.translationKey)}</span>
             </>
@@ -147,23 +147,22 @@ export function Sidebar() {
         data-testid="app-sidebar"
         data-collapsed={rail ? "true" : "false"}
         data-pinned={sidebarCollapsed ? "false" : "true"}
-        className={`flex select-none flex-col gap-3 overflow-hidden border-r border-border bg-sidebar p-2 text-sidebar-foreground ${
+        className={`flex select-none flex-col gap-1 overflow-hidden border-r border-border bg-background p-2.5 text-sidebar-foreground ${
           floating
-            ? `absolute inset-y-0 left-0 z-40 ${prefersReducedMotion ? "" : "transition-[width,box-shadow] duration-150 ease-out"} ${overlayOpen ? "w-[220px] shadow-pop" : "w-14"}`
+            ? `absolute inset-y-0 left-0 z-40 ${prefersReducedMotion ? "" : "transition-[width,box-shadow] duration-150 ease-out"} ${overlayOpen ? "w-[248px] shadow-pop" : "w-16"}`
             : "h-full"
         }`}
       >
-        <div className={`flex items-center gap-1 ${rail ? "flex-col" : ""}`}>
-          <div className={rail ? "w-full" : "min-w-0 flex-1"}>
-            <WorkspaceSwitcher compact={rail} />
-          </div>
+        <div className={`flex min-h-12 items-center gap-2.5 pb-2 pt-1 ${rail ? "flex-col" : "pl-[9px]"}`}>
+          <WeavMark />
+          {!rail && <span className="flex-1 truncate text-base font-semibold tracking-tight text-foreground">Weav</span>}
           {isMobile ? (
             <button
               onClick={() => setMobileSidebarOpen(false)}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
               aria-label={t("nav.close_navigation")}
             >
-              <X size={16} />
+              <X size={18} strokeWidth={1.75} />
             </button>
           ) : (
             <button
@@ -174,43 +173,49 @@ export function Sidebar() {
               aria-label={toggleLabel}
               aria-expanded={!sidebarCollapsed}
               aria-keyshortcuts="Control+B Meta+B"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
             >
-              <ToggleIcon size={16} aria-hidden="true" />
+              <ToggleIcon size={18} strokeWidth={1.75} aria-hidden="true" />
             </button>
           )}
         </div>
 
-        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden" aria-label={t("nav.primary")}>
+        <WorkspaceSwitcher compact={rail} />
+
+        <nav className="mt-3.5 flex flex-col gap-0.5 overflow-y-auto overflow-x-hidden" aria-label={t("nav.primary")}>
           {renderNavItems(MAIN_NAV_ITEMS, rail, isMobile)}
         </nav>
 
-        <div data-testid="sidebar-footer" className="shrink-0 space-y-0.5 border-t border-border pt-2.5">
+        <div className="min-h-6 flex-1" />
+
+        <div data-testid="sidebar-footer" className="shrink-0">
           <nav aria-label={t("nav.support")} className="flex flex-col gap-0.5">
             {renderNavItems(BOTTOM_NAV_ITEMS, rail, isMobile)}
           </nav>
 
-          <div className={`flex items-center gap-2 ${rail ? "flex-col py-1" : "h-9 px-3"}`}>
+          <div className={`mt-2 flex items-center gap-2.5 border-t border-border pt-3 ${rail ? "flex-col" : "px-[7px]"}`}>
             <span
               aria-hidden="true"
               title={rail ? profileName : undefined}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-text-2"
+              className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full border border-border bg-subtle text-xs font-semibold text-foreground"
             >
               {profileInitials || "A"}
             </span>
-            <span
-              data-testid="sidebar-profile-name"
-              className={rail ? "sr-only" : "min-w-0 flex-1 truncate text-[13px] text-foreground"}
-            >
-              {profileName}
+            <span className={rail ? "sr-only" : "flex min-w-0 flex-1 flex-col"}>
+              <span data-testid="sidebar-profile-name" className="truncate text-sm font-medium text-foreground">
+                {profileName}
+              </span>
+              {user?.email && user.email !== profileName && (
+                <span className="truncate text-xs text-muted-foreground">{user.email}</span>
+              )}
             </span>
             <button
               onClick={logout}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-err-bg hover:text-err focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-err-bg hover:text-err ${FOCUS_RING}`}
               title={t("nav.logout")}
               aria-label={t("nav.logout")}
             >
-              <LogOut size={15} />
+              <LogOut size={16} strokeWidth={1.75} />
             </button>
           </div>
         </div>
@@ -237,7 +242,7 @@ export function Sidebar() {
         }}
         className={`relative z-30 hidden h-full shrink-0 flex-col md:flex ${
           prefersReducedMotion ? "" : "transition-[width] duration-150 ease-out"
-        } ${sidebarCollapsed ? "w-14" : "w-[220px]"}`}
+        } ${sidebarCollapsed ? "w-16" : "w-[248px]"}`}
       >
         {renderContent(false)}
       </aside>
@@ -257,7 +262,7 @@ export function Sidebar() {
               animate={prefersReducedMotion ? { opacity: 1 } : { x: 0 }}
               exit={prefersReducedMotion ? { opacity: 0 } : { x: "-100%" }}
               transition={prefersReducedMotion ? REDUCED_MOTION_TRANSITION : { type: "spring", stiffness: 350, damping: 32 }}
-              className="relative z-10 h-full w-[220px]"
+              className="relative z-10 h-full w-[248px]"
             >
               {renderContent(true)}
             </motion.div>

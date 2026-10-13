@@ -2235,6 +2235,22 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "builder.field.format.text.locale": "Kiểu số",
     "builder.field.format.text.locale.vi": "1.234.567,89",
     "builder.field.format.text.locale.en": "1,234,567.89",
+    // ---- v2 redesign (shell, bot) ----
+    "topbar.language": "Ngôn ngữ",
+    "bot.name": "Trợ lý Weav",
+    "bot.open": "Mở trợ lý Weav",
+    "bot.close": "Đóng trợ lý Weav",
+    "bot.close_panel": "Đóng trợ lý",
+    "bot.subtitle": "Hỏi về quy trình, lượt chạy, thành viên",
+    "bot.greeting": "Chào {name}. Mình có thể giải thích lượt chạy lỗi, tìm quy trình hoặc soạn một quy trình mới cho bạn.",
+    "bot.greeting_anon": "Chào bạn. Mình có thể giải thích lượt chạy lỗi, tìm quy trình hoặc soạn một quy trình mới cho bạn.",
+    "bot.suggest.failed": "Vì sao lượt chạy gần nhất bị lỗi?",
+    "bot.suggest.draft": "Soạn quy trình gửi báo cáo tuần qua email",
+    "bot.suggest.top": "Quy trình nào chạy nhiều nhất tuần này?",
+    "bot.input_label": "Tin nhắn gửi trợ lý",
+    "bot.placeholder": "Hỏi trợ lý về quy trình của bạn",
+    "bot.view_runs": "Xem lịch sử chạy",
+    // ---- end v2 ----
   },
   EN: {
     // Navigation
@@ -4468,5 +4484,21 @@ export const TRANSLATIONS: Record<Language, Record<string, string>> = {
     "builder.field.format.text.locale": "Number style",
     "builder.field.format.text.locale.vi": "1.234.567,89",
     "builder.field.format.text.locale.en": "1,234,567.89",
+    // ---- v2 redesign (shell, bot) ----
+    "topbar.language": "Language",
+    "bot.name": "Weav assistant",
+    "bot.open": "Open Weav assistant",
+    "bot.close": "Close Weav assistant",
+    "bot.close_panel": "Close assistant",
+    "bot.subtitle": "Ask about workflows, runs, members",
+    "bot.greeting": "Hi {name}. I can explain a failed run, find a workflow or draft a new one for you.",
+    "bot.greeting_anon": "Hi there. I can explain a failed run, find a workflow or draft a new one for you.",
+    "bot.suggest.failed": "Why did the latest run fail?",
+    "bot.suggest.draft": "Draft a workflow that emails a weekly report",
+    "bot.suggest.top": "Which workflow ran the most this week?",
+    "bot.input_label": "Message to the assistant",
+    "bot.placeholder": "Ask the assistant about your workflows",
+    "bot.view_runs": "View run history",
+    // ---- end v2 ----
   },
 };

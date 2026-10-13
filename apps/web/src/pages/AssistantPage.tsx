@@ -1,212 +1,43 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Bot, GitFork, List, Loader2, Plus, Send, Square, Trash2, Wrench } from 'lucide-react';
-import {
-  AssistantApiError,
-  assistantApi,
-  isAssistantMockMode,
-  type AssistantConversation,
-  type AssistantEvent,
-} from '../api/assistant.api';
-import { workflowV1Api } from '../api/workflow-v1.api';
+import type { AssistantConversation } from '../api/assistant.api';
 import { ConfirmModal } from '../components/common/ConfirmModal';
+import { countDraftNodes, useAssistantChat } from '../hooks/useAssistantChat';
 import { useWorkspaceListContext } from '../hooks/useWorkspace';
-import { showErrorToast } from '../lib/feedback/toast';
 import { formatAssistantText } from '../lib/formatAssistantText';
 import { useI18nStore } from '../store/useI18nStore';
 
-interface Draft {
-  name: string;
-  definition: unknown;
-  layout: Record<string, unknown>;
-}
-
-interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  tools: string[];
-  draft?: Draft;
-  error?: string;
-}
-
-const ERROR_KEYS: Record<string, string> = {
-  AI_BUSY: 'assistant.error.busy',
-  AI_QUOTA_EXCEEDED: 'assistant.error.quota',
-  TOO_MANY_REQUESTS: 'assistant.error.rate_limit',
-  AI_TIMEOUT: 'assistant.error.timeout',
-  AI_PROVIDER_UNAVAILABLE: 'assistant.error.provider',
-  AI_PROVIDER_AUTH: 'assistant.error.provider',
-};
-
-function errorKey(code: string, status = 0): string {
-  return ERROR_KEYS[code] ?? (status === 429 ? 'assistant.error.rate_limit' : 'assistant.error.generic');
-}
-
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const isAbort =(error: unknown) => error instanceof DOMException && error.name === 'AbortError';
-
-function countNodes(definition: unknown): number {
-  const nodes = (definition as { nodes?: unknown } | null)?.nodes;
-  return Array.isArray(nodes) ? nodes.length : 0;
-}
 
 function AssistantChat({ activeWorkspaceId }: { activeWorkspaceId: string | null }) {
   const { t } = useI18nStore();
   const navigate = useNavigate();
   const location = useLocation();
-  const [conversations, setConversations] = useState<AssistantConversation[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [listLoading, setListLoading] = useState(false);
-  const [disabled, setDisabled] = useState(isAssistantMockMode);
-  const [conversationId, setConversationId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [streaming, setStreaming] = useState(false);
-  const [showList, setShowList] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<AssistantConversation | null>(null);
-  const [openingDraft, setOpeningDraft] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
-  const conversationRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
-
-  const markDisabledIfUnavailable = useCallback((error: unknown, notFoundMeansDisabled = true) => {
-    if (error instanceof AssistantApiError && (error.status === 503 || (notFoundMeansDisabled && error.status === 404))) {
-      setDisabled(true);
-      return true;
-    }
-    return false;
-  }, []);
-
-  const loadConversations = useCallback(async (before?: string) => {
-    if (!activeWorkspaceId || isAssistantMockMode) return;
-    try {
-      const items = await assistantApi.listConversations(activeWorkspaceId, before);
-      setConversations((current) => (before ? [...current, ...items] : items));
-      setHasMore(items.length >= 20);
-    } catch (error) {
-      if (!markDisabledIfUnavailable(error)) showErrorToast('assistant.error.list');
-    } finally {
-      setListLoading(false);
-    }
-  }, [activeWorkspaceId, markDisabledIfUnavailable]);
-
-  const resetChat = useCallback(() => {
-    abortRef.current?.abort();
-    conversationRef.current = null;
-    setConversationId(null);
-    setMessages([]);
-    setStreaming(false);
-  }, []);
-
-  useEffect(() => {
-    queueMicrotask(() => void loadConversations()); // async load; keeps setState out of the effect body
-  }, [loadConversations]);
-
-  useEffect(() => () => abortRef.current?.abort(), []);
+  const [showList, setShowList] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<AssistantConversation | null>(null);
+  const {
+    conversations, hasMore, listLoading, setListLoading, disabled, conversationId, messages, input, setInput,
+    streaming, openingDraft, loadConversations, resetChat, openConversation: openChat, deleteConversation, send, stop, openDraft, toolLabel,
+  } = useAssistantChat(activeWorkspaceId, { inputRef });
 
   useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: 'end' });
   }, [messages]);
 
   const openConversation = async (id: string) => {
-    resetChat();
     setShowList(false);
-    try {
-      const history = await assistantApi.getMessages(id);
-      conversationRef.current = id;
-      setConversationId(id);
-      setMessages(history.messages.map((m) => ({ role: m.role, content: m.content, tools: [] })));
-    } catch (error) {
-      if (!markDisabledIfUnavailable(error, false)) showErrorToast('assistant.error.history');
-    }
+    await openChat(id);
   };
 
   const confirmDelete = async () => {
     const target = pendingDelete;
     if (!target) return;
-    try {
-      await assistantApi.deleteConversation(target.conversationId);
-      setConversations((current) => current.filter((c) => c.conversationId !== target.conversationId));
-      if (conversationRef.current === target.conversationId) resetChat();
-    } catch {
-      showErrorToast('assistant.error.delete');
-    } finally {
-      setPendingDelete(null);
-    }
-  };
-
-  const patchLast = (patch: (message: ChatMessage) => ChatMessage) =>
-    setMessages((current) => current.map((message, index) => (index === current.length - 1 ? patch(message) : message)));
-
-  const send = async (override?: string) => {
-    const text = (override ?? input).trim();
-    if (!text || streaming || !activeWorkspaceId) return;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setInput('');
-    setStreaming(true);
-    setMessages((current) => [...current, { role: 'user', content: text, tools: [] }, { role: 'assistant', content: '', tools: [] }]);
-    inputRef.current?.focus();
-    let terminal = false;
-    const onEvent = (event: AssistantEvent) => {
-      switch (event.type) {
-        case 'conversation':
-          conversationRef.current = event.conversationId;
-          setConversationId(event.conversationId);
-          break;
-        case 'delta':
-          patchLast((m) => ({ ...m, content: m.content + event.text }));
-          break;
-        case 'tool_call':
-          patchLast((m) => ({ ...m, tools: [...m.tools, event.name] }));
-          break;
-        case 'draft':
-          patchLast((m) => ({ ...m, draft: { name: event.name, definition: event.definition, layout: event.layout } }));
-          break;
-        case 'done':
-          terminal = true;
-          break;
-        case 'error':
-          terminal = true;
-          patchLast((m) => ({ ...m, error: t(errorKey(event.code)) }));
-          break;
-        default:
-          break;
-      }
-    };
-    try {
-      await assistantApi.chat(
-        {
-          workspaceId: activeWorkspaceId,
-          ...(conversationRef.current ? { conversationId: conversationRef.current } : {}),
-          message: text,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        },
-        controller.signal,
-        onEvent,
-      );
-      if (!terminal && !controller.signal.aborted) patchLast((m) => ({ ...m, error: t('assistant.error.generic') }));
-    } catch (error) {
-      if (!isAbort(error)) {
-        const unavailable = !conversationRef.current && markDisabledIfUnavailable(error);
-        if (!unavailable) {
-          const status = error instanceof AssistantApiError ? error.status : 0;
-          const code = error instanceof AssistantApiError ? error.code : '';
-          patchLast((m) => ({ ...m, error: t(errorKey(code, status)) }));
-        }
-        setInput(text);
-      }
-    } finally {
-      if (abortRef.current === controller) {
-        abortRef.current = null;
-        setStreaming(false);
-        void loadConversations();
-      }
-      inputRef.current?.focus();
-    }
+    await deleteConversation(target);
+    setPendingDelete(null);
   };
 
   // "Ask AI why it failed" hands over {workflowId, executionId} through router state. Send one message, then clear the
@@ -240,24 +71,6 @@ function AssistantChat({ activeWorkspaceId }: { activeWorkspaceId: string | null
       event.preventDefault();
       void send();
     }
-  };
-
-  const openDraft = async (draft: Draft) => {
-    if (!activeWorkspaceId || openingDraft) return;
-    setOpeningDraft(true);
-    try {
-      const id = await workflowV1Api.createWorkflowFromDefinition(draft, activeWorkspaceId);
-      navigate(`/workflows/${id}/builder`);
-    } catch {
-      showErrorToast('assistant.error.open_draft');
-      setOpeningDraft(false);
-    }
-  };
-
-  const toolLabel = (name: string) => {
-    const key = `assistant.tool.${name}`;
-    const label = t(key);
-    return label === key ? name : label;
   };
 
   if (disabled) {
@@ -378,7 +191,7 @@ function AssistantChat({ activeWorkspaceId }: { activeWorkspaceId: string | null
                     <div data-testid="assistant-draft" className="flex items-center justify-between gap-3 rounded-md border border-border bg-card p-2">
                       <div className="min-w-0">
                         <p className="truncate text-[13px] font-medium text-foreground">{message.draft.name}</p>
-                        <p className="text-xs text-text-2">{t('assistant.draft.nodes').replace('{count}', String(countNodes(message.draft.definition)))}</p>
+                        <p className="text-xs text-text-2">{t('assistant.draft.nodes').replace('{count}', String(countDraftNodes(message.draft.definition)))}</p>
                       </div>
                       <button
                         type="button"
@@ -420,7 +233,7 @@ function AssistantChat({ activeWorkspaceId }: { activeWorkspaceId: string | null
             <button
               type="button"
               data-testid="assistant-stop"
-              onClick={() => abortRef.current?.abort()}
+              onClick={stop}
               aria-label={t('assistant.stop')}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-border text-foreground hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
