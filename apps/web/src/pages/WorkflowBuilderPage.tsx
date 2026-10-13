@@ -788,7 +788,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       setPublishedWebhooks(publication.webhooks);
       showSuccessToast('toast.workflow.published', mutationSession);
       refreshNotifications(mutationSession);
-      return true;
+      return publication.webhooks;
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
         reportWorkflowError(error, 'msg.workflow_could_not_be_published');
@@ -836,13 +836,20 @@ export const WorkflowBuilderPage: React.FC = () => {
 
   const handleRunWorkflow = async () => {
     if (!workflow) return;
-    if (hasUnpublishedChanges && !(await handlePublishWorkflow())) return;
+    let newWebhooks: WebhookProvisioning[] = [];
+    if (hasUnpublishedChanges) {
+      const published = await handlePublishWorkflow();
+      if (!published) return;
+      newWebhooks = published;
+    }
     setWorkflowError(null);
     const mutationSession = captureNotificationSession();
     try {
       const accepted = await workflowApi.runWorkflow(workflow.id, {});
       if (!isCurrentNotificationSession(mutationSession)) return;
       showSuccessToast('toast.workflow.run_accepted', mutationSession);
+      // The webhook secret is shown only once: stay here so it can be copied before leaving.
+      if (newWebhooks.length > 0) return;
       navigate(`/workflows/${encodeURIComponent(workflow.id)}/executions?run=${encodeURIComponent(accepted.executionId)}`);
     } catch (error) {
       if (isCurrentNotificationSession(mutationSession)) {
