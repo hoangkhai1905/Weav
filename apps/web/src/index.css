@@ -78,6 +78,10 @@
   --t-action: #33578e;
   --t-logic: #0e6a62;
   --t-ai: #7a2983;
+  --t-trigger-bg: #ece8e2;
+  --t-action-bg: #e6ecf6;
+  --t-logic-bg: #dfefec;
+  --t-ai-bg: #f2e5f3;
 
   /* Legacy brand helpers are flat accent now (no gradients) */
   --brand-from: #2456c7;
@@ -147,6 +151,10 @@
   --t-action: #9db8e8;
   --t-logic: #6fcfc3;
   --t-ai: #dca2e3;
+  --t-trigger-bg: #2a2724;
+  --t-action-bg: #1d2535;
+  --t-logic-bg: #142826;
+  --t-ai-bg: #2a1b2c;
 
   --brand-from: #8eaef3;
   --brand-to: #8eaef3;
@@ -332,6 +340,10 @@ body {
   --color-t-action: var(--t-action);
   --color-t-logic: var(--t-logic);
   --color-t-ai: var(--t-ai);
+  --color-t-trigger-bg: var(--t-trigger-bg);
+  --color-t-action-bg: var(--t-action-bg);
+  --color-t-logic-bg: var(--t-logic-bg);
+  --color-t-ai-bg: var(--t-ai-bg);
   --shadow-pop: var(--pop);
   --radius-sm: 4px;
   --radius-md: 6px;
