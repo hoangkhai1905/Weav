@@ -147,7 +147,7 @@ export default function InvitationsScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={t('inv.title')} onBack={goBack} />
       <KeyboardAvoidingView behavior="padding" style={styles.safe}>
         <ScrollView

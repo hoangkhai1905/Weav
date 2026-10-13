@@ -281,3 +281,13 @@ Xem thêm `docs/work_logs/K/web/ui-redesign.md` mục 10.
 - Font: `@expo-google-fonts/be-vietnam-pro` (400/500/600/700) + `jetbrains-mono` 400, nạp bằng `useFonts` trong `app/_layout.tsx` (import theo từng weight để không gói cả 18 file). `Typography.*` có `fontFamily` theo weight; `Fonts.mono` = JetBrains Mono. `Radius.lg` 8 → 12 (thẻ).
 - Giới hạn: chữ đặt `fontWeight` riêng mà không dùng `Typography` vẫn dùng family Regular (Android có thể tô đậm giả). Các lane màn hình sẽ dùng `Typography`.
 - Kiểm tra: `npx tsc --noEmit -p .` sạch; `node --test src/constants/palette.contrast.test.cjs` 4/4. Chưa kiểm thiết bị.
+
+### Lane 2.1: thanh dưới 4 mục + chuông trên header (xong, chưa kiểm thiết bị)
+- Thanh dưới 4 mục (Trang chủ · Quy trình · Lịch sử · Tôi) vẽ một lần trong `app/(app)/_layout.tsx` (`AppTabBar`) dưới `Stack`, nên màn chi tiết (workflows/[id], templates, executions, connections, settings, workspace, invitations, assistant) cũng có thanh này. `(tabs)/_layout.tsx` chỉ còn giữ trạng thái tab (`tabBar={() => null}`). Tab nào sáng suy ra từ `usePathname()` (`components/ui/tab-bar.ts`, có test). Thanh ẩn khi bàn phím mở và ở màn tạo bằng AI (`/ai/*`) và chat trợ lý (`/assistant/chat`), vì hai màn này có ô nhập sát đáy.
+- Thông báo không còn là tab: `notifications.tsx` chuyển từ `(tabs)/` sang `app/(app)/` (route `/notifications` giữ nguyên), có nút quay lại. Chuông có chấm đỏ + nút sáng/tối nằm ở `components/ui/HeaderActions.tsx`, gắn vào header Trang chủ, Quy trình, Lịch sử, Tôi.
+- Các màn dùng `SafeAreaView` mặc định đổi sang `edges={['top']}` vì phần inset đáy giờ do thanh dưới giữ.
+- `palette.ts` + `useThemeColors`: thêm `steps.{trigger,action,logic,ai}` (fg/bg); test tương phản mở rộng.
+- i18n: `stores/i18n.nav.ts` (+ test) cho nhãn thanh dưới/chuông/sáng-tối; `tab.profile` = "Tôi"/"Me", `tab.executions` EN = "History".
+- Impact (CLI): TabsLayout, AppLayout (mobile), NotificationsScreen, HomeScreen, ProfileScreen, WorkflowsScreen, ExecutionsScreen đều LOW, 0 caller (route file-based, đã grep các `router.navigate('/(app)/(tabs)/notifications')` và đổi).
+- Lệnh: `npx tsc --noEmit -p .` sạch; `node --test` palette.contrast 6/6, tab-bar 2/2, i18n.nav 2/2, i18n.account 3/3, ui.store 1/1.
+- Rủi ro: typed routes (`.expo/types`) sinh lại khi chạy Metro; `router.navigate` từ màn chi tiết về tab dựa vào hành vi "pop về route đã có" của expo-router, cần xác nhận trên máy.

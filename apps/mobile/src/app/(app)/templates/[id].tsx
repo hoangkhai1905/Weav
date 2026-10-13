@@ -154,7 +154,7 @@ export default function TemplateDetailScreen() {
   }
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={[styles.safe, { backgroundColor: colors.bg }]}>
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={t('tpl.detail.title')} onBack={goBack} />
       {body}
     </SafeAreaView>

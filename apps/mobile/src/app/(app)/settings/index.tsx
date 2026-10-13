@@ -141,7 +141,7 @@ export default function SecurityScreen() {
   const hasOthers = Boolean(sessionPage?.items.some((s) => !s.current)) || (sessionPage?.totalPages ?? 0) > 1;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={t('sec.title')} onBack={goBack} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>

@@ -6,6 +6,7 @@ import { accountEn, accountVi } from './i18n.account';
 import { workflowsEn, workflowsVi } from './i18n.workflows';
 import { templatesEn, templatesVi } from './i18n.templates';
 import { invitationsEn, invitationsVi } from './i18n.invitations';
+import { navEn, navVi } from './i18n.nav';
 
 export type Language = 'VI' | 'EN';
 
@@ -16,7 +17,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'tab.workflows': 'Quy trình',
     'tab.executions': 'Lịch sử',
     'tab.notifications': 'Thông báo',
-    'tab.profile': 'Cá nhân',
+    'tab.profile': 'Tôi',
 
     // Home Screen & Control Center
     'home.greeting': 'Xin chào 👋',
@@ -207,14 +208,15 @@ export const translations: Record<Language, Record<string, string>> = {
     ...authVi,
     ...runsVi,
     ...accountVi,
+    ...navVi,
   },
   EN: {
     // Navigation Tabs
     'tab.home': 'Home',
     'tab.workflows': 'Workflows',
-    'tab.executions': 'Executions',
+    'tab.executions': 'History',
     'tab.notifications': 'Alerts',
-    'tab.profile': 'Profile',
+    'tab.profile': 'Me',
 
     // Home Screen & Control Center
     'home.greeting': 'Good morning 👋',
@@ -405,6 +407,7 @@ export const translations: Record<Language, Record<string, string>> = {
     ...authEn,
     ...runsEn,
     ...accountEn,
+    ...navEn,
   },
 };
 

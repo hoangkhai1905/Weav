@@ -324,7 +324,7 @@ export default function WorkspaceScreen() {
   const showSkeleton = isLoadingWorkspace && workspaces.length === 0;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader
         title={t('ws.title')}
         onBack={goBack}

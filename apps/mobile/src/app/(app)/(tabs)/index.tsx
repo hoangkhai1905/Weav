@@ -3,7 +3,6 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import {
-  Bell,
   Building2,
   Check,
   ChevronDown,
@@ -20,11 +19,11 @@ import { selectActiveWorkspace, useWorkspaceStore } from '../../../stores/worksp
 import { useSwitchWorkspace } from '../../../features/workspace/hooks/useSwitchWorkspace';
 import { useMyInvitations } from '../../../features/workspace/hooks/useInvitations';
 import { useWorkflowNames } from '../../../features/workflows/hooks/useWorkflows';
-import { useNotificationUnreadCount } from '../../../features/notifications/hooks/useNotifications';
 import { useDashboard, TRIGGER_CHECK_LIMIT } from '../../../features/dashboard/hooks/useDashboard';
 import type { AttentionItem } from '../../../features/dashboard/dashboard.stats';
 import { fill } from '../../../features/common/fill';
 import { durationBetween, formatRelativeTime } from '../../../features/common/time';
+import { HeaderActions } from '../../../components/ui/HeaderActions';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { ErrorState } from '../../../components/ui/ErrorState';
 import { ListItem } from '../../../components/ui/ListItem';
@@ -49,7 +48,6 @@ export default function HomeScreen() {
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspace = useWorkspaceStore(selectActiveWorkspace);
   const selectWorkspace = useSwitchWorkspace();
-  const { data: unread = 0 } = useNotificationUnreadCount();
   const names = useWorkflowNames();
   const dash = useDashboard();
   // Once a minute while this tab is in front; a failed check just hides the banner.
@@ -77,19 +75,7 @@ export default function HomeScreen() {
         </View>
         <ChevronDown size={18} color={colors.textMuted} />
       </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t('dash.notifications')}
-        onPress={() => router.navigate('/(app)/(tabs)/notifications')}
-        style={styles.bell}
-      >
-        <Bell size={20} color={colors.text} />
-        {unread > 0 ? (
-          <View style={[styles.badge, { backgroundColor: colors.danger }]}>
-            <Text style={[styles.badgeText, { color: colors.card }]}>{unread > 9 ? '9+' : unread}</Text>
-          </View>
-        ) : null}
-      </Pressable>
+      <HeaderActions />
     </View>
   );
 
@@ -398,19 +384,6 @@ const styles = StyleSheet.create({
   },
   switcher: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.two, minHeight: MinTouch },
   switcherText: { flex: 1 },
-  bell: { width: MinTouch, height: MinTouch, alignItems: 'center', justifyContent: 'center' },
-  badge: {
-    position: 'absolute',
-    top: 6,
-    right: 4,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    paddingHorizontal: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeText: { fontSize: 10, fontWeight: '700' },
   choice: {
     flexDirection: 'row',
     alignItems: 'center',

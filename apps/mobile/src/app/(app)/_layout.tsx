@@ -2,6 +2,7 @@ import React from 'react';
 import { Stack, Redirect } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useAuthStore } from '../../stores/auth.store';
+import { AppTabBar } from '../../components/ui/AppTabBar';
 import { OfflineBanner } from '../../components/ui/OfflineBanner';
 import { useThemeColors } from '../../hooks/useThemeColors';
 
@@ -27,6 +28,7 @@ export default function AppLayout() {
     <OfflineBanner />
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="notifications" options={{ presentation: 'card' }} />
       <Stack.Screen name="workflows/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="templates/index" options={{ presentation: 'card' }} />
       <Stack.Screen name="templates/[id]" options={{ presentation: 'card' }} />
@@ -40,6 +42,7 @@ export default function AppLayout() {
       <Stack.Screen name="assistant/chat" options={{ presentation: 'card' }} />
       <Stack.Screen name="settings/index" options={{ presentation: 'card' }} />
     </Stack>
+    <AppTabBar />
     </View>
   );
 }

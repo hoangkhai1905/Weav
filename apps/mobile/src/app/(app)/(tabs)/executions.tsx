@@ -12,6 +12,7 @@ import { ErrorState } from '../../../components/ui/ErrorState';
 import { FilterChips, type ChipOption } from '../../../components/ui/FilterChips';
 import { ListItem } from '../../../components/ui/ListItem';
 import { ListSkeleton } from '../../../components/ui/ListSkeleton';
+import { HeaderActions } from '../../../components/ui/HeaderActions';
 import { ScreenHeader } from '../../../components/ui/ScreenHeader';
 import { Sheet } from '../../../components/ui/Sheet';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
@@ -135,14 +136,17 @@ export default function ExecutionsScreen() {
         title={t('exl.title')}
         subtitle={query.data ? fill(t('exl.count'), { n: visible.length }) : undefined}
         trailing={
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('asst.open')}
-            onPress={() => router.push('/(app)/assistant')}
-            style={styles.assistant}
-          >
-            <MessageCircle size={22} color={colors.primary} />
-          </Pressable>
+          <>
+            <HeaderActions />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('asst.open')}
+              onPress={() => router.push('/(app)/assistant')}
+              style={styles.assistant}
+            >
+              <MessageCircle size={22} color={colors.primary} />
+            </Pressable>
+          </>
         }
       />
       {body}

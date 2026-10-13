@@ -12,6 +12,7 @@ import { ErrorState } from '../../../components/ui/ErrorState';
 import { FilterChips, type ChipOption } from '../../../components/ui/FilterChips';
 import { ListItem } from '../../../components/ui/ListItem';
 import { ListSkeleton } from '../../../components/ui/ListSkeleton';
+import { HeaderActions } from '../../../components/ui/HeaderActions';
 import { ScreenHeader } from '../../../components/ui/ScreenHeader';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { useThemeColors } from '../../../hooks/useThemeColors';
@@ -165,6 +166,7 @@ export default function WorkflowsScreen() {
         subtitle={query.data ? fill(t('wfl.count'), { n: total }) : undefined}
         trailing={
           <View style={styles.actions}>
+            <HeaderActions />
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={t('tpl.title')}

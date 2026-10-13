@@ -5,10 +5,10 @@
 
 import { Platform, type FontVariant } from 'react-native';
 
-import { palette, type ColorPalette, type StatusTone, type ToneColors } from './palette';
+import { palette, type ColorPalette, type StatusTone, type StepKind, type ToneColors } from './palette';
 
 export { palette };
-export type { ColorPalette, StatusTone, ToneColors };
+export type { ColorPalette, StatusTone, StepKind, ToneColors };
 
 /** Keys used by the template components (themed-text, app-tabs, ...). */
 function templateColors(p: ColorPalette) {

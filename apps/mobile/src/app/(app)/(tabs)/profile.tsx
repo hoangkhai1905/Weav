@@ -16,6 +16,7 @@ import { ConfirmSheet } from '../../../components/ui/ConfirmSheet';
 import { FilterChips, type ChipOption } from '../../../components/ui/FilterChips';
 import { Group, SectionLabel } from '../../../components/ui/Section';
 import { ListItem } from '../../../components/ui/ListItem';
+import { HeaderActions } from '../../../components/ui/HeaderActions';
 import { ScreenHeader } from '../../../components/ui/ScreenHeader';
 import { TextField } from '../../../components/ui/TextField';
 import { Radius, Spacing, Typography } from '../../../constants/theme';
@@ -119,8 +120,8 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
-      <ScreenHeader title={t('tab.profile')} />
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
+      <ScreenHeader title={t('tab.profile')} trailing={<HeaderActions />} />
       <KeyboardAvoidingView behavior="padding" style={styles.safe}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Group padded>

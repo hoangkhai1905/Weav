@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Bell, ChevronRight, CheckCheck, CircleCheck, CircleX, Info, TriangleAlert, type LucideIcon } from 'lucide-react-native';
 import { format } from 'date-fns';
 import {
@@ -8,27 +9,27 @@ import {
   useMarkNotificationRead,
   useMarkAllNotificationsRead,
   useNotificationUnreadCount,
-} from '../../../features/notifications/hooks/useNotifications';
-import { useNotificationTargetNavigator } from '../../../features/notifications/hooks/useNotificationTargetNavigator';
-import { getSafeNotificationRoute } from '../../../features/notifications/notification.target';
-import { groupByDay, type DayGroup } from '../../../features/notifications/notification.grouping';
-import { formatRelativeTime } from '../../../features/common/time';
-import { useAuthStore } from '../../../stores/auth.store';
-import { captureAuthSessionScope, isAuthSessionScopeCurrent } from '../../../features/auth/auth-session.scope';
+} from '../../features/notifications/hooks/useNotifications';
+import { useNotificationTargetNavigator } from '../../features/notifications/hooks/useNotificationTargetNavigator';
+import { getSafeNotificationRoute } from '../../features/notifications/notification.target';
+import { groupByDay, type DayGroup } from '../../features/notifications/notification.grouping';
+import { formatRelativeTime } from '../../features/common/time';
+import { useAuthStore } from '../../stores/auth.store';
+import { captureAuthSessionScope, isAuthSessionScopeCurrent } from '../../features/auth/auth-session.scope';
 import type {
   NotificationCategoryFilter,
   NotificationItem,
   NotificationSeverity,
-} from '../../../domain/notification/notification.types';
-import { EmptyState } from '../../../components/ui/EmptyState';
-import { ErrorState } from '../../../components/ui/ErrorState';
-import { FilterChips, type ChipOption } from '../../../components/ui/FilterChips';
-import { ListSkeleton } from '../../../components/ui/ListSkeleton';
-import { ScreenHeader } from '../../../components/ui/ScreenHeader';
-import type { ApiError } from '../../../domain/common/error.types';
-import { MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
-import { useThemeColors } from '../../../hooks/useThemeColors';
-import { useTranslation } from '../../../hooks/useTranslation';
+} from '../../domain/notification/notification.types';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { ErrorState } from '../../components/ui/ErrorState';
+import { FilterChips, type ChipOption } from '../../components/ui/FilterChips';
+import { ListSkeleton } from '../../components/ui/ListSkeleton';
+import { ScreenHeader } from '../../components/ui/ScreenHeader';
+import type { ApiError } from '../../domain/common/error.types';
+import { MinTouch, Radius, Spacing, Typography } from '../../constants/theme';
+import { useThemeColors } from '../../hooks/useThemeColors';
+import { useTranslation } from '../../hooks/useTranslation';
 
 type CategoryChip = 'ALL' | NotificationCategoryFilter;
 type ReadChip = 'ALL' | 'UNREAD';
@@ -43,6 +44,7 @@ const SEVERITY_ICON: Record<NotificationSeverity, { icon: LucideIcon; tone: 'inf
 };
 
 export default function NotificationsScreen() {
+  const router = useRouter();
   const colors = useThemeColors();
   const { t, language } = useTranslation();
   const locale = language === 'VI' ? 'vi' : 'en';
@@ -192,9 +194,10 @@ export default function NotificationsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader
         title={t('notif.title')}
+        onBack={() => (router.canGoBack() ? router.back() : router.replace('/(app)/(tabs)'))}
         subtitle={unreadCount !== undefined ? `${unreadCount} ${t('notif.unread')}` : undefined}
         trailing={
           <Pressable

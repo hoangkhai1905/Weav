@@ -38,7 +38,7 @@ export default function ExecutionLookupScreen() {
   }, [workspaceId, executionId, router]);
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }]}>
+    <SafeAreaView edges={['top']} style={[styles.safeArea, { backgroundColor: colors.bg }]}>
       <View style={styles.center}>
         {notFound ? (
           <>

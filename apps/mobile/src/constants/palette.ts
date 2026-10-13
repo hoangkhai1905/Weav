@@ -9,6 +9,13 @@ export interface ToneColors {
   border: string;
 }
 
+export type StepKind = 'trigger' | 'action' | 'logic' | 'ai';
+
+export interface StepColors {
+  fg: string;
+  bg: string;
+}
+
 export interface ColorPalette {
   bg: string;
   card: string;
@@ -28,6 +35,8 @@ export interface ColorPalette {
   overlay: string;
   headerBg: string;
   tones: Record<StatusTone, ToneColors>;
+  /** Workflow step-type tiles (trigger / action / condition / AI): flat tint plus text. */
+  steps: Record<StepKind, StepColors>;
 }
 
 // Warm neutrals, hairline borders, one blue accent for links/selection; main buttons are ink.
@@ -56,6 +65,12 @@ export const palette: { light: ColorPalette; dark: ColorPalette } = {
       success: { fg: '#2b6a37', bg: '#e5f0e3', border: '#c3dcc0' },
       danger: { fg: '#a1302a', bg: '#fae7e5', border: '#efc4bf' },
     },
+    steps: {
+      trigger: { fg: '#5a534b', bg: '#ece8e2' },
+      action: { fg: '#33578e', bg: '#e6ecf6' },
+      logic: { fg: '#0e6a62', bg: '#dfefec' },
+      ai: { fg: '#7a2983', bg: '#f2e5f3' },
+    },
   },
   dark: {
     bg: '#131211',
@@ -79,6 +94,12 @@ export const palette: { light: ColorPalette; dark: ColorPalette } = {
       warning: { fg: '#e3b860', bg: '#2a2214', border: '#4a3d1e' },
       success: { fg: '#86c595', bg: '#18271c', border: '#2a4a33' },
       danger: { fg: '#f2948a', bg: '#2e1a18', border: '#5a2e29' },
+    },
+    steps: {
+      trigger: { fg: '#c2bbb2', bg: '#2a2724' },
+      action: { fg: '#9db8e8', bg: '#1d2535' },
+      logic: { fg: '#6fcfc3', bg: '#142826' },
+      ai: { fg: '#dca2e3', bg: '#2a1b2c' },
     },
   },
 };

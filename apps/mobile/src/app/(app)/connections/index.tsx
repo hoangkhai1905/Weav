@@ -75,7 +75,7 @@ export default function ConnectionsScreen() {
   const connections = query.data ?? [];
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={t('conn.title')} onBack={goBack} />
       {query.isPending ? (
         <ListSkeleton rows={4} />
