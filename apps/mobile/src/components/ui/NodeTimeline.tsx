@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Pressable, Text, View, StyleSheet } from 'react-native';
+import { Check, Minus, X, type LucideIcon } from 'lucide-react-native';
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Fonts, MinTouch, Radius, Spacing, Typography } from '../../constants/theme';
+import { fill } from '../../features/common/fill';
+import { FontFamily, MinTouch, Radius, Spacing, Typography } from '../../constants/theme';
 import { StatusBadge } from './StatusBadge';
 import { JsonViewer } from './JsonViewer';
 import { formatDuration, statusInfo } from './status';
@@ -31,73 +33,73 @@ export interface NodeTimelineItem {
 
 const hasValue = (v: unknown) => v !== null && v !== undefined;
 
-const Row: React.FC<{ item: NodeTimelineItem; last: boolean }> = ({ item, last }) => {
+const DOT_ICON: Partial<Record<string, LucideIcon>> = { success: Check, danger: X, neutral: Minus };
+
+const Row: React.FC<{ item: NodeTimelineItem; index: number; last: boolean }> = ({ item, index, last }) => {
   const colors = useThemeColors();
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const tone = colors.tones[statusInfo(item.status).tone];
+  const info = statusInfo(item.status);
+  const tone = colors.tones[info.tone];
+  const Icon = DOT_ICON[info.tone];
   const attempts = item.attempts ?? [];
-  const canExpand = attempts.length > 0 || hasValue(item.error) || hasValue(item.output);
-  const toggleLabel = open ? t('ui.timeline.hideAttempts') : t('ui.timeline.showAttempts');
+  const canExpand = attempts.length > 1 || hasValue(item.error) || hasValue(item.output);
+  const skipped = item.status === 'SKIPPED' || item.status === 'CANCELLED';
+  const note = item.errorSummary
+    ? { text: item.errorSummary, color: colors.danger }
+    : skipped
+      ? { text: t('rd.step.skipped'), color: colors.textSubtle }
+      : item.status === 'PENDING' || item.status === 'READY'
+        ? { text: t('rd.step.pending'), color: colors.textSubtle }
+        : item.attemptCount > 1
+          ? { text: fill(t('rd.step.retried'), { n: item.attemptCount }), color: colors.textSubtle }
+          : null;
 
   return (
-    <View style={styles.row} accessibilityRole="none">
-      <View style={styles.rail}>
-        <View style={[styles.dot, { backgroundColor: tone.fg }]} />
-        {!last ? <View style={[styles.line, { backgroundColor: colors.border }]} /> : null}
+    <Pressable
+      disabled={!canExpand}
+      accessibilityRole={canExpand ? 'button' : 'text'}
+      accessibilityState={canExpand ? { expanded: open } : undefined}
+      accessibilityLabel={`${index + 1}. ${item.label}, ${t(info.labelKey)}${note ? `. ${note.text}` : ''}`}
+      onPress={() => setOpen((o) => !o)}
+      style={[styles.row, !last && { borderBottomWidth: 1, borderBottomColor: colors.border }]}
+    >
+      <View style={[styles.dot, { backgroundColor: tone.bg }]}>
+        {Icon ? <Icon size={14} strokeWidth={2} color={tone.fg} /> : <View style={[styles.pulse, { backgroundColor: tone.fg }]} />}
       </View>
       <View style={styles.body}>
-        <Text style={[Typography.body, styles.label, { color: colors.text }]}>{item.label}</Text>
-        <View style={styles.meta}>
-          <StatusBadge status={item.status} />
-          <Text style={[Typography.mono, { color: colors.textMuted, fontFamily: Fonts?.mono }]}>
-            {formatDuration(item.durationMs)}
-          </Text>
-          <Text style={[Typography.caption, { color: colors.textSubtle }]}>
-            {t('ui.timeline.attempts')}: {item.attemptCount}
-          </Text>
-        </View>
-        {item.errorSummary ? (
-          <Text style={[Typography.caption, { color: colors.danger }]}>{item.errorSummary}</Text>
-        ) : null}
-        {canExpand ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ expanded: open }}
-            accessibilityLabel={`${item.label}: ${toggleLabel}`}
-            onPress={() => setOpen((o) => !o)}
-            style={styles.toggle}
-          >
-            <Text style={[Typography.label, { color: colors.primary }]}>{toggleLabel}</Text>
-          </Pressable>
-        ) : null}
+        <Text style={[Typography.body, styles.label, { color: colors.text }]}>
+          {index + 1}. {item.label}
+        </Text>
+        {note ? <Text style={[Typography.caption, { color: note.color }]}>{note.text}</Text> : null}
         {open ? (
           <View style={styles.details}>
-            {hasValue(item.error) ? <JsonViewer label={t('ui.timeline.error')} value={item.error} defaultExpanded /> : null}
-            {hasValue(item.output) ? <JsonViewer label={t('ui.timeline.output')} value={item.output} /> : null}
-            {attempts.map((a) => (
-              <View key={a.id} style={[styles.attempt, { borderColor: colors.border, backgroundColor: colors.card }]}>
-                <View style={styles.meta}>
-                  <Text style={[Typography.label, { color: colors.text }]}>
-                    {t('ui.timeline.attempt')} {a.number}
-                  </Text>
-                  <StatusBadge status={a.status} />
-                  <Text style={[Typography.mono, { color: colors.textMuted, fontFamily: Fonts?.mono }]}>
-                    {formatDuration(a.durationMs)}
-                  </Text>
-                </View>
-                {hasValue(a.error) ? <JsonViewer label={t('ui.timeline.error')} value={a.error} defaultExpanded /> : null}
-                {hasValue(a.output) ? <JsonViewer label={t('ui.timeline.output')} value={a.output} /> : null}
-              </View>
-            ))}
+            {hasValue(item.output) ? <JsonViewer label={t('rd.step.result')} value={item.output} /> : null}
+            {hasValue(item.error) ? <JsonViewer label={t('rd.technical')} value={item.error} /> : null}
+            {attempts.length > 1
+              ? attempts.map((a) => (
+                  <View key={a.id} style={[styles.attempt, { borderColor: colors.border, backgroundColor: colors.cardSecondary }]}>
+                    <View style={styles.meta}>
+                      <Text style={[Typography.label, { color: colors.text }]}>
+                        {t('ui.timeline.attempt')} {a.number}
+                      </Text>
+                      <StatusBadge status={a.status} />
+                      <Text style={[Typography.mono, { color: colors.textMuted }]}>{formatDuration(a.durationMs)}</Text>
+                    </View>
+                    {hasValue(a.error) ? <JsonViewer label={t('rd.technical')} value={a.error} /> : null}
+                    {hasValue(a.output) ? <JsonViewer label={t('rd.step.result')} value={a.output} /> : null}
+                  </View>
+                ))
+              : null}
           </View>
         ) : null}
       </View>
-    </View>
+      <Text style={[Typography.mono, { color: colors.textMuted }]}>{skipped ? '-' : formatDuration(item.durationMs)}</Text>
+    </Pressable>
   );
 };
 
-/** Vertical list of workflow nodes for one execution. Expandable per node. */
+/** Steps of one run as a single card: status dot, name, short plain note, duration; tap a step for its result. */
 export const NodeTimeline: React.FC<{ nodes: NodeTimelineItem[] }> = ({ nodes }) => {
   const colors = useThemeColors();
   const { t } = useTranslation();
@@ -105,24 +107,22 @@ export const NodeTimeline: React.FC<{ nodes: NodeTimelineItem[] }> = ({ nodes })
     return <Text style={[Typography.body, { color: colors.textMuted }]}>{t('ui.timeline.empty')}</Text>;
   }
   return (
-    <View accessibilityRole="list">
+    <View accessibilityRole="list" style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       {nodes.map((n, i) => (
-        <Row key={n.id} item={n} last={i === nodes.length - 1} />
+        <Row key={n.id} item={n} index={i} last={i === nodes.length - 1} />
       ))}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: Spacing.three },
-  rail: { width: 14, alignItems: 'center' },
-  dot: { width: 12, height: 12, borderRadius: 6, marginTop: 5 },
-  line: { flex: 1, width: 2, marginTop: Spacing.one },
-  body: { flex: 1, gap: Spacing.one, paddingBottom: Spacing.three },
-  label: { fontWeight: '600' },
+  card: { borderWidth: 1, borderRadius: Radius.lg, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, minHeight: 56, paddingVertical: 12, paddingHorizontal: 14 },
+  dot: { width: 26, height: 26, borderRadius: Radius.pill, alignItems: 'center', justifyContent: 'center' },
+  pulse: { width: 8, height: 8, borderRadius: Radius.pill },
+  body: { flex: 1, minWidth: 0, gap: 2 },
+  label: { fontFamily: FontFamily.medium },
   meta: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: Spacing.two },
-  // Full width: a shrink-wrapped bold label is measured too narrow on some Android fonts and loses its last word.
-  toggle: { minHeight: MinTouch, justifyContent: 'center' },
-  details: { gap: Spacing.two },
+  details: { gap: Spacing.two, marginTop: 6, minHeight: MinTouch - 12 },
   attempt: { borderWidth: 1, borderRadius: Radius.sm, padding: Spacing.two, gap: Spacing.two },
 });

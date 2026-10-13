@@ -44,3 +44,22 @@ export function nodeErrorSummary(error: unknown, t: (key: string) => string): st
   const label = t(labelKey) === labelKey ? field : t(labelKey);
   return `${label}: ${text}`;
 }
+
+export type FailureAction = 'connections' | 'workflow' | null;
+
+const CONNECTION_CODES = new Set([
+  'CONNECTION_UNAVAILABLE',
+  'CONNECTION_CONFIGURATION_INVALID',
+  'CONNECTION_FORBIDDEN',
+  'AUTHENTICATION_REJECTED',
+]);
+const CONFIG_CODES = new Set(['CONFIGURATION_ERROR', 'MAPPING_ERROR', 'MAPPING_MISSING']);
+
+/** Where a person can fix a failed step: the connections screen, the workflow itself, or nowhere (retry later). */
+export function failureAction(error: unknown): FailureAction {
+  const { code, message } = nodeErrorParts(error);
+  if (code && CONNECTION_CODES.has(code)) return 'connections';
+  if (code && CONFIG_CODES.has(code)) return 'workflow';
+  if (code === 'MAPPING_ERROR' && message?.includes('is missing')) return 'workflow';
+  return null;
+}
