@@ -95,7 +95,7 @@ Refactoring is allowed when it clearly improves correctness, maintainability, or
   - workflow-service `HttpTransportIntegrationTest` x2: TLS test certificate missing.
   - workflow-service `WorkflowNotificationLifecyclePersistenceIntegrationTest.compiledNotificationConsumerPersistsAllSixV2EventsInJwtScopedInbox`: needs a built `services/notification-service/dist`.
   - identity-service Avatar integration tests x3: the `minio/minio:RELEASE.2024-06-04T19-20-08Z` image can no longer be pulled from Docker Hub.
-- **Playwright.** Specs that stub the backend with `page.route` (for example `workspace-connections.spec.ts`) need `VITE_API_MODE=http`, the default in `apps/web/.env.example`. `mock` swaps the API clients for in-app demo data, so the route stubs never fire. The full suite was already red on `dev` (stale text and demo-data assertions) as of 2026-10-02. The live AI generation case also needs `AI_E2E=1` and the Gateway generate route.
+- **Playwright.** Specs that stub the backend with `page.route` (for example `workspace-connections.spec.ts`) need `VITE_API_MODE=http`, the default in `apps/web/.env.example`. `mock` swaps the API clients for in-app demo data, so the route stubs never fire. Some specs on `dev` are stale (old text and demo-data assertions), so run the specs for the area you changed and compare any failure against `dev` before treating it as a regression. The live AI generation case also needs `AI_E2E=1` and the Gateway generate route.
 - **Telegram trigger needs a public URL.** `trigger.telegram` registers its webhook with Telegram, so set `WORKFLOW_PUBLIC_BASE_URL` to the gateway's public HTTPS URL (a `cloudflared tunnel --url http://localhost:3000` quick tunnel in dev); empty keeps it `DEPENDENCY_NOT_CONFIGURED`. A workspace's own bot (token from @BotFather) is a `TELEGRAM` connection; there is no bot-service.
 - **Local web against the real stack.** Run Vite on `localhost:5173`; the Gateway's CORS allow-list does not include other ports.
 - **AI Service.** Off by default. To enable: `node scripts/ai-dev-keys.mjs` (writes `tmp/service-keys/public/` and `private/`), set `DEEPSEEK_API_KEY` and `DEEPSEEK_MODEL` in `.env`, set `WORKFLOW_AI_ENABLED=true` and `WORKFLOW_AI_GENERATION_ENABLED=true`, then start the stack without `compose.ai-local.yml`. Check `curl http://localhost:3001/health/ready`.
@@ -144,3 +144,17 @@ Use only skills relevant to the task; if one is unavailable, say so and use the 
 - Relevant tests and builds pass (known environment-only errors named), and user-facing web changes were checked in the running app.
 - `git diff --check` is clean, GitNexus `detect_changes` ran before any commit, and the work log is updated without secrets.
 - Remaining risks, skipped checks, and next steps are stated plainly.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues on `hoangkhai1905/Weav`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.

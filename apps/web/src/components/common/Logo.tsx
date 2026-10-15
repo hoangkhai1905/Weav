@@ -23,7 +23,7 @@ export function Logo({ collapsed = false, size = 'md', showSubtitle = true }: Lo
   return (
     <Link to="/dashboard" className="flex items-center gap-3 overflow-hidden cursor-pointer select-none group">
       <img
-        src="/weav-logo.svg"
+        src="/weav-mark.svg"
         alt={t('common.logo_alt')}
         className={`${imgSize} shrink-0 group-hover:scale-105 transition-transform duration-300`}
       />

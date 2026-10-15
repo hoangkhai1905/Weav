@@ -45,11 +45,11 @@ test.describe('industrial workflow shell', () => {
   test('uses the refreshed WEAV mark in the shell and auth brand', async ({ page }) => {
     await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.goto('/dashboard');
-    await expect(page.locator('img[alt="WEAV app logo"]')).toHaveAttribute('src', '/weav-logo-v2.png');
+    await expect(page.locator('img[alt="WEAV app logo"]')).toHaveAttribute('src', '/weav-mark.svg');
 
     await page.goto('/login');
-    await expect(page.getByRole('img', { name: 'WEAV logo', exact: true })).toHaveAttribute('src', '/weav-logo-v2.png');
-    await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/weav-logo-v2.png');
+    await expect(page.getByRole('img', { name: 'WEAV logo', exact: true })).toHaveAttribute('src', '/weav-mark.svg');
+    await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute('href', '/favicon.svg');
   });
 
   test('shows readable navigation and moves the active indicator to Workflows', async ({ page }) => {
