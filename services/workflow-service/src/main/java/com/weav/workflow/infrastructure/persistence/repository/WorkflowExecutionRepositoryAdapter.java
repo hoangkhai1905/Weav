@@ -153,13 +153,15 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
                 null, rootNodeId, null, definition);
     }
 
-    /** The caller holds the workflow row lock, so concurrent manual admissions count each other's rows. */
+    /** Only active MANUAL runs count; the caller holds the workflow row lock, so concurrent manual admissions count each other's rows. */
     private void requireManualCapacity(UUID workflowId) {
         Long active = entityManager.createQuery(
                         "select count(execution) from WorkflowExecutionJpaEntity execution "
-                                + "where execution.workflowId = :workflowId and execution.status in :statuses",
+                                + "where execution.workflowId = :workflowId and execution.triggerType = :triggerType "
+                                + "and execution.status in :statuses",
                         Long.class)
                 .setParameter("workflowId", workflowId)
+                .setParameter("triggerType", ExecutionTriggerType.MANUAL)
                 .setParameter("statuses", List.of(
                         ExecutionStatus.QUEUED, ExecutionStatus.RUNNING, ExecutionStatus.WAITING))
                 .getSingleResult();

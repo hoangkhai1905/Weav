@@ -85,6 +85,24 @@ class ManualRunLimitTest {
         assertEquals(3, executionCount(workflow.getId()));
     }
 
+    @Test
+    void activeAutomaticRunsDoNotBlockAManualRun() {
+        UUID workspaceId = UUID.randomUUID();
+        Workflow workflow = publishedManualWorkflow(workspaceId);
+        UUID versionId = jdbc.queryForObject("select current_version_id from workflow.workflows where id = ?",
+                UUID.class, workflow.getId());
+        String[] types = {"SCHEDULE", "WEBHOOK"};
+        String[] statuses = {"QUEUED", "RUNNING", "WAITING"};
+        for (int i = 0; i < 10; i++) {
+            jdbc.update("insert into workflow.workflow_executions (id, workflow_id, workflow_version_id, status, "
+                    + "trigger_type) values (?, ?, ?, ?, ?)", UUID.randomUUID(), workflow.getId(), versionId,
+                    statuses[i % 3], types[i % 2]);
+        }
+
+        admissionService.manual(workspaceId, workflow.getId(), ACTOR_ID, Map.of(), null, null, null);
+        assertEquals(11, executionCount(workflow.getId()));
+    }
+
     private int executionCount(UUID workflowId) {
         return jdbc.queryForObject("select count(*) from workflow.workflow_executions where workflow_id = ?",
                 Integer.class, workflowId);
