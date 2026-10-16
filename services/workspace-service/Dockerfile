@@ -24,6 +24,6 @@ EXPOSE 8080
 
 # busybox wget ships in the alpine JRE image.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=10 \
-  CMD wget -qO- http://127.0.0.1:8080/actuator/health/readiness | grep -q '"status":"UP"' || exit 1
+  CMD wget -qO- http://127.0.0.1:8080/actuator/health/liveness | grep -q '"status":"UP"' || exit 1
 
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "/app/app.jar"]

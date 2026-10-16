@@ -5,11 +5,18 @@ import com.weav.workflow.application.notification.WorkflowNotificationEvent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /** Durable notification outbox operations; external access and broker I/O happen after claims return. */
 public interface WorkflowNotificationOutboxStore extends WorkflowNotificationOutboxPort {
     List<ClaimedEvent> claim(int batchSize, Duration leaseDuration);
+
+    /**
+     * When the earliest unfinished event becomes claimable (retry time of a PENDING row or lease expiry of a CLAIMED
+     * one); empty when nothing is outstanding. Two partial-index reads, used to size the idle sleep.
+     */
+    Optional<Instant> findEarliestDue();
 
     boolean renewClaim(UUID eventId, UUID claimToken, Duration leaseDuration);
 

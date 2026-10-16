@@ -820,6 +820,59 @@ describe('assistant workspace membership and limits', () => {
     expect(elsewhere.res.status).toBe(200);
   });
 
+  it('treats a daily limit of 0 as unlimited and counts nothing when both are 0', async () => {
+    await start(
+      [
+        [text('a'), end()],
+        [text('b'), end()],
+        [text('c'), end()],
+      ],
+      {
+        AI_ASSISTANT_DAILY_USER_LIMIT: '0',
+        AI_ASSISTANT_DAILY_WORKSPACE_LIMIT: '0',
+      },
+    );
+    const record = jest.spyOn(store, 'recordUsage');
+    const token = asUser(randomUUID());
+    for (let i = 0; i < 3; i++)
+      expect((await converse(token)).res.status).toBe(200);
+    expect(record).not.toHaveBeenCalled();
+    record.mockRestore();
+  });
+
+  it('a user limit of 0 leaves the workspace limit in force', async () => {
+    await start([[text('a'), end()]], {
+      AI_ASSISTANT_DAILY_USER_LIMIT: '0',
+      AI_ASSISTANT_DAILY_WORKSPACE_LIMIT: '1',
+    });
+    const same = asUser(randomUUID());
+    expect((await converse(same)).res.status).toBe(200);
+    const { res } = await converse(same);
+    expect(res.status).toBe(429);
+    expect(await errorCode(res)).toBe('AI_QUOTA_EXCEEDED');
+  });
+
+  it('a workspace limit of 0 leaves the user limit in force', async () => {
+    await start(
+      [
+        [text('a'), end()],
+        [text('b'), end()],
+        [text('c'), end()],
+      ],
+      {
+        AI_ASSISTANT_DAILY_USER_LIMIT: '1',
+        AI_ASSISTANT_DAILY_WORKSPACE_LIMIT: '0',
+      },
+    );
+    const first = asUser(randomUUID());
+    expect((await converse(first)).res.status).toBe(200);
+    // A second user is not limited by the first user's quota or the (disabled) workspace one.
+    expect((await converse(asUser(randomUUID()))).res.status).toBe(200);
+    const { res } = await converse(first);
+    expect(res.status).toBe(429);
+    expect(await errorCode(res)).toBe('AI_QUOTA_EXCEEDED');
+  });
+
   it('rate-limits per workspace across users with 429 AI_BUSY', async () => {
     await start([[text('a'), end()]], {
       AI_ASSISTANT_WORKSPACE_RATE_LIMIT_PER_MINUTE: '1',

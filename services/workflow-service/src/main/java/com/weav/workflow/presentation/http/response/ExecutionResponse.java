@@ -1,5 +1,6 @@
 package com.weav.workflow.presentation.http.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.weav.workflow.application.dto.ExecutionResultDto;
 import com.weav.workflow.application.port.out.ExecutionQueryPort;
 import com.weav.workflow.domain.valueobject.AttemptStatus;
@@ -56,19 +57,23 @@ public final class ExecutionResponse {
 
     public record Node(UUID nodeExecutionId, String nodeId, String nodeType, NodeExecutionStatus status,
                        int attemptCount, Instant startedAt, Instant finishedAt,
-                       Object output, Object error, List<Attempt> attempts) {
+                       Object output, @JsonInclude(JsonInclude.Include.NON_DEFAULT) boolean outputTruncated,
+                       Object error, List<Attempt> attempts) {
         private static Node from(ExecutionQueryPort.NodeState node) {
             return new Node(node.nodeExecutionId(), node.nodeId(), node.nodeType(), node.status(),
-                    node.attemptCount(), node.startedAt(), node.finishedAt(), node.output(), node.error(),
+                    node.attemptCount(), node.startedAt(), node.finishedAt(), node.output(),
+                    node.outputTruncated(), node.error(),
                     node.attempts().stream().map(Attempt::from).toList());
         }
     }
 
     public record Attempt(UUID attemptId, int attemptNumber, AttemptStatus status,
-                          Instant startedAt, Instant finishedAt, Object output, Object error) {
+                          Instant startedAt, Instant finishedAt, Object output,
+                          @JsonInclude(JsonInclude.Include.NON_DEFAULT) boolean outputTruncated, Object error) {
         private static Attempt from(ExecutionQueryPort.AttemptState attempt) {
             return new Attempt(attempt.attemptId(), attempt.attemptNumber(), attempt.status(),
-                    attempt.startedAt(), attempt.finishedAt(), attempt.output(), attempt.error());
+                    attempt.startedAt(), attempt.finishedAt(), attempt.output(), attempt.outputTruncated(),
+                    attempt.error());
         }
     }
 

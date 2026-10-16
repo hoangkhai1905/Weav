@@ -55,10 +55,12 @@ const schema = z
     NOTIFICATION_RETRY_BASE_MS: integer(1000),
     NOTIFICATION_RETRY_MAX_MS: integer(300000),
     NOTIFICATION_POLL_MS: integer(1000),
-    // Idle polling backs off (doubling) up to this cap; resets to NOTIFICATION_POLL_MS on work.
-    NOTIFICATION_WORKER_IDLE_MAX_MS: integer(30000, 1000, 600000),
-    // Unacked messages per consumer; processing is idempotent and inbox-transactional.
-    NOTIFICATION_CONSUMER_PREFETCH: integer(5, 1, 50),
+    // Idle polling doubles up to this cap, then wakes at wall-clock multiples of it (aligned with the
+    // other services so the shared Neon compute can suspend); resets to NOTIFICATION_POLL_MS on work.
+    NOTIFICATION_WORKER_IDLE_MAX_MS: integer(600000, 1000, 600000),
+    // Unacked messages per consumer; processing is idempotent and inbox-transactional. Default
+    // equals the Prisma/pg pool size (max 3 in databaseOptions) so a burst does not queue on connections.
+    NOTIFICATION_CONSUMER_PREFETCH: integer(3, 1, 50),
     // Terminal deliveries and inbox rows older than this are purged hourly; 0 disables the purge.
     NOTIFICATION_RETENTION_DAYS: integer(90, 0, 3650),
     NOTIFICATION_LEASE_MS: integer(60000),

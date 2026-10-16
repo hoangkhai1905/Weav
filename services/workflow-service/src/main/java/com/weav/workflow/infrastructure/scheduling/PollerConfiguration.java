@@ -2,6 +2,7 @@ package com.weav.workflow.infrastructure.scheduling;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 /** In-process wake signals between the writers and the pollers that read what they wrote. */
 @Configuration(proxyBeanMethods = false)
@@ -19,7 +20,14 @@ public class PollerConfiguration {
 
     /** Raised when a run is admitted; wakes the recovery scanner and the long-running alert sweeper. */
     @Bean
+    @Primary
     ActivitySignal executionActivity() {
+        return new ActivitySignal();
+    }
+
+    /** Raised when a trigger is published, updated, paused, resumed or deleted; wakes the schedule and Gmail scans. */
+    @Bean
+    ActivitySignal triggerActivity() {
         return new ActivitySignal();
     }
 }

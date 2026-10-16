@@ -309,6 +309,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '413': { $ref: '#/components/responses/RequestTooLarge' }
         '422': { $ref: '#/components/responses/StateConflict' }
+        '429': { $ref: '#/components/responses/ManualRunLimitExceeded' }
         '500': { $ref: '#/components/responses/InternalError' }
     get:
       tags: [Executions]
@@ -1233,7 +1234,13 @@ components:
         finishedAt: { type: string, format: date-time, nullable: true }
         output:
           nullable: true
-          description: Sanitized JSON value; provider credentials are removed.
+          description: >-
+            Sanitized JSON value; provider credentials are removed. Replaced by a marker object
+            (code OUTPUT_TRUNCATED, sizeBytes, limitBytes) when the stored output exceeds the server's
+            execution detail output limit; outputTruncated is then true.
+        outputTruncated:
+          type: boolean
+          description: Present and true only when output was withheld for exceeding the size limit.
         error:
           nullable: true
           description: Sanitized JSON value; provider credentials are removed.
@@ -1249,7 +1256,10 @@ components:
         finishedAt: { type: string, format: date-time, nullable: true }
         output:
           nullable: true
-          description: Sanitized JSON value; provider credentials are removed.
+          description: As NodeState.output, including the OUTPUT_TRUNCATED marker.
+        outputTruncated:
+          type: boolean
+          description: Present and true only when output was withheld for exceeding the size limit.
         error:
           nullable: true
           description: Sanitized JSON value; provider credentials are removed.
@@ -1542,6 +1552,13 @@ components:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
     RequestTooLarge:
       description: Raw request body exceeded the bounded request size before JSON binding.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ManualRunLimitExceeded:
+      description: >-
+        Too many runs of this workflow are still queued, running, or waiting
+        (code MANUAL_RUN_LIMIT_EXCEEDED). Retry when one finishes.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }

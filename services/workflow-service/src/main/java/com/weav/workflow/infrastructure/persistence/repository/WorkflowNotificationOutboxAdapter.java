@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -109,6 +110,17 @@ public class WorkflowNotificationOutboxAdapter implements WorkflowNotificationOu
                 RETURNING event.event_id, event.event_type, event.workspace_id, event.recipient_user_id,
                           event.requires_monitor_access, event.payload::text AS payload, event.retry_count
                 """.formatted(table, table), mapper, batchSize, token, leaseMillis);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Instant> findEarliestDue() {
+        // Mirrors claim(): PENDING rows by next_attempt_at, CLAIMED rows by lease_until; least() ignores nulls.
+        java.sql.Timestamp earliest = jdbc.queryForObject("""
+                SELECT least((SELECT min(next_attempt_at) FROM %1$s WHERE status = 'PENDING'),
+                             (SELECT min(lease_until) FROM %1$s WHERE status = 'CLAIMED'))
+                """.formatted(table), java.sql.Timestamp.class);
+        return Optional.ofNullable(earliest).map(java.sql.Timestamp::toInstant);
     }
 
     @Override

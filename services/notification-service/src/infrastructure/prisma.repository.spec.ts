@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return -- mocked Prisma client */
 import { Prisma } from '../../node_modules/.prisma/notification';
 import { PrismaDeliveryRepository } from './prisma.repository';
-import { testDelivery, testSettings } from '../testing/fixtures';
+import { testDelivery, testEvent, testSettings } from '../testing/fixtures';
 
 type Sql = [TemplateStringsArray, ...unknown[]];
 const text = (call: Sql) => call[0].join('?').replace(/\s+/g, ' ');
@@ -125,4 +125,36 @@ describe('PrismaDeliveryRepository retention purge', () => {
       expect(tx.$executeRaw).not.toHaveBeenCalled();
     },
   );
+});
+
+describe('PrismaDeliveryRepository.nextDueInMs', () => {
+  it('reads one MIN row on the DB clock with bound parameters', async () => {
+    const { repo, client } = setup();
+    const queryRaw = jest.fn().mockResolvedValue([{ ms: 1234.5 }]);
+    (client as unknown as Record<string, unknown>).$queryRaw = queryRaw;
+    await expect(repo.nextDueInMs(5, 60000)).resolves.toBe(1234.5);
+    const sql = text(queryRaw.mock.calls[0] as Sql);
+    expect(sql).toContain('MIN(scheduled_at)');
+    expect(sql).toContain("status='SENDING'");
+    expect(queryRaw.mock.calls[0].slice(1)).toEqual([5, 60000]);
+  });
+  it('returns null when nothing is pending', async () => {
+    const { repo, client } = setup();
+    (client as unknown as Record<string, unknown>).$queryRaw = jest
+      .fn()
+      .mockResolvedValue([{ ms: null }]);
+    await expect(repo.nextDueInMs(5, 60000)).resolves.toBeNull();
+  });
+});
+
+describe('PrismaDeliveryRepository.ingest', () => {
+  it('waits for a pooled connection long enough for a consumer burst', async () => {
+    const { repo, client } = setup();
+    client.$transaction.mockResolvedValue(undefined);
+    await repo.ingest(testEvent(), {});
+    expect(client.$transaction.mock.calls[0][1]).toEqual({
+      maxWait: 10000,
+      timeout: 30000,
+    });
+  });
 });

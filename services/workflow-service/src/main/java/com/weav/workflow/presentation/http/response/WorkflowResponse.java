@@ -3,6 +3,7 @@ package com.weav.workflow.presentation.http.response;
 import com.weav.workflow.application.service.WorkflowDraftService;
 import com.weav.workflow.application.service.WorkflowPublicationService;
 import com.weav.workflow.domain.model.aggregate.workflow.Workflow;
+import com.weav.workflow.domain.model.aggregate.workflow.WorkflowSummary;
 import com.weav.workflow.domain.model.aggregate.workflow.WorkflowTrigger;
 import com.weav.workflow.domain.valueobject.WorkflowStatus;
 
@@ -94,24 +95,16 @@ public record WorkflowResponse(
             triggerTypes = List.copyOf(triggerTypes);
         }
 
-        public static Summary from(Workflow workflow) {
-            return new Summary(workflow.getId(), workflow.getName(), workflow.getDescription(),
-                    workflow.getStatus(), workflow.getSchemaVersion(), workflow.getCurrentVersionId(),
-                    workflow.getCreatedAt(), workflow.getUpdatedAt(), workflow.getPublishedAt(),
-                    triggerTypes(workflow.getDraftDefinition()));
+        public static Summary from(WorkflowSummary workflow) {
+            return new Summary(workflow.id(), workflow.name(), workflow.description(),
+                    workflow.status(), workflow.schemaVersion(), workflow.currentVersionId(),
+                    workflow.createdAt(), workflow.updatedAt(), workflow.publishedAt(),
+                    triggerTypes(workflow.nodeTypes()));
         }
 
-        /** Node types of every trigger node (type starting "trigger.") in definition order. */
-        static List<String> triggerTypes(Map<String, Object> definition) {
-            if (definition == null || !(definition.get("nodes") instanceof List<?> nodes)) {
-                return List.of();
-            }
-            return nodes.stream()
-                    .filter(node -> node instanceof Map<?, ?>)
-                    .map(node -> ((Map<?, ?>) node).get("type"))
-                    .filter(type -> type instanceof String text && text.startsWith("trigger."))
-                    .map(String.class::cast)
-                    .toList();
+        /** Every trigger node type (starting "trigger.") in definition order. */
+        static List<String> triggerTypes(List<String> nodeTypes) {
+            return nodeTypes.stream().filter(type -> type.startsWith("trigger.")).toList();
         }
     }
 

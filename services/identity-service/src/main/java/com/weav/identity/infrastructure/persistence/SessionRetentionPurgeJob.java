@@ -1,7 +1,9 @@
 package com.weav.identity.infrastructure.persistence;
 
+import com.weav.identity.infrastructure.metrics.ScheduledTaskMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -26,6 +28,7 @@ public class SessionRetentionPurgeJob {
     private final TransactionTemplate transaction;
     private final int retentionDays;
     private final String table;
+    private volatile ScheduledTaskMetrics taskMetrics;
 
     public SessionRetentionPurgeJob(
             JdbcTemplate jdbc,
@@ -49,7 +52,17 @@ public class SessionRetentionPurgeJob {
             initialDelayString = "${weav.identity.session-purge-initial-delay:PT5M}")
     public void purgeOnSchedule() {
         purgeNow();
+        ScheduledTaskMetrics metrics = taskMetrics;
+        if (metrics != null) {
+            metrics.succeeded(ScheduledTaskMetrics.SESSION_PURGE);
+        }
     }
+
+    @Autowired(required = false)
+    public void configureTaskMetrics(ScheduledTaskMetrics metrics) {
+        this.taskMetrics = metrics;
+    }
+
 
     /** Returns the number of rows deleted; 0 if another node holds the lock. */
     public int purgeNow() {

@@ -117,6 +117,36 @@ test.describe("AI assistant page", () => {
     await expect(reply.locator("div.whitespace-pre-wrap")).toHaveText("Line one\nLine two");
   });
 
+  test("pages conversations with the before and beforeId keyset cursor", async ({ page }) => {
+    await installAuthFixture(page);
+    const firstPage = Array.from({ length: 20 }, (_, i) => ({
+      conversationId: `30000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+      title: `Conversation ${i + 1}`,
+      createdAt: "2026-10-01T00:00:00Z",
+      // Every row shares one updatedAt: only the id can break the tie.
+      updatedAt: "2026-10-03T00:00:00Z",
+    }));
+    const last = firstPage[firstPage.length - 1];
+    const queries: Array<Record<string, string>> = [];
+    await page.route("**/api/v1/assistant/conversations?**", (route) => {
+      const params = Object.fromEntries(new URL(route.request().url()).searchParams);
+      queries.push(params);
+      return fulfillJson(route, { items: params.before ? [] : firstPage });
+    });
+
+    await gotoAssistant(page);
+    await expect(page.getByTestId("assistant-conversation")).toHaveCount(20);
+    // The first page carries no cursor (it may be fetched more than once while the workspace settles).
+    expect(queries.every((q) => !("before" in q) && !("beforeId" in q))).toBe(true);
+
+    await page.getByTestId("assistant-load-more").click();
+    await expect.poll(() => queries.find((q) => "before" in q)).toMatchObject({
+      workspaceId: WORKSPACE_ID,
+      before: last.updatedAt,
+      beforeId: last.conversationId,
+    });
+  });
+
   test("streams deltas, shows tool chip and reuses conversationId", async ({ page }) => {
     await installAuthFixture(page);
     await stubConversationList(page, []);

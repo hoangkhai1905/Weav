@@ -95,6 +95,11 @@ export abstract class DeliveryRepository {
     leaseMs: number,
   ): Promise<Delivery | null>;
   abstract finish(delivery: Delivery, patch: DeliveryPatch): Promise<void>;
+  /** Milliseconds until the earliest scheduled retry or lease expiry, or null when none is pending. */
+  abstract nextDueInMs(
+    maxAttempts: number,
+    leaseMs: number,
+  ): Promise<number | null>;
   abstract ready(): Promise<boolean>;
 }
 export interface DeliveryPatch {

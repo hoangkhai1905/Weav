@@ -16,6 +16,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -100,6 +101,16 @@ public class OutboxEventRepositoryAdapter implements OutboxEventRepository {
                 .filter(Objects::nonNull)
                 .map(mapper::toDomain)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Instant> findEarliestPendingDue() {
+        // Mirrors claimPending: due once next_attempt_at has passed and any other publisher's lease has expired.
+        Timestamp earliest = jdbcTemplate.queryForObject("select min(greatest(next_attempt_at, "
+                + "coalesce(publisher_lease_until, next_attempt_at))) from " + outboxTable
+                + " where status = 'PENDING'", Timestamp.class);
+        return Optional.ofNullable(earliest).map(Timestamp::toInstant);
     }
 
     @Override

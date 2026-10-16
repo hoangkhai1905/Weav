@@ -5,6 +5,7 @@ import com.weav.workflow.application.port.out.WorkspaceDependencyUnavailableExce
 import com.weav.workflow.application.port.out.WorkflowNotificationOutboxStore;
 import com.weav.workflow.application.port.out.WorkflowNotificationOutboxStore.ClaimedEvent;
 import com.weav.workflow.domain.exception.ForbiddenException;
+import com.weav.workflow.infrastructure.metrics.ScheduledTaskMetrics;
 import com.weav.workflow.infrastructure.scheduling.IdleBackoff;
 import com.weav.workflow.infrastructure.scheduling.OutboxWakeup;
 import org.slf4j.Logger;
@@ -48,6 +49,7 @@ public final class WorkflowNotificationOutboxPublisher {
     private final String exchange;
     private volatile IdleBackoff idleBackoff;
     private volatile OutboxWakeup wakeup;
+    private volatile ScheduledTaskMetrics taskMetrics;
 
     public WorkflowNotificationOutboxPublisher(
             WorkflowNotificationOutboxStore outbox,
@@ -88,21 +90,50 @@ public final class WorkflowNotificationOutboxPublisher {
             }
         }
         int published = 0;
+        boolean failed = false;
         try {
             published = publishPending();
         } catch (RuntimeException exception) {
+            failed = true;
             LOGGER.warn("Workflow notification outbox poll failed ({})", exception.getClass().getSimpleName());
         }
-        if (backoff != null) {
-            backoff.record(published > 0);
+        if (!failed) {
+            ScheduledTaskMetrics.markSucceeded(taskMetrics, ScheduledTaskMetrics.NOTIFICATION_OUTBOX_PUBLISHER);
         }
+        if (backoff == null) {
+            return;
+        }
+        if (published > 0) {
+            backoff.record(true);
+        } else if (failed) {
+            backoff.recordError();
+        } else {
+            recordIdle(backoff);
+        }
+    }
+
+    /** Sleeps until the earliest outstanding row is due (a scheduled retry or an expired claim), else the aligned wake. */
+    private void recordIdle(IdleBackoff backoff) {
+        try {
+            Instant now = clock.instant();
+            backoff.recordIdle(outbox.findEarliestDue().map(due -> Duration.between(now, due)).orElse(null));
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Workflow notification outbox due lookup failed ({})", exception.getClass().getSimpleName());
+            backoff.recordError();
+        }
+    }
+
+    /** Optional: records the last successful run for monitoring. */
+    @Autowired(required = false)
+    public void setScheduledTaskMetrics(ScheduledTaskMetrics metrics) {
+        this.taskMetrics = metrics;
     }
 
     /** Idle backoff (scale-to-zero friendly polling); without it every tick polls, as before. */
     @Autowired
     void configureIdleBackoff(
             @Value("${weav.workflow.notification-outbox.poll-interval:1000}") long pollIntervalMillis,
-            @Value("${weav.workflow.poller.idle-max-delay:PT30S}") Duration idleMaxDelay,
+            @Value("${weav.workflow.poller.idle-max-delay:PT10M}") Duration idleMaxDelay,
             @Qualifier("notificationOutboxWakeup") OutboxWakeup outboxWakeup) {
         Duration base = Duration.ofMillis(pollIntervalMillis);
         this.idleBackoff = new IdleBackoff(base, idleMaxDelay.compareTo(base) < 0 ? base : idleMaxDelay);

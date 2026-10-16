@@ -94,6 +94,79 @@ class WorkflowDraftServiceTest {
         verify(repository, never()).save(existing);
     }
 
+    private static final UUID OTHER_CONNECTION_ID = UUID.fromString("30000000-0000-0000-0000-000000000072");
+
+    private static Map<String, Object> draftWith(UUID... connectionIds) {
+        List<Object> nodes = new java.util.ArrayList<>();
+        nodes.add(Map.of("id", "manual", "type", "trigger.manual", "config", Map.of()));
+        int i = 0;
+        for (UUID id : connectionIds) {
+            nodes.add(Map.of("id", "sheets" + i++, "type", "google.sheets", "config",
+                    Map.of("connectionId", id.toString())));
+        }
+        return Map.of("schemaVersion", "1.0", "nodes", nodes, "edges", List.of(), "variables", Map.of());
+    }
+
+    private static WorkflowDefinition definitionWith(UUID... connectionIds) {
+        List<WorkflowDefinition.Node> nodes = new java.util.ArrayList<>();
+        nodes.add(new WorkflowDefinition.Node("manual", "trigger.manual", Map.of()));
+        int i = 0;
+        for (UUID id : connectionIds) {
+            nodes.add(new WorkflowDefinition.Node("sheets" + i++, "google.sheets", Map.of(
+                    "connectionId", id.toString())));
+        }
+        return new WorkflowDefinition("1.0", nodes, List.of(), Map.of());
+    }
+
+    /** Saves {@code next} over a stored draft referencing {@code saved}; returns the connection port mock. */
+    private static WorkspaceConnectionPort saveOver(Map<String, Object> saved, WorkflowDefinition next) {
+        WorkflowRepository repository = mock(WorkflowRepository.class);
+        WorkspaceConnectionPort workspaceConnections = mock(WorkspaceConnectionPort.class);
+        Instant now = Instant.now();
+        Workflow existing = new Workflow(WORKFLOW_ID, WORKSPACE_ID, "Existing", null,
+                WorkflowStatus.DRAFT, "1.0", saved, null, null, USER_ID, now, now, null, null, null);
+        when(repository.findByWorkspaceAndId(WORKSPACE_ID, WORKFLOW_ID)).thenReturn(Optional.of(existing));
+        when(repository.lockByWorkspaceAndId(WORKSPACE_ID, WORKFLOW_ID)).thenReturn(Optional.of(existing));
+        when(repository.save(org.mockito.ArgumentMatchers.any(Workflow.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        WorkflowDraftService service = new WorkflowDraftService(
+                new CreateWorkflowUseCase(repository), repository,
+                new WorkspaceAuthorization((workspace, user) -> new WorkspaceAccessPort.Access(
+                        workspace, user, "MEMBER", Set.of("WORKFLOW_EDIT"))),
+                workspaceConnections,
+                Optional.of(mock(com.weav.workflow.application.port.out.ConnectionReferencePort.class)));
+        service.save(WORKSPACE_ID, WORKFLOW_ID, USER_ID, "Existing", null, next, Map.of());
+        return workspaceConnections;
+    }
+
+    @Test
+    void autosaveDoesNotReauthorizeConnectionIdsAlreadyInTheSavedDraft() {
+        WorkspaceConnectionPort connections = saveOver(draftWith(CONNECTION_ID), definitionWith(CONNECTION_ID));
+
+        verify(connections, never()).authorizeAttachment(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void autosaveAuthorizesOnlyTheNewConnectionId() {
+        WorkspaceConnectionPort connections = saveOver(draftWith(CONNECTION_ID),
+                definitionWith(CONNECTION_ID, OTHER_CONNECTION_ID));
+
+        verify(connections).authorizeAttachment(WORKSPACE_ID, OTHER_CONNECTION_ID, USER_ID);
+        verify(connections, never()).authorizeAttachment(WORKSPACE_ID, CONNECTION_ID, USER_ID);
+    }
+
+    @Test
+    void autosaveIgnoresRemovedConnectionIds() {
+        WorkspaceConnectionPort connections = saveOver(draftWith(CONNECTION_ID, OTHER_CONNECTION_ID),
+                definitionWith(OTHER_CONNECTION_ID));
+
+        verify(connections, never()).authorizeAttachment(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
     @Test
     void missingViewCapabilityIsRejectedBeforeAnyWorkflowLookup() {
         WorkflowRepository repository = mock(WorkflowRepository.class);

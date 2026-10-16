@@ -159,6 +159,11 @@ public class WorkflowPublicationTestConfiguration {
             }
 
             @Override
+            public Optional<Instant> findEarliestScheduleDue() {
+                return delegate.findEarliestScheduleDue();
+            }
+
+            @Override
             public Optional<WorkflowTrigger> lockCurrent(UUID workflowId, UUID triggerId) {
                 return delegate.lockCurrent(workflowId, triggerId);
             }

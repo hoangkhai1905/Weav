@@ -1,6 +1,7 @@
 package com.weav.workflow.infrastructure.scheduling;
 
 import com.weav.workflow.application.port.out.ExecutionRecoveryPort;
+import com.weav.workflow.infrastructure.metrics.ScheduledTaskMetrics;
 import java.time.Duration;
 import java.util.Objects;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +24,7 @@ public class ExecutionRecoveryScanner {
     private final Duration outboxCooldown;
     private volatile IdleBackoff idleBackoff;
     private volatile ActivitySignal activity;
+    private volatile ScheduledTaskMetrics taskMetrics;
     private long seenActivity;
 
     public ExecutionRecoveryScanner(ExecutionRecoveryPort recovery,
@@ -46,6 +48,7 @@ public class ExecutionRecoveryScanner {
         IdleBackoff backoff = idleBackoff;
         if (backoff == null) {
             scanNow();
+            ScheduledTaskMetrics.markSucceeded(taskMetrics, ScheduledTaskMetrics.EXECUTION_RECOVERY_SCANNER);
             return;
         }
         if (activityChanged()) {
@@ -60,6 +63,13 @@ public class ExecutionRecoveryScanner {
         } finally {
             backoff.record(busy);
         }
+        ScheduledTaskMetrics.markSucceeded(taskMetrics, ScheduledTaskMetrics.EXECUTION_RECOVERY_SCANNER);
+    }
+
+    /** Optional: records the last successful run for monitoring. */
+    @Autowired(required = false)
+    public void setScheduledTaskMetrics(ScheduledTaskMetrics metrics) {
+        this.taskMetrics = metrics;
     }
 
     /** Idle backoff (scale-to-zero friendly polling); without it every tick scans, as before. */

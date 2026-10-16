@@ -34,6 +34,10 @@ import {
   type RequestContextCarrier,
 } from '../common/request-context';
 import { MAX_UPSTREAM_JSON_BYTES, readCapped } from '../common/read-capped';
+import {
+  logUpstreamFailure,
+  startUpstreamCall,
+} from '../common/upstream-proxy';
 
 type AuthMode = 'none' | 'optional' | 'required';
 
@@ -146,6 +150,7 @@ export class IdentityProxyService {
 
     const targetPath = this.withAllowedQuery(req, path, options.queryKeys);
     const abortHandle = createUpstreamAbortHandle(request, reply, 10_000);
+    const call = startUpstreamCall(request, 'identity', requestId);
     try {
       const response = await fetch(`${this.baseUrl()}${targetPath}`, {
         method: req.method,
@@ -163,7 +168,7 @@ export class IdentityProxyService {
           UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.message,
         );
       }
-      this.logger.error(`Identity upstream failed requestId=${requestId}`);
+      logUpstreamFailure(this.logger, call, 'Identity upstream failed');
       return fail(503, 'SERVICE_UNAVAILABLE', 'Identity service unavailable');
     } finally {
       abortHandle.cleanup();
@@ -253,6 +258,7 @@ export class IdentityProxyService {
     }
 
     const abortHandle = createUpstreamAbortHandle(request, reply, 10_000);
+    const call = startUpstreamCall(request, 'identity', requestId);
     try {
       const init: RequestInit & { duplex: 'half' } = {
         method: req.method,
@@ -275,7 +281,7 @@ export class IdentityProxyService {
           UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.message,
         );
       }
-      this.logger.error(`Identity upload failed requestId=${requestId}`);
+      logUpstreamFailure(this.logger, call, 'Identity upload failed');
       return fail(503, 'SERVICE_UNAVAILABLE', 'Identity service unavailable');
     } finally {
       abortHandle.cleanup();

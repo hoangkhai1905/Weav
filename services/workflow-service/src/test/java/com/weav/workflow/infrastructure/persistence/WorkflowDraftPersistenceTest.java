@@ -6,6 +6,7 @@ import com.weav.workflow.application.service.DraftRevisionConflictException;
 import com.weav.workflow.application.service.WorkflowDraftService;
 import com.weav.workflow.domain.definition.WorkflowDefinition;
 import com.weav.workflow.domain.model.aggregate.workflow.Workflow;
+import com.weav.workflow.domain.model.aggregate.workflow.WorkflowSummary;
 import com.weav.workflow.domain.port.out.WorkflowRepository;
 import com.weav.workflow.domain.valueobject.WorkflowStatus;
 import jakarta.persistence.EntityManager;
@@ -101,11 +102,41 @@ class WorkflowDraftPersistenceTest {
 
         assertTrue(workflowRepository.findByWorkspaceAndId(workspaceId, thirdId).isEmpty());
         assertEquals(2, workflowRepository.countByWorkspace(workspaceId));
-        List<Workflow> firstPage = workflowRepository.findPage(workspaceId, 0, 1);
-        List<Workflow> secondPage = workflowRepository.findPage(workspaceId, 1, 1);
-        assertEquals(List.of(secondId), firstPage.stream().map(Workflow::getId).toList());
-        assertEquals(List.of(firstId), secondPage.stream().map(Workflow::getId).toList());
+        List<WorkflowSummary> firstPage = workflowRepository.findPage(workspaceId, 0, 1);
+        List<WorkflowSummary> secondPage = workflowRepository.findPage(workspaceId, 1, 1);
+        assertEquals(List.of(secondId), firstPage.stream().map(WorkflowSummary::id).toList());
+        assertEquals(List.of(firstId), secondPage.stream().map(WorkflowSummary::id).toList());
+        assertEquals("Second", firstPage.getFirst().name());
+        assertEquals(WorkflowStatus.DRAFT, firstPage.getFirst().status());
+        assertEquals(sameCreatedAt, firstPage.getFirst().createdAt());
+        assertEquals(List.of("trigger.manual"), firstPage.getFirst().nodeTypes());
         assertTrue(workflowRepository.findByWorkspaceAndId(UUID.randomUUID(), firstId).isEmpty());
+    }
+
+    @Test
+    void listProjectionReturnsNodeTypesInOrderAndToleratesMalformedDefinitions() {
+        UUID workspaceId = UUID.fromString("10000000-0000-0000-0000-000000000066");
+        UUID actorId = UUID.fromString("20000000-0000-0000-0000-000000000066");
+        Instant createdAt = Instant.parse("2026-03-01T00:00:00Z");
+        UUID ordered = UUID.fromString("40000000-0000-0000-0000-000000000081");
+        UUID malformed = UUID.fromString("40000000-0000-0000-0000-000000000082");
+        Map<String, Object> definition = definitionMap("ordered");
+        definition.put("nodes", List.of(
+                Map.of("id", "send", "type", "email.send", "config", Map.of()),
+                Map.of("id", "hook", "type", "trigger.webhook", "config", Map.of()),
+                Map.of("id", "manual", "type", "trigger.manual", "config", Map.of())));
+        workflowRepository.save(new Workflow(ordered, workspaceId, "Ordered", null, WorkflowStatus.DRAFT, "1.0",
+                definition, Map.of("blob", "x".repeat(100_000)), null, actorId,
+                createdAt.plusSeconds(1), createdAt.plusSeconds(1), null, null, null));
+        workflowRepository.save(workflow(malformed, workspaceId, actorId, "Malformed", createdAt));
+        jdbcTemplate.update("update workflow.workflows set draft_definition = '{\"nodes\": \"oops\"}'::jsonb "
+                + "where id = ?", malformed);
+
+        List<WorkflowSummary> page = workflowRepository.findPage(workspaceId, 0, 10);
+
+        assertEquals(List.of(ordered, malformed), page.stream().map(WorkflowSummary::id).toList());
+        assertEquals(List.of("email.send", "trigger.webhook", "trigger.manual"), page.get(0).nodeTypes());
+        assertEquals(List.of(), page.get(1).nodeTypes());
     }
 
     @Test

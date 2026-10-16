@@ -26,10 +26,14 @@ import {
   createUpstreamAbortHandle,
   getRequestHeader,
   getRequestId,
-  isValidTraceparent,
   setResponseRequestId,
   type RequestContextCarrier,
 } from '../common/request-context';
+import {
+  buildUpstreamHeaders,
+  logUpstreamFailure,
+  startUpstreamCall,
+} from '../common/upstream-proxy';
 import { readCapped } from '../common/read-capped';
 
 const MAX_REQUEST_BYTES = 262_144;
@@ -132,18 +136,15 @@ export class AssistantController {
     const context = request as RequestContextCarrier;
     const requestId = getRequestId(context);
     setResponseRequestId(reply, requestId);
-    const headers: Record<string, string> = {
+    const headers = buildUpstreamHeaders(request, requestId, {
       accept: 'text/event-stream',
       authorization,
-      'content-type': 'application/json',
-      'x-correlation-id': requestId,
-      'x-request-id': requestId,
-    };
-    const traceparent = getRequestHeader(request.headers, 'traceparent');
-    if (isValidTraceparent(traceparent)) headers.traceparent = traceparent;
+    });
+    headers['content-type'] = 'application/json';
 
     const gateway = this.config.getOrThrow<GatewayConfig>('gateway');
     const abort = createUpstreamAbortHandle(context, reply, STREAM_TIMEOUT_MS);
+    const call = startUpstreamCall(context, 'ai', requestId);
     let response: Response;
     try {
       response = await fetch(
@@ -158,7 +159,7 @@ export class AssistantController {
       );
     } catch {
       abort.cleanup();
-      this.logger.error(`AI upstream failed requestId=${requestId}`);
+      logUpstreamFailure(this.logger, call, 'AI upstream failed');
       throw new HttpException('AI service unavailable', 503);
     }
 
@@ -258,17 +259,11 @@ export class AssistantController {
     }
     const requestId = getRequestId(request);
     setResponseRequestId(reply, requestId);
-    const headers: Record<string, string> = {
-      accept: 'application/json',
-      authorization,
-      'x-correlation-id': requestId,
-      'x-request-id': requestId,
-    };
-    const traceparent = getRequestHeader(request.headers, 'traceparent');
-    if (isValidTraceparent(traceparent)) headers.traceparent = traceparent;
+    const headers = buildUpstreamHeaders(request, requestId, { authorization });
 
     const gateway = this.config.getOrThrow<GatewayConfig>('gateway');
     const abort = createUpstreamAbortHandle(request, reply, JSON_TIMEOUT_MS);
+    const call = startUpstreamCall(request, 'ai', requestId);
     let response: Response;
     let text: string | null = '';
     try {
@@ -281,7 +276,7 @@ export class AssistantController {
       else if (response.status !== 204) throw await upstreamFailure(response);
     } catch (error) {
       if (error instanceof HttpException) throw error;
-      this.logger.error(`AI upstream failed requestId=${requestId}`);
+      logUpstreamFailure(this.logger, call, 'AI upstream failed');
       throw new HttpException('AI service unavailable', 503);
     } finally {
       abort.cleanup();

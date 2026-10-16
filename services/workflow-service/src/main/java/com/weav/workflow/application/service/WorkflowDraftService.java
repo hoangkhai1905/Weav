@@ -14,6 +14,7 @@ import com.weav.workflow.domain.definition.WorkflowDefinition;
 import com.weav.workflow.domain.exception.BadRequestException;
 import com.weav.workflow.domain.exception.ResourceNotFoundException;
 import com.weav.workflow.domain.model.aggregate.workflow.Workflow;
+import com.weav.workflow.domain.model.aggregate.workflow.WorkflowSummary;
 import com.weav.workflow.domain.port.out.WorkflowRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -147,8 +148,12 @@ public class WorkflowDraftService {
         Set<UUID> existingReferences = connectionIds(beforeAuthorization.getDraftDefinition());
         requireReferenceProjectionIfNeeded(existingReferences, newReferences);
 
+        // Ids already in the saved draft were authorized when added (and publish re-checks all of them),
+        // so an autosave only pays the remote check for ids it introduces.
         for (UUID connectionId : newReferences) {
-            workspaceConnections.authorizeAttachment(workspaceId, connectionId, actorId);
+            if (!existingReferences.contains(connectionId)) {
+                workspaceConnections.authorizeAttachment(workspaceId, connectionId, actorId);
+            }
         }
 
         return transactions.execute(status -> {
@@ -341,7 +346,7 @@ public class WorkflowDraftService {
     private record DepthEntry(Object value, int depth, boolean exit) {
     }
 
-    public record WorkflowPage(List<Workflow> items, int page, int size, long totalElements) {
+    public record WorkflowPage(List<WorkflowSummary> items, int page, int size, long totalElements) {
         public WorkflowPage {
             items = List.copyOf(items);
         }

@@ -1,7 +1,9 @@
 package com.weav.identity.infrastructure.persistence;
 
+import com.weav.identity.infrastructure.metrics.ScheduledTaskMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -26,6 +28,7 @@ public class NotificationOutboxRetentionPurgeJob {
     private final TransactionTemplate transaction;
     private final int retentionDays;
     private final String table;
+    private volatile ScheduledTaskMetrics taskMetrics;
 
     public NotificationOutboxRetentionPurgeJob(
             JdbcTemplate jdbc,
@@ -50,9 +53,18 @@ public class NotificationOutboxRetentionPurgeJob {
     public void purgeOnSchedule() {
         try {
             purgeNow();
+            ScheduledTaskMetrics metrics = taskMetrics;
+            if (metrics != null) {
+                metrics.succeeded(ScheduledTaskMetrics.NOTIFICATION_OUTBOX_PURGE);
+            }
         } catch (RuntimeException exception) {
             log.warn("identity_outbox_purge_failed cause={}", exception.getClass().getSimpleName());
         }
+    }
+
+    @Autowired(required = false)
+    public void configureTaskMetrics(ScheduledTaskMetrics metrics) {
+        this.taskMetrics = metrics;
     }
 
     /** Returns the number of rows deleted; stops early if another node holds the lock. */

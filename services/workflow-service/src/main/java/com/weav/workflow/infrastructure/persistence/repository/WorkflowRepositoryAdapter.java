@@ -1,15 +1,26 @@
 package com.weav.workflow.infrastructure.persistence.repository;
 
 import com.weav.workflow.domain.model.aggregate.workflow.Workflow;
+import com.weav.workflow.domain.model.aggregate.workflow.WorkflowSummary;
 import com.weav.workflow.domain.port.out.WorkflowRepository;
 import com.weav.workflow.infrastructure.persistence.entity.WorkflowJpaEntity;
+import com.weav.workflow.domain.valueobject.WorkflowStatus;
 import com.weav.workflow.infrastructure.persistence.mapper.WorkflowPersistenceMapper;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -18,6 +29,9 @@ import java.util.UUID;
 @Repository
 public class WorkflowRepositoryAdapter implements WorkflowRepository {
 
+    private static final java.util.regex.Pattern SQL_IDENTIFIER =
+            java.util.regex.Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+
     private static final String WORKSPACE_QUERY = "select workflow from WorkflowJpaEntity workflow "
             + "where workflow.workspaceId = :workspaceId and workflow.deletedAt is null";
 
@@ -25,9 +39,33 @@ public class WorkflowRepositoryAdapter implements WorkflowRepository {
     private EntityManager entityManager;
 
     private final WorkflowPersistenceMapper mapper;
+    private final JdbcTemplate jdbc;
+    private final ObjectMapper objectMapper;
+    private final String pageSql;
 
-    public WorkflowRepositoryAdapter(WorkflowPersistenceMapper mapper) {
+    public WorkflowRepositoryAdapter(
+            WorkflowPersistenceMapper mapper,
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema) {
         this.mapper = Objects.requireNonNull(mapper, "mapper must not be null");
+        this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
+        if (schema == null || !SQL_IDENTIFIER.matcher(schema).matches()) {
+            throw new IllegalArgumentException("schema must be a simple SQL identifier");
+        }
+        // Node types are extracted in the database so the (large) draft definition and editor state never travel.
+        this.pageSql = """
+                SELECT w.id, w.name, w.description, w.status, w.schema_version, w.current_version_id,
+                       w.created_at, w.updated_at, w.published_at,
+                       CASE WHEN jsonb_typeof(w.draft_definition -> 'nodes') = 'array'
+                            THEN jsonb_path_query_array(w.draft_definition, '$.nodes[*].type')::text
+                            ELSE '[]' END AS node_types
+                FROM %s.workflows w
+                WHERE w.workspace_id = ? AND w.deleted_at IS NULL
+                ORDER BY w.created_at DESC, w.id DESC
+                LIMIT ? OFFSET ?
+                """.formatted(schema);
     }
 
     @Override
@@ -77,19 +115,35 @@ public class WorkflowRepositoryAdapter implements WorkflowRepository {
 
     @Override
     @Transactional(readOnly = true)
-    public List<Workflow> findPage(UUID workspaceId, int page, int size) {
+    public List<WorkflowSummary> findPage(UUID workspaceId, int page, int size) {
         Objects.requireNonNull(workspaceId, "workspaceId must not be null");
         int offset = checkedOffset(page, size);
-        return entityManager.createQuery(
-                        WORKSPACE_QUERY + " order by workflow.createdAt desc, workflow.id desc",
-                        WorkflowJpaEntity.class)
-                .setParameter("workspaceId", workspaceId)
-                .setFirstResult(offset)
-                .setMaxResults(size)
-                .getResultList()
-                .stream()
-                .map(mapper::toDomain)
-                .toList();
+        return jdbc.query(pageSql, this::summary, workspaceId, size, offset);
+    }
+
+    private WorkflowSummary summary(ResultSet rs, int rowNum) throws SQLException {
+        List<String> nodeTypes = new ArrayList<>();
+        for (JsonNode type : objectMapper.readTree(rs.getString("node_types"))) {
+            if (type.isString()) {
+                nodeTypes.add(type.stringValue());
+            }
+        }
+        return new WorkflowSummary(
+                rs.getObject("id", UUID.class),
+                rs.getString("name"),
+                rs.getString("description"),
+                WorkflowStatus.valueOf(rs.getString("status")),
+                rs.getString("schema_version"),
+                rs.getObject("current_version_id", UUID.class),
+                instant(rs, "created_at"),
+                instant(rs, "updated_at"),
+                instant(rs, "published_at"),
+                nodeTypes);
+    }
+
+    private static Instant instant(ResultSet rs, String column) throws SQLException {
+        Timestamp value = rs.getTimestamp(column);
+        return value == null ? null : value.toInstant();
     }
 
     @Override

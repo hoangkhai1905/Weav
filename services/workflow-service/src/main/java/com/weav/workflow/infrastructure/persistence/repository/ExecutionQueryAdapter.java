@@ -10,6 +10,7 @@ import com.weav.workflow.domain.valueobject.NodeExecutionStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -50,13 +51,19 @@ public class ExecutionQueryAdapter implements ExecutionQueryPort {
     private final String nodeTable;
     private final String attemptTable;
     private final String logTable;
+    private final int outputMaxBytes;
 
     public ExecutionQueryAdapter(
             JdbcTemplate jdbc,
             ObjectMapper objectMapper,
-            @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema) {
+            @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema,
+            @Value("${weav.workflow.execution.detail.output-max-bytes:262144}") int outputMaxBytes) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc must not be null");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
+        if (outputMaxBytes < 1) {
+            throw new IllegalArgumentException("Execution detail output limit must be positive");
+        }
+        this.outputMaxBytes = outputMaxBytes;
         String safeSchema = validIdentifier(schema, "schema");
         this.workflowTable = safeSchema + ".workflows";
         this.executionTable = safeSchema + ".workflow_executions";
@@ -87,7 +94,9 @@ public class ExecutionQueryAdapter implements ExecutionQueryPort {
         return new ExecutionPage(items, page, size, total);
     }
 
+    /** One read-only transaction so summary, nodes, attempts and logs come from a single connection. */
     @Override
+    @Transactional(readOnly = true)
     public ExecutionDetail detail(UUID workspaceId, UUID workflowId, UUID executionId, UUID actorId,
                                  int logPage, int logSize) {
         ExecutionSummary summary = jdbc.query("""
@@ -103,17 +112,25 @@ public class ExecutionQueryAdapter implements ExecutionQueryPort {
 
         List<NodeRow> nodes = jdbc.query("""
                 SELECT n.id, n.node_id, n.node_type, n.status, n.attempt_count,
-                       n.started_at, n.finished_at, n.output::text AS output_json, n.error::text AS error_json
+                       n.started_at, n.finished_at,
+                       CASE WHEN octet_length(n.output::text) > ? THEN NULL ELSE n.output::text END AS output_json,
+                       octet_length(n.output::text) AS output_bytes,
+                       n.error::text AS error_json
                 FROM %s n
                 WHERE n.execution_id = ?
                 ORDER BY n.created_at ASC, n.node_id ASC, n.id ASC
-                """.formatted(nodeTable), this::nodeRow, executionId);
-        Map<UUID, List<AttemptState>> attemptsByNode = attempts(executionId);
+                """.formatted(nodeTable), this::nodeRow, outputMaxBytes, executionId);
+        Map<UUID, Output> nodeOutputs = new LinkedHashMap<>();
+        for (NodeRow node : nodes) {
+            nodeOutputs.put(node.id(), output(node.outputJson(), node.outputBytes()));
+        }
+        Map<UUID, List<AttemptState>> attemptsByNode = attempts(executionId, nodeOutputs);
         List<NodeState> nodeStates = new ArrayList<>(nodes.size());
         for (NodeRow node : nodes) {
+            Output output = nodeOutputs.get(node.id());
             nodeStates.add(new NodeState(node.id(), node.nodeId(), node.nodeType(), node.status(),
                     node.attemptCount(), node.startedAt(), node.finishedAt(),
-                    sanitizeJson(node.outputJson()), sanitizeJson(node.errorJson()),
+                    output.value(), output.truncated(), sanitizeJson(node.errorJson()),
                     attemptsByNode.getOrDefault(node.id(), List.of())));
         }
 
@@ -134,11 +151,19 @@ public class ExecutionQueryAdapter implements ExecutionQueryPort {
                 new LogPage(logs, logPage, logSize, totalLogs, hasNext));
     }
 
-    private Map<UUID, List<AttemptState>> attempts(UUID executionId) {
+    /**
+     * An attempt output identical to its node's output (the usual single-attempt case) is not read or sanitized
+     * again: it reuses the node's value. The response still carries both fields, which the clients render.
+     */
+    private Map<UUID, List<AttemptState>> attempts(UUID executionId, Map<UUID, Output> nodeOutputs) {
         Map<UUID, List<AttemptState>> result = new LinkedHashMap<>();
         jdbc.query("""
                 SELECT a.node_execution_id, a.id, a.attempt_number, a.status,
-                       a.started_at, a.finished_at, a.output::text AS output_json,
+                       a.started_at, a.finished_at,
+                       (a.output IS NOT NULL AND a.output = n.output) AS output_same_as_node,
+                       CASE WHEN a.output = n.output OR octet_length(a.output::text) > ? THEN NULL
+                            ELSE a.output::text END AS output_json,
+                       octet_length(a.output::text) AS output_bytes,
                        a.error::text AS error_json
                 FROM %s a
                 JOIN %s n ON n.id = a.node_execution_id
@@ -146,16 +171,19 @@ public class ExecutionQueryAdapter implements ExecutionQueryPort {
                 ORDER BY n.node_id ASC, a.attempt_number ASC, a.id ASC
                 """.formatted(attemptTable, nodeTable), (rs, rowNum) -> {
             UUID nodeId = rs.getObject("node_execution_id", UUID.class);
+            Output output = rs.getBoolean("output_same_as_node")
+                    ? nodeOutputs.get(nodeId)
+                    : output(rs.getString("output_json"), nullableLong(rs, "output_bytes"));
             result.computeIfAbsent(nodeId, ignored -> new ArrayList<>()).add(new AttemptState(
                     rs.getObject("id", UUID.class),
                     rs.getInt("attempt_number"),
                     AttemptStatus.valueOf(rs.getString("status")),
                     instant(rs, "started_at"),
                     instant(rs, "finished_at"),
-                    sanitizeJson(rs.getString("output_json")),
+                    output.value(), output.truncated(),
                     sanitizeJson(rs.getString("error_json"))));
             return nodeId;
-        }, executionId);
+        }, outputMaxBytes, executionId);
         result.replaceAll((ignored, value) -> List.copyOf(value));
         return result;
     }
@@ -182,7 +210,21 @@ public class ExecutionQueryAdapter implements ExecutionQueryPort {
                 instant(rs, "started_at"),
                 instant(rs, "finished_at"),
                 rs.getString("output_json"),
+                nullableLong(rs, "output_bytes"),
                 rs.getString("error_json"));
+    }
+
+    /** A null payload with a known size means the SQL withheld it for exceeding the output cap. */
+    private Output output(String json, Long bytes) {
+        if (json == null && bytes != null) {
+            Map<String, Object> marker = new LinkedHashMap<>();
+            marker.put("code", "OUTPUT_TRUNCATED");
+            marker.put("message", "Output exceeds the display limit and was not returned.");
+            marker.put("sizeBytes", bytes);
+            marker.put("limitBytes", outputMaxBytes);
+            return new Output(marker, true);
+        }
+        return new Output(sanitizeJson(json), false);
     }
 
     private LogEntry logEntry(ResultSet rs, int rowNum) throws SQLException {
@@ -295,6 +337,11 @@ public class ExecutionQueryAdapter implements ExecutionQueryPort {
         return (int) offset;
     }
 
+    private static Long nullableLong(ResultSet rs, String column) throws SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
+    }
+
     private static int nullableInt(ResultSet rs, String column) throws SQLException {
         int value = rs.getInt(column);
         return rs.wasNull() ? 0 : value;
@@ -314,6 +361,9 @@ public class ExecutionQueryAdapter implements ExecutionQueryPort {
 
     private record NodeRow(UUID id, String nodeId, String nodeType, NodeExecutionStatus status,
                            int attemptCount, Instant startedAt, Instant finishedAt,
-                           String outputJson, String errorJson) {
+                           String outputJson, Long outputBytes, String errorJson) {
+    }
+
+    private record Output(Object value, boolean truncated) {
     }
 }

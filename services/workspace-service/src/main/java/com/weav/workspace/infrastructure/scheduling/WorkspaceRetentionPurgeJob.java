@@ -1,7 +1,9 @@
 package com.weav.workspace.infrastructure.scheduling;
 
+import com.weav.workspace.infrastructure.metrics.ScheduledTaskMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -29,6 +31,7 @@ public class WorkspaceRetentionPurgeJob {
     private final int idempotencyDays;
     private final String outbox;
     private final String idempotency;
+    private volatile ScheduledTaskMetrics taskMetrics;
 
     public WorkspaceRetentionPurgeJob(
             JdbcTemplate jdbc,
@@ -54,7 +57,17 @@ public class WorkspaceRetentionPurgeJob {
             initialDelayString = "${weav.workspace.retention.initial-delay:PT5M}")
     public void purgeOnSchedule() {
         purgeNow();
+        ScheduledTaskMetrics metrics = taskMetrics;
+        if (metrics != null) {
+            metrics.succeeded(ScheduledTaskMetrics.RETENTION_PURGE);
+        }
     }
+
+    @Autowired(required = false)
+    public void configureTaskMetrics(ScheduledTaskMetrics metrics) {
+        this.taskMetrics = metrics;
+    }
+
 
     /** Runs every purge; stops quietly if another node holds the lock. */
     public void purgeNow() {

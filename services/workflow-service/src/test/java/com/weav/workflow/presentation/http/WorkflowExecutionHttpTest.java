@@ -305,6 +305,71 @@ class WorkflowExecutionHttpTest {
     }
 
     @Test
+    void detailKeepsIdenticalAttemptOutputAndOmitsTheTruncationFlagForNormalOutputs() throws Exception {
+        UUID workflowId = createPublishedWorkflow("same-output-root");
+        UUID executionId = admit(workflowId, "same-output");
+        UUID nodeExecutionId = jdbcUuid("select id from workflow.node_executions where execution_id = ?", executionId);
+        String output = "{\"result\":\"ok\",\"n\":[1,2]}";
+        jdbc.update("update workflow.node_executions set status='SUCCESS', attempt_count=1, "
+                + "output=cast(? as jsonb) where id = ?", output, nodeExecutionId);
+        jdbc.update("""
+                insert into workflow.node_execution_attempts
+                    (id, node_execution_id, attempt_number, status, input, output, started_at, created_at)
+                values (?, ?, 1, 'SUCCESS', '{}'::jsonb, cast(? as jsonb), current_timestamp, current_timestamp)
+                """, UUID.randomUUID(), nodeExecutionId, output);
+
+        MvcResult result = mockMvc.perform(get("/workspaces/{workspaceId}/workflows/{workflowId}/executions/{executionId}",
+                                workspaceId, workflowId, executionId)
+                        .header("Authorization", "Bearer " + accessToken(USER_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nodes[0].output.result").value("ok"))
+                .andExpect(jsonPath("$.nodes[0].attempts[0].output.result").value("ok"))
+                .andExpect(jsonPath("$.nodes[0].attempts[0].output.n.length()").value(2))
+                .andExpect(jsonPath("$.nodes[0].outputTruncated").doesNotExist())
+                .andExpect(jsonPath("$.nodes[0].attempts[0].outputTruncated").doesNotExist())
+                .andReturn();
+        assertFalse(result.getResponse().getContentAsString().contains("OUTPUT_TRUNCATED"));
+    }
+
+    @Test
+    void detailReplacesOutputsAboveTheCapWithAValidMarkerAndFlagsThem() throws Exception {
+        UUID workflowId = createPublishedWorkflow("capped-root");
+        UUID executionId = admit(workflowId, "capped");
+        UUID nodeExecutionId = jdbcUuid("select id from workflow.node_executions where execution_id = ?", executionId);
+        String big = "{\"blob\":\"" + "x".repeat(400) + "\"}";
+        String small = "{\"ok\":true}";
+        jdbc.update("update workflow.node_executions set status='SUCCESS', attempt_count=2, "
+                + "output=cast(? as jsonb) where id = ?", big, nodeExecutionId);
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            // attempt 1 equals the node output, attempt 2 is small, attempt 3 is large but different
+            String attemptOutput = attempt == 1 ? big : attempt == 2 ? small : big.replace("x", "y");
+            jdbc.update("""
+                    insert into workflow.node_execution_attempts
+                        (id, node_execution_id, attempt_number, status, input, output, started_at, created_at)
+                    values (?, ?, ?, 'SUCCESS', '{}'::jsonb, cast(? as jsonb), current_timestamp, current_timestamp)
+                    """, UUID.randomUUID(), nodeExecutionId, attempt, attemptOutput);
+        }
+
+        var adapter = new com.weav.workflow.infrastructure.persistence.repository.ExecutionQueryAdapter(
+                jdbc, objectMapper, "workflow", 128);
+        var node = adapter.detail(workspaceId, workflowId, executionId, USER_ID).nodes().getFirst();
+
+        assertTrue(node.outputTruncated());
+        Map<?, ?> marker = (Map<?, ?>) node.output();
+        assertEquals("OUTPUT_TRUNCATED", marker.get("code"));
+        assertEquals(128, marker.get("limitBytes"));
+        assertTrue(((Number) marker.get("sizeBytes")).longValue() > 128);
+        assertFalse(objectMapper.writeValueAsString(node).contains("xxxx"));
+        var attempts = node.attempts();
+        assertTrue(attempts.get(0).outputTruncated());
+        assertEquals("OUTPUT_TRUNCATED", ((Map<?, ?>) attempts.get(0).output()).get("code"));
+        assertFalse(attempts.get(1).outputTruncated());
+        assertEquals(Map.of("ok", true), attempts.get(1).output());
+        assertTrue(attempts.get(2).outputTruncated());
+        assertFalse(objectMapper.writeValueAsString(attempts).contains("yyyy"));
+    }
+
+    @Test
     void rejectsInvalidPathAndPaginationValuesWithStandardErrors() throws Exception {
         UUID workflowId = createPublishedWorkflow("validation-root");
         mockMvc.perform(get("/workspaces/{workspaceId}/workflows/{workflowId}/executions?page=0&size=101",

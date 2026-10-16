@@ -22,6 +22,8 @@ import type { Settings } from '../config/settings';
 export const PROVIDERS = Symbol('NOTIFICATION_PROVIDERS');
 // Upper bound on rows handled in one drain so a backlog cannot starve shutdown or the event loop.
 export const MAX_DRAIN_PER_TICK = 50;
+export const MAX_JITTER_MS = 2000;
+const RAMP_CEILING_MS = 60000;
 const errorClass = (error: unknown) =>
   error instanceof Error ? error.name : typeof error;
 @Injectable()
@@ -31,8 +33,12 @@ export class DeliveryWorker implements OnModuleInit, OnModuleDestroy {
   private active?: Promise<void>;
   private stopped = false;
   private running = false;
+  // wake() arrived while a tick was running: that tick may have read before the new row committed.
+  private woken = false;
   // Current wait before the next poll: base interval while busy, doubled up to the cap while idle.
   private delay: number;
+  // Constant per-process offset (<= MAX_JITTER_MS) so replicas do not hit the DB in the same ms; tests override.
+  jitterMs = Math.floor(Math.random() * MAX_JITTER_MS);
   constructor(
     private readonly repo: DeliveryRepository,
     @Inject(SETTINGS) private readonly settings: Settings,
@@ -63,7 +69,7 @@ export class DeliveryWorker implements OnModuleInit, OnModuleDestroy {
       this.active = this.tick()
         .then((processed) => this.adjustDelay(processed))
         .catch((error: unknown) => {
-          this.adjustDelay(0);
+          this.delay = this.idleDelay();
           this.logger.error({
             event: 'notification_worker_unavailable',
             errorClass: errorClass(error),
@@ -71,22 +77,52 @@ export class DeliveryWorker implements OnModuleInit, OnModuleDestroy {
         })
         .finally(() => {
           this.running = false;
+          if (this.woken) this.delay = this.settings.NOTIFICATION_POLL_MS;
+          this.woken = false;
           this.schedule();
         });
     }, this.delay);
   }
-  /** Reset to the base interval when work was found, otherwise double up to the idle cap. */
-  private adjustDelay(processed: number) {
-    this.delay =
-      processed > 0
-        ? this.settings.NOTIFICATION_POLL_MS
-        : Math.min(this.delay * 2, this.maxDelay);
+  /**
+   * Idle wait: double from the base interval until the next doubling would reach min(cap, 60 s), then
+   * sleep to the first multiple of the cap (epoch ms) that is at least cap/2 away, so every
+   * service sharing the database wakes in the same cluster instead of drifting apart.
+   */
+  private idleDelay(now = Date.now()) {
+    const max = this.maxDelay;
+    // The ramp stops below 60 s so the first long gap (the aligned wake) starts early and Neon can reach its 5 min suspend timer.
+    if (this.delay * 2 < Math.min(max, RAMP_CEILING_MS)) return this.delay * 2;
+    return Math.max(
+      this.settings.NOTIFICATION_POLL_MS,
+      Math.ceil((now + max / 2) / max) * max + this.jitterMs - now,
+    );
+  }
+  /** Reset to the base interval when work was found, otherwise sleep until the next retry is due or the aligned idle wake. */
+  private async adjustDelay(processed: number) {
+    const base = this.settings.NOTIFICATION_POLL_MS;
+    if (processed > 0) {
+      this.delay = base;
+      return;
+    }
+    this.delay = this.idleDelay();
+    let due: number | null | undefined;
+    try {
+      due = await this.repo.nextDueInMs(
+        this.settings.NOTIFICATION_MAX_ATTEMPTS,
+        this.settings.NOTIFICATION_LEASE_MS,
+      );
+    } catch {
+      // Keep the idle wait: the claim above already proved the database reachable.
+    }
+    if (typeof due === 'number')
+      this.delay = Math.max(base, Math.min(this.delay, Math.ceil(due)));
   }
   /** New work was just stored: poll at the base interval again instead of waiting out an idle backoff. */
   wake() {
     if (this.stopped) return;
     this.delay = this.settings.NOTIFICATION_POLL_MS;
-    if (!this.running && this.timer) this.schedule();
+    if (this.running) this.woken = true;
+    else if (this.timer) this.schedule();
   }
   async onModuleDestroy() {
     this.stopped = true;

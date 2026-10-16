@@ -190,8 +190,8 @@ describe('notification configuration validation', () => {
   });
   it('defaults and validates worker backoff, prefetch and retention', () => {
     const s = loadSettings(env());
-    expect(s.NOTIFICATION_WORKER_IDLE_MAX_MS).toBe(30000);
-    expect(s.NOTIFICATION_CONSUMER_PREFETCH).toBe(5);
+    expect(s.NOTIFICATION_WORKER_IDLE_MAX_MS).toBe(600000);
+    expect(s.NOTIFICATION_CONSUMER_PREFETCH).toBe(3);
     expect(s.NOTIFICATION_RETENTION_DAYS).toBe(90);
     expect(
       loadSettings(env({ NOTIFICATION_RETENTION_DAYS: '0' }))

@@ -24,6 +24,9 @@ import {
 } from './inbox.persistence';
 
 const uuidSchema = z.uuid();
+// Pool max is 3 per client: under a consumer burst an ingest waits for a connection (Prisma
+// default maxWait 2s -> P2028 -> requeue). Same bounds as the inbox repository.
+const INGEST_TX_OPTIONS = { maxWait: 10000, timeout: 30000 };
 
 function normalizeLegacyEvent(event: ExecutionEvent): ExecutionEvent {
   const validated = executionEventSchema.parse(event);
@@ -135,7 +138,7 @@ export class PrismaDeliveryRepository
         executionId: normalized.payload.executionId,
       });
       await persistLegacyInboxGroup(tx, storedRows, 'throw');
-    });
+    }, INGEST_TX_OPTIONS);
   }
   async list(userId: string, q: ListQuery): Promise<Delivery[]> {
     const rows = await this.client.notificationDelivery.findMany({
@@ -214,6 +217,22 @@ export class PrismaDeliveryRepository
           })) as Delivery)
         : null;
     });
+  }
+  /**
+   * Cheap MIN over the claim predicates (indexed on status, scheduled_at): earliest scheduled
+   * retry/receipt check, or the earliest SENDING lease expiry. Computed on the DB clock; a past
+   * value is returned as <= 0. null = nothing pending.
+   */
+  async nextDueInMs(maxAttempts: number, leaseMs: number) {
+    const [row] = await this.client.$queryRaw<{ ms: number | null }[]>`
+      SELECT (EXTRACT(EPOCH FROM LEAST(
+        (SELECT MIN(scheduled_at) FROM notification.notification_deliveries
+          WHERE status IN ('PENDING','FAILED') AND scheduled_at IS NOT NULL
+            AND (retry_count<${maxAttempts} OR payload ? '_receiptId')),
+        (SELECT MIN(updated_at) + (${leaseMs} * INTERVAL '1 millisecond')
+          FROM notification.notification_deliveries WHERE status='SENDING')
+      ) - NOW()) * 1000)::float8 AS ms`;
+    return row?.ms ?? null;
   }
   async finish(delivery: Delivery, patch: DeliveryPatch) {
     await this.client.notificationDelivery.updateMany({

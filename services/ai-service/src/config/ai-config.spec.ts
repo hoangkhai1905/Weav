@@ -22,6 +22,26 @@ describe('missingAssistantDbVars', () => {
   });
 });
 
+describe('daily assistant quota limits', () => {
+  it('default to 50 per user and 200 per workspace', () => {
+    const config = loadAiConfig({});
+    expect(config.AI_ASSISTANT_DAILY_USER_LIMIT).toBe(50);
+    expect(config.AI_ASSISTANT_DAILY_WORKSPACE_LIMIT).toBe(200);
+  });
+
+  it('accept 0 (no limit) and reject negatives', () => {
+    const config = loadAiConfig({
+      AI_ASSISTANT_DAILY_USER_LIMIT: '0',
+      AI_ASSISTANT_DAILY_WORKSPACE_LIMIT: '0',
+    });
+    expect(config.AI_ASSISTANT_DAILY_USER_LIMIT).toBe(0);
+    expect(config.AI_ASSISTANT_DAILY_WORKSPACE_LIMIT).toBe(0);
+    expect(() =>
+      loadAiConfig({ AI_ASSISTANT_DAILY_USER_LIMIT: '-1' }),
+    ).toThrow();
+  });
+});
+
 describe('DEEPSEEK_MAX_TOKENS', () => {
   it('defaults to the 8192 ceiling so reasoning models do not truncate generated workflows', () => {
     expect(loadAiConfig({}).DEEPSEEK_MAX_TOKENS).toBe(8192);

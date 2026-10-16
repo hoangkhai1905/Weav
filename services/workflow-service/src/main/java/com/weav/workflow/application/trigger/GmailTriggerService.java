@@ -4,6 +4,7 @@ import com.weav.workflow.application.port.out.GmailTriggerPort;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,11 @@ public class GmailTriggerService {
     public GmailTriggerService(GmailTriggerPort triggers, GmailTriggerProcessor processor) {
         this.triggers = Objects.requireNonNull(triggers);
         this.processor = Objects.requireNonNull(processor);
+    }
+
+    /** When the next Gmail poll is due, so the scanner can sleep until then. */
+    public Optional<Instant> earliestDue() {
+        return triggers.findEarliestGmailDue();
     }
 
     public ScanResult scan(Instant scanTime, int batchSize) {

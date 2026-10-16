@@ -1,6 +1,7 @@
 package com.weav.workflow.domain.port.out;
 
 import com.weav.workflow.domain.model.aggregate.workflow.Workflow;
+import com.weav.workflow.domain.model.aggregate.workflow.WorkflowSummary;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,7 +14,8 @@ public interface WorkflowRepository {
 
     Optional<Workflow> findByWorkspaceAndId(UUID workspaceId, UUID workflowId);
 
-    List<Workflow> findPage(UUID workspaceId, int page, int size);
+    /** Newest first; reads scalar columns and node types only, never the draft definition or editor state. */
+    List<WorkflowSummary> findPage(UUID workspaceId, int page, int size);
 
     long countByWorkspace(UUID workspaceId);
 

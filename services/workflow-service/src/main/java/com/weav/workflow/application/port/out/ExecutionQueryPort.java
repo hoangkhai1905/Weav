@@ -57,7 +57,7 @@ public interface ExecutionQueryPort {
 
     record NodeState(UUID nodeExecutionId, String nodeId, String nodeType, NodeExecutionStatus status,
                      int attemptCount, Instant startedAt, Instant finishedAt,
-                     Object output, Object error, List<AttemptState> attempts) {
+                     Object output, boolean outputTruncated, Object error, List<AttemptState> attempts) {
         public NodeState {
             Objects.requireNonNull(nodeExecutionId, "nodeExecutionId must not be null");
             if (nodeId == null || nodeId.isBlank() || nodeType == null || nodeType.isBlank()) {
@@ -72,7 +72,8 @@ public interface ExecutionQueryPort {
     }
 
     record AttemptState(UUID attemptId, int attemptNumber, AttemptStatus status,
-                        Instant startedAt, Instant finishedAt, Object output, Object error) {
+                        Instant startedAt, Instant finishedAt, Object output, boolean outputTruncated,
+                        Object error) {
         public AttemptState {
             Objects.requireNonNull(attemptId, "attemptId must not be null");
             if (attemptNumber < 1) {

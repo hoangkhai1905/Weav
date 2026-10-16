@@ -60,17 +60,17 @@ const schema = z.object({
     .min(1)
     .max(6000)
     .default(120),
-  // Daily quota in calls (UTC day), counted in ai_db.
+  // Daily quota in calls (UTC day), counted in ai_db. 0 = no limit for that scope.
   AI_ASSISTANT_DAILY_USER_LIMIT: z.coerce
     .number()
     .int()
-    .min(1)
+    .min(0)
     .max(100_000)
     .default(50),
   AI_ASSISTANT_DAILY_WORKSPACE_LIMIT: z.coerce
     .number()
     .int()
-    .min(1)
+    .min(0)
     .max(1_000_000)
     .default(200),
   // Bounds on the stored history sent to the model each turn.
