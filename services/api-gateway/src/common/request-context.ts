@@ -4,6 +4,8 @@ export const REQUEST_CONTEXT = Symbol('gateway.request-context');
 
 export interface GatewayRequestContext {
   requestId: string;
+  /** Name of the upstream service this request was proxied to; read by the access log. */
+  upstream?: string;
 }
 
 export interface RequestContextCarrier {
@@ -117,6 +119,16 @@ export function getRequestId(request: RequestContextCarrier): string {
     return existing;
   }
   return resolveRequestId(request.headers ?? {});
+}
+
+export function setRequestUpstream(
+  request: RequestContextCarrier,
+  upstream: string,
+): void {
+  const context = request[REQUEST_CONTEXT];
+  if (context) {
+    context.upstream = upstream;
+  }
 }
 
 export function setResponseRequestId(

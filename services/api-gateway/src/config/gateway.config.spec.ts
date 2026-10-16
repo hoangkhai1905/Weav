@@ -171,6 +171,7 @@ describe('validateGatewayEnvironment', () => {
       assistantPerMinute: 20,
       templatePerMinute: 20,
       invitationPerMinute: 10,
+      connectionActionPerMinute: 10,
       windowMs: 60_000,
     });
     expect(config.trustProxyHops).toBe(0);

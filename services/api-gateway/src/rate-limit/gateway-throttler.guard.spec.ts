@@ -1,4 +1,5 @@
 import {
+  isConnectionActionRequest,
   isInvitationRequest,
   isTemplateRequest,
 } from './gateway-throttler.guard';
@@ -50,5 +51,29 @@ describe('isInvitationRequest', () => {
     ['POST', `/api/v1/workspaces/${ws}/members`],
   ])('does not limit %s %s', (method, url) => {
     expect(isInvitationRequest({ method, url })).toBe(false);
+  });
+});
+
+describe('isConnectionActionRequest', () => {
+  const ws = '3fa85f64-5717-4562-b3fc-2c963f66afa6';
+  const id = '3fa85f64-5717-4562-b3fc-2c963f66afa7';
+
+  it.each([
+    ['POST', `/api/v1/workspaces/${ws}/connections/${id}/test`],
+    ['POST', `/api/v1/workspaces/${ws}/connections/${id}/oauth/authorize`],
+    ['POST', `/api/v1/workspaces/${ws}/connections/${id}/test?x=1`],
+  ])('limits %s %s', (method, url) => {
+    expect(isConnectionActionRequest({ method, url })).toBe(true);
+  });
+
+  it.each([
+    ['GET', `/api/v1/workspaces/${ws}/connections/${id}/test`],
+    ['POST', `/api/v1/workspaces/${ws}/connections/${id}/oauth/complete`],
+    ['POST', `/api/v1/workspaces/${ws}/connections/${id}/disable`],
+    ['PUT', `/api/v1/workspaces/${ws}/connections/${id}/credential`],
+    ['POST', `/api/v1/workspaces/${ws}/connections`],
+    ['POST', `/api/v1/other/connections/${id}/test`],
+  ])('does not limit %s %s', (method, url) => {
+    expect(isConnectionActionRequest({ method, url })).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ import {
 } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
 import { validateGatewayEnvironment } from './config/gateway.config';
+import { accessLogHook } from './common/access-log';
 import { GatewayExceptionFilter } from './common/gateway-exception.filter';
 import {
   attachRequestContext,
@@ -39,6 +40,7 @@ export async function createApp(): Promise<NestFastifyApplication> {
     reply.header('Referrer-Policy', 'no-referrer');
     done();
   });
+  fastify.addHook('onResponse', accessLogHook);
 
   app.enableCors({
     origin: config.cors.allowedOrigins.length

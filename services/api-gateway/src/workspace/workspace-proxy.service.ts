@@ -3,17 +3,21 @@ import { ConfigService } from '@nestjs/config';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { GatewayConfig } from '../config/gateway.config';
 import {
-  applyClientForwardingHeaders,
   collectSafeUpstreamResponseHeaders,
   createUpstreamAbortHandle,
   isWriteTimeout,
-  UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN,
-  getRequestHeader,
   getRequestId,
-  isValidTraceparent,
   setResponseRequestId,
   type RequestContextCarrier,
 } from '../common/request-context';
+import {
+  buildUpstreamHeaders,
+  createProxyFail,
+  failOutcomeUnknown,
+  logUpstreamFailure,
+  readBearerAuthorization,
+  startUpstreamCall,
+} from '../common/upstream-proxy';
 import { MAX_UPSTREAM_JSON_BYTES } from '../common/read-capped';
 
 type WorkspaceMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -100,46 +104,17 @@ export class WorkspaceProxyService {
     setResponseRequestId(reply, requestId);
     reply.header('Cache-Control', 'no-store');
 
-    const fail = (status: number, code: string, message: string) => {
-      const raw = context.raw as
-        { aborted?: boolean; destroyed?: boolean } | undefined;
-      if (reply.sent || raw?.aborted === true || raw?.destroyed === true) {
-        return undefined;
-      }
-      reply.header('Content-Type', 'application/json; charset=utf-8');
-      setResponseRequestId(reply, requestId);
-      reply.header('Cache-Control', 'no-store');
-      return reply.code(status).send({
-        error: { code, message, details: [] },
-        status,
-        requestId,
-      });
-    };
+    const fail = createProxyFail(context, reply, requestId);
 
-    const authorization = getRequestHeader(request.headers, 'authorization');
-    if (
-      !authorization ||
-      authorization.length > 8192 ||
-      !/^Bearer \S+$/i.test(authorization)
-    ) {
+    const authorization = readBearerAuthorization(request.headers);
+    if (!authorization) {
       return fail(401, 'UNAUTHORIZED', 'Bearer token required');
     }
 
-    const headers: Record<string, string> = {
-      accept: 'application/json',
+    const headers = buildUpstreamHeaders(request, requestId, {
       authorization,
-      'x-correlation-id': requestId,
-      'x-request-id': requestId,
-    };
-    const traceparent = getRequestHeader(request.headers, 'traceparent');
-    if (isValidTraceparent(traceparent)) {
-      headers.traceparent = traceparent;
-    }
-    const userAgent = getRequestHeader(request.headers, 'user-agent');
-    if (userAgent) {
-      headers['user-agent'] = userAgent.slice(0, 512);
-    }
-    applyClientForwardingHeaders(request, headers, method);
+      clientMethod: method,
+    });
 
     let serializedBody: string | undefined;
     if (options.body !== undefined) {
@@ -167,6 +142,7 @@ export class WorkspaceProxyService {
       reply,
       options.timeoutMs ?? 10_000,
     );
+    const call = startUpstreamCall(context, 'workspace', requestId);
 
     try {
       const response = await fetch(targetUrl, {
@@ -209,9 +185,7 @@ export class WorkspaceProxyService {
         if (abortHandle.signal.aborted) {
           throw error;
         }
-        this.logger.error(
-          `Workspace response read failed requestId=${requestId}`,
-        );
+        logUpstreamFailure(this.logger, call, 'Workspace response read failed');
         return fail(
           503,
           'SERVICE_UNAVAILABLE',
@@ -246,17 +220,14 @@ export class WorkspaceProxyService {
       return reply.code(response.status).send(responseBody);
     } catch (error) {
       if (isWriteTimeout(abortHandle, method)) {
-        return fail(
-          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.status,
-          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.code,
-          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.message,
-        );
+        return failOutcomeUnknown(fail);
       }
       if (!abortHandle.signal.aborted) {
-        this.logger.error(
-          `Workspace upstream failed requestId=${requestId} error=${
-            error instanceof Error ? error.message : 'unknown'
-          }`,
+        logUpstreamFailure(
+          this.logger,
+          call,
+          'Workspace upstream failed',
+          error instanceof Error ? error.message : 'unknown',
         );
       }
       return fail(503, 'SERVICE_UNAVAILABLE', 'Workspace service unavailable');

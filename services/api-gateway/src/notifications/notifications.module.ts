@@ -23,13 +23,18 @@ import {
   collectSafeUpstreamResponseHeaders,
   createUpstreamAbortHandle,
   isWriteTimeout,
-  UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN,
-  getRequestHeader,
   getRequestId,
-  isValidTraceparent,
   setResponseRequestId,
   type RequestContextCarrier,
 } from '../common/request-context';
+import {
+  buildUpstreamHeaders,
+  createProxyFail,
+  failOutcomeUnknown,
+  logUpstreamFailure,
+  readBearerAuthorization,
+  startUpstreamCall,
+} from '../common/upstream-proxy';
 import { MAX_UPSTREAM_JSON_BYTES, readCapped } from '../common/read-capped';
 
 const UUID_PATTERN =
@@ -181,39 +186,21 @@ export class NotificationProxyTransport {
     const request = req as RequestContextCarrier;
     const requestId = getRequestId(request);
     setResponseRequestId(reply, requestId);
-    const authorization = getRequestHeader(req.headers, 'authorization');
-    if (
-      !authorization ||
-      authorization.length > 8192 ||
-      !/^Bearer \S+$/i.test(authorization)
-    )
-      throw new HttpException('Bearer token required', 401);
+    const authorization = readBearerAuthorization(req.headers);
+    if (!authorization) throw new HttpException('Bearer token required', 401);
     const gateway = this.config.get<GatewayConfig>('gateway');
     const base =
       gateway?.upstreams?.notification ??
       this.config.get<string>('NOTIFICATION_SERVICE_URL') ??
       'http://notification-service:3000';
-    const headers: Record<string, string> = {
-      accept: 'application/json',
-      authorization,
-      'x-correlation-id': requestId,
-      'x-request-id': requestId,
-    };
-    const traceparent = getRequestHeader(req.headers, 'traceparent');
-    if (isValidTraceparent(traceparent)) {
-      headers.traceparent = traceparent;
-    }
+    const headers = buildUpstreamHeaders(req, requestId, { authorization });
 
-    const fail = (status: number, code: string, message: string) => {
-      reply.header('Content-Type', 'application/json; charset=utf-8');
-      setResponseRequestId(reply, requestId);
-      return reply.code(status).send({
-        error: { code, message, details: [] },
-        status,
-        requestId,
-      });
-    };
+    const fail = createProxyFail(request, reply, requestId, {
+      skipWhenClosed: false,
+      noStore: false,
+    });
     const abortHandle = createUpstreamAbortHandle(request, reply, 10_000);
+    const call = startUpstreamCall(request, 'notification', requestId);
     try {
       const response = await fetch(
         `${base.replace(/\/$/, '')}/api/${version}/notifications${path}${query ? `?${query}` : ''}`,
@@ -258,13 +245,9 @@ export class NotificationProxyTransport {
       }
     } catch {
       if (isWriteTimeout(abortHandle, req.method)) {
-        return fail(
-          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.status,
-          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.code,
-          UPSTREAM_TIMEOUT_OUTCOME_UNKNOWN.message,
-        );
+        return failOutcomeUnknown(fail);
       }
-      this.logger.error(`Notification upstream failed requestId=${requestId}`);
+      logUpstreamFailure(this.logger, call, 'Notification upstream failed');
       return fail(
         503,
         'SERVICE_UNAVAILABLE',

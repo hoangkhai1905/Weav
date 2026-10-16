@@ -9,6 +9,7 @@ import { FailOpenThrottlerStorage } from './fail-open-throttler-storage';
 import {
   GatewayThrottlerGuard,
   isAssistantRequest,
+  isConnectionActionRequest,
   isInvitationRequest,
   isOcrRateLimitEligible,
   isOcrRequest,
@@ -101,6 +102,16 @@ function requestFromContext(context: {
               skipIf: (context: ExecutionContext) =>
                 skipOperational(context) ||
                 !isInvitationRequest(requestFromContext(context)),
+            },
+            {
+              // Per user: connection test and OAuth authorize reach third-party providers (G13).
+              name: 'connectionAction',
+              limit: gateway.limits.connectionActionPerMinute,
+              ttl: gateway.limits.windowMs,
+              blockDuration: gateway.limits.windowMs,
+              skipIf: (context: ExecutionContext) =>
+                skipOperational(context) ||
+                !isConnectionActionRequest(requestFromContext(context)),
             },
             {
               // Per endpoint key, on top of the general per-IP bucket, so one

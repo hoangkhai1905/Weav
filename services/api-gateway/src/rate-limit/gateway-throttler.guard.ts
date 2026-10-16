@@ -116,6 +116,19 @@ export function isInvitationRequest(request: GatewayRateLimitRequest): boolean {
   return INVITATION_CREATE_PATH.test(path) || INVITATION_RESEND_PATH.test(path);
 }
 
+const CONNECTION_ACTION_PATH =
+  /^\/api\/v1\/workspaces\/[^/]+\/connections\/[^/]+\/(?:test|oauth\/authorize)$/;
+
+/** G13: connection test and OAuth authorize call third-party providers, so they get their own per-user bucket. */
+export function isConnectionActionRequest(
+  request: GatewayRateLimitRequest,
+): boolean {
+  return (
+    request.method?.toUpperCase() === 'POST' &&
+    CONNECTION_ACTION_PATH.test(requestPath(request))
+  );
+}
+
 // Covers /webhooks/<key> and the Telegram variant /webhooks/telegram/<key>; keys are random, so one bucket each.
 const WEBHOOK_PATH_PATTERN = /^\/api\/v1\/webhooks\/(?:telegram\/)?([^/]+)$/;
 
@@ -201,7 +214,8 @@ export class GatewayThrottlerGuard extends ThrottlerGuard {
       (isOcrRequest(request) ||
         isAssistantRequest(request) ||
         isTemplateRequest(request) ||
-        isInvitationRequest(request)) &&
+        isInvitationRequest(request) ||
+        isConnectionActionRequest(request)) &&
       !request.principal?.sub
     ) {
       const token = authorizationToken(request);
@@ -228,7 +242,8 @@ export class GatewayThrottlerGuard extends ThrottlerGuard {
       (isOcrRequest(request) ||
         isAssistantRequest(request) ||
         isTemplateRequest(request) ||
-        isInvitationRequest(request)) &&
+        isInvitationRequest(request) ||
+        isConnectionActionRequest(request)) &&
       request.principal?.sub
     ) {
       return Promise.resolve(`subject:${request.principal.sub}`);
