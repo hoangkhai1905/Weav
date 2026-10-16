@@ -47,6 +47,12 @@ public interface WorkflowTriggerPort {
 
     List<ScheduleCandidate> findDueSchedules(Instant now, int limit);
 
+    /**
+     * When the earliest active schedule becomes due (a missing next run counts as due at once, a recorded retry time
+     * postpones it); empty when no schedule is active. Same predicate as {@link #findDueSchedules}.
+     */
+    Optional<Instant> findEarliestScheduleDue();
+
     Optional<WorkflowTrigger> lockCurrent(UUID workflowId, UUID triggerId);
 
     void initializeSchedule(UUID triggerId, Instant nextRunAt);

@@ -97,12 +97,13 @@ public final class ExecutionAdmissionService {
     /** SHA-256 hex of the canonical (key-sorted) JSON input; null when no key was supplied. */
     private String requestHash(String key, Object input) {
         if (key == null) return null;
+        // The input was already validated as JSON, so a failure here is ours: it surfaces as a 500, not a 400.
         try {
             byte[] json = objectMapper.writeValueAsBytes(canonical(input));
             return java.util.HexFormat.of().formatHex(
                     java.security.MessageDigest.getInstance("SHA-256").digest(json));
         } catch (Exception exception) {
-            throw new BadRequestException("Execution input could not be validated");
+            throw new IllegalStateException("Execution input could not be hashed", exception);
         }
     }
 
@@ -119,20 +120,26 @@ public final class ExecutionAdmissionService {
     }
 
     private Object validateAndFreeze(Object input) {
+        Object immutableInput;
         try {
             checkDepthAndCycles(input);
-            Object immutableInput = JsonValues.freeze(input);
-            if (objectMapper.writeValueAsBytes(immutableInput).length > maxInputBytes) {
-                throw new BadRequestException("Execution input exceeds the supported size");
-            }
-            return immutableInput;
+            immutableInput = JsonValues.freeze(input);
         } catch (BadRequestException exception) {
             throw exception;
         } catch (RuntimeException exception) {
             throw new BadRequestException("Execution input is not valid JSON");
-        } catch (Exception exception) {
-            throw new BadRequestException("Execution input could not be validated");
         }
+        // The frozen value is JSON-safe, so a serialization failure here is a server fault (500), not bad input.
+        byte[] json;
+        try {
+            json = objectMapper.writeValueAsBytes(immutableInput);
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("Execution input could not be serialized", exception);
+        }
+        if (json.length > maxInputBytes) {
+            throw new BadRequestException("Execution input exceeds the supported size");
+        }
+        return immutableInput;
     }
 
     private void checkDepthAndCycles(Object input) {

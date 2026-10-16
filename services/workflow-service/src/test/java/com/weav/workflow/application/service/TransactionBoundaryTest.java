@@ -116,11 +116,13 @@ class TransactionBoundaryTest {
         arrange();
         WorkflowDraftService service = new WorkflowDraftService(new CreateWorkflowUseCase(workflows), workflows,
                 authorization, connections, Optional.of(references), event -> { }, transactions);
+        // Only a connection the saved draft does not already reference is authorized remotely on save.
+        UUID newConnectionId = UUID.fromString("30000000-0000-0000-0000-000000000082");
         WorkflowDefinition definition = new WorkflowDefinition("1.0", List.of(
                 new WorkflowDefinition.Node("manual", "trigger.manual", Map.of()),
                 new WorkflowDefinition.Node("request", "http.request", Map.of(
                         "method", "GET", "url", "https://example.test",
-                        "connectionId", CONNECTION_ID.toString()))), List.of(), Map.of());
+                        "connectionId", newConnectionId.toString()))), List.of(), Map.of());
 
         service.save(WORKSPACE_ID, draft.getId(), ACTOR_ID, "Boundary", null, definition, Map.of());
 

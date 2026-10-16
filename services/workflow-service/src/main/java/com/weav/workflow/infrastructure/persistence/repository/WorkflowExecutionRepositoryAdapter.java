@@ -37,6 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -105,6 +106,19 @@ public class WorkflowExecutionRepositoryAdapter implements WorkflowExecutionRepo
         Objects.requireNonNull(id, "id must not be null");
         WorkflowExecutionJpaEntity entity = entityManager.find(WorkflowExecutionJpaEntity.class, id);
         return Optional.ofNullable(entity).map(mapper::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<WorkflowExecution> findAllById(Collection<UUID> ids) {
+        Objects.requireNonNull(ids, "ids must not be null");
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return entityManager.createQuery("select e from WorkflowExecutionJpaEntity e where e.id in :ids",
+                        WorkflowExecutionJpaEntity.class)
+                .setParameter("ids", ids)
+                .getResultList().stream().map(mapper::toDomain).toList();
     }
 
     @Override

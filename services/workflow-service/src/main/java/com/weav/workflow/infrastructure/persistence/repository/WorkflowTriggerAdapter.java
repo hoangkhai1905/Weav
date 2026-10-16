@@ -7,6 +7,7 @@ import com.weav.workflow.domain.model.aggregate.workflow.WorkflowTrigger;
 import com.weav.workflow.domain.valueobject.TriggerStatus;
 import com.weav.workflow.infrastructure.persistence.entity.WorkflowTriggerJpaEntity;
 import com.weav.workflow.infrastructure.persistence.mapper.WorkflowPersistenceMapper;
+import com.weav.workflow.infrastructure.scheduling.ActivitySignal;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.springframework.stereotype.Repository;
@@ -32,7 +33,10 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort, GmailTrigger
     private final WorkflowPersistenceMapper mapper;
     private final String triggerTable;
     private final String workflowTable;
+    /** Only triggers the processors would actually act on: a live, published workflow still on the trigger's version. */
+    private final String eligibleJoin;
     private final java.time.Clock clock;
+    private ActivitySignal triggerActivity;
 
     public WorkflowTriggerAdapter(WorkflowPersistenceMapper mapper,
                                   @Value("${spring.jpa.properties.hibernate.default_schema:workflow}") String schema,
@@ -45,6 +49,15 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort, GmailTrigger
         }
         this.triggerTable = "\"" + schema + "\".workflow_triggers";
         this.workflowTable = "\"" + schema + "\".workflows";
+        this.eligibleJoin = "join " + workflowTable + " w on w.id = t.workflow_id and w.status = 'PUBLISHED' "
+                + "and w.deleted_at is null and w.current_version_id = t.workflow_version_id";
+    }
+
+    /** Optional: wakes an idle schedule/Gmail scanner once the writing transaction commits. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTriggerActivity(@org.springframework.beans.factory.annotation.Qualifier("triggerActivity")
+                            ActivitySignal triggerActivity) {
+        this.triggerActivity = triggerActivity;
     }
 
     @Override
@@ -53,6 +66,7 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort, GmailTrigger
         Objects.requireNonNull(workflowId, "workflowId must not be null");
         Objects.requireNonNull(versionId, "versionId must not be null");
         Objects.requireNonNull(registrations, "registrations must not be null");
+        signalTriggerChange();
 
         List<WorkflowTriggerJpaEntity> previous = entityManager.createQuery(
                         "select trigger from WorkflowTriggerJpaEntity trigger "
@@ -248,6 +262,49 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort, GmailTrigger
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Optional<Instant> findEarliestScheduleDue() {
+        // Same predicate as findDueSchedules: due once next_run_at (null = at once) and any retryAt have passed.
+        Object earliest = entityManager.createNativeQuery(
+                        "select min(greatest(coalesce(t.next_run_at, 'epoch'::timestamptz), "
+                                + "case when jsonb_typeof(t.last_error) = 'object' and t.last_error->>'retryAt' is not null "
+                                + "then (t.last_error->>'retryAt')::timestamptz else 'epoch'::timestamptz end)) "
+                                + "from " + triggerTable + " t " + eligibleJoin + " where t.type = 'SCHEDULE' and t.status = 'ACTIVE'")
+                .getSingleResult();
+        return Optional.ofNullable(earliest).map(WorkflowTriggerAdapter::toInstant);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Instant> findEarliestGmailDue() {
+        Object earliest = entityManager.createNativeQuery(
+                        "select min(t.next_run_at) from " + triggerTable + " t " + eligibleJoin
+                                + " where t.type = 'GMAIL' and t.status = 'ACTIVE' and t.next_run_at is not null")
+                .getSingleResult();
+        return Optional.ofNullable(earliest).map(WorkflowTriggerAdapter::toInstant);
+    }
+
+    /** Registrations changed (publish, update, pause, resume, delete): the scanners re-read their due times. */
+    private void signalTriggerChange() {
+        if (triggerActivity != null) {
+            triggerActivity.signalAfterCommit();
+        }
+    }
+
+    private static Instant toInstant(Object value) {
+        if (value instanceof Instant instant) {
+            return instant;
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toInstant();
+        }
+        if (value instanceof java.time.OffsetDateTime offset) {
+            return offset.toInstant();
+        }
+        throw new IllegalStateException("Unexpected timestamp type " + value.getClass().getSimpleName());
+    }
+
+    @Override
     @Transactional
     public void advanceGmailPoll(UUID triggerId, Instant nextPollAt) {
         WorkflowTriggerJpaEntity trigger = entityManager.find(WorkflowTriggerJpaEntity.class, triggerId);
@@ -367,6 +424,7 @@ public class WorkflowTriggerAdapter implements WorkflowTriggerPort, GmailTrigger
         Objects.requireNonNull(versionId, "versionId must not be null");
         Objects.requireNonNull(enabledAt, "enabledAt must not be null");
         Objects.requireNonNull(nextRunAtByTrigger, "nextRunAtByTrigger must not be null");
+        signalTriggerChange();
         List<WorkflowTriggerJpaEntity> current = entityManager.createQuery(
                         "select trigger from WorkflowTriggerJpaEntity trigger "
                                 + "where trigger.workflowId = :workflowId and trigger.workflowVersionId = :versionId",

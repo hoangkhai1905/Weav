@@ -2,6 +2,7 @@ package com.weav.workflow.application.port.out;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /** Persistence boundary for the polling state of trigger.gmail registrations. */
@@ -9,6 +10,9 @@ public interface GmailTriggerPort {
 
     /** Active Gmail registrations whose next poll is due, most overdue first, at most {@code limit}. */
     List<Candidate> findDueGmail(Instant now, int limit);
+
+    /** When the earliest active Gmail registration is next due to poll; empty when none is scheduled. */
+    Optional<Instant> findEarliestGmailDue();
 
     /** Moves the next poll instant; call inside the claim transaction that holds the trigger lock. */
     void advanceGmailPoll(UUID triggerId, Instant nextPollAt);

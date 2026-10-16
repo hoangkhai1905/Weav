@@ -1,6 +1,7 @@
 package com.weav.workflow.infrastructure.scheduling;
 
 import com.weav.workflow.application.port.out.WorkflowFileStore;
+import com.weav.workflow.infrastructure.metrics.ScheduledTaskMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +24,8 @@ public class RetentionPurgeJob {
     private static final Pattern SQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
     private static final long ADVISORY_LOCK_ID = 0x5745415652455450L; // "WEAVRETP"
     private static final int BATCH_SIZE = 1_000;
+    // A run owns many child rows (nodes, attempts, logs), so its batch is far smaller than a plain row delete.
+    private static final int EXECUTION_BATCH_SIZE = 100;
     private static final int FILE_BATCH_SIZE = 100;
     private static final int MAX_FILE_BATCHES = 20;
 
@@ -43,6 +46,8 @@ public class RetentionPurgeJob {
     private final String aiUsage;
     private final String alertFirings;
     private final WorkflowFileStore fileStore;
+    private volatile ScheduledTaskMetrics taskMetrics;
+    private volatile boolean stepFailed;
 
     @Autowired
     public RetentionPurgeJob(JdbcTemplate jdbc, PlatformTransactionManager transactionManager,
@@ -84,10 +89,19 @@ public class RetentionPurgeJob {
         this(jdbc, transactionManager, schema, outboxDays, notificationOutboxDays, executionDays, 30, null);
     }
 
+    /** Optional: records the last fully successful scheduled run for monitoring. */
+    @Autowired(required = false)
+    public void setScheduledTaskMetrics(ScheduledTaskMetrics metrics) {
+        this.taskMetrics = metrics;
+    }
+
     @Scheduled(fixedDelayString = "${weav.workflow.retention.purge-interval:PT1H}",
             initialDelayString = "${weav.workflow.retention.initial-delay:PT5M}")
     public void purgeOnSchedule() {
         purgeNow();
+        if (!stepFailed) {
+            ScheduledTaskMetrics.markSucceeded(taskMetrics, ScheduledTaskMetrics.RETENTION_PURGE);
+        }
     }
 
     /**
@@ -95,6 +109,7 @@ public class RetentionPurgeJob {
      * logged and the remaining steps still run (the next scheduled run retries it).
      */
     public void purgeNow() {
+        stepFailed = false;
         purgeFiles();
         boolean held = step("outbox_events", () -> jdbc.update("""
                 DELETE FROM %1$s WHERE id IN (
@@ -112,15 +127,25 @@ public class RetentionPurgeJob {
                 "DELETE FROM %s WHERE usage_date < (now() AT TIME ZONE 'UTC')::date - 30".formatted(aiUsage)));
         held = held && step("alert_rule_firings", this::purgeAlertFiringBatch);
         if (held && executionDays > 0) {
-            step("workflow_executions", this::purgeExecutionBatch);
+            step("workflow_executions", EXECUTION_BATCH_SIZE, this::purgeExecutionBatch);
         }
     }
 
     /** One purge step; a failure is logged (class only, no row data) and does not stop the following steps. */
     private boolean step(String what, IntSupplier batch) {
+        return step(what, BATCH_SIZE, batch);
+    }
+
+    private boolean step(String what, int batchSize, IntSupplier batch) {
         try {
-            return inBatches(what, batch);
+            return inBatches(what, batchSize, batch);
+        } catch (org.springframework.dao.QueryTimeoutException exception) {
+            // The batch rolled back; the next scheduled run retries it (a smaller batch keeps it from timing out forever).
+            stepFailed = true;
+            LOGGER.warn("Retention purge of {} timed out; skipping to the next step and retrying next run", what);
+            return true;
         } catch (RuntimeException exception) {
+            stepFailed = true;
             LOGGER.warn("Retention purge of {} failed: {}", what, exception.getClass().getSimpleName());
             return true;
         }
@@ -163,6 +188,7 @@ public class RetentionPurgeJob {
                 }
             }
         } catch (RuntimeException exception) {
+            stepFailed = true;
             LOGGER.warn("Workflow file purge failed: {}", exception.getClass().getSimpleName());
         }
         if (total > 0) {
@@ -171,7 +197,7 @@ public class RetentionPurgeJob {
     }
 
     /** Returns false when the advisory lock was not acquired (another node is purging). */
-    private boolean inBatches(String what, IntSupplier batch) {
+    private boolean inBatches(String what, int batchSize, IntSupplier batch) {
         int total = 0;
         int deleted;
         do {
@@ -183,7 +209,7 @@ public class RetentionPurgeJob {
             }
             deleted = result;
             total += deleted;
-        } while (deleted >= BATCH_SIZE);
+        } while (deleted >= batchSize);
         if (total > 0) {
             LOGGER.info("Retention purge removed {} rows from {}", total, what);
         }
@@ -203,7 +229,7 @@ public class RetentionPurgeJob {
                   AND NOT EXISTS (SELECT 1 FROM %1$s c WHERE c.parent_execution_id = e.id)
                 ORDER BY e.finished_at
                 LIMIT ?
-                """.formatted(executions, outbox, notificationOutbox), UUID.class, executionDays, BATCH_SIZE);
+                """.formatted(executions, outbox, notificationOutbox), UUID.class, executionDays, EXECUTION_BATCH_SIZE);
         if (ids.isEmpty()) {
             return 0;
         }

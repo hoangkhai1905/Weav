@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,6 +32,11 @@ public class ScheduleTriggerService {
             throw new IllegalArgumentException("Schedule failure backoff must be positive");
         }
         this.failureBackoff = Duration.ofMillis(failureBackoffMs);
+    }
+
+    /** When the next schedule slot is due, so the scanner can sleep until then. */
+    public Optional<Instant> earliestDue() {
+        return triggers.findEarliestScheduleDue();
     }
 
     public ScanResult scan(Instant scanTime, int batchSize) {

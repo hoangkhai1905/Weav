@@ -4,11 +4,14 @@ import com.weav.workflow.domain.model.aggregate.execution.WorkflowExecution;
 import com.weav.workflow.domain.model.aggregate.workflow.OutboxEvent;
 import com.weav.workflow.domain.port.out.OutboxEventRepository;
 import com.weav.workflow.domain.port.out.WorkflowExecutionRepository;
+import com.weav.workflow.infrastructure.metrics.ScheduledTaskMetrics;
 import com.weav.workflow.infrastructure.scheduling.IdleBackoff;
 import com.weav.workflow.infrastructure.scheduling.OutboxWakeup;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -16,6 +19,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.MessageDeliveryMode;
@@ -45,6 +49,7 @@ public final class ExecutionOutboxPublisher {
     private final Duration maxRetryDelay;
     private volatile IdleBackoff idleBackoff;
     private volatile OutboxWakeup wakeup;
+    private volatile ScheduledTaskMetrics taskMetrics;
 
     public ExecutionOutboxPublisher(OutboxEventRepository outboxEvents,
                                     WorkflowExecutionRepository executions,
@@ -85,45 +90,99 @@ public final class ExecutionOutboxPublisher {
             }
         }
         int published = 0;
+        boolean failed = false;
         try {
             published = publishPending();
         } catch (RuntimeException exception) {
+            failed = true;
             LOGGER.warn("Execution outbox poll failed ({})", exception.getClass().getSimpleName());
         }
-        if (backoff != null) {
-            backoff.record(published > 0);
+        if (!failed) {
+            ScheduledTaskMetrics.markSucceeded(taskMetrics, ScheduledTaskMetrics.EXECUTION_OUTBOX_PUBLISHER);
         }
+        if (backoff == null) {
+            return;
+        }
+        if (published > 0) {
+            backoff.record(true);
+        } else if (failed) {
+            backoff.recordError();
+        } else {
+            recordIdle(backoff);
+        }
+    }
+
+    /** Sleeps until the earliest pending row is due (a scheduled retry or an expired lease), else the aligned wake. */
+    private void recordIdle(IdleBackoff backoff) {
+        try {
+            Instant now = clock.instant();
+            backoff.recordIdle(outboxEvents.findEarliestPendingDue()
+                    .map(due -> Duration.between(now, due)).orElse(null));
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Execution outbox due lookup failed ({})", exception.getClass().getSimpleName());
+            backoff.recordError();
+        }
+    }
+
+    /** Optional: records the last successful run for monitoring. */
+    @Autowired(required = false)
+    public void setScheduledTaskMetrics(ScheduledTaskMetrics metrics) {
+        this.taskMetrics = metrics;
     }
 
     /** Idle backoff (scale-to-zero friendly polling); without it every tick polls, as before. */
     @Autowired
     void configureIdleBackoff(
             @Value("${weav.workflow.execution-outbox.poll-interval:1000}") long pollIntervalMillis,
-            @Value("${weav.workflow.poller.idle-max-delay:PT30S}") Duration idleMaxDelay,
+            @Value("${weav.workflow.poller.idle-max-delay:PT10M}") Duration idleMaxDelay,
             @Qualifier("executionOutboxWakeup") OutboxWakeup outboxWakeup) {
         Duration base = Duration.ofMillis(pollIntervalMillis);
         this.idleBackoff = new IdleBackoff(base, idleMaxDelay.compareTo(base) < 0 ? base : idleMaxDelay);
         this.wakeup = outboxWakeup;
     }
 
+    /**
+     * Claims a batch, loads its executions with one query, sends every message and then awaits all broker confirms
+     * together (one shared confirm deadline), so a batch never costs one round trip per event.
+     */
     public int publishPending() {
         Instant claimedAt = clock.instant();
         UUID leaseToken = UUID.randomUUID();
         List<OutboxEvent> claimed = outboxEvents.claimPending(
                 leaseToken, claimedAt, claimedAt.plus(leaseDuration), batchSize);
-        int published = 0;
+        if (claimed.isEmpty()) {
+            return 0;
+        }
+        Map<UUID, WorkflowExecution> byId = new HashMap<>();
+        executions.findAllById(claimed.stream().map(OutboxEvent::getAggregateId).collect(Collectors.toSet()))
+                .forEach(execution -> byId.put(execution.getId(), execution));
+        List<InFlight> inFlight = new ArrayList<>(claimed.size());
         for (OutboxEvent event : claimed) {
-            if (publish(event, leaseToken, claimedAt)) {
+            CorrelationData correlation = send(event, byId.get(event.getAggregateId()), leaseToken, claimedAt);
+            if (correlation != null) {
+                inFlight.add(new InFlight(event, correlation));
+            }
+        }
+        long deadlineNanos = System.nanoTime() + confirmTimeout.toNanos();
+        int published = 0;
+        for (InFlight pending : inFlight) {
+            if (settle(pending, leaseToken, claimedAt, deadlineNanos)) {
                 published++;
             }
         }
         return published;
     }
 
-    private boolean publish(OutboxEvent event, UUID leaseToken, Instant attemptedAt) {
+    private record InFlight(OutboxEvent event, CorrelationData correlation) {
+    }
+
+    /** Sends one message; returns the correlation to await, or null when the event was rescheduled instead. */
+    private CorrelationData send(OutboxEvent event, WorkflowExecution execution, UUID leaseToken,
+                                 Instant attemptedAt) {
         try {
-            WorkflowExecution execution = executions.findById(event.getAggregateId())
-                    .orElseThrow(() -> new IllegalStateException("Outbox execution no longer exists"));
+            if (execution == null) {
+                throw new IllegalStateException("Outbox execution no longer exists");
+            }
             byte[] body = objectMapper.writeValueAsBytes(Map.of("executionId", execution.getId().toString()));
             CorrelationData correlationData = new CorrelationData(event.getId().toString());
             rabbitTemplate.convertAndSend(RabbitExecutionConfiguration.EXECUTION_EXCHANGE,
@@ -143,9 +202,21 @@ public final class ExecutionOutboxPublisher {
                         }
                         return message;
                     }, correlationData);
+            return correlationData;
+        } catch (RuntimeException exception) {
+            scheduleRetry(event, leaseToken, attemptedAt);
+            LOGGER.warn("Execution outbox event {} will retry after a delivery failure ({})",
+                    event.getId(), exception.getClass().getSimpleName());
+            return null;
+        }
+    }
 
-            CorrelationData.Confirm confirm = correlationData.getFuture()
-                    .get(confirmTimeout.toMillis(), TimeUnit.MILLISECONDS);
+    private boolean settle(InFlight pending, UUID leaseToken, Instant attemptedAt, long deadlineNanos) {
+        OutboxEvent event = pending.event();
+        CorrelationData correlationData = pending.correlation();
+        try {
+            long remainingNanos = Math.max(0, deadlineNanos - System.nanoTime());
+            CorrelationData.Confirm confirm = correlationData.getFuture().get(remainingNanos, TimeUnit.NANOSECONDS);
             if (!confirm.ack() || correlationData.getReturned() != null) {
                 scheduleRetry(event, leaseToken, attemptedAt);
                 return false;
@@ -161,17 +232,21 @@ public final class ExecutionOutboxPublisher {
             LOGGER.warn("Execution outbox event {} will retry after a delivery failure ({})",
                     event.getId(), exception.getClass().getSimpleName());
             return false;
-        } catch (Exception exception) {
-            scheduleRetry(event, leaseToken, attemptedAt);
-            LOGGER.warn("Execution outbox event {} will retry after a serialization failure ({})",
-                    event.getId(), exception.getClass().getSimpleName());
-            return false;
         }
     }
 
+    /**
+     * Never throws: one event whose retry cannot be recorded (a database blip) must not stop the rest of an already
+     * sent batch from being settled. Its lease simply expires and the event is delivered again (at least once).
+     */
     private void scheduleRetry(OutboxEvent event, UUID leaseToken, Instant attemptedAt) {
-        Duration delay = retryDelay(event.getRetryCount() == null ? 0 : event.getRetryCount());
-        outboxEvents.scheduleRetry(event.getId(), leaseToken, attemptedAt, attemptedAt.plus(delay));
+        try {
+            Duration delay = retryDelay(event.getRetryCount() == null ? 0 : event.getRetryCount());
+            outboxEvents.scheduleRetry(event.getId(), leaseToken, attemptedAt, attemptedAt.plus(delay));
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Execution outbox event {} retry could not be recorded ({})", event.getId(),
+                    exception.getClass().getSimpleName());
+        }
     }
 
     private Duration retryDelay(int retriesAlreadyScheduled) {

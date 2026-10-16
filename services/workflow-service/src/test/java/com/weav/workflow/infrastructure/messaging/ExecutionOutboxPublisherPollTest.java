@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -58,6 +59,29 @@ class ExecutionOutboxPublisherPollTest {
         verify(outbox, times(1)).claimPending(any(UUID.class), any(Instant.class), any(Instant.class), anyInt());
 
         wakeup.signalAfterCommit();
+        publisher.publishPendingOnSchedule();
+        verify(outbox, times(2)).claimPending(any(UUID.class), any(Instant.class), any(Instant.class), anyInt());
+    }
+
+    /** An idle publisher sleeps until the earliest pending row is due instead of ramping on its own. */
+    @Test
+    void idlePublisherSleepsUntilTheEarliestPendingRowIsDue() throws InterruptedException {
+        OutboxEventRepository outbox = mock(OutboxEventRepository.class);
+        when(outbox.claimPending(any(UUID.class), any(Instant.class), any(Instant.class), anyInt()))
+                .thenReturn(List.of());
+        Instant now = Instant.parse("2026-10-12T00:00:00Z");
+        when(outbox.findEarliestPendingDue()).thenReturn(Optional.of(now.plusMillis(300)));
+        ExecutionOutboxPublisher publisher = new ExecutionOutboxPublisher(outbox,
+                mock(WorkflowExecutionRepository.class), mock(RabbitTemplate.class), JsonMapper.builder().build(),
+                Clock.fixed(now, ZoneOffset.UTC), 5, Duration.ofSeconds(30), Duration.ofSeconds(1),
+                Duration.ofSeconds(60));
+        publisher.configureIdleBackoff(20, Duration.ofMinutes(10), new OutboxWakeup());
+
+        publisher.publishPendingOnSchedule();
+        publisher.publishPendingOnSchedule();
+        verify(outbox, times(1)).claimPending(any(UUID.class), any(Instant.class), any(Instant.class), anyInt());
+
+        Thread.sleep(350); // the retry is due: the next tick claims it
         publisher.publishPendingOnSchedule();
         verify(outbox, times(2)).claimPending(any(UUID.class), any(Instant.class), any(Instant.class), anyInt());
     }

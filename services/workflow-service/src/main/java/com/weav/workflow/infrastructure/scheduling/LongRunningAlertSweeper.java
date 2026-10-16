@@ -1,6 +1,7 @@
 package com.weav.workflow.infrastructure.scheduling;
 
 import com.weav.workflow.application.port.out.ExecutionRecoveryPort;
+import com.weav.workflow.infrastructure.metrics.ScheduledTaskMetrics;
 import com.weav.workflow.application.service.AlertEvaluator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,6 +25,7 @@ public class LongRunningAlertSweeper {
     private final int batchSize;
     private volatile IdleBackoff idleBackoff;
     private volatile ActivitySignal activity;
+    private volatile ScheduledTaskMetrics taskMetrics;
     private volatile ExecutionRecoveryPort executions;
     private long seenActivity;
 
@@ -42,6 +44,7 @@ public class LongRunningAlertSweeper {
         IdleBackoff backoff = idleBackoff;
         if (backoff == null) {
             sweepNow();
+            ScheduledTaskMetrics.markSucceeded(taskMetrics, ScheduledTaskMetrics.LONG_RUNNING_ALERT_SWEEPER);
             return;
         }
         if (activityChanged()) {
@@ -57,6 +60,13 @@ public class LongRunningAlertSweeper {
         } finally {
             backoff.record(busy);
         }
+        ScheduledTaskMetrics.markSucceeded(taskMetrics, ScheduledTaskMetrics.LONG_RUNNING_ALERT_SWEEPER);
+    }
+
+    /** Optional: records the last successful run for monitoring. */
+    @Autowired(required = false)
+    public void setScheduledTaskMetrics(ScheduledTaskMetrics metrics) {
+        this.taskMetrics = metrics;
     }
 
     /** Idle backoff (scale-to-zero friendly polling); without it every tick sweeps, as before. */
