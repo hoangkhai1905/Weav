@@ -80,10 +80,10 @@ function AssistantChat({ activeWorkspaceId }: { activeWorkspaceId: string | null
     return false;
   }, []);
 
-  const loadConversations = useCallback(async (before?: string) => {
+  const loadConversations = useCallback(async (before?: string, beforeId?: string) => {
     if (!activeWorkspaceId || isAssistantMockMode) return;
     try {
-      const items = await assistantApi.listConversations(activeWorkspaceId, before);
+      const items = await assistantApi.listConversations(activeWorkspaceId, before, beforeId);
       setConversations((current) => (before ? [...current, ...items] : items));
       setHasMore(items.length >= 20);
     } catch (error) {
@@ -332,7 +332,11 @@ function AssistantChat({ activeWorkspaceId }: { activeWorkspaceId: string | null
             type="button"
             data-testid="assistant-load-more"
             disabled={listLoading}
-            onClick={() => { setListLoading(true); void loadConversations(conversations[conversations.length - 1]?.updatedAt); }}
+            onClick={() => {
+              const last = conversations[conversations.length - 1];
+              setListLoading(true);
+              void loadConversations(last?.updatedAt, last?.conversationId);
+            }}
             className="h-8 rounded-md text-xs text-text-2 hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             {t('assistant.load_more')}

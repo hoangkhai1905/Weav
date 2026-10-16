@@ -309,6 +309,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '413': { $ref: '#/components/responses/RequestTooLarge' }
         '422': { $ref: '#/components/responses/StateConflict' }
+        '429': { $ref: '#/components/responses/ManualRunLimitExceeded' }
         '500': { $ref: '#/components/responses/InternalError' }
     get:
       tags: [Executions]
@@ -1542,6 +1543,13 @@ components:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
     RequestTooLarge:
       description: Raw request body exceeded the bounded request size before JSON binding.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ManualRunLimitExceeded:
+      description: >-
+        Too many runs of this workflow are still queued, running, or waiting
+        (code MANUAL_RUN_LIMIT_EXCEEDED). Retry when one finishes.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }

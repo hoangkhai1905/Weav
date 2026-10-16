@@ -98,6 +98,9 @@ export class AssistantController {
     const release = this.admission.tryAcquire(`user:${userId}`);
     if (!release) throw new AiError('AI_BUSY');
 
+    const userLimit = config.AI_ASSISTANT_DAILY_USER_LIMIT;
+    const workspaceLimit = config.AI_ASSISTANT_DAILY_WORKSPACE_LIMIT;
+    const metered = userLimit > 0 || workspaceLimit > 0;
     let id: string;
     let userMessageId: string | undefined;
     // The same day is used to refund, even if the turn ends after UTC midnight.
@@ -120,12 +123,15 @@ export class AssistantController {
         if (!existing || existing.workspaceId !== workspaceId)
           throw new AiError('NOT_FOUND');
       }
-      const usage = await store.recordUsage(usageInput);
-      if (
-        usage.userCalls > config.AI_ASSISTANT_DAILY_USER_LIMIT ||
-        usage.workspaceCalls > config.AI_ASSISTANT_DAILY_WORKSPACE_LIMIT
-      )
-        throw new AiError('AI_QUOTA_EXCEEDED');
+      // A limit of 0 means unlimited; with both at 0 nothing is counted (and nothing is refunded).
+      if (metered) {
+        const usage = await store.recordUsage(usageInput);
+        if (
+          (userLimit > 0 && usage.userCalls > userLimit) ||
+          (workspaceLimit > 0 && usage.workspaceCalls > workspaceLimit)
+        )
+          throw new AiError('AI_QUOTA_EXCEEDED');
+      }
       id =
         conversationId ??
         (
@@ -235,7 +241,7 @@ export class AssistantController {
     } finally {
       // Before release(), so a quick client retry cannot overtake the rollback.
       if (!streamed && ROLLBACK_OUTCOMES.has(outcome))
-        rolledBack = await this.rollbackTurn(store, {
+        rolledBack = await this.rollbackTurn(store, metered, {
           ...usageInput,
           conversationId: id,
           messageId: userMessageId,
@@ -261,6 +267,7 @@ export class AssistantController {
    */
   private async rollbackTurn(
     store: ConversationStore,
+    metered: boolean,
     turn: {
       day: string;
       workspaceId: string;
@@ -272,7 +279,7 @@ export class AssistantController {
   ): Promise<boolean> {
     const { conversationId, messageId, correlationId, ...usage } = turn;
     const results = await Promise.allSettled([
-      store.refundUsage(usage),
+      metered ? store.refundUsage(usage) : Promise.resolve(),
       messageId
         ? store.deleteMessage(conversationId, usage.userId, messageId)
         : Promise.resolve(true),

@@ -155,8 +155,13 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
 }
 
 export const assistantApi = {
-  async listConversations(workspaceId: string, before?: string): Promise<AssistantConversation[]> {
-    const query = new URLSearchParams({ workspaceId, limit: '20', ...(before ? { before } : {}) });
+  // `beforeId` is the keyset tie-breaker: the id of the last conversation of the previous page.
+  async listConversations(workspaceId: string, before?: string, beforeId?: string): Promise<AssistantConversation[]> {
+    const query = new URLSearchParams({
+      workspaceId,
+      limit: '20',
+      ...(before ? { before, ...(beforeId ? { beforeId } : {}) } : {}),
+    });
     const payload = await requestJson<{ items?: AssistantConversation[] }>(`/api/v1/assistant/conversations?${query}`);
     return Array.isArray(payload.items) ? payload.items : [];
   },

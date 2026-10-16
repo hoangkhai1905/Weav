@@ -46,3 +46,10 @@ Owners can now invite an e-mail address that has no Weav account. The person sig
 ## W7-A2 (node bundle)
 
 No mobile change required. Connection providers SLACK and TEAMS (authType TOKEN) were added to the workspace connection provider enum; mobile only needs an update if it lists providers exhaustively.
+
+## Assistant paging and manual run limit
+
+Two small mobile follow-ups; no mobile code was changed here.
+
+- **Assistant conversation paging.** When loading the next page of `GET /api/v1/assistant/conversations`, send `beforeId=<conversationId of the last item of the previous page>` together with `before=<updatedAt of that same item>`. `beforeId` is optional and needs `before`; it breaks ties between conversations that share an `updatedAt`, so none are skipped or repeated. Without it, the old `before`-only cursor still works.
+- **Manual run limit.** `POST /api/v1/workspaces/{id}/workflows/{workflowId}/executions` can now answer `429` with `code: MANUAL_RUN_LIMIT_EXCEEDED` when too many runs of that workflow are still queued, running, or waiting. Show a friendly message such as "This workflow already has runs in progress. Try again when one finishes", not a generic error. It is declared in `packages/contracts/http/workflow/openapi.yaml`.
