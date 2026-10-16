@@ -192,7 +192,7 @@ describe('RabbitMQ topology', () => {
       settings.NOTIFICATION_QUEUE,
     ]);
     expect(consumer.isReady).toBe(true);
-    expect(calls.prefetch).toEqual([[5]]);
+    expect(calls.prefetch).toEqual([[3]]);
   });
   it('uses the configured prefetch', async () => {
     const channel = {
@@ -277,6 +277,17 @@ describe('RabbitMQ topology', () => {
       channel as unknown as ConfirmChannel,
     );
     expect(ack).toHaveBeenCalled();
+    expect(wake).toHaveBeenCalledTimes(1);
+    (notifications.consume as jest.Mock).mockRejectedValue(new Error('db'));
+    consumer.sleep = jest.fn().mockResolvedValue(undefined);
+    await consumer.handle(
+      {
+        content: Buffer.from(JSON.stringify(event)),
+        fields: { routingKey: 'workflow.completed' },
+        properties: { headers: {} },
+      } as unknown as ConsumeMessage,
+      channel as unknown as ConfirmChannel,
+    );
     expect(wake).toHaveBeenCalledTimes(1);
   });
 });

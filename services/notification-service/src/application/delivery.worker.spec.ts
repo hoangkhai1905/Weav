@@ -155,8 +155,8 @@ describe('delivery worker idle backoff', () => {
     EXPO_PUSH: { send: jest.fn() },
     EMAIL: { send: jest.fn() },
   };
-  const make = (overrides = {}) =>
-    new DeliveryWorker(
+  const make = (overrides = {}) => {
+    const worker = new DeliveryWorker(
       repo,
       testSettings({
         NOTIFICATION_POLL_MS: 1000,
@@ -165,25 +165,114 @@ describe('delivery worker idle backoff', () => {
       }),
       providers,
     );
+    worker.jitterMs = 0;
+    return worker;
+  };
   const spin = (_worker: DeliveryWorker, ms: number) =>
     jest.advanceTimersByTimeAsync(ms);
   beforeEach(() => {
     jest.resetAllMocks();
     jest.useFakeTimers();
+    // Epoch 0 keeps the wall-clock alignment arithmetic readable.
+    jest.setSystemTime(0);
     providers.TELEGRAM.send.mockResolvedValue({ kind: 'sent' });
   });
   afterEach(() => jest.useRealTimers());
-  it('doubles the wait after each empty poll and caps at the maximum', async () => {
+  it('doubles the wait after each empty poll, then sleeps to the next wall-clock multiple of the cap', async () => {
     repo.claim.mockResolvedValue(null);
     const worker = make();
     worker.onModuleInit();
     expect(worker.currentDelayMs).toBe(1000);
     const seen: number[] = [];
+    const wakeAt: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      await spin(worker, worker.currentDelayMs);
+      seen.push(worker.currentDelayMs);
+      wakeAt.push(Date.now() + worker.currentDelayMs);
+    }
+    // t=7000: doubling would reach the cap, so wake at 16000 (first multiple of 8000 >= now + 4000).
+    expect(seen).toEqual([2000, 4000, 9000, 8000, 8000, 8000]);
+    expect(wakeAt.slice(2).every((t) => t % 8000 === 0)).toBe(true);
+    await worker.onModuleDestroy();
+  });
+  it('stops the doubling ramp at 60 s even with a 10 minute cap', async () => {
+    repo.claim.mockResolvedValue(null);
+    const worker = make({ NOTIFICATION_WORKER_IDLE_MAX_MS: 600000 });
+    worker.onModuleInit();
+    const seen: number[] = [];
     for (let i = 0; i < 6; i++) {
       await spin(worker, worker.currentDelayMs);
       seen.push(worker.currentDelayMs);
     }
-    expect(seen).toEqual([2000, 4000, 8000, 8000, 8000, 8000]);
+    expect(seen.slice(0, 5)).toEqual([2000, 4000, 8000, 16000, 32000]);
+    // t=63000: aligned to the next multiple of 600000 at least 300000 away.
+    expect((Date.now() + seen[5]) % 600000).toBe(0);
+    expect(seen[5]).toBeGreaterThanOrEqual(300000);
+    await worker.onModuleDestroy();
+  });
+  it('adds the per-process jitter to the aligned wake only', async () => {
+    repo.claim.mockResolvedValue(null);
+    const worker = make();
+    worker.jitterMs = 1500;
+    worker.onModuleInit();
+    await spin(worker, 1000);
+    await spin(worker, 2000);
+    expect(worker.currentDelayMs).toBe(4000);
+    await spin(worker, 4000);
+    expect(worker.currentDelayMs).toBe(9000 + 1500);
+    await worker.onModuleDestroy();
+  });
+  it('keeps the default jitter within 2 seconds', () => {
+    for (let i = 0; i < 20; i++) {
+      const w = new DeliveryWorker(repo, testSettings(), providers);
+      expect(w.jitterMs).toBeGreaterThanOrEqual(0);
+      expect(w.jitterMs).toBeLessThanOrEqual(2000);
+    }
+  });
+  it('sleeps until the earliest scheduled delivery when it is sooner than the idle wake', async () => {
+    repo.claim.mockResolvedValue(null);
+    repo.nextDueInMs.mockResolvedValue(1500);
+    const worker = make();
+    worker.onModuleInit();
+    await spin(worker, 1000);
+    expect(worker.currentDelayMs).toBe(1500);
+    expect(repo.nextDueInMs).toHaveBeenCalledWith(5, 60000);
+    // A due time beyond the aligned wake does not delay it; an overdue one floors at the poll interval.
+    repo.nextDueInMs.mockResolvedValue(10 * 60000);
+    await spin(worker, 1500);
+    expect(worker.currentDelayMs).toBe(3000);
+    repo.nextDueInMs.mockResolvedValue(-250);
+    await spin(worker, 3000);
+    expect(worker.currentDelayMs).toBe(1000);
+    await worker.onModuleDestroy();
+  });
+  it('does not look up the next due time when work was found, and survives a failing lookup', async () => {
+    repo.claim.mockResolvedValueOnce(testDelivery()).mockResolvedValue(null);
+    repo.nextDueInMs.mockRejectedValue(new Error('db'));
+    const worker = make();
+    worker.onModuleInit();
+    await spin(worker, 1000);
+    expect(repo.nextDueInMs).not.toHaveBeenCalled();
+    await spin(worker, 1000);
+    expect(repo.nextDueInMs).toHaveBeenCalledTimes(1);
+    expect(worker.currentDelayMs).toBe(2000);
+    await worker.onModuleDestroy();
+  });
+  it('wake() during a running tick polls again at the base interval instead of backing off', async () => {
+    let release!: () => void;
+    repo.claim.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(null);
+        }),
+    );
+    const worker = make();
+    worker.onModuleInit();
+    await spin(worker, 1000);
+    worker.wake();
+    release();
+    await spin(worker, 0);
+    expect(worker.currentDelayMs).toBe(1000);
     await worker.onModuleDestroy();
   });
   it('polls rarely while idle', async () => {

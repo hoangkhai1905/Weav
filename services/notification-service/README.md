@@ -82,6 +82,8 @@ Runtime variables (Compose maps root `NOTIFICATION_DB_*` to service `DB_*`):
 - NOTIFICATION_EXCHANGE, NOTIFICATION_QUEUE, NOTIFICATION_DLQ: defaults above.
 - NOTIFICATION_TELEGRAM_ENABLED=false, TELEGRAM_BOT_TOKEN; NOTIFICATION_EXPO_ENABLED=false, EXPO_ACCESS_TOKEN (optional).
 - NOTIFICATION_TIMEOUT_MS=10000, NOTIFICATION_MAX_ATTEMPTS=5, NOTIFICATION_RETRY_BASE_MS=1000, NOTIFICATION_RETRY_MAX_MS=300000, NOTIFICATION_POLL_MS=1000, NOTIFICATION_LEASE_MS=60000 (at least three request timeouts).
+- NOTIFICATION_WORKER_IDLE_MAX_MS=600000 (1000-600000): idle polling doubles from NOTIFICATION_POLL_MS, then sleeps to the next wall-clock multiple of this value (plus up to 2 s per-process jitter) or to the earliest scheduled retry, whichever is sooner, so the shared Neon compute can suspend. A consumed event wakes the worker at once.
+- NOTIFICATION_CONSUMER_PREFETCH=3 (1-50): unacked messages per consumer; keep it at or below the DB pool size (3).
 - Optional NOTIFICATION_DETAIL_BASE_URL: HTTPS without credentials/query/fragment. Unset to omit Telegram links.
 - Gateway: NOTIFICATION_SERVICE_URL=http://notification-service:3000.
 - Migration only: NOTIFICATION_MIGRATION_URL, a direct non-pooled connection supplied by your secret manager/shell.
@@ -104,15 +106,14 @@ Production cutover and legacy reconciliation are later operator actions. Quiesce
 
 Task 3 ingestion atomically stores the legacy delivery rows, one inbox item per recipient, and the delivery links in the same transaction. A shared canonical event lock enforces first-persisted-event-wins across legacy and v2 envelopes. Replays cannot add recipients/destinations; v2 events without legacy delivery intent remain inbox-only. These guarantees complement rather than replace the explicit bounded backfill and final reconciliation checks.
 
-Apply the migration before deploying the generated client, then run one explicitly requested bounded reconciliation batch:
+Apply the migration before deploying the generated client:
 
 ```powershell
 pnpm --dir services/notification-service db:migrate
 pnpm --dir services/notification-service build
-pnpm --dir services/notification-service db:reconcile-inbox -- --apply --batch-size 100
 ```
 
-Repeat the command while `linkedDeliveries` is greater than zero. Investigate every nonzero `skippedGroups`; do not report the backfill complete while any group remains skipped. Keep the legacy consumer and mark-read writes quiesced through the final pass and verification, then resume ingestion on the Task 3-compatible service. Late deliveries can be linked idempotently to their existing event/user item, but reconciliation does not synchronize read state after that item has been seeded. Legacy delivery reads and v2 inbox reads remain independent; v2 reads do not update worker delivery rows. Enable v2 clients only after the final cutover checks and coordinated client migration.
+There is no reconciliation script any more; the bounded backfill is not run from this service. Keep the legacy consumer and mark-read writes quiesced through any manual backfill and verification, then resume ingestion on the Task 3-compatible service. Late deliveries can be linked idempotently to their existing event/user item, but reconciliation does not synchronize read state after that item has been seeded. Legacy delivery reads and v2 inbox reads remain independent; v2 reads do not update worker delivery rows. Enable v2 clients only after the final cutover checks and coordinated client migration.
 
 Application rollback retains the additive inbox table, delivery links, and all original legacy records. There is no automatic destructive down migration. Before another cutover after rollback, reassess legacy reads and reconcile them under quiescence.
 
