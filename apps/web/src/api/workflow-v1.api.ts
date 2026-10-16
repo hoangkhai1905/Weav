@@ -89,6 +89,7 @@ export interface WorkflowExecutionDetailV1 extends WorkflowExecutionSummaryV1 {
     startedAt: string | null;
     finishedAt: string | null;
     output: unknown;
+    outputTruncated?: boolean;
     error: unknown;
     attempts: Array<{
       attemptId: string;
@@ -97,6 +98,7 @@ export interface WorkflowExecutionDetailV1 extends WorkflowExecutionSummaryV1 {
       startedAt: string;
       finishedAt: string | null;
       output: unknown;
+      outputTruncated?: boolean;
       error: unknown;
     }>;
   }>;

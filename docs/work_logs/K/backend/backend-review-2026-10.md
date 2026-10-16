@@ -189,3 +189,47 @@ Regression found and fixed in this session: batch 5 first broke workflow context
 | Commit/PR đã tạo | 7 batch commits + this log, pushed to `origin/fix/backend-review-2026-10`; no PR, no merge |
 | Người cập nhật log | AI agent (Claude Code) |
 | Cần đọc trước khi tiếp tục | sections 6, 7.3, 10, 11 |
+
+## 14. Session 3 (2026-10-16): live verification of the merged review (Phase A)
+
+Run locally against Neon `dev-k` (`br-steep-wildflower-b3hl2xdq`) on `dev` @ `7eb35e59` (contains merge `b673136`).
+
+| Step | Result | Evidence |
+| --- | --- | --- |
+| Pre-flight | PASS | `b673136` is an ancestor of HEAD, tree clean, `.env` has every `.env.example` key except `WORKFLOW_MAINTENANCE_IDLE_MAX_DELAY` (PT10M default). GitNexus refreshed. |
+| **`.env` pointed at production** | FIXED | All `*_DB_HOST` and both `*_MIGRATION_URL` pointed at the `production` compute, not dev-k. The first `db:migrate` hit production and was a no-op ("No pending migrations", already applied there). Hosts and the shared role password were repointed to dev-k (owner approved; password not printed). |
+| Notification migration `202610120001_retention_indexes` | PASS on dev-k | Applied via `NOTIFICATION_MIGRATION_URL` (owner approved). |
+| Stack (7 services, no OCR) | PASS | All healthy; 0 `ERROR`/exceptions in any log; Flyway workflow 15 -> 16 (0.8 s); notification `RetentionPurger` ran (0 rows deleted, 90 d); thread dump shows `workflow-scheduling-1..4` plus the idle `workflow-execution-timer`. |
+| Smoke (headless Playwright script `tmp/smoke/phase-a.mjs`, real UI + gateway API) | PASS | login 0 console errors; manual run SUCCESS + execution detail; 14 parallel runs -> 10 accepted, 4 x 429 `MANUAL_RUN_LIMIT_EXCEEDED`; publish -> pause -> resume; schedule due 05:00:00Z fired at 05:00:12.7 s (earlier run 8.3 s) while idle; assistant answered a prompt; execution/monitoring pages 0 failed calls. One transient 401 on assistant list recovered through the refresh retry. |
+| Invitation | PASS (path), deviation | qa2 invite returned 409 `USER_EXISTS` (qa2 is already a member). The subagent invited `nhoangkhai195+smokeinv1@gmail.com` (owner's mailbox alias) instead; workspace outbox row published in 1.1 s, EMAIL delivery `SENT`. Identity outbox: no new event (no signup in this run), not exercised live. Left behind: workspace `smoke-ws-*` (7b99e4c5-...) with invitation ab9b815d-... (PENDING). |
+| Merge review (Sonnet, read-only) | 1 HIGH, 4 MED, LOW | See below. No test or build was run by the reviewer. |
+| Idle measurement (10.8 min, 05:03:00-05:13:50 UTC) | Scans fell ~90% but compute stayed `active` | see table below |
+
+### Idle scan rates (dev-k, idle stack, per minute)
+
+Baseline 2026-10-12 was ~60/min per polled table (1 s polling; counters 88k-90k seq scans per table).
+
+| Table (scan type) | Delta in 10.8 min | Per minute |
+| --- | --- | --- |
+| workflow.workflow_triggers (seq) | +43 | 4.0 |
+| workflow.outbox_events (seq) | +44 | 4.1 |
+| workflow.notification_outbox (idx) | +78 | 7.2 |
+| notification.notification_deliveries (seq) | +63 | 5.8 |
+| identity.avatar_cleanup (seq) | +22 | 2.0 |
+| identity.notification_outbox (idx) | +22 | 2.0 |
+| workspace.notification_outbox (idx) | +53 | 4.9 |
+
+`list_branch_computes` after the window: `current_state: active`, `last_active` 05:10:46Z. Every poller still wakes every ~30 s, so Neon cannot reach its ~5 min suspend timer. Baselines are in `tmp/pgstat-baseline-2026-10-16.txt`.
+
+### Review findings (merge b673136)
+
+- F1 HIGH: schedule scanner backs off even while ACTIVE schedule/Gmail triggers exist; a due slot can start up to ~30 s late; a new Gmail trigger waits too (Phase B1 fixes with sleep-until-next-due + wake on publish).
+- F2 MED: notification prefetch 5 > Prisma pool 3 per client (P2028 under burst) -> Phase B.
+- F3 MED (owner decision): manual cap counts every active run (any trigger type, incl. WAITING), not only manual ones.
+- F4 MED (owner decision): notification retention (default 90 d) deletes unread inbox rows and wakes Neon hourly.
+- F5 MED: workflow execution purge batch of 1000 can livelock under the 15 s query timeout (only when `WORKFLOW_EXECUTION_RETENTION_DAYS` > 0) -> Phase B fix.
+- F6-F11 LOW: cross-instance recovery up to 10 min; assistant rollback leaves an empty conversation; AI_TIMEOUT never trips the breaker; workspace publisher counts attempts at settle; openapi lacks the 429; notification README mentions the removed `db:reconcile-inbox`; gateway 1 MiB workspace cap.
+
+### Periodic DB touch audit (Sonnet, read-only)
+
+Wake Neon while idle: identity/workspace/workflow outbox publishers (30 s cap), schedule + Gmail scanner (30 s cap, no wake on publish), notification delivery worker (30 s cap), identity `AvatarCleanupReconciler` (fixed 30 s, no backoff), and the Dockerfile `HEALTHCHECK`s (identity/workspace/workflow `readiness`, notification `/ready`, 15 s; compose overrides them in dev). OK: Hikari (no keepalive, min-idle 0, idle 60 s), pg pools (idle close 10 s), purges (1 h), ai-service/gateway (no DB timers), `OutboxMetrics` gauges (only on scrape, cached 30 s, no scraper in repo). All services share one compute, so independent PT10M timers at different phases would still leave <5 min gaps; Phase B aligns idle wake-ups to wall-clock boundaries.

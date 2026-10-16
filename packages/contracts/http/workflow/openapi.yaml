@@ -1234,7 +1234,13 @@ components:
         finishedAt: { type: string, format: date-time, nullable: true }
         output:
           nullable: true
-          description: Sanitized JSON value; provider credentials are removed.
+          description: >-
+            Sanitized JSON value; provider credentials are removed. Replaced by a marker object
+            (code OUTPUT_TRUNCATED, sizeBytes, limitBytes) when the stored output exceeds the server's
+            execution detail output limit; outputTruncated is then true.
+        outputTruncated:
+          type: boolean
+          description: Present and true only when output was withheld for exceeding the size limit.
         error:
           nullable: true
           description: Sanitized JSON value; provider credentials are removed.
@@ -1250,7 +1256,10 @@ components:
         finishedAt: { type: string, format: date-time, nullable: true }
         output:
           nullable: true
-          description: Sanitized JSON value; provider credentials are removed.
+          description: As NodeState.output, including the OUTPUT_TRUNCATED marker.
+        outputTruncated:
+          type: boolean
+          description: Present and true only when output was withheld for exceeding the size limit.
         error:
           nullable: true
           description: Sanitized JSON value; provider credentials are removed.
