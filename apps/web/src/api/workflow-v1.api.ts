@@ -208,7 +208,7 @@ async function requestOnce<T>(path: string, init: RequestInit = {}): Promise<T> 
   if (!response.ok) {
     const envelope = isRecord(payload) && isRecord(payload.error) ? payload.error : undefined;
     const message = response.status === 429
-      ? tr('msg.rate_limited')
+      ? tr(envelope?.code === 'MANUAL_RUN_LIMIT_EXCEEDED' ? 'msg.manual_run_limit_exceeded' : 'msg.rate_limited')
       : typeof envelope?.message === 'string'
       ? envelope.message
       : response.status === 401

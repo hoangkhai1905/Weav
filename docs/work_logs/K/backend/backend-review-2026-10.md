@@ -284,6 +284,16 @@ Burst caveat: in the Phase C run a 14-request burst gave 12 x 202 + 2 x 429 (ins
 - A first `GET /assistant/conversations` sometimes returns 401 and recovers through the refresh retry (seen in Phase A and C).
 - Heavy request bursts from one user hit the gateway general rate limit and the web app logs out on a 429 from `/api/auth/me`.
 
-### 15.6. Follow-ups (not done)
+### 15.6. Owner decisions applied (2026-10-16, branch `feature/manual-cap-retention-429` from `dev` @ `956b82ba`)
+
+| Item | Change | Commit |
+| --- | --- | --- |
+| F4 | `NOTIFICATION_RETENTION_DAYS` default 0 (purge off) in code, `.env.example`, `compose.dev.yml`, local `.env`; settings test covers default 0 and explicit 90 | `c820a5be` |
+| Web 429 | `MANUAL_RUN_LIMIT_EXCEEDED` shows "This workflow already has too many runs in progress..." (vi + en) instead of the generic rate-limit text; Playwright case in `workflow-api-v1.spec.ts` (5/5 pass, stubbed backend) | `832dcebe` |
+| F3 | manual cap counts only `trigger_type = MANUAL` (QUEUED/RUNNING/WAITING); `ManualRunLimitTest.activeAutomaticRunsDoNotBlockAManualRun` (10 active SCHEDULE/WEBHOOK rows, cap 2, manual run admitted); openapi, `.env.example`, mobile handoff wording | see git log |
+
+GitNexus: `requireManualCapacity` (private) is not in the index; the adapter class is CRITICAL (central repository), the edit only narrows one private query with one caller. `detect_changes` flagged web `requestOnce` CRITICAL (shared request path); the new branch only fires on 429 + that code. Not checked live against the running stack (stack down).
+
+### 15.7. Follow-ups (not done)
 
 Drop unused tables/indexes; identity outbox FAILED state; Telegram `setWebhook` after commit; remove HS256; DLQ consumer; CHECK constraints on status columns; placeholder folders; pruning `tmp/`; execution outbox row whose execution is gone retries every 60 s forever and keeps Neon awake; workspace publisher counts attempts at settle; assistant rollback leaves an empty conversation; `AI_TIMEOUT` never trips the circuit breaker; gateway 1 MiB cap on Workspace responses; cross-instance recovery up to 10 min; three copy-pasted `IdleBackoff` classes; mobile handoff (`docs/handoff/2026-10-week7-mobile.md`) for `beforeId` and the 429 message.

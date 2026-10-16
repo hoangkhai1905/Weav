@@ -62,7 +62,7 @@ const schema = z
     // equals the Prisma/pg pool size (max 3 in databaseOptions) so a burst does not queue on connections.
     NOTIFICATION_CONSUMER_PREFETCH: integer(3, 1, 50),
     // Terminal deliveries and inbox rows older than this are purged hourly; 0 disables the purge.
-    NOTIFICATION_RETENTION_DAYS: integer(90, 0, 3650),
+    NOTIFICATION_RETENTION_DAYS: integer(0, 0, 3650),
     NOTIFICATION_LEASE_MS: integer(60000),
     NOTIFICATION_TIMEOUT_MS: integer(10000, 100, 30000),
     NOTIFICATION_TELEGRAM_ENABLED: flag('false'),

@@ -1557,7 +1557,7 @@ components:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
     ManualRunLimitExceeded:
       description: >-
-        Too many runs of this workflow are still queued, running, or waiting
+        Too many manual runs of this workflow are still queued, running, or waiting
         (code MANUAL_RUN_LIMIT_EXCEEDED). Retry when one finishes.
       content:
         application/json:
