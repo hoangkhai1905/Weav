@@ -1,5 +1,6 @@
 package com.weav.workspace.infrastructure.messaging.notification;
 
+import com.weav.workspace.infrastructure.metrics.ScheduledTaskMetrics;
 import com.weav.workspace.infrastructure.scheduling.IdleBackoff;
 import com.weav.workspace.infrastructure.scheduling.OutboxWakeup;
 import org.slf4j.Logger;
@@ -60,6 +61,7 @@ public final class NotificationOutboxPublisher {
     private final long leaseMillis;
     private volatile IdleBackoff idleBackoff;
     private volatile OutboxWakeup wakeup;
+    private volatile ScheduledTaskMetrics taskMetrics;
 
     public NotificationOutboxPublisher(
             JdbcTemplate jdbcTemplate,
@@ -110,9 +112,12 @@ public final class NotificationOutboxPublisher {
                 return;
             }
         }
-        int published = publishPending();
+        int published = publishBatch();
+        if (published >= 0) {
+            recordSuccess();
+        }
         if (backoff != null) {
-            recordPoll(backoff, published);
+            recordPoll(backoff, Math.max(published, 0));
         }
     }
 
@@ -158,13 +163,30 @@ public final class NotificationOutboxPublisher {
         this.wakeup = outboxWakeup;
     }
 
+    @Autowired(required = false)
+    void configureTaskMetrics(ScheduledTaskMetrics metrics) {
+        this.taskMetrics = metrics;
+    }
+
+    private void recordSuccess() {
+        ScheduledTaskMetrics metrics = taskMetrics;
+        if (metrics != null) {
+            metrics.succeeded(ScheduledTaskMetrics.NOTIFICATION_OUTBOX_PUBLISHER);
+        }
+    }
+
     public int publishPending() {
+        return Math.max(publishBatch(), 0);
+    }
+
+    /** One claim, publish and settle pass; returns the rows published, or -1 when the claim or settle step failed. */
+    private int publishBatch() {
         List<Claimed> claimed;
         try {
             claimed = transactionTemplate.execute(status -> claimBatch());
         } catch (RuntimeException exception) {
             LOGGER.warn("Workspace notification outbox claim failed ({})", exception.getClass().getSimpleName());
-            return 0;
+            return -1;
         }
         if (claimed == null || claimed.isEmpty()) {
             return 0;
@@ -176,7 +198,7 @@ public final class NotificationOutboxPublisher {
         } catch (RuntimeException exception) {
             LOGGER.warn("Workspace notification outbox settle failed; lease expiry will retry ({})",
                     exception.getClass().getSimpleName());
-            return 0;
+            return -1;
         }
         return (int) settlements.stream().filter(value -> value.failureCode() == null).count();
     }

@@ -2,6 +2,7 @@ package com.weav.identity.infrastructure.storage;
 
 import com.weav.identity.application.port.out.AvatarCleanupQueue;
 import com.weav.identity.application.port.out.AvatarStorage;
+import com.weav.identity.infrastructure.metrics.ScheduledTaskMetrics;
 import com.weav.identity.infrastructure.scheduling.IdleBackoff;
 import com.weav.identity.infrastructure.scheduling.OutboxWakeup;
 import org.slf4j.Logger;
@@ -45,6 +46,7 @@ public final class AvatarCleanupReconciler implements AvatarCleanupQueue {
     private final String table;
     private final IdleBackoff idleBackoff;
     private final OutboxWakeup wakeup = new OutboxWakeup();
+    private volatile ScheduledTaskMetrics taskMetrics;
 
     public AvatarCleanupReconciler(
             AvatarStorage storage,
@@ -95,7 +97,12 @@ public final class AvatarCleanupReconciler implements AvatarCleanupQueue {
         if (!idleBackoff.shouldPoll()) {
             return;
         }
-        if (reconcile() > 0) {
+        int deleted = reconcile();
+        ScheduledTaskMetrics metrics = taskMetrics;
+        if (deleted >= 0 && metrics != null) {
+            metrics.succeeded(ScheduledTaskMetrics.AVATAR_CLEANUP);
+        }
+        if (deleted > 0) {
             idleBackoff.record(true);
             return;
         }
@@ -105,6 +112,11 @@ public final class AvatarCleanupReconciler implements AvatarCleanupQueue {
             // Unknown table state (e.g. database unreachable): fall back to the plain ramp.
             idleBackoff.record(false);
         }
+    }
+
+    @Autowired(required = false)
+    void configureTaskMetrics(ScheduledTaskMetrics metrics) {
+        this.taskMetrics = metrics;
     }
 
     /** Earliest due time of a row that has not given up, or null when none is pending (one MIN on a tiny table). */
@@ -125,7 +137,7 @@ public final class AvatarCleanupReconciler implements AvatarCleanupQueue {
         reconcile();
     }
 
-    /** Returns the number of objects deleted; failed deletes are rescheduled and do not count as work. */
+    /** Returns the number of objects deleted (failed deletes are rescheduled and do not count as work), or -1 when the claim failed. */
     private int reconcile() {
         List<Claimed> claimed;
         try {
@@ -133,7 +145,7 @@ public final class AvatarCleanupReconciler implements AvatarCleanupQueue {
         } catch (RuntimeException exception) {
             log.warn("identity_avatar_cleanup_event action=CLAIM result=FAILED error={}",
                     exception.getClass().getSimpleName());
-            return 0;
+            return -1;
         }
         if (claimed == null) {
             return 0;

@@ -1,5 +1,6 @@
 package com.weav.identity.infrastructure.messaging.notification;
 
+import com.weav.identity.infrastructure.metrics.ScheduledTaskMetrics;
 import com.weav.identity.infrastructure.scheduling.IdleBackoff;
 import com.weav.identity.infrastructure.scheduling.OutboxWakeup;
 import org.slf4j.Logger;
@@ -59,6 +60,7 @@ public final class IdentityNotificationOutboxPublisher {
     private final long pollIntervalMillis;
     private volatile IdleBackoff idleBackoff;
     private volatile OutboxWakeup wakeup;
+    private volatile ScheduledTaskMetrics taskMetrics;
 
     public IdentityNotificationOutboxPublisher(
             JdbcTemplate jdbcTemplate,
@@ -112,9 +114,12 @@ public final class IdentityNotificationOutboxPublisher {
                 return;
             }
         }
-        int published = publishPending();
+        int published = publishBatch();
+        if (published >= 0) {
+            recordSuccess();
+        }
         if (backoff != null) {
-            recordPoll(backoff, published);
+            recordPoll(backoff, Math.max(published, 0));
         }
     }
 
@@ -165,13 +170,30 @@ public final class IdentityNotificationOutboxPublisher {
      * every row in a second short transaction. A crash between publish and settle only lets the lease
      * expire and the row be re-sent (at-least-once; consumers dedupe on messageId = eventId).
      */
+    @Autowired(required = false)
+    void configureTaskMetrics(ScheduledTaskMetrics metrics) {
+        this.taskMetrics = metrics;
+    }
+
+    private void recordSuccess() {
+        ScheduledTaskMetrics metrics = taskMetrics;
+        if (metrics != null) {
+            metrics.succeeded(ScheduledTaskMetrics.NOTIFICATION_OUTBOX_PUBLISHER);
+        }
+    }
+
     public int publishPending() {
+        return Math.max(publishBatch(), 0);
+    }
+
+    /** One claim, publish and settle pass; returns the rows published, or -1 when the claim or settle step failed. */
+    private int publishBatch() {
         List<Claimed> claimed;
         try {
             claimed = transactionTemplate.execute(status -> claimBatch());
         } catch (RuntimeException exception) {
             LOGGER.warn("Identity notification outbox claim failed ({})", exception.getClass().getSimpleName());
-            return 0;
+            return -1;
         }
         if (claimed == null || claimed.isEmpty()) {
             return 0;
@@ -183,7 +205,7 @@ public final class IdentityNotificationOutboxPublisher {
         } catch (RuntimeException exception) {
             LOGGER.warn("Identity notification outbox settle failed; lease expiry will retry ({})",
                     exception.getClass().getSimpleName());
-            return 0;
+            return -1;
         }
         return (int) settlements.stream().filter(value -> value.failureCode() == null).count();
     }
