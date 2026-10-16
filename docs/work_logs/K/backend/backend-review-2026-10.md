@@ -233,3 +233,57 @@ Baseline 2026-10-12 was ~60/min per polled table (1 s polling; counters 88k-90k 
 ### Periodic DB touch audit (Sonnet, read-only)
 
 Wake Neon while idle: identity/workspace/workflow outbox publishers (30 s cap), schedule + Gmail scanner (30 s cap, no wake on publish), notification delivery worker (30 s cap), identity `AvatarCleanupReconciler` (fixed 30 s, no backoff), and the Dockerfile `HEALTHCHECK`s (identity/workspace/workflow `readiness`, notification `/ready`, 15 s; compose overrides them in dev). OK: Hikari (no keepalive, min-idle 0, idle 60 s), pg pools (idle close 10 s), purges (1 h), ai-service/gateway (no DB timers), `OutboxMetrics` gauges (only on scrape, cached 30 s, no scraper in repo). All services share one compute, so independent PT10M timers at different phases would still leave <5 min gaps; Phase B aligns idle wake-ups to wall-clock boundaries.
+
+## 15. Session 3 (2026-10-16): Neon scale-to-zero and review leftovers (Phase B + C)
+
+Branch `feature/neon-suspend-and-leftovers` from `dev` @ `7eb35e59`, one commit per batch, each diff reviewed by a second Sonnet agent before commit.
+
+### 15.1. Design
+
+All services share ONE Neon compute that suspends after ~5 idle minutes, so independent per-service timers (even at PT10M) would never leave a 5 min gap. `IdleBackoff` (3 copies: workflow, identity, workspace) and the notification `DeliveryWorker` now: ramp 1,2,4..32 s on empty polls, then sleep until `min(earliest known due row, aligned wake)`. Aligned wake = first wall-clock multiple of the cap (epoch ms) that is >= now + cap/2, plus a per-process jitter <= 2 s, so every service wakes in one cluster per cap. Local after-commit signals wake a poller immediately. `recordError()` (workflow) retries from the base interval so a Neon cold-start failure never costs a full aligned sleep. Multi-instance caveat: a write on another instance only wakes this one at its due time or the aligned wake.
+
+### 15.2. Commits
+
+| Batch | Commit |
+| --- | --- |
+| notification-service (worker sleep-until-due, prefetch 3 + ingest tx timeout, healthcheck, README) | `49718821` |
+| gateway (G13 connection-action rate limit, D5 shared proxy helper, D3 access log) | `c3f4c501` |
+| ai-service daily limit 0 = unlimited, web `beforeId` paging, contracts 429, mobile handoff note | `40756965` |
+| identity + workspace (aligned backoff, avatar reconciler, Flyway V9 index, healthchecks) | `f5d0feac` |
+| identity + workspace last-success gauge | `3cacd525` |
+| workflow (B1 scanner/outbox sleep-until-due, B11 batch publish, F5 purge batch 100, B6/B9/B10/D8, gauge) | `963a4c8f` |
+| env vars, `outputTruncated` contract + web type, work log | `ab8379ff` |
+
+B3 (monitoring queries): EXPLAIN on dev-k (read-only) gives Hash Join over Seq Scan at ~137 executions / 150 workflows (3.6 ms / 0.7 ms); the existing `idx_workflows_workspace_active` and `idx_workflow_executions_workflow_created` already serve the workspace + time filter, a direct workspace+time index would need a denormalised `workspace_id`, so no migration was added.
+
+### 15.3. Env vars
+
+Changed to `PT10M`: `WORKFLOW_POLLER_IDLE_MAX_DELAY`, `IDENTITY_NOTIFICATION_OUTBOX_IDLE_MAX_DELAY`, `WORKSPACE_NOTIFICATION_OUTBOX_IDLE_MAX_DELAY`. `NOTIFICATION_WORKER_IDLE_MAX_MS` 600000. `NOTIFICATION_CONSUMER_PREFETCH` 3. New: `WORKFLOW_SCHEDULE_SCANNER_MAX_SLEEP` (PT10M, replaces `..._IDLE_MAX_DELAY`), `AVATAR_S3_CLEANUP_IDLE_MAX_DELAY` (PT10M), `GATEWAY_CONNECTION_ACTION_RATE_LIMIT` (10), `WORKFLOW_EXECUTION_DETAIL_OUTPUT_MAX_BYTES` (262144). `AI_ASSISTANT_DAILY_*_LIMIT=0` means unlimited. All in `.env.example`, `compose.dev.yml` and the local `.env`. Migrations: identity Flyway `V9__notification_outbox_published_index` (additive); workflow V16 and Prisma `202610120001` were applied in Phase A.
+
+### 15.4. Verification
+
+| Check | Result |
+| --- | --- |
+| workflow `mvnw verify` | 1161 tests, 0 failures/errors (incl. the TLS and bridge tests that were env-only before) |
+| workspace `mvnw verify` | 540 tests green |
+| identity `mvnw verify` | 409 tests, 3 errors = known MinIO image pull |
+| notification / gateway / ai | build, unit, e2e green; eslint 0 problems; notification integration 8/8 against real Postgres + RabbitMQ |
+| Live smoke (new code, dev-k) | login, manual run SUCCESS, publish/pause/resume, schedule fired +1.8 s, 300 KB output -> `OUTPUT_TRUNCATED` + `outputTruncated: true`, connection-test bucket 10 x 404 then 429 `Retry-After: 60`, assistant `before`+`beforeId` page 200, workspace create/delete, monitoring pages 0 failed calls |
+| Neon suspend | compute `suspended` 10:06:47Z (~7 min after last activity), woke at the aligned cluster 10:10:13Z, 0 error/warn lines in all 6 service logs |
+| Idle scans (14 min, 09:59-10:13Z) | workflow_triggers seq +4 (0.3/min), outbox_events seq +6, notification_deliveries seq +10 (0.7/min), avatar_cleanup seq +4; was ~60/min at 1 Hz and 2-7/min after the merge |
+| Cold wake | from a compute suspended at 10:57:47Z: manual run 202 in 2.5 s, SUCCESS in 6.7 s; schedule published 10:58:07Z fired at 11:00:00.99Z; 0 error lines |
+
+Burst caveat: in the Phase C run a 14-request burst gave 12 x 202 + 2 x 429 (instant runs freed slots); the exact limit of 10 was shown in Phase A (10 x 202, 4 x 429).
+
+### 15.5. Open items for the owner
+
+- F3: the manual-run cap counts every active run (any trigger type, incl. WAITING); decide whether it should count manual runs only.
+- F4: `NOTIFICATION_RETENTION_DAYS` default 90 deletes unread inbox rows and wakes Neon hourly.
+- `.env` pointed at the production Neon branch before this session; it now targets dev-k (host + password).
+- `NotificationProxyTransport` logged one ERROR with no matching access-log line (likely an aborted notification stream when the page navigated); not investigated.
+- A first `GET /assistant/conversations` sometimes returns 401 and recovers through the refresh retry (seen in Phase A and C).
+- Heavy request bursts from one user hit the gateway general rate limit and the web app logs out on a 429 from `/api/auth/me`.
+
+### 15.6. Follow-ups (not done)
+
+Drop unused tables/indexes; identity outbox FAILED state; Telegram `setWebhook` after commit; remove HS256; DLQ consumer; CHECK constraints on status columns; placeholder folders; pruning `tmp/`; execution outbox row whose execution is gone retries every 60 s forever and keeps Neon awake; workspace publisher counts attempts at settle; assistant rollback leaves an empty conversation; `AI_TIMEOUT` never trips the circuit breaker; gateway 1 MiB cap on Workspace responses; cross-instance recovery up to 10 min; three copy-pasted `IdleBackoff` classes; mobile handoff (`docs/handoff/2026-10-week7-mobile.md`) for `beforeId` and the 429 message.
