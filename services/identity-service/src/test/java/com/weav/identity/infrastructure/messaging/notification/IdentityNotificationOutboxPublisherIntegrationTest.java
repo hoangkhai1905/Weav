@@ -29,6 +29,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -197,6 +198,44 @@ class IdentityNotificationOutboxPublisherIntegrationTest {
             assertThat(rabbitTemplate.receive(queue, 2_000)).isNotNull();
         }
         assertThat(publisher.publishPending()).isZero();
+    }
+
+    @Test
+    void earliestPendingDueIsTheSoonestNextAttemptOfAnUnpublishedRow() {
+        assertThat(publisher.earliestPendingDue()).isNull();
+        jdbc.update("insert into identity.notification_outbox (event_id, event_type, payload, published_at, next_attempt_at) "
+                + "values (?, 'x', cast('{}' as jsonb), current_timestamp, current_timestamp - interval '1 hour')",
+                UUID.randomUUID());
+        assertThat(publisher.earliestPendingDue()).as("published rows are ignored").isNull();
+        for (int seconds : new int[] {300, 90}) {
+            jdbc.update("insert into identity.notification_outbox (event_id, event_type, payload, next_attempt_at) "
+                    + "values (?, 'x', cast('{}' as jsonb), current_timestamp + (? * interval '1 second'))",
+                    UUID.randomUUID(), seconds);
+        }
+
+        Instant due = publisher.earliestPendingDue();
+
+        assertThat(due).isBetween(Instant.now().plusSeconds(80), Instant.now().plusSeconds(95));
+    }
+
+    @Test
+    void idlePublisherStaysAsleepUntilALocalWriteCommitsThenPollsAtOnce() {
+        declareQueue(IdentitySecurityEventType.PASSWORD_CHANGED.eventType());
+        String otherKey = IdentitySecurityEventType.GOOGLE_LINKED.eventType();
+        declareQueue(otherKey);
+        publisher.publishPendingOnSchedule();
+        UUID unwoken = UUID.randomUUID();
+        jdbc.update("insert into identity.notification_outbox (event_id, event_type, payload) "
+                + "values (?, ?, cast('{}' as jsonb))", unwoken, otherKey);
+
+        publisher.publishPendingOnSchedule();
+        assertThat(publishedAt(unwoken)).as("idle: the aligned cap has not elapsed").isNull();
+
+        UUID woken = append(IdentitySecurityEventType.PASSWORD_CHANGED, UUID.randomUUID());
+        publisher.publishPendingOnSchedule();
+
+        assertThat(publishedAt(woken)).as("commit wakes the publisher").isNotNull();
+        assertThat(publishedAt(unwoken)).isNotNull();
     }
 
     private String declareQueue(String routingKey) {

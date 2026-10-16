@@ -114,14 +114,45 @@ public final class IdentityNotificationOutboxPublisher {
         }
         int published = publishPending();
         if (backoff != null) {
-            backoff.record(published > 0);
+            recordPoll(backoff, published);
         }
+    }
+
+    /** Work resets the backoff; an empty poll sleeps until the earliest pending row is due, or the aligned cap. */
+    private void recordPoll(IdleBackoff backoff, int published) {
+        if (published > 0) {
+            backoff.record(true);
+            return;
+        }
+        try {
+            backoff.record(false, earliestPendingDue());
+        } catch (RuntimeException exception) {
+            // Unknown table state (e.g. database unreachable): fall back to the plain ramp.
+            backoff.record(false);
+        }
+    }
+
+    /**
+     * Earliest due time (next_attempt_at, which doubles as the claim lease) of an unpublished row, or null when
+     * none is pending. One indexed MIN (idx_notification_outbox_due); the delta is taken against the database
+     * clock so a skewed application clock cannot delay retries.
+     */
+    Instant earliestPendingDue() {
+        return jdbcTemplate.query("select (extract(epoch from min(next_attempt_at) - current_timestamp) * 1000)::bigint"
+                        + " from " + table + " where published_at is null",
+                resultSet -> {
+                    if (!resultSet.next()) {
+                        return null;
+                    }
+                    long untilDueMillis = resultSet.getLong(1);
+                    return resultSet.wasNull() ? null : Instant.now().plusMillis(untilDueMillis);
+                });
     }
 
     /** Idle backoff (scale-to-zero friendly polling); without it every tick polls, as before. */
     @Autowired
     void configureIdleBackoff(
-            @Value("${weav.identity.notification-outbox.idle-max-delay:PT30S}") Duration idleMaxDelay,
+            @Value("${weav.identity.notification-outbox.idle-max-delay:PT10M}") Duration idleMaxDelay,
             OutboxWakeup outboxWakeup) {
         this.idleBackoff = new IdleBackoff(Duration.ofMillis(pollIntervalMillis),
                 idleMaxDelay.toMillis() < pollIntervalMillis ? Duration.ofMillis(pollIntervalMillis) : idleMaxDelay);

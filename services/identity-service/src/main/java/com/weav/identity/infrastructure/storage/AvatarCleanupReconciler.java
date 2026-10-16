@@ -2,8 +2,11 @@ package com.weav.identity.infrastructure.storage;
 
 import com.weav.identity.application.port.out.AvatarCleanupQueue;
 import com.weav.identity.application.port.out.AvatarStorage;
+import com.weav.identity.infrastructure.scheduling.IdleBackoff;
+import com.weav.identity.infrastructure.scheduling.OutboxWakeup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -11,6 +14,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -21,6 +26,8 @@ import java.util.regex.Pattern;
  * so the row commits or rolls back together with the avatar-key swap. {@link #reconcileNow} claims due rows
  * (FOR UPDATE SKIP LOCKED, leased by bumping next_attempt_at), deletes the object with no transaction open,
  * then removes the row; failures back off and give up (row kept, ERROR logged) after {@link #MAX_ATTEMPTS}.
+ * Neon scale-to-zero: the scheduled poll backs off while idle (sleeping until the earliest pending row is due, or
+ * the aligned cap) and {@link #enqueue} wakes it after the inserting transaction commits.
  */
 @Component
 public final class AvatarCleanupReconciler implements AvatarCleanupQueue {
@@ -36,12 +43,26 @@ public final class AvatarCleanupReconciler implements AvatarCleanupQueue {
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
     private final String table;
+    private final IdleBackoff idleBackoff;
+    private final OutboxWakeup wakeup = new OutboxWakeup();
 
     public AvatarCleanupReconciler(
             AvatarStorage storage,
             JdbcTemplate jdbc,
             PlatformTransactionManager transactionManager,
-            @Value("${DB_SCHEMA:identity}") String schema
+            String schema
+    ) {
+        this(storage, jdbc, transactionManager, schema, 30_000L, Duration.ofMinutes(10));
+    }
+
+    @Autowired
+    public AvatarCleanupReconciler(
+            AvatarStorage storage,
+            JdbcTemplate jdbc,
+            PlatformTransactionManager transactionManager,
+            @Value("${DB_SCHEMA:identity}") String schema,
+            @Value("${weav.avatar.storage.cleanup-interval-ms:30000}") long intervalMillis,
+            @Value("${weav.avatar.storage.cleanup-idle-max-delay:PT10M}") Duration idleMaxDelay
     ) {
         this.storage = Objects.requireNonNull(storage);
         this.jdbc = Objects.requireNonNull(jdbc);
@@ -50,6 +71,8 @@ public final class AvatarCleanupReconciler implements AvatarCleanupQueue {
             throw new IllegalArgumentException("DB_SCHEMA must be a simple PostgreSQL schema identifier");
         }
         this.table = '"' + schema + '"' + ".avatar_cleanup";
+        Duration base = Duration.ofMillis(intervalMillis);
+        this.idleBackoff = new IdleBackoff(base, idleMaxDelay.compareTo(base) < 0 ? base : idleMaxDelay);
     }
 
     @Override
@@ -57,33 +80,77 @@ public final class AvatarCleanupReconciler implements AvatarCleanupQueue {
         if (userId == null || objectKey == null || objectKey.isBlank()) {
             return;
         }
-        jdbc.update("insert into " + table + " (object_key, user_id) values (?, ?) on conflict do nothing",
-                objectKey, userId);
+        int inserted = jdbc.update("insert into " + table
+                + " (object_key, user_id) values (?, ?) on conflict do nothing", objectKey, userId);
+        if (inserted > 0) {
+            wakeup.signalAfterCommit();
+        }
     }
 
     @Scheduled(fixedDelayString = "${weav.avatar.storage.cleanup-interval-ms:30000}")
+    public void reconcileOnSchedule() {
+        if (wakeup.consume()) {
+            idleBackoff.wake();
+        }
+        if (!idleBackoff.shouldPoll()) {
+            return;
+        }
+        if (reconcile() > 0) {
+            idleBackoff.record(true);
+            return;
+        }
+        try {
+            idleBackoff.record(false, earliestPendingDue());
+        } catch (RuntimeException exception) {
+            // Unknown table state (e.g. database unreachable): fall back to the plain ramp.
+            idleBackoff.record(false);
+        }
+    }
+
+    /** Earliest due time of a row that has not given up, or null when none is pending (one MIN on a tiny table). */
+    Instant earliestPendingDue() {
+        return jdbc.query("select (extract(epoch from min(next_attempt_at) - now()) * 1000)::bigint from " + table
+                        + " where attempts < ?",
+                resultSet -> {
+                    if (!resultSet.next()) {
+                        return null;
+                    }
+                    long untilDueMillis = resultSet.getLong(1);
+                    return resultSet.wasNull() ? null : Instant.now().plusMillis(untilDueMillis);
+                }, MAX_ATTEMPTS);
+    }
+
+    /** One unconditional pass (ignores the idle backoff). */
     public void reconcileNow() {
+        reconcile();
+    }
+
+    /** Returns the number of objects deleted; failed deletes are rescheduled and do not count as work. */
+    private int reconcile() {
         List<Claimed> claimed;
         try {
             claimed = tx.execute(status -> claimBatch());
         } catch (RuntimeException exception) {
             log.warn("identity_avatar_cleanup_event action=CLAIM result=FAILED error={}",
                     exception.getClass().getSimpleName());
-            return;
+            return 0;
         }
         if (claimed == null) {
-            return;
+            return 0;
         }
+        int deleted = 0;
         for (Claimed row : claimed) {
             try {
                 storage.delete(row.userId(), row.objectKey());
                 jdbc.update("delete from " + table + " where object_key = ?", row.objectKey());
                 log.info("identity_avatar_cleanup_event userId={} objectKeyHash={} action=DELETE result=SUCCESS",
                         row.userId(), Integer.toHexString(row.objectKey().hashCode()));
+                deleted++;
             } catch (RuntimeException exception) {
                 recordFailure(row, exception);
             }
         }
+        return deleted;
     }
 
     private List<Claimed> claimBatch() {
