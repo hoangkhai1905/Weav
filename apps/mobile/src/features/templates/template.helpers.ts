@@ -33,3 +33,24 @@ const GENERIC: Record<TemplateErrorPhase, string> = {
   use: 'tpl.err.useFailed',
   load: 'tpl.err.loadFailed',
 };
+
+export type TemplateGroup = 'email' | 'chat' | 'schedule' | 'webhook' | 'other';
+
+export const TEMPLATE_GROUPS: readonly TemplateGroup[] = ['email', 'chat', 'schedule', 'webhook', 'other'];
+
+/** Templates carry no category, so they are grouped by what starts the workflow (its first trigger step). */
+export function templateGroup(nodeTypes: readonly string[]): TemplateGroup {
+  const trigger = nodeTypes.find((type) => type.startsWith('trigger.'));
+  switch (trigger) {
+    case 'trigger.gmail':
+      return 'email';
+    case 'trigger.telegram':
+      return 'chat';
+    case 'trigger.schedule':
+      return 'schedule';
+    case 'trigger.webhook':
+      return 'webhook';
+    default:
+      return 'other';
+  }
+}

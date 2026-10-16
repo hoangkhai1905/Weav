@@ -40,3 +40,18 @@ export function dayEndExclusiveIso(value: string): string | undefined {
   const time = Date.parse(`${value}T00:00:00Z`);
   return Number.isFinite(time) ? new Date(time + 86_400_000).toISOString() : undefined;
 }
+
+/** "09:42" for a run that started today, "12/10 09:42" otherwise (24h, locale-independent digits). */
+export function formatClock(iso: string | null | undefined, locale: string, now: number = Date.now()): string {
+  const time = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(time)) return '—';
+  const date = new Date(time);
+  const clock = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (date.toDateString() === new Date(now).toDateString()) return clock;
+  return `${date.toLocaleDateString(locale, { day: '2-digit', month: '2-digit' })} ${clock}`;
+}
+
+/** Two-letter tile label from a name: "Gửi hóa đơn" -> "GH". */
+export function nameInitials(name: string): string {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => Array.from(part)[0]?.toUpperCase() ?? '').join('') || '•';
+}

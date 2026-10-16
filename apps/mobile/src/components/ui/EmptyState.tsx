@@ -35,10 +35,10 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
           onPress={onAction}
           style={({ pressed }) => [
             styles.button,
-            { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 },
+            { backgroundColor: colors.button, opacity: pressed ? 0.85 : 1 },
           ]}
         >
-          <Text style={[Typography.label, { color: colors.onPrimary }]}>{actionLabel}</Text>
+          <Text style={[Typography.label, { color: colors.onButton }]}>{actionLabel}</Text>
         </Pressable>
       ) : null}
     </View>

@@ -65,7 +65,7 @@ export function GoogleOAuthCallbackPage() {
           <p className="mt-3 text-sm text-muted-foreground">{error}</p>
           <Link
             to="/login"
-            className="mt-6 inline-flex rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary"
+            className="mt-6 inline-flex rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary"
           >
             {t('forgot.back_to_sign_in')}
           </Link>

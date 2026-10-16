@@ -112,7 +112,7 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
         </div>
         <div className="mt-3 space-y-3">
           <div>
-            <label htmlFor={promptId} className="mb-1 block text-[11px] font-medium text-text-2">{t('ai.describe_workflow')}</label>
+            <label htmlFor={promptId} className="mb-1 block text-[13px] font-medium text-foreground">{t('ai.describe_workflow')}</label>
             <textarea
               id={promptId}
               rows={4}
@@ -124,7 +124,7 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label htmlFor={sheetsConnectionId} className="mb-1 block text-[11px] font-medium text-text-2">{t('ai.connection_sheets')}</label>
+              <label htmlFor={sheetsConnectionId} className="mb-1 block text-[13px] font-medium text-foreground">{t('ai.connection_sheets')}</label>
               <select
                 id={sheetsConnectionId}
                 value={sheetsConnection}
@@ -138,7 +138,7 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
               </select>
             </div>
             <div>
-              <label htmlFor={emailConnectionId} className="mb-1 block text-[11px] font-medium text-text-2">{t('ai.connection_email')}</label>
+              <label htmlFor={emailConnectionId} className="mb-1 block text-[13px] font-medium text-foreground">{t('ai.connection_email')}</label>
               <select
                 id={emailConnectionId}
                 value={emailConnection}

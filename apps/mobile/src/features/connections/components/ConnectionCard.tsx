@@ -20,7 +20,7 @@ import { Button } from '../../../components/ui/Button';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
-import { Radius, Spacing, Typography } from '../../../constants/theme';
+import { FontFamily, Radius, Spacing, Typography } from '../../../constants/theme';
 import { formatRelativeTime } from '../../common/time';
 import { credentialExpiry } from '../connection.expiry';
 
@@ -137,10 +137,10 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   icon: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
   main: { flex: 1, gap: Spacing.half },
-  name: { fontWeight: '600' },
+  name: { fontFamily: FontFamily.semibold },
   facts: { gap: Spacing.half },
   notice: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, padding: Spacing.two, borderWidth: 1, borderRadius: Radius.sm },
-  noticeText: { flex: 1, fontWeight: '600' },
+  noticeText: { flex: 1, fontFamily: FontFamily.semibold },
   actions: { flexDirection: 'row', gap: Spacing.two },
   action: { flex: 1 },
 });

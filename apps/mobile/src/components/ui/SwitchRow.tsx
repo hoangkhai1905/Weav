@@ -29,7 +29,7 @@ export const SwitchRow: React.FC<SwitchRowProps> = ({ label, hint, value, onChan
         value={value}
         disabled={disabled}
         onValueChange={onChange}
-        trackColor={{ false: colors.borderStrong, true: colors.primary }}
+        trackColor={{ false: colors.borderStrong, true: colors.success }}
         thumbColor="#ffffff"
       />
     </View>

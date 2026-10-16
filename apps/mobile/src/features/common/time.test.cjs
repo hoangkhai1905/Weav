@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 // The backend always sends UTC ("Z"); the app must only convert to the device zone, never shift by hand.
 process.env.TZ = 'Asia/Ho_Chi_Minh';
 require('../../../test-support/register-typescript.cjs');
-const { formatClock, formatDateTime, formatRelativeTime } = require('./time.ts');
+const { formatClock, formatDateTime, formatRelativeTime, formatHourMinute, formatWeekdayDate, dayPart } = require('./time.ts');
 const { groupByDay } = require('../notifications/notification.grouping.ts');
 
 test('shows a UTC timestamp in the device zone (UTC+7)', () => {
@@ -31,4 +31,12 @@ test('day groups follow the device calendar day', () => {
   );
   // 17:30Z = 00:30 on 8 Oct locally (today); 16:59Z = 23:59 on 7 Oct locally (yesterday).
   assert.deepEqual(groups.map((g) => [g.bucket, g.items.length]), [['today', 2], ['yesterday', 1]]);
+});
+
+test('home greeting helpers use the device clock', () => {
+  assert.equal(formatHourMinute('2026-10-08T02:40:00.000Z'), '09:40');
+  assert.equal(formatWeekdayDate('EN', new Date('2026-10-12T03:00:00.000Z')), 'Monday, 12/10');
+  assert.equal(dayPart(new Date('2026-10-12T04:59:00.000Z')), 'morning');
+  assert.equal(dayPart(new Date('2026-10-12T05:00:00.000Z')), 'afternoon');
+  assert.equal(dayPart(new Date('2026-10-12T11:00:00.000Z')), 'evening');
 });

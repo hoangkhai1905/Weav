@@ -18,7 +18,7 @@ export const DataSuggestions: React.FC<DataSuggestionsProps> = ({ groups, value,
   const text = typeof value === 'string' || typeof value === 'number' ? String(value) : '';
   return (
     <div data-testid="data-suggestions" className="mt-1 flex flex-wrap items-center gap-1">
-      <span className="text-[10px] text-muted-foreground">{t('builder.var.suggest')}</span>
+      <span className="text-xs text-muted-foreground">{t('builder.var.suggest')}</span>
       {items.map((item) => (
         <button
           key={item.mapping}
@@ -27,7 +27,7 @@ export const DataSuggestions: React.FC<DataSuggestionsProps> = ({ groups, value,
           data-path={item.path}
           title={`${item.group.label}: ${item.mapping}`}
           onClick={() => onChange(`${text}${text && !/\s$/.test(text) ? (multiline ? '\n' : ' ') : ''}${item.mapping}`)}
-          className="rounded border border-border-strong bg-card px-1.5 py-0.5 text-[10px] font-medium text-text-2 hover:border-primary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="rounded border border-border-strong bg-card px-1.5 py-0.5 text-[10px] font-medium text-text-2 hover:border-border-strong hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           + {pathLabel(item.group, item.path, t) ?? item.path}
         </button>

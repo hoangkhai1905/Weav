@@ -14,6 +14,8 @@ export interface ThemeColors {
   textSubtle: string;
   primary: string;
   onPrimary: string;
+  button: string;
+  onButton: string;
   primaryBg: string;
   primaryBorder: string;
   success: string;
@@ -29,6 +31,8 @@ export interface ThemeColors {
   headerBg: string;
   /** Semantic status tones, shared by badges and timelines. */
   tones: ColorPalette['tones'];
+  /** Step-type tile colours (trigger / action / logic / ai). */
+  steps: ColorPalette['steps'];
 }
 
 function toThemeColors(p: ColorPalette, isDark: boolean): ThemeColors {
@@ -45,6 +49,8 @@ function toThemeColors(p: ColorPalette, isDark: boolean): ThemeColors {
     textSubtle: p.textSubtle,
     primary: p.primary,
     onPrimary: p.onPrimary,
+    button: p.button,
+    onButton: p.onButton,
     primaryBg: info.bg,
     primaryBorder: info.border,
     success: success.fg,
@@ -59,6 +65,7 @@ function toThemeColors(p: ColorPalette, isDark: boolean): ThemeColors {
     tabBorder: p.border,
     headerBg: p.headerBg,
     tones: p.tones,
+    steps: p.steps,
   };
 }
 

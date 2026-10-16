@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { LayoutTemplate, Search, X } from 'lucide-react-native';
+import { LayoutTemplate } from 'lucide-react-native';
 import { useInfiniteTemplates, useTemplateByCode } from '../../../features/templates/hooks/useTemplates';
 import { templateErrorKey } from '../../../features/templates/template.helpers';
 import { fill } from '../../../features/common/fill';
@@ -13,6 +13,7 @@ import { FilterChips, type ChipOption } from '../../../components/ui/FilterChips
 import { ListItem } from '../../../components/ui/ListItem';
 import { ListSkeleton } from '../../../components/ui/ListSkeleton';
 import { ScreenHeader } from '../../../components/ui/ScreenHeader';
+import { SearchField } from '../../../components/ui/SearchField';
 import { TextField } from '../../../components/ui/TextField';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
@@ -90,29 +91,13 @@ export default function TemplatesScreen() {
       </View>
       <FilterChips<TemplateScope> options={chips} value={tab} onChange={setTab} accessibilityLabel={t('tpl.tabs.label')} />
       {tab === 'public' ? (
-        <View style={[styles.search, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Search size={18} color={colors.textMuted} />
-          <TextInput
+        <View style={styles.field}>
+          <SearchField
             value={search}
             onChangeText={setSearch}
             placeholder={t('tpl.search.placeholder')}
-            placeholderTextColor={colors.textSubtle}
             accessibilityLabel={t('tpl.search.label')}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            style={[Typography.body, styles.searchInput, { color: colors.text, outlineColor: colors.primary }]}
           />
-          {search !== '' ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('ui.clearSearch')}
-              onPress={() => setSearch('')}
-              style={styles.clear}
-            >
-              <X size={18} color={colors.textMuted} />
-            </Pressable>
-          ) : null}
         </View>
       ) : null}
     </View>
@@ -152,6 +137,7 @@ export default function TemplatesScreen() {
     <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={t('tpl.title')} onBack={goBack} />
       <FlatList
+        showsVerticalScrollIndicator={false}
         data={items}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
@@ -179,18 +165,7 @@ const styles = StyleSheet.create({
   list: { paddingBottom: Spacing.five },
   controls: { gap: Spacing.three, paddingVertical: Spacing.three, borderBottomWidth: 1 },
   code: { gap: Spacing.two, paddingHorizontal: Spacing.three },
-  search: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    minHeight: MinTouch,
-    marginHorizontal: Spacing.three,
-    paddingLeft: Spacing.three,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-  },
-  searchInput: { flex: 1, minHeight: MinTouch },
-  clear: { width: MinTouch, height: MinTouch, alignItems: 'center', justifyContent: 'center' },
+  field: { paddingHorizontal: Spacing.three },
   footer: { gap: Spacing.two, paddingTop: Spacing.three, alignItems: 'center' },
   more: {
     minHeight: MinTouch,

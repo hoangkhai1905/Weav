@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X } from 'lucide-react-native';
 import { useUIStore } from '../../stores/ui.store';
 import { useThemeColors } from '../../hooks/useThemeColors';
+import { FontFamily } from '../../constants/theme';
 
 export const ToastContainer: React.FC = () => {
   const colors = useThemeColors();
@@ -87,7 +88,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: FontFamily.semibold,
   },
   message: {
     fontSize: 13,

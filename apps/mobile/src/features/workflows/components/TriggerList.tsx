@@ -4,7 +4,7 @@ import { Lightbulb } from 'lucide-react-native';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
-import { Radius, Spacing, Typography } from '../../../constants/theme';
+import { FontFamily, Radius, Spacing, Typography } from '../../../constants/theme';
 import type { WorkflowStatus, WorkflowTrigger } from '../../../domain/workflow/workflow.types';
 import { fill } from '../../common/fill';
 import { formatDateTime, formatRelativeTime } from '../../common/time';
@@ -79,7 +79,7 @@ const styles = StyleSheet.create({
   list: { gap: Spacing.three },
   card: { gap: Spacing.one },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
-  type: { flex: 1, fontWeight: '500' },
+  type: { flex: 1, fontFamily: FontFamily.medium },
   reason: { gap: Spacing.one, marginTop: Spacing.two, padding: Spacing.two, borderRadius: Radius.sm },
   fix: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.one },
   fixText: { flex: 1 },

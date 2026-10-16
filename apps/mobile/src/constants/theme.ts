@@ -5,10 +5,10 @@
 
 import { Platform, type FontVariant } from 'react-native';
 
-import { palette, type ColorPalette, type StatusTone, type ToneColors } from './palette';
+import { palette, type ColorPalette, type StatusTone, type StepKind, type ToneColors } from './palette';
 
 export { palette };
-export type { ColorPalette, StatusTone, ToneColors };
+export type { ColorPalette, StatusTone, StepKind, ToneColors };
 
 /** Keys used by the template components (themed-text, app-tabs, ...). */
 function templateColors(p: ColorPalette) {
@@ -28,28 +28,22 @@ export const Colors = {
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
-export const Fonts = Platform.select({
-  ios: {
-    sans: 'system-ui',
-    serif: 'ui-serif',
-    rounded: 'ui-rounded',
-    /** IDs, durations, JSON. */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    // global.css is not loaded by the app, so the var() form never resolved (serif fallback).
-    mono: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-  },
-});
+/** Loaded in app/_layout.tsx. Custom fonts need one family per weight (no weight synthesis on Android). */
+export const FontFamily = {
+  regular: 'BeVietnamPro_400Regular',
+  medium: 'BeVietnamPro_500Medium',
+  semibold: 'BeVietnamPro_600SemiBold',
+  bold: 'BeVietnamPro_700Bold',
+  mono: 'JetBrainsMono_400Regular',
+} as const;
+
+export const Fonts = {
+  sans: FontFamily.regular,
+  serif: Platform.select({ ios: 'ui-serif', web: 'Georgia, serif', default: 'serif' }),
+  rounded: FontFamily.regular,
+  /** IDs, durations, clock times, JSON. */
+  mono: FontFamily.mono,
+};
 
 export const Spacing = {
   half: 2,
@@ -61,21 +55,21 @@ export const Spacing = {
   six: 64,
 } as const;
 
-/** Small, restrained corners: 6 for controls and chips, 8 for surfaces. `pill` is only for dots and avatars. */
-export const Radius = { sm: 6, md: 8, lg: 8, pill: 999 } as const;
+/** 6 for chips, 8 for buttons and inputs, 12 for cards. `pill` is for status pills, dots and avatars. */
+export const Radius = { sm: 6, md: 8, lg: 12, pill: 999 } as const;
 
 /** No fixed heights on text containers: lineHeight scales with Dynamic Type. */
 export const Typography = {
-  caption: { fontSize: 13, lineHeight: 18 },
-  body: { fontSize: 15, lineHeight: 22 },
-  label: { fontSize: 14, lineHeight: 20, fontWeight: '600' as const },
+  caption: { fontSize: 13, lineHeight: 18, fontFamily: FontFamily.regular },
+  body: { fontSize: 15, lineHeight: 22, fontFamily: FontFamily.regular },
+  label: { fontSize: 14, lineHeight: 20, fontWeight: '600' as const, fontFamily: FontFamily.semibold },
   /** Small muted heading above a group of rows; render with textTransform: 'uppercase'. */
-  section: { fontSize: 12, lineHeight: 16, fontWeight: '600' as const, letterSpacing: 0.6 },
-  title: { fontSize: 17, lineHeight: 24, fontWeight: '600' as const },
-  headline: { fontSize: 22, lineHeight: 28, fontWeight: '600' as const, letterSpacing: -0.2 },
+  section: { fontSize: 12, lineHeight: 16, fontWeight: '600' as const, letterSpacing: 0.6, fontFamily: FontFamily.semibold },
+  title: { fontSize: 17, lineHeight: 24, fontWeight: '600' as const, fontFamily: FontFamily.semibold },
+  headline: { fontSize: 22, lineHeight: 28, fontWeight: '600' as const, letterSpacing: -0.2, fontFamily: FontFamily.semibold },
   /** Stats and durations: digits keep one width so columns line up. */
-  number: { fontSize: 24, lineHeight: 30, fontWeight: '600' as const, fontVariant: ['tabular-nums'] as FontVariant[] },
-  mono: { fontSize: 13, lineHeight: 19 },
+  number: { fontSize: 24, lineHeight: 30, fontWeight: '600' as const, fontVariant: ['tabular-nums'] as FontVariant[], fontFamily: FontFamily.mono },
+  mono: { fontSize: 13, lineHeight: 19, fontFamily: FontFamily.mono },
 } as const;
 
 /** Minimum touch target (points). */

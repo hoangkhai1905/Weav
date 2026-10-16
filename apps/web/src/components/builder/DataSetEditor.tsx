@@ -5,8 +5,8 @@ import { isCredentialKey, isReferenceableName } from '../../lib/mappingGrammar';
 import type { VariableGroup } from '../../lib/variablePaths';
 import { MappingTextField } from './MappingTextField';
 
-const fieldCls = 'min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
-const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
+const fieldCls = 'min-w-0 rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring';
+const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-xs font-medium text-accent-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
 
 type RowType = 'text' | 'number' | 'boolean' | 'mapping' | 'raw';
 /** `value` is the text shown in the input ('true'/'false' for Yes/No); `raw` is an untouched object, array or null. */
@@ -66,7 +66,7 @@ export const DataSetEditor: React.FC<DataSetEditorProps> = ({ value, onChange, g
 
   return (
     <div data-testid="data-set-config" className="space-y-2">
-      <span className="block text-[11px] font-medium text-text-2">{t('builder.field.data.set.fields')}</span>
+      <span className="block text-[13px] font-medium text-foreground">{t('builder.field.data.set.fields')}</span>
       <select
         aria-label={t('builder.cfg.data_set_mode')}
         data-testid="data-set-mode"
@@ -106,7 +106,7 @@ export const DataSetEditor: React.FC<DataSetEditorProps> = ({ value, onChange, g
                     className={`${fieldCls} w-28 shrink-0`}
                   />
                   {row.type === 'raw' ? (
-                    <span data-testid="data-set-advanced" className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">{t('builder.cfg.data_set_advanced')}</span>
+                    <span data-testid="data-set-advanced" className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{t('builder.cfg.data_set_advanced')}</span>
                   ) : (
                     <select
                       aria-label={t('builder.cfg.data_set_type').replace('{n}', n)}
@@ -157,7 +157,7 @@ export const DataSetEditor: React.FC<DataSetEditorProps> = ({ value, onChange, g
                     className={`${fieldCls} w-full`}
                   />
                 )}
-                {row.type === 'mapping' && <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.data_set_mapping_hint')}</p>}
+                {row.type === 'mapping' && <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.data_set_mapping_hint')}</p>}
                 {invalidNumber(row) && <p role="alert" className="text-[10px] text-err">{t('builder.cfg.data_set_number_invalid')}</p>}
                 {duplicate && <p role="alert" className="text-[10px] text-err">{t('builder.cfg.data_set_duplicate')}</p>}
                 {!duplicate && row.key.trim() !== '' && isCredentialKey(row.key) && <p role="alert" className="text-[10px] text-err">{t('builder.cfg.data_set_credential')}</p>}
@@ -170,7 +170,7 @@ export const DataSetEditor: React.FC<DataSetEditorProps> = ({ value, onChange, g
           </button>
         </>
       )}
-      <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.data_set_hint')}</p>
+      <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.data_set_hint')}</p>
     </div>
   );
 };

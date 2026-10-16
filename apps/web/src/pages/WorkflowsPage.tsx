@@ -2,15 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { primaryTrigger, triggerTypeLabel } from '../lib/executions/runView';
-import { Copy, Edit3, History, MoreHorizontal, Pause, Play, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
+import { Copy, Edit3, History, MoreHorizontal, Pause, Play, Plus, Search, Trash2, X } from 'lucide-react';
 import type { ExecutionDetail, WorkflowDefinition } from '../types/workflow.types';
 import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
 import { getActiveWorkflowWorkspaceId, workflowRequest, workflowV1Api } from '../api/workflow-v1.api';
 import { WORKFLOW_FILE_MAX_BYTES, buildDraftBody, importedWorkflowName, parseWorkflowFile } from '../lib/workflowTransfer';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchRecentExecutions, fetchWorkflowList, invalidateWorkflowQueries, workflowRunStatsKey } from '../lib/queries/workflows';
-import { WorkflowGlyph } from '../components/workflows/WorkflowGlyph';
-import { StatusBadge } from '../components/common/StatusBadge';
 import { statusBadgeClass } from '../components/common/statusBadgeClass';
 import { TypedConfirmDialog } from '../components/common/TypedConfirmDialog';
 import { NoWorkspaceNotice } from '../components/common/NoWorkspaceNotice';
@@ -23,9 +21,14 @@ import { showSuccessToast } from '../lib/feedback/toast';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
 import { tr } from '../lib/i18n/tr';
 import { formatRelativeTime } from '../lib/relativeTime';
+import { runTone } from '../lib/monitoring/format';
+import { nodeLabel } from '../lib/nodeLabels';
+import { describeWorkflow, orderedStepTypes } from '../lib/workflowSummary';
+import { useWorkspaceStore } from '../store/useWorkspaceStore';
+import { BTN_PRIMARY, BTN_SECONDARY, CARD, FOCUS_RING, ICON_BTN } from '../lib/uiClasses';
 
 type WorkflowStatus = 'PUBLISHED' | 'PAUSED' | 'DRAFT';
-type StatusTab = 'ALL' | 'ACTIVE' | 'ERROR' | 'PAUSED' | 'DRAFT';
+type StatusTab = 'ALL' | 'ACTIVE' | 'PAUSED' | 'DRAFT';
 type SortKey = 'LAST_RUN' | 'ERROR_RATE' | 'NAME' | 'NEWEST';
 
 interface RunStats {
@@ -55,13 +58,7 @@ interface WorkflowItem {
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 const field =
-  'h-8 rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50';
-const btn =
-  'inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-50';
-const btnPrimary =
-  'inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-primary bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:border-primary-hover hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-50';
-const iconBtn =
-  'inline-flex h-7 w-7 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent';
+  'h-9 rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
 
 function computeStats(executions: ExecutionDetail[]): Record<string, RunStats> {
   const now = Date.now();
@@ -103,12 +100,12 @@ export function WorkflowsPage() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<StatusTab>('ALL');
-  const [triggerFilter, setTriggerFilter] = useState('ALL');
   const [sortKey, setSortKey] = useState<SortKey>('LAST_RUN');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [switching, setSwitching] = useState<Set<string>>(new Set());
 
   const closeMenu = (id: string) => {
     setActiveMenuId(null);
@@ -272,6 +269,21 @@ export function WorkflowsPage() {
     }
   };
 
+  /** The on/off switch of a row: published <-> paused (drafts have no switch). */
+  const handleSwitch = async (workflow: WorkflowItem) => {
+    if (switching.has(workflow.id)) return;
+    setSwitching((current) => new Set(current).add(workflow.id));
+    try {
+      await handleTogglePause(workflow);
+    } finally {
+      setSwitching((current) => {
+        const next = new Set(current);
+        next.delete(workflow.id);
+        return next;
+      });
+    }
+  };
+
   const handleDuplicate = async (id: string) => {
     setApiError(null);
     try {
@@ -306,11 +318,6 @@ export function WorkflowsPage() {
     }
   };
 
-  const hasStats = Object.keys(stats).length > 0;
-  const isErrored = useCallback(
-    (wf: WorkflowItem) => wf.status === 'PUBLISHED' && stats[wf.id]?.lastStatus === 'FAILED',
-    [stats],
-  );
   // The API's triggerTypes decide (a real trigger beats a legacy manual node); an older API without the field falls
   // back to the latest automatic run, which proves a real trigger.
   const triggerOf = useCallback(
@@ -323,16 +330,10 @@ export function WorkflowsPage() {
     () => ({
       ALL: workflowsList.length,
       ACTIVE: workflowsList.filter((w) => w.status === 'PUBLISHED').length,
-      ERROR: workflowsList.filter(isErrored).length,
       PAUSED: workflowsList.filter((w) => w.status === 'PAUSED').length,
       DRAFT: workflowsList.filter((w) => w.status === 'DRAFT').length,
     }),
-    [workflowsList, isErrored],
-  );
-
-  const triggerOptions = useMemo(
-    () => Array.from(new Set(workflowsList.map(triggerOf).filter(Boolean))).sort(),
-    [workflowsList, triggerOf],
+    [workflowsList],
   );
 
   const triggerLabel = useCallback((type: string) => triggerTypeLabel(type, t), [t]);
@@ -349,9 +350,7 @@ export function WorkflowsPage() {
     const q = search.trim().toLowerCase();
     const list = workflowsList.filter((wf) => {
       if (q && !wf.name.toLowerCase().includes(q) && !wf.code.toLowerCase().includes(q) && !triggerLabel(triggerOf(wf)).toLowerCase().includes(q) && !wf.ownerName.toLowerCase().includes(q)) return false;
-      if (triggerFilter !== 'ALL' && triggerOf(wf) !== triggerFilter) return false;
       if (activeTab === 'ACTIVE') return wf.status === 'PUBLISHED';
-      if (activeTab === 'ERROR') return isErrored(wf);
       if (activeTab === 'PAUSED') return wf.status === 'PAUSED';
       if (activeTab === 'DRAFT') return wf.status === 'DRAFT';
       return true;
@@ -363,7 +362,28 @@ export function WorkflowsPage() {
       if (sortKey === 'ERROR_RATE') return (errorRate(b) ?? -1) - (errorRate(a) ?? -1);
       return time(lastRunOf(b)) - time(lastRunOf(a)) || time(b.updatedAt) - time(a.updatedAt);
     });
-  }, [workflowsList, search, triggerFilter, activeTab, sortKey, locale, isErrored, errorRate, lastRunOf, triggerLabel, triggerOf]);
+  }, [workflowsList, search, activeTab, sortKey, locale, errorRate, lastRunOf, triggerLabel, triggerOf]);
+
+  // Each row's "what it does" sentence needs the steps, which the list API does not return: load the detail of the first
+  // rows (cached 60s, bounded) and fall back to the trigger line alone for the rest.
+  const workspaceKey = useWorkspaceStore((state) => state.activeWorkspaceId) ?? 'active';
+  const stepIds = useMemo(() => filteredWorkflows.slice(0, 20).map((wf) => wf.id), [filteredWorkflows]);
+  const updatedById = useMemo(() => new Map(workflowsList.map((wf) => [wf.id, wf.updatedAt])), [workflowsList]);
+  const stepResults = useQueries({
+    queries: stepIds.map((id) => ({
+      queryKey: ['workflows', 'steps', workspaceKey, id, updatedById.get(id) ?? ''],
+      queryFn: () => workflowApi.getWorkflow(id),
+      staleTime: 60_000,
+      retry: false,
+      select: (workflow: WorkflowDefinition | null) => (workflow ? orderedStepTypes(workflow.nodes, workflow.edges) : []),
+    })),
+  });
+  const stepsById: Record<string, string[]> = {};
+  stepIds.forEach((id, index) => {
+    const data = stepResults[index]?.data;
+    if (data) stepsById[id] = data;
+  });
+  const labelOf = (type: string) => nodeLabel(type, t);
 
   const selectedVisibleCount = filteredWorkflows.filter((w) => selectedIds.has(w.id)).length;
   const allSelected = filteredWorkflows.length > 0 && selectedVisibleCount === filteredWorkflows.length;
@@ -387,60 +407,37 @@ export function WorkflowsPage() {
   );
   const exactTime = (iso?: string) => (iso && Number.isFinite(Date.parse(iso)) ? new Date(iso).toLocaleString(locale) : undefined);
 
-  const statusBadge = (wf: WorkflowItem) => {
-    if (isErrored(wf)) {
-      return (
-        <Link
-          to={`/workflows/${encodeURIComponent(wf.id)}/executions`}
-          title={t('workflows.view_failed_runs')}
-          className={`${statusBadgeClass('err')} hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
-        >
-          {t('workflows.status_error')}
-        </Link>
-      );
-    }
-    if (wf.status === 'PUBLISHED') return <StatusBadge tone="ok">{t('workflows.status_on')}</StatusBadge>;
-    if (wf.status === 'PAUSED') return <StatusBadge tone="pause">{t('workflows.tab_paused')}</StatusBadge>;
-    return <StatusBadge tone="pause">{t('workflows.tab_draft')}</StatusBadge>;
-  };
-
-  const tabs: Array<{ key: StatusTab; label: string; count: number | null }> = [
+  const tabs: Array<{ key: StatusTab; label: string; count: number }> = [
     { key: 'ALL', label: t('workflows.tab_all'), count: counts.ALL },
     { key: 'ACTIVE', label: t('workflows.status_on'), count: counts.ACTIVE },
-    { key: 'ERROR', label: t('workflows.status_error'), count: hasStats ? counts.ERROR : null },
     { key: 'PAUSED', label: t('workflows.tab_paused'), count: counts.PAUSED },
     { key: 'DRAFT', label: t('workflows.tab_draft'), count: counts.DRAFT },
   ];
 
-  const hasFilters = search.trim() !== '' || triggerFilter !== 'ALL' || activeTab !== 'ALL';
+  const hasFilters = search.trim() !== '' || activeTab !== 'ALL';
   const clearFilters = () => {
     setSearch('');
-    setTriggerFilter('ALL');
     setActiveTab('ALL');
   };
 
   const deleteTargets = workflowsList.filter((w) => deleteIds?.includes(w.id));
   const deleteCount = deleteIds?.length ?? 0;
   const deletePhrase = `${t('workflows.delete_word')} ${deleteCount}`;
-  const showOwner = workflowsList.some((w) => w.ownerName);
-  const columnCount = showOwner ? 9 : 8;
   const showToolbar = !loadError && (isLoading || workflowsList.length > 0);
-  const th = 'h-8 whitespace-nowrap border-b border-border bg-subtle px-3 text-left text-xs font-medium text-muted-foreground';
-  const td = 'h-10 overflow-hidden text-ellipsis whitespace-nowrap border-b border-border px-3';
+  const th = 'px-3 py-3 text-left text-xs font-medium text-muted-foreground';
 
   return (
-    <div className="-m-4 flex h-[calc(100%+2rem)] min-h-0 flex-col bg-card sm:-m-5 sm:h-[calc(100%+2.5rem)]">
-      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-5 py-2">
-        <h1 className="text-base font-semibold text-foreground">{t('workflows.title')}</h1>
-        {!isLoading && !loadError && workflowsList.length > 0 && (
-          <span className="tabular-nums text-muted-foreground">
-            {t('workflows.summary').replace('{total}', String(counts.ALL)).replace('{active}', String(counts.ACTIVE))}
-          </span>
-        )}
-        <span className="ml-auto flex flex-wrap gap-2">
-          <button type="button" onClick={() => openAiGenerator()} className={btn}>
-            <Sparkles size={14} aria-hidden="true" />
-            {t('nav.ai_generator')}
+    <div className="mx-auto flex max-w-[1180px] flex-col gap-5 pb-12">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-[26px] font-semibold leading-tight tracking-tight text-foreground">{t('nav.workflows')}</h1>
+          <p className="text-text-2">{t('wfl.subtitle')}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link to="/workflows/new#templates-list" className={BTN_SECONDARY}>{t('wfl.use_template')}</Link>
+          <button type="button" onClick={() => openAiGenerator()} className={BTN_SECONDARY}>
+            <span className="rounded bg-t-ai-bg px-1.5 py-px font-mono text-[11px] text-t-ai">AI</span>
+            {t('home.ai_describe')}
           </button>
           <input
             ref={importInputRef}
@@ -451,49 +448,26 @@ export function WorkflowsPage() {
             tabIndex={-1}
             onChange={(event) => void handleImportFile(event)}
           />
-          <button type="button" className={btn} disabled={isImporting} onClick={() => importInputRef.current?.click()}>
+          <button type="button" className={BTN_SECONDARY} disabled={isImporting} onClick={() => importInputRef.current?.click()}>
             {isImporting ? t('workflows.transfer.importing') : t('workflows.import')}
           </button>
           <span role="status" aria-live="polite" className="sr-only">{isImporting ? t('workflows.transfer.importing') : ''}</span>
-          <button type="button" onClick={() => navigate('/workflows/new')} className={btnPrimary}>
-            <Plus size={14} strokeWidth={2} aria-hidden="true" />
-            {t('dashboard.new_workflow')}
+          <button type="button" onClick={() => navigate('/workflows/new')} className={BTN_PRIMARY}>
+            <Plus size={18} strokeWidth={1.75} aria-hidden="true" />
+            {t('home.create')}
           </button>
-        </span>
+        </div>
       </header>
 
       {apiError && (
-        <div role="alert" data-testid="workflow-api-error" className="shrink-0 border-b border-err-border bg-err-bg px-5 py-2 text-[13px] text-err">
+        <div role="alert" data-testid="workflow-api-error" className="rounded-xl border border-err-border bg-err-bg px-4 py-2.5 text-[13px] text-err">
           {apiError}
         </div>
       )}
 
       {showToolbar && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-5 py-2">
-          <label className="relative flex w-full items-center sm:w-[260px]">
-            <span className="sr-only">{t('workflows.search_placeholder')}</span>
-            <Search size={14} aria-hidden="true" className="pointer-events-none absolute left-2.5 text-muted-foreground" />
-            <input
-              type="text"
-              data-testid="workflow-search"
-              placeholder={t('workflows.search_placeholder')}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className={`${field} w-full pl-[30px] pr-8`}
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                aria-label={t('workflows.bulk_clear')}
-                className="absolute right-1.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <X size={13} />
-              </button>
-            )}
-          </label>
-
-          <div role="group" aria-label={t('workflows.filter_status')} className="inline-flex gap-0.5 rounded-md bg-muted p-0.5">
+        <div className="flex flex-wrap items-center gap-3">
+          <div role="group" aria-label={t('workflows.filter_status')} className="flex flex-wrap gap-1 rounded-lg bg-subtle p-[3px]">
             {tabs.map((tab) => {
               const on = activeTab === tab.key;
               return (
@@ -503,30 +477,43 @@ export function WorkflowsPage() {
                   data-testid={`workflow-stat-${tab.key.toLowerCase()}`}
                   aria-pressed={on}
                   onClick={() => setActiveTab(tab.key)}
-                  className={`inline-flex h-7 items-center gap-1.5 rounded px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                    on ? 'bg-card text-foreground shadow-[0_0_0_1px_var(--border)]' : 'text-text-2 hover:text-foreground'
+                  className={`inline-flex h-[30px] items-center gap-2 rounded-md px-3 text-[13px] font-medium transition-colors ${FOCUS_RING} ${
+                    on ? 'bg-card text-foreground shadow-[0_0_0_1px_var(--border-strong)]' : 'text-text-2 hover:text-foreground'
                   }`}
                 >
                   {tab.label}
-                  {tab.count !== null && <span className="font-normal tabular-nums text-muted-foreground">{tab.count}</span>}
+                  <span className="font-mono text-xs text-muted-foreground">{tab.count}</span>
                 </button>
               );
             })}
           </div>
 
-          <label className="flex">
-            <span className="sr-only">{t('workflows.filter_trigger')}</span>
-            <select value={triggerFilter} onChange={(e) => setTriggerFilter(e.target.value)} className={field}>
-              <option value="ALL">{t('workflows.trigger_all')}</option>
-              {triggerOptions.map((type) => (
-                <option key={type} value={type}>
-                  {triggerLabel(type)}
-                </option>
-              ))}
-            </select>
+          <div className="flex-1" />
+
+          <label className="relative flex h-9 w-full items-center sm:w-[300px]">
+            <span className="sr-only">{t('workflows.search_placeholder')}</span>
+            <Search size={16} strokeWidth={1.75} aria-hidden="true" className="pointer-events-none absolute left-2.5 text-muted-foreground" />
+            <input
+              type="text"
+              data-testid="workflow-search"
+              placeholder={t('wfl.search_placeholder')}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className={`${field} w-full pl-8 pr-8`}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                aria-label={t('workflows.bulk_clear')}
+                className={`absolute right-1.5 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-foreground ${FOCUS_RING}`}
+              >
+                <X size={13} />
+              </button>
+            )}
           </label>
 
-          <label className="ml-auto flex">
+          <label className="flex items-center gap-2 text-[13px] text-text-2">
             <span className="sr-only">{t('workflows.sort')}</span>
             <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className={field}>
               <option value="LAST_RUN">{t('workflows.sort_last_run')}</option>
@@ -548,7 +535,7 @@ export function WorkflowsPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             transition={prefersReducedMotion ? REDUCED_MOTION_TRANSITION : { duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
-            className="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-accent px-5 py-1.5"
+            className="flex min-h-11 flex-wrap items-center gap-2 rounded-xl border border-border bg-run-bg px-4 py-1.5"
             aria-live="polite"
           >
             <span className="font-medium tabular-nums text-foreground">
@@ -557,132 +544,118 @@ export function WorkflowsPage() {
             <button
               type="button"
               onClick={() => setSelectedIds(new Set())}
-              className="inline-flex h-7 items-center rounded-md px-2.5 text-[13px] font-medium text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className={`inline-flex h-7 items-center rounded-md px-2.5 text-[13px] font-medium text-text-2 transition-colors hover:bg-subtle hover:text-foreground ${FOCUS_RING}`}
             >
               {t('workflows.bulk_clear')}
             </button>
-            <>
             <span aria-hidden="true" className="mx-1 h-[18px] w-px bg-border-strong" />
             <button
               type="button"
               aria-label={t('workflows.bulk_delete')}
               onClick={() => setDeleteIds(Array.from(selectedIds))}
-              className="inline-flex h-7 items-center gap-1 rounded-md border border-err-border bg-card px-2.5 text-[13px] font-medium text-err transition-colors hover:bg-err-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className={`inline-flex h-7 items-center gap-1 rounded-md border border-err-border bg-card px-2.5 text-[13px] font-medium text-err transition-colors hover:bg-err-bg disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`}
             >
               <Trash2 size={13} aria-hidden="true" />
               {t('workflows.btn_delete')}…
             </button>
-              </>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        {noWorkspace ? (
-          <div className="mx-auto max-w-[560px] px-5 py-12">
-            <NoWorkspaceNotice />
-          </div>
-        ) : loadError ? (
-          <div role="alert" data-testid="workflow-load-error" className="px-5 py-12">
-            <div className="mx-auto max-w-[560px] rounded-lg border border-err-border bg-err-bg p-4">
-              <div className="text-sm font-semibold text-err">{t('workflows.load_error_title')}</div>
-              <p className="mt-1.5 break-words text-foreground">{loadError}</p>
-              <p className="mt-1.5 text-xs text-text-2">{t('workflows.load_error_hint')}</p>
-              <div className="mt-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsLoading(true);
-                    void loadWorkflows(true);
-                  }}
-                  className={btn}
-                >
-                  {t('topbar.retry')}
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : isLoading ? (
-          <div role="status" aria-label={t('workflows.loading')}>
-            <div className="h-8 border-b border-border bg-subtle" />
-            {[62, 48, 70, 55, 40, 66, 52, 58].map((width, row) => (
-              <div key={row} className="flex h-10 items-center gap-6 border-b border-border px-3">
-                <span className="h-4 w-4 animate-pulse rounded bg-muted" />
-                <span className="h-2.5 animate-pulse rounded bg-muted" style={{ width: `${width}%` }} />
-                <span className="ml-auto h-4 w-14 animate-pulse rounded bg-muted" />
-              </div>
-            ))}
-          </div>
-        ) : workflowsList.length === 0 ? (
-          <div className="px-5 py-12">
-            <div className="mx-auto max-w-[640px]">
-              <h2 className="text-xl font-semibold text-foreground">{t('workflows.empty_title')}</h2>
-              <p className="mt-2 text-sm text-text-2">{t('workflows.empty_description')}</p>
-              <ol className="mt-5 list-none rounded-lg border border-border p-0">
-                <li className="flex gap-3 border-b border-border px-3.5 py-3">
-                  <span className="font-mono tabular-nums text-muted-foreground">1</span>
-                  <span>
-                    <strong className="font-medium">{t('workflows.empty_step1_title')}</strong>{' '}
-                    <span className="text-text-2">
-                      {t('workflows.empty_step1_desc')}{' '}
-                      <Link to="/workspace/connections" className="text-accent-ink hover:underline">
-                        {t('workflows.empty_open_connections')}
-                      </Link>
-                    </span>
-                  </span>
-                </li>
-                <li className="flex gap-3 border-b border-border px-3.5 py-3">
-                  <span className="font-mono tabular-nums text-muted-foreground">2</span>
-                  <span>
-                    <strong className="font-medium">{t('workflows.empty_step2_title')}</strong>{' '}
-                    <span className="text-text-2">{t('workflows.empty_step2_desc')}</span>
-                  </span>
-                </li>
-                <li className="flex gap-3 px-3.5 py-3">
-                  <span className="font-mono tabular-nums text-muted-foreground">3</span>
-                  <span>
-                    <strong className="font-medium">{t('workflows.empty_step3_title')}</strong>{' '}
-                    <span className="text-text-2">{t('workflows.empty_step3_desc')}</span>
-                  </span>
-                </li>
-              </ol>
-              <div className="mt-5 flex gap-2">
-                <button type="button" onClick={() => navigate('/workflows/new')} className={btnPrimary}>
-                  {t('dashboard.new_workflow')}
-                </button>
-                <button type="button" onClick={() => openAiGenerator()} className={btn}>
-                  <Sparkles size={14} aria-hidden="true" />
-                  {t('nav.ai_generator')}
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : filteredWorkflows.length === 0 ? (
-          <div className="px-5 py-12 text-center">
-            <h3 className="text-sm font-semibold text-foreground">{t('workflows.no_results')}</h3>
-            <p className="mx-auto mt-1 max-w-sm text-[13px] text-text-2">{t('workflows.no_results_description')}</p>
-            {hasFilters && (
-              <button type="button" onClick={clearFilters} className={`${btn} mt-4`}>
-                {t('workflows.clear_filters')}
+      {noWorkspace ? (
+        <div className="mx-auto w-full max-w-[560px] py-12">
+          <NoWorkspaceNotice />
+        </div>
+      ) : loadError ? (
+        <div role="alert" data-testid="workflow-load-error" className="py-12">
+          <div className="mx-auto max-w-[560px] rounded-xl border border-err-border bg-err-bg p-4">
+            <div className="text-sm font-semibold text-err">{t('workflows.load_error_title')}</div>
+            <p className="mt-1.5 break-words text-foreground">{loadError}</p>
+            <p className="mt-1.5 text-xs text-text-2">{t('workflows.load_error_hint')}</p>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLoading(true);
+                  void loadWorkflows(true);
+                }}
+                className={BTN_SECONDARY}
+              >
+                {t('topbar.retry')}
               </button>
-            )}
+            </div>
           </div>
-        ) : (
-          <table className="w-full min-w-[960px] table-fixed border-collapse text-[13px]">
-            <colgroup>
-              <col style={{ width: 44 }} />
-              <col />
-              <col style={{ width: 112 }} />
-              <col style={{ width: 150 }} />
-              <col style={{ width: 150 }} />
-              <col style={{ width: 104 }} />
-              <col style={{ width: 92 }} />
-              {showOwner && <col style={{ width: 150 }} />}
-              <col style={{ width: 124 }} />
-            </colgroup>
+        </div>
+      ) : isLoading ? (
+        <div role="status" aria-label={t('workflows.loading')} className={`${CARD} overflow-hidden`}>
+          {[62, 48, 70, 55, 40, 66].map((width, row) => (
+            <div key={row} className="flex h-[72px] items-center gap-6 border-b border-border px-5 last:border-b-0">
+              <span className="h-5 w-9 animate-pulse rounded-full bg-muted" />
+              <span className="h-2.5 animate-pulse rounded bg-muted" style={{ width: `${width}%` }} />
+              <span className="ml-auto h-4 w-14 animate-pulse rounded bg-muted" />
+            </div>
+          ))}
+        </div>
+      ) : workflowsList.length === 0 ? (
+        <div className={`${CARD} px-5 py-12`}>
+          <div className="mx-auto max-w-[640px]">
+            <h2 className="text-xl font-semibold text-foreground">{t('workflows.empty_title')}</h2>
+            <p className="mt-2 text-sm text-text-2">{t('workflows.empty_description')}</p>
+            <ol className="mt-5 list-none rounded-xl border border-border p-0">
+              <li className="flex gap-3 border-b border-border px-3.5 py-3">
+                <span className="font-mono tabular-nums text-muted-foreground">1</span>
+                <span>
+                  <strong className="font-medium">{t('workflows.empty_step1_title')}</strong>{' '}
+                  <span className="text-text-2">
+                    {t('workflows.empty_step1_desc')}{' '}
+                    <Link to="/workspace/connections" className="text-accent-ink hover:underline">
+                      {t('workflows.empty_open_connections')}
+                    </Link>
+                  </span>
+                </span>
+              </li>
+              <li className="flex gap-3 border-b border-border px-3.5 py-3">
+                <span className="font-mono tabular-nums text-muted-foreground">2</span>
+                <span>
+                  <strong className="font-medium">{t('workflows.empty_step2_title')}</strong>{' '}
+                  <span className="text-text-2">{t('workflows.empty_step2_desc')}</span>
+                </span>
+              </li>
+              <li className="flex gap-3 px-3.5 py-3">
+                <span className="font-mono tabular-nums text-muted-foreground">3</span>
+                <span>
+                  <strong className="font-medium">{t('workflows.empty_step3_title')}</strong>{' '}
+                  <span className="text-text-2">{t('workflows.empty_step3_desc')}</span>
+                </span>
+              </li>
+            </ol>
+            <div className="mt-5 flex gap-2">
+              <button type="button" onClick={() => navigate('/workflows/new')} className={BTN_PRIMARY}>
+                {t('home.create')}
+              </button>
+              <button type="button" onClick={() => openAiGenerator()} className={BTN_SECONDARY}>
+                <span className="rounded bg-t-ai-bg px-1.5 py-px font-mono text-[11px] text-t-ai">AI</span>
+                {t('home.ai_describe')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : filteredWorkflows.length === 0 ? (
+        <div className={`${CARD} px-5 py-12 text-center`}>
+          <h3 className="text-sm font-semibold text-foreground">{t('workflows.no_results')}</h3>
+          <p className="mx-auto mt-1 max-w-sm text-[13px] text-text-2">{t('wfl.empty_filter')}</p>
+          {hasFilters && (
+            <button type="button" onClick={clearFilters} className={`${BTN_SECONDARY} mt-4`}>
+              {t('workflows.clear_filters')}
+            </button>
+          )}
+        </div>
+      ) : (
+        <section aria-label={t('wfl.list_label')} className={`${CARD} overflow-x-auto`}>
+          <table className="w-full min-w-[860px] border-collapse text-sm">
             <thead>
               <tr>
-                <th className={th}>
+                <th className={`${th} w-11 pl-5`}>
                   <input
                     type="checkbox"
                     checked={allSelected}
@@ -691,14 +664,12 @@ export function WorkflowsPage() {
                     aria-label={t('workflows.select_all')}
                   />
                 </th>
-                <th className={th}>{t('workflows.col_name')}</th>
-                <th className={th}>{t('workflows.col_status')}</th>
-                <th className={th}>{t('workflows.col_trigger')}</th>
-                <th className={th}>{t('workflows.col_last_run')}</th>
-                <th className={`${th} text-right`}>{t('workflows.col_errors_7d')}</th>
-                <th className={`${th} text-right`}>{t('workflows.col_runs_7d')}</th>
-                {showOwner && <th className={th}>{t('workflows.col_owner')}</th>}
-                <th className={th}>
+                <th className={`${th} w-16`}>{t('wfl.col_on')}</th>
+                <th className={th}>{t('wfl.col_name')}</th>
+                <th className={th}>{t('wfl.col_what')}</th>
+                <th className={th}>{t('wfl.col_last')}</th>
+                <th className={`${th} text-right`}>{t('wfl.col_runs')}</th>
+                <th className={`${th} w-28 pr-5`}>
                   <span className="sr-only">{t('workflows.col_actions')}</span>
                 </th>
               </tr>
@@ -707,98 +678,103 @@ export function WorkflowsPage() {
               {filteredWorkflows.map((wf) => {
                 const isSelected = selectedIds.has(wf.id);
                 const rowStats = stats[wf.id];
-                const rate = errorRate(wf);
                 const lastAt = lastRunOf(wf);
-                const lastMark = rowStats?.lastStatus
-                  ? rowStats.lastStatus === 'SUCCESS'
-                    ? { mark: '✓', cls: 'text-ok' }
-                    : rowStats.lastStatus === 'FAILED'
-                      ? { mark: '✕', cls: 'text-err' }
-                      : rowStats.lastStatus === 'RUNNING' || rowStats.lastStatus === 'QUEUED'
-                        ? { mark: '●', cls: 'text-run' }
-                        : { mark: '–', cls: 'text-muted-foreground' }
-                  : { mark: '–', cls: 'text-muted-foreground' };
+                const summary = describeWorkflow(triggerOf(wf), stepsById[wf.id], t, labelOf);
+                const stepsLoading = stepIds.includes(wf.id) && !(wf.id in stepsById);
+                const isOn = wf.status === 'PUBLISHED';
+                const lastPill = wf.status === 'DRAFT'
+                  ? <span className={statusBadgeClass('pause')}>{t('workflows.tab_draft')}</span>
+                  : rowStats?.lastStatus
+                    ? <span className={statusBadgeClass(runTone(rowStats.lastStatus))}>{t(`monitoring.status.${rowStats.lastStatus.toLowerCase()}`)}</span>
+                    : <span className={statusBadgeClass('pause')}>{t('relative.never')}</span>;
 
                 return (
                   <tr
                     key={wf.id}
                     data-testid="workflow-row"
                     data-status={wf.status}
-                    className={`transition-colors ${isSelected ? 'bg-accent' : 'hover:bg-subtle'}`}
+                    className={`border-t border-border transition-colors ${isSelected ? 'bg-run-bg' : 'hover:bg-subtle'}`}
                   >
-                    <td className={td}>
+                    <td className="py-3.5 pl-5 pr-3 align-top">
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => handleToggleSelectRow(wf.id)}
-                        className="m-0 h-4 w-4 cursor-pointer accent-[var(--primary)]"
+                        className="m-0 mt-[3px] h-4 w-4 cursor-pointer accent-[var(--primary)]"
                         aria-label={`${t('workflows.select')} ${wf.name}`}
                       />
                     </td>
-                    <td className={td} title={wf.name}>
-                      <Link
-                        to={`/workflows/${wf.id}/builder`}
-                        className="font-medium text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
+                    <td className="px-3 py-3.5 align-top">
+                      {wf.status === 'DRAFT' ? (
+                        <span title={t('wfl.draft_no_switch')} aria-label={t('wfl.draft_no_switch')} className="inline-flex h-[22px] items-center text-muted-foreground">—</span>
+                      ) : (
+                        <button
+                          type="button"
+                          role="switch"
+                          data-testid="workflow-switch"
+                          aria-checked={isOn}
+                          disabled={switching.has(wf.id)}
+                          aria-label={t(isOn ? 'wfl.switch_off' : 'wfl.switch_on').replace('{name}', wf.name)}
+                          onClick={() => void handleSwitch(wf)}
+                          className={`inline-flex h-[22px] w-9 shrink-0 items-center rounded-full p-0.5 transition-colors disabled:opacity-50 ${FOCUS_RING} ${isOn ? 'justify-end bg-ok' : 'justify-start bg-border-strong'}`}
+                        >
+                          <span aria-hidden="true" className="h-[18px] w-[18px] rounded-full bg-white" />
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-3 py-3.5 align-top">
+                      <Link to={`/workflows/${wf.id}/builder`} className={`rounded-sm font-medium text-foreground hover:underline ${FOCUS_RING}`}>
                         {wf.name}
                       </Link>
+                      <div className="text-xs text-muted-foreground">
+                        {[wf.ownerName, t('wfl.edited').replace('{when}', relativeTime(wf.updatedAt))].filter(Boolean).join(' · ')}
+                      </div>
                     </td>
-                    <td className={td}>{statusBadge(wf)}</td>
-                    <td className={`${td} text-text-2`} title={triggerLabel(triggerOf(wf))}>
-                      <span className="inline-flex items-center gap-2">
-                        <WorkflowGlyph triggerType={triggerOf(wf)} status={wf.status === 'PUBLISHED' ? 'SUCCESS' : wf.status} />
-                        {triggerLabel(triggerOf(wf))}
-                      </span>
+                    <td className="max-w-[360px] px-3 py-3.5 align-top">
+                      <div data-testid="workflow-summary" className="flex flex-col gap-0.5">
+                        <span><span className="text-muted-foreground">{t('wfl.run_prefix')} </span>{summary.when}</span>
+                        {summary.then ? (
+                          <span className="text-[13px] text-text-2"><span className="text-muted-foreground">{t('wfl.then_prefix')} </span>{summary.then}</span>
+                        ) : stepsLoading ? (
+                          <span className="text-[13px] text-muted-foreground">…</span>
+                        ) : null}
+                      </div>
                     </td>
-                    <td className={td} title={exactTime(lastAt)}>
-                      <span className={lastMark.cls} aria-hidden="true">
-                        {lastMark.mark}
-                      </span>{' '}
-                      <span className="tabular-nums text-text-2">{relativeTime(lastAt)}</span>
+                    <td className="px-3 py-3.5 align-top" title={exactTime(lastAt)}>
+                      <div className="flex flex-col items-start gap-0.5">
+                        {lastPill}
+                        {lastAt && <span className="font-mono text-xs text-muted-foreground">{relativeTime(lastAt)}</span>}
+                      </div>
                     </td>
-                    <td
-                      className={`${td} text-right tabular-nums ${rate === null ? 'text-muted-foreground' : rate >= 0.1 ? 'text-err' : rate >= 0.02 ? 'text-warn' : 'text-text-2'}`}
-                    >
-                      {rate === null ? '—' : `${(rate * 100).toFixed(1).replace('.', language === 'VI' ? ',' : '.')}%`}
+                    <td className="px-3 py-3.5 text-right align-top font-mono text-xs text-text-2">
+                      {rowStats ? rowStats.runs7d.toLocaleString(locale) : wf.status === 'DRAFT' ? '—' : '…'}
                     </td>
-                    <td className={`${td} text-right tabular-nums text-text-2`}>
-                      {rowStats ? rowStats.runs7d.toLocaleString(locale) : '—'}
-                    </td>
-                    {showOwner && <td className={`${td} text-text-2`}>{wf.ownerName || '—'}</td>}
                     {/* No overflow-hidden here: it would clip the row menu below. */}
-                    <td className="relative h-10 whitespace-nowrap border-b border-border px-3">
+                    <td className="relative whitespace-nowrap py-2.5 pl-3 pr-5 align-top">
                       <div className="flex items-center justify-end gap-0.5">
                         <button
                           type="button"
                           onClick={() => void handleRun(wf.id)}
                           disabled={wf.status !== 'PUBLISHED'}
-                          className={iconBtn}
+                          className={`${ICON_BTN} h-8 w-8 disabled:opacity-40 disabled:hover:bg-transparent`}
                           title={wf.status === 'PUBLISHED' ? t('workflows.trigger_execution') : t('workflows.btn_publish')}
                           aria-label={`${t('workflows.trigger_execution')}: ${wf.name}`}
                         >
-                          <Play size={14} />
+                          <Play size={16} strokeWidth={1.75} />
                         </button>
-                        <Link
-                          to={`/workflows/${wf.id}/builder`}
-                          className={iconBtn}
-                          title={t('workflows.edit_studio')}
-                          aria-label={`${t('workflows.edit_studio')}: ${wf.name}`}
-                        >
-                          <Edit3 size={14} />
-                        </Link>
                         <button
                           type="button"
                           ref={(element) => {
                             menuButtonRefs.current[wf.id] = element;
                           }}
                           onClick={() => setActiveMenuId(activeMenuId === wf.id ? null : wf.id)}
-                          className={`${iconBtn} ${activeMenuId === wf.id ? 'bg-muted text-foreground' : ''}`}
+                          className={`${ICON_BTN} h-8 w-8 ${activeMenuId === wf.id ? 'bg-muted text-foreground' : ''}`}
                           title={t('workflows.more_actions')}
                           aria-label={`${t('workflows.more_actions')}: ${wf.name}`}
                           aria-haspopup="menu"
                           aria-expanded={activeMenuId === wf.id}
                         >
-                          <MoreHorizontal size={16} />
+                          <MoreHorizontal size={18} strokeWidth={1.75} />
                         </button>
                       </div>
 
@@ -814,23 +790,31 @@ export function WorkflowsPage() {
                             onKeyDown={(event) => {
                               if (event.key === 'Escape') closeMenu(wf.id);
                             }}
-                            className="absolute right-3 top-9 z-30 flex w-48 flex-col rounded-lg border border-border bg-popover p-1 text-left text-[13px] text-popover-foreground shadow-pop"
+                            className="absolute right-5 top-11 z-30 flex w-48 flex-col rounded-xl border border-border bg-popover p-1 text-left text-[13px] text-popover-foreground shadow-pop"
                           >
                             <Link
                               role="menuitem"
                               to={`/workflows/${encodeURIComponent(wf.id)}/executions`}
-                              className="flex h-8 items-center gap-2 rounded-md px-2 hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              className={`flex h-8 items-center gap-2 rounded-md px-2 hover:bg-subtle ${FOCUS_RING}`}
                             >
-                              <History size={14} className="text-muted-foreground" />
+                              <History size={14} strokeWidth={1.75} className="text-muted-foreground" />
                               <span>{t('nav.executions')}</span>
+                            </Link>
+                            <Link
+                              role="menuitem"
+                              to={`/workflows/${encodeURIComponent(wf.id)}/builder`}
+                              className={`flex h-8 items-center gap-2 rounded-md px-2 hover:bg-subtle ${FOCUS_RING}`}
+                            >
+                              <Edit3 size={14} strokeWidth={1.75} className="text-muted-foreground" />
+                              <span>{t('workflows.edit_studio')}</span>
                             </Link>
                             <button
                               type="button"
                               role="menuitem"
                               onClick={() => void handleDuplicate(wf.id)}
-                              className="flex h-8 items-center gap-2 rounded-md px-2 text-left hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              className={`flex h-8 items-center gap-2 rounded-md px-2 text-left hover:bg-subtle ${FOCUS_RING}`}
                             >
-                              <Copy size={14} className="text-muted-foreground" />
+                              <Copy size={14} strokeWidth={1.75} className="text-muted-foreground" />
                               <span>{t('workflows.btn_duplicate')}</span>
                             </button>
                             <button
@@ -839,21 +823,20 @@ export function WorkflowsPage() {
                               onClick={() => void handleTogglePause(wf)}
                               disabled={wf.status === 'DRAFT'}
                               title={wf.status === 'DRAFT' ? t('workflows.publish_before_pause') : undefined}
-                              className="flex h-8 items-center gap-2 rounded-md px-2 text-left hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+                              className={`flex h-8 items-center gap-2 rounded-md px-2 text-left hover:bg-subtle disabled:cursor-not-allowed disabled:opacity-40 ${FOCUS_RING}`}
                             >
                               {wf.status === 'PAUSED' ? (
                                 <>
-                                  <Play size={14} className="text-ok" />
+                                  <Play size={14} strokeWidth={1.75} className="text-ok" />
                                   <span>{t('workflows.btn_resume')}</span>
                                 </>
                               ) : (
                                 <>
-                                  <Pause size={14} className="text-warn" />
+                                  <Pause size={14} strokeWidth={1.75} className="text-warn" />
                                   <span>{t('workflows.btn_pause')}</span>
                                 </>
                               )}
                             </button>
-                            <>
                             <div className="my-1 h-px bg-border" />
                             <button
                               type="button"
@@ -862,12 +845,11 @@ export function WorkflowsPage() {
                                 closeMenu(wf.id);
                                 setDeleteIds([wf.id]);
                               }}
-                              className="flex h-8 items-center gap-2 rounded-md px-2 text-left font-medium text-err hover:bg-err-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
+                              className={`flex h-8 items-center gap-2 rounded-md px-2 text-left font-medium text-err hover:bg-err-bg disabled:cursor-not-allowed disabled:opacity-40 ${FOCUS_RING}`}
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={14} strokeWidth={1.75} />
                               <span>{t('workflows.btn_delete')}…</span>
                             </button>
-                              </>
                           </motion.div>
                         )}
                       </AnimatePresence>
@@ -876,23 +858,14 @@ export function WorkflowsPage() {
                 );
               })}
             </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={columnCount} className="h-11 px-5 text-xs text-muted-foreground">
-                  <span className="tabular-nums">
-                    {t('workflows.showing')} {filteredWorkflows.length} / {workflowsList.length}
-                  </span>
-                  {hasStats && (
-                    <span className="ml-4 inline-flex items-center gap-1">
-                      {t('workflows.error_badge_hint')}
-                    </span>
-                  )}
-                </td>
-              </tr>
-            </tfoot>
           </table>
-        )}
-      </div>
+          <div className="border-t border-border px-5 py-3 text-xs text-muted-foreground">
+            <span className="tabular-nums">
+              {t('workflows.showing')} {filteredWorkflows.length} / {workflowsList.length}
+            </span>
+          </div>
+        </section>
+      )}
 
       <TypedConfirmDialog
         isOpen={deleteIds !== null}

@@ -131,7 +131,7 @@ export function InvitationsPage() {
                 aria-label={`${t('invitations.accept')} ${invitation.workspaceName}`}
                 onClick={() => void handleAccept(invitation)}
                 disabled={busyId !== null}
-                className="rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {busyId === invitation.id ? t('invitations.working') : t('invitations.accept')}
               </button>

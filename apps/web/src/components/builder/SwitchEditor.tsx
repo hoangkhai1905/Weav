@@ -4,8 +4,8 @@ import { useI18nStore } from '../../store/useI18nStore';
 import { SchemaField } from './SchemaField';
 import type { VariableGroup } from '../../lib/variablePaths';
 
-const inputCls = 'w-full min-w-0 rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary';
-const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-[11px] font-medium text-run hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
+const inputCls = 'w-full min-w-0 rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring';
+const addCls = 'mt-1.5 inline-flex items-center gap-1 rounded text-xs font-medium text-accent-ink hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40';
 
 // DefinitionValidator.validateSwitchCases: 1-20 unique literal cases, max 64 chars, "default" reserved.
 const MAX_CASES = 20;
@@ -36,7 +36,7 @@ export const SwitchEditor: React.FC<SwitchEditorProps> = ({ config, onChange, on
     <div data-testid="switch-config" className="space-y-3">
       <SchemaField nodeType="logic.switch" name="value" value={config.value} onChange={(value) => onChange({ value })} groups={groups} />
       <fieldset className="space-y-1.5">
-        <legend className="mb-1 block text-[11px] font-medium text-text-2">{t('builder.field.logic.switch.cases')}</legend>
+        <legend className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.field.logic.switch.cases')}</legend>
         {cases.map((value, index) => {
           const problem = caseProblem(value, index, cases);
           const n = String(index + 1);
@@ -70,7 +70,7 @@ export const SwitchEditor: React.FC<SwitchEditorProps> = ({ config, onChange, on
         <button type="button" data-testid="switch-add" disabled={cases.length >= MAX_CASES} onClick={() => onCasesChange([...cases, ''])} className={addCls}>
           <Plus size={12} aria-hidden="true" />{t('builder.cfg.switch_add')}
         </button>
-        <p className="text-[10px] leading-relaxed text-muted-foreground">{t('builder.cfg.switch_hint')}</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.switch_hint')}</p>
       </fieldset>
     </div>
   );

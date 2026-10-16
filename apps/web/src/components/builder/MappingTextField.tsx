@@ -35,8 +35,8 @@ interface MappingTextFieldProps {
 const NBSP = new RegExp(String.fromCharCode(160), 'g');
 const TOKEN = /\{\{\s*([^{}]+?)\s*\}\}/g;
 const HAS_TOKEN = /\{\{\s*[^{}]+?\s*\}\}/;
-const CHIP = 'mx-0.5 inline-flex select-none items-center gap-1 rounded border px-1.5 align-baseline text-[11px] font-medium leading-5';
-const CHIP_OK = `${CHIP} border-run/30 bg-run-bg text-run`;
+const CHIP = 'mx-0.5 inline-flex select-none items-center gap-1 rounded border px-1.5 align-baseline text-xs font-medium leading-5';
+const CHIP_OK = `${CHIP} border-transparent bg-run-bg text-run`;
 const CHIP_UNKNOWN = `${CHIP} border-warn/40 bg-warn-bg text-warn`;
 
 /**
@@ -314,6 +314,8 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
 
   return (
     <div className={`relative ${className ?? ''}`}>
+      {/* With a format toolbar, toolbar and text share one bordered box (design); a plain field keeps its own border. */}
+      <div className={format ? 'rounded-lg border border-border-strong bg-card focus-within:ring-2 focus-within:ring-ring' : undefined}>
       {format && (
         <FormatToolbar
           // Enter already breaks the line in the visual editor.
@@ -322,7 +324,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
           code={format.rich ? { label: format.syntax === 'html' || format.syntax === 'telegramHtml' ? 'HTML' : 'Markdown', active: codeMode, onToggle: toggleCode } : undefined}
         />
       )}
-      {format && formatNote && <p data-testid="format-note" className="mb-1 text-[10px] leading-relaxed text-muted-foreground">{formatNote}</p>}
+      {format && formatNote && <p data-testid="format-note" className="px-2.5 pt-1.5 text-xs leading-relaxed text-muted-foreground">{formatNote}</p>}
       <div
         ref={ref}
         id={id}
@@ -371,9 +373,10 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
           remove.closest('[data-mapping]')?.remove();
           emit();
         }}
-        className={`w-full cursor-text rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs leading-6 text-foreground outline-none hover:border-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] ${multiline ? `min-h-[6rem] break-words ${rich && format?.syntax === 'html' ? 'whitespace-normal' : 'whitespace-pre-wrap'}` : 'min-h-[2rem] overflow-x-auto whitespace-pre'} [&_a]:text-run [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5`}
+        className={`w-full cursor-text bg-card px-2.5 py-1.5 text-[13px] leading-7 text-foreground outline-none ${format ? 'rounded-b-lg' : 'rounded-md border border-border-strong hover:border-muted-foreground focus:ring-2 focus:ring-ring'} empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] ${multiline ? `min-h-[6rem] break-words ${rich && format?.syntax === 'html' ? 'whitespace-normal' : 'whitespace-pre-wrap'}` : 'min-h-[2rem] overflow-x-auto whitespace-pre'} [&_a]:text-run [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5`}
       />
-      <div ref={menuRef} className="mt-0.5 flex justify-end">
+      </div>
+      <div ref={menuRef} className="mt-1 flex justify-end">
         <button
           type="button"
           data-testid="mapping-data-toggle"
@@ -381,9 +384,9 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
           aria-expanded={menuOpen}
           onMouseDown={keepCaret}
           onClick={() => setMenuOpen(!menuOpen)}
-          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-text-2 hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border-strong bg-card px-2.5 text-xs font-medium text-foreground hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Braces size={11} aria-hidden="true" />{t('builder.var.add_data')}
+          <Braces size={14} strokeWidth={1.75} aria-hidden="true" />{t('builder.var.add_data')}
         </button>
         {menuOpen && (
           <div
@@ -392,7 +395,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
             onKeyDown={(event) => { if (event.key === 'Escape') setMenuOpen(false); }}
             className="absolute right-0 top-full z-30 mt-1 max-h-72 w-72 max-w-full space-y-2 overflow-y-auto rounded-md border border-border bg-popover p-2 shadow-pop"
           >
-            {groups.length === 0 && <p className="px-2 text-[10px] text-muted-foreground">{t('builder.var.empty')}</p>}
+            {groups.length === 0 && <p className="px-2 text-xs text-muted-foreground">{t('builder.var.empty')}</p>}
             {groups.map((group) => (
               <div key={group.key}>
                 <p className="px-2 pb-0.5 text-[10px] font-semibold text-text-2">{group.label}</p>

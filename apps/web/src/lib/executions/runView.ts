@@ -104,3 +104,15 @@ export function friendlyErrorMessage(raw: string | undefined, t: (key: string) =
     return null;
   }
 }
+
+/** `code` of a stored node/run error (JSON text), or null. Shown only inside the collapsed technical details. */
+export function errorCodeOf(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    const code = parsed && typeof parsed === 'object' ? (parsed as { code?: unknown }).code : null;
+    return typeof code === 'string' && code ? code : null;
+  } catch {
+    return null;
+  }
+}

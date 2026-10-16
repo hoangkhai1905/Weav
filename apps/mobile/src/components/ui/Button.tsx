@@ -27,7 +27,7 @@ export const Button: React.FC<ButtonProps> = ({
 }) => {
   const colors = useThemeColors();
   const palette = {
-    primary: { bg: colors.primary, border: colors.primary, fg: colors.onPrimary },
+    primary: { bg: colors.button, border: colors.button, fg: colors.onButton },
     secondary: { bg: colors.card, border: colors.borderStrong, fg: colors.text },
     danger: { bg: colors.card, border: colors.tones.danger.border, fg: colors.danger },
   }[variant];

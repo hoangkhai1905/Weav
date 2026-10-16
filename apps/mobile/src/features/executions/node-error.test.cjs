@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 require('../../../test-support/register-typescript.cjs');
-const { nodeErrorParts, nodeErrorSummary } = require('./node-error.ts');
+const { nodeErrorParts, nodeErrorSummary, failureAction } = require('./node-error.ts');
 const { runsVi, runsEn } = require('../../stores/i18n.runs.ts');
 const { translations } = require('../../stores/i18n.store.ts');
 
@@ -35,4 +35,21 @@ test('run strings exist in both languages and are merged into the store', () => 
     assert.equal(translations.VI[key], runsVi[key]);
     assert.equal(translations.EN[key], runsEn[key]);
   }
+});
+
+test('failure action points to connections, the workflow, or nothing', () => {
+  assert.equal(failureAction({ code: 'CONNECTION_UNAVAILABLE' }), 'connections');
+  assert.equal(failureAction('{"code":"AUTHENTICATION_REJECTED"}'), 'connections');
+  assert.equal(failureAction({ code: 'CONFIGURATION_ERROR', details: { field: 'to' } }), 'workflow');
+  assert.equal(failureAction({ code: 'MAPPING_ERROR', message: 'x is missing' }), 'workflow');
+  assert.equal(failureAction({ code: 'HTTP_TIMEOUT' }), null);
+  assert.equal(failureAction(null), null);
+});
+
+test('run detail strings exist in both languages with the same placeholders', () => {
+  const rd = (map) => Object.keys(map).filter((k) => k.startsWith('rd.')).sort();
+  assert.deepEqual(rd(runsVi), rd(runsEn));
+  assert.ok(rd(runsVi).length > 15);
+  const holders = (s) => (s.match(/\{\w+\}/g) ?? []).sort().join(',');
+  for (const key of rd(runsVi)) assert.equal(holders(runsVi[key]), holders(runsEn[key]), key);
 });

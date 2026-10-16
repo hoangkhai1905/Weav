@@ -41,6 +41,15 @@ export const templatesVi: Record<string, string> = {
   'tpl.err.lookupFailed': 'Chưa tra cứu được mã. Bạn thử lại sau nhé.',
   'tpl.err.useFailed': 'Chưa dùng được mẫu này. Bạn thử lại sau nhé.',
   'tpl.err.loadFailed': 'Chưa tải được mẫu. Bạn thử lại sau nhé.',
+  'tpl.pane.search': 'Tìm mẫu, ví dụ: hóa đơn',
+  'tpl.group.label': 'Lọc mẫu theo việc bắt đầu quy trình',
+  'tpl.group.all': 'Tất cả',
+  'tpl.group.email': 'Khi có email',
+  'tpl.group.chat': 'Khi có tin nhắn',
+  'tpl.group.schedule': 'Theo lịch',
+  'tpl.group.webhook': 'Khi có dữ liệu gửi tới',
+  'tpl.group.other': 'Khác',
+  'tpl.more': 'Nhập mã mẫu hoặc xem mẫu của tôi',
 };
 
 export const templatesEn: Record<string, string> = {
@@ -85,4 +94,13 @@ export const templatesEn: Record<string, string> = {
   'tpl.err.lookupFailed': 'The code could not be looked up. Please try again later.',
   'tpl.err.useFailed': 'This template could not be used. Please try again later.',
   'tpl.err.loadFailed': 'The template could not be loaded. Please try again later.',
+  'tpl.pane.search': 'Search templates, e.g. invoice',
+  'tpl.group.label': 'Filter templates by what starts the workflow',
+  'tpl.group.all': 'All',
+  'tpl.group.email': 'When an email arrives',
+  'tpl.group.chat': 'When a message arrives',
+  'tpl.group.schedule': 'On a schedule',
+  'tpl.group.webhook': 'When data is sent in',
+  'tpl.group.other': 'Other',
+  'tpl.more': 'Enter a template code or see my templates',
 };

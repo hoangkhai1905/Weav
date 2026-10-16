@@ -22,7 +22,7 @@ test('every i18n key the Lane C screens reference resolves in both languages', (
   const files = [
     'app/(app)/workspace/index.tsx',
     'app/(app)/connections/index.tsx',
-    'app/(app)/(tabs)/notifications.tsx',
+    'app/(app)/notifications.tsx',
     'app/(app)/(tabs)/profile.tsx',
     'app/(app)/settings/index.tsx',
     'features/workspace/components/MemberCard.tsx',

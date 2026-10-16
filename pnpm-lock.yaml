@@ -10,6 +10,12 @@ importers:
 
   apps/mobile:
     dependencies:
+      '@expo-google-fonts/be-vietnam-pro':
+        specifier: ^0.4.1
+        version: 0.4.1
+      '@expo-google-fonts/jetbrains-mono':
+        specifier: ^0.4.1
+        version: 0.4.1
       '@expo/ui':
         specifier: ~57.0.11
         version: 57.0.11(@babel/core@7.29.7(supports-color@8.1.1))(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(expo@57.0.14)(react-dom@19.2.3(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)(supports-color@8.1.1))(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)
@@ -134,10 +140,10 @@ importers:
 
   apps/web:
     dependencies:
-      '@fontsource-variable/geist':
+      '@fontsource-variable/jetbrains-mono':
         specifier: ^5.3.0
         version: 5.3.0
-      '@fontsource-variable/geist-mono':
+      '@fontsource/be-vietnam-pro':
         specifier: ^5.3.0
         version: 5.3.0
       '@hookform/resolvers':
@@ -1209,6 +1215,12 @@ packages:
     resolution: {integrity: sha512-+CNAzxglkrpNf/kKywqQfk74QjtceuOE7Qm+AF8miRvPF/wmmK5+OJOgVh3AVTT3RP2mH3+FOaxlE5v72owk0A==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
 
+  '@expo-google-fonts/be-vietnam-pro@0.4.1':
+    resolution: {integrity: sha512-4o2bsqU1zcC6NZf5FRYB+7gE49waNWYOGc5c5qLfPgrSqqr61hS2Bz4TVPgxudO038tLydSyPxV8e79g8j5DpQ==}
+
+  '@expo-google-fonts/jetbrains-mono@0.4.1':
+    resolution: {integrity: sha512-CslACrtMOcRwoWXCO7OMEI+9w3fukWSoBtvNz46OqPoogEuuoY0tkDY1O8sFumk8t0pC6Cx0Xr95O0TOQhpkug==}
+
   '@expo-google-fonts/material-symbols@0.4.44':
     resolution: {integrity: sha512-36JP9Chcy/QEVZ9ZGY4i6zInlyFPbQjkIm6gRNuWWltScIj0WR8rddcD57EIjSC5YKCe2ZKLO6eO/N5r8Jit0A==}
 
@@ -1436,11 +1448,11 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@fontsource-variable/geist-mono@5.3.0':
-    resolution: {integrity: sha512-vBbuwDEo9AkrqADMXOrlAR3DFcJi4/JxeuU43FoiQERnNwsfXNnvxvReZG02cQKmyk4DZkZdBZX3oTDvy2zBAw==}
+  '@fontsource-variable/jetbrains-mono@5.3.0':
+    resolution: {integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==}
 
-  '@fontsource-variable/geist@5.3.0':
-    resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
+  '@fontsource/be-vietnam-pro@5.3.0':
+    resolution: {integrity: sha512-xhAQBGHDxP5BF8IJxedy5MoWUmc1DlPCcZbMLhvnPkf8TaYCbbUVs3LjpuJ4BYdTrdiCLaewNaY8z+owq/FqFw==}
 
   '@hono/node-server@2.1.1':
     resolution: {integrity: sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg==}
@@ -8910,6 +8922,10 @@ snapshots:
       '@eslint/core': 1.2.1
       levn: 0.4.1
 
+  '@expo-google-fonts/be-vietnam-pro@0.4.1': {}
+
+  '@expo-google-fonts/jetbrains-mono@0.4.1': {}
+
   '@expo-google-fonts/material-symbols@0.4.44': {}
 
   '@expo/cli@57.0.16(@expo/dom-webview@57.0.1)(@expo/metro-runtime@57.0.11)(expo-constants@57.0.12)(expo-font@57.0.1)(expo-router@57.0.14)(expo@57.0.14)(react-dom@19.2.3(react@19.2.3))(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.2.18)(react@19.2.3)(supports-color@8.1.1))(react@19.2.3)(supports-color@8.1.1)(typescript@6.0.3)':
@@ -9342,9 +9358,9 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@fontsource-variable/geist-mono@5.3.0': {}
+  '@fontsource-variable/jetbrains-mono@5.3.0': {}
 
-  '@fontsource-variable/geist@5.3.0': {}
+  '@fontsource/be-vietnam-pro@5.3.0': {}
 
   '@hono/node-server@2.1.1(hono@4.13.2)':
     dependencies:

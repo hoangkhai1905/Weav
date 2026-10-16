@@ -271,3 +271,84 @@ Lý do: người dùng thấy giao diện cũ "xấu quá", trông như do AI l�
 
 ### Để sau
 - (Đã làm 2026-10-11, xem mục trên) Đăng nhập Google trên mobile: luồng hiện có chỉ cho web (gọi thẳng identity-service :8082, kiểm Origin + cookie + CSRF, quay về `/auth/callback` của web; gateway chưa có route). Cần client OAuth cho mobile (PKCE + deep link `weav://auth/callback`) + route gateway + `expo-auth-session`. Người dùng quyết định để sau (2026-10-08).
+
+## Giao diện v2 theo Claude Design (nhánh `feature/ui-redesign-v2`, từ 2026-10-13)
+
+Xem thêm `docs/work_logs/K/web/ui-redesign.md` mục 10.
+
+### Lane 1: token, font (xong)
+- `palette.ts`: giá trị mới theo Theme.dc.html; thêm `button`/`onButton` (nút chính màu mực), `primary` giữ vai trò nhấn xanh (link, tab đang chọn). `Button`, `ConfirmSheet`, `EmptyState`, `RunSheet`, `PublishResultSheet`, bong bóng chat và icon trên nút chính dùng `button`/`onButton`. `useThemeColors` thêm 2 trường. Test tương phản thêm `onButton` trên `button`.
+- Font: `@expo-google-fonts/be-vietnam-pro` (400/500/600/700) + `jetbrains-mono` 400, nạp bằng `useFonts` trong `app/_layout.tsx` (import theo từng weight để không gói cả 18 file). `Typography.*` có `fontFamily` theo weight; `Fonts.mono` = JetBrains Mono. `Radius.lg` 8 → 12 (thẻ).
+- Giới hạn: chữ đặt `fontWeight` riêng mà không dùng `Typography` vẫn dùng family Regular (Android có thể tô đậm giả). Các lane màn hình sẽ dùng `Typography`.
+- Kiểm tra: `npx tsc --noEmit -p .` sạch; `node --test src/constants/palette.contrast.test.cjs` 4/4. Chưa kiểm thiết bị.
+
+### Lane 2.1: thanh dưới 4 mục + chuông trên header (xong, chưa kiểm thiết bị)
+- Thanh dưới 4 mục (Trang chủ · Quy trình · Lịch sử · Tôi) vẽ một lần trong `app/(app)/_layout.tsx` (`AppTabBar`) dưới `Stack`, nên màn chi tiết (workflows/[id], templates, executions, connections, settings, workspace, invitations, assistant) cũng có thanh này. `(tabs)/_layout.tsx` chỉ còn giữ trạng thái tab (`tabBar={() => null}`). Tab nào sáng suy ra từ `usePathname()` (`components/ui/tab-bar.ts`, có test). Thanh ẩn khi bàn phím mở và ở màn tạo bằng AI (`/ai/*`) và chat trợ lý (`/assistant/chat`), vì hai màn này có ô nhập sát đáy.
+- Thông báo không còn là tab: `notifications.tsx` chuyển từ `(tabs)/` sang `app/(app)/` (route `/notifications` giữ nguyên), có nút quay lại. Chuông có chấm đỏ + nút sáng/tối nằm ở `components/ui/HeaderActions.tsx`, gắn vào header Trang chủ, Quy trình, Lịch sử, Tôi.
+- Các màn dùng `SafeAreaView` mặc định đổi sang `edges={['top']}` vì phần inset đáy giờ do thanh dưới giữ.
+- `palette.ts` + `useThemeColors`: thêm `steps.{trigger,action,logic,ai}` (fg/bg); test tương phản mở rộng.
+- i18n: `stores/i18n.nav.ts` (+ test) cho nhãn thanh dưới/chuông/sáng-tối; `tab.profile` = "Tôi"/"Me", `tab.executions` EN = "History".
+- Impact (CLI): TabsLayout, AppLayout (mobile), NotificationsScreen, HomeScreen, ProfileScreen, WorkflowsScreen, ExecutionsScreen đều LOW, 0 caller (route file-based, đã grep các `router.navigate('/(app)/(tabs)/notifications')` và đổi).
+- Lệnh: `npx tsc --noEmit -p .` sạch; `node --test` palette.contrast 6/6, tab-bar 2/2, i18n.nav 2/2, i18n.account 3/3, ui.store 1/1.
+- Rủi ro: typed routes (`.expo/types`) sinh lại khi chạy Metro; `router.navigate` từ màn chi tiết về tab dựa vào hành vi "pop về route đã có" của expo-router, cần xác nhận trên máy.
+
+### Lane 2.2: Trang chủ (xong, chưa kiểm thiết bị)
+- `app/(app)/(tabs)/index.tsx` viết lại theo `MHome`: header (nhóm làm việc + sáng/tối + chuông), lời chào theo giờ + thứ/ngày, thẻ đỏ "N lượt chạy lỗi cần xem" (mở Lịch sử với `filter=failed`), 4 ô số, "Lượt chạy gần đây", "Tạo quy trình mới" (Mô tả bằng lời → AI, Dùng mẫu có sẵn → Quy trình, `segment=templates`). Giữ banner lời mời, đổi nhóm, EmptyState, mục "Cần chú ý" chỉ còn điều kiện kích hoạt tắt và kết nối hỏng (lượt lỗi đã nằm ở thẻ đỏ).
+- Số liệu: chỉ lấy từ API sẵn có, tính trên mẫu các lượt chạy gần nhất (không có API 7 ngày). Bỏ ô "Lượt chạy, 7 ngày". 4 ô: Thành công (%), Bị lỗi, Đang bật (x / tổng quy trình), Đang chạy. Dòng chú thích "Tính trên N lượt chạy gần nhất."
+- Ô loại bước của lượt chạy là icon theo nguồn kích hoạt (`TriggerTile`), không dùng mã chữ.
+- Thành phần mới: `StepTile`/`StepTileText`, `TriggerTile`; `StatusBadge` thành pill (bo 999, font Medium); `time.ts` thêm `formatHourMinute`, `formatWeekdayDate`, `dayPart` (có test).
+- i18n: `stores/i18n.home.ts` (+ test, 20 khóa VI/EN).
+- Lệnh: `npx tsc --noEmit -p .` sạch; `node --test` i18n.home 2/2, i18n.nav 2/2, time 4/4. StatusBadge dùng ở 8 file, chỉ đổi kiểu.
+- Việc cho bước sau: màn Lịch sử phải đọc param `filter` (`failed`/`running`), màn Quy trình đọc `segment=templates`.
+
+### Lane 2.3: Quy trình (Của nhóm / Mẫu có sẵn) và mẫu (xong, chưa kiểm thiết bị)
+- `(tabs)/workflows.tsx` viết lại theo `MWorkflows`: tiêu đề + sáng/tối + chuông + nút "+" (ink, mở tạo bằng AI), thanh 2 đoạn "Của nhóm" / "Mẫu có sẵn" (`SegmentedControl`).
+  - "Của nhóm" (`features/workflows/components/TeamWorkflowsPane.tsx`, `WorkflowCard.tsx`): ô tìm kiếm, chip lọc Tất cả / Đang bật / Tạm dừng / Bản nháp kèm số đếm (tính trên các trang đã tải), công tắc bật/tắt từng dòng gọi `usePauseWorkflow`/`useResumeWorkflow`. Bản nháp không có công tắc. Công tắc bị khóa nếu thiếu quyền `canManageState` (có ghi chú). Công tắc đổi ngay, hoàn lại và báo lỗi nếu gọi thất bại.
+  - "Mẫu có sẵn" (`features/templates/components/TemplatesPane.tsx`, `TemplateCard.tsx`): tìm kiếm phía server (có debounce, dùng `useInfiniteTemplates('public', q)`), chip nhóm việc, thẻ mẫu có icon các bước + nút "Dùng mẫu" (mở `templates/[id]` để xem rồi tạo bản nháp bằng luồng sẵn có), liên kết "Nhập mã mẫu hoặc xem mẫu của tôi" mở lại `templates/index`.
+  - Home mở tab này ở đoạn mẫu bằng param `segment=templates` (đọc rồi xóa param).
+- Quyết định và giới hạn dữ liệu (cần chủ dự án biết):
+  - Mẫu trong API KHÔNG có trường "nhóm việc" (Kế toán, Khách hàng...). Chip lọc nhóm theo "việc bắt đầu quy trình" suy từ bước trigger đầu tiên (`templateGroup`: email / tin nhắn / theo lịch / dữ liệu gửi tới / khác).
+  - Danh sách quy trình (`WorkflowSummary`) không có danh sách bước, nên hàng "Của nhóm" hiện mô tả một dòng + trạng thái + giờ cập nhật thay cho dãy ô bước; chỉ thẻ mẫu (có `nodeTypes`) mới hiện ô bước. Không gọi chi tiết từng quy trình để khỏi tốn N request.
+  - Ô bước dùng icon theo loại node (`NodeTile`, `step-kind.ts`), không hiện mã node.
+- Thành phần dùng chung mới/đổi: `FilterChips` thành pill (đang chọn = nền ink, có `count` tùy chọn), `SegmentedControl`, `SearchField`, `Toggle` (xanh thành công), `SwitchRow` đổi màu bật sang xanh thành công.
+- Ẩn thanh cuộn: quét toàn bộ `ScrollView`/`FlatList` dọc trong `src` (15 file) thêm `showsVerticalScrollIndicator={false}`; hàng chip ngang đã tắt từ trước.
+- i18n: thêm `wfl.*`, `tpl.*` (VI/EN) vào `i18n.workflows.ts`, `i18n.templates.ts`; `stores/i18n.screens.test.cjs` kiểm mọi khóa literal của các màn v2 có đủ hai ngôn ngữ (sẽ nối thêm file ở các bước sau).
+- Impact (CLI): WorkflowsScreen LOW; `FilterChips` CRITICAL theo đồ thị (7 caller trực tiếp: lịch sử, chi tiết lượt chạy, thông báo, AI generator, hồ sơ, mẫu, quy trình), nhưng chỉ đổi kiểu và thêm prop tùy chọn `count`, chữ ký cũ giữ nguyên. `SwitchRow` UNKNOWN: đã grep, dùng ở `ScheduleField`, `MemberCard`, `profile.tsx`; chỉ đổi màu thanh bật.
+- Lệnh: `npx tsc --noEmit -p .` sạch; `node --test "src/**/*.test.cjs"` 241/241 (gồm template.helpers + test nhóm mẫu, i18n.screens, step-kind, palette.contrast).
+
+### Lane 2.4: Lịch sử chạy (xong, chưa kiểm thiết bị)
+- `(tabs)/executions.tsx` viết lại theo `MRuns`: tiêu đề "Lịch sử chạy" + sáng/tối + chuông, ô tìm kiếm (tên quy trình, không phân biệt dấu, hoặc một phần mã lượt chạy), chip Tất cả / Lỗi / Thành công / Đang chạy kèm số đếm, danh sách nhóm theo ngày (Hôm nay / Hôm qua / dd/MM/yyyy, dùng lại `groupByDay`), mỗi hàng: ô icon nguồn kích hoạt, tên quy trình, giờ + thời lượng (mono) hoặc "đang chạy", pill trạng thái. Bấm hàng mở chi tiết, nút quay lại về danh sách.
+- "Đang chạy" gồm cả QUEUED/WAITING; lượt CANCELLED chỉ hiện ở "Tất cả". Logic lọc nằm ở `features/executions/run-list.ts` (có test).
+- Home mở tab này kèm `filter=failed|running` (màn đọc param rồi xóa).
+- Bỏ: bộ chọn "lọc theo quy trình" (ô tìm theo tên thay thế) và nút trợ lý ở header (trợ lý sẽ nằm trong mục Công việc của "Tôi").
+- i18n: `stores/i18n.history.ts` (`rl.*`), thêm file vào `i18n.screens.test.cjs`.
+- Lệnh: `npx tsc --noEmit -p .` sạch; `i18n.screens` 4/4, `run-list` 3/3. Impact ExecutionsScreen LOW.
+
+### Lane 2.5: Chi tiết lượt chạy và chi tiết quy trình (xong, chưa kiểm thiết bị)
+- `executions/[workflowId]/[executionId].tsx` theo `MRun`: header riêng (quay lại, "Lượt chạy #<8 ký tự>" mono, sáng/tối + chuông), pill trạng thái, tên quy trình (bấm mở quy trình), "Hôm nay 09:31:04 · chạy 12.8 s". Khi FAILED: khối đỏ viết bằng lời thường: "Bước N (tên bước) không chạy được." + lý do thân thiện (dùng lại `nodeErrorSummary`, có câu hướng dẫn sửa sẵn trong `runs.err.*`) + "Sau khi sửa, bấm Chạy lại. Quy trình sẽ chạy lại từ đầu." + nút sửa tùy mã lỗi (`failureAction`: lỗi kết nối → "Kiểm tra kết nối", lỗi cấu hình/ánh xạ → "Mở quy trình", còn lại không có nút) + mục "Chi tiết kỹ thuật" thu gọn (mã lỗi, thông báo gốc, JSON). Danh sách "Các bước" là một thẻ (chấm xanh/đỏ/xám, số thứ tự, ghi chú ngắn, thời lượng mono); bấm bước mở "Kết quả của bước", lỗi kỹ thuật và các lần thử. Phần ID, kích hoạt, giờ, nhật ký (lọc mức, phân trang) gom vào mục "Chi tiết kỹ thuật" thu gọn ở cuối. Thanh dưới cùng: "Chạy lại" (nút ink) hoặc "Dừng lượt chạy" khi đang chạy.
+  - Xác minh backend (theo chủ dự án): KHÔNG có API chạy lại từ bước lỗi → nút chỉ là "Chạy lại" toàn bộ (`useRunWorkflow`), lời giải thích nói rõ chạy lại từ đầu.
+- `workflows/[id].tsx` theo `MWorkflow`: header (quay lại, sáng/tối, chuông, "Thêm thao tác" mở sheet Xuất bản/Xóa), tên + trạng thái chữ (Đang bật / Đã tắt / Bản nháp) + công tắc bật/tắt (`usePauseWorkflow`/`useResumeWorkflow`, khóa nếu thiếu quyền), hai nút "Chạy ngay" (hoặc "Xuất bản" nếu là bản nháp) và "Tạo bằng AI" (mở màn tạo bằng AI; backend chỉ có tạo mới, KHÔNG có sửa quy trình đã có), thanh 2 đoạn "Các bước" / "Lượt chạy". "Các bước": thẻ có ô icon + "Khi nào chạy / Bước N" + tên, nối bằng vạch; dưới là ghi chú "chỉ sửa được trên web" và thẻ "Điều kiện kích hoạt" (giữ nguyên `TriggerList` vì có lý do + cách sửa). "Lượt chạy": thẻ danh sách giờ (mono) + thời lượng + pill, bấm mở chi tiết.
+  - Bỏ: dòng "312 lượt trong 7 ngày" (không có API).
+- Thành phần mới: `Disclosure`, `NodeTile`, `FlowCards`; `NodeTimeline` viết lại (vẫn đúng props cũ).
+- i18n: `rd.*` (i18n.runs.ts), `wfd.*` mới (i18n.workflows.ts); `i18n.screens.test.cjs` thêm 4 file; `node-error.test.cjs` thêm test `failureAction` và test cặp ngôn ngữ `rd.*`.
+- Impact: ExecutionDetailScreen, WorkflowDetailScreen, nodeErrorSummary LOW; NodeTimeline UNKNOWN (ambiguous), đã grep: chỉ `executions/[workflowId]/[executionId].tsx` dùng.
+- Lệnh: `npx tsc --noEmit -p .` sạch; `node --test "src/**/*.test.cjs"` 248/248.
+- Rủi ro/việc cho thiết bị: nhấn bước trong thẻ có JsonViewer lồng (nút lồng trong Pressable) cần thử trên máy; `Ellipsis` icon của lucide 1.34.
+
+### Lane 2.6: Tài khoản "Tôi" (xong, chưa kiểm thiết bị)
+- `(tabs)/profile.tsx` viết lại theo `MProfile`: tiêu đề "Tài khoản" + sáng/tối + chuông; thẻ hồ sơ (ảnh 64 có nút máy ảnh góc dưới để đổi ảnh, tên, email, "Chủ không gian/Thành viên · tên nhóm", nút chữ "Xóa ảnh đại diện" khi có ảnh); "Thông tin cá nhân" (tên, email khóa màu xám + ghi chú "Email không đổi được.", nút Lưu ink); "Công việc" (Không gian làm việc, Lời mời vào nhóm với badge số + dòng "A mời bạn vào nhóm B", Kết nối dịch vụ, Tạo quy trình bằng AI, Trợ lý); "Giao diện" (Sáng / Tối / Theo điện thoại và Tiếng Việt / English bằng `SegmentedControl`); "Bảo mật" (mở màn mật khẩu và thiết bị); Đăng xuất (có xác nhận như cũ).
+- Giữ nguyên toàn bộ logic: `useProfile`, tải/xóa ảnh (`ImagePicker`, `checkAvatarImage`), lưu tên, đăng xuất, testID `profile-display-name`.
+- Vai trò: `Workspace` không có trường role, nên "Chủ không gian" suy ra từ `workspace.createdBy === user.id`.
+- Phụ: `TextField` ô khóa (`editable=false`) có nền xám + chữ nhạt; `Avatar` dùng font SemiBold; i18n `prof.*` mới (`prof.title`, `prof.role.line`, `prof.ws.*`, `prof.inv*`).
+- Impact: ProfileScreen LOW; `TextField` CRITICAL theo đồ thị (9 file dùng), nhưng chỉ đổi giao diện ô khóa, chữ ký không đổi; Avatar UNKNOWN (ambiguous), chỉ đổi font.
+- Lệnh: `npx tsc --noEmit -p .` sạch; `node --test "src/**/*.test.cjs"` 248/248 (i18n.screens thêm profile).
+
+### Lane 2.7: Thông báo + dọn font (xong, chưa kiểm thiết bị)
+- `app/(app)/notifications.tsx` (đã chuyển khỏi tab ở lane 2.1) theo `MNotifications`: header có nút quay lại, tiêu đề, sáng/tối (`ThemeToggleButton` tách ra từ `HeaderActions`), nút "đánh dấu tất cả đã đọc"; thanh 2 đoạn "Tất cả / Chưa đọc (n)"; giữ chip lọc theo nhóm (workflow/workspace/kết nối/bảo mật) bên dưới; nhóm theo ngày; mỗi thông báo là thẻ bo 12 có icon tròn theo mức độ, tiêu đề đậm + chấm xanh nếu chưa đọc, nội dung, thời gian mono. Giữ nguyên toàn bộ logic mở/đánh dấu đọc, banner lỗi, phân trang, testID.
+- Chưa làm: nút "Chấp nhận / Từ chối" ngay trong thẻ lời mời (thông báo không mang `invitationId`, lời mời xử lý ở màn Lời mời, bấm thông báo sẽ mở màn đó nếu target cho phép).
+- Dọn font: thay `fontWeight` rời ở 15 file còn lại bằng `FontFamily.*` (Android không tổng hợp độ đậm cho font tùy chỉnh): ListItem, ToastContainer, Logo, FlowList, TriggerList, MemberCard, OwnerInvitations, ConnectionCard, MessageText, invitations, workspace, ai/generator, lookup, login, register. Không còn `fontWeight` ngoài `themed-text.tsx` (file mẫu Expo không dùng).
+- Impact: NotificationsScreen LOW. Lệnh: `npx tsc --noEmit -p .` sạch; `node --test "apps/mobile/src/**/*.test.cjs"` 248/248.
+
+### Tổng kết mobile v2 (chưa kiểm thiết bị, chưa push)
+- Việc cần máy thật: thanh dưới + `router.navigate` từ màn chi tiết về tab; phím tắt Home (`filter`, `segment`); công tắc quy trình; chọn ảnh đại diện; JsonViewer lồng trong bước; hiển thị font Be Vietnam Pro trên Android; kiểm tương phản bằng mắt ở chế độ tối.
+- Câu hỏi cho chủ dự án: (1) nhóm việc của mẫu suy từ trigger vì API không có category; (2) hàng "Của nhóm" không có dãy ô bước vì danh sách không trả bước; (3) bỏ bộ chọn lọc theo quy trình ở Lịch sử (ô tìm kiếm thay thế); (4) nút trợ lý chuyển từ header Lịch sử sang mục Công việc ở "Tôi".

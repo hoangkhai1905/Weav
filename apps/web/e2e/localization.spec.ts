@@ -134,9 +134,7 @@ test.describe('Vietnamese and English web localization', () => {
   test('localizes login, registration, and password recovery in Vietnamese', async ({ page }) => {
     await page.addInitScript(() => (globalThis as unknown as BrowserContext).localStorage.setItem('weav_lang_v1', 'VI'));
     await page.goto('/login');
-    await expect(page.getByRole('heading', { name: 'Chào mừng trở lại', exact: true })).toBeVisible();
-    await expect(page.getByText('Ghi nhớ đăng nhập', { exact: true })).toBeVisible();
-    await expect(page.getByText('Trình thiết kế quy trình AI', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Đăng nhập', exact: true })).toBeVisible();
     await expect(page.getByRole('img', { name: 'Biểu trưng WEAV' })).toBeVisible();
     await expect(page.locator('body')).toContainText('Nền tảng tự động hóa bằng AI');
 
@@ -162,17 +160,17 @@ test.describe('Vietnamese and English web localization', () => {
 
   test('keeps every existing web screen in its selected locale', async ({ page }) => {
     const screens = [
-      { path: '/login', vi: 'Chào mừng trở lại', en: 'Welcome back' },
+      { path: '/login', vi: 'Tiếp tục với các quy trình của nhóm bạn.', en: "Continue with your team's workflows." },
       { path: '/register', vi: 'Tạo tài khoản mới', en: 'Create your Account' },
       { path: '/forgot-password', vi: 'Đặt lại mật khẩu', en: 'Reset your password' },
-      { path: '/dashboard', vi: 'Thao tác nhanh', en: 'Quick actions' },
-      { path: '/workflows', vi: 'Danh sách quy trình', en: 'Workflows' },
+      { path: '/dashboard', vi: 'Bắt đầu nhanh', en: 'Quick start' },
+      { path: '/workflows', vi: 'Quy trình làm gì', en: 'What it does' },
       { path: '/workflows/new', vi: 'Tạo quy trình', en: 'Create workflow' },
       { path: '/workflows/wf-prod-8492/builder', vi: 'Vừa khung', en: 'Fit View' },
       { path: '/executions', vi: 'Lịch sử chạy quy trình', en: 'Execution History' },
       { path: '/executions/EX-8492', vi: 'Kiểm tra bước', en: 'Step inspector' },
       { path: '/connections', vi: 'Kết nối dịch vụ', en: 'Connections' },
-      { path: '/workspace', vi: 'Quản lý không gian làm việc', en: 'Workspace management' },
+      { path: '/workspace', vi: 'Không gian làm việc', en: 'Workspace' },
       { path: '/notifications', vi: 'Thông báo', en: 'Notifications' },
       { path: '/settings/profile', vi: 'Cài đặt', en: 'Settings' },
       { path: '/ai/workflow-generator', vi: 'Tạo bằng AI', en: 'Create with AI' },
@@ -196,12 +194,6 @@ test.describe('Vietnamese and English web localization', () => {
         await page.goto(screen.path);
         expect(new URL(page.url()).pathname, `${locale} ${screen.path} should stay on the requested screen`).toBe(screen.path);
         await expect(page.locator('body')).toContainText(screen[locale === 'VI' ? 'vi' : 'en']);
-        if (screen.path === '/login') {
-          await expect(page.getByText(locale === 'VI' ? 'Trình thiết kế quy trình AI' : 'AI Workflow Studio', { exact: true })).toBeVisible();
-          await expect(page.locator('body')).toContainText(
-            locale === 'VI' ? 'Nền tảng tự động hóa bằng AI' : 'Built for modern AI engineering',
-          );
-        }
         if (screen.path === '/executions' && locale === 'VI') {
           await expect(page.locator('body')).toContainText('Lịch (hằng ngày)');
         }

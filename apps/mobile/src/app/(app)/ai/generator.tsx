@@ -23,7 +23,7 @@ import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
 import { useUIStore } from '../../../stores/ui.store';
 import { useWorkspaceStore } from '../../../stores/workspace.store';
-import { MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
+import { FontFamily, MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
 import type { ApiError } from '../../../domain/common/error.types';
 import type { AiGenerationResult } from '../../../domain/ai/ai.types';
 import type { WorkflowPublication } from '../../../domain/workflow/workflow.types';
@@ -241,7 +241,7 @@ export default function AiGeneratorScreen() {
           label={save.isError ? t('aig.ready.saveRetry') : t('aig.ready.save')}
           busy={save.isPending}
           disabled={emptyName}
-          icon={<Check size={18} color={colors.onPrimary} />}
+          icon={<Check size={18} color={colors.onButton} />}
           onPress={() => void saveDraft(result)}
         />
         <Button label={t('aig.regenerate')} variant="secondary" onPress={() => void run(collected)} />
@@ -298,7 +298,7 @@ export default function AiGeneratorScreen() {
     <SafeAreaView edges={['top', 'bottom']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={t('aig.title')} onBack={back} />
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {body}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -351,7 +351,7 @@ const GeneratingProgress: React.FC = () => {
               <Text
                 style={[
                   Typography.body,
-                  { color: active ? colors.text : done ? colors.textMuted : colors.textSubtle, fontWeight: active ? '700' : '400' },
+                  { color: active ? colors.text : done ? colors.textMuted : colors.textSubtle, fontFamily: active ? FontFamily.bold : FontFamily.regular },
                 ]}
               >
                 {t(`aig.stage.${i + 1}`)}

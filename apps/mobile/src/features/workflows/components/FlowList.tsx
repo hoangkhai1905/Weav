@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
-import { Fonts, Spacing, Typography } from '../../../constants/theme';
+import { FontFamily, Fonts, Spacing, Typography } from '../../../constants/theme';
 import type { Workflow } from '../../../domain/workflow/workflow.types';
 import { fill } from '../../common/fill';
 import { nodeTypeFallback, orderFlowNodes } from '../workflow-flow';
@@ -59,5 +59,5 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: Spacing.three },
   num: { width: 20, textAlign: 'right' },
   body: { flex: 1, gap: Spacing.half, paddingBottom: Spacing.three },
-  label: { fontWeight: '500' },
+  label: { fontFamily: FontFamily.medium },
 });

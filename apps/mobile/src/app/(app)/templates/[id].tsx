@@ -72,7 +72,7 @@ export default function TemplateDetailScreen() {
     const reconnect = reconnectCount(template.nodes);
     body = (
       <>
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
           refreshControl={
             <RefreshControl
@@ -154,7 +154,7 @@ export default function TemplateDetailScreen() {
   }
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={[styles.safe, { backgroundColor: colors.bg }]}>
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={t('tpl.detail.title')} onBack={goBack} />
       {body}
     </SafeAreaView>

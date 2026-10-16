@@ -251,7 +251,7 @@ test.describe('web password recovery HTTP integration', () => {
     await requestStarted;
     await page.goto('/login');
     resolveRequest?.();
-    await expect(page.getByText('Welcome back')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sign In', exact: true })).toBeVisible();
     await expect(page.getByText('If the account is eligible, recovery instructions may be sent to the account email.')).toHaveCount(0);
   });
 });

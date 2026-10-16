@@ -20,6 +20,11 @@ for (const mode of ['light', 'dark']) {
       assert.ok(ratio(c.fg, p.card) >= 4.5, `${mode} ${tone} on card: ${ratio(c.fg, p.card).toFixed(2)}`);
     }
   });
+  test(`${mode}: step-type text >= 4.5 on its tile background`, () => {
+    for (const [kind, c] of Object.entries(p.steps)) {
+      assert.ok(ratio(c.fg, c.bg) >= 4.5, `${mode} step ${kind}: ${ratio(c.fg, c.bg).toFixed(2)}`);
+    }
+  });
   test(`${mode}: body text, muted text, primary button >= 4.5`, () => {
     for (const bg of [p.bg, p.card, p.cardSecondary]) {
       assert.ok(ratio(p.text, bg) >= 4.5);
@@ -28,5 +33,6 @@ for (const mode of ['light', 'dark']) {
     }
     assert.ok(ratio(p.onPrimary, p.primary) >= 4.5, `onPrimary ${ratio(p.onPrimary, p.primary).toFixed(2)}`);
     assert.ok(ratio(p.primary, p.card) >= 4.5, 'primary link text on card');
+    assert.ok(ratio(p.onButton, p.button) >= 4.5, `onButton ${ratio(p.onButton, p.button).toFixed(2)}`);
   });
 }

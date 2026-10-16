@@ -8,6 +8,6 @@ export const TONE_CLASS: Record<StatusTone, string> = {
   pause: 'bg-pause-bg text-pause',
 };
 
-/** Flat status pill: 20px tall, dot + label, colour carries the meaning. */
+/** Flat status pill: 22px tall, fully rounded, dot + label, colour carries the meaning. */
 export const statusBadgeClass = (tone: StatusTone) =>
-  `inline-flex h-5 items-center gap-[5px] whitespace-nowrap rounded px-1.5 text-xs font-medium before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] ${TONE_CLASS[tone]}`;
+  `inline-flex h-[22px] items-center gap-1.5 whitespace-nowrap rounded-full px-2 text-xs font-medium before:h-1.5 before:w-1.5 before:rounded-full before:bg-current before:content-[''] ${TONE_CLASS[tone]}`;

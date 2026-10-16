@@ -69,7 +69,7 @@ export default function AssistantChatScreen() {
     <SafeAreaView edges={['top', 'bottom']} style={[styles.safe, { backgroundColor: colors.bg }]}>
       <ScreenHeader title={history.data?.title || t('asst.title')} onBack={back} />
       <KeyboardAvoidingView style={styles.flex} behavior="padding">
-        <ScrollView
+        <ScrollView showsVerticalScrollIndicator={false}
           ref={scroller}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
@@ -143,9 +143,9 @@ export default function AssistantChatScreen() {
             accessibilityState={{ disabled: chat.sending || !text.trim() }}
             disabled={chat.sending || !text.trim()}
             onPress={() => submit(text)}
-            style={[styles.send, { backgroundColor: colors.primary, opacity: chat.sending || !text.trim() ? 0.5 : 1 }]}
+            style={[styles.send, { backgroundColor: colors.button, opacity: chat.sending || !text.trim() ? 0.5 : 1 }]}
           >
-            <Send size={20} color={colors.onPrimary} />
+            <Send size={20} color={colors.onButton} />
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -170,11 +170,11 @@ const Bubble: React.FC<{ role: 'user' | 'assistant'; content: string; streaming?
         style={[
           styles.bubble,
           mine
-            ? { backgroundColor: colors.primary }
+            ? { backgroundColor: colors.button }
             : { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 },
         ]}
       >
-        <MessageText content={content} color={mine ? colors.onPrimary : colors.text} />
+        <MessageText content={content} color={mine ? colors.onButton : colors.text} />
       </View>
     </View>
   );

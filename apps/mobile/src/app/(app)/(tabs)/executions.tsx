@@ -1,94 +1,116 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { Activity, ChevronDown, MessageCircle } from 'lucide-react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Activity, ChevronRight } from 'lucide-react-native';
+import { format } from 'date-fns';
 import { useExecutions } from '../../../features/executions/hooks/useExecutions';
+import { RUN_FILTERS, filterRuns, parseRunFilter, type RunFilter } from '../../../features/executions/run-list';
 import { useWorkflowNames } from '../../../features/workflows/hooks/useWorkflows';
+import { groupByDay, type DayGroup } from '../../../features/notifications/notification.grouping';
 import { fill } from '../../../features/common/fill';
-import { durationBetween, formatRelativeTime } from '../../../features/common/time';
+import { durationBetween, formatHourMinute, formatRelativeTime } from '../../../features/common/time';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { ErrorState } from '../../../components/ui/ErrorState';
 import { FilterChips, type ChipOption } from '../../../components/ui/FilterChips';
-import { ListItem } from '../../../components/ui/ListItem';
+import { HeaderActions } from '../../../components/ui/HeaderActions';
 import { ListSkeleton } from '../../../components/ui/ListSkeleton';
-import { ScreenHeader } from '../../../components/ui/ScreenHeader';
-import { Sheet } from '../../../components/ui/Sheet';
+import { SearchField } from '../../../components/ui/SearchField';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
+import { TriggerTile } from '../../../components/ui/TriggerTile';
 import { formatDuration } from '../../../components/ui/status';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
-import { MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
+import { FontFamily, Radius, Spacing, Typography } from '../../../constants/theme';
 import type { ApiError } from '../../../domain/common/error.types';
-import type { ExecutionStatus, ExecutionSummary } from '../../../domain/execution/execution.types';
-
-type StatusFilter = 'ALL' | ExecutionStatus;
-const STATUS_FILTERS: StatusFilter[] = ['ALL', 'RUNNING', 'QUEUED', 'WAITING', 'SUCCESS', 'FAILED', 'CANCELLED'];
+import type { ExecutionSummary } from '../../../domain/execution/execution.types';
 
 export default function ExecutionsScreen() {
   const router = useRouter();
   const colors = useThemeColors();
   const { t, language } = useTranslation();
+  const params = useLocalSearchParams<{ filter?: string }>();
   const query = useExecutions();
   const names = useWorkflowNames();
-  const [status, setStatus] = useState<StatusFilter>('ALL');
-  const [workflowId, setWorkflowId] = useState<string | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [filter, setFilter] = useState<RunFilter>('all');
+  const [search, setSearch] = useState('');
+
+  // Home links here with `filter=failed` / `running`. The tab stays mounted, so read the parameter
+  // whenever it arrives and clear it so the same shortcut works again later.
+  useEffect(() => {
+    if (params.filter !== undefined) {
+      setFilter(parseRunFilter(params.filter));
+      router.setParams({ filter: undefined });
+    }
+  }, [params.filter, router]);
 
   const all = query.data ?? [];
   const nameOf = (id: string) => names.get(id) ?? t('exl.unknownWorkflow');
 
-  const workflowOptions = Array.from(new Set(all.map((e) => e.workflowId))).map((id) => ({ id, name: nameOf(id) }));
+  const visible = useMemo(() => filterRuns(all, filter, search, nameOf), [all, filter, search, names]);
+  const groups = useMemo(() => groupByDay(visible, (run) => run.createdAt), [visible]);
 
-  const visible = useMemo(
-    () => all.filter((e) => (status === 'ALL' || e.status === status) && (!workflowId || e.workflowId === workflowId)),
-    [all, status, workflowId],
-  );
-
-  const chips: ChipOption<StatusFilter>[] = STATUS_FILTERS.map((value) => ({
+  const chips: ChipOption<RunFilter>[] = RUN_FILTERS.map((value) => ({
     value,
-    label: value === 'ALL' ? t('ui.filter.all') : t(`status.${value}`),
+    label: t(`rl.filter.${value}`),
+    count: filterRuns(all, value, search, nameOf).length,
   }));
 
   const clearFilters = () => {
-    setStatus('ALL');
-    setWorkflowId(null);
+    setFilter('all');
+    setSearch('');
   };
 
-  const renderItem = ({ item }: { item: ExecutionSummary }) => {
-    const duration = formatDuration(item.durationMs ?? durationBetween(item.startedAt, item.finishedAt));
+  const dayLabel = (group: DayGroup<ExecutionSummary>) =>
+    group.bucket === 'today' ? t('ntf.today') : group.bucket === 'yesterday' ? t('ntf.yesterday') : format(group.date, 'dd/MM/yyyy');
+
+  const renderRun = (run: ExecutionSummary, last: boolean) => {
+    const active = run.status === 'QUEUED' || run.status === 'RUNNING' || run.status === 'WAITING';
+    const duration = run.durationMs ?? durationBetween(run.startedAt, run.finishedAt);
+    const when = `${formatHourMinute(run.createdAt)} · ${active ? t('rl.inProgress') : formatDuration(duration)}`;
     return (
-      <ListItem
-        title={nameOf(item.workflowId)}
-        subtitle={`${t(`execution.trigger.${item.triggerType}`)} · ${duration}`}
-        meta={formatRelativeTime(item.createdAt, language)}
-        trailing={<StatusBadge status={item.status} />}
+      <Pressable
+        key={run.executionId}
+        testID={`run-row-${run.executionId}`}
+        accessibilityRole="button"
+        accessibilityLabel={fill(t('rl.open'), { name: nameOf(run.workflowId), time: formatRelativeTime(run.createdAt, language) })}
         accessibilityHint={t('exl.item.hint')}
-        onPress={() => router.push(`/(app)/executions/${item.workflowId}/${item.executionId}`)}
-      />
+        onPress={() => router.push(`/(app)/executions/${run.workflowId}/${run.executionId}`)}
+        style={({ pressed }) => [
+          styles.row,
+          !last && { borderBottomWidth: 1, borderBottomColor: colors.border },
+          pressed && { backgroundColor: colors.cardSecondary },
+        ]}
+      >
+        <TriggerTile type={run.triggerType} />
+        <View style={styles.rowText}>
+          <Text numberOfLines={1} style={[Typography.body, { color: colors.text, fontFamily: FontFamily.medium }]}>
+            {nameOf(run.workflowId)}
+          </Text>
+          <Text style={[Typography.mono, { color: colors.textSubtle }]}>{when}</Text>
+        </View>
+        <StatusBadge status={run.status} />
+        <ChevronRight size={16} strokeWidth={1.75} color={colors.textSubtle} />
+      </Pressable>
     );
   };
 
   const header = (
-    <View style={[styles.controls, { borderBottomColor: colors.border }]}>
-      <FilterChips<StatusFilter> options={chips} value={status} onChange={setStatus} accessibilityLabel={t('exl.filter.status')} />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${t('exl.filter.workflow')}: ${workflowId ? nameOf(workflowId) : t('exl.filter.allWorkflows')}`}
-        onPress={() => setPickerOpen(true)}
-        style={[styles.picker, { backgroundColor: colors.card, borderColor: colors.border }]}
-      >
-        <Text numberOfLines={1} style={[Typography.body, styles.pickerText, { color: colors.text }]}>
-          {workflowId ? nameOf(workflowId) : t('exl.filter.allWorkflows')}
-        </Text>
-        <ChevronDown size={18} color={colors.textMuted} />
-      </Pressable>
+    <View style={styles.controls}>
+      <View style={styles.field}>
+        <SearchField
+          testID="runs-search"
+          value={search}
+          onChangeText={setSearch}
+          placeholder={t('rl.search.placeholder')}
+          accessibilityLabel={t('rl.search.label')}
+        />
+      </View>
+      <FilterChips<RunFilter> options={chips} value={filter} onChange={setFilter} accessibilityLabel={t('rl.filter.label')} />
     </View>
   );
 
-  const footer = (
-    <Text style={[Typography.caption, styles.note, { color: colors.textSubtle }]}>{t('exl.note')}</Text>
-  );
+  const footer = <Text style={[Typography.caption, styles.note, { color: colors.textSubtle }]}>{t('exl.note')}</Text>;
 
   let body: React.ReactNode;
   if (query.isPending) {
@@ -108,9 +130,19 @@ export default function ExecutionsScreen() {
   } else {
     body = (
       <FlatList
-        data={visible}
-        keyExtractor={(e) => e.executionId}
-        renderItem={renderItem}
+        showsVerticalScrollIndicator={false}
+        data={groups}
+        keyExtractor={(g) => g.key}
+        renderItem={({ item: group }) => (
+          <View style={styles.group}>
+            <Text accessibilityRole="header" style={[styles.day, { color: colors.textSubtle }]}>
+              {dayLabel(group)}
+            </Text>
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {group.items.map((run, i) => renderRun(run, i === group.items.length - 1))}
+            </View>
+          </View>
+        )}
         ListHeaderComponent={header}
         ListFooterComponent={footer}
         ListEmptyComponent={
@@ -122,6 +154,7 @@ export default function ExecutionsScreen() {
           />
         }
         contentContainerStyle={styles.list}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={query.isRefetching} onRefresh={() => void query.refetch()} tintColor={colors.primary} />
         }
@@ -131,82 +164,36 @@ export default function ExecutionsScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: colors.bg }]}>
-      <ScreenHeader
-        title={t('exl.title')}
-        subtitle={query.data ? fill(t('exl.count'), { n: visible.length }) : undefined}
-        trailing={
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('asst.open')}
-            onPress={() => router.push('/(app)/assistant')}
-            style={styles.assistant}
-          >
-            <MessageCircle size={22} color={colors.primary} />
-          </Pressable>
-        }
-      />
+      <View style={styles.header}>
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>
+          {t('exl.title')}
+        </Text>
+        <HeaderActions />
+      </View>
       {body}
-      <Sheet visible={pickerOpen} onClose={() => setPickerOpen(false)} title={t('exl.filter.pick')}>
-        <WorkflowChoice
-          label={t('exl.filter.allWorkflows')}
-          selected={workflowId === null}
-          onPress={() => {
-            setWorkflowId(null);
-            setPickerOpen(false);
-          }}
-        />
-        {workflowOptions.map((o) => (
-          <WorkflowChoice
-            key={o.id}
-            label={o.name}
-            selected={workflowId === o.id}
-            onPress={() => {
-              setWorkflowId(o.id);
-              setPickerOpen(false);
-            }}
-          />
-        ))}
-      </Sheet>
     </SafeAreaView>
   );
 }
 
-const WorkflowChoice: React.FC<{ label: string; selected: boolean; onPress: () => void }> = ({ label, selected, onPress }) => {
-  const colors = useThemeColors();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={[styles.choice, { backgroundColor: selected ? colors.cardSecondary : colors.card, borderBottomColor: colors.border }]}
-    >
-      <Text style={[Typography.body, { color: colors.text, fontWeight: selected ? '600' : '400' }]}>{label}</Text>
-    </Pressable>
-  );
-};
-
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  list: { paddingBottom: Spacing.five },
-  controls: { gap: Spacing.two, paddingVertical: Spacing.three, borderBottomWidth: 1 },
-  picker: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
-    minHeight: MinTouch,
-    marginHorizontal: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    borderWidth: 1,
-    borderRadius: Radius.md,
+    gap: Spacing.one,
+    paddingLeft: Spacing.three,
+    paddingRight: Spacing.two,
+    paddingTop: Spacing.two,
+    paddingBottom: Spacing.one,
   },
-  pickerText: { flex: 1 },
-  assistant: { width: MinTouch, height: MinTouch, alignItems: 'center', justifyContent: 'center' },
-  note: { textAlign: 'center', paddingTop: Spacing.three },
-  choice: {
-    minHeight: MinTouch,
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.three,
-    borderBottomWidth: 1,
-  },
+  title: { flex: 1, fontFamily: FontFamily.semibold, fontSize: 24, lineHeight: 30, letterSpacing: -0.4 },
+  list: { paddingBottom: Spacing.four },
+  controls: { gap: Spacing.one, paddingTop: Spacing.two, paddingBottom: Spacing.one },
+  field: { paddingHorizontal: Spacing.three, paddingBottom: Spacing.one },
+  group: { paddingHorizontal: Spacing.three },
+  day: { fontFamily: FontFamily.semibold, fontSize: 13, lineHeight: 18, paddingTop: 12, paddingBottom: 8, paddingHorizontal: 2 },
+  card: { borderWidth: 1, borderRadius: Radius.lg, overflow: 'hidden' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, paddingVertical: 10, paddingLeft: 14, paddingRight: 12 },
+  rowText: { flex: 1, minWidth: 0, gap: 2 },
+  note: { textAlign: 'center', paddingTop: Spacing.three, paddingHorizontal: Spacing.three },
 });

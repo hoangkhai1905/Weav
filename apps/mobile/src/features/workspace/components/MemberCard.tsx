@@ -7,7 +7,7 @@ import { Button } from '../../../components/ui/Button';
 import { SwitchRow } from '../../../components/ui/SwitchRow';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
-import { Radius, Spacing, Typography } from '../../../constants/theme';
+import { FontFamily, Radius, Spacing, Typography } from '../../../constants/theme';
 
 interface MemberCardProps {
   member: WorkspaceMember;
@@ -55,7 +55,7 @@ export const MemberCard: React.FC<MemberCardProps> = ({
               : { backgroundColor: colors.cardSecondary, borderColor: colors.border },
           ]}
         >
-          <Text style={[Typography.caption, { color: owner ? colors.primary : colors.textMuted, fontWeight: '600' }]}>
+          <Text style={[Typography.caption, { color: owner ? colors.primary : colors.textMuted, fontFamily: FontFamily.semibold }]}>
             {t(owner ? 'ws.role.owner' : 'ws.role.member')}
           </Text>
         </View>
@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
   card: { gap: Spacing.two, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.md },
   top: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   who: { flex: 1, gap: Spacing.half },
-  name: { fontWeight: '600' },
+  name: { fontFamily: FontFamily.semibold },
   role: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.half, borderWidth: 1, borderRadius: Radius.sm },
   controls: { gap: Spacing.one, paddingTop: Spacing.one },
 });

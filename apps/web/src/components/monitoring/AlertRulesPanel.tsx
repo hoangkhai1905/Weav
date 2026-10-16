@@ -34,7 +34,7 @@ const EMPTY_FORM: FormState = {
   enabled: true,
 };
 
-const fieldCls = 'h-8 w-full rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary';
+const fieldCls = 'h-8 w-full rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none focus:border-ring focus:ring-1 focus:ring-ring';
 const btnCls = 'inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border-strong bg-card px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
 
 function errorText(error: unknown, fallback: string): string {

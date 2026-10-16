@@ -13,7 +13,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { AuthShell } from '../../components/ui/AuthShell';
 import { TextField } from '../../components/ui/TextField';
 import { Button } from '../../components/ui/Button';
-import { MinTouch, Spacing, Typography } from '../../constants/theme';
+import { FontFamily, MinTouch, Spacing, Typography } from '../../constants/theme';
 
 type Errors = { email?: string; password?: string };
 
@@ -106,7 +106,7 @@ export default function LoginScreen() {
       {general ? (
         <Text accessibilityRole="alert" style={[Typography.caption, { color: colors.danger }]}>{general}</Text>
       ) : null}
-      <Button label={t('au.signIn')} icon={<LogIn size={18} color={colors.onPrimary} />} busy={loading} disabled={googleBusy} onPress={() => { void handleLogin(); }} />
+      <Button label={t('au.signIn')} icon={<LogIn size={18} color={colors.onButton} />} busy={loading} disabled={googleBusy} onPress={() => { void handleLogin(); }} />
       {googleSignInAvailable ? (
         <>
           <Text style={[Typography.caption, styles.or, { color: colors.textMuted }]}>{t('au.or')}</Text>
@@ -136,7 +136,7 @@ export default function LoginScreen() {
         style={styles.link}
       >
         <Text style={[Typography.body, { color: colors.textMuted }]}>
-          {t('au.noAccount')} <Text style={{ color: colors.primary, fontWeight: '600' }}>{t('au.register')}</Text>
+          {t('au.noAccount')} <Text style={{ color: colors.primary, fontFamily: FontFamily.semibold }}>{t('au.register')}</Text>
         </Text>
       </Pressable>
     </AuthShell>

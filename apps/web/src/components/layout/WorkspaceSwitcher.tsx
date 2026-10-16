@@ -35,8 +35,8 @@ export function WorkspaceSwitcher({ compact = false }: { compact?: boolean }) {
 
   if (workspaces.length > 0 && compact) {
     return (
-      <div className="relative flex h-9 w-full items-center justify-center rounded-md transition-colors focus-within:ring-2 focus-within:ring-ring hover:bg-subtle" title={active?.name}>
-        <span aria-hidden="true" className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-foreground text-[11px] font-semibold text-background">
+      <div className="relative flex h-11 w-full items-center justify-center rounded-lg border border-border bg-card transition-colors focus-within:ring-2 focus-within:ring-ring hover:bg-subtle" title={active?.name}>
+        <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-md bg-t-action-bg text-[11px] font-semibold text-t-action">
           {initialsOf(active?.name ?? '') || 'W'}
         </span>
         <label className="sr-only" htmlFor="topbar-workspace-selector">{t('topbar.select_workspace')}</label>
@@ -61,15 +61,15 @@ export function WorkspaceSwitcher({ compact = false }: { compact?: boolean }) {
   if (workspaces.length > 0) {
     return (
       <div className="min-w-0">
-        <div className="relative flex h-9 items-center gap-2 rounded-md px-2 transition-colors focus-within:ring-2 focus-within:ring-ring hover:bg-subtle">
+        <div className="relative flex h-11 items-center gap-2.5 rounded-lg border border-border bg-card px-[7px] transition-colors focus-within:ring-2 focus-within:ring-ring hover:bg-subtle">
           <span
             aria-hidden="true"
-            className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-foreground text-[11px] font-semibold text-background"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-t-action-bg text-[11px] font-semibold text-t-action"
           >
             {initialsOf(active?.name ?? '') || 'W'}
           </span>
-          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">{active?.name}</span>
-          <ChevronsUpDown size={14} aria-hidden="true" className="shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{active?.name}</span>
+          <ChevronsUpDown size={16} strokeWidth={1.75} aria-hidden="true" className="shrink-0 text-muted-foreground" />
           <label className="sr-only" htmlFor="topbar-workspace-selector">
             {t('topbar.select_workspace')}
           </label>

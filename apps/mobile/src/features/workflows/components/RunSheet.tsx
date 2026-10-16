@@ -67,12 +67,12 @@ export const RunSheet: React.FC<RunSheetProps> = ({ visible, value, onChange, bu
         accessibilityState={{ disabled: !canSubmit, busy }}
         disabled={!canSubmit}
         onPress={() => parsed.ok && onSubmit(parsed.value)}
-        style={[styles.submit, { backgroundColor: colors.primary, opacity: canSubmit ? 1 : 0.5 }]}
+        style={[styles.submit, { backgroundColor: colors.button, opacity: canSubmit ? 1 : 0.5 }]}
       >
         {busy ? (
-          <ActivityIndicator color={colors.onPrimary} />
+          <ActivityIndicator color={colors.onButton} />
         ) : (
-          <Text style={[Typography.label, { color: colors.onPrimary }]}>{t('run.submit')}</Text>
+          <Text style={[Typography.label, { color: colors.onButton }]}>{t('run.submit')}</Text>
         )}
       </Pressable>
     </Sheet>
