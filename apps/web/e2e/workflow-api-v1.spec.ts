@@ -231,3 +231,25 @@ test('execution detail renders service node results and logs, without falling ba
   await expect(page.getByRole('main').nth(1)).toContainText('fixture failure');
   await expect(page.getByText('Order processing & notification', { exact: true })).toHaveCount(0);
 });
+
+test('manual run answered 429 MANUAL_RUN_LIMIT_EXCEEDED shows the run-limit text, not the generic rate-limit text', async ({ page }) => {
+  await page.route(`**/api/v1/workspaces/${workspaceId}/workflows?page=0&size=100`, (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ items: [{ workflowId, name: 'Real API workflow', status: 'PUBLISHED' }], page: 0, size: 100, totalElements: 1 }),
+  }));
+  await page.route(`**/api/v1/workspaces/${workspaceId}/workflows/${workflowId}/executions`, (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    return route.fulfill({
+      status: 429,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'MANUAL_RUN_LIMIT_EXCEEDED', message: 'Too many runs in progress', details: [] } }),
+    });
+  });
+
+  await page.goto('/workflows');
+  await page.getByRole('button', { name: 'Run workflow: Real API workflow' }).click();
+
+  await expect(page.getByText('This workflow already has too many runs in progress. Try again when one finishes.')).toBeVisible();
+  await expect(page.getByText('You are doing that too fast')).toHaveCount(0);
+});
