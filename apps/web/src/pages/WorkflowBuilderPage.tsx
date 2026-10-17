@@ -82,7 +82,7 @@ import { storeOAuthPendingContext } from '../lib/oauthPending';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG, nextNodeId, nodeSourcePorts } from '../lib/constants/nodeCatalog';
-import { getNodeReadinessBadge, isConditionComplete } from '../lib/nodeReadiness';
+import { getNodeReadinessBadge, isConditionComplete, missingFieldLabels } from '../lib/nodeReadiness';
 import { SchemaField } from '../components/builder/SchemaField';
 import { AdvancedSection } from '../components/builder/AdvancedSection';
 import { FieldShell } from '../components/builder/FieldShell';
@@ -105,7 +105,7 @@ import { fileSources, pathLabel, upstreamGroups, useFieldTarget } from '../lib/v
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
 import { definitionToCanvas, WorkflowApiError, type GenerationResponse } from '../api/workflow-v1.api';
-import { describeIssues, type WorkflowIssue } from '../lib/publishErrors';
+import { describeIssues, fieldErrorsByStep, type WorkflowIssue } from '../lib/publishErrors';
 import { workflowToReactFlow, reactFlowToWorkflow } from '../lib/mappers/workflowMapper';
 import type { WorkflowDefinition } from '../types/workflow.types';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
@@ -533,6 +533,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   const selectedNodeReadinessMessage = selectedNode
     ? getNodeReadinessMessage(selectedNodeType, selectedNodeConfig, t, attachableConnectionIds, ocrSources)
     : undefined;
+  const selectedMissingFields = selectedNode ? missingFieldLabels(selectedNodeType, selectedNodeConfig, t) : [];
   const isUnsupportedNode = Boolean(selectedNodeType) && !SUPPORTED_NODE_TYPES.has(selectedNodeType);
   const isGoogleSheetsNode = selectedNodeType === 'google.sheets';
   const isGoogleDocsNode = selectedNodeType === 'google.docs';
@@ -580,7 +581,9 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [isSavingWorkflow, setIsSavingWorkflow] = useState(false);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   // Validation issues of the last rejected save/publish, kept together with the message they belong to.
-  const [issueState, setIssueState] = useState<{ message: string; issues: WorkflowIssue[] } | null>(null);
+  // `fields`: the issue text of each step's config fields that the issues name (opens their "Thêm tùy chọn" section).
+  const [issueState, setIssueState] = useState<{ message: string; issues: WorkflowIssue[]; fields: Record<string, Record<string, string>> } | null>(null);
+  const selectedFieldErrors = issueState && workflowError === issueState.message && selectedNodeId ? issueState.fields[selectedNodeId] : undefined;
   const [publishedWebhooks, setPublishedWebhooks] = useState<WebhookProvisioning[]>([]);
   const [webhookUnchanged, setWebhookUnchanged] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -744,9 +747,14 @@ export const WorkflowBuilderPage: React.FC = () => {
   /** Shows a failed save/publish; validation details become Vietnamese per-step issues and the first step is selected. */
   const reportWorkflowError = (error: unknown, fallbackKey: string) => {
     if (error instanceof WorkflowApiError && error.details.length > 0) {
-      const issues = describeIssues(error.details, t);
+      const steps = nodes.map((node) => ({
+        id: node.id,
+        type: String(node.data?.nodeType ?? ''),
+        name: node.data?.nameKey ? t(String(node.data.nameKey)) : String(node.data?.name ?? ''),
+      }));
+      const issues = describeIssues(error.details, t, steps);
       const message = t('builder.err.summary');
-      setIssueState({ message, issues });
+      setIssueState({ message, issues, fields: fieldErrorsByStep(error.details, issues) });
       setWorkflowError(message);
       const first = issues.find((issue) => issue.nodeId && nodes.some((node) => node.id === issue.nodeId));
       if (first?.nodeId) focusNode(first.nodeId);
@@ -2055,6 +2063,9 @@ export const WorkflowBuilderPage: React.FC = () => {
               className="border-b border-warn/30 bg-warn-bg px-3 py-2 text-[11px] leading-relaxed text-warn"
             >
               {selectedNodeReadinessMessage}
+              {selectedMissingFields.length > 0 && (
+                <span className="block">{t('builder.readiness.missing').replace('{fields}', selectedMissingFields.join(', '))}</span>
+              )}
               {isUnsupportedNode && <span className="block">{t('builder.cfg.preserved_readonly')}</span>}
             </div>
           )}
@@ -2170,7 +2181,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     return (
                       <>
                         {names.filter((name) => !advancedNames.includes(name)).map(renderField)}
-                        <AdvancedSection key={selectedNodeId} testId="schema-advanced" count={advancedNames.length} defaultOpen={hasValueOrError(advancedNames, selectedNodeConfig)}>
+                        <AdvancedSection key={selectedNodeId} testId="schema-advanced" count={advancedNames.length} defaultOpen={hasValueOrError(advancedNames, selectedNodeConfig, selectedFieldErrors)}>
                           {advancedNames.map(renderField)}
                         </AdvancedSection>
                       </>
@@ -2310,7 +2321,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     />
                     {suggestionsFor('text', true)}
                   </>))}
-                  <AdvancedSection key={`tg-advanced-${selectedNodeId}`} testId="telegram-advanced" count={TELEGRAM_ADVANCED.length} defaultOpen={hasValueOrError(TELEGRAM_ADVANCED, selectedNodeConfig)}>
+                  <AdvancedSection key={`tg-advanced-${selectedNodeId}`} testId="telegram-advanced" count={TELEGRAM_ADVANCED.length} defaultOpen={hasValueOrError(TELEGRAM_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>
                     {TELEGRAM_ADVANCED.map((name) => configField(name))}
                   </AdvancedSection>
                 </div>
@@ -2328,7 +2339,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <MappingTextField key={`${selectedNodeId}-body`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} multiline value={String(selectedNodeConfig.body ?? '')} onChange={(body) => updateSelectedNodeConfig({ body })} groups={inspectorGroups} placeholder={t('builder.cfg.body_placeholder')} />
                   ))}
                   {/* Headers, query parameters and a stored connection are rarely needed: kept under Advanced options. */}
-                  <AdvancedSection key={`http-advanced-${selectedNodeId}`} testId="http-advanced" count={HTTP_ADVANCED.length} defaultOpen={hasValueOrError(HTTP_ADVANCED, withoutEmptyMaps(selectedNodeConfig))}>
+                  <AdvancedSection key={`http-advanced-${selectedNodeId}`} testId="http-advanced" count={HTTP_ADVANCED.length} defaultOpen={hasValueOrError(HTTP_ADVANCED, withoutEmptyMaps(selectedNodeConfig), selectedFieldErrors)}>
                       <KeyValueEditor key={`headers-${selectedNodeId}`} label={t('builder.cfg.http_headers')} testId="http-headers" value={selectedNodeConfig.headers} onChange={(headers) => updateSelectedNodeConfig({ headers })} />
                       <KeyValueEditor key={`query-${selectedNodeId}`} label={t('builder.cfg.http_query')} testId="http-query" value={selectedNodeConfig.query} onChange={(query) => updateSelectedNodeConfig({ query })} />
                       {configField('connectionId', httpConnections)}
@@ -2424,7 +2435,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </>))}
                   {['bodyType', 'cc', 'bcc'].map((name) => configField(name))}
                   <AttachmentsEditor key={`${selectedNodeId}-attachments`} value={selectedNodeConfig.attachments} onChange={(attachments) => updateSelectedNodeConfig({ attachments })} groups={inspectorGroups} />
-                  <AdvancedSection key={`email-advanced-${selectedNodeId}`} testId="email-advanced" count={EMAIL_ADVANCED.length} defaultOpen={hasValueOrError(EMAIL_ADVANCED, selectedNodeConfig)}>
+                  <AdvancedSection key={`email-advanced-${selectedNodeId}`} testId="email-advanced" count={EMAIL_ADVANCED.length} defaultOpen={hasValueOrError(EMAIL_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>
                     {EMAIL_ADVANCED.map((name) => configField(name))}
                   </AdvancedSection>
                 </div>

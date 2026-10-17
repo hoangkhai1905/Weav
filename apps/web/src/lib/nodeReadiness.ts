@@ -1,4 +1,6 @@
 import { NODE_CATALOG } from './constants/nodeCatalog';
+import { fieldCopy } from './fieldCopy';
+import { NODE_SCHEMAS } from './nodeSchemas';
 
 const SUPPORTED_NODE_TYPES = new Set(NODE_CATALOG.map((item) => item.type));
 
@@ -87,6 +89,19 @@ export const isConditionComplete = (config: Record<string, unknown>): boolean =>
     && conditions.every((item: { left?: unknown; operator?: unknown; right?: unknown }) => !isBlank(item?.left) && !isBlank(item?.operator) && !isBlank(item?.right));
 };
 
+/** Fields the step needs before it can be published: the schema's required ones (connectionId has its own state) plus the conditional rules. */
+export const requiredFields = (nodeType: string, config: Record<string, unknown>): string[] => [
+  ...new Set([
+    ...(NODE_SCHEMAS[nodeType]?.required ?? []).filter((name) => name !== 'connectionId'),
+    ...(CONNECTION_NODE_FIELDS[nodeType]?.(config) ?? []),
+    ...(FORMAT_NODE_FIELDS[nodeType]?.(config) ?? []),
+  ]),
+];
+
+/** Plain-language labels of the required fields that are still blank. */
+export const missingFieldLabels = (nodeType: string, config: Record<string, unknown>, t: (key: string) => string): string[] =>
+  requiredFields(nodeType, config).filter((name) => isBlank(config[name])).map((name) => fieldCopy(nodeType, name, t).label);
+
 /**
  * `attachableConnectionIds`: ids of the workspace's ACTIVE connections the user can attach.
  * Leave it undefined while the list is loading so a step is not flagged before we know.
@@ -120,7 +135,7 @@ export const getNodeReadinessBadge = (
   const connectionFields = CONNECTION_NODE_FIELDS[nodeType]?.(config);
   if (connectionFields) {
     const connectionId = String(config.connectionId ?? '').trim();
-    if (!connectionId || connectionFields.some((field) => isBlank(config[field]))) return NOT_CONFIGURED;
+    if (!connectionId || requiredFields(nodeType, config).some((field) => isBlank(config[field]))) return NOT_CONFIGURED;
     // Drive uploads take `content` or `file`, never both (CONFIGURATION_ERROR).
     if (nodeType === 'google.drive' && !isBlank(config.content) && !isBlank(config.file)) return NOT_CONFIGURED;
     const operation = String(config.operation ?? 'read');

@@ -17,7 +17,8 @@ const draft = (extraNodes: Array<{ id: string; type: string; config: Record<stri
   definition: {
     schemaVersion: '1.0',
     nodes: [{ id: 'manual', type: 'trigger.manual', config: {} }, ...extraNodes],
-    edges: [],
+    // Publish needs every step reachable; the publish-error fixtures name their step tg1.
+    edges: extraNodes.filter((node) => node.id === 'tg1').map((node) => ({ id: 'e1', source: 'manual', target: node.id })),
     variables: {},
   },
   editorState: {
@@ -142,4 +143,63 @@ test('hand-written mapping fields are reachable by their label', async ({ page }
   await expect(page.locator('#http-url')).toContainText('https://example.test');
   await addNode(page, 'telegram.send_message');
   await expect(page.getByLabel('Nội dung tin nhắn')).toBeVisible();
+});
+
+const TG_CONNECTION = '20000000-0000-4000-8000-000000000003';
+const namedTelegram = [{ id: 'tg1', type: 'telegram.send_message', config: { connectionId: TG_CONNECTION, chatId: '1', text: 'hi' } }];
+
+// An active Telegram connection, so the step is complete and Publish is enabled (the 400 is stubbed).
+async function stubTelegramConnection(page: Page) {
+  await page.route(`**/api/v1/workspaces/${workspaceId}/connections**`, (route) => json(route, [{
+    id: TG_CONNECTION, workspaceId, createdBy: '00000000-0000-4000-8000-000000000010', name: 'Bot', provider: 'TELEGRAM', authType: 'API_KEY',
+    status: 'ACTIVE', config: null, hasCredential: true, credentialExpiresAt: null, lastVerifiedAt: null, canManage: true,
+    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+  }]));
+}
+
+async function stubPublishError(page: Page, field: string, message: string) {
+  await page.route(`${base}/publish`, (route) =>
+    json(route, { error: { code: 'VALIDATION_ERROR', message: 'Workflow definition is invalid', details: [{ field, message }] } }, 400));
+}
+
+
+
+test('publish error names the step and the field', async ({ page }) => {
+  await stubBackend(page, namedTelegram);
+  await stubTelegramConnection(page);
+  await page.route(`${base}`, (route) => json(route, { ...draft(namedTelegram), editorState: { nodes: { manual: { name: 'Manual trigger', position: { x: 100, y: 120 } }, tg1: { name: 'Gửi tin Telegram', position: { x: 100, y: 300 } } } } }));
+  await stubPublishError(page, 'nodes[tg1].config.text', 'REQUIRED_FIELD_MISSING: text is required');
+  await openBuilder(page);
+  await page.getByTestId('workflow-publish').click();
+  const issue = page.getByText("Bước 'Gửi tin Telegram': cần điền 'Message'");
+  await expect(issue.first()).toBeVisible();
+  await expect(page.getByText(/nodes\[|config\./)).toHaveCount(0);
+});
+
+test('unknown field falls back to a name, never a key', async ({ page }) => {
+  await stubBackend(page, namedTelegram);
+  await stubTelegramConnection(page);
+  await stubPublishError(page, 'nodes[tg1].config.legacyThing', 'UNKNOWN_CONFIG_FIELD: nope');
+  await openBuilder(page);
+  await page.getByTestId('workflow-publish').click();
+  await expect(page.getByText(/legacyThing/).first()).toBeVisible();
+  await expect(page.getByText(/undefined|builder\.field\./)).toHaveCount(0);
+});
+
+test('readiness banner lists missing fields by label', async ({ page }) => {
+  await stubBackend(page);
+  await openBuilder(page);
+  await addNode(page, 'telegram.send_message');
+  await expect(page.getByTestId('integration-readiness')).toContainText(/Cần điền: .*Message/);
+});
+
+test('advanced section opens for a publish error', async ({ page }) => {
+  await stubBackend(page, namedTelegram);
+  await stubTelegramConnection(page);
+  await stubPublishError(page, 'nodes[tg1].config.parseMode', 'INVALID_ENUM_VALUE: parseMode bad');
+  await openBuilder(page);
+  await page.getByTestId('rf__node-tg1').getByTestId('workflow-node').click();
+  await expect(page.getByTestId('telegram-advanced')).not.toHaveAttribute('open', /.*/);
+  await page.getByTestId('workflow-publish').click();
+  await expect(page.getByTestId('telegram-advanced')).toHaveAttribute('open', '');
 });
