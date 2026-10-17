@@ -2003,7 +2003,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
       definition: { schemaVersion: "1.0", ...definition, variables: {} },
       editorState: {
         nodes: Object.fromEntries(
-          definition.nodes.map((item, index) => [item.id, { name: item.id, position: { x: index * 340, y: (index % 2) * 160 } }]),
+          definition.nodes.map((item, index) => [item.id, { name: "", position: { x: index * 340, y: (index % 2) * 160 } }]),
         ),
       },
     });
@@ -2110,7 +2110,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await suggestions.first().click();
     // The field shows the data as a named chip; the saved value stays the mapping.
     await expect(page.locator("#telegram-text")).toHaveAttribute("data-value", "Invoice:\n{{ nodes.ocr_1.output.text.rawText }}");
-    await expect(page.locator("#telegram-text").getByTestId("mapping-chip")).toHaveText("ocr_1 › Text read×");
+    await expect(page.locator("#telegram-text").getByTestId("mapping-chip")).toHaveText("OCR Text Extract › Text read×");
     await expect(page.locator("#telegram-text")).not.toContainText("{{");
 
     await saveDraft(page);

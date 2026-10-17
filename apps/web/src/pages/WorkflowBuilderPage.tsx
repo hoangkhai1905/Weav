@@ -105,6 +105,7 @@ import { fileSources, pathLabel, upstreamGroups, useFieldTarget } from '../lib/v
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
 import { definitionToCanvas, WorkflowApiError, type GenerationResponse } from '../api/workflow-v1.api';
+import { nodeLabel } from '../lib/nodeLabels';
 import { describeIssues, fieldErrorsByStep, type WorkflowIssue } from '../lib/publishErrors';
 import { workflowToReactFlow, reactFlowToWorkflow } from '../lib/mappers/workflowMapper';
 import type { WorkflowDefinition } from '../types/workflow.types';
@@ -442,7 +443,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   // Highest number handed out per id prefix in this workflow, so a deleted step's id is not reused.
   const idMarks = useRef<{ workflowId?: string; marks: Record<string, number> }>({ marks: {} });
   const fieldTarget = useFieldTarget(selectedNodeId);
-  const stepLabel = (node: Node) => (node.data?.nameKey ? t(String(node.data.nameKey)) : String(node.data?.name || node.id));
+  const stepLabel = (node: Node) => (node.data?.nameKey ? t(String(node.data.nameKey)) : String(node.data?.name || (node.data?.nodeType ? nodeLabel(String(node.data.nodeType), t) : node.id)));
   /** Data the trigger and earlier steps hand to step `id` (what "Insert variable" offers). */
   const groupsBefore = (id: string, nodeList: Node[] = nodes, edgeList: Pick<Edge, 'source' | 'target'>[] = edges) =>
     upstreamGroups(nodeList, edgeList, id, t('builder.var.trigger'), stepLabel);
