@@ -9,7 +9,10 @@ const base = `**/api/v1/workspaces/${workspaceId}/workflows/${workflowId}`;
 const json = (route: Route, body: unknown, status = 200) =>
   route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
-const draft = (extraNodes: Array<{ id: string; type: string; config: Record<string, unknown> }> = []) => ({
+type StubNode = { id: string; type: string; config: Record<string, unknown> };
+type StubGraph = { edges?: Array<[string, string]>; names?: Record<string, string> };
+
+const draft = (extraNodes: StubNode[] = [], graph: StubGraph = {}) => ({
   workflowId,
   name: 'Simple nodes',
   status: 'DRAFT',
@@ -18,13 +21,13 @@ const draft = (extraNodes: Array<{ id: string; type: string; config: Record<stri
     schemaVersion: '1.0',
     nodes: [{ id: 'manual', type: 'trigger.manual', config: {} }, ...extraNodes],
     // Publish needs every step reachable; the publish-error fixtures name their step tg1.
-    edges: extraNodes.filter((node) => node.id === 'tg1' || node.id === 'http_1').map((node) => ({ id: 'e1', source: extraNodes.some((other) => other.id === 'tgt') ? 'tgt' : 'manual', target: node.id })),
+    edges: graph.edges ? graph.edges.map(([source, target], index) => ({ id: `g${index}`, source, target })) : extraNodes.filter((node) => node.id === 'tg1' || node.id === 'http_1').map((node) => ({ id: 'e1', source: extraNodes.some((other) => other.id === 'tgt') ? 'tgt' : 'manual', target: node.id })),
     variables: {},
   },
   editorState: {
     nodes: {
       manual: { name: 'Manual trigger', position: { x: 100, y: 120 } },
-      ...Object.fromEntries(extraNodes.map((node, index) => [node.id, { name: node.type, position: { x: 100, y: 300 + index * 120 } }])),
+      ...Object.fromEntries(extraNodes.map((node, index) => [node.id, { name: graph.names?.[node.id] ?? node.type, position: { x: 100, y: 300 + index * 120 } }])),
     },
   },
   currentVersionId: null,
@@ -34,8 +37,9 @@ const draft = (extraNodes: Array<{ id: string; type: string; config: Record<stri
   triggers: [],
 });
 
-async function stubBackend(page: Page, extraNodes: Array<{ id: string; type: string; config: Record<string, unknown> }> = []) {
-  let current: Record<string, unknown> = draft(extraNodes);
+async function stubBackend(page: Page, extraNodes: StubNode[] = [], graph: StubGraph = {}) {
+  let current: Record<string, unknown> = draft(extraNodes, graph);
+  const savedDrafts: Array<Record<string, unknown>> = [];
   await page.addInitScript(() => {
     localStorage.setItem('weav_token', 'playwright-test-token');
     localStorage.setItem('weav_lang_v1', 'VI');
@@ -50,8 +54,10 @@ async function stubBackend(page: Page, extraNodes: Array<{ id: string; type: str
   await page.route(base, (route) => json(route, current));
   await page.route(`${base}/draft`, (route) => {
     current = { ...current, ...(route.request().postDataJSON() as object) };
+    savedDrafts.push(current);
     return json(route, current);
   });
+  return savedDrafts;
 }
 
 async function openBuilder(page: Page) {
@@ -306,4 +312,84 @@ test('delete button names the step, not its id', async ({ page }) => {
   const del = page.getByTestId('workflow-node-delete');
   await expect(del).toHaveAttribute('aria-label', new RegExp(name));
   await expect(del).not.toHaveAttribute('aria-label', /http_1/);
+});
+
+// Data menu: nearest step first, search, run values, named input, orphan chips.
+const MAIL_CHAIN: StubNode[] = [
+  { id: 'tgt', type: 'trigger.gmail', config: {} },
+  { id: 'ai1', type: 'ai.summarize', config: {} },
+  { id: 'tg1', type: 'telegram.send_message', config: { connectionId: TG_CONNECTION, chatId: '1', text: '' } },
+];
+const mailGraph: StubGraph = { edges: [['tgt', 'ai1'], ['ai1', 'tg1']], names: { tgt: 'Thư mới', ai1: 'Tóm tắt thư', tg1: 'Báo Telegram' } };
+
+async function openDataMenu(page: Page, nodeId: string) {
+  await page.getByTestId(`rf__node-${nodeId}`).getByTestId('workflow-node').click();
+  await page.getByTestId('mapping-data-toggle').first().click();
+  return page.getByTestId('mapping-data-menu');
+}
+
+test('data menu lists the nearest step first with plain labels', async ({ page }) => {
+  await stubBackend(page, MAIL_CHAIN, mailGraph);
+  await stubTelegramConnection(page);
+  await openBuilder(page);
+  const menu = await openDataMenu(page, 'tg1');
+  const headings = await menu.locator('[data-testid="mapping-data-group"] > p').allInnerTexts();
+  expect(headings.slice(0, 2)).toEqual(['Tóm tắt thư', 'Dữ liệu kích hoạt']);
+  const items = await menu.getByTestId('mapping-data-item').allInnerTexts();
+  expect(items.length).toBeGreaterThan(5);
+  for (const text of items) expect(text).not.toMatch(/nodes\.|output\.|\{\{/);
+});
+
+test('search appears with more than 8 items', async ({ page }) => {
+  await stubBackend(page, MAIL_CHAIN, mailGraph);
+  await stubTelegramConnection(page);
+  await openBuilder(page);
+  const menu = await openDataMenu(page, 'tg1');
+  await menu.getByLabel('Tìm dữ liệu').fill('nguoi gui');
+  const items = menu.getByTestId('mapping-data-item');
+  await expect(items.first()).toBeVisible();
+  for (const text of await items.allInnerTexts()) expect(text.toLowerCase()).toMatch(/gửi/);
+  expect(await items.count()).toBeLessThan(8);
+});
+
+test('Khác group offers time, run and workflow name', async ({ page }) => {
+  await stubBackend(page, MAIL_CHAIN, mailGraph);
+  await stubTelegramConnection(page);
+  await openBuilder(page);
+  const menu = await openDataMenu(page, 'tg1');
+  const other = menu.getByTestId('mapping-data-group').filter({ has: page.getByText('Khác', { exact: true }) });
+  for (const path of ['now', 'run.id', 'workflow.name']) await expect(other.locator(`[data-path="${path}"]`)).toHaveCount(1);
+});
+
+test('orphan chip turns amber and keeps the value', async ({ page }) => {
+  const mapping = '{{ nodes.ai1.output.summary }}';
+  const chain = MAIL_CHAIN.map((node) => (node.id === 'tg1' ? { ...node, config: { ...node.config, text: mapping } } : node));
+  const saved = await stubBackend(page, chain, mailGraph);
+  await stubTelegramConnection(page);
+  await openBuilder(page);
+  await page.getByTestId('rf__node-tg1').getByTestId('workflow-node').click();
+  await expect(page.locator('#telegram-text').getByTestId('mapping-chip')).toContainText('Tóm tắt thư');
+  await page.getByTestId('rf__node-ai1').getByTestId('workflow-node').click();
+  await page.getByTestId('workflow-node-delete').click();
+  await page.getByTestId('rf__node-tg1').getByTestId('workflow-node').click();
+  await expect(page.locator('#telegram-text').getByTestId('mapping-chip')).toContainText('Dữ liệu này không còn — chọn lại');
+  await page.getByTestId('workflow-save').click();
+  await expect.poll(() => saved.length).toBeGreaterThan(0);
+  const last = saved[saved.length - 1] as { definition: { nodes: Array<{ id: string; config: { text?: string } }> } };
+  expect(last.definition.nodes.find((node) => node.id === 'tg1')?.config.text).toBe(mapping);
+});
+
+test('manual trigger offers a named input', async ({ page }) => {
+  await stubBackend(page, [{ id: 'tg1', type: 'telegram.send_message', config: { connectionId: TG_CONNECTION, chatId: '1', text: '' } }]);
+  await stubTelegramConnection(page);
+  await openBuilder(page);
+  const menu = await openDataMenu(page, 'tg1');
+  await expect(menu.getByText('Dữ liệu gửi vào')).toBeVisible();
+  const name = menu.getByPlaceholder('Tên trường, ví dụ ten_khach');
+  const add = menu.getByTestId('mapping-data-named-add');
+  await name.fill('ten khach');
+  await expect(add).toBeDisabled();
+  await name.fill('ten_khach');
+  await add.click();
+  await expect(page.locator('#telegram-text').getByTestId('mapping-chip')).toHaveAttribute('data-mapping', '{{ trigger.input.ten_khach }}');
 });

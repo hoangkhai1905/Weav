@@ -6,7 +6,8 @@ import { FormatPreview } from './FormatPreview';
 import { formatInsert, type FormatAction, type FormatSyntax } from '../../lib/formatInsert';
 import { formatPreview, richEditable } from '../../lib/formatPreview';
 import { buildRich, serializeRich } from './richText';
-import { describeMapping, mappingFieldInserts, mappingOf, pathLabel, RUN_PATHS, type VariableGroup } from '../../lib/variablePaths';
+import { DataMenu } from './DataMenu';
+import { describeMapping, mappingFieldInserts, type VariableGroup } from '../../lib/variablePaths';
 
 interface MappingTextFieldProps {
   id: string;
@@ -310,9 +311,8 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
     insert(mapping);
     setMenuOpen(false);
   };
-  // Keeps the caret in the field while a menu item is pressed.
+  // Keeps the caret in the field while the toggle is pressed.
   const keepCaret = (event: React.MouseEvent) => event.preventDefault();
-  const itemCls = 'flex w-full flex-col items-start rounded px-2 py-1 text-left hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
   return (
     <div className={`relative ${className ?? ''}`}>
@@ -392,36 +392,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
         >
           <Braces size={14} strokeWidth={1.75} aria-hidden="true" />{t('builder.var.add_data')}
         </button>
-        {menuOpen && (
-          <div
-            role="menu"
-            data-testid="mapping-data-menu"
-            onKeyDown={(event) => { if (event.key === 'Escape') setMenuOpen(false); }}
-            className="absolute right-0 top-full z-30 mt-1 max-h-72 w-72 max-w-full space-y-2 overflow-y-auto rounded-md border border-border bg-popover p-2 shadow-pop"
-          >
-            {groups.length === 0 && <p className="px-2 text-xs text-muted-foreground">{t('builder.var.empty')}</p>}
-            {groups.map((group) => (
-              <div key={group.key}>
-                <p className="px-2 pb-0.5 text-[10px] font-semibold text-text-2">{group.label}</p>
-                {group.paths.map((path) => (
-                  <button key={path} type="button" role="menuitem" data-testid="mapping-data-item" data-path={path} onMouseDown={keepCaret} onClick={() => pick(mappingOf(group, path))} className={itemCls}>
-                    <span className="text-[11px] text-foreground">{pathLabel(group, path, t) ?? path}</span>
-                    <span className="font-mono text-[9px] text-muted-foreground">{path}</span>
-                  </button>
-                ))}
-              </div>
-            ))}
-            <div>
-              <p className="px-2 pb-0.5 text-[10px] font-semibold text-text-2">{t('builder.var.run')}</p>
-              {RUN_PATHS.map(({ path, labelKey }) => (
-                <button key={path} type="button" role="menuitem" data-testid="mapping-data-item" data-path={path} onMouseDown={keepCaret} onClick={() => pick(`{{ ${path} }}`)} className={itemCls}>
-                  <span className="text-[11px] text-foreground">{t(labelKey)}</span>
-                  <span className="font-mono text-[9px] text-muted-foreground">{path}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {menuOpen && <DataMenu groups={groups} onPick={pick} onClose={() => setMenuOpen(false)} />}
       </div>
       {format?.rich && codeMode && <FormatPreview syntax={format.syntax} text={value} groups={groups} />}
     </div>
