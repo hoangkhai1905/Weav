@@ -121,3 +121,25 @@ test('node id lives in the technical footer', async ({ page }) => {
   await expect(page.getByTestId('inspector-node-id')).toHaveText('http_1');
   await expect(page.getByTestId('inspector-node-id-copy')).toBeVisible();
 });
+
+test('telegram extras are closed on a new step and open when one is set', async ({ page }) => {
+  await stubBackend(page, [{ id: 'tg', type: 'telegram.send_message', config: { parseMode: 'HTML' } }]);
+  await openBuilder(page);
+  await addNode(page, 'telegram.send_message');
+  await expect(page.getByTestId('telegram-advanced').locator('summary')).toContainText('Thêm tùy chọn (');
+  await expect(page.getByTestId('telegram-advanced')).not.toHaveAttribute('open', /.*/);
+  await page.getByTestId('rf__node-tg').getByTestId('workflow-node').click();
+  await expect(page.getByTestId('telegram-advanced')).toHaveAttribute('open', '');
+});
+
+test('hand-written mapping fields are reachable by their label', async ({ page }) => {
+  await stubBackend(page);
+  await openBuilder(page);
+  await addNode(page, 'http.request');
+  await expect(page.getByLabel(/^URL/)).toBeVisible();
+  await page.getByLabel(/^URL/).click();
+  await page.keyboard.type('https://example.test');
+  await expect(page.locator('#http-url')).toContainText('https://example.test');
+  await addNode(page, 'telegram.send_message');
+  await expect(page.getByLabel('Nội dung tin nhắn')).toBeVisible();
+});

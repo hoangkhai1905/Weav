@@ -2238,7 +2238,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                 handField('buttonLabel', 'manual-button-label', 'builder.cfg.button_label', ({ id, describedBy }) => (
                   <input
                     id={id}
-                    aria-describedby={describedBy}
+                          aria-describedby={describedBy}
                     value={String(selectedNodeConfig.buttonLabel ?? '')}
                     onChange={(event) => updateSelectedNodeConfig({ buttonLabel: event.target.value })}
                     className="w-full rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring"
@@ -2264,7 +2264,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           handField('chatId', 'telegram-chat-target', 'builder.cfg.tg_target', ({ id, describedBy }) => (
                             <select
                               id={id}
-                              aria-describedby={describedBy}
+                          aria-describedby={describedBy}
                               data-testid="telegram-chat-target"
                               value={replying ? 'reply' : 'custom'}
                               onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value === 'reply' ? TELEGRAM_REPLY_CHAT : '' })}
@@ -2341,7 +2341,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     {handField('connectionId', 'email-connection', 'builder.cfg.gmail_connection', ({ id, describedBy }) => (
                     <select
                       id={id}
-                      aria-describedby={describedBy}
+                          aria-describedby={describedBy}
                       data-testid="email-connection"
                       value={String(selectedNodeConfig.connectionId ?? '')}
                       // Omit the key when cleared: the Workflow Service rejects an empty connectionId even in drafts.
@@ -2473,9 +2473,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </div>
 
                   <div data-testid="ocr-workflow-source" className="space-y-2 rounded border border-border bg-subtle p-2.5">
-                    <label htmlFor="ocr-source-mode" className="block text-[11px] font-semibold text-text-2">{t('builder.cfg.ocr_source')}</label>
-                    <select
-                      id="ocr-source-mode"
+                    {handField('source', 'ocr-source-mode', 'builder.cfg.ocr_source', ({ id, describedBy }) => (
+                          <select
+                      id={id}
+                          aria-describedby={describedBy}
                       data-testid="ocr-source-mode"
                       value={ocrSourceMode}
                       onChange={(event) => {
@@ -2493,29 +2494,34 @@ export const WorkflowBuilderPage: React.FC = () => {
                         </option>
                       ))}
                     </select>
+                        ))}
                     {ocrSourceMode === 'artifact' && (
                       <div>
-                        <label htmlFor="ocr-artifact-id" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.artifact_id')}</label>
-                        <input
-                          id="ocr-artifact-id"
+                        {handField('artifactId', 'ocr-artifact-id', 'builder.cfg.artifact_id', ({ id, describedBy }) => (
+                          <input
+                          id={id}
+                          aria-describedby={describedBy}
                           data-testid="ocr-artifact-id"
                           value={String(selectedNodeConfig.artifactId ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value || undefined, fileUrl: undefined, file: undefined })}
                           className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring"
                         />
+                        ))}
                       </div>
                     )}
                     {ocrSourceMode === 'url' && (
                       <div>
-                        <label htmlFor="ocr-file-url" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.file_url')}</label>
-                        <input
-                          id="ocr-file-url"
+                        {handField('fileUrl', 'ocr-file-url', 'builder.cfg.file_url', ({ id, describedBy }) => (
+                          <input
+                          id={id}
+                          aria-describedby={describedBy}
                           data-testid="ocr-file-url"
                           value={String(selectedNodeConfig.fileUrl ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value || undefined, artifactId: undefined, file: undefined })}
                           placeholder="https://..."
                           className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring"
                         />
+                        ))}
                       </div>
                     )}
                     {ocrSourceMode === 'file' && (() => {
@@ -2527,9 +2533,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                       <div className="space-y-2">
                         {ocrFileOptions.length > 0 && (
                           <div>
-                            <label htmlFor="ocr-file-pick" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.ocr_file_pick')}</label>
-                            <select
-                              id="ocr-file-pick"
+                            {handField('file', 'ocr-file-pick', 'builder.cfg.ocr_file_pick', ({ id, describedBy }) => (
+                          <select
+                              id={id}
+                          aria-describedby={describedBy}
                               data-testid="ocr-file-pick"
                               value={picked ? picked.mapping : typing ? OCR_FILE_CUSTOM : ''}
                               onChange={(event) => {
@@ -2547,6 +2554,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                               ))}
                               <option value={OCR_FILE_CUSTOM}>{t('builder.cfg.ocr_file_custom')}</option>
                             </select>
+                        ))}
                           </div>
                         )}
                         {!ocrFileOptions.length && (
@@ -2554,15 +2562,17 @@ export const WorkflowBuilderPage: React.FC = () => {
                         )}
                         {typing && (
                       <div>
-                        <label htmlFor="ocr-file-mapping" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.ocr_file_mapping')}</label>
-                        <input
-                          id="ocr-file-mapping"
+                        {handField('file', 'ocr-file-mapping', 'builder.cfg.ocr_file_mapping', ({ id, describedBy }) => (
+                          <input
+                          id={id}
+                          aria-describedby={describedBy}
                           data-testid="ocr-file-mapping"
                           value={typeof selectedNodeConfig.file === 'object' && selectedNodeConfig.file !== null ? JSON.stringify(selectedNodeConfig.file) : String(selectedNodeConfig.file ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ file: event.target.value || undefined, fileUrl: undefined, artifactId: undefined })}
                           placeholder="{{ trigger.input.attachments[0] }}"
                           className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring"
                         />
+                        ))}
                         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.ocr_file_hint')}</p>
                       </div>
                         )}
@@ -2577,11 +2587,10 @@ export const WorkflowBuilderPage: React.FC = () => {
 
                   <div className="space-y-2">
                     <div>
-                      <label htmlFor="ocr-language" className="mb-1 block text-[13px] font-medium text-foreground">
-                        {t('ocr.language')}
-                      </label>
-                      <select
-                        id="ocr-language"
+                      {handField('language', 'ocr-language', 'ocr.language', ({ id, describedBy }) => (
+                          <select
+                        id={id}
+                          aria-describedby={describedBy}
                         value={ocrLanguage}
                         onChange={(event) => {
                           setOcrLanguage(event.target.value);
@@ -2593,6 +2602,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <option value="vi">{t('settings.vietnamese')}</option>
                         <option value="en">{t('settings.english')}</option>
                       </select>
+                        ))}
                     </div>
                     <div>
                       <label className="flex items-center gap-2 text-[11px] text-text-2">
@@ -2776,11 +2786,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label htmlFor="google-connection" className="mb-1 block text-[13px] font-medium text-foreground">
-                      {t('builder.google.connection')}
-                    </label>
-                    <select
-                      id="google-connection"
+                    {handField('connectionId', 'google-connection', 'builder.google.connection', ({ id, describedBy }) => (
+                          <select
+                      id={id}
+                          aria-describedby={describedBy}
                       data-testid="google-connection"
                       value={String(selectedNodeConfig.connectionId ?? '')}
                       // Omit the key when cleared: the Workflow Service rejects an empty connectionId even in drafts.
@@ -2797,6 +2806,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <option value={String(selectedNodeConfig.connectionId)}>{t('builder.cfg.unavailable_connection')}</option>
                       )}
                     </select>
+                        ))}
                     {!isLoadingConnections && sheetsConnections.length === 0 && (
                       <p data-testid="google-connection-empty" className="mt-1 text-xs text-muted-foreground">
                         {t('builder.cfg.no_sheets')} {t('builder.cfg.sheets_create_in')}{' '}
@@ -2811,11 +2821,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label htmlFor="google-operation" className="mb-1 block text-[13px] font-medium text-foreground">
-                      {t('builder.google.operation')}
-                    </label>
-                    <select
-                      id="google-operation"
+                    {handField('operation', 'google-operation', 'builder.google.operation', ({ id, describedBy }) => (
+                          <select
+                      id={id}
+                          aria-describedby={describedBy}
                       value={googleOperation}
                       onChange={(event) => updateSelectedNodeConfig({ operation: event.target.value })}
                       className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
@@ -2835,39 +2844,36 @@ export const WorkflowBuilderPage: React.FC = () => {
                         </>
                       )}
                     </select>
+                        ))}
                   </div>
 
                   {isGoogleSheetsNode && (
                     <>
                       <div>
-                        <label htmlFor="google-spreadsheet-id" className="mb-1 block text-[13px] font-medium text-foreground">
-                          {t('builder.google.spreadsheet_id')}
-                        </label>
-                        <input
-                          id="google-spreadsheet-id"
+                        {handField('spreadsheetId', 'google-spreadsheet-id', 'builder.google.spreadsheet_id', ({ id, describedBy }) => (
+                          <input
+                          id={id}
+                          aria-describedby={describedBy}
                           type="text"
                           value={String(selectedNodeConfig.spreadsheetId ?? '')}
                           // A pasted Sheets link is reduced to the id inside it.
                           onChange={(event) => updateSelectedNodeConfig({ spreadsheetId: idFromGoogleLink(event.target.value) })}
                           className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                         />
+                        ))}
                       </div>
 
                       <div>
-                        <label htmlFor="google-range" className="mb-1 block text-[13px] font-medium text-foreground">
-                          {t('builder.google.range')}
-                        </label>
-                        <input
-                          id="google-range"
+                        {handField('range', 'google-range', 'builder.google.range', ({ id, describedBy }) => (
+                          <input
+                          id={id}
+                          aria-describedby={describedBy}
                           type="text"
                           value={String(selectedNodeConfig.range ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ range: event.target.value })}
-                          aria-describedby="google-range-hint"
                           className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                         />
-                        <p id="google-range-hint" className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {t(`builder.google.range_hint_${['append', 'update', 'lookup'].includes(googleOperation) ? googleOperation : 'read'}`)}
-                        </p>
+), t(`builder.google.range_hint_${['append', 'update', 'lookup'].includes(googleOperation) ? googleOperation : 'read'}`))}
                       </div>
 
                       {googleOperation === 'lookup' && ['lookupColumn', 'lookupValue', 'limit'].map((name) => configField(name))}
@@ -2950,46 +2956,46 @@ export const WorkflowBuilderPage: React.FC = () => {
 
                   {isGoogleDocsNode && googleOperation === 'create' && (
                     <div>
-                      <label htmlFor="google-document-title" className="mb-1 block text-[13px] font-medium text-foreground">
-                        {t('builder.google.title_field')}
-                      </label>
-                      <input
-                        id="google-document-title"
+                      {handField('title', 'google-document-title', 'builder.google.title_field', ({ id, describedBy }) => (
+                          <input
+                        id={id}
+                          aria-describedby={describedBy}
                         type="text"
                         value={String(selectedNodeConfig.title ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ title: event.target.value })}
                         className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                       />
+                        ))}
                     </div>
                   )}
 
                   {isGoogleDocsNode && googleOperation !== 'create' && (
                     <div>
-                      <label htmlFor="google-document-id" className="mb-1 block text-[13px] font-medium text-foreground">
-                        {t('builder.google.document_id')}
-                      </label>
-                      <input
-                        id="google-document-id"
+                      {handField('documentId', 'google-document-id', 'builder.google.document_id', ({ id, describedBy }) => (
+                          <input
+                        id={id}
+                          aria-describedby={describedBy}
                         type="text"
                         value={String(selectedNodeConfig.documentId ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ documentId: event.target.value })}
                         className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                       />
+                        ))}
                     </div>
                   )}
 
                   {isGoogleDocsNode && (googleOperation === 'create' || googleOperation === 'append') && (
                     <div>
-                      <label htmlFor="google-content-variable" className="mb-1 block text-[13px] font-medium text-foreground">
-                        {t('builder.google.content_variable')}
-                      </label>
-                      <input
-                        id="google-content-variable"
+                      {handField('contentVariable', 'google-content-variable', 'builder.google.content_variable', ({ id, describedBy }) => (
+                          <input
+                        id={id}
+                          aria-describedby={describedBy}
                         type="text"
                         value={String(selectedNodeConfig.contentVariable ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ contentVariable: event.target.value })}
                         className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                       />
+                        ))}
                     </div>
                   )}
 
