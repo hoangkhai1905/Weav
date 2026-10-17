@@ -93,3 +93,31 @@ test('an advanced field with a saved value starts open', async ({ page }) => {
   await expect(page.getByTestId('schema-advanced')).toHaveAttribute('open', '');
   await expect(page.getByTestId('field-location')).toHaveText('Hà Nội');
 });
+
+test('email extras sit under Thêm tùy chọn and open when set', async ({ page }) => {
+  await stubBackend(page);
+  await openBuilder(page);
+  await addNode(page, 'email.send');
+  const section = page.getByTestId('email-advanced');
+  await expect(section.locator('summary')).toContainText('Thêm tùy chọn (');
+  await expect(section).not.toHaveAttribute('open', /.*/);
+});
+
+test('email extras start open when one is set', async ({ page }) => {
+  await stubBackend(page, [{ id: 'mail', type: 'email.send', config: { replyTo: 'a@example.test' } }]);
+  await openBuilder(page);
+  await page.getByTestId('rf__node-mail').getByTestId('workflow-node').click();
+  await expect(page.getByTestId('email-advanced')).toHaveAttribute('open', '');
+});
+
+test('node id lives in the technical footer', async ({ page }) => {
+  await stubBackend(page);
+  await openBuilder(page);
+  await addNode(page, 'http.request');
+  const footer = page.getByTestId('inspector-technical');
+  await expect(footer.locator('summary')).toHaveText('Chi tiết kỹ thuật');
+  await expect(page.getByTestId('inspector-node-id')).toBeHidden();
+  await footer.locator('summary').click();
+  await expect(page.getByTestId('inspector-node-id')).toHaveText('http_1');
+  await expect(page.getByTestId('inspector-node-id-copy')).toBeVisible();
+});
