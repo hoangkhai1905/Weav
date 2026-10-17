@@ -192,8 +192,12 @@ test('readiness banner lists missing fields by label', async ({ page }) => {
   await addNode(page, 'telegram.send_message');
   await expect(page.getByTestId('integration-readiness')).toContainText(/Cần điền: .*Nội dung tin nhắn/);
   // The banner uses the label the field itself shows.
-  const fieldLabel = (await page.locator("#telegram-text-label").textContent())?.replace("*", "").trim() ?? "";
-  await expect(page.getByTestId('integration-readiness')).toContainText(fieldLabel);
+  for (const id of ['telegram-text', 'telegram-chat-id']) {
+    const fieldLabel = ((await page.locator(`#${id}-label`).textContent()) ?? '').replace(/[*]/g, '').trim();
+    expect(fieldLabel).not.toBe('');
+    await expect(page.getByTestId('integration-readiness')).toContainText(fieldLabel);
+  }
+  await expect(page.locator('#telegram-chat-id-label')).toContainText('Gửi tới');
 });
 
 test('advanced section opens for a publish error', async ({ page }) => {
