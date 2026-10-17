@@ -484,9 +484,19 @@ test('typing a comma list in a string-or-list field saves a list', async ({ page
   expect(last.definition.nodes.find((node) => node.id === 'mail_1')?.config.cc).toEqual(['a@example.test', 'b@example.test']);
 });
 
-test('every output path has a vi and en label', async () => {
-  const { NODE_CATALOG, OUTPUTS_BY_OPERATION } = await import('../src/lib/constants/nodeCatalog');
-  const { TRANSLATIONS } = await import('../src/lib/i18n/translations');
+type CatalogModule = {
+  NODE_CATALOG: Array<{ type: string; outputs: Array<{ name: string }> }>;
+  OUTPUTS_BY_OPERATION: Record<string, Record<string, string[]>>;
+};
+// nodeCatalog.ts is bundler-style source, so tsc -b (node16 e2e project) cannot import it: load it from the dev server in the page.
+const loadCatalog = (page: Page): Promise<CatalogModule> =>
+  page.evaluate((url) => import(/* @vite-ignore */ url) as Promise<CatalogModule>, '/src/lib/constants/nodeCatalog.ts');
+
+test('every output path has a vi and en label', async ({ page }) => {
+  await stubBackend(page);
+  await openBuilder(page);
+  const { NODE_CATALOG, OUTPUTS_BY_OPERATION } = await loadCatalog(page);
+  const { TRANSLATIONS } = await import('../src/lib/i18n/translations.js');
   const wanted = new Set<string>();
   for (const item of NODE_CATALOG) for (const output of item.outputs) wanted.add(`builder.var.path.${item.type}.${output.name}`);
   for (const [type, operations] of Object.entries(OUTPUTS_BY_OPERATION)) {
@@ -546,7 +556,9 @@ test('no builder. keys leak in either language, and the same step switches langu
 
 test('no builder. keys leak for any node type or operation', async ({ page }) => {
   test.setTimeout(300_000);
-  const { NODE_CATALOG, OUTPUTS_BY_OPERATION } = await import('../src/lib/constants/nodeCatalog');
+  await stubBackend(page);
+  await openBuilder(page);
+  const { NODE_CATALOG, OUTPUTS_BY_OPERATION } = await loadCatalog(page);
   const inspector = page.getByTestId('workflow-inspector');
   // Every type through the palette, then the operation-dependent steps with each operation as a saved step.
   const operational: StubNode[] = Object.entries(OUTPUTS_BY_OPERATION).flatMap(([type, operations]) =>
