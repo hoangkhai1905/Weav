@@ -27,6 +27,7 @@ render node forms from the same files.
 | `x-weav-template: true` | text input with a mapping picker for `{{ ... }}` values; a literal is also fine |
 | `x-weav-connection: {provider}` | dropdown of workspace connections filtered by `provider` |
 | `x-weav-static: true` | literal only (no mapping picker) |
+| `x-weav-ui: {advanced: true}` | shown under "More options"; never allowed on a required field; ignored by the backend |
 | `title` / `description` | label / help text |
 
 `required` means required to **publish**. Drafts may omit any field, so do not block saving.

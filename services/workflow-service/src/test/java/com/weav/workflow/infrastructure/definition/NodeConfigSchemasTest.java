@@ -448,6 +448,49 @@ class NodeConfigSchemasTest {
         }
     }
 
+    private static final String UI_HINT_BASE = """
+            {"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"weav:node/x.test","title":"X",
+             "description":"d","x-weav-node":{"type":"x.test","category":"action","label":"X","sideEffect":false},
+             "type":"object","properties":{"text":HINT,"b":{"type":"string"}},"required":REQ,
+             "additionalProperties":false}""";
+
+    private static JsonNode uiHintSchema(String field, String required) throws Exception {
+        return MAPPER.readTree(UI_HINT_BASE.replace("HINT", field).replace("REQ", required));
+    }
+
+    @Test
+    void acceptsUiAdvancedHint() throws Exception {
+        NodeConfigSchema parsed = ClasspathNodeSchemaSource.parse("x.test.json",
+                uiHintSchema("{\"type\":\"string\",\"x-weav-ui\":{\"advanced\":true}}", "[\"b\"]"));
+        assertEquals(List.of("b"), parsed.required());
+    }
+
+    @Test
+    void rejectsUiHintThatIsNotAnObject() throws Exception {
+        JsonNode node = uiHintSchema("{\"type\":\"string\",\"x-weav-ui\":true}", "[\"b\"]");
+        assertThrows(IllegalArgumentException.class, () -> ClasspathNodeSchemaSource.parse("x.test.json", node));
+    }
+
+    @Test
+    void rejectsUnknownUiHintKey() throws Exception {
+        JsonNode node = uiHintSchema("{\"type\":\"string\",\"x-weav-ui\":{\"order\":1}}", "[\"b\"]");
+        assertThrows(IllegalArgumentException.class, () -> ClasspathNodeSchemaSource.parse("x.test.json", node));
+    }
+
+    @Test
+    void rejectsNonBooleanAdvanced() throws Exception {
+        JsonNode node = uiHintSchema("{\"type\":\"string\",\"x-weav-ui\":{\"advanced\":\"yes\"}}", "[\"b\"]");
+        assertThrows(IllegalArgumentException.class, () -> ClasspathNodeSchemaSource.parse("x.test.json", node));
+    }
+
+    @Test
+    void rejectsAdvancedRequiredField() throws Exception {
+        JsonNode node = uiHintSchema("{\"type\":\"string\",\"x-weav-ui\":{\"advanced\":true}}", "[\"text\"]");
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> ClasspathNodeSchemaSource.parse("x.test.json", node));
+        assertTrue(error.getMessage().contains("text"), error.getMessage());
+    }
+
     @Test
     void contractSchemaAgreesWithNodeFiles() throws Exception {
         Path path = Path.of("..", "..", "packages", "contracts", "http", "workflow", "definition.schema.json");
