@@ -2088,7 +2088,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await page.locator(node("ocr.extract")).click();
     await expect(page.getByTestId("ocr-source-mode")).toHaveValue("file");
     const pick = page.getByTestId("ocr-file-pick");
-    await expect(pick.locator("option", { hasText: "Photo/file sent to the bot" })).toHaveCount(1);
+    await expect(pick.locator("option", { hasText: "File sent to bot" })).toHaveCount(1);
     await expect(page.getByTestId("ocr-file-mapping")).toHaveCount(0);
     await pick.selectOption("__custom");
     await expect(page.getByTestId("ocr-file-mapping")).toHaveValue("");
@@ -2145,8 +2145,8 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(page.locator("#email-to")).toHaveCount(0);
     await page.getByTestId("attachment-add").click();
     await page.getByLabel("Source of file 1").selectOption("fileId");
-    await page.getByTestId("attachment-file-pick").selectOption({ label: "First attachment — Trigger data" });
-    await expect(page.getByTestId("attachment-source").getByTestId("mapping-chip")).toHaveText("Trigger data › First attachment (file id)×");
+    await page.getByTestId("attachment-file-pick").selectOption({ label: "Attachment 1 — Trigger data" });
+    await expect(page.getByTestId("attachment-source").getByTestId("mapping-chip")).toHaveText("Trigger data › Attachment code×");
 
     // A pasted Drive link keeps only the file id.
     await page.locator(node("google.drive")).click();

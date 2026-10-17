@@ -99,6 +99,8 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
   const numberWithData = takesData && isInteger && property.type !== 'array';
   const useData = numberWithData && dataMode;
   // A comma separated list that can take data: shown as text, saved as a list unless it holds a mapping.
+  // A string-or-list field saves what it already holds: a list if it is one (or the schema says so), else the typed text.
+  const asList = property.type === 'array' || Array.isArray(value);
   const listText = takesData && types.includes('array') && !types.includes('object');
   // A text field that can take data from earlier steps (not a list, choice or a stored file object).
   const chipText = takesData && !listText && property.type !== 'array'
@@ -142,7 +144,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
         onChange={(next) => {
           setListDraft(next);
           // "a@x.test, b@x.test" is saved as a list; a mapping stays one string resolved at run time.
-          onChange(next.trim() === '' ? undefined : next.includes('{{') ? next : next.split(',').map((item) => item.trim()));
+          onChange(next.trim() === '' ? undefined : next.includes('{{') || !asList ? next : next.split(',').map((item) => item.trim()));
         }}
       />
     );

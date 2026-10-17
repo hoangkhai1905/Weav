@@ -519,11 +519,12 @@ test('the data button names its field and a search without a match says so', asy
   await expect(menu.getByText('Không tìm thấy dữ liệu')).toBeVisible();
 });
 
-test('typing a comma list in a string-or-list field saves a list', async ({ page }) => {
-  const saved = await stubBackend(page, [{ id: 'mail_1', type: 'email.send', config: { to: 'x@example.test', subject: 's', body: 'b' } }], { edges: [['manual', 'mail_1']] });
+test('typing a comma list over a stored list saves a list', async ({ page }) => {
+  const saved = await stubBackend(page, [{ id: 'mail_1', type: 'email.send', config: { to: 'x@example.test', subject: 's', body: 'b', cc: ['y@example.test'] } }], { edges: [['manual', 'mail_1']] });
   await openBuilder(page);
   await page.getByTestId('rf__node-mail_1').getByTestId('workflow-node').click();
   await page.getByTestId('field-cc').click();
+  await page.keyboard.press('Control+A');
   await page.keyboard.type('a@example.test, b@example.test');
   await page.getByTestId('workflow-save').click();
   await expect.poll(() => saved.length).toBeGreaterThan(0);
