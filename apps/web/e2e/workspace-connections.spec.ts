@@ -2110,7 +2110,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await suggestions.first().click();
     // The field shows the data as a named chip; the saved value stays the mapping.
     await expect(page.locator("#telegram-text")).toHaveAttribute("data-value", "Invoice:\n{{ nodes.ocr_1.output.text.rawText }}");
-    await expect(page.locator("#telegram-text").getByTestId("mapping-chip")).toHaveText("Text read×");
+    await expect(page.locator("#telegram-text").getByTestId("mapping-chip")).toHaveText("ocr_1 › Text read×");
     await expect(page.locator("#telegram-text")).not.toContainText("{{");
 
     await saveDraft(page);
@@ -2146,7 +2146,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await page.getByTestId("attachment-add").click();
     await page.getByLabel("Source of file 1").selectOption("fileId");
     await page.getByTestId("attachment-file-pick").selectOption({ label: "First attachment — Trigger data" });
-    await expect(page.getByTestId("attachment-source").getByTestId("mapping-chip")).toHaveText("First attachment (file id)×");
+    await expect(page.getByTestId("attachment-source").getByTestId("mapping-chip")).toHaveText("Trigger data › First attachment (file id)×");
 
     // A pasted Drive link keeps only the file id.
     await page.locator(node("google.drive")).click();

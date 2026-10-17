@@ -393,3 +393,25 @@ test('manual trigger offers a named input', async ({ page }) => {
   await add.click();
   await expect(page.locator('#telegram-text').getByTestId('mapping-chip')).toHaveAttribute('data-mapping', '{{ trigger.input.ten_khach }}');
 });
+
+test('orphan chip after the link to its step is removed keeps the value', async ({ page }) => {
+  const mapping = '{{ nodes.ai1.output.summary }}';
+  const chain = MAIL_CHAIN.map((node) => (node.id === 'tg1' ? { ...node, config: { ...node.config, text: mapping } } : node));
+  const saved = await stubBackend(page, chain, mailGraph);
+  await stubTelegramConnection(page);
+  await openBuilder(page);
+  await page.getByTestId('rf__node-tg1').getByTestId('workflow-node').click();
+  await expect(page.locator('#telegram-text').getByTestId('mapping-chip')).toContainText('Tóm tắt thư');
+  // The step stays on the canvas; only its link into the Telegram step goes, so it is no longer before it.
+  await page.getByTestId('rf__edge-g1').locator('.react-flow__edge-interaction').click({ force: true });
+  await page.keyboard.press('Delete');
+  await expect(page.getByTestId('rf__edge-g1')).toHaveCount(0);
+  await expect(page.getByTestId('rf__node-ai1')).toBeVisible();
+  await page.getByTestId('rf__node-tg1').getByTestId('workflow-node').click();
+  await expect(page.locator('#telegram-text').getByTestId('mapping-chip')).toContainText('Dữ liệu này không còn — chọn lại');
+  await page.getByTestId('workflow-save').click();
+  await expect.poll(() => saved.length).toBeGreaterThan(0);
+  const last = saved[saved.length - 1] as { definition: { nodes: Array<{ id: string; config: { text?: string } }>; edges: Array<{ id: string }> } };
+  expect(last.definition.edges.map((edge) => edge.id)).not.toContain('g1');
+  expect(last.definition.nodes.find((node) => node.id === 'tg1')?.config.text).toBe(mapping);
+});
