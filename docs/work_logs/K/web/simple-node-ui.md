@@ -33,7 +33,7 @@ Live check (2026-10-17, in-app browser, dev stack on Neon dev-k, 7 services with
 - English: "More options (3)", "Technical details", "Fill in: Send to, Subject", "Recipient address"; no `builder.` keys leaked.
 - Console errors: none; API calls all 200/204.
 - Not reachable live: a server-side publish error (the client blocks publish first); covered by the stubbed Playwright cases.
-- Left on dev-k: draft workflow "Live check Batch 1" (`beb3ab7c-…`) in the test account's workspace `adaea5f1-…` (delete when convenient).
+- Left on dev-k: draft workflow "Live check Batch 1" (`beb3ab7c-…`) in the test account's workspace `adaea5f1-…` — soft-deleted 2026-10-17 via `DELETE /workflows/{id}` (204).
 - Findings for later batches: palette wording ("Lịch / Cron", "biểu thức cron", "JSON có cấu trúc", Gmail send "Gửi thông báo đến các kênh"), "ID lịch", "Nội dung (body)", publish blocker text "Node HTTP request cần URL" (Batch 3); the old "Chèn biến" bar (Batch 2); delete button accessible name "Xóa bước calendar_1" exposes the raw id; email body shows `*` although a blank body publishes.
 
 Deferred minors listed in the ledger (formatter pass on `handField` wrappers, stricter Task 1 test messages, checkbox `aria-required`, a test for "a later value reopens a closed section").
@@ -64,7 +64,7 @@ Live check (2026-10-17, in-app browser, dev stack on Neon dev-k, 7 services with
 - Removing the AI -> Telegram link: chip turns amber "Dữ liệu này không còn — chọn lại"; saved draft has no such edge and keeps `{{ nodes.summarize_1.output.summary }}`; reconnecting turns the chip back to normal.
 - English: "Insert data", "Fill in: Send to", chip "Tóm tắt bằng AI › Summary", menu "Trigger data / Incoming data / Other"; no `builder.` keys. Console errors none; API calls all 200/204.
 - Not checked live: search (needs a trigger with > 8 outputs connected; covered by Playwright).
-- Left on dev-k: draft workflow "Live check Batch 2" (`5347c47e-…`) in workspace `adaea5f1-…` (delete when convenient).
+- Left on dev-k: draft workflow "Live check Batch 2" (`5347c47e-…`) in workspace `adaea5f1-…` — soft-deleted 2026-10-17 via `DELETE /workflows/{id}` (204).
 - Findings for Batch 3 wording: EN "Run id" / "Workflow id" and "Current time (UTC, ISO 8601)" in the "Khác/Other" group (banned "id", jargon); `builder.cfg.tg_target_custom` "chat ID"; publish banner "Bước summarize_1: AI Summarize cần …" shows a raw step id and English node name; the data menu near the bottom of the inspector is partly hidden behind the footer; the button's accessible name includes the `*` marker.
 
 Deferred minors (ledger): `role="menu"` holds inputs; group headings have no step icon; `fileSources` now nearest-first (OCR auto-pick); test hygiene (xpath `../..`, leak test opens the builder twice, orphan edge-click flake).
