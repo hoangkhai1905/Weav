@@ -394,6 +394,7 @@ const ocrModeOf = (config: Record<string, unknown>): OcrSourceMode =>
 
 /** Telegram send target "whoever just wrote to the bot" (a Telegram trigger's chat). */
 // Fields folded under "Thêm tùy chọn" in the hand-written forms (same membership as before).
+const HAND_FIELD_VARIANT_KEYS = new Set(['builder.cfg.tg_target', 'builder.cfg.mail_target', 'builder.cfg.ocr_file_mapping']);
 const TELEGRAM_ADVANCED = ['parseMode', 'disableNotification', 'replyToMessageId'];
 const HTTP_ADVANCED = ['connectionId', 'headers', 'query'];
 const EMAIL_ADVANCED = ['senderName', 'replyTo', 'replyToMessageId'];
@@ -499,8 +500,12 @@ export const WorkflowBuilderPage: React.FC = () => {
   /** FieldShell for a hand-written field of the selected step: `labelKey` keeps the field's existing wording; hint and `*` come from the schema copy. */
   const handField = (name: string, id: string, labelKey: string | undefined, children: (a11y: { id: string; describedBy?: string }) => React.ReactNode, hint?: string) => {
     const copy = fieldCopy(selectedNodeType, name, t);
+    // One source for the label: builder.field.<type>.<name>, shared with publish errors and the readiness line.
+    // Variant labels (chat target, mail target, OCR file expression) and fields without a config key keep their own key.
+    const ownKey = `builder.field.${selectedNodeType}.${name}`;
+    const label = labelKey && (t(ownKey) === ownKey || HAND_FIELD_VARIANT_KEYS.has(labelKey)) ? t(labelKey) : copy.label;
     return (
-      <FieldShell id={id} label={labelKey ? t(labelKey) : copy.label} hint={hint ?? copy.hint} required={NODE_SCHEMAS[selectedNodeType]?.required.includes(name)}>
+      <FieldShell id={id} label={label} hint={hint ?? copy.hint} required={NODE_SCHEMAS[selectedNodeType]?.required.includes(name)}>
         {children}
       </FieldShell>
     );

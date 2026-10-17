@@ -89,10 +89,20 @@ export const isConditionComplete = (config: Record<string, unknown>): boolean =>
     && conditions.every((item: { left?: unknown; operator?: unknown; right?: unknown }) => !isBlank(item?.left) && !isBlank(item?.operator) && !isBlank(item?.right));
 };
 
+// Fields whose requirement a conditional rule above decides alone, so the schema's unconditional `required` must not re-add them.
+// email.send: a reply may leave the subject blank (#57); a blank body passes publish (DefinitionValidator checks the key only, the body has no minLength).
+const RULE_OWNED_FIELDS: Record<string, string[]> = {
+  'email.send': ['subject', 'body'],
+  'google.drive': ['name', 'fileId'],
+  'google.calendar': ['summary', 'start', 'end'],
+  'format.datetime': ['value', 'amount', 'unit', 'pattern', 'timezone'],
+  'format.text': ['value', 'search', 'maxLength'],
+};
+
 /** Fields the step needs before it can be published: the schema's required ones (connectionId has its own state) plus the conditional rules. */
 export const requiredFields = (nodeType: string, config: Record<string, unknown>): string[] => [
   ...new Set([
-    ...(NODE_SCHEMAS[nodeType]?.required ?? []).filter((name) => name !== 'connectionId'),
+    ...(NODE_SCHEMAS[nodeType]?.required ?? []).filter((name) => name !== 'connectionId' && !RULE_OWNED_FIELDS[nodeType]?.includes(name)),
     ...(CONNECTION_NODE_FIELDS[nodeType]?.(config) ?? []),
     ...(FORMAT_NODE_FIELDS[nodeType]?.(config) ?? []),
   ]),

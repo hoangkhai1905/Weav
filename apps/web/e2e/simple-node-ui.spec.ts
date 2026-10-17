@@ -149,9 +149,9 @@ const TG_CONNECTION = '20000000-0000-4000-8000-000000000003';
 const namedTelegram = [{ id: 'tg1', type: 'telegram.send_message', config: { connectionId: TG_CONNECTION, chatId: '1', text: 'hi' } }];
 
 // An active Telegram connection, so the step is complete and Publish is enabled (the 400 is stubbed).
-async function stubTelegramConnection(page: Page) {
+async function stubTelegramConnection(page: Page, provider = 'TELEGRAM') {
   await page.route(`**/api/v1/workspaces/${workspaceId}/connections**`, (route) => json(route, [{
-    id: TG_CONNECTION, workspaceId, createdBy: '00000000-0000-4000-8000-000000000010', name: 'Bot', provider: 'TELEGRAM', authType: 'API_KEY',
+    id: TG_CONNECTION, workspaceId, createdBy: '00000000-0000-4000-8000-000000000010', name: 'Bot', provider, authType: 'API_KEY',
     status: 'ACTIVE', config: null, hasCredential: true, credentialExpiresAt: null, lastVerifiedAt: null, canManage: true,
     createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
   }]));
@@ -171,7 +171,7 @@ test('publish error names the step and the field', async ({ page }) => {
   await stubPublishError(page, 'nodes[tg1].config.text', 'REQUIRED_FIELD_MISSING: text is required');
   await openBuilder(page);
   await page.getByTestId('workflow-publish').click();
-  const issue = page.getByText("Bước 'Gửi tin Telegram': cần điền 'Message'");
+  const issue = page.getByText("Bước 'Gửi tin Telegram': cần điền 'Nội dung tin nhắn'");
   await expect(issue.first()).toBeVisible();
   await expect(page.getByText(/nodes\[|config\./)).toHaveCount(0);
 });
@@ -190,7 +190,10 @@ test('readiness banner lists missing fields by label', async ({ page }) => {
   await stubBackend(page);
   await openBuilder(page);
   await addNode(page, 'telegram.send_message');
-  await expect(page.getByTestId('integration-readiness')).toContainText(/Cần điền: .*Message/);
+  await expect(page.getByTestId('integration-readiness')).toContainText(/Cần điền: .*Nội dung tin nhắn/);
+  // The banner uses the label the field itself shows.
+  const fieldLabel = (await page.locator("#telegram-text-label").textContent())?.replace("*", "").trim() ?? "";
+  await expect(page.getByTestId('integration-readiness')).toContainText(fieldLabel);
 });
 
 test('advanced section opens for a publish error', async ({ page }) => {
@@ -202,4 +205,15 @@ test('advanced section opens for a publish error', async ({ page }) => {
   await expect(page.getByTestId('telegram-advanced')).not.toHaveAttribute('open', /.*/);
   await page.getByTestId('workflow-publish').click();
   await expect(page.getByTestId('telegram-advanced')).toHaveAttribute('open', '');
+});
+
+test('email reply with blank subject is ready', async ({ page }) => {
+  const reply = [{ id: 'mail1', type: 'email.send', config: { connectionId: TG_CONNECTION, to: 'a@example.test', body: 'hi', replyToMessageId: 'msg-1' } }];
+  await stubBackend(page, reply);
+  await stubTelegramConnection(page, 'GMAIL');
+  await openBuilder(page);
+  await page.getByTestId('rf__node-mail1').getByTestId('workflow-node').click();
+  await expect(page.getByTestId('email-config')).toBeVisible();
+  await expect(page.getByTestId('integration-readiness')).toHaveCount(0);
+  await expect(page.getByText(/Cần điền/)).toHaveCount(0);
 });
