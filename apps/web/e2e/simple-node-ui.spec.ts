@@ -483,3 +483,45 @@ test('typing a comma list in a string-or-list field saves a list', async ({ page
   const last = saved[saved.length - 1] as { definition: { nodes: Array<{ id: string; config: { cc?: unknown } }> } };
   expect(last.definition.nodes.find((node) => node.id === 'mail_1')?.config.cc).toEqual(['a@example.test', 'b@example.test']);
 });
+
+test('every output path has a vi and en label', async () => {
+  const { NODE_CATALOG, OUTPUTS_BY_OPERATION } = await import('../src/lib/constants/nodeCatalog');
+  const { TRANSLATIONS } = await import('../src/lib/i18n/translations');
+  const wanted = new Set<string>();
+  for (const item of NODE_CATALOG) for (const output of item.outputs) wanted.add(`builder.var.path.${item.type}.${output.name}`);
+  for (const [type, operations] of Object.entries(OUTPUTS_BY_OPERATION)) {
+    for (const paths of Object.values(operations)) for (const path of paths) wanted.add(`builder.var.path.${type}.${path}`);
+  }
+  const missing = [...wanted].flatMap((key) => (['VI', 'EN'] as const).filter((lang) => !TRANSLATIONS[lang][key]).map((lang) => `${lang} ${key}`));
+  expect(missing).toEqual([]);
+  // Plain words for non-technical users: no jargon, at most four words.
+  const jargon = /\b(ID|JSON|cron|payload|node|config)\b/i;
+  const bad = [...wanted].flatMap((key) => (['VI', 'EN'] as const).map((lang) => ({ key: `${lang} ${key}`, text: TRANSLATIONS[lang][key] ?? '' })))
+    .filter(({ text }) => jargon.test(text) || text.trim().split(/\s+/).length > 4)
+    .map(({ key, text }) => `${key}: ${text}`);
+  expect(bad).toEqual([]);
+});
+
+test('no builder. keys leak in either language', async ({ page }) => {
+  test.setTimeout(240_000);
+  await stubBackend(page);
+  // Runs after the VI default of stubBackend; the builder has no language switch, so each pass picks its language by reload.
+  await page.addInitScript(() => {
+    const lang = sessionStorage.getItem('test_lang');
+    if (lang) localStorage.setItem('weav_lang_v1', lang);
+  });
+  const { NODE_CATALOG } = await import('../src/lib/constants/nodeCatalog');
+  const inspector = page.getByTestId('workflow-inspector');
+  const leak = /\bbuilder\.[a-z_]+\./;
+  for (const code of ['EN', 'VI']) {
+    await openBuilder(page);
+    await page.evaluate((lang) => sessionStorage.setItem('test_lang', lang), code);
+    await page.reload();
+    await expect(page.getByTestId('workflow-title')).toHaveValue('Simple nodes');
+    for (const { type } of NODE_CATALOG) {
+      await addNode(page, type);
+      await expect(inspector).toBeVisible();
+      expect((await inspector.innerText()).match(leak), `${type} ${code}`).toBeNull();
+    }
+  }
+});
