@@ -18,7 +18,7 @@ const draft = (extraNodes: Array<{ id: string; type: string; config: Record<stri
     schemaVersion: '1.0',
     nodes: [{ id: 'manual', type: 'trigger.manual', config: {} }, ...extraNodes],
     // Publish needs every step reachable; the publish-error fixtures name their step tg1.
-    edges: extraNodes.filter((node) => node.id === 'tg1').map((node) => ({ id: 'e1', source: 'manual', target: node.id })),
+    edges: extraNodes.filter((node) => node.id === 'tg1').map((node) => ({ id: 'e1', source: extraNodes.some((other) => other.id === 'tgt') ? 'tgt' : 'manual', target: node.id })),
     variables: {},
   },
   editorState: {
@@ -220,4 +220,18 @@ test('email reply with blank subject is ready', async ({ page }) => {
   await expect(page.getByTestId('email-config')).toBeVisible();
   await expect(page.getByTestId('integration-readiness')).toHaveCount(0);
   await expect(page.getByText(/Cần điền/)).toHaveCount(0);
+});
+
+test('telegram reply target and other chat have distinct labels', async ({ page }) => {
+  await stubBackend(page, [
+    { id: 'tgt', type: 'trigger.telegram', config: {} },
+    { id: 'tg1', type: 'telegram.send_message', config: { connectionId: TG_CONNECTION, chatId: '', text: 'hi' } },
+  ]);
+  await stubTelegramConnection(page);
+  await openBuilder(page);
+  await page.getByTestId('rf__node-tg1').getByTestId('workflow-node').click();
+  await page.getByTestId('telegram-chat-target').selectOption('custom');
+  await expect(page.getByLabel('Gửi tới', { exact: false })).toHaveCount(1);
+  await expect(page.getByLabel('Gửi tới', { exact: false })).toHaveAttribute('data-testid', 'telegram-chat-target');
+  await expect(page.getByLabel('Cuộc trò chuyện khác')).toHaveAttribute('id', 'telegram-chat-id');
 });

@@ -497,14 +497,14 @@ export const WorkflowBuilderPage: React.FC = () => {
     />
   );
   /** FieldShell for a hand-written field of the selected step: `labelKey` keeps the field's existing wording; hint and `*` come from the schema copy. */
-  const handField = (name: string, id: string, labelKey: string | undefined, children: (a11y: { id: string; describedBy?: string }) => React.ReactNode, hint?: string) => {
+  const handField = (name: string, id: string, labelKey: string | undefined, children: (a11y: { id: string; describedBy?: string }) => React.ReactNode, hint?: string, override?: { label: string; required: boolean }) => {
     const copy = fieldCopy(selectedNodeType, name, t);
     // One source for the label: builder.field.<type>.<name>, shared with publish errors and the readiness line.
     // Fields without a config key (e.g. the OCR source mode) keep their own labelKey.
     const ownKey = `builder.field.${selectedNodeType}.${name}`;
-    const label = labelKey && t(ownKey) === ownKey ? t(labelKey) : copy.label;
+    const label = override?.label ?? (labelKey && t(ownKey) === ownKey ? t(labelKey) : copy.label);
     return (
-      <FieldShell id={id} label={label} hint={hint ?? copy.hint} required={NODE_SCHEMAS[selectedNodeType]?.required.includes(name)}>
+      <FieldShell id={id} label={label} hint={hint ?? copy.hint} required={override?.required ?? NODE_SCHEMAS[selectedNodeType]?.required.includes(name)}>
         {children}
       </FieldShell>
     );
@@ -2293,7 +2293,9 @@ export const WorkflowBuilderPage: React.FC = () => {
                         {!replying && (
                           handField('chatId', 'telegram-chat-id', 'builder.cfg.chat_id', ({ id, describedBy }) => (
                             <input id={id} aria-describedby={describedBy} value={chatId} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} placeholder="123456789" className="w-full rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring" />
-                          ), t('builder.cfg.tg_chat_hint'))
+                          ), t('builder.cfg.tg_chat_hint'),
+                          // Next to the target select (which names the field and carries the required marker) the input gets its own label.
+                          canReply ? { label: t('builder.field.telegram.send_message.chatId_other'), required: false } : undefined)
                         )}
                       </div>
                     );
