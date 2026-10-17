@@ -143,12 +143,12 @@ test('hand-written mapping fields are reachable by their label', async ({ page }
   await stubBackend(page);
   await openBuilder(page);
   await addNode(page, 'http.request');
-  await expect(page.getByLabel(/^URL/)).toBeVisible();
-  await page.getByLabel(/^URL/).click();
+  await expect(page.getByRole('textbox', { name: /^URL/ })).toBeVisible();
+  await page.getByRole('textbox', { name: /^URL/ }).click();
   await page.keyboard.type('https://example.test');
   await expect(page.locator('#http-url')).toContainText('https://example.test');
   await addNode(page, 'telegram.send_message');
-  await expect(page.getByLabel('Nội dung tin nhắn')).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Nội dung tin nhắn', exact: true })).toBeVisible();
 });
 
 const TG_CONNECTION = '20000000-0000-4000-8000-000000000003';
@@ -237,7 +237,7 @@ test('telegram reply target and other chat have distinct labels', async ({ page 
   await page.getByTestId('telegram-chat-target').selectOption('custom');
   await expect(page.getByLabel('Gửi tới', { exact: false })).toHaveCount(1);
   await expect(page.getByLabel('Gửi tới', { exact: false })).toHaveAttribute('data-testid', 'telegram-chat-target');
-  await expect(page.getByLabel('Cuộc trò chuyện khác')).toHaveAttribute('id', 'telegram-chat-id');
+  await expect(page.getByRole('textbox', { name: 'Cuộc trò chuyện khác', exact: true })).toHaveAttribute('id', 'telegram-chat-id');
 });
 
 test('advanced section stays open after clearing its value', async ({ page }) => {
@@ -268,7 +268,7 @@ test('email reply target and custom recipient have distinct labels', async ({ pa
   await page.getByTestId('email-target').selectOption('custom');
   await expect(page.getByLabel('Gửi tới', { exact: false })).toHaveCount(1);
   await expect(page.getByLabel('Gửi tới', { exact: false })).toHaveAttribute('data-testid', 'email-target');
-  await expect(page.getByLabel('Địa chỉ người nhận')).toHaveAttribute('id', 'email-to');
+  await expect(page.getByRole('textbox', { name: 'Địa chỉ người nhận', exact: true })).toHaveAttribute('id', 'email-to');
 });
 
 test('no english schema description shows as a hint in vietnamese', async ({ page }) => {
@@ -391,6 +391,7 @@ test('manual trigger offers a named input', async ({ page }) => {
   const add = menu.getByTestId('mapping-data-named-add');
   await name.fill('ten khach');
   await expect(add).toBeDisabled();
+  await expect(menu.getByRole('alert')).toContainText('khoảng trắng');
   await name.fill('ten_khach');
   await add.click();
   await expect(page.locator('#telegram-text').getByTestId('mapping-chip')).toHaveAttribute('data-mapping', '{{ trigger.input.ten_khach }}');
@@ -462,7 +463,7 @@ test('mapping in a number field round-trips', async ({ page }) => {
 });
 
 test('ticking use-data over a typed number gives a data field', async ({ page }) => {
-  await stubBackend(page, [
+  const saved = await stubBackend(page, [
     { id: 'a', type: 'http.request', config: { url: 'https://example.test' } },
     { id: 'fd1', type: 'format.datetime', config: { operation: 'add', value: '2026-01-01', amount: 5, unit: 'days' } },
   ], { edges: [['manual', 'a'], ['a', 'fd1']] });
@@ -470,6 +471,52 @@ test('ticking use-data over a typed number gives a data field', async ({ page })
   await page.getByTestId('rf__node-fd1').getByTestId('workflow-node').click();
   await page.getByTestId('field-amount-use-data').check();
   await expect(dataToggles(page, 'field-format-datetime-amount')).toHaveCount(1);
+  // The typed 5 is gone, so inserting data gives exactly the mapping, never `5{{ ... }}`.
+  await dataToggles(page, 'field-format-datetime-amount').click();
+  await page.getByTestId('mapping-data-item').first().click();
+  await page.getByTestId('workflow-save').click();
+  await expect.poll(() => saved.length).toBeGreaterThan(0);
+  const last = saved[saved.length - 1] as { definition: { nodes: Array<{ id: string; config: { amount?: unknown } }> } };
+  expect(last.definition.nodes.find((node) => node.id === 'fd1')?.config.amount).toMatch(/^\{\{ nodes\.a\.output\.[\w.[\]]+ \}\}$/);
+});
+
+test('removing the chip of a number data field keeps the data field', async ({ page }) => {
+  await stubBackend(page, [
+    { id: 'a', type: 'http.request', config: { url: 'https://example.test' } },
+    { id: 'fd1', type: 'format.datetime', config: { operation: 'add', value: '2026-01-01', amount: '{{ nodes.a.output.status }}', unit: 'days' } },
+  ], { edges: [['manual', 'a'], ['a', 'fd1']] });
+  await openBuilder(page);
+  await page.getByTestId('rf__node-fd1').getByTestId('workflow-node').click();
+  const field = page.locator('#field-format-datetime-amount');
+  await field.getByRole('button', { name: /Bỏ dữ liệu này/ }).click();
+  await expect(field.getByTestId('mapping-chip')).toHaveCount(0);
+  await expect(page.getByTestId('field-amount-use-data')).toBeChecked();
+  await expect(dataToggles(page, 'field-format-datetime-amount')).toHaveCount(1);
+});
+
+test('a path deeper than a listed one is not reported as gone', async ({ page }) => {
+  await stubBackend(page, [
+    { id: 'http_1', type: 'http.request', config: { url: 'https://example.test' } },
+    { id: 'tg1', type: 'telegram.send_message', config: { connectionId: TG_CONNECTION, chatId: '1', text: '{{ nodes.http_1.output.data.name }}' } },
+  ], { edges: [['manual', 'http_1'], ['http_1', 'tg1']] });
+  await stubTelegramConnection(page);
+  await openBuilder(page);
+  await page.getByTestId('rf__node-tg1').getByTestId('workflow-node').click();
+  const chip = page.locator('#telegram-text').getByTestId('mapping-chip');
+  await expect(chip).toHaveCount(1);
+  await expect(chip).not.toContainText('không còn');
+  await expect(chip).not.toContainText('data.name');
+  await expect(chip).toContainText('Name');
+});
+
+test('the data button names its field and a search without a match says so', async ({ page }) => {
+  await stubBackend(page, MAIL_CHAIN, mailGraph);
+  await stubTelegramConnection(page);
+  await openBuilder(page);
+  const menu = await openDataMenu(page, 'tg1', 'telegram-text');
+  await expect(page.getByRole('button', { name: /^Chèn dữ liệu vào .+/ })).toHaveCount(await page.getByTestId('mapping-data-toggle').count());
+  await menu.getByLabel('Tìm dữ liệu').fill('zzzzqq');
+  await expect(menu.getByText('Không tìm thấy dữ liệu')).toBeVisible();
 });
 
 test('typing a comma list in a string-or-list field saves a list', async ({ page }) => {

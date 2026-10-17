@@ -2219,7 +2219,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                   {(selectedNodeType === 'slack.send_message' || selectedNodeType === 'teams.send_message') && <CharCounter value={selectedNodeConfig.text} max={4000} />}
                 </div>
               ) : selectedNodeType === 'weav.workflow' && selectedNodeId ? (
-                <WeavWorkflowInspector key={`control-bot:${selectedNodeId}`} nodeId={selectedNodeId} config={selectedNodeConfig} currentWorkflowId={workflow?.id} onChange={updateSelectedNodeConfig} />
+                <WeavWorkflowInspector key={`control-bot:${selectedNodeId}`} nodeId={selectedNodeId} config={selectedNodeConfig} currentWorkflowId={workflow?.id} groups={inspectorGroups} onChange={updateSelectedNodeConfig} />
               ) : selectedNodeType === 'trigger.workflow_event' ? (
                 <WorkflowEventInspector key={`control-bot:${selectedNodeId}`} config={selectedNodeConfig} currentWorkflowId={workflow?.id} onChange={updateSelectedNodeConfig} />
               ) : selectedNodeType === 'logic.switch' ? (

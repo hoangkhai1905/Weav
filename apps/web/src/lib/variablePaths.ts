@@ -83,19 +83,26 @@ export const RUN_PATHS: Array<{ path: string; labelKey: string }> = [
 ];
 
 /**
- * How a `{{ inner }}` expression reads to a person: the friendly name of the data, a tooltip with its step, and the
- * whether an earlier step (or the run) really provides it. Data nothing provides reads as "gone".
+ * How a `{{ inner }}` expression reads to a person: the friendly name of the data, a tooltip with its step, and whether
+ * an earlier step (or the run) really provides it. A path is provided when it is a listed path or goes deeper into one
+ * (`data.name` under `data`); data nothing provides reads as "gone".
  */
 export const describeMapping = (inner: string, groups: VariableGroup[], t: (key: string) => string) => {
-    const run = RUN_PATHS.find((item) => item.path === inner);
+  const run = RUN_PATHS.find((item) => item.path === inner);
   if (run) return { label: t(run.labelKey), title: t('builder.var.run'), known: true };
   // Data that is not offered here (a deleted step, or one no longer before this step) reads as gone; the saved value is kept as is.
   const missing = { label: t('builder.var.missing'), title: t('builder.var.unknown'), known: false };
   const group = groups.find((item) => inner.startsWith(`${item.prefix}.`));
   if (!group) return missing;
   const path = inner.slice(group.prefix.length + 1);
-  if (!group.paths.includes(path) && !group.freeForm) return missing;
-  return { label: `${group.label} › ${outputLabel(group, path, t)}`, title: group.label, known: true };
+  // The nearest (longest) listed path that `path` is, or extends at a segment boundary.
+  const listed = group.paths
+    .filter((p) => path === p || path.startsWith(`${p}.`) || path.startsWith(`${p}[`))
+    .sort((a, b) => b.length - a.length)[0];
+  if (listed === undefined && !group.freeForm) return missing;
+  const base = listed ?? path;
+  const rest = path.slice(base.length).split('.').filter(Boolean).map(humanise);
+  return { label: [group.label, outputLabel(group, base, t), ...rest].join(' › '), title: group.label, known: true };
 };
 
 /** Files earlier steps produce, as mappings a file source (OCR) can take as is. */

@@ -1853,9 +1853,9 @@ test.describe("workflow builder Week 4 node fields", () => {
     await page.locator("#google-operation").selectOption("lookup");
     await expect(page.locator(node("google.sheets"))).toHaveAttribute("data-readiness", "not-configured");
     await expect(page.getByTestId("google-row-editor")).toHaveCount(0);
-    await page.getByLabel("Lookup column").fill("B");
-    await page.getByLabel("Value to find").fill("{{ trigger.input.email }}");
-    await page.getByLabel("Maximum rows").fill("5");
+    await page.getByLabel("Lookup column", { exact: true }).fill("B");
+    await page.getByLabel("Value to find", { exact: true }).fill("{{ trigger.input.email }}");
+    await page.getByLabel("Maximum rows", { exact: true }).fill("5");
     await expect(page.locator(node("google.sheets"))).toHaveAttribute("data-readiness", "ready");
 
     await saveDraft(page);
@@ -1886,7 +1886,7 @@ test.describe("workflow builder Week 4 node fields", () => {
     await page.getByLabel("Source of file 2").selectOption("fileId");
     await page.getByTestId("attachment-source").nth(1).fill("{{ trigger.input.attachments[0].fileId }}");
     await page.getByTestId("email-advanced").locator("summary").click();
-    await page.getByLabel("Sender name").fill("Weav bot");
+    await page.getByLabel("Sender name", { exact: true }).fill("Weav bot");
     await expect(page.locator(node("email.send"))).toHaveAttribute("data-readiness", "ready");
 
     await saveDraft(page);
@@ -2295,10 +2295,10 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await page.getByTestId("data-set-add").click();
     await page.getByLabel("Field 1 name").fill("email");
     await page.getByLabel("Value type of field 1").selectOption("mapping");
-    await page.getByLabel("Field 1 value").fill("{{ trigger.input.email }}");
+    await page.getByLabel("Field 1 value", { exact: true }).fill("{{ trigger.input.email }}");
     await page.getByTestId("data-set-add").click();
     await page.getByLabel("Field 2 name").fill("plan");
-    await page.getByLabel("Field 2 value").fill("pro");
+    await page.getByLabel("Field 2 value", { exact: true }).fill("pro");
     await expect(set).toHaveAttribute("data-readiness", "ready");
     await saveDraft(page);
     expect(savedConfig(state, "set")).toEqual({ fields: { email: "{{ trigger.input.email }}", plan: "pro" } });
@@ -2307,27 +2307,27 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await page.getByTestId("data-set-add").click();
     await page.getByLabel("Field 3 name").fill("count");
     await page.getByLabel("Value type of field 3").selectOption("number");
-    await page.getByLabel("Field 3 value").fill("42");
+    await page.getByLabel("Field 3 value", { exact: true }).fill("42");
     await page.getByTestId("data-set-add").click();
     await page.getByLabel("Field 4 name").fill("active");
     await page.getByLabel("Value type of field 4").selectOption("boolean");
-    await page.getByLabel("Field 4 value").selectOption("false");
+    await page.getByLabel("Field 4 value", { exact: true }).selectOption("false");
     await page.getByTestId("data-set-add").click();
     await page.getByLabel("Field 5 name").fill("code");
-    await page.getByLabel("Field 5 value").fill("007");
+    await page.getByLabel("Field 5 value", { exact: true }).fill("007");
     await saveDraft(page);
     expect(savedConfig(state, "set")).toEqual({
       fields: { email: "{{ trigger.input.email }}", plan: "pro", count: 42, active: false, code: "007" },
     });
 
     // An invalid number shows a friendly error and is left out of the saved fields until fixed.
-    await page.getByLabel("Field 3 value").fill("forty");
+    await page.getByLabel("Field 3 value", { exact: true }).fill("forty");
     await expect(page.getByRole("alert")).toContainText("Enter a number");
     await saveDraft(page);
     expect(savedConfig(state, "set")).toEqual({
       fields: { email: "{{ trigger.input.email }}", plan: "pro", active: false, code: "007" },
     });
-    await page.getByLabel("Field 3 value").fill("3.5");
+    await page.getByLabel("Field 3 value", { exact: true }).fill("3.5");
     await expect(page.getByRole("alert")).toHaveCount(0);
     await saveDraft(page);
     expect((savedConfig(state, "set") as { fields: Record<string, unknown> }).fields.count).toBe(3.5);
@@ -2367,11 +2367,11 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(types.nth(1)).toHaveValue("number");
     await expect(types.nth(2)).toHaveValue("boolean");
     await expect(types.nth(3)).toHaveValue("mapping");
-    await expect(page.getByLabel("Field 2 value")).toHaveValue("30");
-    await expect(page.getByLabel("Field 3 value")).toHaveValue("true");
+    await expect(page.getByLabel("Field 2 value", { exact: true })).toHaveValue("30");
+    await expect(page.getByLabel("Field 3 value", { exact: true })).toHaveValue("true");
     await expect(page.getByTestId("data-set-advanced")).toHaveText("Advanced value, kept as is.");
 
-    await page.getByLabel("Field 1 value").fill("Bob");
+    await page.getByLabel("Field 1 value", { exact: true }).fill("Bob");
     await saveDraft(page);
     expect(savedConfig(state, "set")).toEqual({
       fields: { name: "Bob", age: 30, vip: true, email: "{{ trigger.input.email }}", extra: nested },

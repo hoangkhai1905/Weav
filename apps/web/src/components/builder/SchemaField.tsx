@@ -59,8 +59,9 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
   const { t } = useI18nStore();
   // Text that is not a valid whole number is shown with an error but never written to the config.
   const [badInteger, setBadInteger] = useState<string | null>(null);
-  // Whether a number field takes data from an earlier step instead of a typed number; null = follow the stored value.
-  const [dataMode, setDataMode] = useState<boolean | null>(null);
+  // Whether a number field takes data from an earlier step instead of a typed number. A field loaded with a mapping
+  // starts in data mode and stays there, so removing the chip leaves an empty data field instead of a number input.
+  const [dataMode, setDataMode] = useState<boolean>(() => typeof value === 'string' && value.includes('{{'));
   // What the user typed in a list field: the stored list is re-joined with ", ", which would move the caret.
   const [listDraft, setListDraft] = useState<string | null>(null);
   const property = NODE_SCHEMAS[nodeType]?.properties[name];
@@ -96,7 +97,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
   const takesData = Boolean(groups) && Boolean(property['x-weav-template']) && !property.enum && !property['x-weav-connection'];
   // A number field keeps a typed number by default; "Dùng dữ liệu từ bước trước" turns it into a data field.
   const numberWithData = takesData && isInteger && property.type !== 'array';
-  const useData = numberWithData && (dataMode ?? (typeof value === 'string' && value.includes('{{')));
+  const useData = numberWithData && dataMode;
   // A comma separated list that can take data: shown as text, saved as a list unless it holds a mapping.
   const listText = takesData && types.includes('array') && !types.includes('object');
   // A text field that can take data from earlier steps (not a list, choice or a stored file object).
@@ -242,8 +243,8 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
               onChange={(event) => {
                 setBadInteger(null);
                 setDataMode(event.target.checked);
-                // Leaving data mode drops the mapping: it is not a number.
-                if (!event.target.checked && typeof value === 'string') onChange(undefined);
+                // The typed number would show as text and turn "+ Dữ liệu" into `5{{ ... }}`; leaving data mode drops the mapping (not a number).
+                if (event.target.checked ? typeof value === 'number' : typeof value === 'string') onChange(undefined);
               }}
               className="h-3.5 w-3.5 accent-primary"
             />

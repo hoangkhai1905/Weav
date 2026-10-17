@@ -181,7 +181,7 @@ test('command shows sender and the allow-list only for command, and clears them 
   await openBuilder(page);
   await addNode(page, 'weav.workflow');
   await expect(page.getByTestId('field-operation')).toHaveValue('command');
-  await expect(page.getByTestId('field-sender')).toHaveValue('{{ trigger.input.message.from.id }}');
+  await expect(page.getByTestId('field-sender')).toHaveAttribute('data-value', '{{ trigger.input.message.from.id }}');
   await page.locator('#weav-workflow-allowed-senders').fill('111, 222');
   let node = await savedNode(page, backend.drafts, 'weav.workflow');
   expect(node?.config).toMatchObject({ operation: 'command', sender: '{{ trigger.input.message.from.id }}', allowedSenders: ['111', '222'] });
@@ -195,7 +195,7 @@ test('command shows sender and the allow-list only for command, and clears them 
 
   await page.getByTestId('rf__node-control_1').click();
   await page.getByTestId('field-operation').selectOption('command');
-  await expect(page.getByTestId('field-sender')).toHaveValue('{{ trigger.input.message.from.id }}');
+  await expect(page.getByTestId('field-sender')).toHaveAttribute('data-value', '{{ trigger.input.message.from.id }}');
   await expect(page.locator('#weav-workflow-allowed-senders')).toHaveValue('');
 });
 

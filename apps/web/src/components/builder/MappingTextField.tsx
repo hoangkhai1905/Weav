@@ -45,8 +45,8 @@ const CHIP_UNKNOWN = `${CHIP} border-warn/40 bg-warn-bg text-warn`;
 /**
  * A text field that shows each `{{ ... }}` as a chip with a friendly name ("Text read") and an × to remove it,
  * while the saved value stays the plain mapping string. A "+ Data" menu under the field inserts data from the
- * steps before at the caret; typing, pasting and "Insert variable" also work, and a mapping typed or pasted by
- * hand turns into a chip when the field loses focus.
+ * steps before at the caret; typing and pasting also work, and a mapping typed or pasted by hand turns into a chip
+ * when the field loses focus.
  */
 export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelledBy, describedBy, required, ariaLabel, value, onChange, groups, multiline, placeholder, testId, className, format }) => {
   const { t } = useI18nStore();
@@ -376,6 +376,12 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
         <button
           type="button"
           data-testid="mapping-data-toggle"
+          // "Chèn dữ liệu vào <field label>": steps with several data fields get distinct buttons. The name is built from the
+          // visible label's text (an aria-labelledby on the label would also make the button a match for that label).
+          ref={(button) => {
+            const label = (labelledBy && document.getElementById(labelledBy)?.textContent?.trim()) || ariaLabel;
+            if (button && label) button.setAttribute('aria-label', `${t('builder.var.add_data')} ${t('builder.var.into')} ${label}`);
+          }}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onMouseDown={keepCaret}

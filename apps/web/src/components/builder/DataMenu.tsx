@@ -38,7 +38,8 @@ export const DataMenu: React.FC<DataMenuProps> = ({ groups, onPick, onClose }) =
   ];
   const total = sections.reduce((sum, section) => sum + section.items.length, 0);
   const needle = searchKey(query.trim());
-  const nameOk = isValidPath(name);
+  const typedName = name.trim();
+  const nameOk = isValidPath(typedName);
 
   return (
     <div
@@ -58,6 +59,9 @@ export const DataMenu: React.FC<DataMenuProps> = ({ groups, onPick, onClose }) =
           onChange={(event) => setQuery(event.target.value)}
           className="w-full rounded border border-border-strong bg-card px-2 py-1 text-xs text-foreground"
         />
+      )}
+      {needle && sections.every((section) => !section.items.some((item) => searchKey(item.label).includes(needle))) && (
+        <p className="px-2 text-xs text-muted-foreground">{t('builder.var.no_match')}</p>
       )}
       {sections.map((section) => {
         const items = section.items.filter((item) => !needle || searchKey(item.label).includes(needle));
@@ -79,7 +83,7 @@ export const DataMenu: React.FC<DataMenuProps> = ({ groups, onPick, onClose }) =
                     placeholder={t('builder.var.named_input_hint')}
                     data-notemplate
                     value={name}
-                    onChange={(event) => setName(event.target.value.trim())}
+                    onChange={(event) => setName(event.target.value)}
                     className="min-w-0 flex-1 rounded border border-border-strong bg-card px-2 py-1 font-mono text-[10px] text-foreground"
                   />
                   <button
@@ -87,12 +91,13 @@ export const DataMenu: React.FC<DataMenuProps> = ({ groups, onPick, onClose }) =
                     data-testid="mapping-data-named-add"
                     disabled={!nameOk}
                     onMouseDown={keepCaret}
-                    onClick={() => onPick(mappingOf(section.freeForm as VariableGroup, name))}
+                    onClick={() => onPick(mappingOf(section.freeForm as VariableGroup, typedName))}
                     className="rounded border border-border-strong px-1.5 py-1 text-[10px] font-medium text-text-2 hover:text-foreground disabled:opacity-40"
                   >
                     {t('builder.var.trigger_key_add')}
                   </button>
                 </div>
+                {typedName !== '' && !nameOk && <p role="alert" className="pt-0.5 text-[10px] text-warn">{t('builder.var.named_input_invalid')}</p>}
               </div>
             )}
           </div>
