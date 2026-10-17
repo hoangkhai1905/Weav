@@ -26,7 +26,17 @@ Decisions worth knowing:
 
 Checks: `apps/web/e2e/simple-node-ui.spec.ts` 18/18; builder specs (`workflow-ui` http mode, `builder-correctness`, `ocr-builder`, `w7-nodes`) have identical failing test names before and after every task (39 pre-existing on `dev`: workflow-ui 25, builder-correctness 1, ocr-builder 13); `tsc -p tsconfig.app.json` clean; web build OK; eslint only the pre-existing set-state-in-effect error in `WorkflowBuilderPage.tsx` (~692).
 
-Not done yet: live check in the in-app browser on the dev stack (planned at the Batch 2 gate and in Task 11); deferred minors listed in the ledger (formatter pass on `handField` wrappers, stricter Task 1 test messages, checkbox `aria-required`, a test for "a later value reopens a closed section").
+Live check (2026-10-17, in-app browser, dev stack on Neon dev-k, 7 services without OCR, workflow-service rebuilt; local live-test account from `tmp/live-test-account.txt`): PASS.
+- Calendar step: "Thêm tùy chọn (1)" and "Chi tiết kỹ thuật" collapsed; "Địa điểm" stays open after typing and clearing; readiness "Cần điền: Tiêu đề, Bắt đầu, Kết thúc"; node id only in the footer.
+- HTTP step: "Phương thức*", "URL*", per-field "Chèn dữ liệu", "Thêm tùy chọn (3)", readiness "Cần điền: URL", no English hints.
+- Gmail trigger -> email: target select "Gửi tới*", custom field "Địa chỉ người nhận"; readiness "Cần điền: Gửi tới, Tiêu đề".
+- English: "More options (3)", "Technical details", "Fill in: Send to, Subject", "Recipient address"; no `builder.` keys leaked.
+- Console errors: none; API calls all 200/204.
+- Not reachable live: a server-side publish error (the client blocks publish first); covered by the stubbed Playwright cases.
+- Left on dev-k: draft workflow "Live check Batch 1" (`beb3ab7c-…`) in the test account's workspace `adaea5f1-…` (delete when convenient).
+- Findings for later batches: palette wording ("Lịch / Cron", "biểu thức cron", "JSON có cấu trúc", Gmail send "Gửi thông báo đến các kênh"), "ID lịch", "Nội dung (body)", publish blocker text "Node HTTP request cần URL" (Batch 3); the old "Chèn biến" bar (Batch 2); delete button accessible name "Xóa bước calendar_1" exposes the raw id; email body shows `*` although a blank body publishes.
+
+Deferred minors listed in the ledger (formatter pass on `handField` wrappers, stricter Task 1 test messages, checkbox `aria-required`, a test for "a later value reopens a closed section").
 
 ## Next
 
