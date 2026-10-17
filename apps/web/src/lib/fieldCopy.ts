@@ -2,7 +2,7 @@ import { NODE_SCHEMAS } from './nodeSchemas';
 
 export interface FieldCopy { label: string; hint?: string; example?: string }
 
-/** Plain-language copy of a schema field: i18n `builder.field.<type>.<name>[_hint|_example]`, else the schema title/description. */
+/** Plain-language copy of a schema field: i18n `builder.field.<type>.<name>[_hint|_example]`, else the schema title. Hints come only from i18n (schema descriptions are English). */
 export function fieldCopy(nodeType: string, name: string, t: (key: string) => string): FieldCopy {
   const property = NODE_SCHEMAS[nodeType]?.properties[name];
   const key = `builder.field.${nodeType}.${name}`;
@@ -12,7 +12,7 @@ export function fieldCopy(nodeType: string, name: string, t: (key: string) => st
   };
   return {
     label: find('') ?? property?.title ?? name,
-    hint: find('_hint') ?? property?.description,
+    hint: find('_hint'),
     example: find('_example'),
   };
 }

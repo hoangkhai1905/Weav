@@ -18,7 +18,7 @@ const draft = (extraNodes: Array<{ id: string; type: string; config: Record<stri
     schemaVersion: '1.0',
     nodes: [{ id: 'manual', type: 'trigger.manual', config: {} }, ...extraNodes],
     // Publish needs every step reachable; the publish-error fixtures name their step tg1.
-    edges: extraNodes.filter((node) => node.id === 'tg1').map((node) => ({ id: 'e1', source: extraNodes.some((other) => other.id === 'tgt') ? 'tgt' : 'manual', target: node.id })),
+    edges: extraNodes.filter((node) => node.id === 'tg1' || node.id === 'http_1').map((node) => ({ id: 'e1', source: extraNodes.some((other) => other.id === 'tgt') ? 'tgt' : 'manual', target: node.id })),
     variables: {},
   },
   editorState: {
@@ -162,8 +162,6 @@ async function stubPublishError(page: Page, field: string, message: string) {
     json(route, { error: { code: 'VALIDATION_ERROR', message: 'Workflow definition is invalid', details: [{ field, message }] } }, 400));
 }
 
-
-
 test('publish error names the step and the field', async ({ page }) => {
   await stubBackend(page, namedTelegram);
   await stubTelegramConnection(page);
@@ -234,4 +232,57 @@ test('telegram reply target and other chat have distinct labels', async ({ page 
   await expect(page.getByLabel('Gửi tới', { exact: false })).toHaveCount(1);
   await expect(page.getByLabel('Gửi tới', { exact: false })).toHaveAttribute('data-testid', 'telegram-chat-target');
   await expect(page.getByLabel('Cuộc trò chuyện khác')).toHaveAttribute('id', 'telegram-chat-id');
+});
+
+test('advanced section stays open after clearing its value', async ({ page }) => {
+  await stubBackend(page);
+  await openBuilder(page);
+  await addNode(page, 'google.calendar');
+  const section = page.getByTestId('schema-advanced');
+  await section.locator('summary').click();
+  await expect(section).toHaveAttribute('open', '');
+  const field = page.getByTestId('field-location');
+  await field.click();
+  await page.keyboard.type('Hà Nội');
+  await expect(field).toHaveText('Hà Nội');
+  await page.keyboard.press('Control+A');
+  await page.keyboard.press('Backspace');
+  await expect(field).toHaveText('');
+  await expect(section).toHaveAttribute('open', '');
+});
+
+test('email reply target and custom recipient have distinct labels', async ({ page }) => {
+  await stubBackend(page, [
+    { id: 'tgt', type: 'trigger.gmail', config: {} },
+    { id: 'tg1', type: 'email.send', config: { connectionId: TG_CONNECTION } },
+  ]);
+  await stubTelegramConnection(page, 'GMAIL');
+  await openBuilder(page);
+  await page.getByTestId('rf__node-tg1').getByTestId('workflow-node').click();
+  await page.getByTestId('email-target').selectOption('custom');
+  await expect(page.getByLabel('Gửi tới', { exact: false })).toHaveCount(1);
+  await expect(page.getByLabel('Gửi tới', { exact: false })).toHaveAttribute('data-testid', 'email-target');
+  await expect(page.getByLabel('Địa chỉ người nhận')).toHaveAttribute('id', 'email-to');
+});
+
+test('no english schema description shows as a hint in vietnamese', async ({ page }) => {
+  await stubBackend(page);
+  await openBuilder(page);
+  const inspector = page.getByTestId('workflow-inspector');
+  await addNode(page, 'telegram.send_message');
+  await expect(inspector).toContainText('Nội dung tin nhắn');
+  await expect(inspector).not.toContainText('Message text to send.');
+  await addNode(page, 'http.request');
+  await expect(inspector.getByTestId('http-request-config')).toBeVisible();
+  await expect(inspector).not.toContainText('HTTP method:');
+});
+
+test('publish error for an unnamed step uses the step type name, not its id', async ({ page }) => {
+  await stubBackend(page, [{ id: 'http_1', type: 'http.request', config: { method: 'GET', url: 'https://example.test' } }]);
+  await page.route(base, (route) => json(route, { ...draft([{ id: 'http_1', type: 'http.request', config: { method: 'GET', url: 'https://example.test' } }]), editorState: { nodes: { manual: { name: 'Manual trigger', position: { x: 100, y: 120 } } } } }));
+  await stubPublishError(page, 'nodes[http_1].config.url', 'REQUIRED_FIELD_MISSING: url is required');
+  await openBuilder(page);
+  await page.getByTestId('workflow-publish').click();
+  await expect(page.getByText(/Bước 'HTTP Request'/).first()).toBeVisible();
+  await expect(page.getByTestId('workflow-builder-error')).not.toContainText('http_1');
 });

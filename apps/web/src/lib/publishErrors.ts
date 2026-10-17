@@ -1,4 +1,5 @@
 import { fieldCopy } from './fieldCopy';
+import { nodeLabel } from './nodeLabels';
 
 // Turns the Workflow Service validation details (`field` + "CODE: English message") into Vietnamese
 // text tied to a step, so the builder never shows the raw English "Workflow definition is invalid".
@@ -36,7 +37,7 @@ export function describeIssues(details: WorkflowErrorDetail[], t: (key: string) 
     const detailText = !label ? meaning
       : code === 'REQUIRED_FIELD_MISSING' ? t('builder.err.required_field').replace('{field}', label)
         : `'${label}' — ${meaning}`;
-    return { nodeId: match[1], text: `${t('builder.err.step_named').replace('{step}', step?.name || match[1])}: ${detailText}` };
+    return { nodeId: match[1], text: `${t('builder.err.step_named').replace('{step}', step?.name || (step ? nodeLabel(step.type, t) : match[1]))}: ${detailText}` };
   });
 }
 

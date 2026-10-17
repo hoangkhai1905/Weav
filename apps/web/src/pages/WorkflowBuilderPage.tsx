@@ -392,7 +392,6 @@ type OcrSourceMode = 'url' | 'file' | 'artifact';
 const ocrModeOf = (config: Record<string, unknown>): OcrSourceMode =>
   String(config.file ?? '').trim() ? 'file' : String(config.artifactId ?? '').trim() ? 'artifact' : 'url';
 
-/** Telegram send target "whoever just wrote to the bot" (a Telegram trigger's chat). */
 // Fields folded under "Thêm tùy chọn" in the hand-written forms (same membership as before).
 const TELEGRAM_ADVANCED = ['parseMode', 'disableNotification', 'replyToMessageId'];
 const HTTP_ADVANCED = ['connectionId', 'headers', 'query'];
@@ -400,6 +399,7 @@ const EMAIL_ADVANCED = ['senderName', 'replyTo', 'replyToMessageId'];
 /** An empty key/value map (what the editor saves after the last row is removed) counts as no value. */
 const withoutEmptyMaps = (config: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(config).map(([name, value]) => [name, value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length ? undefined : value]));
+/** Telegram send target "whoever just wrote to the bot" (a Telegram trigger's chat). */
 const TELEGRAM_REPLY_CHAT = '{{ trigger.input.message.chat.id }}';
 /** Gmail send recipient "whoever sent the email that started the run" (a Gmail trigger's sender address). */
 const GMAIL_REPLY_TO = '{{ trigger.input.fromEmail }}';
@@ -2409,7 +2409,8 @@ export const WorkflowBuilderPage: React.FC = () => {
                     {selectedNodeConfig.to !== GMAIL_REPLY_TO || !inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail')) ? (
                       handField('to', 'email-to', 'builder.cfg.recipient', ({ id, describedBy }) => (
                         <MappingTextField key={`${selectedNodeId}-to`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required value={String(selectedNodeConfig.to ?? '')} onChange={(to) => updateSelectedNodeConfig({ to })} groups={inspectorGroups} />
-                      ))
+                      ), undefined, inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail'))
+                        ? { label: t('builder.field.email.send.to_other'), required: false } : undefined)
                     ) : null}
                   </div>
                   {handField('subject', 'email-subject', 'builder.cfg.subject', ({ id, describedBy }) => (<>
