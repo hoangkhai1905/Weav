@@ -82,12 +82,12 @@ import { storeOAuthPendingContext } from '../lib/oauthPending';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG, nextNodeId, nodeSourcePorts } from '../lib/constants/nodeCatalog';
-import { getNodeReadinessBadge, isConditionComplete, missingFieldLabels } from '../lib/nodeReadiness';
+import { getNodeReadinessBadge, isConditionComplete, isMarkedRequired, missingFieldLabels } from '../lib/nodeReadiness';
 import { SchemaField } from '../components/builder/SchemaField';
 import { AdvancedSection } from '../components/builder/AdvancedSection';
 import { FieldShell } from '../components/builder/FieldShell';
 import { fieldCopy, hasValueOrError } from '../lib/fieldCopy';
-import { isAdvanced, NODE_SCHEMAS } from '../lib/nodeSchemas';
+import { isAdvanced } from '../lib/nodeSchemas';
 import { CharCounter, WeavWorkflowInspector, WorkflowEventInspector } from '../components/builder/ControlBotInspectors';
 import { ConditionEditor } from '../components/builder/ConditionEditor';
 import { AttachmentsEditor } from '../components/builder/AttachmentsEditor';
@@ -483,6 +483,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       onChange={(value) => updateSelectedNodeConfig({ [name]: value })}
       connections={connections}
       multiline={multiline}
+      required={isMarkedRequired(selectedNodeType, name, selectedNodeConfig)}
       // Text fields of a step show data from earlier steps as chips; a trigger has no earlier step.
       groups={selectedNodeType.startsWith('trigger.') ? undefined : inspectorGroups}
     />
@@ -504,7 +505,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     const ownKey = `builder.field.${selectedNodeType}.${name}`;
     const label = override?.label ?? (labelKey && t(ownKey) === ownKey ? t(labelKey) : copy.label);
     return (
-      <FieldShell id={id} label={label} hint={hint ?? copy.hint} required={override?.required ?? NODE_SCHEMAS[selectedNodeType]?.required.includes(name)}>
+      <FieldShell id={id} label={label} hint={hint ?? copy.hint} required={override?.required ?? isMarkedRequired(selectedNodeType, name, selectedNodeConfig)}>
         {children}
       </FieldShell>
     );

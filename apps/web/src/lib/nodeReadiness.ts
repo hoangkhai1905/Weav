@@ -108,6 +108,10 @@ export const requiredFields = (nodeType: string, config: Record<string, unknown>
   ]),
 ];
 
+/** Whether the inspector shows a `*` on `name`: same rule as readiness, except connectionId (its own state) follows the schema. */
+export const isMarkedRequired = (nodeType: string, name: string, config: Record<string, unknown>): boolean =>
+  name === 'connectionId' ? NODE_SCHEMAS[nodeType]?.required.includes('connectionId') ?? false : requiredFields(nodeType, config).includes(name);
+
 /** Plain-language labels of the required fields that are still blank. */
 export const missingFieldLabels = (nodeType: string, config: Record<string, unknown>, t: (key: string) => string): string[] =>
   requiredFields(nodeType, config).filter((name) => isBlank(config[name])).map((name) => fieldCopy(nodeType, name, t).label);

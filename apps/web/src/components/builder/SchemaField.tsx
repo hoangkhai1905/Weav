@@ -42,6 +42,8 @@ interface SchemaFieldProps {
   connections?: { id: string; name: string }[];
   /** Render a text field as a textarea (prompts, file content, descriptions). */
   multiline?: boolean;
+  /** Overrides the schema's required list (the builder passes the readiness rule). */
+  required?: boolean;
   /** Data from the steps before: a template text field then shows inserted data as named chips. */
   groups?: VariableGroup[];
 }
@@ -53,7 +55,7 @@ interface SchemaFieldProps {
  * Labels come from `builder.field.<type>.<name>` (fallback: schema title); `..._hint` adds help text;
  * enum options use `builder.field.<type>.<name>.<value>` (fallback: the raw value).
  */
-export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value, onChange, connections, multiline, groups }) => {
+export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value, onChange, connections, multiline, groups, required: requiredProp }) => {
   const { t } = useI18nStore();
   // Text that is not a valid whole number is shown with an error but never written to the config.
   const [badInteger, setBadInteger] = useState<string | null>(null);
@@ -62,7 +64,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
   const key = `builder.field.${nodeType}.${name}`;
   const { label, hint, example } = fieldCopy(nodeType, name, t);
   const placeholder = example ? `${t('builder.field.example_prefix')}${example}` : undefined;
-  const required = NODE_SCHEMAS[nodeType].required.includes(name);
+  const required = requiredProp ?? NODE_SCHEMAS[nodeType].required.includes(name);
   const id = `field-${nodeType}-${name}`.replace(/\./g, '-');
   const types = schemaTypes(property);
   // An object value (for example a file reference) is shown as JSON, never as "[object Object]".

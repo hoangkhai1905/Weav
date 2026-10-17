@@ -286,3 +286,24 @@ test('publish error for an unnamed step uses the step type name, not its id', as
   await expect(page.getByText(/Bước 'HTTP Request'/).first()).toBeVisible();
   await expect(page.getByTestId('workflow-builder-error')).not.toContainText('http_1');
 });
+
+test('email body has no required marker', async ({ page }) => {
+  await stubBackend(page);
+  await stubTelegramConnection(page, 'GMAIL');
+  await openBuilder(page);
+  await addNode(page, 'email.send');
+  await expect(page.getByTestId('email-config')).toBeVisible();
+  await expect(page.locator('#email-to-label')).toContainText('*');
+  await expect(page.locator('#email-subject-label')).toContainText('*');
+  await expect(page.locator('#email-body-label')).not.toContainText('*');
+});
+
+test('delete button names the step, not its id', async ({ page }) => {
+  await stubBackend(page, [{ id: 'http_1', type: 'http.request', config: { method: 'GET', url: 'https://example.test' } }]);
+  await openBuilder(page);
+  await page.getByTestId('rf__node-http_1').getByTestId('workflow-node').click();
+  const name = await page.getByTestId('rf__node-http_1').locator('span.font-semibold').first().innerText();
+  const del = page.getByTestId('workflow-node-delete');
+  await expect(del).toHaveAttribute('aria-label', new RegExp(name));
+  await expect(del).not.toHaveAttribute('aria-label', /http_1/);
+});

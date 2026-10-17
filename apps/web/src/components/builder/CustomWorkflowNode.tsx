@@ -213,8 +213,8 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
         <button
           type="button"
           data-testid="workflow-node-delete"
-          aria-label={t('builder.node.delete').replace('{id}', id)}
-          title={t('builder.node.delete').replace('{id}', id)}
+          aria-label={t('builder.node.delete').replace('{id}', name || id)}
+          title={t('builder.node.delete').replace('{id}', name || id)}
           onClick={(event) => {
             event.stopPropagation();
             // The button disappears with the node: hand focus to the canvas instead of <body>.
