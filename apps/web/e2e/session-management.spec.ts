@@ -122,6 +122,28 @@ async function gotoSecurity(page: Page) {
 }
 
 test.describe('web auth session management HTTP integration', () => {
+  test('keeps the session when /api/auth/me is rate limited at boot', async ({ page }) => {
+    await installAuthFixture(page);
+    let meCalls = 0;
+    await page.route('**/api/auth/me', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+      meCalls += 1;
+      if (meCalls === 1) {
+        await fulfillJson(route, { error: { code: 'RATE_LIMITED', message: 'Too many requests' } }, 429);
+        return;
+      }
+      await fulfillJson(route, identityUser(USER_A, 'a@example.com', 'User A'));
+    });
+
+    await page.goto('/settings/security', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('topbar-user-avatar')).toHaveAttribute('title', 'User A', { timeout: 15_000 });
+    expect(new URL(page.url()).pathname).not.toBe('/login');
+    expect(meCalls).toBe(2);
+  });
+
   test('loads contract metadata and navigates zero-based session pages', async ({ page }) => {
     await installAuthFixture(page);
     const sessionRequests: URL[] = [];

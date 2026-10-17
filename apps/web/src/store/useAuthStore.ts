@@ -46,7 +46,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 }));
 
 const initialAccessToken = getStoredAuthToken();
-if (!isAuthMockMode && (initialAccessToken || authApi.canRefresh())) {
+const BOOT_RETRY_DELAY_MS = 5000;
+
+function loadCurrentUser(retryOnError: boolean): void {
   void authApi
     .getCurrentUser()
     .then((user) => {
@@ -54,11 +56,15 @@ if (!isAuthMockMode && (initialAccessToken || authApi.canRefresh())) {
       if (user) useAuthStore.getState().setUser(user);
       else useAuthStore.getState().logout();
     })
-    .catch(() => {
-      if (getStoredAuthToken() === initialAccessToken)
-        useAuthStore.getState().logout();
+    .catch((error) => {
+      if (getStoredAuthToken() !== initialAccessToken) return;
+      // Only a rejected session ends it; a 429, 5xx or network failure keeps it (one retry, then the normal 401 path).
+      if (getAuthApiErrorStatus(error) === 401) useAuthStore.getState().logout();
+      else if (retryOnError) window.setTimeout(() => loadCurrentUser(false), BOOT_RETRY_DELAY_MS);
     });
 }
+
+if (!isAuthMockMode && (initialAccessToken || authApi.canRefresh())) loadCurrentUser(true);
 
 // Renew the 15-minute access token shortly before it expires, so API calls never see a 401 while the
 // backend refresh session (7 days) is still valid. Timers sleep in background tabs, hence the visibility check.
