@@ -405,7 +405,7 @@ test('orphan chip after the link to its step is removed keeps the value', async 
   await page.getByTestId('rf__node-tg1').getByTestId('workflow-node').click();
   await expect(page.locator('#telegram-text').getByTestId('mapping-chip')).toContainText('Tóm tắt thư');
   // The step stays on the canvas; only its link into the Telegram step goes, so it is no longer before it.
-  await page.getByTestId('rf__edge-g1').locator('.react-flow__edge-interaction').click({ force: true });
+  await page.getByTestId('rf__edge-g1').locator('.react-flow__edge-interaction').dispatchEvent('click');
   await page.keyboard.press('Delete');
   await expect(page.getByTestId('rf__edge-g1')).toHaveCount(0);
   await expect(page.getByTestId('rf__node-ai1')).toBeVisible();
@@ -500,28 +500,71 @@ test('every output path has a vi and en label', async () => {
     .filter(({ text }) => jargon.test(text) || text.trim().split(/\s+/).length > 4)
     .map(({ key, text }) => `${key}: ${text}`);
   expect(bad).toEqual([]);
+  // Non-catalog keys (for example webhook bank fields) are shown in the data menu too: same banned words.
+  const existing = (['VI', 'EN'] as const).flatMap((lang) => Object.entries(TRANSLATIONS[lang])
+    .filter(([key, text]) => key.startsWith('builder.var.path.') && jargon.test(text))
+    .map(([key, text]) => `${lang} ${key}: ${text}`));
+  expect(existing).toEqual([]);
 });
 
-test('no builder. keys leak in either language', async ({ page }) => {
-  test.setTimeout(240_000);
-  await stubBackend(page);
-  // Runs after the VI default of stubBackend; the builder has no language switch, so each pass picks its language by reload.
+const LEAK = /\bbuilder\.[a-z_]+\./;
+
+// The builder has no language control, so a pass picks its language from sessionStorage and reloads.
+async function useLanguageSwitch(page: Page) {
   await page.addInitScript(() => {
     const lang = sessionStorage.getItem('test_lang');
     if (lang) localStorage.setItem('weav_lang_v1', lang);
   });
-  const { NODE_CATALOG } = await import('../src/lib/constants/nodeCatalog');
+}
+async function switchLanguage(page: Page, code: 'VI' | 'EN') {
+  await page.evaluate((lang) => sessionStorage.setItem('test_lang', lang), code);
+  await page.reload();
+  await expect(page.getByTestId('workflow-title')).toHaveValue('Simple nodes');
+}
+
+test('no builder. keys leak in either language, and the same step switches language', async ({ page }) => {
+  test.setTimeout(240_000);
+  await stubBackend(page, MAIL_CHAIN, mailGraph);
+  await stubTelegramConnection(page);
+  await useLanguageSwitch(page);
+  await openBuilder(page);
   const inspector = page.getByTestId('workflow-inspector');
-  const leak = /\bbuilder\.[a-z_]+\./;
-  for (const code of ['EN', 'VI']) {
-    await openBuilder(page);
-    await page.evaluate((lang) => sessionStorage.setItem('test_lang', lang), code);
-    await page.reload();
-    await expect(page.getByTestId('workflow-title')).toHaveValue('Simple nodes');
+  const texts: string[] = [];
+  for (const code of ['VI', 'EN'] as const) {
+    await switchLanguage(page, code);
+    const menu = await openDataMenu(page, 'tg1');
+    await expect(menu).toBeVisible();
+    expect((await menu.innerText()).match(LEAK), `data menu ${code}`).toBeNull();
+    await page.keyboard.press('Escape');
+    texts.push(await inspector.innerText());
+    expect(texts.at(-1)!.match(LEAK), `tg1 ${code}`).toBeNull();
+  }
+  expect(texts[0]).not.toEqual(texts[1]);
+  expect(texts[0]).toContain('Nội dung');
+  expect(texts[1]).toContain('Message');
+});
+
+test('no builder. keys leak for any node type or operation', async ({ page }) => {
+  test.setTimeout(300_000);
+  const { NODE_CATALOG, OUTPUTS_BY_OPERATION } = await import('../src/lib/constants/nodeCatalog');
+  const inspector = page.getByTestId('workflow-inspector');
+  // Every type through the palette, then the operation-dependent steps with each operation as a saved step.
+  const operational: StubNode[] = Object.entries(OUTPUTS_BY_OPERATION).flatMap(([type, operations]) =>
+    Object.keys(operations).map((operation) => ({ id: `op_${type.replace(/\W/g, '_')}_${operation}`, type, config: { operation } })));
+  await stubBackend(page, operational);
+  await useLanguageSwitch(page);
+  await openBuilder(page);
+  for (const code of ['EN', 'VI'] as const) {
+    await switchLanguage(page, code);
     for (const { type } of NODE_CATALOG) {
       await addNode(page, type);
       await expect(inspector).toBeVisible();
-      expect((await inspector.innerText()).match(leak), `${type} ${code}`).toBeNull();
+      expect((await inspector.innerText()).match(LEAK), `${type} ${code}`).toBeNull();
+    }
+    for (const node of operational) {
+      await page.getByTestId(`rf__node-${node.id}`).getByTestId('workflow-node').dispatchEvent('click');
+      await expect(inspector).toBeVisible();
+      expect((await inspector.innerText()).match(LEAK), `${node.id} ${code}`).toBeNull();
     }
   }
 });
