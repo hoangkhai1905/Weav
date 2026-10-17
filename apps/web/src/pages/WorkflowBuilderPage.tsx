@@ -97,11 +97,10 @@ import { SchedulePicker } from '../components/builder/SchedulePicker';
 import { CommaListInput } from '../components/builder/CommaListInput';
 import { KeyValueEditor } from '../components/builder/KeyValueEditor';
 import { definitionBlockers } from '../lib/publishBlockers';
-import { VariablePicker } from '../components/builder/VariablePicker';
 import { DataSuggestions } from '../components/builder/DataSuggestions';
 import { MappingTextField } from '../components/builder/MappingTextField';
 import { idFromGoogleLink } from '../lib/googleLinks';
-import { fileSources, pathLabel, upstreamGroups, useFieldTarget } from '../lib/variablePaths';
+import { fileSources, pathLabel, upstreamGroups } from '../lib/variablePaths';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
 import { definitionToCanvas, WorkflowApiError, type GenerationResponse } from '../api/workflow-v1.api';
@@ -442,9 +441,8 @@ export const WorkflowBuilderPage: React.FC = () => {
   const selectedNodeConfig = (selectedNode?.data?.config ?? {}) as Record<string, unknown>;
   // Highest number handed out per id prefix in this workflow, so a deleted step's id is not reused.
   const idMarks = useRef<{ workflowId?: string; marks: Record<string, number> }>({ marks: {} });
-  const fieldTarget = useFieldTarget(selectedNodeId);
   const stepLabel = (node: Node) => (node.data?.nameKey ? t(String(node.data.nameKey)) : String(node.data?.name || (node.data?.nodeType ? nodeLabel(String(node.data.nodeType), t) : node.id)));
-  /** Data the trigger and earlier steps hand to step `id` (what "Insert variable" offers). */
+  /** Data the trigger and earlier steps hand to step `id` (what the "+ Dữ liệu" menus offer). */
   const groupsBefore = (id: string, nodeList: Node[] = nodes, edgeList: Pick<Edge, 'source' | 'target'>[] = edges) =>
     upstreamGroups(nodeList, edgeList, id, t('builder.var.trigger'), stepLabel);
   const inspectorGroups = selectedNodeId ? groupsBefore(selectedNodeId) : [];
@@ -2117,14 +2115,7 @@ export const WorkflowBuilderPage: React.FC = () => {
           </div>
 
           {/* Inspector Body Content */}
-          <div className="flex-1 space-y-5 overflow-y-auto p-5 text-[13px]" onFocusCapture={fieldTarget.onFocusCapture}>
-            {inspectorTab === 'config' && !isUnsupportedNode && !selectedNodeType.startsWith('trigger.') && selectedNodeId && (
-              <VariablePicker
-                key={selectedNodeId}
-                groups={inspectorGroups}
-                insert={fieldTarget.insert}
-              />
-            )}
+          <div className="flex-1 space-y-5 overflow-y-auto p-5 text-[13px]">
             {inspectorTab === 'config' && (
               isUnsupportedNode ? (
                 <div data-testid="unsupported-node-config" className="space-y-3">
@@ -2294,7 +2285,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         )}
                         {!replying && (
                           handField('chatId', 'telegram-chat-id', 'builder.cfg.chat_id', ({ id, describedBy }) => (
-                            <input id={id} aria-describedby={describedBy} value={chatId} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} placeholder="123456789" className="w-full rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring" />
+                            <MappingTextField key={`${selectedNodeId}-chat-id`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={!canReply && isMarkedRequired(selectedNodeType, 'chatId', selectedNodeConfig)} value={chatId} onChange={(next) => updateSelectedNodeConfig({ chatId: next })} groups={inspectorGroups} placeholder="123456789" />
                           ), t('builder.cfg.tg_chat_hint'),
                           // Next to the target select (which names the field and carries the required marker) the input gets its own label.
                           canReply ? { label: t('builder.field.telegram.send_message.chatId_other'), required: false } : undefined)
@@ -2308,7 +2299,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       id={id}
                       labelledBy={`${id}-label`}
                       describedBy={describedBy}
-                      required
+                      required={isMarkedRequired(selectedNodeType, 'text', selectedNodeConfig)}
                       multiline
                       value={String(selectedNodeConfig.text ?? '')}
                       onChange={(text) => updateSelectedNodeConfig({ text })}
@@ -2341,10 +2332,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                     </select>
                   ))}
                   {handField('url', 'http-url', 'builder.cfg.url', ({ id, describedBy }) => (
-                    <MappingTextField key={`${selectedNodeId}-url`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required value={String(selectedNodeConfig.url ?? '')} onChange={(url) => updateSelectedNodeConfig({ url })} groups={inspectorGroups} placeholder="https://example.com/api" />
+                    <MappingTextField key={`${selectedNodeId}-url`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'url', selectedNodeConfig)} value={String(selectedNodeConfig.url ?? '')} onChange={(url) => updateSelectedNodeConfig({ url })} groups={inspectorGroups} placeholder="https://example.com/api" />
                   ))}
                   {handField('body', 'http-body', 'builder.cfg.body', ({ id, describedBy }) => (
-                    <MappingTextField key={`${selectedNodeId}-body`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} multiline value={String(selectedNodeConfig.body ?? '')} onChange={(body) => updateSelectedNodeConfig({ body })} groups={inspectorGroups} placeholder={t('builder.cfg.body_placeholder')} />
+                    <MappingTextField key={`${selectedNodeId}-body`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'body', selectedNodeConfig)} multiline value={String(selectedNodeConfig.body ?? '')} onChange={(body) => updateSelectedNodeConfig({ body })} groups={inspectorGroups} placeholder={t('builder.cfg.body_placeholder')} />
                   ))}
                   {/* Headers, query parameters and a stored connection are rarely needed: kept under Advanced options. */}
                   <AdvancedSection key={`http-advanced-${selectedNodeId}`} testId="http-advanced" count={HTTP_ADVANCED.length} defaultOpen={hasValueOrError(HTTP_ADVANCED, withoutEmptyMaps(selectedNodeConfig), selectedFieldErrors)}>
@@ -2410,13 +2401,13 @@ export const WorkflowBuilderPage: React.FC = () => {
                     )}
                     {selectedNodeConfig.to !== GMAIL_REPLY_TO || !inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail')) ? (
                       handField('to', 'email-to', 'builder.cfg.recipient', ({ id, describedBy }) => (
-                        <MappingTextField key={`${selectedNodeId}-to`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required value={String(selectedNodeConfig.to ?? '')} onChange={(to) => updateSelectedNodeConfig({ to })} groups={inspectorGroups} />
+                        <MappingTextField key={`${selectedNodeId}-to`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'to', selectedNodeConfig) && !inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail'))} value={String(selectedNodeConfig.to ?? '')} onChange={(to) => updateSelectedNodeConfig({ to })} groups={inspectorGroups} />
                       ), undefined, inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail'))
                         ? { label: t('builder.field.email.send.to_other'), required: false } : undefined)
                     ) : null}
                   </div>
                   {handField('subject', 'email-subject', 'builder.cfg.subject', ({ id, describedBy }) => (<>
-                    <MappingTextField key={`${selectedNodeId}-subject`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} value={String(selectedNodeConfig.subject ?? '')} onChange={(subject) => updateSelectedNodeConfig({ subject })} groups={inspectorGroups} />
+                    <MappingTextField key={`${selectedNodeId}-subject`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'subject', selectedNodeConfig)} value={String(selectedNodeConfig.subject ?? '')} onChange={(subject) => updateSelectedNodeConfig({ subject })} groups={inspectorGroups} />
                     {suggestionsFor('subject')}
                   </>))}
                   {handField('body', 'email-body', 'builder.cfg.body', ({ id, describedBy }) => (<>
@@ -2425,6 +2416,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       id={id}
                       labelledBy={`${id}-label`}
                       describedBy={describedBy}
+                      required={isMarkedRequired(selectedNodeType, 'body', selectedNodeConfig)}
                       multiline
                       value={String(selectedNodeConfig.body ?? '')}
                       onChange={(body) => updateSelectedNodeConfig({ body })}
@@ -2458,7 +2450,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         onChange={(outputSchema) => updateSelectedNodeConfig({ outputSchema })}
                       />
                       {handField('text', 'ai-input-text', 'builder.cfg.input_text', ({ id, describedBy }) => (<>
-                        <MappingTextField key={`${selectedNodeId}-ai-text`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required multiline value={String(selectedNodeConfig.text ?? '')} onChange={(text) => updateSelectedNodeConfig({ text })} groups={inspectorGroups} />
+                        <MappingTextField key={`${selectedNodeId}-ai-text`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'text', selectedNodeConfig)} multiline value={String(selectedNodeConfig.text ?? '')} onChange={(text) => updateSelectedNodeConfig({ text })} groups={inspectorGroups} />
                         {suggestionsFor('text', true)}
                       </>))}
                       {configField('instructions', undefined, true)}
@@ -2871,29 +2863,15 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <>
                       <div>
                         {handField('spreadsheetId', 'google-spreadsheet-id', 'builder.google.spreadsheet_id', ({ id, describedBy }) => (
-                          <input
-                          id={id}
-                          aria-describedby={describedBy}
-                          type="text"
-                          value={String(selectedNodeConfig.spreadsheetId ?? '')}
                           // A pasted Sheets link is reduced to the id inside it.
-                          onChange={(event) => updateSelectedNodeConfig({ spreadsheetId: idFromGoogleLink(event.target.value) })}
-                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-                        />
+                          <MappingTextField key={`${selectedNodeId}-spreadsheet`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'spreadsheetId', selectedNodeConfig)} value={String(selectedNodeConfig.spreadsheetId ?? '')} onChange={(next) => updateSelectedNodeConfig({ spreadsheetId: idFromGoogleLink(next) })} groups={inspectorGroups} />
                         ))}
                       </div>
 
                       <div>
                         {handField('range', 'google-range', 'builder.google.range', ({ id, describedBy }) => (
-                          <input
-                          id={id}
-                          aria-describedby={describedBy}
-                          type="text"
-                          value={String(selectedNodeConfig.range ?? '')}
-                          onChange={(event) => updateSelectedNodeConfig({ range: event.target.value })}
-                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-                        />
-), t(`builder.google.range_hint_${['append', 'update', 'lookup'].includes(googleOperation) ? googleOperation : 'read'}`))}
+                          <MappingTextField key={`${selectedNodeId}-range`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'range', selectedNodeConfig)} value={String(selectedNodeConfig.range ?? '')} onChange={(next) => updateSelectedNodeConfig({ range: next })} groups={inspectorGroups} />
+                        ), t(`builder.google.range_hint_${['append', 'update', 'lookup'].includes(googleOperation) ? googleOperation : 'read'}`))}
                       </div>
 
                       {googleOperation === 'lookup' && ['lookupColumn', 'lookupValue', 'limit'].map((name) => configField(name))}

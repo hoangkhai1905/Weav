@@ -7,7 +7,7 @@ import { formatInsert, type FormatAction, type FormatSyntax } from '../../lib/fo
 import { formatPreview, richEditable } from '../../lib/formatPreview';
 import { buildRich, serializeRich } from './richText';
 import { DataMenu } from './DataMenu';
-import { describeMapping, mappingFieldInserts, type VariableGroup } from '../../lib/variablePaths';
+import { describeMapping, type VariableGroup } from '../../lib/variablePaths';
 
 interface MappingTextFieldProps {
   id: string;
@@ -250,11 +250,6 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
     setFormatNote(current.onUse?.() || '');
   };
 
-  const insertRef = useRef(insert);
-  useLayoutEffect(() => {
-    insertRef.current = insert;
-  });
-
   // Rebuild the field only when the value changed from outside (another step, a quick insert) or the editor switched
   // between visual and source, never while typing.
   useLayoutEffect(() => {
@@ -290,10 +285,8 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
       if (range && el.contains(range.commonAncestorContainer)) caret.current = range.cloneRange();
     };
     document.addEventListener('selectionchange', remember);
-    mappingFieldInserts.set(el, (text) => insertRef.current(text));
     return () => {
       document.removeEventListener('selectionchange', remember);
-      mappingFieldInserts.delete(el);
     };
   }, []);
 
@@ -340,7 +333,6 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
         aria-required={required || undefined}
         aria-label={ariaLabel}
         aria-placeholder={placeholder}
-        data-mapping-field
         data-testid={testId}
         data-placeholder={placeholder}
         data-value={value}

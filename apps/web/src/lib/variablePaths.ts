@@ -1,4 +1,3 @@
-import React, { useEffect, useRef } from 'react';
 import type { Edge, Node } from '@xyflow/react';
 import { nodeOutputPaths } from './constants/nodeCatalog';
 export { isValidPath } from './mappingGrammar';
@@ -99,9 +98,6 @@ export const describeMapping = (inner: string, groups: VariableGroup[], t: (key:
   return { label: `${group.label} › ${outputLabel(group, path, t)}`, title: group.label, known: true };
 };
 
-/** Rich text fields (MappingTextField) register how to insert at their caret, so "Insert variable" can target them. */
-export const mappingFieldInserts = new WeakMap<HTMLElement, (text: string) => void>();
-
 /** Files earlier steps produce, as mappings a file source (OCR) can take as is. */
 export const fileSources = (groups: VariableGroup[]) =>
   groups.flatMap((group) => group.paths.filter((path) => FILE_PATHS.has(path)).map((path) => ({ group, path, mapping: mappingOf(group, path) })));
@@ -151,47 +147,4 @@ export function upstreamGroups(
     });
   // Nearest step first; the sort is stable, so equally close steps keep the canvas order.
   return groups.sort((a, b) => distanceOf[a.key] - distanceOf[b.key]);
-}
-
-type TextField = HTMLInputElement | HTMLTextAreaElement;
-
-/**
- * Remembers the text field the user last focused inside the inspector, so the picker can insert there
- * (the picker's own buttons do not take focus away). Fields that are never mapped opt out with `data-notemplate`.
- */
-export function useFieldTarget(resetKey: unknown) {
-  const target = useRef<TextField | HTMLElement | null>(null);
-  // A field of the previously selected step must not receive an insert meant for this one.
-  useEffect(() => { target.current = null; }, [resetKey]);
-  const onFocusCapture = (event: React.FocusEvent) => {
-    const el = event.target;
-    const rich = el instanceof HTMLElement ? el.closest<HTMLElement>('[data-mapping-field]') : null;
-    if (rich && mappingFieldInserts.has(rich)) {
-      target.current = rich;
-      return;
-    }
-    const isText = (el instanceof HTMLInputElement && (el.type === 'text' || el.type === '')) || el instanceof HTMLTextAreaElement;
-    if (isText && !el.readOnly && el.dataset.notemplate === undefined && !el.closest('[data-variable-picker]')) target.current = el;
-  };
-  /** Inserts at the cursor (replacing the selection); false when there is no field to insert into. */
-  const insert = (text: string): boolean => {
-    const el = target.current;
-    if (!el || !el.isConnected) return false;
-    const richInsert = mappingFieldInserts.get(el);
-    if (richInsert) {
-      richInsert(text);
-      return true;
-    }
-    if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return false;
-    const start = el.selectionStart ?? el.value.length;
-    const end = el.selectionEnd ?? start;
-    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    // Go through the native setter so React's controlled onChange sees the edit.
-    Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, el.value.slice(0, start) + text + el.value.slice(end));
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.focus();
-    el.setSelectionRange(start + text.length, start + text.length);
-    return true;
-  };
-  return { onFocusCapture, insert };
 }

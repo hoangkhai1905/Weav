@@ -60,7 +60,7 @@ async function addNode(page: Page, nodeType: string) {
   await page.locator(`[data-testid="workflow-palette-item"][data-node-type="${nodeType}"]`).click();
 }
 
-test('new steps show their real id and the variable picker uses it', async ({ page }) => {
+test('new steps show their real id and the data menu uses it', async ({ page }) => {
   const backend = await stubBackend(page);
   await page.goto(`/workflows/${workflowId}/builder`);
   await expect(page.getByTestId('workflow-title')).toHaveValue('Builder correctness');
@@ -75,11 +75,10 @@ test('new steps show their real id and the variable picker uses it', async ({ pa
   await page.locator('#http-url').fill('https://example.test/two');
 
   // Only upstream steps are offered: http_1 and the trigger, never http_2 itself.
-  await page.locator('#http-body').click();
-  await page.getByTestId('variable-picker-toggle').click();
-  await expect(page.getByRole('group', { name: 'http_1', exact: true })).toBeVisible();
-  await expect(page.getByRole('group', { name: 'http_2', exact: true })).toHaveCount(0);
-  await page.getByRole('group', { name: 'http_1', exact: true }).getByRole('button', { name: 'status', exact: true }).click();
+  await page.locator('#http-body').locator('xpath=ancestor::*[.//*[@data-testid="mapping-data-toggle"]][1]').getByTestId('mapping-data-toggle').click();
+  // The nearest step comes first: http_1 (its mapping carries the real id); no group offers http_2 itself.
+  await expect(page.locator('[data-testid="mapping-data-item"][data-path^="status"]')).toHaveCount(1);
+  await page.locator('[data-testid="mapping-data-item"][data-path="status"]').click();
   await expect(page.locator('#http-body')).toHaveAttribute('data-value', '{{ nodes.http_1.output.status }}');
 
   await page.getByTestId('workflow-publish').click();

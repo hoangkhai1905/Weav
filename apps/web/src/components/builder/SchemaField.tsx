@@ -59,6 +59,10 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
   const { t } = useI18nStore();
   // Text that is not a valid whole number is shown with an error but never written to the config.
   const [badInteger, setBadInteger] = useState<string | null>(null);
+  // Whether a number field takes data from an earlier step instead of a typed number; null = follow the stored value.
+  const [dataMode, setDataMode] = useState<boolean | null>(null);
+  // What the user typed in a list field: the stored list is re-joined with ", ", which would move the caret.
+  const [listDraft, setListDraft] = useState<string | null>(null);
   const property = NODE_SCHEMAS[nodeType]?.properties[name];
   if (!property) return null;
   const key = `builder.field.${nodeType}.${name}`;
@@ -85,10 +89,21 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
     );
   }
 
-  // A text field that can take data from earlier steps (not a number, list, choice or a stored file object).
-  const chipText = Boolean(groups) && Boolean(property['x-weav-template']) && types.includes('string')
-    && !types.includes('integer') && property.type !== 'array' && !property.enum && !property['x-weav-connection']
-    && (typeof value === 'string' || value === undefined || value === null);
+  // A string-or-unbounded-integer field (format.datetime value: a date, or epoch milliseconds) is free text.
+  const freeText = Boolean(property.oneOf?.some((branch) => branch.type === 'string'))
+    && Boolean(property.oneOf?.some((branch) => branch.type === 'integer' && branch.minimum === undefined && branch.maximum === undefined));
+  const isInteger = types.includes('integer') && !freeText;
+  const takesData = Boolean(groups) && Boolean(property['x-weav-template']) && !property.enum && !property['x-weav-connection'];
+  // A number field keeps a typed number by default; "Dùng dữ liệu từ bước trước" turns it into a data field.
+  const numberWithData = takesData && isInteger && property.type !== 'array';
+  const useData = numberWithData && (dataMode ?? (typeof value === 'string' && value.includes('{{')));
+  // A comma separated list that can take data: shown as text, saved as a list unless it holds a mapping.
+  const listText = takesData && types.includes('array') && !types.includes('object');
+  const asList = property.type === 'array' || Array.isArray(value);
+  // A text field that can take data from earlier steps (not a list, choice or a stored file object).
+  const chipText = takesData && !listText && property.type !== 'array'
+    && (useData || (types.includes('string') && !isInteger))
+    && (typeof value === 'string' || value === undefined || value === null || (freeText && typeof value === 'number'));
 
   // Drive file and folder ids also take the pasted Drive link; only the id inside it is saved.
   const takesGoogleLink = nodeType.startsWith('google.') && (name === 'fileId' || name === 'folderId');
@@ -110,6 +125,25 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
         groups={groups}
         format={FORMAT_FIELDS[nodeType]?.name === name ? { syntax: FORMAT_FIELDS[nodeType].syntax, actions: FORMAT_FIELDS[nodeType].actions, rich: true } : undefined}
         onChange={(next) => onChange(next === '' ? undefined : textValue(next))}
+      />
+    );
+  } else if (listText && groups) {
+    control = ({ describedBy }) => (
+      <MappingTextField
+        id={id}
+        labelledBy={`${id}-label`}
+        describedBy={describedBy}
+        required={required}
+        placeholder={placeholder}
+        testId={`field-${name}`}
+        multiline={multiline}
+        value={listDraft ?? text}
+        groups={groups}
+        onChange={(next) => {
+          setListDraft(next);
+          // "a@x.test, b@x.test" is saved as a list; a mapping stays one string resolved at run time.
+          onChange(next.trim() === '' ? undefined : next.includes('{{') || !asList ? next : next.split(',').map((item) => item.trim()));
+        }}
       />
     );
   } else if (property['x-weav-connection'] || property.enum) {
@@ -149,9 +183,6 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
     // Integer fields also take a mapping such as {{ trigger.input.id }}. Plain digits within the schema range
     // are saved as a number; a mapping stays text; anything else is flagged and not saved.
     // A string-or-unbounded-integer field (format.datetime value: a date, or epoch milliseconds) is free text.
-    const freeText = Boolean(property.oneOf?.some((branch) => branch.type === 'string'))
-      && Boolean(property.oneOf?.some((branch) => branch.type === 'integer' && branch.minimum === undefined && branch.maximum === undefined));
-    const isInteger = types.includes('integer') && !freeText;
     const min = property.minimum ?? INTEGER_MIN[`${nodeType}.${name}`] ?? 0;
     const max = property.maximum ?? INTEGER_CAP[`${nodeType}.${name}`] ?? INTEGER_CAP[name];
     const shown = badInteger ?? text;
@@ -200,6 +231,25 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
             onChange={(event) => onChange(event.target.value ? withLocalOffset(event.target.value) : undefined)}
             className={`${inputCls} w-auto shrink-0`}
           />
+        </div>
+      ) : numberWithData ? (
+        <div className="space-y-1.5">
+          {control(a11y)}
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              data-testid={`field-${name}-use-data`}
+              checked={useData}
+              onChange={(event) => {
+                setBadInteger(null);
+                setDataMode(event.target.checked);
+                // Leaving data mode drops the mapping: it is not a number.
+                if (!event.target.checked && typeof value === 'string') onChange(undefined);
+              }}
+              className="h-3.5 w-3.5 accent-primary"
+            />
+            {t('builder.field.use_data')}
+          </label>
         </div>
       ) : control(a11y)}
     </FieldShell>

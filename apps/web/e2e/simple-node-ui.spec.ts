@@ -322,9 +322,11 @@ const MAIL_CHAIN: StubNode[] = [
 ];
 const mailGraph: StubGraph = { edges: [['tgt', 'ai1'], ['ai1', 'tg1']], names: { tgt: 'Thư mới', ai1: 'Tóm tắt thư', tg1: 'Báo Telegram' } };
 
-async function openDataMenu(page: Page, nodeId: string) {
+async function openDataMenu(page: Page, nodeId: string, fieldId?: string) {
   await page.getByTestId(`rf__node-${nodeId}`).getByTestId('workflow-node').click();
-  await page.getByTestId('mapping-data-toggle').first().click();
+  // Every data field has its own button: name the field when the step has more than one.
+  const toggle = fieldId ? page.locator(`#${fieldId}`).locator('xpath=ancestor::*[.//*[@data-testid="mapping-data-toggle"]][1]').getByTestId('mapping-data-toggle') : page.getByTestId('mapping-data-toggle').first();
+  await toggle.click();
   return page.getByTestId('mapping-data-menu');
 }
 
@@ -383,7 +385,7 @@ test('manual trigger offers a named input', async ({ page }) => {
   await stubBackend(page, [{ id: 'tg1', type: 'telegram.send_message', config: { connectionId: TG_CONNECTION, chatId: '1', text: '' } }]);
   await stubTelegramConnection(page);
   await openBuilder(page);
-  const menu = await openDataMenu(page, 'tg1');
+  const menu = await openDataMenu(page, 'tg1', 'telegram-text');
   await expect(menu.getByText('Dữ liệu gửi vào')).toBeVisible();
   const name = menu.getByPlaceholder('Tên trường, ví dụ ten_khach');
   const add = menu.getByTestId('mapping-data-named-add');
@@ -414,4 +416,47 @@ test('orphan chip after the link to its step is removed keeps the value', async 
   const last = saved[saved.length - 1] as { definition: { nodes: Array<{ id: string; config: { text?: string } }>; edges: Array<{ id: string }> } };
   expect(last.definition.edges.map((edge) => edge.id)).not.toContain('g1');
   expect(last.definition.nodes.find((node) => node.id === 'tg1')?.config.text).toBe(mapping);
+});
+
+// A data field's own "+ Dữ liệu" button sits in its FieldShell (the div that holds the field's label).
+const dataToggles = (page: Page, fieldId: string) => page.locator(`div:has(> #${fieldId}-label)`).getByTestId('mapping-data-toggle');
+
+test('every data field has its own + Dữ liệu button', async ({ page }) => {
+  await stubBackend(page, [
+    { id: 'http_1', type: 'http.request', config: { url: 'https://example.test', method: 'POST' } },
+    { id: 'sheet_1', type: 'google.sheets', config: { operation: 'append', spreadsheetId: 'abc', range: 'A1', values: [['x', 'y']] } },
+    { id: 'mail_1', type: 'email.send', config: { to: 'a@example.test', subject: 's', body: 'b' } },
+  ], { edges: [['manual', 'http_1'], ['http_1', 'sheet_1'], ['sheet_1', 'mail_1']] });
+  await openBuilder(page);
+  const fieldsByNode: Record<string, string[]> = {
+    http_1: ['http-url', 'http-body'],
+    sheet_1: ['google-spreadsheet-id', 'google-range', 'google-cell-0-0', 'google-cell-0-1'],
+    mail_1: ['email-to', 'email-subject', 'email-body'],
+  };
+  for (const [nodeId, ids] of Object.entries(fieldsByNode)) {
+    await page.getByTestId(`rf__node-${nodeId}`).getByTestId('workflow-node').click();
+    for (const id of ids) {
+      if (id.startsWith('google-cell')) await expect(page.locator(`#${id}`).locator('xpath=../..').getByTestId('mapping-data-toggle')).toHaveCount(1);
+      else await expect(dataToggles(page, id)).toHaveCount(1);
+    }
+    await expect(page.getByTestId('variable-picker')).toHaveCount(0);
+    await expect(page.getByTestId('variable-picker-toggle')).toHaveCount(0);
+  }
+});
+
+test('mapping in a number field round-trips', async ({ page }) => {
+  const mapping = '{{ nodes.a.output.n }}';
+  const saved = await stubBackend(page, [
+    { id: 'a', type: 'http.request', config: { url: 'https://example.test' } },
+    { id: 'fd1', type: 'format.datetime', config: { operation: 'add', value: '2026-01-01', amount: mapping, unit: 'days' } },
+  ], { edges: [['manual', 'a'], ['a', 'fd1']] });
+  await openBuilder(page);
+  await page.getByTestId('rf__node-fd1').getByTestId('workflow-node').click();
+  await expect(page.getByLabel('Dùng dữ liệu từ bước trước')).toBeChecked();
+  await expect(page.locator('#field-format-datetime-amount').getByTestId('mapping-chip')).toHaveCount(1);
+  await expect(page.getByText('Nhập số nguyên', { exact: false })).toHaveCount(0);
+  await page.getByTestId('workflow-save').click();
+  await expect.poll(() => saved.length).toBeGreaterThan(0);
+  const last = saved[saved.length - 1] as { definition: { nodes: Array<{ id: string; config: { amount?: unknown } }> } };
+  expect(last.definition.nodes.find((node) => node.id === 'fd1')?.config.amount).toBe(mapping);
 });
