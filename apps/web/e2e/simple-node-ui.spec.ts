@@ -460,3 +460,26 @@ test('mapping in a number field round-trips', async ({ page }) => {
   const last = saved[saved.length - 1] as { definition: { nodes: Array<{ id: string; config: { amount?: unknown } }> } };
   expect(last.definition.nodes.find((node) => node.id === 'fd1')?.config.amount).toBe(mapping);
 });
+
+test('ticking use-data over a typed number gives a data field', async ({ page }) => {
+  await stubBackend(page, [
+    { id: 'a', type: 'http.request', config: { url: 'https://example.test' } },
+    { id: 'fd1', type: 'format.datetime', config: { operation: 'add', value: '2026-01-01', amount: 5, unit: 'days' } },
+  ], { edges: [['manual', 'a'], ['a', 'fd1']] });
+  await openBuilder(page);
+  await page.getByTestId('rf__node-fd1').getByTestId('workflow-node').click();
+  await page.getByTestId('field-amount-use-data').check();
+  await expect(dataToggles(page, 'field-format-datetime-amount')).toHaveCount(1);
+});
+
+test('typing a comma list in a string-or-list field saves a list', async ({ page }) => {
+  const saved = await stubBackend(page, [{ id: 'mail_1', type: 'email.send', config: { to: 'x@example.test', subject: 's', body: 'b' } }], { edges: [['manual', 'mail_1']] });
+  await openBuilder(page);
+  await page.getByTestId('rf__node-mail_1').getByTestId('workflow-node').click();
+  await page.getByTestId('field-cc').click();
+  await page.keyboard.type('a@example.test, b@example.test');
+  await page.getByTestId('workflow-save').click();
+  await expect.poll(() => saved.length).toBeGreaterThan(0);
+  const last = saved[saved.length - 1] as { definition: { nodes: Array<{ id: string; config: { cc?: unknown } }> } };
+  expect(last.definition.nodes.find((node) => node.id === 'mail_1')?.config.cc).toEqual(['a@example.test', 'b@example.test']);
+});

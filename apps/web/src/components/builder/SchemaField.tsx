@@ -99,11 +99,10 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
   const useData = numberWithData && (dataMode ?? (typeof value === 'string' && value.includes('{{')));
   // A comma separated list that can take data: shown as text, saved as a list unless it holds a mapping.
   const listText = takesData && types.includes('array') && !types.includes('object');
-  const asList = property.type === 'array' || Array.isArray(value);
   // A text field that can take data from earlier steps (not a list, choice or a stored file object).
   const chipText = takesData && !listText && property.type !== 'array'
     && (useData || (types.includes('string') && !isInteger))
-    && (typeof value === 'string' || value === undefined || value === null || (freeText && typeof value === 'number'));
+    && (useData || typeof value === 'string' || value === undefined || value === null || (freeText && typeof value === 'number'));
 
   // Drive file and folder ids also take the pasted Drive link; only the id inside it is saved.
   const takesGoogleLink = nodeType.startsWith('google.') && (name === 'fileId' || name === 'folderId');
@@ -142,7 +141,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
         onChange={(next) => {
           setListDraft(next);
           // "a@x.test, b@x.test" is saved as a list; a mapping stays one string resolved at run time.
-          onChange(next.trim() === '' ? undefined : next.includes('{{') || !asList ? next : next.split(',').map((item) => item.trim()));
+          onChange(next.trim() === '' ? undefined : next.includes('{{') ? next : next.split(',').map((item) => item.trim()));
         }}
       />
     );
