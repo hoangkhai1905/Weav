@@ -551,7 +551,7 @@ test('no builder. keys leak for any node type or operation', async ({ page }) =>
   // Every type through the palette, then the operation-dependent steps with each operation as a saved step.
   const operational: StubNode[] = Object.entries(OUTPUTS_BY_OPERATION).flatMap(([type, operations]) =>
     Object.keys(operations).map((operation) => ({ id: `op_${type.replace(/\W/g, '_')}_${operation}`, type, config: { operation } })));
-  await stubBackend(page, operational);
+  await stubBackend(page, operational, { names: Object.fromEntries(operational.map((node) => [node.id, `Step ${node.id}`])) });
   await useLanguageSwitch(page);
   await openBuilder(page);
   for (const code of ['EN', 'VI'] as const) {
@@ -563,6 +563,8 @@ test('no builder. keys leak for any node type or operation', async ({ page }) =>
     }
     for (const node of operational) {
       await page.getByTestId(`rf__node-${node.id}`).getByTestId('workflow-node').dispatchEvent('click');
+      // The inspector must now show THIS step (unique name), so a missed click cannot re-scan stale text.
+      await expect(inspector.getByText(`Step ${node.id}`, { exact: true })).toBeVisible();
       await expect(inspector).toBeVisible();
       expect((await inspector.innerText()).match(LEAK), `${node.id} ${code}`).toBeNull();
     }
