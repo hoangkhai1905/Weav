@@ -12,6 +12,8 @@ interface MappingTextFieldProps {
   id: string;
   /** Id of the visible label (a <label for> does not focus a contenteditable). */
   labelledBy?: string;
+  describedBy?: string;
+  required?: boolean;
   /** Accessible name when there is no visible label of its own. */
   ariaLabel?: string;
   value: string;
@@ -45,7 +47,7 @@ const CHIP_UNKNOWN = `${CHIP} border-warn/40 bg-warn-bg text-warn`;
  * steps before at the caret; typing, pasting and "Insert variable" also work, and a mapping typed or pasted by
  * hand turns into a chip when the field loses focus.
  */
-export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelledBy, ariaLabel, value, onChange, groups, multiline, placeholder, testId, className, format }) => {
+export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelledBy, describedBy, required, ariaLabel, value, onChange, groups, multiline, placeholder, testId, className, format }) => {
   const { t } = useI18nStore();
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -334,6 +336,8 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
         suppressContentEditableWarning
         aria-multiline={multiline ? 'true' : 'false'}
         aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
+        aria-required={required || undefined}
         aria-label={ariaLabel}
         aria-placeholder={placeholder}
         data-mapping-field

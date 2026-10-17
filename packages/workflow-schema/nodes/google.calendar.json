@@ -44,7 +44,10 @@
       "type": "string",
       "title": "Location",
       "description": "Event location.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "start": {
       "type": "string",

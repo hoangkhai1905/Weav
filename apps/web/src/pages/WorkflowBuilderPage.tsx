@@ -84,6 +84,9 @@ import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG, nextNodeId, nodeSourcePorts } from '../lib/constants/nodeCatalog';
 import { getNodeReadinessBadge, isConditionComplete } from '../lib/nodeReadiness';
 import { SchemaField } from '../components/builder/SchemaField';
+import { AdvancedSection } from '../components/builder/AdvancedSection';
+import { hasValueOrError } from '../lib/fieldCopy';
+import { isAdvanced } from '../lib/nodeSchemas';
 import { CharCounter, WeavWorkflowInspector, WorkflowEventInspector } from '../components/builder/ControlBotInspectors';
 import { ConditionEditor } from '../components/builder/ConditionEditor';
 import { AttachmentsEditor } from '../components/builder/AttachmentsEditor';
@@ -2148,15 +2151,27 @@ export const WorkflowBuilderPage: React.FC = () => {
                       </div>
                     );
                   })()}
-                  {selectedSchemaForm.fields(selectedNodeConfig).map((name) => {
-                    const multiline = selectedSchemaForm.multiline?.includes(name);
+                  {(() => {
+                    const names = selectedSchemaForm.fields(selectedNodeConfig);
+                    const advancedNames = names.filter((name) => isAdvanced(selectedNodeType, name));
+                    const renderField = (name: string) => {
+                      const multiline = selectedSchemaForm.multiline?.includes(name);
+                      return (
+                        <React.Fragment key={name}>
+                          {configField(name, undefined, multiline)}
+                          {SUGGEST_FIELDS[selectedNodeType]?.includes(name) && suggestionsFor(name, multiline)}
+                        </React.Fragment>
+                      );
+                    };
                     return (
-                      <React.Fragment key={name}>
-                        {configField(name, undefined, multiline)}
-                        {SUGGEST_FIELDS[selectedNodeType]?.includes(name) && suggestionsFor(name, multiline)}
-                      </React.Fragment>
+                      <>
+                        {names.filter((name) => !advancedNames.includes(name)).map(renderField)}
+                        <AdvancedSection key={selectedNodeId} testId="schema-advanced" count={advancedNames.length} defaultOpen={hasValueOrError(advancedNames, selectedNodeConfig)}>
+                          {advancedNames.map(renderField)}
+                        </AdvancedSection>
+                      </>
                     );
-                  })}
+                  })()}
                   {selectedNodeType === 'trigger.telegram' && <p data-testid="telegram-trigger-hint" className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.telegram_trigger_hint')}</p>}
                   {selectedNodeType === 'google.drive' && <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.drive_hint')}</p>}
                   {selectedNodeType === 'trigger.gmail' && (

@@ -5,6 +5,8 @@ import { toLocalInput, withLocalOffset } from '../../lib/localOffset';
 import type { VariableGroup } from '../../lib/variablePaths';
 import { idFromGoogleLink } from '../../lib/googleLinks';
 import { MappingTextField } from './MappingTextField';
+import { FieldShell } from './FieldShell';
+import { fieldCopy } from '../../lib/fieldCopy';
 import type { FormatAction, FormatSyntax } from '../../lib/formatInsert';
 
 // The executors reject more than this even where the schema has no maximum.
@@ -58,8 +60,9 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
   const property = NODE_SCHEMAS[nodeType]?.properties[name];
   if (!property) return null;
   const key = `builder.field.${nodeType}.${name}`;
-  const label = t(key) === key ? property.title ?? name : t(key);
-  const hint = t(`${key}_hint`) === `${key}_hint` ? undefined : t(`${key}_hint`);
+  const { label, hint, example } = fieldCopy(nodeType, name, t);
+  const placeholder = example ? `${t('builder.field.example_prefix')}${example}` : undefined;
+  const required = NODE_SCHEMAS[nodeType].required.includes(name);
   const id = `field-${nodeType}-${name}`.replace(/\./g, '-');
   const types = schemaTypes(property);
   // An object value (for example a file reference) is shown as JSON, never as "[object Object]".
@@ -69,11 +72,14 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
 
   if (types.includes('boolean')) {
     return (
-      <label htmlFor={id} className="flex items-center gap-2 text-[13px] font-medium text-foreground">
-        <input id={id} data-testid={`field-${name}`} type="checkbox" checked={value === true || value === 'true'} onChange={(event) => onChange(event.target.checked || undefined)} className="h-3.5 w-3.5 accent-primary" />
-        {label}
-        {hint && <span className="font-normal text-muted-foreground">({hint})</span>}
-      </label>
+      // A checkbox keeps its label beside the box, so it does not use FieldShell's label-above layout.
+      <div>
+        <label htmlFor={id} className="flex items-center gap-2 text-[13px] font-medium text-foreground">
+          <input id={id} data-testid={`field-${name}`} type="checkbox" aria-describedby={hint ? `${id}-hint` : undefined} checked={value === true || value === 'true'} onChange={(event) => onChange(event.target.checked || undefined)} className="h-3.5 w-3.5 accent-primary" />
+          {label}
+        </label>
+        {hint && <p id={`${id}-hint`} className="mt-1 text-xs leading-relaxed text-muted-foreground">{hint}</p>}
+      </div>
     );
   }
 
@@ -86,12 +92,16 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
   const takesGoogleLink = nodeType.startsWith('google.') && (name === 'fileId' || name === 'folderId');
   const textValue = (next: string) => (takesGoogleLink ? idFromGoogleLink(next) : next);
 
-  let control: React.ReactNode;
+  let error: string | undefined;
+  let control: (a11y: { id: string; describedBy?: string }) => React.ReactNode;
   if (chipText && groups) {
-    control = (
+    control = ({ describedBy }) => (
       <MappingTextField
         id={id}
         labelledBy={`${id}-label`}
+        describedBy={describedBy}
+        required={required}
+        placeholder={placeholder}
         testId={`field-${name}`}
         multiline={multiline}
         value={text}
@@ -104,24 +114,27 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
     // Friendly option names come from `<key>.<value>`; the saved value stays the raw enum.
     const optionLabel = (option: string) => (t(`${key}.${option}`) === `${key}.${option}` ? option : t(`${key}.${option}`));
     const options = property.enum?.map((option) => ({ id: option, name: optionLabel(option) })) ?? connections ?? [];
-    control = (
-      <select id={id} data-testid={`field-${name}`} value={hasNone && !text ? 'none' : text} onChange={(event) => onChange(hasNone && event.target.value === 'none' ? undefined : event.target.value || undefined)} className={inputCls}>
+    control = ({ describedBy }) => (
+      <select id={id} data-testid={`field-${name}`} aria-describedby={describedBy} aria-required={required || undefined} value={hasNone && !text ? 'none' : text} onChange={(event) => onChange(hasNone && event.target.value === 'none' ? undefined : event.target.value || undefined)} className={inputCls}>
         {!hasNone && <option value="">{t(property.enum ? 'builder.field.default' : 'builder.field.select_connection')}</option>}
         {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
         {text && !options.some((option) => option.id === text) && <option value={text}>{property.enum ? text : t('builder.cfg.unavailable_connection')}</option>}
       </select>
     );
   } else if (multiline) {
-    control = (
-      <textarea id={id} data-testid={`field-${name}`} rows={4} value={text} onChange={(event) => onChange(event.target.value === '' ? undefined : event.target.value)} className={`${inputCls} resize-y`} />
+    control = ({ describedBy }) => (
+      <textarea id={id} data-testid={`field-${name}`} aria-describedby={describedBy} aria-required={required || undefined} placeholder={placeholder} rows={4} value={text} onChange={(event) => onChange(event.target.value === '' ? undefined : event.target.value)} className={`${inputCls} resize-y`} />
     );
   } else if (property.type === 'array') {
     // "a@x.test, b@x.test" is saved as a list; a mapping stays one string resolved at run time.
-    control = (
+    control = ({ describedBy }) => (
       <input
         id={id}
         data-testid={`field-${name}`}
         type="text"
+        aria-describedby={describedBy}
+        aria-required={required || undefined}
+        placeholder={placeholder}
         value={text}
         onChange={(event) => {
           const next = event.target.value;
@@ -141,17 +154,19 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
     const max = property.maximum ?? INTEGER_CAP[`${nodeType}.${name}`] ?? INTEGER_CAP[name];
     const shown = badInteger ?? text;
     const invalid = isInteger && badInteger !== null;
-    control = (
-      <>
+    if (invalid) error = t('builder.field.int_invalid').replace('{min}', String(min)).replace('{max}', max === undefined ? '∞' : String(max));
+    control = ({ describedBy }) => (
         <input
           id={id}
           data-testid={`field-${name}`}
           type="text"
+          placeholder={placeholder}
+          aria-required={required || undefined}
           inputMode={isInteger ? 'numeric' : undefined}
           maxLength={property.maxLength}
           value={shown}
           aria-invalid={invalid || undefined}
-          aria-describedby={invalid ? `${id}-error` : undefined}
+          aria-describedby={describedBy}
           onChange={(event) => {
             const next = event.target.value;
             if (!isInteger || next === '' || next.includes('{{')) {
@@ -166,22 +181,15 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
           }}
           className={`${inputCls} ${property['x-weav-template'] ? 'font-mono' : ''}`}
         />
-        {invalid && (
-          <p id={`${id}-error`} role="alert" className="mt-1 text-[10px] text-err">
-            {t('builder.field.int_invalid').replace('{min}', String(min)).replace('{max}', max === undefined ? '∞' : String(max))}
-          </p>
-        )}
-      </>
     );
   }
 
   const isCalendarTime = nodeType === 'google.calendar' && (name === 'start' || name === 'end');
   return (
-    <div>
-      <label id={`${id}-label`} htmlFor={id} onClick={chipText ? () => document.getElementById(id)?.focus() : undefined} className="mb-1 block text-[13px] font-medium text-foreground">{label}</label>
-      {isCalendarTime ? (
+    <FieldShell id={id} label={label} hint={hint} error={error} required={required}>
+      {(a11y) => isCalendarTime ? (
         <div className="flex items-start gap-1.5">
-          <div className="min-w-0 flex-1">{control}</div>
+          <div className="min-w-0 flex-1">{control(a11y)}</div>
           <input
             type="datetime-local"
             data-testid={`field-${name}-picker`}
@@ -191,8 +199,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
             className={`${inputCls} w-auto shrink-0`}
           />
         </div>
-      ) : control}
-      {hint && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{hint}</p>}
-    </div>
+      ) : control(a11y)}
+    </FieldShell>
   );
 };
