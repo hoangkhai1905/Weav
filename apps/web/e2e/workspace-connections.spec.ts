@@ -1543,7 +1543,7 @@ test.describe("workflow builder connection readiness", () => {
     await page.locator(sheetsNode).click();
     await page.locator("#google-spreadsheet-id").fill("");
     await expect(page.locator(sheetsNode)).toHaveAttribute("data-readiness", "not-configured");
-    await expect(page.getByTestId("integration-readiness")).toContainText("spreadsheet ID");
+    await expect(page.getByTestId("integration-readiness")).toContainText("spreadsheet link");
   });
 
   test("Sheets writes are entered cell by cell and drafts carry only Workflow Service fields", async ({ page }) => {
@@ -1855,6 +1855,7 @@ test.describe("workflow builder Week 4 node fields", () => {
     await expect(page.getByTestId("google-row-editor")).toHaveCount(0);
     await page.getByLabel("Lookup column", { exact: true }).fill("B");
     await page.getByLabel("Value to find", { exact: true }).fill("{{ trigger.input.email }}");
+    await page.getByTestId("sheets-advanced").locator("summary").click();
     await page.getByLabel("Maximum rows", { exact: true }).fill("5");
     await expect(page.locator(node("google.sheets"))).toHaveAttribute("data-readiness", "ready");
 
@@ -2058,6 +2059,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(page.getByTestId("field-operation")).toContainText("Upload a file");
     await expect(page.getByTestId("field-operation")).toContainText("List files");
     await page.getByTestId("field-operation").selectOption("list");
+    await page.getByTestId("schema-advanced").locator("summary").click();
     await expect(page.getByTestId("field-folderId")).toBeVisible();
     await expect(page.getByTestId("field-nameContains")).toBeVisible();
     await expect(page.getByTestId("field-content")).toHaveCount(0);
@@ -2111,7 +2113,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await suggestions.first().click();
     // The field shows the data as a named chip; the saved value stays the mapping.
     await expect(page.locator("#telegram-text")).toHaveAttribute("data-value", "Invoice:\n{{ nodes.ocr_1.output.text.rawText }}");
-    await expect(page.locator("#telegram-text").getByTestId("mapping-chip")).toHaveText("OCR Text Extract › Text read×");
+    await expect(page.locator("#telegram-text").getByTestId("mapping-chip")).toHaveText("Read text from a file › Text read×");
     await expect(page.locator("#telegram-text")).not.toContainText("{{");
 
     await saveDraft(page);
@@ -2151,7 +2153,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(page.getByTestId("attachment-source").getByTestId("mapping-chip")).toHaveText("Trigger data › Attachment code×");
 
     // A pasted Drive link keeps only the file id.
-    await page.locator(node("google.drive")).click();
+    await page.locator(node("google.drive")).dispatchEvent("click");
     await page.getByTestId("field-fileId").fill("https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp/view?usp=sharing");
     await page.getByTestId("field-fileId").blur();
     await expect(page.getByTestId("field-fileId")).toHaveAttribute("data-value", "1AbCdEfGhIjKlMnOp");
@@ -2179,6 +2181,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(calendar).toHaveAttribute("data-readiness", "not-configured");
     await page.getByTestId("field-end").fill("2026-10-07T10:00:00+07:00");
     await expect(calendar).toHaveAttribute("data-readiness", "ready");
+    await page.getByTestId("schema-advanced").locator("summary").click();
     await page.getByTestId("field-attendees").fill("a@x.test, b@x.test");
     await page.getByTestId("field-sendInvitations").check();
 
@@ -2233,6 +2236,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(ai).toHaveAttribute("data-readiness", "not-configured");
     await page.getByTestId("field-prompt").fill("Summarize {{ trigger.input.text }}");
     await expect(ai).toHaveAttribute("data-readiness", "ready");
+    await page.getByTestId("schema-advanced").locator("summary").click();
     await page.getByTestId("field-instructions").fill("Be brief");
     await page.getByTestId("field-maxLength").fill("300");
 

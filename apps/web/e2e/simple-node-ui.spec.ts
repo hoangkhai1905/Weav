@@ -89,7 +89,7 @@ test('advanced fields are collapsed until they hold a value', async ({ page }) =
   await openBuilder(page);
   await addNode(page, 'google.calendar');
   const section = page.getByTestId('schema-advanced');
-  await expect(section.locator('summary')).toHaveText('Thêm tùy chọn (1)');
+  await expect(section.locator('summary')).toHaveText('Thêm tùy chọn (6)');
   await expect(section).not.toHaveAttribute('open', /.*/);
   await expect(page.getByTestId('field-location')).toBeHidden();
   await section.locator('summary').click();
@@ -648,14 +648,18 @@ type DomNode = {
   ownerDocument: { getElementById(id: string): DomNode | null };
 };
 
+// Composite editors (a row of conditions, the rows of cells) label their parts themselves; only their label text is checked.
+const COMPOSITE = '[data-testid="condition-config"], [data-testid="google-row-editor"]';
+
 /** Every field the open inspector renders through FieldShell or as a SchemaField checkbox, plus every label/legend text. */
 async function inspectFields(page: Page): Promise<{ fields: InspectedField[]; labels: string[] }> {
-  return page.getByTestId('workflow-inspector').evaluate((element) => {
+  return page.getByTestId('workflow-inspector').evaluate((element, composite) => {
     const root = element as unknown as DomNode;
     const doc = root.ownerDocument;
     const clean = (text: string | null | undefined) => (text ?? '').replace(/\*/g, '').replace(/\s+/g, ' ').trim();
     const fields: InspectedField[] = [];
     for (const label of Array.from(root.querySelectorAll('label[id$="-label"]'))) {
+      if (label.closest(composite)) continue;
       const base = label.id.replace(/-label$/, '');
       const control = doc.getElementById(base);
       fields.push({
@@ -672,21 +676,24 @@ async function inspectFields(page: Page): Promise<{ fields: InspectedField[]; la
       .filter((node) => !node.closest('[data-testid="inspector-technical"]'))
       .map((node) => clean(node.textContent));
     return { fields, labels };
-  });
+  }, COMPOSITE);
 }
 
-/** Plain wording of the selected step: short jargon-free labels, a hint under each, and an "Ví dụ:" placeholder in every text box. Returns what is wrong. */
-async function expectPlainWording(page: Page, stepName: string, nodeId: string) {
+/** Plain wording of the selected step: short jargon-free labels, a hint under each, and an "Ví dụ:" placeholder in every text box.
+ *  Returns what is wrong (it asserts nothing itself). `minFields` makes a step whose fields are silently skipped (a label with no control) fail. */
+async function collectWordingProblems(page: Page, stepName: string, nodeId: string, minFields: number) {
   await page.getByTestId(`rf__node-${nodeId}`).getByTestId('workflow-node').dispatchEvent('click');
   await expect(page.getByTestId('workflow-inspector').getByText(stepName, { exact: true })).toBeVisible();
   const { fields, labels } = await inspectFields(page);
   const problems: string[] = [];
+  if (fields.length < minFields) problems.push(`${stepName}: only ${fields.length} fields inspected, expected at least ${minFields}`);
   for (const field of fields) {
     const name = `${stepName} / ${field.label || '(no label)'}`;
     if (!field.label) problems.push(`${name}: empty label`);
     if (JARGON.test(field.label)) problems.push(`${name}: jargon in label`);
-    if (field.label.split(/\s+/).length > 4) problems.push(`${name}: label longer than four words`);
+    if (field.label.split(/s+/).length > 4) problems.push(`${name}: label longer than four words`);
     if (!field.hint) problems.push(`${name}: no hint`);
+    if (field.control === 'none') problems.push(`${name}: no control with the label's id`);
     if (field.control === 'text' && !field.placeholder.startsWith('Ví dụ:')) problems.push(`${name}: placeholder is "${field.placeholder}"`);
   }
   for (const label of labels) if (JARGON.test(label)) problems.push(`${stepName} / ${label}: jargon in a label`);
@@ -716,8 +723,10 @@ test('wording: triggers and messaging', async ({ page }) => {
   await stubBackend(page, steps, { edges: [['gm', 'mail'], ['tgt', 'tg1']], names });
   await stubTelegramConnection(page);
   await openBuilder(page);
-  const problems = [...await expectPlainWording(page, 'Manual trigger', 'manual')];
-  for (const { id } of steps) problems.push(...await expectPlainWording(page, `Step ${id}`, id));
+  // Fields each step must render through FieldShell (steps with their own inspector render none); a skipped field fails the count.
+  const minFields: Record<string, number> = { sched: 0, sched_adv: 0, hook: 0, tgt: 1, gm: 3, wfe: 0, mail: 11, tg1: 7, dc: 3, sl: 2, tm: 3, http_1: 4, wf_cmd: 2, wf_run: 0, wf_fail: 1 };
+  const problems = [...await collectWordingProblems(page, 'Manual trigger', 'manual', 1)];
+  for (const { id } of steps) problems.push(...await collectWordingProblems(page, `Step ${id}`, id, minFields[id]));
   expect(problems).toEqual([]);
 });
 
@@ -752,4 +761,104 @@ test('flagged fields of triggers and messaging sit under Thêm tùy chọn', asy
     await expect(section.locator('summary'), type).toContainText(`Thêm tùy chọn (${flagged.length})`);
     for (const name of flagged) await expect(section.getByTestId(testIdFor(name)), `${type}.${name}`).toHaveCount(1);
   }
+});
+
+test('wording: google, logic, ai, ocr', async ({ page }) => {
+  test.setTimeout(300_000);
+  // [step, minimum FieldShell fields (steps with their own editor render none)]
+  const steps: Array<[StubNode, number]> = [
+    [{ id: 'sh_read', type: 'google.sheets', config: { operation: 'read' } }, 4],
+    [{ id: 'sh_add', type: 'google.sheets', config: { operation: 'append' } }, 5],
+    [{ id: 'sh_find', type: 'google.sheets', config: { operation: 'lookup' } }, 7],
+    [{ id: 'dr_up', type: 'google.drive', config: { operation: 'upload' } }, 7],
+    [{ id: 'dr_list', type: 'google.drive', config: { operation: 'list' } }, 5],
+    [{ id: 'dr_get', type: 'google.drive', config: { operation: 'download' } }, 3],
+    [{ id: 'cal_new', type: 'google.calendar', config: { operation: 'create' } }, 11],
+    [{ id: 'cal_list', type: 'google.calendar', config: { operation: 'list' } }, 7],
+    [{ id: 'if_one', type: 'logic.condition', config: { left: '', operator: 'eq', right: '' } }, 0],
+    [{ id: 'if_many', type: 'logic.condition', config: { combinator: 'and', conditions: [{ left: '', operator: 'eq', right: '' }] } }, 0],
+    [{ id: 'sw', type: 'logic.switch', config: { cases: ['a'] } }, 1],
+    [{ id: 'set', type: 'data.set', config: { fields: { ten: 'An' } } }, 0],
+    [{ id: 'dt_now', type: 'format.datetime', config: { operation: 'now' } }, 2],
+    [{ id: 'dt_add', type: 'format.datetime', config: { operation: 'add' } }, 5],
+    [{ id: 'dt_fmt', type: 'format.datetime', config: { operation: 'format' } }, 5],
+    [{ id: 'dt_conv', type: 'format.datetime', config: { operation: 'convert' } }, 3],
+    [{ id: 'tx_up', type: 'format.text', config: { operation: 'upper' } }, 2],
+    [{ id: 'tx_rep', type: 'format.text', config: { operation: 'replace' } }, 4],
+    [{ id: 'tx_split', type: 'format.text', config: { operation: 'split' } }, 3],
+    [{ id: 'tx_num', type: 'format.text', config: { operation: 'number_format' } }, 4],
+    [{ id: 'ai_ext', type: 'ai.extract', config: {} }, 2],
+    [{ id: 'ai_cls', type: 'ai.classify', config: {} }, 2],
+    [{ id: 'ai_sum', type: 'ai.summarize', config: {} }, 2],
+    [{ id: 'ai_gen', type: 'ai.generate', config: {} }, 3],
+    [{ id: 'ocr_url', type: 'ocr.extract', config: { fileUrl: 'https://example.test/a.pdf' } }, 3],
+    [{ id: 'ocr_art', type: 'ocr.extract', config: { artifactId: 'art-1' } }, 3],
+    [{ id: 'ocr_file', type: 'ocr.extract', config: { file: '{{ trigger.input.file }}' } }, 3],
+  ];
+  const nodes: StubNode[] = [{ id: 'tgt', type: 'trigger.telegram', config: {} }, ...steps.map(([node]) => node)];
+  const names = Object.fromEntries(nodes.map((step) => [step.id, `Step ${step.id}`]));
+  // The Telegram trigger hands a file to the OCR step, so its file picker has options.
+  await stubBackend(page, nodes, { edges: [['tgt', 'ocr_file']], names });
+  await openBuilder(page);
+  const problems: string[] = [];
+  for (const [step, minFields] of steps) problems.push(...await collectWordingProblems(page, `Step ${step.id}`, step.id, minFields));
+  expect(problems).toEqual([]);
+});
+
+test('Calendar create shows at most four fields before Thêm tùy chọn', async ({ page }) => {
+  await stubBackend(page, [{ id: 'cal', type: 'google.calendar', config: { operation: 'create' } }], { names: { cal: 'Step cal' } });
+  await openBuilder(page);
+  await page.getByTestId('rf__node-cal').getByTestId('workflow-node').dispatchEvent('click');
+  await expect(page.getByTestId('workflow-inspector').getByText('Step cal', { exact: true })).toBeVisible();
+  // Labelled fields outside the advanced section, without the account picker.
+  const visible = await page.getByTestId('schema-config').evaluate((element) => {
+    const root = element as unknown as DomNode;
+    return Array.from(root.querySelectorAll('label[id$="-label"]'))
+      .filter((label) => !label.closest('[data-testid="schema-advanced"]') && !label.id.includes('connectionId'))
+      .map((label) => (label.textContent ?? '').replace(/\*/g, '').trim());
+  });
+  expect(visible.length).toBeLessThanOrEqual(4);
+  expect(visible).toEqual(['Thao tác', 'Tiêu đề', 'Bắt đầu', 'Kết thúc']);
+  await expect(page.getByTestId('schema-advanced').locator('summary')).toContainText('Thêm tùy chọn (6)');
+});
+
+test('flagged fields of google, logic, AI and OCR sit under Thêm tùy chọn', async ({ page }) => {
+  test.setTimeout(180_000);
+  // [step type, config, section test id, flagged fields shown for this config, locator of one field inside the section]
+  type Section = ReturnType<Page['getByTestId']>;
+  type Place = (section: Section, name: string) => ReturnType<Section['locator']>;
+  const byTestId: Place = (section, name) => section.getByTestId(`field-${name}`);
+  const cases: Array<[string, Record<string, unknown>, string, string[], Place]> = [
+    ['google.sheets', { operation: 'lookup' }, 'sheets-advanced', ['limit'], byTestId],
+    ['google.sheets', { operation: 'append' }, 'sheets-advanced', ['valueInputOption'], byTestId],
+    ['google.drive', { operation: 'upload' }, 'schema-advanced', ['mimeType', 'folderId'], byTestId],
+    ['google.drive', { operation: 'list' }, 'schema-advanced', ['folderId', 'pageSize'], byTestId],
+    ['google.calendar', { operation: 'create' }, 'schema-advanced', ['calendarId', 'timeZone', 'description', 'location', 'attendees', 'sendInvitations'], byTestId],
+    ['google.calendar', { operation: 'list' }, 'schema-advanced', ['calendarId', 'maxResults', 'query'], byTestId],
+    ['format.datetime', { operation: 'format' }, 'schema-advanced', ['locale'], byTestId],
+    ['format.text', { operation: 'number_format' }, 'schema-advanced', ['decimals', 'locale'], byTestId],
+    ['format.text', { operation: 'split' }, 'schema-advanced', ['separator'], byTestId],
+    ['ai.extract', {}, 'ai-advanced', ['instructions'], byTestId],
+    ['ai.summarize', {}, 'ai-advanced', ['maxLength'], byTestId],
+    ['ai.generate', {}, 'schema-advanced', ['instructions', 'maxLength'], byTestId],
+    ['ocr.extract', { fileUrl: 'https://example.test/a.pdf' }, 'ocr-advanced', ['language', 'detectTables'], (section, name) => (name === 'language' ? section.locator('#ocr-language') : section.getByTestId('ocr-detect-tables'))],
+  ];
+  const nodes: StubNode[] = cases.map(([type, config], index) => ({ id: `n${index}`, type, config }));
+  await stubBackend(page, nodes, { names: Object.fromEntries(nodes.map((node) => [node.id, `Step ${node.id}`])) });
+  await openBuilder(page);
+  const covered = new Map<string, Set<string>>();
+  for (const [index, [type, , sectionId, shown, place]] of cases.entries()) {
+    await page.getByTestId(`rf__node-n${index}`).getByTestId('workflow-node').dispatchEvent('click');
+    await expect(page.getByTestId('workflow-inspector').getByText(`Step n${index}`, { exact: true })).toBeVisible();
+    const flagged = flaggedFields(type);
+    const section = page.getByTestId(sectionId);
+    await expect(section.locator('summary'), `${type} ${index}`).toContainText(`Thêm tùy chọn (${shown.length})`);
+    for (const name of shown) {
+      expect(flagged, `${type}.${name} is flagged in the schema`).toContain(name);
+      await expect(place(section, name), `${type}.${name}`).toHaveCount(1);
+      covered.set(type, (covered.get(type) ?? new Set()).add(name));
+    }
+  }
+  // No flag in a schema goes untested.
+  for (const type of new Set(cases.map(([caseType]) => caseType))) expect([...(covered.get(type) ?? [])].sort(), type).toEqual([...flaggedFields(type)].sort());
 });

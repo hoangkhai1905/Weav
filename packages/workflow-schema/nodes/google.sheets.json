@@ -77,7 +77,10 @@
         {
           "type": "string"
         }
-      ]
+      ],
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "valueInputOption": {
       "title": "Value input option",
@@ -87,7 +90,10 @@
       "enum": [
         "RAW",
         "USER_ENTERED"
-      ]
+      ],
+      "x-weav-ui": {
+        "advanced": true
+      }
     }
   },
   "required": [

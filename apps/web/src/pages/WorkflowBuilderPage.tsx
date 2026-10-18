@@ -507,7 +507,7 @@ export const WorkflowBuilderPage: React.FC = () => {
     // One source for the label: builder.field.<type>.<name>, shared with publish errors and the readiness line.
     // Fields without a config key (e.g. the OCR source mode) keep their own labelKey.
     const ownKey = `builder.field.${selectedNodeType}.${name}`;
-    const label = override?.label ?? (labelKey && t(ownKey) === ownKey ? t(labelKey) : copy.label);
+    const label = override?.label ?? (labelKey && (t(ownKey) === ownKey || id === 'ocr-file-mapping') ? t(labelKey) : copy.label);
     return (
       <FieldShell id={id} label={label} hint={hint ?? copy.hint} required={override?.required ?? isMarkedRequired(selectedNodeType, name, selectedNodeConfig)}>
         {children}
@@ -2458,17 +2458,17 @@ export const WorkflowBuilderPage: React.FC = () => {
                         onChange={(outputSchema) => updateSelectedNodeConfig({ outputSchema })}
                       />
                       {handField('text', 'ai-input-text', 'builder.cfg.input_text', ({ id, describedBy }) => (<>
-                        <MappingTextField key={`${selectedNodeId}-ai-text`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'text', selectedNodeConfig)} multiline value={String(selectedNodeConfig.text ?? '')} onChange={(text) => updateSelectedNodeConfig({ text })} groups={inspectorGroups} />
+                        <MappingTextField key={`${selectedNodeId}-ai-text`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'text', selectedNodeConfig)} placeholder={examplePlaceholder('text')} multiline value={String(selectedNodeConfig.text ?? '')} onChange={(text) => updateSelectedNodeConfig({ text })} groups={inspectorGroups} />
                         {suggestionsFor('text', true)}
                       </>))}
-                      {configField('instructions', undefined, true)}
+                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={['instructions'].length} defaultOpen={hasValueOrError(['instructions'], selectedNodeConfig, selectedFieldErrors)}>{configField('instructions', undefined, true)}</AdvancedSection>
                     </div>
                   )}
                   {selectedNodeType === 'ai.classify' && (
                     <div className="space-y-3">
                       {configField('content', undefined, true)}
                       {suggestionsFor('content', true)}
-                      <CommaListInput key={selectedNodeId} id="ai-categories" label={t('builder.cfg.categories')} value={selectedNodeConfig.categories} onChange={(categories) => updateSelectedNodeConfig({ categories })} />
+                      <CommaListInput key={selectedNodeId} id="ai-categories" label={t('builder.cfg.categories')} hint={fieldCopy('ai.classify', 'categories', t).hint} placeholder={`${t('builder.field.example_prefix')}${fieldCopy('ai.classify', 'categories', t).example ?? ''}`} value={selectedNodeConfig.categories} onChange={(categories) => updateSelectedNodeConfig({ categories })} />
                     </div>
                   )}
                   {selectedNodeType === 'ai.summarize' && (
@@ -2476,7 +2476,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       {configField('inputText', undefined, true)}
                       {suggestionsFor('inputText', true)}
                       {/* Whole numbers 1..5000 are saved as numbers, a {{ }} mapping stays text, empty is omitted, anything else is flagged and not saved. */}
-                      {configField('maxLength')}
+                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={['maxLength'].length} defaultOpen={hasValueOrError(['maxLength'], selectedNodeConfig, selectedFieldErrors)}>{configField('maxLength')}</AdvancedSection>
                     </div>
                   )}
                 </div>
@@ -2522,6 +2522,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           id={id}
                           aria-describedby={describedBy}
                           data-testid="ocr-artifact-id"
+                          placeholder={examplePlaceholder('artifactId')}
                           value={String(selectedNodeConfig.artifactId ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value || undefined, fileUrl: undefined, file: undefined })}
                           className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring"
@@ -2538,7 +2539,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           data-testid="ocr-file-url"
                           value={String(selectedNodeConfig.fileUrl ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value || undefined, artifactId: undefined, file: undefined })}
-                          placeholder="https://..."
+                          placeholder={examplePlaceholder('fileUrl')}
                           className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring"
                         />
                         ))}
@@ -2589,7 +2590,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                           data-testid="ocr-file-mapping"
                           value={typeof selectedNodeConfig.file === 'object' && selectedNodeConfig.file !== null ? JSON.stringify(selectedNodeConfig.file) : String(selectedNodeConfig.file ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ file: event.target.value || undefined, fileUrl: undefined, artifactId: undefined })}
-                          placeholder="{{ trigger.input.attachments[0] }}"
+                          placeholder={t('builder.cfg.ocr_file_mapping_placeholder')}
                           className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring"
                         />
                         ))}
@@ -2605,7 +2606,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.ocr_source_hint')}</p>
                   </div>
 
-                  <div className="space-y-2">
+                  <AdvancedSection key={`ocr-advanced-${selectedNodeId}`} testId="ocr-advanced" count={2} defaultOpen={hasValueOrError(['language', 'detectTables'], selectedNodeConfig, selectedFieldErrors)}>
                     <div>
                       {handField('language', 'ocr-language', 'ocr.language', ({ id, describedBy }) => (
                           <select
@@ -2640,7 +2641,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       </label>
                       <p className="mt-1 pl-5 text-xs leading-relaxed text-muted-foreground">{t('ocr.detect_tables_hint')}</p>
                     </div>
-                  </div>
+                  </AdvancedSection>
 
                   {/* Trying OCR on a sample file is separate from the workflow: collapsed so it is not mistaken for a required step. */}
                   <details
@@ -2872,19 +2873,20 @@ export const WorkflowBuilderPage: React.FC = () => {
                       <div>
                         {handField('spreadsheetId', 'google-spreadsheet-id', 'builder.google.spreadsheet_id', ({ id, describedBy }) => (
                           // A pasted Sheets link is reduced to the id inside it.
-                          <MappingTextField key={`${selectedNodeId}-spreadsheet`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'spreadsheetId', selectedNodeConfig)} value={String(selectedNodeConfig.spreadsheetId ?? '')} onChange={(next) => updateSelectedNodeConfig({ spreadsheetId: idFromGoogleLink(next) })} groups={inspectorGroups} />
+                          <MappingTextField key={`${selectedNodeId}-spreadsheet`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'spreadsheetId', selectedNodeConfig)} placeholder={examplePlaceholder('spreadsheetId')} value={String(selectedNodeConfig.spreadsheetId ?? '')} onChange={(next) => updateSelectedNodeConfig({ spreadsheetId: idFromGoogleLink(next) })} groups={inspectorGroups} />
                         ))}
                       </div>
 
                       <div>
                         {handField('range', 'google-range', 'builder.google.range', ({ id, describedBy }) => (
-                          <MappingTextField key={`${selectedNodeId}-range`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'range', selectedNodeConfig)} value={String(selectedNodeConfig.range ?? '')} onChange={(next) => updateSelectedNodeConfig({ range: next })} groups={inspectorGroups} />
+                          <MappingTextField key={`${selectedNodeId}-range`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'range', selectedNodeConfig)} placeholder={examplePlaceholder('range')} value={String(selectedNodeConfig.range ?? '')} onChange={(next) => updateSelectedNodeConfig({ range: next })} groups={inspectorGroups} />
                         ), t(`builder.google.range_hint_${['append', 'update', 'lookup'].includes(googleOperation) ? googleOperation : 'read'}`))}
                       </div>
 
-                      {googleOperation === 'lookup' && ['lookupColumn', 'lookupValue', 'limit'].map((name) => configField(name))}
+                      {googleOperation === 'lookup' && ['lookupColumn', 'lookupValue'].map((name) => configField(name))}
+                      {googleOperation === 'lookup' && <AdvancedSection key={`sheets-advanced-${selectedNodeId}`} testId="sheets-advanced" count={['limit'].length} defaultOpen={hasValueOrError(['limit'], selectedNodeConfig, selectedFieldErrors)}>{configField('limit')}</AdvancedSection>}
 
-                      {(googleOperation === 'append' || googleOperation === 'update') && configField('valueInputOption')}
+                      {(googleOperation === 'append' || googleOperation === 'update') && <AdvancedSection key={`sheets-advanced-${selectedNodeId}`} testId="sheets-advanced" count={['valueInputOption'].length} defaultOpen={hasValueOrError(['valueInputOption'], selectedNodeConfig, selectedFieldErrors)}>{configField('valueInputOption')}</AdvancedSection>}
 
                       {(googleOperation === 'append' || googleOperation === 'update') && sheetsValuesMapping !== null && (
                         <div data-testid="google-values-mapping" className="space-y-1">

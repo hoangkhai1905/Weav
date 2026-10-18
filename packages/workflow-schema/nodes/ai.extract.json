@@ -28,7 +28,10 @@
       "type": "string",
       "title": "Instructions",
       "description": "Extra guidance for the AI model.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "schemaDescription": {
       "type": "string",

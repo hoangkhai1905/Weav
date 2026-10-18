@@ -77,6 +77,14 @@ Deferred minors (ledger): `role="menu"` holds inputs; group headings have no ste
 - Fixed live-check findings: Gmail send description, manual trigger description, "Nội dung (body)", "chat ID", blockers that started with "Node", output labels (scheduledAt, durationMs, weav.workflow items[0].finishedAt).
 - Tests: `wording: triggers and messaging` and `flagged fields of triggers and messaging sit under Thêm tùy chọn` in simple-node-ui.spec.ts; `inspectFields` / `expectPlainWording` are reusable for Task 9.
 
+## Batch 3 - Task 9: Google, logic, data, format, AI and OCR wording (2026-10-18)
+
+- Plain names/descriptions for the 13 nodes (e.g. ai.extract -> Lấy thông tin bằng AI, switch -> Chia nhánh theo giá trị, ocr -> Đọc chữ từ tệp) and label/hint/example (vi + en) for every field; blockers, messages and help-page names without Node/ID/JSON/prompt.
+- Schema x-weav-ui.advanced: sheets limit, valueInputOption; drive mimeType, folderId, pageSize; calendar calendarId, description, timeZone, attendees, sendInvitations, maxResults, query (+ location); format.datetime locale; format.text separator, decimals, locale; ai.extract/generate instructions; ai.summarize/generate maxLength; ocr language, detectTables. format.datetime timezone stays visible (convert needs it). Calendar create shows 4 fields before Thêm tùy chọn.
+- Hand-written blocks fold with sheets-advanced, ai-advanced, ocr-advanced; CommaListInput now uses FieldShell (hint + example); collectWordingProblems (renamed from expectPlainWording) checks a per-step minimum field count.
+- Tests: wording: google, logic, ai, ocr; Calendar create at most four fields; flagged fields test. Existing specs updated for reworded EN names (OCR step is now Read text from a file) and folded fields.
+- Known, not from this task: control-bot.spec 137 (Discord username folded in Task 8) and 149 (JSON wording in Task 8) fail.
+
 ## Next
 
 Batch 3 wording (Tasks 8-9; include the Batch 2 live-check wording findings above), then Task 11 (journey test, stale specs, live check). Merge into `dev` only on K's go-ahead.

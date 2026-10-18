@@ -104,8 +104,9 @@ export const WeavWorkflowInspector: React.FC<{ nodeId: string; config: Config; c
               label={t('builder.field.weav.workflow.allowedSenders')}
               value={config.allowedSenders}
               onChange={(items) => onChange({ allowedSenders: items.length ? items : undefined })}
+              hint={t('builder.field.weav.workflow.allowedSenders_hint')}
+              placeholder={`${t('builder.field.example_prefix')}${t('builder.field.weav.workflow.allowedSenders_example')}`}
             />
-            <p className={hintCls}>{t('builder.field.weav.workflow.allowedSenders_hint')}</p>
           </div>
         </>
       )}
