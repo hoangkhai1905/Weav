@@ -862,3 +862,37 @@ test('flagged fields of google, logic, AI and OCR sit under Thêm tùy chọn', 
   // No flag in a schema goes untested.
   for (const type of new Set(cases.map(([caseType]) => caseType))) expect([...(covered.get(type) ?? [])].sort(), type).toEqual([...flaggedFields(type)].sort());
 });
+
+test('palette search finds a step by its type, its name or its description', async ({ page }) => {
+  await stubBackend(page);
+  await openBuilder(page);
+  await page.getByTestId('workflow-add-step').click();
+  const search = page.getByRole('dialog').getByRole('textbox');
+  const items = page.getByTestId('workflow-palette-item');
+  await search.fill('http');
+  await expect(items.filter({ hasText: 'Gọi dịch vụ web' })).toHaveCount(1);
+  await search.fill('ocr');
+  await expect(page.locator('[data-testid="workflow-palette-item"][data-node-type="ocr.extract"]')).toHaveCount(1);
+  await search.fill('SWITCH');
+  await expect(page.locator('[data-testid="workflow-palette-item"][data-node-type="logic.switch"]')).toHaveCount(1);
+  await search.fill('zzzz-no-step');
+  await expect(items).toHaveCount(0);
+});
+
+// Visible node, blocker, error and message texts stay in plain words and never show raw data syntax.
+test('node, blocker, error and message texts have no raw syntax or jargon', async () => {
+  const { TRANSLATIONS } = await import('../src/lib/i18n/translations.js');
+  const banned = /\b(JSON|cron|payload|node)\b/i;
+  // Allowlist: a key whose banned word is legitimate (product name), with a comment saying why. None needed today.
+  const allowed = new Set<string>([]);
+  const bad: string[] = [];
+  for (const lang of ['VI', 'EN'] as const) {
+    for (const [key, text] of Object.entries(TRANSLATIONS[lang])) {
+      const checked = /^builder\.(node|blocker|err)\./.test(key) || key.startsWith('builder.cfg.msg_');
+      if (!checked || allowed.has(key)) continue;
+      const isName = key.startsWith('builder.node.') && !key.endsWith('_desc');
+      if (text.includes('{{') || banned.test(text) || (isName && /\bID\b/.test(text))) bad.push(`${lang} ${key}: ${text}`);
+    }
+  }
+  expect(bad).toEqual([]);
+});

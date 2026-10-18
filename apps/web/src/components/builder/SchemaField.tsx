@@ -245,7 +245,7 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
               onChange={(event) => {
                 setBadInteger(null);
                 setDataMode(event.target.checked);
-                // The typed number would show as text and turn "+ Dữ liệu" into `5{{ ... }}`; leaving data mode drops the mapping (not a number).
+                // The typed number would show as text and turn "Insert data" into `5{{ ... }}`; leaving data mode drops the mapping (not a number).
                 if (event.target.checked ? typeof value === 'number' : typeof value === 'string') onChange(undefined);
               }}
               className="h-3.5 w-3.5 accent-primary"

@@ -395,6 +395,11 @@ const ocrModeOf = (config: Record<string, unknown>): OcrSourceMode =>
 // Fields folded under "Thêm tùy chọn" in the hand-written forms (same membership as before).
 const TELEGRAM_ADVANCED = ['parseMode', 'disableNotification', 'replyToMessageId'];
 const HTTP_ADVANCED = ['connectionId', 'headers', 'query'];
+const AI_EXTRACT_ADVANCED = ['instructions'];
+const AI_SUMMARIZE_ADVANCED = ['maxLength'];
+const OCR_ADVANCED = ['language', 'detectTables'];
+const SHEETS_LOOKUP_ADVANCED = ['limit'];
+const SHEETS_WRITE_ADVANCED = ['valueInputOption'];
 const EMAIL_ADVANCED = ['cc', 'bcc', 'replyTo', 'senderName', 'replyToMessageId', 'attachments'];
 /** An empty key/value map (what the editor saves after the last row is removed) counts as no value. */
 const withoutEmptyMaps = (config: Record<string, unknown>) =>
@@ -442,7 +447,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   // Highest number handed out per id prefix in this workflow, so a deleted step's id is not reused.
   const idMarks = useRef<{ workflowId?: string; marks: Record<string, number> }>({ marks: {} });
   const stepLabel = (node: Node) => (node.data?.nameKey ? t(String(node.data.nameKey)) : String(node.data?.name || (node.data?.nodeType ? nodeLabel(String(node.data.nodeType), t) : node.id)));
-  /** Data the trigger and earlier steps hand to step `id` (what the "+ Dữ liệu" menus offer). */
+  /** Data the trigger and earlier steps hand to step `id` (what the "Chèn dữ liệu" menus offer). */
   const groupsBefore = (id: string, nodeList: Node[] = nodes, edgeList: Pick<Edge, 'source' | 'target'>[] = edges) =>
     upstreamGroups(nodeList, edgeList, id, t('builder.var.trigger'), stepLabel);
   const inspectorGroups = selectedNodeId ? groupsBefore(selectedNodeId) : [];
@@ -1980,8 +1985,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                 <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
                   {PALETTE_CATALOG.map((cat) => {
                     const items = cat.items.filter((item) => {
-                      const name = item.nameKey ? t(item.nameKey) : item.title;
-                      return name.toLowerCase().includes(searchQuery.toLowerCase());
+                      // Match the localized name, the localized description, or the node type (http.request, ocr.extract...).
+                      const needle = searchQuery.trim().toLowerCase();
+                      const haystack = [item.nameKey ? t(item.nameKey) : item.title, item.descKey ? t(item.descKey) : '', item.type];
+                      return haystack.some((text) => text.toLowerCase().includes(needle));
                     });
                     if (items.length === 0) return null;
                     return (
@@ -2461,7 +2468,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <MappingTextField key={`${selectedNodeId}-ai-text`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'text', selectedNodeConfig)} placeholder={examplePlaceholder('text')} multiline value={String(selectedNodeConfig.text ?? '')} onChange={(text) => updateSelectedNodeConfig({ text })} groups={inspectorGroups} />
                         {suggestionsFor('text', true)}
                       </>))}
-                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={['instructions'].length} defaultOpen={hasValueOrError(['instructions'], selectedNodeConfig, selectedFieldErrors)}>{configField('instructions', undefined, true)}</AdvancedSection>
+                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={AI_EXTRACT_ADVANCED.length} defaultOpen={hasValueOrError(AI_EXTRACT_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>{configField('instructions', undefined, true)}</AdvancedSection>
                     </div>
                   )}
                   {selectedNodeType === 'ai.classify' && (
@@ -2476,7 +2483,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       {configField('inputText', undefined, true)}
                       {suggestionsFor('inputText', true)}
                       {/* Whole numbers 1..5000 are saved as numbers, a {{ }} mapping stays text, empty is omitted, anything else is flagged and not saved. */}
-                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={['maxLength'].length} defaultOpen={hasValueOrError(['maxLength'], selectedNodeConfig, selectedFieldErrors)}>{configField('maxLength')}</AdvancedSection>
+                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={AI_SUMMARIZE_ADVANCED.length} defaultOpen={hasValueOrError(AI_SUMMARIZE_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>{configField('maxLength')}</AdvancedSection>
                     </div>
                   )}
                 </div>
@@ -2606,7 +2613,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.ocr_source_hint')}</p>
                   </div>
 
-                  <AdvancedSection key={`ocr-advanced-${selectedNodeId}`} testId="ocr-advanced" count={2} defaultOpen={hasValueOrError(['language', 'detectTables'], selectedNodeConfig, selectedFieldErrors)}>
+                  <AdvancedSection key={`ocr-advanced-${selectedNodeId}`} testId="ocr-advanced" count={OCR_ADVANCED.length} defaultOpen={hasValueOrError(OCR_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>
                     <div>
                       {handField('language', 'ocr-language', 'ocr.language', ({ id, describedBy }) => (
                           <select
@@ -2884,9 +2891,9 @@ export const WorkflowBuilderPage: React.FC = () => {
                       </div>
 
                       {googleOperation === 'lookup' && ['lookupColumn', 'lookupValue'].map((name) => configField(name))}
-                      {googleOperation === 'lookup' && <AdvancedSection key={`sheets-advanced-${selectedNodeId}`} testId="sheets-advanced" count={['limit'].length} defaultOpen={hasValueOrError(['limit'], selectedNodeConfig, selectedFieldErrors)}>{configField('limit')}</AdvancedSection>}
+                      {googleOperation === 'lookup' && <AdvancedSection key={`sheets-advanced-${selectedNodeId}`} testId="sheets-advanced" count={SHEETS_LOOKUP_ADVANCED.length} defaultOpen={hasValueOrError(SHEETS_LOOKUP_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>{configField('limit')}</AdvancedSection>}
 
-                      {(googleOperation === 'append' || googleOperation === 'update') && <AdvancedSection key={`sheets-advanced-${selectedNodeId}`} testId="sheets-advanced" count={['valueInputOption'].length} defaultOpen={hasValueOrError(['valueInputOption'], selectedNodeConfig, selectedFieldErrors)}>{configField('valueInputOption')}</AdvancedSection>}
+                      {(googleOperation === 'append' || googleOperation === 'update') && <AdvancedSection key={`sheets-advanced-${selectedNodeId}`} testId="sheets-advanced" count={SHEETS_WRITE_ADVANCED.length} defaultOpen={hasValueOrError(SHEETS_WRITE_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>{configField('valueInputOption')}</AdvancedSection>}
 
                       {(googleOperation === 'append' || googleOperation === 'update') && sheetsValuesMapping !== null && (
                         <div data-testid="google-values-mapping" className="space-y-1">

@@ -17,7 +17,7 @@ const headingCls = 'px-2 pb-0.5 text-[10px] font-semibold text-text-2';
 // Keeps the caret in the field while a menu item is pressed.
 const keepCaret = (event: React.MouseEvent) => event.preventDefault();
 
-/** The "+ Data" menu: earlier steps nearest first, then "Other" (time, run, workflow); searchable when long. */
+/** The "Insert data" menu: earlier steps nearest first, then "Other" (time, run, workflow); searchable when long. */
 export const DataMenu: React.FC<DataMenuProps> = ({ groups, onPick, onClose }) => {
   const { t } = useI18nStore();
   const [query, setQuery] = useState('');

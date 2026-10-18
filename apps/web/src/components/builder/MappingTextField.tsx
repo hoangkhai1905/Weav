@@ -19,7 +19,7 @@ interface MappingTextFieldProps {
   ariaLabel?: string;
   value: string;
   onChange: (next: string) => void;
-  /** Data the trigger and earlier steps hand over: names the chips, fills the "+ Data" menu, flags unknown data. */
+  /** Data the trigger and earlier steps hand over: names the chips, fills the "Insert data" menu, flags unknown data. */
   groups: VariableGroup[];
   multiline?: boolean;
   placeholder?: string;
@@ -44,7 +44,7 @@ const CHIP_UNKNOWN = `${CHIP} border-warn/40 bg-warn-bg text-warn`;
 
 /**
  * A text field that shows each `{{ ... }}` as a chip with a friendly name ("Text read") and an × to remove it,
- * while the saved value stays the plain mapping string. A "+ Data" menu under the field inserts data from the
+ * while the saved value stays the plain mapping string. A "Insert data" menu under the field inserts data from the
  * steps before at the caret; typing and pasting also work, and a mapping typed or pasted by hand turns into a chip
  * when the field loses focus.
  */
@@ -290,7 +290,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
     };
   }, []);
 
-  // The "+ Data" menu closes on a click outside it.
+  // The "Insert data" menu closes on a click outside it.
   useEffect(() => {
     if (!menuOpen) return;
     const close = (event: MouseEvent) => {
