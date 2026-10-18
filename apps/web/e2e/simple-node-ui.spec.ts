@@ -566,6 +566,11 @@ test('every output path has a vi and en label', async ({ page }) => {
     .filter(([key, text]) => key.startsWith('builder.var.path.') && jargon.test(text))
     .map(([key, text]) => `${lang} ${key}: ${text}`));
   expect(existing).toEqual([]);
+  // The rest of the data menu labels (this run, workflow, named input...) get the same banned words; hints and examples are prose.
+  const menuLabels = (['VI', 'EN'] as const).flatMap((lang) => Object.entries(TRANSLATIONS[lang])
+    .filter(([key, text]) => key.startsWith('builder.var.') && !key.startsWith('builder.var.path.') && !/_(hint|example)$/.test(key) && (jargon.test(text) || /\b(ISO|UTC)\b/.test(text)))
+    .map(([key, text]) => `${lang} ${key}: ${text}`));
+  expect(menuLabels).toEqual([]);
 });
 
 const LEAK = /\bbuilder\.[a-z_]+\./;

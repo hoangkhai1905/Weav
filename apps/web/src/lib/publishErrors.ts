@@ -35,9 +35,11 @@ export function describeIssues(details: WorkflowErrorDetail[], t: (key: string) 
     const name = topField(match[2]);
     const label = name ? fieldCopy(step?.type ?? '', name, t).label : '';
     const detailText = !label ? meaning
-      : code === 'REQUIRED_FIELD_MISSING' ? t('builder.err.required_field').replace('{field}', label)
+      : code === 'REQUIRED_FIELD_MISSING' ? t('builder.err.required_field').replace('{field}', () => label)
         : `'${label}' — ${meaning}`;
-    return { nodeId: match[1], text: `${t('builder.err.step_named').replace('{step}', step?.name || (step ? nodeLabel(step.type, t) : match[1]))}: ${detailText}` };
+    const shown = step?.name || (step ? nodeLabel(step.type, t) : '');
+    const stepText = shown ? t('builder.err.step_named').replace('{step}', () => shown) : t('builder.err.unknown_step');
+    return { nodeId: match[1], text: `${stepText}: ${detailText}` };
   });
 }
 

@@ -60,7 +60,7 @@ async function addNode(page: Page, nodeType: string) {
   await page.locator(`[data-testid="workflow-palette-item"][data-node-type="${nodeType}"]`).click();
 }
 
-test('new steps show their real id and the data menu uses it', async ({ page }) => {
+test('new steps are named on the card, and the data menu maps the real id', async ({ page }) => {
   const backend = await stubBackend(page);
   await page.goto(`/workflows/${workflowId}/builder`);
   await expect(page.getByTestId('workflow-title')).toHaveValue('Builder correctness');
@@ -71,6 +71,7 @@ test('new steps show their real id and the data menu uses it', async ({ page }) 
   await addNode(page, 'http.request');
   await expect(page.getByTestId('inspector-node-id')).toHaveText('http_2');
   // The card names the step; the raw id lives only in the inspector's technical footer.
+  await expect(page.getByTestId('rf__node-http_2')).toContainText('Call a web service');
   await expect(page.getByTestId('rf__node-http_2')).not.toContainText('http_2');
   await expect(page.getByTestId('rf__node-http_2')).not.toContainText('_v1');
   await page.locator('#http-url').fill('https://example.test/two');

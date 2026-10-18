@@ -2476,6 +2476,7 @@ test.describe("workflow builder Telegram trigger", () => {
     await expect(page.getByTestId("integration-readiness")).toContainText("select a Telegram bot connection");
     await expect(page.getByTestId("publish-blocker-summary")).toContainText("select a Telegram bot connection");
     await expect(page.getByTestId("telegram-trigger-hint")).toContainText("public HTTPS address");
+    await expect(page.getByTestId("telegram-trigger-hint")).not.toContainText("WORKFLOW_PUBLIC_BASE_URL");
     await expect(page.getByTestId("add-connection-TELEGRAM")).toHaveAttribute("href", "/workspace/connections");
 
     const select = page.getByLabel("Telegram bot connection");

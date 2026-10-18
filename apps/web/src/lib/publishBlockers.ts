@@ -7,7 +7,7 @@ import { stepName } from './nodeLabels';
 
 type Translate = (key: string) => string;
 // {id} is filled with the step's display name (never the raw id) so the banner reads like the rest of the builder.
-const withId = (t: Translate, key: string, node: Node) => t(key).replaceAll('{id}', stepName(node, t));
+const withId = (t: Translate, key: string, node: Node) => t(key).replaceAll('{id}', () => stepName(node, t));
 const isTrigger = (node: Node) => String(node.data?.nodeType ?? '').startsWith('trigger.');
 const hasDelimiter = (value: string) => value.includes('{{') || value.includes('}}');
 const configOf = (node: Node) => (node.data?.config ?? {}) as Record<string, unknown>;
