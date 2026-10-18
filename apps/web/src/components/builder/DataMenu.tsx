@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { isValidPath, mappingOf, outputLabel, RUN_PATHS, searchKey, type VariableGroup } from '../../lib/variablePaths';
 
@@ -22,6 +22,9 @@ export const DataMenu: React.FC<DataMenuProps> = ({ groups, onPick, onClose }) =
   const { t } = useI18nStore();
   const [query, setQuery] = useState('');
   const [name, setName] = useState('');
+  const menuRef = useRef<HTMLDivElement>(null);
+  // A field near the bottom of the inspector would open the menu under the footer: scroll the inspector so all of it shows.
+  useEffect(() => { menuRef.current?.scrollIntoView?.({ block: 'nearest' }); }, []);
   const sections = [
     ...groups.map((group) => ({
       key: group.key,
@@ -43,6 +46,7 @@ export const DataMenu: React.FC<DataMenuProps> = ({ groups, onPick, onClose }) =
 
   return (
     <div
+      ref={menuRef}
       role="menu"
       data-testid="mapping-data-menu"
       onKeyDown={(event) => { if (event.key === 'Escape') onClose(); }}

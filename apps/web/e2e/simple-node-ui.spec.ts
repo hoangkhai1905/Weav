@@ -896,3 +896,87 @@ test('node, blocker, error and message texts have no raw syntax or jargon', asyn
   }
   expect(bad).toEqual([]);
 });
+
+// Task 11: the whole first-time path, and the live-check polish.
+test('first-time user: new Gmail -> Telegram without typing {{', async ({ page }) => {
+  const GMAIL_CONNECTION = '20000000-0000-4000-8000-000000000004';
+  const connection = (id: string, provider: string, name: string) => ({
+    id, workspaceId, createdBy: '00000000-0000-4000-8000-000000000010', name, provider, authType: provider === 'GMAIL' ? 'OAUTH2' : 'API_KEY',
+    status: 'ACTIVE', config: null, hasCredential: true, credentialExpiresAt: null, lastVerifiedAt: null, canManage: true, canAttach: true,
+    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+  });
+  const savedDrafts = await stubBackend(page);
+  await page.route(`**/api/v1/workspaces/${workspaceId}/connections**`, (route) =>
+    json(route, [connection(GMAIL_CONNECTION, 'GMAIL', 'Gmail của tôi'), connection(TG_CONNECTION, 'TELEGRAM', 'Bot của tôi')]));
+  // A blank workflow: no steps yet.
+  await page.route(base, (route) => json(route, { ...draft(), definition: { schemaVersion: '1.0', nodes: [], edges: [], variables: {} }, editorState: { nodes: {} } }));
+  const published: unknown[] = [];
+  await page.route(`${base}/publish`, (route) => {
+    published.push(route.request().postDataJSON());
+    return json(route, { workflow: { ...draft(), status: 'PUBLISHED' }, webhooks: [] });
+  });
+  await openBuilder(page);
+
+  await addNode(page, 'trigger.gmail');
+  await page.getByTestId('field-connectionId').selectOption(GMAIL_CONNECTION);
+  await addNode(page, 'telegram.send_message');
+  await page.getByTestId('field-connectionId').selectOption(TG_CONNECTION);
+
+  const chat = page.locator('#telegram-chat-id');
+  await chat.click();
+  await page.keyboard.type('123456789');
+  const text = page.locator('#telegram-text');
+  await text.click();
+  await page.keyboard.type('Thư mới: ');
+  for (const label of ['Tiêu đề thư', 'Người gửi']) {
+    await page.locator('#telegram-text').locator('xpath=ancestor::*[.//*[@data-testid="mapping-data-toggle"]][1]').getByTestId('mapping-data-toggle').click();
+    await page.getByTestId('mapping-data-menu').getByRole('menuitem', { name: label, exact: true }).click();
+  }
+  await expect(page.getByTestId('mapping-chip')).toHaveCount(2);
+  await expect(page.getByTestId('integration-readiness')).toHaveCount(0);
+
+  await expect(page.getByTestId('workflow-publish')).toBeEnabled();
+  await page.getByTestId('workflow-publish').click();
+  await expect.poll(() => savedDrafts.length).toBeGreaterThan(0);
+  const body = JSON.stringify(savedDrafts[savedDrafts.length - 1]);
+  expect(body).toMatch(/\{\{ trigger\.input\.subject \}\}/);
+  expect(body).toMatch(/\{\{ trigger\.input\.from \}\}/);
+  expect(published.length).toBe(1);
+});
+
+test('publish blockers name the step, never its id', async ({ page }) => {
+  const nodes = [{ id: 'summarize_1', type: 'ai.summarize', config: {} }];
+  await stubBackend(page, nodes, { edges: [['manual', 'summarize_1']] });
+  await page.route(base, (route) => json(route, { ...draft(nodes, { edges: [['manual', 'summarize_1']] }), editorState: { nodes: { manual: { name: 'Manual trigger', position: { x: 100, y: 120 } } } } }));
+  await openBuilder(page);
+  await expect(page.getByTestId('publish-blocker-summary')).toContainText("Bước 'Tóm tắt bằng AI'");
+  await expect(page.getByTestId('publish-blocker-summary')).not.toContainText('summarize_1');
+});
+
+test('the data button name has no required marker', async ({ page }) => {
+  await stubBackend(page);
+  await openBuilder(page);
+  await addNode(page, 'telegram.send_message');
+  await expect(page.locator('#telegram-text-label')).toContainText('*');
+  await expect(page.getByRole('button', { name: /^Chèn dữ liệu vào Nội dung tin nhắn$/ })).toHaveCount(1);
+  for (const name of await page.getByTestId('mapping-data-toggle').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label') ?? ''))) expect(name).not.toContain('*');
+});
+
+test('the data menu of a field near the bottom stays inside the inspector', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 560 });
+  await stubBackend(page);
+  await openBuilder(page);
+  await addNode(page, 'telegram.send_message');
+  const toggles = page.getByTestId('mapping-data-toggle');
+  await toggles.last().click();
+  const menu = page.getByTestId('mapping-data-menu');
+  await expect(menu).toBeVisible();
+  await expect.poll(() => menu.evaluate((el) => {
+    let scroller = el.parentElement;
+    while (scroller && getComputedStyle(scroller).overflowY !== 'auto') scroller = scroller.parentElement;
+    if (!scroller) return false;
+    const box = el.getBoundingClientRect();
+    const area = scroller.getBoundingClientRect();
+    return box.top >= area.top - 1 && box.bottom <= area.bottom + 1;
+  })).toBe(true);
+});

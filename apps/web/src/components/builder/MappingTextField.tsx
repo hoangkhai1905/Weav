@@ -379,7 +379,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
           // "Chèn dữ liệu vào <field label>": steps with several data fields get distinct buttons. The name is built from the
           // visible label's text (an aria-labelledby on the label would also make the button a match for that label).
           ref={(button) => {
-            const label = (labelledBy && document.getElementById(labelledBy)?.textContent?.trim()) || ariaLabel;
+            const label = (labelledBy && document.getElementById(labelledBy)?.textContent?.replace(/\s*\*\s*$/, '').trim()) || ariaLabel; // drop the required marker
             if (button && label) button.setAttribute('aria-label', `${t('builder.var.add_data')} ${t('builder.var.into')} ${label}`);
           }}
           aria-haspopup="menu"

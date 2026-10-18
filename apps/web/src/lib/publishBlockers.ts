@@ -1,11 +1,13 @@
 import type { Edge, Node } from '@xyflow/react';
 import { isValidPath } from './mappingGrammar';
+import { stepName } from './nodeLabels';
 
 // Client-side mirror of the publish rules in workflow-service DefinitionValidator (graph, mappings, ordering
 // operands, required AI fields, absolute URL). Only rules the validator really has are checked here.
 
 type Translate = (key: string) => string;
-const withId = (t: Translate, key: string, id: string) => t(key).replace('{id}', id);
+// {id} is filled with the step's display name (never the raw id) so the banner reads like the rest of the builder.
+const withId = (t: Translate, key: string, node: Node) => t(key).replaceAll('{id}', stepName(node, t));
 const isTrigger = (node: Node) => String(node.data?.nodeType ?? '').startsWith('trigger.');
 const hasDelimiter = (value: string) => value.includes('{{') || value.includes('}}');
 const configOf = (node: Node) => (node.data?.config ?? {}) as Record<string, unknown>;
@@ -85,16 +87,16 @@ export function definitionBlockers(nodes: Node[], edges: Edge[], t: Translate): 
     const source = byId.get(edge.source);
     const target = byId.get(edge.target);
     if (!source || !target) continue;
-    if (isTrigger(target)) blockers.add(withId(t, 'builder.blocker.trigger_incoming', target.id));
+    if (isTrigger(target)) blockers.add(withId(t, 'builder.blocker.trigger_incoming', target));
     const type = String(source.data?.nodeType ?? '');
     const port = edge.sourceHandle || null; // '' counts as no port
     if (type === 'logic.switch') {
       const cases = Array.isArray(configOf(source).cases) ? (configOf(source).cases as unknown[]) : [];
-      if (port === null || (port !== 'default' && !cases.includes(port))) blockers.add(withId(t, 'builder.blocker.port_switch', source.id));
+      if (port === null || (port !== 'default' && !cases.includes(port))) blockers.add(withId(t, 'builder.blocker.port_switch', source));
     } else if (type === 'logic.condition') {
-      if (port !== 'true' && port !== 'false') blockers.add(withId(t, 'builder.blocker.port_condition', source.id));
+      if (port !== 'true' && port !== 'false') blockers.add(withId(t, 'builder.blocker.port_condition', source));
     } else if (port !== null) {
-      blockers.add(withId(t, 'builder.blocker.port_plain', source.id));
+      blockers.add(withId(t, 'builder.blocker.port_plain', source));
     }
   }
 
@@ -125,13 +127,13 @@ export function definitionBlockers(nodes: Node[], edges: Edge[], t: Translate): 
     for (const text of strings) {
       if (!hasDelimiter(text)) continue;
       const expressions = expressionsOf(text);
-      if (!expressions) { blockers.add(withId(t, 'builder.blocker.mapping', node.id)); continue; }
+      if (!expressions) { blockers.add(withId(t, 'builder.blocker.mapping', node)); continue; }
       for (const expression of expressions) {
         const parsed = parseExpression(expression, ids);
         if ('node' in parsed) {
-          if (parsed.node === node.id || !ancestors.has(parsed.node)) blockers.add(withId(t, 'builder.blocker.mapping_upstream', node.id));
+          if (parsed.node === node.id || !ancestors.has(parsed.node)) blockers.add(withId(t, 'builder.blocker.mapping_upstream', node));
         } else if (!parsed.ok) {
-          blockers.add(withId(t, 'builder.blocker.mapping', node.id));
+          blockers.add(withId(t, 'builder.blocker.mapping', node));
         }
       }
     }
@@ -139,14 +141,14 @@ export function definitionBlockers(nodes: Node[], edges: Edge[], t: Translate): 
     if (type === 'logic.condition') {
       const bad = conditionItems(config).some((item) => typeof item.operator === 'string' && ORDERING.has(item.operator)
         && (orderingOperandBad(item.left) || orderingOperandBad(item.right)));
-      if (bad) blockers.add(withId(t, 'builder.blocker.numeric', node.id));
+      if (bad) blockers.add(withId(t, 'builder.blocker.numeric', node));
     }
     // Required text of the AI steps (schema `required` + non-empty).
     const required: Record<string, string> = { 'ai.extract': 'text', 'ai.classify': 'content', 'ai.summarize': 'inputText' };
-    if (required[type] && !String(config[required[type]] ?? '').trim()) blockers.add(withId(t, `builder.blocker.${type.replace('.', '_')}`, node.id));
+    if (required[type] && !String(config[required[type]] ?? '').trim()) blockers.add(withId(t, `builder.blocker.${type.replace('.', '_')}`, node));
     if (type === 'http.request' && typeof config.url === 'string' && config.url.trim() && !hasDelimiter(config.url)) {
       // Lenient on purpose: the server uses Java URI, which accepts things `new URL` rejects (a port above 65535).
-      if (!/^https?:\/\/[^/?#\s:@]+/i.test(config.url.trim())) blockers.add(withId(t, 'builder.blocker.http_url', node.id));
+      if (!/^https?:\/\/[^/?#\s:@]+/i.test(config.url.trim())) blockers.add(withId(t, 'builder.blocker.http_url', node));
     }
   }
   return [...blockers];
