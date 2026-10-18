@@ -48,20 +48,49 @@ function detail(workflowId: string) {
   };
 }
 
+let unmatched: string[] = [];
+test.beforeEach(() => { unmatched = []; });
+test.afterEach(() => { expect(unmatched, 'API calls the stub does not cover').toEqual([]); });
+
 async function stubBackend(page: Page, lang: 'EN' | 'VI' = 'EN', ocrSources: string[] = []) {
   const remaining = new Set(wfIds);
   await page.addInitScript(([language]) => {
-    localStorage.setItem('weav_token', 'playwright-test-token');
     localStorage.setItem('weav_lang_v1', language);
+    // Sign in once per tab: a test can sign out and the next navigation must not sign it back in.
+    if (!sessionStorage.getItem('e2e_signed_in_once')) {
+      sessionStorage.setItem('e2e_signed_in_once', '1');
+      localStorage.setItem('weav_token', 'playwright-test-token');
+    }
   }, [lang]);
+  // Fallback first (later routes win): an API call no stub covers fails with 501 and is recorded, and afterEach fails the test.
+  await page.route((url) => url.pathname.startsWith('/api/'), (route) => {
+    unmatched.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+    return json(route, { error: 'not stubbed' }, 501);
+  });
   await page.route('**/api/auth/me', (route) => json(route, { id: userId, email: 'ui@example.test', displayName: 'UI Tester', systemRole: 'USER', status: 'ACTIVE' }));
   await page.route('**/api/v2/notifications**', (route) =>
     json(route, route.request().url().includes('unread-count') ? { count: 0 } : { items: [], nextCursor: null }));
   const workspace = { id: workspaceId, name: 'Weav Test Workspace', role: 'OWNER', createdBy: userId, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z' };
-  // Fallback first (later routes win): any other workspace-scoped read returns an empty page.
-  await page.route(`**/api/v1/workspaces/${workspaceId}/**`, (route) => json(route, pageOf([])));
   await page.route('**/api/v1/workspaces?**', (route) => json(route, pageOf([workspace])));
   await page.route(`**/api/v1/workspaces/${workspaceId}`, (route) => json(route, workspace));
+  await page.route(`**/api/v1/workspaces/${workspaceId}/monitoring/summary**`, (route) => json(route, {
+    days: 7,
+    from: '2026-10-11T00:00:00Z',
+    to: '2026-10-18T00:00:00Z',
+    workflows: { published: 2, paused: 0, draft: 1 },
+    runs: { total: 0, today: 0, success: 0, failed: 0, active: 0 },
+    successRate: null,
+    averageDurationMs: null,
+    p95DurationMs: null,
+    trend: [],
+    topFailingWorkflows: [],
+    recentFailures: [],
+  }));
+  await page.route((url) => url.pathname === `/api/v1/workspaces/${workspaceId}/executions`, (route) =>
+    json(route, { items: [], page: 0, size: 6, totalElements: 0, hasNext: false }));
+  await page.route('**/api/auth/sessions**', (route) => json(route, pageOf([])));
+  await page.route('**/api/v1/invitations**', (route) => json(route, pageOf([])));
+  await page.route(`**/api/v1/workspaces/${workspaceId}/members**`, (route) => json(route, pageOf([])));
   await page.route(`**/api/v1/workspaces/${workspaceId}/connections**`, (route) => json(route, []));
   await page.route(`**/api/v1/workspaces/${workspaceId}/workflows**`, (route) => {
     const url = new URL(route.request().url());
@@ -70,7 +99,7 @@ async function stubBackend(page: Page, lang: 'EN' | 'VI' = 'EN', ocrSources: str
       if (id) remaining.delete(id);
       return route.fulfill({ status: 204, body: '' });
     }
-    if (id) return wfIds.includes(id) ? json(route, detail(id)) : json(route, pageOf([]));
+    if (id) return wfIds.includes(id) ? json(route, detail(id)) : json(route, { error: 'not found' }, 404);
     return json(route, pageOf(wfIds.filter((wf) => remaining.has(wf)).map((wf) => {
       const { workflowId, name, status, schemaVersion, currentVersionId, createdAt, updatedAt, publishedAt } = detail(wf);
       return { workflowId, name, status, schemaVersion, currentVersionId, createdAt, updatedAt, publishedAt };
@@ -132,6 +161,8 @@ test.describe('workflow shell', () => {
     // The auth layout shows the same W tile next to the brand name.
     await page.evaluate(() => localStorage.removeItem('weav_token'));
     await page.goto('/login');
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByTestId('app-sidebar')).toHaveCount(0);
     await expect(page.getByText('Weav', { exact: true }).first()).toBeVisible();
     await expect(page.locator('svg path[d="M6 9l4 11 4-8 4 8 4-11"]').first()).toBeAttached();
   });
@@ -161,6 +192,29 @@ test.describe('workflow shell', () => {
       return (red + green + blue) / (255 * 3);
     });
     expect(sidebarLightness).toBeGreaterThan(0.75);
+  });
+});
+
+test.describe('dark sidebar palette', () => {
+  test('keeps the support footer on the same surface as the sidebar in dark mode', async ({ page }) => {
+    await stubBackend(page);
+    await page.addInitScript(() => localStorage.setItem('weav_theme_v1', 'dark'));
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto('/dashboard');
+    await expect(page.locator('html')).toHaveClass(/dark/);
+
+    const sidebar = page.getByTestId('app-sidebar');
+    const footer = sidebar.getByTestId('sidebar-footer');
+    await expect(footer).toBeVisible();
+    // The footer has no fill of its own, so it shows the sidebar's token background.
+    await expect(footer).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    const sidebarBackground = await sidebar.evaluate((element) => {
+      const el = element as unknown as { ownerDocument: { defaultView: { getComputedStyle: (e: unknown) => { backgroundColor: string } } } };
+      return el.ownerDocument.defaultView.getComputedStyle(el).backgroundColor;
+    });
+    expect(sidebarBackground).not.toBe('rgba(0, 0, 0, 0)');
+    const [red, green, blue] = sidebarBackground.match(/\d+/g)!.slice(0, 3).map(Number);
+    expect((red + green + blue) / (255 * 3)).toBeLessThan(0.35);
   });
 });
 
