@@ -24,7 +24,10 @@
       "type": "string",
       "maxLength": 500,
       "title": "Search filter",
-      "description": "Optional Gmail search syntax (for example: from:billing@example.com is:unread). Only matching new emails start a run."
+      "description": "Optional Gmail search syntax (for example: from:billing@example.com is:unread). Only matching new emails start a run.",
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "pollIntervalMinutes": {
       "type": "integer",
@@ -32,7 +35,10 @@
       "maximum": 1440,
       "default": 5,
       "title": "Check every (minutes)",
-      "description": "How often Weav checks for new email. Defaults to 5."
+      "description": "How often Weav checks for new email. Defaults to 5.",
+      "x-weav-ui": {
+        "advanced": true
+      }
     }
   },
   "required": [

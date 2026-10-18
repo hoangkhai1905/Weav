@@ -348,7 +348,7 @@ export const nodeSourcePorts = (type: string, config: Record<string, unknown>): 
   return NODE_CATALOG.find((item) => item.type === type)?.sourcePorts;
 };
 
-const OUTPUTS_BY_OPERATION: Record<string, Record<string, string[]>> = {
+export const OUTPUTS_BY_OPERATION: Record<string, Record<string, string[]>> = {
   'google.sheets': {
     read: ['range', 'majorDimension', 'values'],
     lookup: ['range', 'rows', 'count', 'truncated', 'rows[0].row', 'rows[0].values'],

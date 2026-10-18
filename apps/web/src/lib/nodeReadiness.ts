@@ -1,4 +1,6 @@
 import { NODE_CATALOG } from './constants/nodeCatalog';
+import { fieldCopy } from './fieldCopy';
+import { NODE_SCHEMAS } from './nodeSchemas';
 
 const SUPPORTED_NODE_TYPES = new Set(NODE_CATALOG.map((item) => item.type));
 
@@ -87,6 +89,33 @@ export const isConditionComplete = (config: Record<string, unknown>): boolean =>
     && conditions.every((item: { left?: unknown; operator?: unknown; right?: unknown }) => !isBlank(item?.left) && !isBlank(item?.operator) && !isBlank(item?.right));
 };
 
+// Fields whose requirement a conditional rule above decides alone, so the schema's unconditional `required` must not re-add them.
+// email.send: a reply may leave the subject blank (#57); a blank body passes publish (DefinitionValidator checks the key only, the body has no minLength).
+const RULE_OWNED_FIELDS: Record<string, string[]> = {
+  'email.send': ['subject', 'body'],
+  'google.drive': ['name', 'fileId'],
+  'google.calendar': ['summary', 'start', 'end'],
+  'format.datetime': ['value', 'amount', 'unit', 'pattern', 'timezone'],
+  'format.text': ['value', 'search', 'maxLength'],
+};
+
+/** Fields the step needs before it can be published: the schema's required ones (connectionId has its own state) plus the conditional rules. */
+export const requiredFields = (nodeType: string, config: Record<string, unknown>): string[] => [
+  ...new Set([
+    ...(NODE_SCHEMAS[nodeType]?.required ?? []).filter((name) => name !== 'connectionId' && !RULE_OWNED_FIELDS[nodeType]?.includes(name)),
+    ...(CONNECTION_NODE_FIELDS[nodeType]?.(config) ?? []),
+    ...(FORMAT_NODE_FIELDS[nodeType]?.(config) ?? []),
+  ]),
+];
+
+/** Whether the inspector shows a `*` on `name`: same rule as readiness, except connectionId (its own state) follows the schema. */
+export const isMarkedRequired = (nodeType: string, name: string, config: Record<string, unknown>): boolean =>
+  name === 'connectionId' ? NODE_SCHEMAS[nodeType]?.required.includes('connectionId') ?? false : requiredFields(nodeType, config).includes(name);
+
+/** Plain-language labels of the required fields that are still blank. */
+export const missingFieldLabels = (nodeType: string, config: Record<string, unknown>, t: (key: string) => string): string[] =>
+  requiredFields(nodeType, config).filter((name) => isBlank(config[name])).map((name) => fieldCopy(nodeType, name, t).label);
+
 /**
  * `attachableConnectionIds`: ids of the workspace's ACTIVE connections the user can attach.
  * Leave it undefined while the list is loading so a step is not flagged before we know.
@@ -120,7 +149,7 @@ export const getNodeReadinessBadge = (
   const connectionFields = CONNECTION_NODE_FIELDS[nodeType]?.(config);
   if (connectionFields) {
     const connectionId = String(config.connectionId ?? '').trim();
-    if (!connectionId || connectionFields.some((field) => isBlank(config[field]))) return NOT_CONFIGURED;
+    if (!connectionId || requiredFields(nodeType, config).some((field) => isBlank(config[field]))) return NOT_CONFIGURED;
     // Drive uploads take `content` or `file`, never both (CONFIGURATION_ERROR).
     if (nodeType === 'google.drive' && !isBlank(config.content) && !isBlank(config.file)) return NOT_CONFIGURED;
     const operation = String(config.operation ?? 'read');

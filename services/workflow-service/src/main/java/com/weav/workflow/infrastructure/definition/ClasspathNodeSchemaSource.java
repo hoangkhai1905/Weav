@@ -27,7 +27,7 @@ public final class ClasspathNodeSchemaSource implements NodeSchemaSource {
             "properties", "required", "additionalProperties", "x-weav-node", "x-weav-mutually-exclusive");
     private static final Set<String> FIELD_KEYWORDS = Set.of("type", "enum", "items", "oneOf",
             "additionalProperties", "minLength", "minItems", "minimum", "maxLength", "maximum", "title", "description",
-            "x-weav-template", "x-weav-connection", "x-weav-static", "x-weav-personal", "default");
+            "x-weav-template", "x-weav-connection", "x-weav-static", "x-weav-personal", "x-weav-ui", "default");
     private static final Set<String> CATEGORIES = Set.of("trigger", "action", "logic", "ai");
 
     private final JsonMapper mapper = JsonMapper.builder().build();
@@ -82,6 +82,8 @@ public final class ClasspathNodeSchemaSource implements NodeSchemaSource {
         for (JsonNode name : requiredNode) {
             require(name.isString() && fields.containsKey(name.stringValue()), type,
                     "required entries must name declared properties");
+            require(!advanced(props.get(name.stringValue())), type + "." + name.stringValue(),
+                    "x-weav-ui.advanced is not allowed on a required field");
             required.add(name.stringValue());
         }
         return new NodeConfigSchema(type, text(meta, "category"), label,
@@ -116,6 +118,12 @@ public final class ClasspathNodeSchemaSource implements NodeSchemaSource {
             provider = text(node.get("x-weav-connection"), "provider");
             require(provider != null && !provider.isBlank(), where, "x-weav-connection.provider is required");
         }
+        if (node.has("x-weav-ui")) {
+            JsonNode ui = node.get("x-weav-ui");
+            requireObject(ui, where);
+            rejectUnsupported(ui, Set.of("advanced"), where + ".x-weav-ui");
+            flag(ui, "advanced", where + ".x-weav-ui");
+        }
         require(!node.has("minimum") || node.get("minimum").isNumber(), where, "minimum must be a number");
         require(!node.has("maximum") || node.get("maximum").isNumber(), where, "maximum must be a number");
         return new Field(type, Set.copyOf(enumValues),
@@ -127,6 +135,11 @@ public final class ClasspathNodeSchemaSource implements NodeSchemaSource {
                 intValue(node, "maxLength", where),
                 node.has("maximum") ? node.get("maximum").decimalValue() : null,
                 flag(node, "x-weav-personal", where));
+    }
+
+    /** UI-only hint: validated at load, not stored (the backend ignores it at runtime). */
+    private static boolean advanced(JsonNode field) {
+        return field.path("x-weav-ui").path("advanced").asBoolean(false);
     }
 
     private static Integer intValue(JsonNode node, String name, String where) {

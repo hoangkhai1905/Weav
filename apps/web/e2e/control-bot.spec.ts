@@ -141,6 +141,7 @@ test('the Discord step picks a connection, counts content and saves its config',
   await page.getByTestId('field-connectionId').selectOption(discordConnectionId);
   await page.getByTestId('field-content').fill('Failed: {{ trigger.input.workflowName }}');
   await expect(page.getByTestId('content-counter')).toContainText('/2000');
+  await page.getByTestId('schema-advanced').locator('summary').click();
   await page.getByTestId('field-username').fill('Weav');
   const node = await savedNode(page, backend.drafts, 'discord.send_message');
   expect(node?.config).toMatchObject({ connectionId: discordConnectionId, content: 'Failed: {{ trigger.input.workflowName }}', username: 'Weav' });
@@ -162,7 +163,7 @@ test('the control step shows the fields of its operation and saves them', async 
 
   await page.getByTestId('field-operation').selectOption('run');
   await page.getByTestId('weav-workflow-input').fill('{"a": ');
-  await expect(page.getByText('The input must be a valid JSON object.')).toBeVisible();
+  await expect(page.getByText('The data is not in the right format', { exact: false })).toBeVisible();
   await page.getByTestId('weav-workflow-input').fill('{"a": 1}');
 
   await page.getByTestId('field-operation').selectOption('list_failures');
@@ -181,7 +182,7 @@ test('command shows sender and the allow-list only for command, and clears them 
   await openBuilder(page);
   await addNode(page, 'weav.workflow');
   await expect(page.getByTestId('field-operation')).toHaveValue('command');
-  await expect(page.getByTestId('field-sender')).toHaveValue('{{ trigger.input.message.from.id }}');
+  await expect(page.getByTestId('field-sender')).toHaveAttribute('data-value', '{{ trigger.input.message.from.id }}');
   await page.locator('#weav-workflow-allowed-senders').fill('111, 222');
   let node = await savedNode(page, backend.drafts, 'weav.workflow');
   expect(node?.config).toMatchObject({ operation: 'command', sender: '{{ trigger.input.message.from.id }}', allowedSenders: ['111', '222'] });
@@ -195,7 +196,7 @@ test('command shows sender and the allow-list only for command, and clears them 
 
   await page.getByTestId('rf__node-control_1').click();
   await page.getByTestId('field-operation').selectOption('command');
-  await expect(page.getByTestId('field-sender')).toHaveValue('{{ trigger.input.message.from.id }}');
+  await expect(page.getByTestId('field-sender')).toHaveAttribute('data-value', '{{ trigger.input.message.from.id }}');
   await expect(page.locator('#weav-workflow-allowed-senders')).toHaveValue('');
 });
 
@@ -271,15 +272,15 @@ test.describe('control bot templates', () => {
   }
 });
 
-// The variable picker lists what the executors return; asserted through the UI (no imports from src/).
-test('the variable picker offers the real outputs of the new steps', async ({ page }) => {
+// The data menu lists what the executors return; asserted through the UI (no imports from src/).
+test('the data menu offers the real outputs of the new steps', async ({ page }) => {
   await stubBackend(page);
   await openBuilder(page);
-  const paths = async (group: string) => {
+  const paths = async () => {
     await page.getByTestId('rf__node-http_1').click();
     await page.locator('#http-body').click();
-    if (await page.getByTestId('variable-option').count() === 0) await page.getByTestId('variable-picker-toggle').click();
-    return page.getByRole('group', { name: group, exact: true }).getByTestId('variable-option').allInnerTexts();
+    if (await page.getByTestId('mapping-data-menu').count() === 0) await page.locator('#http-body').locator('xpath=ancestor::*[.//*[@data-testid="mapping-data-toggle"]][1]').getByTestId('mapping-data-toggle').click();
+    return page.getByTestId('mapping-data-group').first().getByTestId('mapping-data-item').evaluateAll((items) => items.map((item) => item.getAttribute('data-path')));
   };
   await addNode(page, 'weav.workflow');
   await addNode(page, 'http.request');
@@ -292,9 +293,9 @@ test('the variable picker offers the real outputs of the new steps', async ({ pa
   for (const [operation, list] of Object.entries(expected)) {
     await page.getByTestId('rf__node-control_1').click();
     await page.getByTestId('field-operation').selectOption(operation);
-    expect(await paths('control_1')).toEqual(list);
+    expect(await paths()).toEqual(list);
   }
   await page.getByTestId('rf__node-control_1').click();
   await page.getByTestId('field-operation').selectOption('list_failures');
-  expect(await paths('control_1')).toEqual(expect.arrayContaining(['items', 'items[0].workflowId', 'items[0].errorMessage']));
+  expect(await paths()).toEqual(expect.arrayContaining(['items', 'items[0].workflowId', 'items[0].errorMessage']));
 });

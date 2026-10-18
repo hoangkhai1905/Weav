@@ -60,7 +60,7 @@ async function addNode(page: Page, nodeType: string) {
   await page.locator(`[data-testid="workflow-palette-item"][data-node-type="${nodeType}"]`).click();
 }
 
-test('new steps show their real id and the variable picker uses it', async ({ page }) => {
+test('new steps are named on the card, and the data menu maps the real id', async ({ page }) => {
   const backend = await stubBackend(page);
   await page.goto(`/workflows/${workflowId}/builder`);
   await expect(page.getByTestId('workflow-title')).toHaveValue('Builder correctness');
@@ -70,16 +70,17 @@ test('new steps show their real id and the variable picker uses it', async ({ pa
   await page.locator('#http-url').fill('https://example.test/one');
   await addNode(page, 'http.request');
   await expect(page.getByTestId('inspector-node-id')).toHaveText('http_2');
-  await expect(page.getByTestId('rf__node-http_2')).toContainText('http_2');
+  // The card names the step; the raw id lives only in the inspector's technical footer.
+  await expect(page.getByTestId('rf__node-http_2')).toContainText('Call a web service');
+  await expect(page.getByTestId('rf__node-http_2')).not.toContainText('http_2');
   await expect(page.getByTestId('rf__node-http_2')).not.toContainText('_v1');
   await page.locator('#http-url').fill('https://example.test/two');
 
   // Only upstream steps are offered: http_1 and the trigger, never http_2 itself.
-  await page.locator('#http-body').click();
-  await page.getByTestId('variable-picker-toggle').click();
-  await expect(page.getByRole('group', { name: 'http_1', exact: true })).toBeVisible();
-  await expect(page.getByRole('group', { name: 'http_2', exact: true })).toHaveCount(0);
-  await page.getByRole('group', { name: 'http_1', exact: true }).getByRole('button', { name: 'status', exact: true }).click();
+  await page.locator('#http-body').locator('xpath=ancestor::*[.//*[@data-testid="mapping-data-toggle"]][1]').getByTestId('mapping-data-toggle').click();
+  // The nearest step comes first: http_1 (its mapping carries the real id); no group offers http_2 itself.
+  await expect(page.locator('[data-testid="mapping-data-item"][data-path^="status"]')).toHaveCount(1);
+  await page.locator('[data-testid="mapping-data-item"][data-path="status"]').click();
   await expect(page.locator('#http-body')).toHaveAttribute('data-value', '{{ nodes.http_1.output.status }}');
 
   await page.getByTestId('workflow-publish').click();
@@ -111,6 +112,7 @@ test('invalid numbers and credential-like header names are flagged and never sav
   await expect(page.getByTestId('workflow-title')).toHaveValue('Builder correctness');
 
   await addNode(page, 'ai.summarize');
+  await page.getByTestId('ai-advanced').locator('summary').click();
   await page.getByTestId('field-maxLength').fill('0');
   await expect(page.getByTestId('field-maxLength')).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByText('Enter a whole number', { exact: false })).toBeVisible();
@@ -159,7 +161,7 @@ test('a rejected publish names the step and the field in plain language and outl
   }, 400));
   await page.getByTestId('workflow-publish').click();
   const banner = page.getByTestId('workflow-builder-error');
-  await expect(banner).toContainText('Step http_1 · url');
+  await expect(banner).toContainText("Step 'Call a web service': 'URL (web address)'");
   await expect(banner).toContainText('full http/https address');
   await expect(banner).not.toContainText('Workflow definition is invalid');
   await expect(page.getByTestId('inspector-node-id')).toHaveText('http_1');

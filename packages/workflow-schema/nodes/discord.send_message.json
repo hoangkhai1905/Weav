@@ -31,7 +31,10 @@
       "type": "string",
       "title": "Sender name",
       "description": "Optional name shown instead of the webhook's own, at most 80 characters.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     }
   },
   "required": [

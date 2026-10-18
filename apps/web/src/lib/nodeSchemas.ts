@@ -10,9 +10,11 @@ export interface SchemaProperty {
   minimum?: number;
   maximum?: number;
   maxLength?: number;
+  default?: unknown;
   'x-weav-template'?: boolean;
   'x-weav-connection'?: { provider: string };
   'x-weav-personal'?: boolean;
+  'x-weav-ui'?: { advanced?: boolean };
 }
 
 export interface NodeSchema {
@@ -30,3 +32,7 @@ export const NODE_SCHEMAS: Record<string, NodeSchema> = Object.fromEntries(
 /** The JSON types a property accepts, flattening `oneOf`. */
 export const schemaTypes = (property: SchemaProperty): string[] =>
   property.oneOf ? property.oneOf.flatMap(schemaTypes) : property.type ? [property.type] : [];
+
+/** True when the field is an optional extra shown under "More options". False for an unknown type or field. */
+export const isAdvanced = (nodeType: string, name: string): boolean =>
+  NODE_SCHEMAS[nodeType]?.properties[name]?.['x-weav-ui']?.advanced === true;

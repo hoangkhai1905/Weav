@@ -51,7 +51,10 @@
         "none",
         "HTML",
         "MarkdownV2"
-      ]
+      ],
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "disableNotification": {
       "title": "Silent message",
@@ -64,7 +67,10 @@
         {
           "type": "string"
         }
-      ]
+      ],
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "replyToMessageId": {
       "title": "Reply to message ID",
@@ -78,7 +84,10 @@
         {
           "type": "string"
         }
-      ]
+      ],
+      "x-weav-ui": {
+        "advanced": true
+      }
     }
   },
   "required": [

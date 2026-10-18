@@ -35,3 +35,7 @@ export const nodeLabel = (type: string, t: (key: string) => string): string => {
   const key = NODE_NAME_KEYS[type];
   return key ? t(key) : NODE_SCHEMAS[type]?.title ?? type;
 };
+
+/** Display name of a canvas step: translated nameKey / name, else the catalog label of its type, else its id. */
+export const stepName = (node: { id: string; data?: Record<string, unknown> }, t: (key: string) => string): string =>
+  node.data?.nameKey ? t(String(node.data.nameKey)) : String(node.data?.name || (node.data?.nodeType ? nodeLabel(String(node.data.nodeType), t) : node.id));

@@ -1,3 +1,6 @@
+import { fieldCopy } from './fieldCopy';
+import { nodeLabel } from './nodeLabels';
+
 // Turns the Workflow Service validation details (`field` + "CODE: English message") into Vietnamese
 // text tied to a step, so the builder never shows the raw English "Workflow definition is invalid".
 
@@ -15,14 +18,38 @@ const KNOWN_CODES = new Set([
   'INVALID_CRON', 'INVALID_TIMEZONE', 'SCHEDULE_VALIDATION_UNAVAILABLE', 'INVALID_DATETIME_PATTERN',
 ]);
 
-/** Maps each detail to a step id (when it names one) and Vietnamese text (`builder.err.<CODE>`, else generic). */
-export function describeIssues(details: WorkflowErrorDetail[], t: (key: string) => string): WorkflowIssue[] {
+export interface IssueStep { id: string; type: string; name: string }
+
+const NODE_FIELD = /^nodes\[(.+?)\]\.(.*)$/;
+// Top-level config field of a detail path: `nodes[a].config.cases[0].value` -> `cases`.
+const topField = (path: string) => /^config\.([^.[]+)/.exec(path)?.[1] ?? '';
+
+/** Maps each detail to a step id (when it names one) and Vietnamese text: the step's name, the field's label, the meaning. */
+export function describeIssues(details: WorkflowErrorDetail[], t: (key: string) => string, steps: ReadonlyArray<IssueStep>): WorkflowIssue[] {
   return details.map((detail) => {
     const code = /^([A-Z][A-Z_]+):/.exec(detail.message ?? '')?.[1] ?? '';
     const meaning = KNOWN_CODES.has(code) ? t(`builder.err.${code}`) : t('builder.err.generic');
-    const match = /^nodes\[(.+?)\]\.(.*)$/.exec(detail.field ?? '');
+    const match = NODE_FIELD.exec(detail.field ?? '');
     if (!match) return { text: meaning };
-    const field = match[2].replace(/^config\./, '').replace(/^config$/, '');
-    return { nodeId: match[1], text: `${t('builder.err.step').replace('{id}', match[1])}${field ? ` · ${field}` : ''}: ${meaning}` };
+    const step = steps.find((item) => item.id === match[1]);
+    const name = topField(match[2]);
+    const label = name ? fieldCopy(step?.type ?? '', name, t).label : '';
+    const detailText = !label ? meaning
+      : code === 'REQUIRED_FIELD_MISSING' ? t('builder.err.required_field').replace('{field}', () => label)
+        : `'${label}' — ${meaning}`;
+    const shown = step?.name || (step ? nodeLabel(step.type, t) : '');
+    const stepText = shown ? t('builder.err.step_named').replace('{step}', () => shown) : t('builder.err.unknown_step');
+    return { nodeId: match[1], text: `${stepText}: ${detailText}` };
   });
+}
+
+/** Issue texts by step id and top-level config field, so the inspector can open a section holding a field with an error. */
+export function fieldErrorsByStep(details: WorkflowErrorDetail[], issues: WorkflowIssue[]): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  details.forEach((detail, index) => {
+    const match = NODE_FIELD.exec(detail.field ?? '');
+    const name = match ? topField(match[2]) : '';
+    if (match && name) (out[match[1]] ??= {})[name] = issues[index].text;
+  });
+  return out;
 }

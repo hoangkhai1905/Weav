@@ -6,17 +6,20 @@ import { FormatPreview } from './FormatPreview';
 import { formatInsert, type FormatAction, type FormatSyntax } from '../../lib/formatInsert';
 import { formatPreview, richEditable } from '../../lib/formatPreview';
 import { buildRich, serializeRich } from './richText';
-import { describeMapping, mappingFieldInserts, mappingOf, pathLabel, RUN_PATHS, type VariableGroup } from '../../lib/variablePaths';
+import { DataMenu } from './DataMenu';
+import { describeMapping, type VariableGroup } from '../../lib/variablePaths';
 
 interface MappingTextFieldProps {
   id: string;
   /** Id of the visible label (a <label for> does not focus a contenteditable). */
   labelledBy?: string;
+  describedBy?: string;
+  required?: boolean;
   /** Accessible name when there is no visible label of its own. */
   ariaLabel?: string;
   value: string;
   onChange: (next: string) => void;
-  /** Data the trigger and earlier steps hand over: names the chips, fills the "+ Data" menu, flags unknown data. */
+  /** Data the trigger and earlier steps hand over: names the chips, fills the "Insert data" menu, flags unknown data. */
   groups: VariableGroup[];
   multiline?: boolean;
   placeholder?: string;
@@ -41,11 +44,11 @@ const CHIP_UNKNOWN = `${CHIP} border-warn/40 bg-warn-bg text-warn`;
 
 /**
  * A text field that shows each `{{ ... }}` as a chip with a friendly name ("Text read") and an × to remove it,
- * while the saved value stays the plain mapping string. A "+ Data" menu under the field inserts data from the
- * steps before at the caret; typing, pasting and "Insert variable" also work, and a mapping typed or pasted by
- * hand turns into a chip when the field loses focus.
+ * while the saved value stays the plain mapping string. A "Insert data" menu under the field inserts data from the
+ * steps before at the caret; typing and pasting also work, and a mapping typed or pasted by hand turns into a chip
+ * when the field loses focus.
  */
-export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelledBy, ariaLabel, value, onChange, groups, multiline, placeholder, testId, className, format }) => {
+export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelledBy, describedBy, required, ariaLabel, value, onChange, groups, multiline, placeholder, testId, className, format }) => {
   const { t } = useI18nStore();
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -247,11 +250,6 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
     setFormatNote(current.onUse?.() || '');
   };
 
-  const insertRef = useRef(insert);
-  useLayoutEffect(() => {
-    insertRef.current = insert;
-  });
-
   // Rebuild the field only when the value changed from outside (another step, a quick insert) or the editor switched
   // between visual and source, never while typing.
   useLayoutEffect(() => {
@@ -287,14 +285,12 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
       if (range && el.contains(range.commonAncestorContainer)) caret.current = range.cloneRange();
     };
     document.addEventListener('selectionchange', remember);
-    mappingFieldInserts.set(el, (text) => insertRef.current(text));
     return () => {
       document.removeEventListener('selectionchange', remember);
-      mappingFieldInserts.delete(el);
     };
   }, []);
 
-  // The "+ Data" menu closes on a click outside it.
+  // The "Insert data" menu closes on a click outside it.
   useEffect(() => {
     if (!menuOpen) return;
     const close = (event: MouseEvent) => {
@@ -308,9 +304,8 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
     insert(mapping);
     setMenuOpen(false);
   };
-  // Keeps the caret in the field while a menu item is pressed.
+  // Keeps the caret in the field while the toggle is pressed.
   const keepCaret = (event: React.MouseEvent) => event.preventDefault();
-  const itemCls = 'flex w-full flex-col items-start rounded px-2 py-1 text-left hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
   return (
     <div className={`relative ${className ?? ''}`}>
@@ -334,9 +329,10 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
         suppressContentEditableWarning
         aria-multiline={multiline ? 'true' : 'false'}
         aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
+        aria-required={required || undefined}
         aria-label={ariaLabel}
         aria-placeholder={placeholder}
-        data-mapping-field
         data-testid={testId}
         data-placeholder={placeholder}
         data-value={value}
@@ -380,6 +376,12 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
         <button
           type="button"
           data-testid="mapping-data-toggle"
+          // "Chèn dữ liệu vào <field label>": steps with several data fields get distinct buttons. The name is built from the
+          // visible label's text (an aria-labelledby on the label would also make the button a match for that label).
+          ref={(button) => {
+            const label = (labelledBy && document.getElementById(labelledBy)?.textContent?.replace(/\s*\*\s*$/, '').trim()) || ariaLabel; // drop the required marker
+            if (button && label) button.setAttribute('aria-label', `${t('builder.var.add_data')} ${t('builder.var.into')} ${label}`);
+          }}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onMouseDown={keepCaret}
@@ -388,36 +390,7 @@ export const MappingTextField: React.FC<MappingTextFieldProps> = ({ id, labelled
         >
           <Braces size={14} strokeWidth={1.75} aria-hidden="true" />{t('builder.var.add_data')}
         </button>
-        {menuOpen && (
-          <div
-            role="menu"
-            data-testid="mapping-data-menu"
-            onKeyDown={(event) => { if (event.key === 'Escape') setMenuOpen(false); }}
-            className="absolute right-0 top-full z-30 mt-1 max-h-72 w-72 max-w-full space-y-2 overflow-y-auto rounded-md border border-border bg-popover p-2 shadow-pop"
-          >
-            {groups.length === 0 && <p className="px-2 text-xs text-muted-foreground">{t('builder.var.empty')}</p>}
-            {groups.map((group) => (
-              <div key={group.key}>
-                <p className="px-2 pb-0.5 text-[10px] font-semibold text-text-2">{group.label}</p>
-                {group.paths.map((path) => (
-                  <button key={path} type="button" role="menuitem" data-testid="mapping-data-item" data-path={path} onMouseDown={keepCaret} onClick={() => pick(mappingOf(group, path))} className={itemCls}>
-                    <span className="text-[11px] text-foreground">{pathLabel(group, path, t) ?? path}</span>
-                    <span className="font-mono text-[9px] text-muted-foreground">{path}</span>
-                  </button>
-                ))}
-              </div>
-            ))}
-            <div>
-              <p className="px-2 pb-0.5 text-[10px] font-semibold text-text-2">{t('builder.var.run')}</p>
-              {RUN_PATHS.map(({ path, labelKey }) => (
-                <button key={path} type="button" role="menuitem" data-testid="mapping-data-item" data-path={path} onMouseDown={keepCaret} onClick={() => pick(`{{ ${path} }}`)} className={itemCls}>
-                  <span className="text-[11px] text-foreground">{t(labelKey)}</span>
-                  <span className="font-mono text-[9px] text-muted-foreground">{path}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        {menuOpen && <DataMenu groups={groups} onPick={pick} onClose={() => setMenuOpen(false)} />}
       </div>
       {format?.rich && codeMode && <FormatPreview syntax={format.syntax} text={value} groups={groups} />}
     </div>

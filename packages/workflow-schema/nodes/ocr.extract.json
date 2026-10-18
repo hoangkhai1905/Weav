@@ -44,13 +44,19 @@
       "type": "string",
       "title": "Language",
       "description": "Language hint for recognition.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "detectTables": {
       "type": "boolean",
       "title": "Detect tables",
       "description": "Also detect tables in the document.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     }
   },
   "required": [],

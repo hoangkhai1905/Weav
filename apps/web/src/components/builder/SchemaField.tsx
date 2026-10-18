@@ -5,6 +5,8 @@ import { toLocalInput, withLocalOffset } from '../../lib/localOffset';
 import type { VariableGroup } from '../../lib/variablePaths';
 import { idFromGoogleLink } from '../../lib/googleLinks';
 import { MappingTextField } from './MappingTextField';
+import { FieldShell } from './FieldShell';
+import { fieldCopy } from '../../lib/fieldCopy';
 import type { FormatAction, FormatSyntax } from '../../lib/formatInsert';
 
 // The executors reject more than this even where the schema has no maximum.
@@ -40,6 +42,8 @@ interface SchemaFieldProps {
   connections?: { id: string; name: string }[];
   /** Render a text field as a textarea (prompts, file content, descriptions). */
   multiline?: boolean;
+  /** Overrides the schema's required list (the builder passes the readiness rule). */
+  required?: boolean;
   /** Data from the steps before: a template text field then shows inserted data as named chips. */
   groups?: VariableGroup[];
 }
@@ -51,15 +55,21 @@ interface SchemaFieldProps {
  * Labels come from `builder.field.<type>.<name>` (fallback: schema title); `..._hint` adds help text;
  * enum options use `builder.field.<type>.<name>.<value>` (fallback: the raw value).
  */
-export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value, onChange, connections, multiline, groups }) => {
+export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value, onChange, connections, multiline, groups, required: requiredProp }) => {
   const { t } = useI18nStore();
   // Text that is not a valid whole number is shown with an error but never written to the config.
   const [badInteger, setBadInteger] = useState<string | null>(null);
+  // Whether a number field takes data from an earlier step instead of a typed number. A field loaded with a mapping
+  // starts in data mode and stays there, so removing the chip leaves an empty data field instead of a number input.
+  const [dataMode, setDataMode] = useState<boolean>(() => typeof value === 'string' && value.includes('{{'));
+  // What the user typed in a list field: the stored list is re-joined with ", ", which would move the caret.
+  const [listDraft, setListDraft] = useState<string | null>(null);
   const property = NODE_SCHEMAS[nodeType]?.properties[name];
   if (!property) return null;
   const key = `builder.field.${nodeType}.${name}`;
-  const label = t(key) === key ? property.title ?? name : t(key);
-  const hint = t(`${key}_hint`) === `${key}_hint` ? undefined : t(`${key}_hint`);
+  const { label, hint, example } = fieldCopy(nodeType, name, t);
+  const placeholder = example ? `${t('builder.field.example_prefix')}${example}` : undefined;
+  const required = requiredProp ?? NODE_SCHEMAS[nodeType].required.includes(name);
   const id = `field-${nodeType}-${name}`.replace(/\./g, '-');
   const types = schemaTypes(property);
   // An object value (for example a file reference) is shown as JSON, never as "[object Object]".
@@ -69,29 +79,48 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
 
   if (types.includes('boolean')) {
     return (
-      <label htmlFor={id} className="flex items-center gap-2 text-[13px] font-medium text-foreground">
-        <input id={id} data-testid={`field-${name}`} type="checkbox" checked={value === true || value === 'true'} onChange={(event) => onChange(event.target.checked || undefined)} className="h-3.5 w-3.5 accent-primary" />
-        {label}
-        {hint && <span className="font-normal text-muted-foreground">({hint})</span>}
-      </label>
+      // A checkbox keeps its label beside the box, so it does not use FieldShell's label-above layout.
+      <div>
+        <label htmlFor={id} className="flex items-center gap-2 text-[13px] font-medium text-foreground">
+          <input id={id} data-testid={`field-${name}`} type="checkbox" aria-describedby={hint ? `${id}-hint` : undefined} checked={value === true || value === 'true'} onChange={(event) => onChange(event.target.checked || undefined)} className="h-3.5 w-3.5 accent-primary" />
+          {label}
+        </label>
+        {hint && <p id={`${id}-hint`} className="mt-1 text-xs leading-relaxed text-muted-foreground">{hint}</p>}
+      </div>
     );
   }
 
-  // A text field that can take data from earlier steps (not a number, list, choice or a stored file object).
-  const chipText = Boolean(groups) && Boolean(property['x-weav-template']) && types.includes('string')
-    && !types.includes('integer') && property.type !== 'array' && !property.enum && !property['x-weav-connection']
-    && (typeof value === 'string' || value === undefined || value === null);
+  // A string-or-unbounded-integer field (format.datetime value: a date, or epoch milliseconds) is free text.
+  const freeText = Boolean(property.oneOf?.some((branch) => branch.type === 'string'))
+    && Boolean(property.oneOf?.some((branch) => branch.type === 'integer' && branch.minimum === undefined && branch.maximum === undefined));
+  const isInteger = types.includes('integer') && !freeText;
+  const takesData = Boolean(groups) && Boolean(property['x-weav-template']) && !property.enum && !property['x-weav-connection'];
+  // A number field keeps a typed number by default; "Dùng dữ liệu từ bước trước" turns it into a data field.
+  const numberWithData = takesData && isInteger && property.type !== 'array';
+  const useData = numberWithData && dataMode;
+  // A comma separated list that can take data: shown as text, saved as a list unless it holds a mapping.
+  // A string-or-list field saves what it already holds: a list if it is one (or the schema says so), else the typed text.
+  const asList = property.type === 'array' || Array.isArray(value);
+  const listText = takesData && types.includes('array') && !types.includes('object');
+  // A text field that can take data from earlier steps (not a list, choice or a stored file object).
+  const chipText = takesData && !listText && property.type !== 'array'
+    && (useData || (types.includes('string') && !isInteger))
+    && (useData || typeof value === 'string' || value === undefined || value === null || (freeText && typeof value === 'number'));
 
   // Drive file and folder ids also take the pasted Drive link; only the id inside it is saved.
   const takesGoogleLink = nodeType.startsWith('google.') && (name === 'fileId' || name === 'folderId');
   const textValue = (next: string) => (takesGoogleLink ? idFromGoogleLink(next) : next);
 
-  let control: React.ReactNode;
+  let error: string | undefined;
+  let control: (a11y: { id: string; describedBy?: string }) => React.ReactNode;
   if (chipText && groups) {
-    control = (
+    control = ({ describedBy }) => (
       <MappingTextField
         id={id}
         labelledBy={`${id}-label`}
+        describedBy={describedBy}
+        required={required}
+        placeholder={placeholder}
         testId={`field-${name}`}
         multiline={multiline}
         value={text}
@@ -100,28 +129,50 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
         onChange={(next) => onChange(next === '' ? undefined : textValue(next))}
       />
     );
+  } else if (listText && groups) {
+    control = ({ describedBy }) => (
+      <MappingTextField
+        id={id}
+        labelledBy={`${id}-label`}
+        describedBy={describedBy}
+        required={required}
+        placeholder={placeholder}
+        testId={`field-${name}`}
+        multiline={multiline}
+        value={listDraft ?? text}
+        groups={groups}
+        onChange={(next) => {
+          setListDraft(next);
+          // "a@x.test, b@x.test" is saved as a list; a mapping stays one string resolved at run time.
+          onChange(next.trim() === '' ? undefined : next.includes('{{') || !asList ? next : next.split(',').map((item) => item.trim()));
+        }}
+      />
+    );
   } else if (property['x-weav-connection'] || property.enum) {
     // Friendly option names come from `<key>.<value>`; the saved value stays the raw enum.
     const optionLabel = (option: string) => (t(`${key}.${option}`) === `${key}.${option}` ? option : t(`${key}.${option}`));
     const options = property.enum?.map((option) => ({ id: option, name: optionLabel(option) })) ?? connections ?? [];
-    control = (
-      <select id={id} data-testid={`field-${name}`} value={hasNone && !text ? 'none' : text} onChange={(event) => onChange(hasNone && event.target.value === 'none' ? undefined : event.target.value || undefined)} className={inputCls}>
+    control = ({ describedBy }) => (
+      <select id={id} data-testid={`field-${name}`} aria-describedby={describedBy} aria-required={required || undefined} value={hasNone && !text ? 'none' : text} onChange={(event) => onChange(hasNone && event.target.value === 'none' ? undefined : event.target.value || undefined)} className={inputCls}>
         {!hasNone && <option value="">{t(property.enum ? 'builder.field.default' : 'builder.field.select_connection')}</option>}
         {options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
         {text && !options.some((option) => option.id === text) && <option value={text}>{property.enum ? text : t('builder.cfg.unavailable_connection')}</option>}
       </select>
     );
   } else if (multiline) {
-    control = (
-      <textarea id={id} data-testid={`field-${name}`} rows={4} value={text} onChange={(event) => onChange(event.target.value === '' ? undefined : event.target.value)} className={`${inputCls} resize-y`} />
+    control = ({ describedBy }) => (
+      <textarea id={id} data-testid={`field-${name}`} aria-describedby={describedBy} aria-required={required || undefined} placeholder={placeholder} rows={4} value={text} onChange={(event) => onChange(event.target.value === '' ? undefined : event.target.value)} className={`${inputCls} resize-y`} />
     );
   } else if (property.type === 'array') {
     // "a@x.test, b@x.test" is saved as a list; a mapping stays one string resolved at run time.
-    control = (
+    control = ({ describedBy }) => (
       <input
         id={id}
         data-testid={`field-${name}`}
         type="text"
+        aria-describedby={describedBy}
+        aria-required={required || undefined}
+        placeholder={placeholder}
         value={text}
         onChange={(event) => {
           const next = event.target.value;
@@ -134,24 +185,23 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
     // Integer fields also take a mapping such as {{ trigger.input.id }}. Plain digits within the schema range
     // are saved as a number; a mapping stays text; anything else is flagged and not saved.
     // A string-or-unbounded-integer field (format.datetime value: a date, or epoch milliseconds) is free text.
-    const freeText = Boolean(property.oneOf?.some((branch) => branch.type === 'string'))
-      && Boolean(property.oneOf?.some((branch) => branch.type === 'integer' && branch.minimum === undefined && branch.maximum === undefined));
-    const isInteger = types.includes('integer') && !freeText;
     const min = property.minimum ?? INTEGER_MIN[`${nodeType}.${name}`] ?? 0;
     const max = property.maximum ?? INTEGER_CAP[`${nodeType}.${name}`] ?? INTEGER_CAP[name];
     const shown = badInteger ?? text;
     const invalid = isInteger && badInteger !== null;
-    control = (
-      <>
+    if (invalid) error = t('builder.field.int_invalid').replace('{min}', String(min)).replace('{max}', max === undefined ? '∞' : String(max));
+    control = ({ describedBy }) => (
         <input
           id={id}
           data-testid={`field-${name}`}
           type="text"
+          placeholder={placeholder}
+          aria-required={required || undefined}
           inputMode={isInteger ? 'numeric' : undefined}
           maxLength={property.maxLength}
           value={shown}
           aria-invalid={invalid || undefined}
-          aria-describedby={invalid ? `${id}-error` : undefined}
+          aria-describedby={describedBy}
           onChange={(event) => {
             const next = event.target.value;
             if (!isInteger || next === '' || next.includes('{{')) {
@@ -166,22 +216,15 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
           }}
           className={`${inputCls} ${property['x-weav-template'] ? 'font-mono' : ''}`}
         />
-        {invalid && (
-          <p id={`${id}-error`} role="alert" className="mt-1 text-[10px] text-err">
-            {t('builder.field.int_invalid').replace('{min}', String(min)).replace('{max}', max === undefined ? '∞' : String(max))}
-          </p>
-        )}
-      </>
     );
   }
 
   const isCalendarTime = nodeType === 'google.calendar' && (name === 'start' || name === 'end');
   return (
-    <div>
-      <label id={`${id}-label`} htmlFor={id} onClick={chipText ? () => document.getElementById(id)?.focus() : undefined} className="mb-1 block text-[13px] font-medium text-foreground">{label}</label>
-      {isCalendarTime ? (
+    <FieldShell id={id} label={label} hint={hint} error={error} required={required}>
+      {(a11y) => isCalendarTime ? (
         <div className="flex items-start gap-1.5">
-          <div className="min-w-0 flex-1">{control}</div>
+          <div className="min-w-0 flex-1">{control(a11y)}</div>
           <input
             type="datetime-local"
             data-testid={`field-${name}-picker`}
@@ -191,8 +234,26 @@ export const SchemaField: React.FC<SchemaFieldProps> = ({ nodeType, name, value,
             className={`${inputCls} w-auto shrink-0`}
           />
         </div>
-      ) : control}
-      {hint && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{hint}</p>}
-    </div>
+      ) : numberWithData ? (
+        <div className="space-y-1.5">
+          {control(a11y)}
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              data-testid={`field-${name}-use-data`}
+              checked={useData}
+              onChange={(event) => {
+                setBadInteger(null);
+                setDataMode(event.target.checked);
+                // The typed number would show as text and turn "Insert data" into `5{{ ... }}`; leaving data mode drops the mapping (not a number).
+                if (event.target.checked ? typeof value === 'number' : typeof value === 'string') onChange(undefined);
+              }}
+              className="h-3.5 w-3.5 accent-primary"
+            />
+            {t('builder.field.use_data')}
+          </label>
+        </div>
+      ) : control(a11y)}
+    </FieldShell>
   );
 };

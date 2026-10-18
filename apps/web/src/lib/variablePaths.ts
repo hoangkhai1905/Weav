@@ -1,4 +1,3 @@
-import React, { useEffect, useRef } from 'react';
 import type { Edge, Node } from '@xyflow/react';
 import { nodeOutputPaths } from './constants/nodeCatalog';
 export { isValidPath } from './mappingGrammar';
@@ -33,6 +32,25 @@ export const pathLabel = (group: VariableGroup, path: string, t: (key: string) =
   return undefined;
 };
 
+/** "firstName" -> "First name", "attachments[0]" -> "Attachments 1": the last segment of a path, never the whole path. */
+const humanise = (path: string) => {
+  const last = path.split('.').pop() ?? path;
+  const words = last
+    .replace(/\[(\d+)\]/g, (_, index) => ` ${Number(index) + 1}`)
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+/** What a person reads for `path`: its friendly name, else the humanised last segment. */
+export const outputLabel = (group: VariableGroup, path: string, t: (key: string) => string): string =>
+  pathLabel(group, path, t) ?? humanise(path);
+
+/** Lower-cased text without accents (and with đ as d), so "nguoi gui" finds "Người gửi". */
+export const searchKey = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').toLowerCase();
+
 /** Content people most often put in a message or prompt (`<nodeType>:<path>`), offered as one-click suggestions. */
 const FEATURED_PATHS = new Set([
   'trigger.telegram:message.text', 'trigger.telegram:message.from.firstName',
@@ -48,7 +66,7 @@ const FEATURED_PATHS = new Set([
  */
 export const suggestedData = (groups: VariableGroup[], max = 4) => {
   const readsFile = groups.some((group) => group.nodeTypes.includes('ocr.extract'));
-  return [...groups].reverse()
+  return groups
     .flatMap((group) => group.paths
       .filter((path) => group.nodeTypes.some((type) => FEATURED_PATHS.has(`${type}:${path}`)
         && !(readsFile && type === 'trigger.telegram' && path === 'message.text')))
@@ -65,26 +83,27 @@ export const RUN_PATHS: Array<{ path: string; labelKey: string }> = [
 ];
 
 /**
- * How a `{{ inner }}` expression reads to a person: the friendly name of the data, a tooltip with its step and the
- * raw expression, and whether an earlier step (or the run) really provides it.
+ * How a `{{ inner }}` expression reads to a person: the friendly name of the data, a tooltip with its step, and whether
+ * an earlier step (or the run) really provides it. A path is provided when it is a listed path or goes deeper into one
+ * (`data.name` under `data`); data nothing provides reads as "gone".
  */
 export const describeMapping = (inner: string, groups: VariableGroup[], t: (key: string) => string) => {
-  const raw = `{{ ${inner} }}`;
   const run = RUN_PATHS.find((item) => item.path === inner);
-  if (run) return { label: t(run.labelKey), title: `${t('builder.var.run')}: ${raw}`, known: true };
+  if (run) return { label: t(run.labelKey), title: t('builder.var.run'), known: true };
+  // Data that is not offered here (a deleted step, or one no longer before this step) reads as gone; the saved value is kept as is.
+  const missing = { label: t('builder.var.missing'), title: t('builder.var.unknown'), known: false };
   const group = groups.find((item) => inner.startsWith(`${item.prefix}.`));
-  if (!group) return { label: inner, title: `${t('builder.var.unknown')}: ${raw}`, known: false };
+  if (!group) return missing;
   const path = inner.slice(group.prefix.length + 1);
-  const known = group.paths.includes(path) || Boolean(group.freeForm);
-  return {
-    label: pathLabel(group, path, t) ?? path,
-    title: known ? `${group.label}: ${raw}` : `${t('builder.var.unknown')}: ${raw}`,
-    known,
-  };
+  // The nearest (longest) listed path that `path` is, or extends at a segment boundary.
+  const listed = group.paths
+    .filter((p) => path === p || path.startsWith(`${p}.`) || path.startsWith(`${p}[`))
+    .sort((a, b) => b.length - a.length)[0];
+  if (listed === undefined && !group.freeForm) return missing;
+  const base = listed ?? path;
+  const rest = path.slice(base.length).split('.').filter(Boolean).map(humanise);
+  return { label: [group.label, outputLabel(group, base, t), ...rest].join(' › '), title: group.label, known: true };
 };
-
-/** Rich text fields (MappingTextField) register how to insert at their caret, so "Insert variable" can target them. */
-export const mappingFieldInserts = new WeakMap<HTMLElement, (text: string) => void>();
 
 /** Files earlier steps produce, as mappings a file source (OCR) can take as is. */
 export const fileSources = (groups: VariableGroup[]) =>
@@ -100,20 +119,23 @@ export function upstreamGroups(
 ): VariableGroup[] {
   const parents = new Map<string, string[]>();
   edges.forEach((edge) => parents.set(edge.target, [...(parents.get(edge.target) ?? []), edge.source]));
-  const seen = new Set<string>();
-  const queue = [...(parents.get(selectedId) ?? [])];
+  // Breadth-first walk backwards: `seen` maps each earlier step to its distance from the selected one.
+  const seen = new Map<string, number>();
+  const queue: Array<[string, number]> = (parents.get(selectedId) ?? []).map((id) => [id, 1]);
   while (queue.length) {
-    const id = queue.shift() as string;
+    const [id, distance] = queue.shift() as [string, number];
     if (seen.has(id) || id === selectedId) continue;
-    seen.add(id);
-    queue.push(...(parents.get(id) ?? []));
+    seen.set(id, distance);
+    queue.push(...(parents.get(id) ?? []).map((parent): [string, number] => [parent, distance + 1]));
   }
   const upstream = nodes.filter((node) => seen.has(node.id));
+  const distanceOf: Record<string, number> = {};
   const config = (node: Node) => (node.data?.config ?? {}) as Record<string, unknown>;
   const groups: VariableGroup[] = [];
   const triggers = upstream.filter((node) => String(node.data?.nodeType ?? '').startsWith('trigger.'));
   if (triggers.length) {
     const paths = [...new Set(triggers.flatMap((node) => nodeOutputPaths(String(node.data?.nodeType), config(node))))];
+    distanceOf.trigger = Math.min(...triggers.map((node) => seen.get(node.id) as number));
     groups.push({
       key: 'trigger',
       label: triggerLabel,
@@ -127,50 +149,9 @@ export function upstreamGroups(
     .filter((node) => !String(node.data?.nodeType ?? '').startsWith('trigger.'))
     .forEach((node) => {
       const type = String(node.data?.nodeType);
+      distanceOf[node.id] = seen.get(node.id) as number;
       groups.push({ key: node.id, label: stepLabel(node), prefix: `nodes.${node.id}.output`, paths: nodeOutputPaths(type, config(node)), nodeTypes: [type] });
     });
-  return groups;
-}
-
-type TextField = HTMLInputElement | HTMLTextAreaElement;
-
-/**
- * Remembers the text field the user last focused inside the inspector, so the picker can insert there
- * (the picker's own buttons do not take focus away). Fields that are never mapped opt out with `data-notemplate`.
- */
-export function useFieldTarget(resetKey: unknown) {
-  const target = useRef<TextField | HTMLElement | null>(null);
-  // A field of the previously selected step must not receive an insert meant for this one.
-  useEffect(() => { target.current = null; }, [resetKey]);
-  const onFocusCapture = (event: React.FocusEvent) => {
-    const el = event.target;
-    const rich = el instanceof HTMLElement ? el.closest<HTMLElement>('[data-mapping-field]') : null;
-    if (rich && mappingFieldInserts.has(rich)) {
-      target.current = rich;
-      return;
-    }
-    const isText = (el instanceof HTMLInputElement && (el.type === 'text' || el.type === '')) || el instanceof HTMLTextAreaElement;
-    if (isText && !el.readOnly && el.dataset.notemplate === undefined && !el.closest('[data-variable-picker]')) target.current = el;
-  };
-  /** Inserts at the cursor (replacing the selection); false when there is no field to insert into. */
-  const insert = (text: string): boolean => {
-    const el = target.current;
-    if (!el || !el.isConnected) return false;
-    const richInsert = mappingFieldInserts.get(el);
-    if (richInsert) {
-      richInsert(text);
-      return true;
-    }
-    if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) return false;
-    const start = el.selectionStart ?? el.value.length;
-    const end = el.selectionEnd ?? start;
-    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-    // Go through the native setter so React's controlled onChange sees the edit.
-    Object.getOwnPropertyDescriptor(proto, 'value')?.set?.call(el, el.value.slice(0, start) + text + el.value.slice(end));
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.focus();
-    el.setSelectionRange(start + text.length, start + text.length);
-    return true;
-  };
-  return { onFocusCapture, insert };
+  // Nearest step first; the sort is stable, so equally close steps keep the canvas order.
+  return groups.sort((a, b) => distanceOf[a.key] - distanceOf[b.key]);
 }

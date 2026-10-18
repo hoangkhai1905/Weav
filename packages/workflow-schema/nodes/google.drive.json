@@ -68,14 +68,20 @@
       "type": "string",
       "title": "MIME type",
       "description": "Content type of the new file. Defaults to text/plain. Used by upload.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "folderId": {
       "type": "string",
       "title": "Folder ID",
       "description": "Upload into, or list only, this folder. Optional. With the drive.file permission only folders created or opened by Weav are accessible.",
       "x-weav-template": true,
-      "x-weav-personal": true
+      "x-weav-personal": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "nameContains": {
       "type": "string",
@@ -88,7 +94,10 @@
       "minimum": 1,
       "title": "Page size",
       "description": "Maximum number of files to list (at most 100). Used by list.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     }
   },
   "required": [

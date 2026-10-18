@@ -207,15 +207,16 @@ test.describe("run values in the variable picker (stubbed backend)", () => {
     await page.goto(`/workflows/${BUILDER_WF}/builder`);
     await page.getByTestId("workflow-add-step").click();
     await page.locator('[data-testid="workflow-palette-item"][data-node-type="http.request"]').click();
-    await page.locator("#http-body").click();
-    await page.getByTestId("variable-picker-toggle").click();
+    const openMenu = () => page.locator("#http-body").locator('xpath=ancestor::*[.//*[@data-testid="mapping-data-toggle"]][1]').getByTestId("mapping-data-toggle").click();
+    const runGroup = () => page.getByTestId("mapping-data-group").filter({ has: page.getByText("Khác", { exact: true }) });
 
-    const group = page.getByTestId("variable-run-group");
-    await expect(group).toContainText("Lần chạy");
-    await expect(group.getByTestId("variable-option")).toHaveText(["now", "run.id", "workflow.id", "workflow.name"]);
-    await group.getByRole("button", { name: "workflow.name", exact: true }).click();
+    await openMenu();
+    const paths = await runGroup().getByTestId("mapping-data-item").evaluateAll((items) => items.map((item) => item.getAttribute("data-path")));
+    expect(paths).toEqual(["now", "run.id", "workflow.id", "workflow.name"]);
+    await runGroup().locator('[data-path="workflow.name"]').click();
     await expect(page.locator("#http-body")).toHaveAttribute("data-value", "{{ workflow.name }}");
-    await group.getByRole("button", { name: "now", exact: true }).click();
+    await openMenu();
+    await runGroup().locator('[data-path="now"]').click();
     await expect(page.locator("#http-body")).toHaveAttribute("data-value", "{{ workflow.name }}{{ now }}");
   });
 });

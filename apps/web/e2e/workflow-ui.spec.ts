@@ -417,7 +417,7 @@ test.describe('OCR workflow node', () => {
     await page.goto('/workflows/wf-001/builder');
     await expect(page.getByText('Loading workflow…', { exact: true })).toBeVisible();
 
-    const ocrPaletteItem = page.getByRole('button', { name: 'OCR Text Extract' });
+    const ocrPaletteItem = page.getByRole('button', { name: 'Read text from a file' });
     await expect(ocrPaletteItem).toBeDisabled();
     await page.evaluate("window.dispatchEvent(new Event('weav:release-mock-delays'))");
     await expect(page.getByText('Loading workflow…', { exact: true })).toBeHidden();
@@ -425,7 +425,7 @@ test.describe('OCR workflow node', () => {
     await ocrPaletteItem.click();
 
     const inspector = page.getByTestId('workflow-inspector');
-    await expect(inspector).toContainText('OCR Text Extract');
+    await expect(inspector).toContainText('Read text from a file');
     const fileInput = inspector.getByTestId('ocr-file-input');
     await expect(fileInput).toBeVisible();
     await fileInput.setInputFiles({

@@ -82,8 +82,12 @@ import { storeOAuthPendingContext } from '../lib/oauthPending';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG, nextNodeId, nodeSourcePorts } from '../lib/constants/nodeCatalog';
-import { getNodeReadinessBadge, isConditionComplete } from '../lib/nodeReadiness';
+import { getNodeReadinessBadge, isConditionComplete, isMarkedRequired, missingFieldLabels } from '../lib/nodeReadiness';
 import { SchemaField } from '../components/builder/SchemaField';
+import { AdvancedSection } from '../components/builder/AdvancedSection';
+import { FieldShell } from '../components/builder/FieldShell';
+import { fieldCopy, hasValueOrError } from '../lib/fieldCopy';
+import { isAdvanced } from '../lib/nodeSchemas';
 import { CharCounter, WeavWorkflowInspector, WorkflowEventInspector } from '../components/builder/ControlBotInspectors';
 import { ConditionEditor } from '../components/builder/ConditionEditor';
 import { AttachmentsEditor } from '../components/builder/AttachmentsEditor';
@@ -93,15 +97,15 @@ import { SchedulePicker } from '../components/builder/SchedulePicker';
 import { CommaListInput } from '../components/builder/CommaListInput';
 import { KeyValueEditor } from '../components/builder/KeyValueEditor';
 import { definitionBlockers } from '../lib/publishBlockers';
-import { VariablePicker } from '../components/builder/VariablePicker';
 import { DataSuggestions } from '../components/builder/DataSuggestions';
 import { MappingTextField } from '../components/builder/MappingTextField';
 import { idFromGoogleLink } from '../lib/googleLinks';
-import { fileSources, pathLabel, upstreamGroups, useFieldTarget } from '../lib/variablePaths';
+import { fileSources, pathLabel, upstreamGroups } from '../lib/variablePaths';
 import { workflowApi, isWorkflowMockMode } from '../api/workflow.api';
 import type { WebhookProvisioning } from '../api/workflow-v1.api';
 import { definitionToCanvas, WorkflowApiError, type GenerationResponse } from '../api/workflow-v1.api';
-import { describeIssues, type WorkflowIssue } from '../lib/publishErrors';
+import { stepName } from '../lib/nodeLabels';
+import { describeIssues, fieldErrorsByStep, type WorkflowIssue } from '../lib/publishErrors';
 import { workflowToReactFlow, reactFlowToWorkflow } from '../lib/mappers/workflowMapper';
 import type { WorkflowDefinition } from '../types/workflow.types';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
@@ -388,6 +392,18 @@ type OcrSourceMode = 'url' | 'file' | 'artifact';
 const ocrModeOf = (config: Record<string, unknown>): OcrSourceMode =>
   String(config.file ?? '').trim() ? 'file' : String(config.artifactId ?? '').trim() ? 'artifact' : 'url';
 
+// Fields folded under "Thêm tùy chọn" in the hand-written forms (same membership as before).
+const TELEGRAM_ADVANCED = ['parseMode', 'disableNotification', 'replyToMessageId'];
+const HTTP_ADVANCED = ['connectionId', 'headers', 'query'];
+const AI_EXTRACT_ADVANCED = ['instructions'];
+const AI_SUMMARIZE_ADVANCED = ['maxLength'];
+const OCR_ADVANCED = ['language', 'detectTables'];
+const SHEETS_LOOKUP_ADVANCED = ['limit'];
+const SHEETS_WRITE_ADVANCED = ['valueInputOption'];
+const EMAIL_ADVANCED = ['cc', 'bcc', 'replyTo', 'senderName', 'replyToMessageId', 'attachments'];
+/** An empty key/value map (what the editor saves after the last row is removed) counts as no value. */
+const withoutEmptyMaps = (config: Record<string, unknown>) =>
+  Object.fromEntries(Object.entries(config).map(([name, value]) => [name, value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length ? undefined : value]));
 /** Telegram send target "whoever just wrote to the bot" (a Telegram trigger's chat). */
 const TELEGRAM_REPLY_CHAT = '{{ trigger.input.message.chat.id }}';
 /** Gmail send recipient "whoever sent the email that started the run" (a Gmail trigger's sender address). */
@@ -430,9 +446,8 @@ export const WorkflowBuilderPage: React.FC = () => {
   const selectedNodeConfig = (selectedNode?.data?.config ?? {}) as Record<string, unknown>;
   // Highest number handed out per id prefix in this workflow, so a deleted step's id is not reused.
   const idMarks = useRef<{ workflowId?: string; marks: Record<string, number> }>({ marks: {} });
-  const fieldTarget = useFieldTarget(selectedNodeId);
-  const stepLabel = (node: Node) => (node.data?.nameKey ? t(String(node.data.nameKey)) : String(node.data?.name || node.id));
-  /** Data the trigger and earlier steps hand to step `id` (what "Insert variable" offers). */
+  const stepLabel = (node: Node) => stepName(node, t);
+  /** Data the trigger and earlier steps hand to step `id` (what the "Chèn dữ liệu" menus offer). */
   const groupsBefore = (id: string, nodeList: Node[] = nodes, edgeList: Pick<Edge, 'source' | 'target'>[] = edges) =>
     upstreamGroups(nodeList, edgeList, id, t('builder.var.trigger'), stepLabel);
   const inspectorGroups = selectedNodeId ? groupsBefore(selectedNodeId) : [];
@@ -472,6 +487,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       onChange={(value) => updateSelectedNodeConfig({ [name]: value })}
       connections={connections}
       multiline={multiline}
+      required={isMarkedRequired(selectedNodeType, name, selectedNodeConfig)}
       // Text fields of a step show data from earlier steps as chips; a trigger has no earlier step.
       groups={selectedNodeType.startsWith('trigger.') ? undefined : inspectorGroups}
     />
@@ -485,6 +501,24 @@ export const WorkflowBuilderPage: React.FC = () => {
       onChange={(next) => updateSelectedNodeConfig({ [name]: next })}
     />
   );
+  /** The "Ví dụ: …" placeholder of a hand-written text field: same copy source as SchemaField (builder.field.<type>.<name>_example). */
+  const examplePlaceholder = (name: string) => {
+    const { example } = fieldCopy(selectedNodeType, name, t);
+    return example ? `${t('builder.field.example_prefix')}${example}` : undefined;
+  };
+  /** FieldShell for a hand-written field of the selected step: `labelKey` keeps the field's existing wording; hint and `*` come from the schema copy. */
+  const handField = (name: string, id: string, labelKey: string | undefined, children: (a11y: { id: string; describedBy?: string }) => React.ReactNode, hint?: string, override?: { label: string; required: boolean }) => {
+    const copy = fieldCopy(selectedNodeType, name, t);
+    // One source for the label: builder.field.<type>.<name>, shared with publish errors and the readiness line.
+    // Fields without a config key (e.g. the OCR source mode) keep their own labelKey.
+    const ownKey = `builder.field.${selectedNodeType}.${name}`;
+    const label = override?.label ?? (labelKey && (t(ownKey) === ownKey || id === 'ocr-file-mapping') ? t(labelKey) : copy.label);
+    return (
+      <FieldShell id={id} label={label} hint={hint ?? copy.hint} required={override?.required ?? isMarkedRequired(selectedNodeType, name, selectedNodeConfig)}>
+        {children}
+      </FieldShell>
+    );
+  };
   const selectedSchemaForm = SCHEMA_FORMS[selectedNodeType];
   // Edges leave a switch by case name; drop the ones whose case was removed or renamed (INVALID_SOURCE_PORT).
   const updateSwitchCases = (cases: string[]) => {
@@ -513,6 +547,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   const selectedNodeReadinessMessage = selectedNode
     ? getNodeReadinessMessage(selectedNodeType, selectedNodeConfig, t, attachableConnectionIds, ocrSources)
     : undefined;
+  const selectedMissingFields = selectedNode ? missingFieldLabels(selectedNodeType, selectedNodeConfig, t) : [];
   const isUnsupportedNode = Boolean(selectedNodeType) && !SUPPORTED_NODE_TYPES.has(selectedNodeType);
   const isGoogleSheetsNode = selectedNodeType === 'google.sheets';
   const isGoogleDocsNode = selectedNodeType === 'google.docs';
@@ -560,7 +595,9 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [isSavingWorkflow, setIsSavingWorkflow] = useState(false);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   // Validation issues of the last rejected save/publish, kept together with the message they belong to.
-  const [issueState, setIssueState] = useState<{ message: string; issues: WorkflowIssue[] } | null>(null);
+  // `fields`: the issue text of each step's config fields that the issues name (opens their "Thêm tùy chọn" section).
+  const [issueState, setIssueState] = useState<{ message: string; issues: WorkflowIssue[]; fields: Record<string, Record<string, string>> } | null>(null);
+  const selectedFieldErrors = issueState && workflowError === issueState.message && selectedNodeId ? issueState.fields[selectedNodeId] : undefined;
   const [publishedWebhooks, setPublishedWebhooks] = useState<WebhookProvisioning[]>([]);
   const [webhookUnchanged, setWebhookUnchanged] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -724,9 +761,14 @@ export const WorkflowBuilderPage: React.FC = () => {
   /** Shows a failed save/publish; validation details become Vietnamese per-step issues and the first step is selected. */
   const reportWorkflowError = (error: unknown, fallbackKey: string) => {
     if (error instanceof WorkflowApiError && error.details.length > 0) {
-      const issues = describeIssues(error.details, t);
+      const steps = nodes.map((node) => ({
+        id: node.id,
+        type: String(node.data?.nodeType ?? ''),
+        name: node.data?.nameKey ? t(String(node.data.nameKey)) : String(node.data?.name ?? ''),
+      }));
+      const issues = describeIssues(error.details, t, steps);
       const message = t('builder.err.summary');
-      setIssueState({ message, issues });
+      setIssueState({ message, issues, fields: fieldErrorsByStep(error.details, issues) });
       setWorkflowError(message);
       const first = issues.find((issue) => issue.nodeId && nodes.some((node) => node.id === issue.nodeId));
       if (first?.nodeId) focusNode(first.nodeId);
@@ -1943,8 +1985,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                 <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
                   {PALETTE_CATALOG.map((cat) => {
                     const items = cat.items.filter((item) => {
-                      const name = item.nameKey ? t(item.nameKey) : item.title;
-                      return name.toLowerCase().includes(searchQuery.toLowerCase());
+                      // Match the localized name, the localized description, or the node type (http.request, ocr.extract...).
+                      const needle = searchQuery.trim().toLowerCase();
+                      const haystack = [item.nameKey ? t(item.nameKey) : item.title, item.descKey ? t(item.descKey) : '', item.type];
+                      return haystack.some((text) => text.toLowerCase().includes(needle));
                     });
                     if (items.length === 0) return null;
                     return (
@@ -2007,19 +2051,6 @@ export const WorkflowBuilderPage: React.FC = () => {
                   ? t(String(selectedNode.data.nameKey))
                   : (selectedNode.data.name as string) || t('builder.step_inspector')}
               </span>
-              <span data-testid="inspector-node-id" title={t('builder.node_id')} className="min-w-0 truncate rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-                {selectedNode.id}
-              </span>
-              <button
-                type="button"
-                data-testid="inspector-node-id-copy"
-                aria-label={t('builder.node_id.copy')}
-                title={t('builder.node_id.copy')}
-                onClick={() => { void navigator.clipboard?.writeText(selectedNode.id).catch(() => undefined); }}
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <Copy size={12} aria-hidden="true" />
-              </button>
               {NODE_GUIDE_TOPIC[selectedNodeType] && (
                 <button
                   type="button"
@@ -2048,6 +2079,9 @@ export const WorkflowBuilderPage: React.FC = () => {
               className="border-b border-warn/30 bg-warn-bg px-3 py-2 text-[11px] leading-relaxed text-warn"
             >
               {selectedNodeReadinessMessage}
+              {selectedMissingFields.length > 0 && (
+                <span className="block">{t('builder.readiness.missing').replace('{fields}', selectedMissingFields.join(', '))}</span>
+              )}
               {isUnsupportedNode && <span className="block">{t('builder.cfg.preserved_readonly')}</span>}
             </div>
           )}
@@ -2093,14 +2127,7 @@ export const WorkflowBuilderPage: React.FC = () => {
           </div>
 
           {/* Inspector Body Content */}
-          <div className="flex-1 space-y-5 overflow-y-auto p-5 text-[13px]" onFocusCapture={fieldTarget.onFocusCapture}>
-            {inspectorTab === 'config' && !isUnsupportedNode && !selectedNodeType.startsWith('trigger.') && selectedNodeId && (
-              <VariablePicker
-                key={selectedNodeId}
-                groups={inspectorGroups}
-                insert={fieldTarget.insert}
-              />
-            )}
+          <div className="flex-1 space-y-5 overflow-y-auto p-5 text-[13px]">
             {inspectorTab === 'config' && (
               isUnsupportedNode ? (
                 <div data-testid="unsupported-node-config" className="space-y-3">
@@ -2148,15 +2175,27 @@ export const WorkflowBuilderPage: React.FC = () => {
                       </div>
                     );
                   })()}
-                  {selectedSchemaForm.fields(selectedNodeConfig).map((name) => {
-                    const multiline = selectedSchemaForm.multiline?.includes(name);
+                  {(() => {
+                    const names = selectedSchemaForm.fields(selectedNodeConfig);
+                    const advancedNames = names.filter((name) => isAdvanced(selectedNodeType, name));
+                    const renderField = (name: string) => {
+                      const multiline = selectedSchemaForm.multiline?.includes(name);
+                      return (
+                        <React.Fragment key={name}>
+                          {configField(name, undefined, multiline)}
+                          {SUGGEST_FIELDS[selectedNodeType]?.includes(name) && suggestionsFor(name, multiline)}
+                        </React.Fragment>
+                      );
+                    };
                     return (
-                      <React.Fragment key={name}>
-                        {configField(name, undefined, multiline)}
-                        {SUGGEST_FIELDS[selectedNodeType]?.includes(name) && suggestionsFor(name, multiline)}
-                      </React.Fragment>
+                      <>
+                        {names.filter((name) => !advancedNames.includes(name)).map(renderField)}
+                        <AdvancedSection key={selectedNodeId} testId="schema-advanced" count={advancedNames.length} defaultOpen={hasValueOrError(advancedNames, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>
+                          {advancedNames.map(renderField)}
+                        </AdvancedSection>
+                      </>
                     );
-                  })}
+                  })()}
                   {selectedNodeType === 'trigger.telegram' && <p data-testid="telegram-trigger-hint" className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.telegram_trigger_hint')}</p>}
                   {selectedNodeType === 'google.drive' && <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.drive_hint')}</p>}
                   {selectedNodeType === 'trigger.gmail' && (
@@ -2192,7 +2231,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                   {(selectedNodeType === 'slack.send_message' || selectedNodeType === 'teams.send_message') && <CharCounter value={selectedNodeConfig.text} max={4000} />}
                 </div>
               ) : selectedNodeType === 'weav.workflow' && selectedNodeId ? (
-                <WeavWorkflowInspector key={`control-bot:${selectedNodeId}`} nodeId={selectedNodeId} config={selectedNodeConfig} currentWorkflowId={workflow?.id} onChange={updateSelectedNodeConfig} />
+                <WeavWorkflowInspector key={`control-bot:${selectedNodeId}`} nodeId={selectedNodeId} config={selectedNodeConfig} currentWorkflowId={workflow?.id} groups={inspectorGroups} onChange={updateSelectedNodeConfig} />
               ) : selectedNodeType === 'trigger.workflow_event' ? (
                 <WorkflowEventInspector key={`control-bot:${selectedNodeId}`} config={selectedNodeConfig} currentWorkflowId={workflow?.id} onChange={updateSelectedNodeConfig} />
               ) : selectedNodeType === 'logic.switch' ? (
@@ -2216,15 +2255,16 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </div>
                 </div>
               ) : selectedNodeType === 'trigger.manual' ? (
-                <div>
-                  <label htmlFor="manual-button-label" className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.button_label')}</label>
+                handField('buttonLabel', 'manual-button-label', 'builder.cfg.button_label', ({ id, describedBy }) => (
                   <input
-                    id="manual-button-label"
+                    id={id}
+                          aria-describedby={describedBy}
+                    placeholder={examplePlaceholder('buttonLabel')}
                     value={String(selectedNodeConfig.buttonLabel ?? '')}
                     onChange={(event) => updateSelectedNodeConfig({ buttonLabel: event.target.value })}
                     className="w-full rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring"
                   />
-                </div>
+                ))
               ) : selectedNodeType === 'telegram.send_message' ? (
                 <div data-testid="telegram-send-config" className="space-y-3">
                   <div>
@@ -2242,10 +2282,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                     return (
                       <div className="space-y-2">
                         {canReply && (
-                          <div>
-                            <label htmlFor="telegram-chat-target" className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.tg_target')}</label>
+                          handField('chatId', 'telegram-chat-target', 'builder.cfg.tg_target', ({ id, describedBy }) => (
                             <select
-                              id="telegram-chat-target"
+                              id={id}
+                          aria-describedby={describedBy}
                               data-testid="telegram-chat-target"
                               value={replying ? 'reply' : 'custom'}
                               onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value === 'reply' ? TELEGRAM_REPLY_CHAT : '' })}
@@ -2254,29 +2294,30 @@ export const WorkflowBuilderPage: React.FC = () => {
                               <option value="reply">{t('builder.cfg.tg_target_reply')}</option>
                               <option value="custom">{t('builder.cfg.tg_target_custom')}</option>
                             </select>
-                          </div>
+                          ))
                         )}
                         {!replying && (
-                          <div>
-                            <label htmlFor="telegram-chat-id" className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.chat_id')}</label>
-                            <input id="telegram-chat-id" value={chatId} onChange={(event) => updateSelectedNodeConfig({ chatId: event.target.value })} placeholder="123456789" className="w-full rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring" />
-                            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.tg_chat_hint')}</p>
-                          </div>
+                          handField('chatId', 'telegram-chat-id', 'builder.cfg.chat_id', ({ id, describedBy }) => (
+                            <MappingTextField key={`${selectedNodeId}-chat-id`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={!canReply && isMarkedRequired(selectedNodeType, 'chatId', selectedNodeConfig)} value={chatId} onChange={(next) => updateSelectedNodeConfig({ chatId: next })} groups={inspectorGroups} placeholder={examplePlaceholder('chatId')} />
+                          ), t('builder.cfg.tg_chat_hint'),
+                          // Next to the target select (which names the field and carries the required marker) the input gets its own label.
+                          canReply ? { label: t('builder.field.telegram.send_message.chatId_other'), required: false } : undefined)
                         )}
                       </div>
                     );
                   })()}
-                  <div>
-                    <label id="telegram-text-label" onClick={() => document.getElementById('telegram-text')?.focus()} className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.message')}</label>
+                  {handField('text', 'telegram-text', 'builder.cfg.message', ({ id, describedBy }) => (<>
                     <MappingTextField
                       key={`${selectedNodeId}-text`}
-                      id="telegram-text"
-                      labelledBy="telegram-text-label"
+                      id={id}
+                      labelledBy={`${id}-label`}
+                      describedBy={describedBy}
+                      required={isMarkedRequired(selectedNodeType, 'text', selectedNodeConfig)}
                       multiline
                       value={String(selectedNodeConfig.text ?? '')}
                       onChange={(text) => updateSelectedNodeConfig({ text })}
                       groups={inspectorGroups}
-                      placeholder={t('builder.cfg.tg_text_placeholder')}
+                      placeholder={examplePlaceholder('text')}
                       format={{
                         // MarkdownV2 stays as the user chose it; otherwise formatting turns on Telegram's HTML.
                         syntax: selectedNodeConfig.parseMode === 'MarkdownV2' ? 'telegramMarkdown' : 'telegramHtml',
@@ -2291,59 +2332,39 @@ export const WorkflowBuilderPage: React.FC = () => {
                       }}
                     />
                     {suggestionsFor('text', true)}
-                  </div>
-                  <details
-                    key={`tg-advanced-${selectedNodeId}`}
-                    data-testid="telegram-advanced"
-                    open={Boolean(selectedNodeConfig.parseMode || selectedNodeConfig.disableNotification || selectedNodeConfig.replyToMessageId)}
-                    className="group rounded-md border border-border"
-                  >
-                    <summary className="cursor-pointer select-none px-2.5 py-1.5 text-[13px] font-medium text-foreground hover:text-foreground">{t('builder.cfg.advanced_options')}</summary>
-                    <div className="space-y-3 border-t border-border p-2.5">
-                      {['parseMode', 'disableNotification', 'replyToMessageId'].map((name) => configField(name))}
-                    </div>
-                  </details>
+                  </>))}
+                  <AdvancedSection key={`tg-advanced-${selectedNodeId}`} testId="telegram-advanced" count={TELEGRAM_ADVANCED.length} defaultOpen={hasValueOrError(TELEGRAM_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>
+                    {TELEGRAM_ADVANCED.map((name) => configField(name))}
+                  </AdvancedSection>
                 </div>
               ) : selectedNodeType === 'http.request' ? (
                 <div data-testid="http-request-config" className="space-y-3">
-                  <div>
-                    <label htmlFor="http-method" className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.method')}</label>
-                    <select id="http-method" value={String(selectedNodeConfig.method ?? 'GET')} onChange={(event) => updateSelectedNodeConfig({ method: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring">
+                  {handField('method', 'http-method', 'builder.cfg.method', ({ id, describedBy }) => (
+                    <select id={id} aria-describedby={describedBy} value={String(selectedNodeConfig.method ?? 'GET')} onChange={(event) => updateSelectedNodeConfig({ method: event.target.value })} className="w-full rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring">
                       {['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map((method) => <option key={method}>{method}</option>)}
                     </select>
-                  </div>
-                  <div>
-                    <label id="http-url-label" onClick={() => document.getElementById('http-url')?.focus()} className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.url')}</label>
-                    <MappingTextField key={`${selectedNodeId}-url`} id="http-url" labelledBy="http-url-label" value={String(selectedNodeConfig.url ?? '')} onChange={(url) => updateSelectedNodeConfig({ url })} groups={inspectorGroups} placeholder="https://example.com/api" />
-                  </div>
-                  <div>
-                    <label id="http-body-label" onClick={() => document.getElementById('http-body')?.focus()} className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.body')}</label>
-                    <MappingTextField key={`${selectedNodeId}-body`} id="http-body" labelledBy="http-body-label" multiline value={String(selectedNodeConfig.body ?? '')} onChange={(body) => updateSelectedNodeConfig({ body })} groups={inspectorGroups} placeholder={t('builder.cfg.body_placeholder')} />
-                  </div>
+                  ))}
+                  {handField('url', 'http-url', 'builder.cfg.url', ({ id, describedBy }) => (
+                    <MappingTextField key={`${selectedNodeId}-url`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'url', selectedNodeConfig)} value={String(selectedNodeConfig.url ?? '')} onChange={(url) => updateSelectedNodeConfig({ url })} groups={inspectorGroups} placeholder={examplePlaceholder('url')} />
+                  ))}
+                  {handField('body', 'http-body', 'builder.cfg.body', ({ id, describedBy }) => (
+                    <MappingTextField key={`${selectedNodeId}-body`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'body', selectedNodeConfig)} multiline value={String(selectedNodeConfig.body ?? '')} onChange={(body) => updateSelectedNodeConfig({ body })} groups={inspectorGroups} placeholder={examplePlaceholder('body')} />
+                  ))}
                   {/* Headers, query parameters and a stored connection are rarely needed: kept under Advanced options. */}
-                  <details
-                    key={`http-advanced-${selectedNodeId}`}
-                    data-testid="http-advanced"
-                    open={Boolean(selectedNodeConfig.connectionId
-                      || (selectedNodeConfig.headers && Object.keys(selectedNodeConfig.headers as object).length)
-                      || (selectedNodeConfig.query && Object.keys(selectedNodeConfig.query as object).length))}
-                    className="group rounded-md border border-border"
-                  >
-                    <summary className="cursor-pointer select-none px-2.5 py-1.5 text-[13px] font-medium text-foreground hover:text-foreground">{t('builder.cfg.advanced_options')}</summary>
-                    <div className="space-y-3 border-t border-border p-2.5">
+                  <AdvancedSection key={`http-advanced-${selectedNodeId}`} testId="http-advanced" count={HTTP_ADVANCED.length} defaultOpen={hasValueOrError(HTTP_ADVANCED, withoutEmptyMaps(selectedNodeConfig), selectedFieldErrors, selectedNodeType)}>
                       <KeyValueEditor key={`headers-${selectedNodeId}`} label={t('builder.cfg.http_headers')} testId="http-headers" value={selectedNodeConfig.headers} onChange={(headers) => updateSelectedNodeConfig({ headers })} />
                       <KeyValueEditor key={`query-${selectedNodeId}`} label={t('builder.cfg.http_query')} testId="http-query" value={selectedNodeConfig.query} onChange={(query) => updateSelectedNodeConfig({ query })} />
                       {configField('connectionId', httpConnections)}
                       <p className="text-xs text-muted-foreground">{t('builder.cfg.http_hint')}</p>
-                    </div>
-                  </details>
+                  </AdvancedSection>
                 </div>
               ) : selectedNodeType === 'email.send' ? (
                 <div data-testid="email-config" className="space-y-3">
                   <div>
-                    <label htmlFor="email-connection" className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.gmail_connection')}</label>
+                    {handField('connectionId', 'email-connection', 'builder.cfg.gmail_connection', ({ id, describedBy }) => (
                     <select
-                      id="email-connection"
+                      id={id}
+                          aria-describedby={describedBy}
                       data-testid="email-connection"
                       value={String(selectedNodeConfig.connectionId ?? '')}
                       // Omit the key when cleared: the Workflow Service rejects an empty connectionId even in drafts.
@@ -2360,6 +2381,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <option value={String(selectedNodeConfig.connectionId)}>{t('builder.cfg.unavailable_connection')}</option>
                       )}
                     </select>
+                    ))}
                     {!isLoadingConnections && gmailConnections.length === 0 && (
                       <p className="mt-1 text-xs text-muted-foreground">
                         {t('builder.cfg.no_gmail')} <Link to="/workspace/connections" className="text-run underline">{t('builder.cfg.connect_gmail')}</Link> {t('builder.cfg.connect_first')}
@@ -2375,9 +2397,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                     {/* After a Gmail trigger the usual answer goes back to whoever sent that email. */}
                     {inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail')) && (
                       <div className="mb-2">
-                        <label htmlFor="email-target" className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.mail_target')}</label>
+                        {handField('to', 'email-target', 'builder.cfg.mail_target', ({ id, describedBy }) => (
                         <select
-                          id="email-target"
+                          id={id}
+                          aria-describedby={describedBy}
                           data-testid="email-target"
                           value={selectedNodeConfig.to === GMAIL_REPLY_TO ? 'sender' : 'custom'}
                           onChange={(event) => updateSelectedNodeConfig({ to: event.target.value === 'sender' ? GMAIL_REPLY_TO : '' })}
@@ -2386,30 +2409,32 @@ export const WorkflowBuilderPage: React.FC = () => {
                           <option value="sender">{t('builder.cfg.mail_target_sender')}</option>
                           <option value="custom">{t('builder.cfg.mail_target_custom')}</option>
                         </select>
+                        ), t('builder.cfg.mail_target_hint'))}
                       </div>
                     )}
                     {selectedNodeConfig.to !== GMAIL_REPLY_TO || !inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail')) ? (
-                      <>
-                        <label id="email-to-label" onClick={() => document.getElementById('email-to')?.focus()} className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.recipient')}</label>
-                        <MappingTextField key={`${selectedNodeId}-to`} id="email-to" labelledBy="email-to-label" value={String(selectedNodeConfig.to ?? '')} onChange={(to) => updateSelectedNodeConfig({ to })} groups={inspectorGroups} />
-                      </>
+                      handField('to', 'email-to', 'builder.cfg.recipient', ({ id, describedBy }) => (
+                        <MappingTextField key={`${selectedNodeId}-to`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'to', selectedNodeConfig) && !inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail'))} value={String(selectedNodeConfig.to ?? '')} onChange={(to) => updateSelectedNodeConfig({ to })} groups={inspectorGroups} placeholder={examplePlaceholder('to')} />
+                      ), inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail')) ? t('builder.field.email.send.to_other_hint') : undefined, inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail'))
+                        ? { label: t('builder.field.email.send.to_other'), required: false } : undefined)
                     ) : null}
                   </div>
-                  <div>
-                    <label id="email-subject-label" onClick={() => document.getElementById('email-subject')?.focus()} className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.subject')}</label>
-                    <MappingTextField key={`${selectedNodeId}-subject`} id="email-subject" labelledBy="email-subject-label" value={String(selectedNodeConfig.subject ?? '')} onChange={(subject) => updateSelectedNodeConfig({ subject })} groups={inspectorGroups} />
+                  {handField('subject', 'email-subject', 'builder.cfg.subject', ({ id, describedBy }) => (<>
+                    <MappingTextField key={`${selectedNodeId}-subject`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'subject', selectedNodeConfig)} value={String(selectedNodeConfig.subject ?? '')} onChange={(subject) => updateSelectedNodeConfig({ subject })} groups={inspectorGroups} placeholder={examplePlaceholder('subject')} />
                     {suggestionsFor('subject')}
-                  </div>
-                  <div>
-                    <label id="email-body-label" onClick={() => document.getElementById('email-body')?.focus()} className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.body')}</label>
+                  </>))}
+                  {handField('body', 'email-body', 'builder.cfg.body', ({ id, describedBy }) => (<>
                     <MappingTextField
                       key={`${selectedNodeId}-body`}
-                      id="email-body"
-                      labelledBy="email-body-label"
+                      id={id}
+                      labelledBy={`${id}-label`}
+                      describedBy={describedBy}
+                      required={isMarkedRequired(selectedNodeType, 'body', selectedNodeConfig)}
                       multiline
                       value={String(selectedNodeConfig.body ?? '')}
                       onChange={(body) => updateSelectedNodeConfig({ body })}
                       groups={inspectorGroups}
+                      placeholder={examplePlaceholder('body')}
                       format={{
                         syntax: 'html',
                         rich: selectedNodeConfig.bodyType === 'html',
@@ -2422,15 +2447,13 @@ export const WorkflowBuilderPage: React.FC = () => {
                       }}
                     />
                     {suggestionsFor('body', true)}
-                  </div>
-                  {['bodyType', 'cc', 'bcc'].map((name) => configField(name))}
-                  <AttachmentsEditor key={`${selectedNodeId}-attachments`} value={selectedNodeConfig.attachments} onChange={(attachments) => updateSelectedNodeConfig({ attachments })} groups={inspectorGroups} />
-                  <details data-testid="email-advanced" className="group rounded-md border border-border">
-                    <summary className="cursor-pointer select-none px-2.5 py-1.5 text-[13px] font-medium text-foreground hover:text-foreground">{t('builder.cfg.advanced_options')}</summary>
-                    <div className="space-y-3 border-t border-border p-2.5">
-                      {['senderName', 'replyTo', 'replyToMessageId'].map((name) => configField(name))}
-                    </div>
-                  </details>
+                  </>))}
+                  {configField('bodyType')}
+                  <AdvancedSection key={`email-advanced-${selectedNodeId}`} testId="email-advanced" count={EMAIL_ADVANCED.length} defaultOpen={hasValueOrError(EMAIL_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>
+                    {EMAIL_ADVANCED.map((name) => (name === 'attachments'
+                      ? <AttachmentsEditor key={`${selectedNodeId}-attachments`} value={selectedNodeConfig.attachments} onChange={(attachments) => updateSelectedNodeConfig({ attachments })} groups={inspectorGroups} />
+                      : configField(name)))}
+                  </AdvancedSection>
                 </div>
               ) : selectedNodeType.startsWith('ai.') ? (
                 <div data-testid="ai-config" className="space-y-3">
@@ -2441,19 +2464,18 @@ export const WorkflowBuilderPage: React.FC = () => {
                         legacyDescription={typeof selectedNodeConfig.schemaDescription === 'string' ? selectedNodeConfig.schemaDescription : undefined}
                         onChange={(outputSchema) => updateSelectedNodeConfig({ outputSchema })}
                       />
-                      <div>
-                        <label id="ai-input-text-label" onClick={() => document.getElementById('ai-input-text')?.focus()} className="mb-1 block text-[13px] font-medium text-foreground">{t('builder.cfg.input_text')}</label>
-                        <MappingTextField key={`${selectedNodeId}-ai-text`} id="ai-input-text" labelledBy="ai-input-text-label" multiline value={String(selectedNodeConfig.text ?? '')} onChange={(text) => updateSelectedNodeConfig({ text })} groups={inspectorGroups} />
+                      {handField('text', 'ai-input-text', 'builder.cfg.input_text', ({ id, describedBy }) => (<>
+                        <MappingTextField key={`${selectedNodeId}-ai-text`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'text', selectedNodeConfig)} placeholder={examplePlaceholder('text')} multiline value={String(selectedNodeConfig.text ?? '')} onChange={(text) => updateSelectedNodeConfig({ text })} groups={inspectorGroups} />
                         {suggestionsFor('text', true)}
-                      </div>
-                      {configField('instructions', undefined, true)}
+                      </>))}
+                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={AI_EXTRACT_ADVANCED.length} defaultOpen={hasValueOrError(AI_EXTRACT_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>{configField('instructions', undefined, true)}</AdvancedSection>
                     </div>
                   )}
                   {selectedNodeType === 'ai.classify' && (
                     <div className="space-y-3">
                       {configField('content', undefined, true)}
                       {suggestionsFor('content', true)}
-                      <CommaListInput key={selectedNodeId} id="ai-categories" label={t('builder.cfg.categories')} value={selectedNodeConfig.categories} onChange={(categories) => updateSelectedNodeConfig({ categories })} />
+                      <CommaListInput key={selectedNodeId} id="ai-categories" label={t('builder.cfg.categories')} hint={fieldCopy('ai.classify', 'categories', t).hint} placeholder={`${t('builder.field.example_prefix')}${fieldCopy('ai.classify', 'categories', t).example ?? ''}`} value={selectedNodeConfig.categories} onChange={(categories) => updateSelectedNodeConfig({ categories })} />
                     </div>
                   )}
                   {selectedNodeType === 'ai.summarize' && (
@@ -2461,7 +2483,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       {configField('inputText', undefined, true)}
                       {suggestionsFor('inputText', true)}
                       {/* Whole numbers 1..5000 are saved as numbers, a {{ }} mapping stays text, empty is omitted, anything else is flagged and not saved. */}
-                      {configField('maxLength')}
+                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={AI_SUMMARIZE_ADVANCED.length} defaultOpen={hasValueOrError(AI_SUMMARIZE_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>{configField('maxLength')}</AdvancedSection>
                     </div>
                   )}
                 </div>
@@ -2478,9 +2500,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </div>
 
                   <div data-testid="ocr-workflow-source" className="space-y-2 rounded border border-border bg-subtle p-2.5">
-                    <label htmlFor="ocr-source-mode" className="block text-[11px] font-semibold text-text-2">{t('builder.cfg.ocr_source')}</label>
-                    <select
-                      id="ocr-source-mode"
+                    {handField('source', 'ocr-source-mode', 'builder.cfg.ocr_source', ({ id, describedBy }) => (
+                          <select
+                      id={id}
+                          aria-describedby={describedBy}
                       data-testid="ocr-source-mode"
                       value={ocrSourceMode}
                       onChange={(event) => {
@@ -2498,29 +2521,35 @@ export const WorkflowBuilderPage: React.FC = () => {
                         </option>
                       ))}
                     </select>
+                        ))}
                     {ocrSourceMode === 'artifact' && (
                       <div>
-                        <label htmlFor="ocr-artifact-id" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.artifact_id')}</label>
-                        <input
-                          id="ocr-artifact-id"
+                        {handField('artifactId', 'ocr-artifact-id', 'builder.cfg.artifact_id', ({ id, describedBy }) => (
+                          <input
+                          id={id}
+                          aria-describedby={describedBy}
                           data-testid="ocr-artifact-id"
+                          placeholder={examplePlaceholder('artifactId')}
                           value={String(selectedNodeConfig.artifactId ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ artifactId: event.target.value || undefined, fileUrl: undefined, file: undefined })}
                           className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring"
                         />
+                        ))}
                       </div>
                     )}
                     {ocrSourceMode === 'url' && (
                       <div>
-                        <label htmlFor="ocr-file-url" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.file_url')}</label>
-                        <input
-                          id="ocr-file-url"
+                        {handField('fileUrl', 'ocr-file-url', 'builder.cfg.file_url', ({ id, describedBy }) => (
+                          <input
+                          id={id}
+                          aria-describedby={describedBy}
                           data-testid="ocr-file-url"
                           value={String(selectedNodeConfig.fileUrl ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ fileUrl: event.target.value || undefined, artifactId: undefined, file: undefined })}
-                          placeholder="https://..."
+                          placeholder={examplePlaceholder('fileUrl')}
                           className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring"
                         />
+                        ))}
                       </div>
                     )}
                     {ocrSourceMode === 'file' && (() => {
@@ -2532,9 +2561,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                       <div className="space-y-2">
                         {ocrFileOptions.length > 0 && (
                           <div>
-                            <label htmlFor="ocr-file-pick" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.ocr_file_pick')}</label>
-                            <select
-                              id="ocr-file-pick"
+                            {handField('file', 'ocr-file-pick', 'builder.cfg.ocr_file_pick', ({ id, describedBy }) => (
+                          <select
+                              id={id}
+                          aria-describedby={describedBy}
                               data-testid="ocr-file-pick"
                               value={picked ? picked.mapping : typing ? OCR_FILE_CUSTOM : ''}
                               onChange={(event) => {
@@ -2552,6 +2582,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                               ))}
                               <option value={OCR_FILE_CUSTOM}>{t('builder.cfg.ocr_file_custom')}</option>
                             </select>
+                        ))}
                           </div>
                         )}
                         {!ocrFileOptions.length && (
@@ -2559,15 +2590,17 @@ export const WorkflowBuilderPage: React.FC = () => {
                         )}
                         {typing && (
                       <div>
-                        <label htmlFor="ocr-file-mapping" className="mb-1 block text-[10px] font-medium text-text-2">{t('builder.cfg.ocr_file_mapping')}</label>
-                        <input
-                          id="ocr-file-mapping"
+                        {handField('file', 'ocr-file-mapping', 'builder.cfg.ocr_file_mapping', ({ id, describedBy }) => (
+                          <input
+                          id={id}
+                          aria-describedby={describedBy}
                           data-testid="ocr-file-mapping"
                           value={typeof selectedNodeConfig.file === 'object' && selectedNodeConfig.file !== null ? JSON.stringify(selectedNodeConfig.file) : String(selectedNodeConfig.file ?? '')}
                           onChange={(event) => updateSelectedNodeConfig({ file: event.target.value || undefined, fileUrl: undefined, artifactId: undefined })}
-                          placeholder="{{ trigger.input.attachments[0] }}"
+                          placeholder={t('builder.cfg.ocr_file_mapping_placeholder')}
                           className="w-full rounded border border-border bg-card px-2 py-1.5 font-mono text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring"
                         />
+                        ))}
                         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.ocr_file_hint')}</p>
                       </div>
                         )}
@@ -2580,13 +2613,12 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.ocr_source_hint')}</p>
                   </div>
 
-                  <div className="space-y-2">
+                  <AdvancedSection key={`ocr-advanced-${selectedNodeId}`} testId="ocr-advanced" count={OCR_ADVANCED.length} defaultOpen={hasValueOrError(OCR_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>
                     <div>
-                      <label htmlFor="ocr-language" className="mb-1 block text-[13px] font-medium text-foreground">
-                        {t('ocr.language')}
-                      </label>
-                      <select
-                        id="ocr-language"
+                      {handField('language', 'ocr-language', 'ocr.language', ({ id, describedBy }) => (
+                          <select
+                        id={id}
+                          aria-describedby={describedBy}
                         value={ocrLanguage}
                         onChange={(event) => {
                           setOcrLanguage(event.target.value);
@@ -2598,6 +2630,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <option value="vi">{t('settings.vietnamese')}</option>
                         <option value="en">{t('settings.english')}</option>
                       </select>
+                        ))}
                     </div>
                     <div>
                       <label className="flex items-center gap-2 text-[11px] text-text-2">
@@ -2615,7 +2648,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       </label>
                       <p className="mt-1 pl-5 text-xs leading-relaxed text-muted-foreground">{t('ocr.detect_tables_hint')}</p>
                     </div>
-                  </div>
+                  </AdvancedSection>
 
                   {/* Trying OCR on a sample file is separate from the workflow: collapsed so it is not mistaken for a required step. */}
                   <details
@@ -2781,11 +2814,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label htmlFor="google-connection" className="mb-1 block text-[13px] font-medium text-foreground">
-                      {t('builder.google.connection')}
-                    </label>
-                    <select
-                      id="google-connection"
+                    {handField('connectionId', 'google-connection', 'builder.google.connection', ({ id, describedBy }) => (
+                          <select
+                      id={id}
+                          aria-describedby={describedBy}
                       data-testid="google-connection"
                       value={String(selectedNodeConfig.connectionId ?? '')}
                       // Omit the key when cleared: the Workflow Service rejects an empty connectionId even in drafts.
@@ -2802,6 +2834,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <option value={String(selectedNodeConfig.connectionId)}>{t('builder.cfg.unavailable_connection')}</option>
                       )}
                     </select>
+                        ))}
                     {!isLoadingConnections && sheetsConnections.length === 0 && (
                       <p data-testid="google-connection-empty" className="mt-1 text-xs text-muted-foreground">
                         {t('builder.cfg.no_sheets')} {t('builder.cfg.sheets_create_in')}{' '}
@@ -2816,11 +2849,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label htmlFor="google-operation" className="mb-1 block text-[13px] font-medium text-foreground">
-                      {t('builder.google.operation')}
-                    </label>
-                    <select
-                      id="google-operation"
+                    {handField('operation', 'google-operation', 'builder.google.operation', ({ id, describedBy }) => (
+                          <select
+                      id={id}
+                          aria-describedby={describedBy}
                       value={googleOperation}
                       onChange={(event) => updateSelectedNodeConfig({ operation: event.target.value })}
                       className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
@@ -2840,44 +2872,28 @@ export const WorkflowBuilderPage: React.FC = () => {
                         </>
                       )}
                     </select>
+                        ))}
                   </div>
 
                   {isGoogleSheetsNode && (
                     <>
                       <div>
-                        <label htmlFor="google-spreadsheet-id" className="mb-1 block text-[13px] font-medium text-foreground">
-                          {t('builder.google.spreadsheet_id')}
-                        </label>
-                        <input
-                          id="google-spreadsheet-id"
-                          type="text"
-                          value={String(selectedNodeConfig.spreadsheetId ?? '')}
+                        {handField('spreadsheetId', 'google-spreadsheet-id', 'builder.google.spreadsheet_id', ({ id, describedBy }) => (
                           // A pasted Sheets link is reduced to the id inside it.
-                          onChange={(event) => updateSelectedNodeConfig({ spreadsheetId: idFromGoogleLink(event.target.value) })}
-                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-                        />
+                          <MappingTextField key={`${selectedNodeId}-spreadsheet`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'spreadsheetId', selectedNodeConfig)} placeholder={examplePlaceholder('spreadsheetId')} value={String(selectedNodeConfig.spreadsheetId ?? '')} onChange={(next) => updateSelectedNodeConfig({ spreadsheetId: idFromGoogleLink(next) })} groups={inspectorGroups} />
+                        ))}
                       </div>
 
                       <div>
-                        <label htmlFor="google-range" className="mb-1 block text-[13px] font-medium text-foreground">
-                          {t('builder.google.range')}
-                        </label>
-                        <input
-                          id="google-range"
-                          type="text"
-                          value={String(selectedNodeConfig.range ?? '')}
-                          onChange={(event) => updateSelectedNodeConfig({ range: event.target.value })}
-                          aria-describedby="google-range-hint"
-                          className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-                        />
-                        <p id="google-range-hint" className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                          {t(`builder.google.range_hint_${['append', 'update', 'lookup'].includes(googleOperation) ? googleOperation : 'read'}`)}
-                        </p>
+                        {handField('range', 'google-range', 'builder.google.range', ({ id, describedBy }) => (
+                          <MappingTextField key={`${selectedNodeId}-range`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'range', selectedNodeConfig)} placeholder={examplePlaceholder('range')} value={String(selectedNodeConfig.range ?? '')} onChange={(next) => updateSelectedNodeConfig({ range: next })} groups={inspectorGroups} />
+                        ), t(`builder.google.range_hint_${['append', 'update', 'lookup'].includes(googleOperation) ? googleOperation : 'read'}`))}
                       </div>
 
-                      {googleOperation === 'lookup' && ['lookupColumn', 'lookupValue', 'limit'].map((name) => configField(name))}
+                      {googleOperation === 'lookup' && ['lookupColumn', 'lookupValue'].map((name) => configField(name))}
+                      {googleOperation === 'lookup' && <AdvancedSection key={`sheets-advanced-${selectedNodeId}`} testId="sheets-advanced" count={SHEETS_LOOKUP_ADVANCED.length} defaultOpen={hasValueOrError(SHEETS_LOOKUP_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>{configField('limit')}</AdvancedSection>}
 
-                      {(googleOperation === 'append' || googleOperation === 'update') && configField('valueInputOption')}
+                      {(googleOperation === 'append' || googleOperation === 'update') && <AdvancedSection key={`sheets-advanced-${selectedNodeId}`} testId="sheets-advanced" count={SHEETS_WRITE_ADVANCED.length} defaultOpen={hasValueOrError(SHEETS_WRITE_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>{configField('valueInputOption')}</AdvancedSection>}
 
                       {(googleOperation === 'append' || googleOperation === 'update') && sheetsValuesMapping !== null && (
                         <div data-testid="google-values-mapping" className="space-y-1">
@@ -2955,46 +2971,46 @@ export const WorkflowBuilderPage: React.FC = () => {
 
                   {isGoogleDocsNode && googleOperation === 'create' && (
                     <div>
-                      <label htmlFor="google-document-title" className="mb-1 block text-[13px] font-medium text-foreground">
-                        {t('builder.google.title_field')}
-                      </label>
-                      <input
-                        id="google-document-title"
+                      {handField('title', 'google-document-title', 'builder.google.title_field', ({ id, describedBy }) => (
+                          <input
+                        id={id}
+                          aria-describedby={describedBy}
                         type="text"
                         value={String(selectedNodeConfig.title ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ title: event.target.value })}
                         className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                       />
+                        ))}
                     </div>
                   )}
 
                   {isGoogleDocsNode && googleOperation !== 'create' && (
                     <div>
-                      <label htmlFor="google-document-id" className="mb-1 block text-[13px] font-medium text-foreground">
-                        {t('builder.google.document_id')}
-                      </label>
-                      <input
-                        id="google-document-id"
+                      {handField('documentId', 'google-document-id', 'builder.google.document_id', ({ id, describedBy }) => (
+                          <input
+                        id={id}
+                          aria-describedby={describedBy}
                         type="text"
                         value={String(selectedNodeConfig.documentId ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ documentId: event.target.value })}
                         className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                       />
+                        ))}
                     </div>
                   )}
 
                   {isGoogleDocsNode && (googleOperation === 'create' || googleOperation === 'append') && (
                     <div>
-                      <label htmlFor="google-content-variable" className="mb-1 block text-[13px] font-medium text-foreground">
-                        {t('builder.google.content_variable')}
-                      </label>
-                      <input
-                        id="google-content-variable"
+                      {handField('contentVariable', 'google-content-variable', 'builder.google.content_variable', ({ id, describedBy }) => (
+                          <input
+                        id={id}
+                          aria-describedby={describedBy}
                         type="text"
                         value={String(selectedNodeConfig.contentVariable ?? '')}
                         onChange={(event) => updateSelectedNodeConfig({ contentVariable: event.target.value })}
                         className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
                       />
+                        ))}
                     </div>
                   )}
 
@@ -3005,6 +3021,27 @@ export const WorkflowBuilderPage: React.FC = () => {
                   {t('builder.cfg.no_config')}
                 </div>
               )
+            )}
+            {inspectorTab === 'config' && (
+              <details data-testid="inspector-technical" className="rounded-md border border-border">
+                <summary className="cursor-pointer px-3 py-2 text-[13px] font-medium text-muted-foreground">{t('builder.cfg.technical')}</summary>
+                <div className="flex items-center gap-2 border-t border-border px-3 py-2">
+                  <span className="text-xs text-muted-foreground">{t('builder.node_id')}</span>
+                  <span data-testid="inspector-node-id" className="min-w-0 truncate rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                    {selectedNode.id}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="inspector-node-id-copy"
+                    aria-label={t('builder.node_id.copy')}
+                    title={t('builder.node_id.copy')}
+                    onClick={() => { void navigator.clipboard?.writeText(selectedNode.id).catch(() => undefined); }}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Copy size={12} aria-hidden="true" />
+                  </button>
+                </div>
+              </details>
             )}
 
             {inspectorTab === 'input' && (

@@ -25,7 +25,10 @@
       "title": "Calendar ID",
       "description": "Calendar to add the event to. Defaults to the primary calendar.",
       "x-weav-template": true,
-      "x-weav-personal": true
+      "x-weav-personal": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "summary": {
       "type": "string",
@@ -38,13 +41,19 @@
       "type": "string",
       "title": "Description",
       "description": "Event description.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "location": {
       "type": "string",
       "title": "Location",
       "description": "Event location.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "start": {
       "type": "string",
@@ -64,7 +73,10 @@
       "type": "string",
       "title": "Time zone",
       "description": "IANA time zone name (for example Asia/Ho_Chi_Minh). Needed when the start has no UTC offset.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "attendees": {
       "type": "array",
@@ -75,13 +87,19 @@
       "items": {
         "type": "string",
         "minLength": 1
+      },
+      "x-weav-ui": {
+        "advanced": true
       }
     },
     "sendInvitations": {
       "type": "boolean",
       "title": "Send invitations",
       "description": "Email invitations to the attendees. Off by default: attendees are added to the event without an email.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "operation": {
       "title": "Operation",
@@ -119,13 +137,19 @@
         {
           "type": "string"
         }
-      ]
+      ],
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "query": {
       "title": "Search text",
       "description": "list: only events matching this text (title, description, location).",
       "type": "string",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     }
   },
   "required": [

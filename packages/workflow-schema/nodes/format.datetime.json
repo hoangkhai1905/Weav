@@ -88,7 +88,10 @@
       "enum": [
         "vi",
         "en"
-      ]
+      ],
+      "x-weav-ui": {
+        "advanced": true
+      }
     }
   },
   "required": [

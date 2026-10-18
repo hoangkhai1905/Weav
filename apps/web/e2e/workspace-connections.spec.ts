@@ -626,7 +626,7 @@ test.describe("workspace connection API adapter", () => {
     await page.getByTestId("connection-create-submit").click();
 
     const row = page.getByTestId(`connection-row-${CONNECTION_TELEGRAM_ID}`);
-    await expect(row).toContainText("TELEGRAM");
+    await expect(row).toContainText("Telegram");
     await expect(
       page.getByTestId(`connection-status-${CONNECTION_TELEGRAM_ID}`),
     ).toHaveAttribute("data-status", "ACTIVE");
@@ -1543,7 +1543,7 @@ test.describe("workflow builder connection readiness", () => {
     await page.locator(sheetsNode).click();
     await page.locator("#google-spreadsheet-id").fill("");
     await expect(page.locator(sheetsNode)).toHaveAttribute("data-readiness", "not-configured");
-    await expect(page.getByTestId("integration-readiness")).toContainText("spreadsheet ID");
+    await expect(page.getByTestId("integration-readiness")).toContainText("spreadsheet link");
   });
 
   test("Sheets writes are entered cell by cell and drafts carry only Workflow Service fields", async ({ page }) => {
@@ -1853,9 +1853,10 @@ test.describe("workflow builder Week 4 node fields", () => {
     await page.locator("#google-operation").selectOption("lookup");
     await expect(page.locator(node("google.sheets"))).toHaveAttribute("data-readiness", "not-configured");
     await expect(page.getByTestId("google-row-editor")).toHaveCount(0);
-    await page.getByLabel("Lookup column").fill("B");
-    await page.getByLabel("Value to find").fill("{{ trigger.input.email }}");
-    await page.getByLabel("Maximum rows").fill("5");
+    await page.getByLabel("Lookup column", { exact: true }).fill("B");
+    await page.getByLabel("Value to find", { exact: true }).fill("{{ trigger.input.email }}");
+    await page.getByTestId("sheets-advanced").locator("summary").click();
+    await page.getByLabel("Maximum rows", { exact: true }).fill("5");
     await expect(page.locator(node("google.sheets"))).toHaveAttribute("data-readiness", "ready");
 
     await saveDraft(page);
@@ -1876,7 +1877,9 @@ test.describe("workflow builder Week 4 node fields", () => {
 
     await page.locator(node("email.send")).click();
     await page.getByLabel("Body format").selectOption("html");
-    await page.getByLabel("Cc", { exact: true }).fill("a@example.test, b@example.test");
+    // Cc, attachments and the other extras live under "More options".
+    await page.getByTestId("email-advanced").locator("summary").click();
+    await page.getByLabel("Copy (Cc)", { exact: true }).fill("a@example.test, b@example.test");
     await page.getByTestId("attachment-add").click();
     // The source select is narrow so the URL input keeps usable width inside the 400px inspector.
     expect((await page.getByTestId("attachment-source").boundingBox())!.width).toBeGreaterThan(150);
@@ -1885,8 +1888,7 @@ test.describe("workflow builder Week 4 node fields", () => {
     await page.getByTestId("attachment-add").click();
     await page.getByLabel("Source of file 2").selectOption("fileId");
     await page.getByTestId("attachment-source").nth(1).fill("{{ trigger.input.attachments[0].fileId }}");
-    await page.getByTestId("email-advanced").locator("summary").click();
-    await page.getByLabel("Sender name").fill("Weav bot");
+    await page.getByLabel("Sender name", { exact: true }).fill("Weav bot");
     await expect(page.locator(node("email.send"))).toHaveAttribute("data-readiness", "ready");
 
     await saveDraft(page);
@@ -1955,9 +1957,9 @@ test.describe("workflow builder Week 4 node fields", () => {
     await page.locator("#telegram-text").fill("<b>Hi</b>");
     // The less common options live under "Advanced options".
     await page.getByTestId("telegram-advanced").locator("summary").click();
-    await page.getByLabel("Parse mode").selectOption("HTML");
+    await page.getByLabel("Formatting style").selectOption("HTML");
     await page.getByLabel("Send silently").check();
-    await page.getByLabel("Reply to message ID").fill("42");
+    await page.getByLabel("Reply to a message").fill("42");
     await expect(page.locator(node("telegram.send_message"))).toHaveAttribute("data-readiness", "ready");
     await expect(page.getByTestId("integration-readiness")).toHaveCount(0);
 
@@ -2003,7 +2005,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
       definition: { schemaVersion: "1.0", ...definition, variables: {} },
       editorState: {
         nodes: Object.fromEntries(
-          definition.nodes.map((item, index) => [item.id, { name: item.id, position: { x: index * 340, y: (index % 2) * 160 } }]),
+          definition.nodes.map((item, index) => [item.id, { name: "", position: { x: index * 340, y: (index % 2) * 160 } }]),
         ),
       },
     });
@@ -2057,6 +2059,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(page.getByTestId("field-operation")).toContainText("Upload a file");
     await expect(page.getByTestId("field-operation")).toContainText("List files");
     await page.getByTestId("field-operation").selectOption("list");
+    await page.getByTestId("schema-advanced").locator("summary").click();
     await expect(page.getByTestId("field-folderId")).toBeVisible();
     await expect(page.getByTestId("field-nameContains")).toBeVisible();
     await expect(page.getByTestId("field-content")).toHaveCount(0);
@@ -2088,7 +2091,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await page.locator(node("ocr.extract")).click();
     await expect(page.getByTestId("ocr-source-mode")).toHaveValue("file");
     const pick = page.getByTestId("ocr-file-pick");
-    await expect(pick.locator("option", { hasText: "Photo/file sent to the bot" })).toHaveCount(1);
+    await expect(pick.locator("option", { hasText: "File sent to bot" })).toHaveCount(1);
     await expect(page.getByTestId("ocr-file-mapping")).toHaveCount(0);
     await pick.selectOption("__custom");
     await expect(page.getByTestId("ocr-file-mapping")).toHaveValue("");
@@ -2110,7 +2113,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await suggestions.first().click();
     // The field shows the data as a named chip; the saved value stays the mapping.
     await expect(page.locator("#telegram-text")).toHaveAttribute("data-value", "Invoice:\n{{ nodes.ocr_1.output.text.rawText }}");
-    await expect(page.locator("#telegram-text").getByTestId("mapping-chip")).toHaveText("Text read×");
+    await expect(page.locator("#telegram-text").getByTestId("mapping-chip")).toHaveText("Read text from a file › Text read×");
     await expect(page.locator("#telegram-text")).not.toContainText("{{");
 
     await saveDraft(page);
@@ -2143,13 +2146,14 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await page.locator(node("email.send")).click();
     await page.getByTestId("email-target").selectOption("sender");
     await expect(page.locator("#email-to")).toHaveCount(0);
+    await page.getByTestId("email-advanced").locator("summary").click();
     await page.getByTestId("attachment-add").click();
     await page.getByLabel("Source of file 1").selectOption("fileId");
-    await page.getByTestId("attachment-file-pick").selectOption({ label: "First attachment — Trigger data" });
-    await expect(page.getByTestId("attachment-source").getByTestId("mapping-chip")).toHaveText("First attachment (file id)×");
+    await page.getByTestId("attachment-file-pick").selectOption({ label: "Attachment 1 — Trigger data" });
+    await expect(page.getByTestId("attachment-source").getByTestId("mapping-chip")).toHaveText("Trigger data › Attachment code×");
 
     // A pasted Drive link keeps only the file id.
-    await page.locator(node("google.drive")).click();
+    await page.locator(node("google.drive")).dispatchEvent("click");
     await page.getByTestId("field-fileId").fill("https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp/view?usp=sharing");
     await page.getByTestId("field-fileId").blur();
     await expect(page.getByTestId("field-fileId")).toHaveAttribute("data-value", "1AbCdEfGhIjKlMnOp");
@@ -2177,6 +2181,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(calendar).toHaveAttribute("data-readiness", "not-configured");
     await page.getByTestId("field-end").fill("2026-10-07T10:00:00+07:00");
     await expect(calendar).toHaveAttribute("data-readiness", "ready");
+    await page.getByTestId("schema-advanced").locator("summary").click();
     await page.getByTestId("field-attendees").fill("a@x.test, b@x.test");
     await page.getByTestId("field-sendInvitations").check();
 
@@ -2206,6 +2211,8 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await gmail.click();
     await expect(gmail).toHaveAttribute("data-readiness", "not-configured");
     await page.getByTestId("field-connectionId").selectOption(CONNECTION_GMAIL_ID);
+    // The search filter and check interval are optional extras under "More options".
+    await page.getByTestId("schema-advanced").locator("summary").click();
     await page.getByTestId("field-query").fill("from:boss@x.test has:attachment");
     await page.getByTestId("field-pollIntervalMinutes").fill("15");
     await expect(gmail).toHaveAttribute("data-readiness", "ready");
@@ -2229,6 +2236,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(ai).toHaveAttribute("data-readiness", "not-configured");
     await page.getByTestId("field-prompt").fill("Summarize {{ trigger.input.text }}");
     await expect(ai).toHaveAttribute("data-readiness", "ready");
+    await page.getByTestId("schema-advanced").locator("summary").click();
     await page.getByTestId("field-instructions").fill("Be brief");
     await page.getByTestId("field-maxLength").fill("300");
 
@@ -2295,10 +2303,10 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await page.getByTestId("data-set-add").click();
     await page.getByLabel("Field 1 name").fill("email");
     await page.getByLabel("Value type of field 1").selectOption("mapping");
-    await page.getByLabel("Field 1 value").fill("{{ trigger.input.email }}");
+    await page.getByLabel("Field 1 value", { exact: true }).fill("{{ trigger.input.email }}");
     await page.getByTestId("data-set-add").click();
     await page.getByLabel("Field 2 name").fill("plan");
-    await page.getByLabel("Field 2 value").fill("pro");
+    await page.getByLabel("Field 2 value", { exact: true }).fill("pro");
     await expect(set).toHaveAttribute("data-readiness", "ready");
     await saveDraft(page);
     expect(savedConfig(state, "set")).toEqual({ fields: { email: "{{ trigger.input.email }}", plan: "pro" } });
@@ -2307,27 +2315,27 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await page.getByTestId("data-set-add").click();
     await page.getByLabel("Field 3 name").fill("count");
     await page.getByLabel("Value type of field 3").selectOption("number");
-    await page.getByLabel("Field 3 value").fill("42");
+    await page.getByLabel("Field 3 value", { exact: true }).fill("42");
     await page.getByTestId("data-set-add").click();
     await page.getByLabel("Field 4 name").fill("active");
     await page.getByLabel("Value type of field 4").selectOption("boolean");
-    await page.getByLabel("Field 4 value").selectOption("false");
+    await page.getByLabel("Field 4 value", { exact: true }).selectOption("false");
     await page.getByTestId("data-set-add").click();
     await page.getByLabel("Field 5 name").fill("code");
-    await page.getByLabel("Field 5 value").fill("007");
+    await page.getByLabel("Field 5 value", { exact: true }).fill("007");
     await saveDraft(page);
     expect(savedConfig(state, "set")).toEqual({
       fields: { email: "{{ trigger.input.email }}", plan: "pro", count: 42, active: false, code: "007" },
     });
 
     // An invalid number shows a friendly error and is left out of the saved fields until fixed.
-    await page.getByLabel("Field 3 value").fill("forty");
+    await page.getByLabel("Field 3 value", { exact: true }).fill("forty");
     await expect(page.getByRole("alert")).toContainText("Enter a number");
     await saveDraft(page);
     expect(savedConfig(state, "set")).toEqual({
       fields: { email: "{{ trigger.input.email }}", plan: "pro", active: false, code: "007" },
     });
-    await page.getByLabel("Field 3 value").fill("3.5");
+    await page.getByLabel("Field 3 value", { exact: true }).fill("3.5");
     await expect(page.getByRole("alert")).toHaveCount(0);
     await saveDraft(page);
     expect((savedConfig(state, "set") as { fields: Record<string, unknown> }).fields.count).toBe(3.5);
@@ -2367,11 +2375,11 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await expect(types.nth(1)).toHaveValue("number");
     await expect(types.nth(2)).toHaveValue("boolean");
     await expect(types.nth(3)).toHaveValue("mapping");
-    await expect(page.getByLabel("Field 2 value")).toHaveValue("30");
-    await expect(page.getByLabel("Field 3 value")).toHaveValue("true");
+    await expect(page.getByLabel("Field 2 value", { exact: true })).toHaveValue("30");
+    await expect(page.getByLabel("Field 3 value", { exact: true })).toHaveValue("true");
     await expect(page.getByTestId("data-set-advanced")).toHaveText("Advanced value, kept as is.");
 
-    await page.getByLabel("Field 1 value").fill("Bob");
+    await page.getByLabel("Field 1 value", { exact: true }).fill("Bob");
     await saveDraft(page);
     expect(savedConfig(state, "set")).toEqual({
       fields: { name: "Bob", age: 30, vip: true, email: "{{ trigger.input.email }}", extra: nested },
@@ -2467,7 +2475,8 @@ test.describe("workflow builder Telegram trigger", () => {
     await expect(page.locator(triggerNode)).toHaveAttribute("data-readiness", "not-configured");
     await expect(page.getByTestId("integration-readiness")).toContainText("select a Telegram bot connection");
     await expect(page.getByTestId("publish-blocker-summary")).toContainText("select a Telegram bot connection");
-    await expect(page.getByTestId("telegram-trigger-hint")).toContainText("WORKFLOW_PUBLIC_BASE_URL");
+    await expect(page.getByTestId("telegram-trigger-hint")).toContainText("public HTTPS address");
+    await expect(page.getByTestId("telegram-trigger-hint")).not.toContainText("WORKFLOW_PUBLIC_BASE_URL");
     await expect(page.getByTestId("add-connection-TELEGRAM")).toHaveAttribute("href", "/workspace/connections");
 
     const select = page.getByLabel("Telegram bot connection");

@@ -267,7 +267,7 @@ test.describe('workspace-scoped OCR', () => {
     await membersResponse;
     await expect(page.getByTestId('builder-workspace-context')).toContainText(WORKSPACE_B);
     await page.getByTestId('workflow-add-step').click();
-    await page.getByRole('button', { name: 'OCR Text Extract' }).click();
+    await page.getByRole('button', { name: 'Read text from a file' }).click();
     await page.getByTestId('workflow-inspector').getByTestId('ocr-file-input').setInputFiles({
       name: 'contract.pdf',
       mimeType: 'application/pdf',
@@ -299,7 +299,7 @@ test.describe('workspace-scoped OCR', () => {
 
     await gotoAuthenticated(page, '/workflows/wf-001/builder');
     await page.getByTestId('workflow-add-step').click();
-    await page.getByRole('button', { name: 'OCR Text Extract' }).click();
+    await page.getByRole('button', { name: 'Read text from a file' }).click();
     await page.getByTestId('workflow-inspector').getByTestId('ocr-file-input').setInputFiles({
       name: 'contract.pdf',
       mimeType: 'application/pdf',
@@ -364,7 +364,7 @@ test.describe('workspace create and rename mutations', () => {
       });
     });
     await page.getByTestId('workflow-add-step').click();
-    await page.getByRole('button', { name: 'OCR Text Extract' }).click();
+    await page.getByRole('button', { name: 'Read text from a file' }).click();
     await page.getByTestId('workflow-inspector').getByTestId('ocr-file-input').setInputFiles({
       name: 'created.pdf',
       mimeType: 'application/pdf',

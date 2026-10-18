@@ -153,6 +153,8 @@ test('the Slack and Teams steps pick a connection, count text and save their con
 
   await addNode(page, 'teams.send_message');
   await page.getByTestId('field-connectionId').selectOption(teamsConnectionId);
+  // The heading is optional, so it sits under the folded "Thêm tùy chọn".
+  await page.getByTestId('schema-advanced').locator('summary').click();
   await page.getByTestId('field-title').fill('Alert');
   await page.getByTestId('field-text').fill('Build failed');
   const teams = await savedNode(page, backend.drafts, 'teams.send_message');
@@ -197,6 +199,7 @@ test('the Format date and time step shows the fields of its operation and saves 
   await page.getByTestId('field-operation').selectOption('format');
   await page.getByTestId('field-pattern').fill('dd/MM/yyyy HH:mm');
   await page.getByTestId('field-timezone').fill('Asia/Ho_Chi_Minh');
+  await page.getByTestId('schema-advanced').locator('summary').click();
   await page.getByTestId('field-locale').selectOption('vi');
 
   const node = await savedNode(page, backend.drafts, 'format.datetime');
@@ -219,6 +222,7 @@ test('the Format text step shows the fields of its operation and saves them', as
   await expect(page.getByTestId('field-decimals')).toHaveCount(0);
 
   await page.getByTestId('field-operation').selectOption('number_format');
+  await page.getByTestId('schema-advanced').locator('summary').click();
   await page.getByTestId('field-decimals').fill('2');
   await page.getByTestId('field-locale').selectOption('en');
 

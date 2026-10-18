@@ -22,14 +22,20 @@
       "type": "string",
       "title": "Instructions",
       "description": "Optional style or format guidance, for example tone or language.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "maxLength": {
       "type": "integer",
       "minimum": 1,
       "title": "Maximum length",
       "description": "Upper bound on the answer length in characters, as a positive whole number (default 1000).",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     }
   },
   "required": [

@@ -23,7 +23,10 @@
       "minimum": 1,
       "title": "Maximum length",
       "description": "Upper bound on the summary length, as a positive whole number.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     }
   },
   "required": [
