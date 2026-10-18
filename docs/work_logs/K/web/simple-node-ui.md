@@ -5,7 +5,7 @@
 | Spec | `docs/superpowers/specs/2026-10-17-simple-node-ui-design.md` |
 | Plan | `docs/superpowers/plans/2026-10-17-simple-node-ui.md` (11 tasks, 4 batches) |
 | Branch | `feature/simple-node-ui` from `dev` (not merged, not pushed) |
-| Status | Batches 1-2 done, reviewed and live-checked (2026-10-17); Batch 3-4 and Task 11 not started |
+| Status | Tasks 1-9 and 11 done, reviewed and live-checked (2026-10-18); whole-branch review clean; ready to merge into `dev` on K's go-ahead. Task 10 (sample values, optional) not started |
 
 ## Batch 1 — Foundation (2026-10-17)
 
@@ -107,6 +107,52 @@ Live check (2026-10-18, in-app browser, dev stack, 7 services without OCR, local
 
 Deferred minors (ledger): `telegram_trigger_hint` shows the env-var name (reword before deploy); hex/UUID example values; wording test is vi-only (en length unchecked); `msg_ocr`/`retry_ocr` say "OCR"; `hp.help.trigger.schedule.text` explains cron syntax (custom mode only).
 
+## Task 11 — journey, stale specs, whole-branch review, live check (2026-10-18)
+
+Same process (Sonnet implementer, a different Sonnet reviewer, scoped re-reviews, one Sonnet whole-branch review of `cf7f7578..HEAD`, one fix wave). Rulings are in the ledger and the session report.
+
+| Work | Commits | Result |
+| --- | --- | --- |
+| Live-check polish: publish blockers name the step by its display name (`stepName` in `nodeLabels.ts`, shared with the builder's step label; `{id}` kept and quoted); "+ Dữ liệu" button name without the `*` marker; data menu scrolls into view above the inspector footer; plain `telegram_trigger_hint` (no env-var name); calendar step "Quản lý lịch Google" / "Manage Google Calendar" | `52ea4e30` | review: spec ✅ |
+| Journey test `first-time user: new Gmail -> Telegram without typing {{`; stale specs moved to the redesign copy (localization 5 cases, dashboard quick links, builder-correctness card, workspace-connections provider) | `2a53ac6b`, `756887cb` | — |
+| Fix round 1: journey asserts both mappings on the draft that publish sends (publish has no body) and polls; data-menu test shown RED without the fix; dashboard test rewritten to the v2 dashboard (counts, recent runs, no demo data), manual-run-failure test deleted (v2 dashboard has no run action) | `0bc97251` | re-review: all 3 addressed |
+| Whole-branch review (`cf7f7578..0bc97251`): ready to merge, 0 Critical, 0 Important, 8 Minor. Fix wave: `$`-safe replacers for step names, no raw id when a step is not on the canvas (`builder.err.unknown_step`), plain labels (no ID/ISO 8601/node in `builder.var.*`, Google Docs, OCR errors, `no_logs`), wording test scans `builder.var.*`, test polish | `21911a77` | re-review: all 5 addressed |
+| Live-fix: "Thêm tùy chọn" opened by itself on a brand-new step because the builder seeds defaults (Gmail check interval 5, AI summary length 200, OCR language/tables). `hasValueOrError` now ignores a value equal to the seeded or schema default; a user-set value or an error still opens it | `1a229c2e` | review: Approved |
+
+Checks:
+- Full web Playwright suite (`--project=chromium`), compared by test title with a `dev` baseline run (`cf7f7578`, throwaway detached worktree): `dev` 281 passed / 84 failed; branch at `0bc97251` 337 passed / 74 failed, 0 new failures, 10 `dev` failures fixed. Final run at `1a229c2e`: 339 passed, 2 skipped, 75 failed = the same 74 `dev` failures + "no builder. keys leak in either language" (240 s timeout under full-suite load; passes alone, 2/2 in 28 s).
+- The 74 remaining failures all fail on `dev` with the same title and are not caused by this branch: workflow-ui 25 (shell/topbar/list/builder selectors removed by dev's v2 redesign `d57ffae8`), ocr-builder 13, workflow-catalog-v1 7, ai-builder 2 (pre-redesign builder selectors), password-recovery 8 (v2 auth screens), workspace-read-switch 6, workspace-connections 4, workspace-members 1 (workspace copy/ids), executions-live 3, workflow-api-v1 1, request-budget 1 (run history/detail copy), localization 1 (mock workflow id in http mode), notification-integration 1, notification-task10-live 1 (needs a live Identity URL).
+- workflow-service `mvnw verify` exit 0 (Task 11 touches no backend); `tsc -p tsconfig.app.json` OK; `pnpm --dir apps/web build` OK (chunk-size warning only); `git diff --check cf7f7578..HEAD` clean; eslint on the branch's changed files: one pre-existing error (`WorkflowBuilderPage.tsx:702` set-state-in-effect, same line on `dev`).
+
+Live check (2026-10-18, in-app browser, dev stack 7 services without OCR, local live-test account): PASS.
+- Journey by hand (vi): blank draft, "Nhận email Gmail mới" and "Gửi tin Telegram" from the palette, the account's existing Gmail and Telegram connections picked (none created here), a literal chat number typed, "Tiêu đề thư" and "Người gửi" inserted from "Chèn dữ liệu". Chips read "Dữ liệu kích hoạt › Tiêu đề thư". The saved draft (PUT `/draft` 200) holds `{{ trigger.input.subject }}{{ trigger.input.from }}` and the Gmail → Telegram edge; both steps "Sẵn sàng"; "Xuất bản" enabled with no blockers. Publish was not clicked: it would start a live Gmail poller that sends real Telegram messages (left to K).
+- Data menu opens fully above the inspector footer; data button names "Insert data into Send to" / "… Message" (no `*`).
+- English (stored language + reload): "Telegram bot connection", "Send to", "Message", "Insert data", "More options (3)", chips "Trigger data › Subject"; no raw paths in the inspector outside "Technical details".
+- Unconfigured "Summarize with AI": banner "Step 'Summarize with AI': the Summarize with AI step needs text to summarize" (no step id).
+- After the live-fix: a fresh Gmail step shows "Thêm tùy chọn (2)" closed.
+- Network: API calls 200/204; one 403 console line from an earlier page load, none after builder reloads.
+- Draft `304b033d-…` deleted through the API (DELETE 204, GET 404); Vite and containers stopped.
+- Seen, not this feature: a blank draft starts with a manual trigger; adding the Gmail trigger leaves it on the canvas, unconnected.
+
+Deferred / parked (ledger): DataMenu `role="menu"` keyboard pattern; long e2e timeouts (one "no builder. keys leak" timeout under load, passes alone); `handField` indentation; calendar `timeZone` stays advanced; no test for "error on a default-valued field still opens"; two steps with the same display name give the same blocker text.
+
+## Feature summary (for the thesis report)
+
+Goal: a person who has never used an automation tool opens a step in the builder and knows what to fill in and how to use data from earlier steps, without docs and without the `{{ }}` syntax. Same power, clearer: no node removed, no config field renamed, saved workflows and templates load and publish unchanged.
+
+What changed (38 commits, 51 files, `cf7f7578..1a229c2e`):
+1. **Schema hints (`x-weav-ui`)**: node schemas in `packages/workflow-schema` mark optional fields a first-time user can skip as `advanced`; workflow-service accepts and ignores the keyword (additive, tested in `NodeConfigSchemasTest`); a required field is never advanced.
+2. **One field shell**: every field shows a plain label (4 words or fewer, no ID/JSON/cron/payload/node/config), a one-sentence hint and a realistic "Ví dụ:" placeholder, all from `builder.field.<type>.<name>` keys in vi and en. Advanced fields sit in one collapsed "Thêm tùy chọn (N)" section that opens by itself only when it holds a user value or an error.
+3. **Data without syntax**: each text field has a "Chèn dữ liệu" button that opens a searchable menu of earlier steps' outputs with plain names ("Tiêu đề thư", "Người gửi"); picking one inserts a chip. Chips pointing at a deleted or no-longer-earlier step turn amber ("Dữ liệu này không còn — chọn lại") and the saved value is kept.
+4. **Plain errors and readiness**: publish errors and blockers name the step by its display name and the field by its label, in the current language; required markers follow the same readiness rules as the "Cần điền" list.
+5. **Plain wording for all 26 nodes**: names as verb + object ("Gửi tin Telegram", "Lấy thông tin bằng AI"), one-sentence descriptions, palette search by name, description or technical type.
+
+Quality process: per task a Sonnet implementer, a different Sonnet reviewer, scoped re-reviews of each fix round, one whole-batch review per batch and a final whole-branch review, then a live check in the running app per batch. Every decision taken without the user is a "Ruling:" line in the ledger and in the session reports.
+
+Evidence: `simple-node-ui.spec.ts` (journey, wording scans in vi and en, Review Focus 1-5: advanced values not hidden, amber chips for deleted steps, mappings in number fields round-trip, unknown-field errors fall back to readable names, language switch leaks no `builder.` keys); workflow-service `NodeConfigSchemasTest`; live checks after Batches 1, 2, 3 and Task 11.
+
 ## Next
 
-Task 11 (journey test, stale specs, live check) and optional Task 10 in a later session. Merge into `dev` only on K's go-ahead.
+- K: decide the merge into `dev` (`git merge --no-ff feature/simple-node-ui`); optionally publish the journey workflow once with real accounts.
+- Follow-up: repair the ~70 Playwright specs that fail on `dev` since the v2 UI redesign (separate test-maintenance task).
+- Optional Task 10 (sample values from the latest run).
