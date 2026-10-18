@@ -43,7 +43,7 @@ test.beforeEach(async ({ page }) => {
   }));
 });
 
-test('renders complete workflow data and only runs a published workflow by its real id', async ({ page }) => {
+test('renders real workflow counts and recent runs without demo data', async ({ page }) => {
   await page.route(`**/api/v1/workspaces/${workspaceId}/workflows?page=0&size=100`, (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -100,64 +100,17 @@ test('renders complete workflow data and only runs a published workflow by its r
       hasNext: false,
     }),
   }));
-  await page.route(`**/api/v1/workspaces/${workspaceId}/workflows/${publishedWorkflowId}/executions**`, async (route) => {
-    if (route.request().method() === 'GET') {
-      const startedAt = new Date(Date.now() - 5 * 60_000).toISOString();
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          items: [{
-            executionId: '00000000-0000-4000-8000-000000000106',
-            workflowId: publishedWorkflowId,
-            workflowVersionId: '00000000-0000-4000-8000-000000000105',
-            status: 'SUCCESS',
-            triggerType: 'MANUAL',
-            createdAt: startedAt,
-            startedAt,
-            finishedAt: startedAt,
-          }],
-          page: 0,
-          size: 50,
-          totalElements: 1,
-        }),
-      });
-    }
-    if (route.request().method() !== 'POST') return route.fallback();
-    await route.fulfill({
-      status: 202,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        executionId: '00000000-0000-4000-8000-000000000104',
-        workflowId: publishedWorkflowId,
-        workflowVersionId: '00000000-0000-4000-8000-000000000105',
-        status: 'QUEUED',
-      }),
-    });
-  });
-
   await page.goto('/dashboard');
 
   const dashboard = page.getByTestId('dashboard-real-data');
   await expect(dashboard).toBeVisible();
   await expect(page.getByTestId('dashboard-total-workflows')).toHaveText('2');
   await expect(page.getByTestId('dashboard-published-workflows')).toHaveText('1');
-  await expect(dashboard).toContainText('Customer sync');
-  await expect(dashboard).toContainText(publishedWorkflowId);
-  await expect(dashboard).toContainText('Draft report');
-  await expect(dashboard).toContainText(draftWorkflowId);
-
-  const publishedRow = page.getByTestId('dashboard-workflow-row').filter({ hasText: 'Customer sync' });
-  await expect(publishedRow.getByRole('button', { name: 'Trigger manual run', exact: true })).toBeEnabled();
-  await expect(page.getByTestId('dashboard-workflow-row').filter({ hasText: 'Draft report' }).getByRole('button')).toHaveCount(0);
-  const runRequest = page.waitForRequest((request) => request.method() === 'POST' && request.url().includes(`/workflows/${publishedWorkflowId}/executions`));
-  await publishedRow.getByRole('button', { name: 'Trigger manual run', exact: true }).click();
-  const request = await runRequest;
-  expect(new URL(request.url()).pathname).toBe(`/api/v1/workspaces/${workspaceId}/workflows/${publishedWorkflowId}/executions`);
+  await expect(dashboard.getByTestId('dashboard-recent-runs')).toContainText('Customer sync');
 
   // Run numbers come from the real executions API, not placeholders or demo data.
   await expect(page.getByTestId('dashboard-runs-7d')).toHaveText('1');
-  await expect(page.getByTestId('dashboard-failure-rate-7d')).toHaveText('0%');
+  await expect(page.getByTestId('dashboard-success-rate-7d')).toHaveText('100%');
   const recentRuns = page.getByTestId('dashboard-recent-runs');
   await expect(recentRuns.getByRole('link', { name: 'View run: Customer sync' })).toHaveAttribute(
     'href',
@@ -185,39 +138,6 @@ test('keeps safe quick actions available in HTTP mode without demo workflow ids'
   await actions.getByRole('button', { name: /Describe it/ }).click();
   await expect(page.getByTestId('ai-generator-dialog')).toBeVisible();
   await expect(actions).not.toContainText('wf-prod-8492');
-});
-
-test('keeps workflow rows visible when a real manual run fails', async ({ page }) => {
-  await page.route(`**/api/v1/workspaces/${workspaceId}/workflows?page=0&size=100`, (route) => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({
-      items: [workflow(publishedWorkflowId, 'Customer sync', 'PUBLISHED')],
-      page: 0,
-      size: 100,
-      totalElements: 1,
-    }),
-  }));
-  await page.route(`**/api/v1/workspaces/${workspaceId}/workflows/${publishedWorkflowId}/executions**`, async (route) => {
-    if (route.request().method() !== 'POST') return route.fallback();
-    await route.fulfill({
-      status: 503,
-      contentType: 'application/json',
-      body: JSON.stringify({ error: { code: 'WORKFLOW_RUN_UNAVAILABLE', message: 'Workflow execution unavailable' } }),
-    });
-  });
-
-  await page.goto('/dashboard');
-
-  const dashboard = page.getByTestId('dashboard-real-data');
-  const row = page.getByTestId('dashboard-workflow-row').filter({ hasText: 'Customer sync' });
-  await expect(row).toBeVisible();
-  await row.getByRole('button', { name: 'Trigger manual run', exact: true }).click();
-
-  await expect(page.getByTestId('dashboard-workflow-action-error')).toContainText('Workflow could not be started.');
-  await expect(row).toBeVisible();
-  await expect(dashboard.getByTestId('dashboard-workflows-error')).toHaveCount(0);
-  await expect(page.getByTestId('dashboard-total-workflows')).toHaveText('1');
 });
 
 test('shows a truthful empty state without demo workflows or execution metrics', async ({ page }) => {

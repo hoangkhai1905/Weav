@@ -910,9 +910,10 @@ test('first-time user: new Gmail -> Telegram without typing {{', async ({ page }
     json(route, [connection(GMAIL_CONNECTION, 'GMAIL', 'Gmail của tôi'), connection(TG_CONNECTION, 'TELEGRAM', 'Bot của tôi')]));
   // A blank workflow: no steps yet.
   await page.route(base, (route) => json(route, { ...draft(), definition: { schemaVersion: '1.0', nodes: [], edges: [], variables: {} }, editorState: { nodes: {} } }));
-  const published: unknown[] = [];
+  // Publish carries no definition: it publishes the draft saved just before it, so snapshot that draft when the call arrives.
+  const published: Array<{ body: unknown; draft: unknown }> = [];
   await page.route(`${base}/publish`, (route) => {
-    published.push(route.request().postDataJSON());
+    published.push({ body: route.request().postData(), draft: savedDrafts[savedDrafts.length - 1] });
     return json(route, { workflow: { ...draft(), status: 'PUBLISHED' }, webhooks: [] });
   });
   await openBuilder(page);
@@ -937,11 +938,10 @@ test('first-time user: new Gmail -> Telegram without typing {{', async ({ page }
 
   await expect(page.getByTestId('workflow-publish')).toBeEnabled();
   await page.getByTestId('workflow-publish').click();
-  await expect.poll(() => savedDrafts.length).toBeGreaterThan(0);
-  const body = JSON.stringify(savedDrafts[savedDrafts.length - 1]);
+  await expect.poll(() => published.length).toBe(1);
+  const body = JSON.stringify(published[0].draft);
   expect(body).toMatch(/\{\{ trigger\.input\.subject \}\}/);
   expect(body).toMatch(/\{\{ trigger\.input\.from \}\}/);
-  expect(published.length).toBe(1);
 });
 
 test('publish blockers name the step, never its id', async ({ page }) => {
