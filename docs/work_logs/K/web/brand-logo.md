@@ -46,3 +46,8 @@
 - Chưa tra cứu nhãn hiệu (trademark) cho biểu tượng.
 - App mobile (`apps/mobile`, phần của partner) vẫn dùng icon cũ; nếu muốn đồng bộ, bàn giao `docs/brand/weav-app-icon.svg`.
 - Có thể đổi chữ "WEAV" trong `Logo.tsx` sang wordmark SVG nếu muốn đồng nhất với bộ nhận diện.
+
+## Logo trong app dùng app icon (2026-10-18, nhánh `feature/app-icon-logo`)
+- Theo yêu cầu: lấy `public/icon-192.png` (ô xanh `#2b5fd9`, biểu tượng trắng) làm logo. `WeavMark` (sidebar, đăng nhập/đăng ký/quên mật khẩu, landing) vẽ lại bằng SVG của `docs/brand/weav-app-icon.svg` thay ô chữ "W" màu mực; `Logo.tsx` (không còn nơi dùng) trỏ `/icon-192.png`. Favicon/PWA đã dùng mark này từ `ac2d7433`.
+- E2E `workflow-ui` "refreshed WEAV mark" vốn đỏ từ bản v2 (tìm `<img src=/weav-mark.svg>` không còn tồn tại) → kiểm `data-testid="weav-mark"` + màu ô; pass.
+- Kiểm tra: tsc sạch, eslint 2 file sạch, Browser `/` và `/login` hiện logo mới, console không lỗi. GitNexus không tìm thấy `WeavMark` (index cũ) → grep: 3 nơi dùng, props không đổi.

@@ -45,10 +45,12 @@ test.describe('industrial workflow shell', () => {
   test('uses the refreshed WEAV mark in the shell and auth brand', async ({ page }) => {
     await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.goto('/dashboard');
-    await expect(page.locator('img[alt="WEAV app logo"]')).toHaveAttribute('src', '/weav-mark.svg');
+    // The app-icon mark (public/icon-192.png): brand-blue tile with the white run-weave symbol.
+    await expect(page.getByTestId('weav-mark').first()).toBeVisible();
+    await expect(page.getByTestId('weav-mark').first().locator('rect')).toHaveAttribute('fill', '#2b5fd9');
 
     await page.goto('/login');
-    await expect(page.getByRole('img', { name: 'WEAV logo', exact: true })).toHaveAttribute('src', '/weav-mark.svg');
+    await expect(page.getByTestId('weav-mark').first()).toBeVisible();
     await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute('href', '/favicon.svg');
   });
 
