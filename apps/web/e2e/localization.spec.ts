@@ -66,6 +66,35 @@ test.describe('Vietnamese and English web localization', () => {
         }),
       });
     });
+    // Workflow list, monitoring summary and recent runs for the v2 Dashboard and Workflows screens (the catch-all above answers with workspaces).
+    const today = new Date().toISOString();
+    await page.route(/\/api\/v1\/workspaces\/[^/]+\/workflows\?/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [{
+            workflowId: '00000000-0000-4000-8000-000000000201', name: 'Localization flow', description: null, status: 'DRAFT', schemaVersion: '1.0',
+            currentVersionId: null, createdAt: today, updatedAt: new Date(Date.now() - 2 * 3600_000).toISOString(), publishedAt: null,
+          }],
+          page: 0, size: 100, totalElements: 1, totalPages: 1,
+        }),
+      });
+    });
+    await page.route('**/api/v1/workspaces/*/monitoring/summary**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          days: 7, from: today, to: today, workflows: { published: 0, paused: 0, draft: 1 },
+          runs: { total: 36, today: 36, success: 36, failed: 0, active: 0 }, successRate: 1, averageDurationMs: 1000, p95DurationMs: 1000,
+          trend: [{ date: today.slice(0, 10), total: 36, success: 36, failed: 0 }], topFailingWorkflows: [], recentFailures: [],
+        }),
+      });
+    });
+    await page.route((url) => /\/api\/v1\/workspaces\/[^/]+\/executions$/.test(url.pathname), async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [], page: 0, size: 6, totalElements: 0, hasNext: false }) });
+    });
   });
 
   test('translates Dashboard quick actions without exposing a translation key', async ({ page }) => {
@@ -74,7 +103,7 @@ test.describe('Vietnamese and English web localization', () => {
 
     const quickActions = page.getByTestId('dashboard-quick-actions');
     await expect(quickActions).toBeVisible();
-    await expect(quickActions).toContainText('Thao tác nhanh');
+    await expect(quickActions).toContainText('Bắt đầu nhanh');
     await expect(quickActions).not.toContainText('dashboard.quick_actions');
   });
 
@@ -118,7 +147,7 @@ test.describe('Vietnamese and English web localization', () => {
     await page.goto('/dashboard');
 
     const quickActions = page.getByTestId('dashboard-quick-actions');
-    await expect(quickActions).toContainText('Quick actions');
+    await expect(quickActions).toContainText('Quick start');
     await expect(quickActions).not.toContainText('dashboard.quick_actions');
   });
 
@@ -126,8 +155,8 @@ test.describe('Vietnamese and English web localization', () => {
     for (const locale of ['VI', 'EN'] as const) {
       await page.addInitScript((selectedLocale) => (globalThis as unknown as BrowserContext).localStorage.setItem('weav_lang_v1', selectedLocale), locale);
       await page.goto('/workflows');
-      await expect(page.locator('body')).toContainText(locale === 'VI' ? 'Hôm nay, 10:40' : 'Today, 10:40 AM');
-      if (locale === 'VI') await expect(page.locator('body')).not.toContainText(/Today,|Yesterday,/);
+      await expect(page.locator('body')).toContainText(locale === 'VI' ? 'sửa 2 giờ trước' : 'edited 2 hours ago');
+      if (locale === 'VI') await expect(page.locator('body')).not.toContainText(/hours? ago/);
     }
   });
 
@@ -135,8 +164,7 @@ test.describe('Vietnamese and English web localization', () => {
     await page.addInitScript(() => (globalThis as unknown as BrowserContext).localStorage.setItem('weav_lang_v1', 'VI'));
     await page.goto('/login');
     await expect(page.getByRole('heading', { name: 'Đăng nhập', exact: true })).toBeVisible();
-    await expect(page.getByRole('img', { name: 'Biểu trưng WEAV' })).toBeVisible();
-    await expect(page.locator('body')).toContainText('Nền tảng tự động hóa bằng AI');
+    await expect(page.locator('body')).toContainText('Tiếp tục với các quy trình của nhóm bạn.');
 
     await page.goto('/register');
     await expect(page.getByRole('heading', { name: 'Tạo tài khoản mới', exact: true })).toBeVisible();
@@ -198,8 +226,8 @@ test.describe('Vietnamese and English web localization', () => {
           await expect(page.locator('body')).toContainText('Lịch (hằng ngày)');
         }
         if (screen.path === '/workflows' && locale === 'VI') {
-          await expect(page.locator('body')).toContainText('Hôm nay, 10:40');
-          await expect(page.locator('body')).not.toContainText(/Today,|Yesterday,/);
+          await expect(page.locator('body')).toContainText('sửa 2 giờ trước');
+          await expect(page.locator('body')).not.toContainText(/hours? ago/);
         }
         if (screen.path === '/executions/EX-8492') {
           await expect(page.locator('body')).toContainText(
@@ -235,10 +263,10 @@ test.describe('Vietnamese and English web localization', () => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await page.goto('/dashboard');
         const quickActions = page.getByTestId('dashboard-quick-actions');
-        await expect(quickActions).toContainText(locale === 'VI' ? 'Thao tác nhanh' : 'Quick actions');
+        await expect(quickActions).toContainText(locale === 'VI' ? 'Bắt đầu nhanh' : 'Quick start');
         await expect(quickActions).not.toContainText('dashboard.quick_actions');
         if (locale === 'VI') {
-          await expect(page.locator('body')).toContainText('T7: 36 lượt');
+          await expect(page.getByLabel(/Biểu đồ lượt chạy 7 ngày, cao nhất .+ với 36 lượt/)).toBeVisible();
           await expect(page.locator('body')).not.toContainText(/\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/);
         }
         await page.screenshot({

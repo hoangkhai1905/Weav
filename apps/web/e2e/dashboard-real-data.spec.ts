@@ -180,10 +180,9 @@ test('keeps safe quick actions available in HTTP mode without demo workflow ids'
 
   const actions = page.getByTestId('dashboard-quick-actions');
   await expect(actions).toBeVisible();
-  await expect(actions.getByRole('link', { name: /^Create workflow\b/ })).toHaveAttribute('href', '/workflows/new');
-  await expect(actions.getByRole('link', { name: /^Run test\b/ })).toHaveAttribute('href', '/workflows');
-  await expect(actions.getByRole('link', { name: /^View executions\b/ })).toHaveAttribute('href', '/executions');
-  await actions.getByRole('button', { name: /^Create with AI/ }).click();
+  await expect(actions.getByRole('link', { name: /^Start from scratch/ })).toHaveAttribute('href', '/workflows/new');
+  await expect(actions.getByRole('link', { name: /^Use a ready-made template/ })).toHaveAttribute('href', '/workflows/new#templates-list');
+  await actions.getByRole('button', { name: /Describe it/ }).click();
   await expect(page.getByTestId('ai-generator-dialog')).toBeVisible();
   await expect(actions).not.toContainText('wf-prod-8492');
 });
