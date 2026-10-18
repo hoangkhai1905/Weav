@@ -626,7 +626,7 @@ test.describe("workspace connection API adapter", () => {
     await page.getByTestId("connection-create-submit").click();
 
     const row = page.getByTestId(`connection-row-${CONNECTION_TELEGRAM_ID}`);
-    await expect(row).toContainText("TELEGRAM");
+    await expect(row).toContainText("Telegram");
     await expect(
       page.getByTestId(`connection-status-${CONNECTION_TELEGRAM_ID}`),
     ).toHaveAttribute("data-status", "ACTIVE");

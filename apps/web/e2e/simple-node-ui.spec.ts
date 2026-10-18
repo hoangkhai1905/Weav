@@ -971,12 +971,10 @@ test('the data menu of a field near the bottom stays inside the inspector', asyn
   await toggles.last().click();
   const menu = page.getByTestId('mapping-data-menu');
   await expect(menu).toBeVisible();
-  await expect.poll(() => menu.evaluate((el) => {
-    let scroller = el.parentElement;
-    while (scroller && getComputedStyle(scroller).overflowY !== 'auto') scroller = scroller.parentElement;
-    if (!scroller) return false;
-    const box = el.getBoundingClientRect();
-    const area = scroller.getBoundingClientRect();
-    return box.top >= area.top - 1 && box.bottom <= area.bottom + 1;
-  })).toBe(true);
+  const scroller = menu.locator('xpath=ancestor::div[contains(@class,"overflow-y-auto")][1]');
+  await expect.poll(async () => {
+    const box = await menu.boundingBox();
+    const area = await scroller.boundingBox();
+    return !!box && !!area && box.y >= area.y - 1 && box.y + box.height <= area.y + area.height + 1;
+  }).toBe(true);
 });
