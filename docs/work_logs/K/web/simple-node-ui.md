@@ -83,8 +83,30 @@ Deferred minors (ledger): `role="menu"` holds inputs; group headings have no ste
 - Schema x-weav-ui.advanced: sheets limit, valueInputOption; drive mimeType, folderId, pageSize; calendar calendarId, description, timeZone, attendees, sendInvitations, maxResults, query (+ location); format.datetime locale; format.text separator, decimals, locale; ai.extract/generate instructions; ai.summarize/generate maxLength; ocr language, detectTables. format.datetime timezone stays visible (convert needs it). Calendar create shows 4 fields before Thêm tùy chọn.
 - Hand-written blocks fold with sheets-advanced, ai-advanced, ocr-advanced; CommaListInput now uses FieldShell (hint + example); collectWordingProblems (renamed from expectPlainWording) checks a per-step minimum field count.
 - Tests: wording: google, logic, ai, ocr; Calendar create at most four fields; flagged fields test. Existing specs updated for reworded EN names (OCR step is now Read text from a file) and folded fields.
-- Known, not from this task: control-bot.spec 137 (Discord username folded in Task 8) and 149 (JSON wording in Task 8) fail.
+- control-bot.spec 137 (Discord username folded) and 149 (reworded input-format error) were Task 8 regressions; fixed in the Task 9 fix round (`c3764a4e`).
+
+## Batch 3 — review, fix wave, gate, live check (2026-10-18)
+
+Same process as Batches 1-2 (Sonnet implementer per task, a different Sonnet reviewer, scoped re-reviews, one Sonnet whole-batch review, one fix wave). Rulings are in the ledger and in the session report.
+
+| Task | Commits | Result |
+| --- | --- | --- |
+| 8 triggers, messaging, HTTP, control workflows | `64020bc1` | review clean |
+| 9 Google, logic, data, format, AI, OCR | `4939d9d8`, `c3764a4e` | 1 fix round (4-word check typo `/s+/`, 5-word labels, `{{ }}` in OCR hint/placeholder, control-bot regressions) |
+| Batch review fixes: hints name the real "Chèn dữ liệu" button; error texts match the new names (switch, condition, custom schedule, set data); no `{{ }}` in placeholders/blockers/errors; palette search matches name, description and node type ("http", "ocr", "switch" find the renamed steps); copy minors (Thao tác, Ai được ra lệnh, help-page names); advanced-section counts from named constants; Playwright scan of `builder.node/blocker/err/cfg.msg_*` in vi+en for `{{` and banned words (allowlist empty) | `c93037c5` | re-review: all 7 addressed |
+
+Checks: `simple-node-ui.spec.ts` 43 pass, `control-bot` 10/10, `w7-nodes` 8/8; localization 6, workspace-connections 5 (463, 576, 1200, 1581, 1687), builder-correctness 1 (63), ocr-builder 13 and workspace-read-switch 6 fail with the same names as before the batch (workspace-read-switch asserts workspace copy the batch never touched). workflow-service `mvnw verify` OK at `c3764a4e` (fix wave touched no schema); `pnpm --dir apps/web build` OK at `c93037c5`; `git diff --check 751cd971..HEAD` clean.
+
+Live check (2026-10-18, in-app browser, dev stack, 7 services without OCR, local live-test account): PASS.
+- Palette (vi): 26 plain names + descriptions; search "http" -> Gọi dịch vụ web, "ocr" -> Đọc chữ từ tệp, "switch" -> Chia nhánh theo giá trị, "lịch" -> Chạy theo lịch. Template cards use the new names.
+- Draft from template "Báo cáo định kỳ qua Telegram": Telegram step shows Kết nối bot Telegram / Gửi tới / Nội dung tin nhắn with hints and "Ví dụ:" placeholders; Thêm tùy chọn (3) holds Kiểu định dạng, Gửi im lặng, Trả lời tin nhắn. HTTP step: Phương thức, URL (địa chỉ web), Nội dung visible; Thêm tùy chọn (3) holds Thông tin gửi kèm, Tham số trên địa chỉ, Kết nối HTTP. Schedule step: Lặp lại, Tự nhập lịch (nâng cao), Giờ chạy, Múi giờ — no "cron" label.
+- Google Calendar step added from the palette: create shows Thao tác, Tiêu đề, Bắt đầu, Kết thúc before Thêm tùy chọn (6).
+- English (stored language + reload): "More options (3)", "Insert data", "e.g. …" placeholders, palette "Call a web service", "Read text from a file", "Branch by value", "Pull details with AI". No `builder.` keys; console errors none.
+- Draft `d65af5f1-…` in workspace `adaea5f1-…` deleted through the app (DELETE 204, GET 404). Containers stopped, Vite stopped.
+- Seen, not fixed (polish): Calendar node name "Tạo hoặc xem sự kiện Google Calendar" is long for a step title; HTTP headers/query editors have no hint line (composite editors, per ruling).
+
+Deferred minors (ledger): `telegram_trigger_hint` shows the env-var name (reword before deploy); hex/UUID example values; wording test is vi-only (en length unchecked); `msg_ocr`/`retry_ocr` say "OCR"; `hp.help.trigger.schedule.text` explains cron syntax (custom mode only).
 
 ## Next
 
-Batch 3 wording (Tasks 8-9; include the Batch 2 live-check wording findings above), then Task 11 (journey test, stale specs, live check). Merge into `dev` only on K's go-ahead.
+Task 11 (journey test, stale specs, live check) and optional Task 10 in a later session. Merge into `dev` only on K's go-ahead.
