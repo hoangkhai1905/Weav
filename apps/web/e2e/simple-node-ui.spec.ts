@@ -983,3 +983,25 @@ test('the data menu of a field near the bottom stays inside the inspector', asyn
     return !!box && !!area && box.y >= area.y - 1 && box.y + box.height <= area.y + area.height + 1;
   }).toBe(true);
 });
+
+test('a new step whose advanced fields hold only their defaults starts closed', async ({ page }) => {
+  await stubBackend(page);
+  await openBuilder(page);
+  for (const [type, testId] of [['trigger.gmail', 'schema-advanced'], ['ai.summarize', 'ai-advanced'], ['ocr.extract', 'ocr-advanced']] as const) {
+    await addNode(page, type);
+    await expect(page.getByTestId(testId).locator('summary')).toContainText('Thêm tùy chọn (');
+    await expect(page.getByTestId(testId)).not.toHaveAttribute('open', /.*/);
+  }
+});
+
+for (const [minutes, opens] of [[5, false], [10, true]] as const) {
+  test(`gmail check interval ${minutes} ${opens ? 'opens' : 'does not open'} the advanced section`, async ({ page }) => {
+    await stubBackend(page, [{ id: 'gm', type: 'trigger.gmail', config: { pollIntervalMinutes: minutes } }]);
+    await openBuilder(page);
+    await page.getByTestId('rf__node-gm').getByTestId('workflow-node').click();
+    const section = page.getByTestId('schema-advanced');
+    await expect(section.locator('summary')).toContainText('Thêm tùy chọn (');
+    if (opens) await expect(section).toHaveAttribute('open', '');
+    else await expect(section).not.toHaveAttribute('open', /.*/);
+  });
+}

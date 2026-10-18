@@ -2190,7 +2190,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     return (
                       <>
                         {names.filter((name) => !advancedNames.includes(name)).map(renderField)}
-                        <AdvancedSection key={selectedNodeId} testId="schema-advanced" count={advancedNames.length} defaultOpen={hasValueOrError(advancedNames, selectedNodeConfig, selectedFieldErrors)}>
+                        <AdvancedSection key={selectedNodeId} testId="schema-advanced" count={advancedNames.length} defaultOpen={hasValueOrError(advancedNames, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>
                           {advancedNames.map(renderField)}
                         </AdvancedSection>
                       </>
@@ -2333,7 +2333,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     />
                     {suggestionsFor('text', true)}
                   </>))}
-                  <AdvancedSection key={`tg-advanced-${selectedNodeId}`} testId="telegram-advanced" count={TELEGRAM_ADVANCED.length} defaultOpen={hasValueOrError(TELEGRAM_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>
+                  <AdvancedSection key={`tg-advanced-${selectedNodeId}`} testId="telegram-advanced" count={TELEGRAM_ADVANCED.length} defaultOpen={hasValueOrError(TELEGRAM_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>
                     {TELEGRAM_ADVANCED.map((name) => configField(name))}
                   </AdvancedSection>
                 </div>
@@ -2351,7 +2351,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <MappingTextField key={`${selectedNodeId}-body`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'body', selectedNodeConfig)} multiline value={String(selectedNodeConfig.body ?? '')} onChange={(body) => updateSelectedNodeConfig({ body })} groups={inspectorGroups} placeholder={examplePlaceholder('body')} />
                   ))}
                   {/* Headers, query parameters and a stored connection are rarely needed: kept under Advanced options. */}
-                  <AdvancedSection key={`http-advanced-${selectedNodeId}`} testId="http-advanced" count={HTTP_ADVANCED.length} defaultOpen={hasValueOrError(HTTP_ADVANCED, withoutEmptyMaps(selectedNodeConfig), selectedFieldErrors)}>
+                  <AdvancedSection key={`http-advanced-${selectedNodeId}`} testId="http-advanced" count={HTTP_ADVANCED.length} defaultOpen={hasValueOrError(HTTP_ADVANCED, withoutEmptyMaps(selectedNodeConfig), selectedFieldErrors, selectedNodeType)}>
                       <KeyValueEditor key={`headers-${selectedNodeId}`} label={t('builder.cfg.http_headers')} testId="http-headers" value={selectedNodeConfig.headers} onChange={(headers) => updateSelectedNodeConfig({ headers })} />
                       <KeyValueEditor key={`query-${selectedNodeId}`} label={t('builder.cfg.http_query')} testId="http-query" value={selectedNodeConfig.query} onChange={(query) => updateSelectedNodeConfig({ query })} />
                       {configField('connectionId', httpConnections)}
@@ -2449,7 +2449,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     {suggestionsFor('body', true)}
                   </>))}
                   {configField('bodyType')}
-                  <AdvancedSection key={`email-advanced-${selectedNodeId}`} testId="email-advanced" count={EMAIL_ADVANCED.length} defaultOpen={hasValueOrError(EMAIL_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>
+                  <AdvancedSection key={`email-advanced-${selectedNodeId}`} testId="email-advanced" count={EMAIL_ADVANCED.length} defaultOpen={hasValueOrError(EMAIL_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>
                     {EMAIL_ADVANCED.map((name) => (name === 'attachments'
                       ? <AttachmentsEditor key={`${selectedNodeId}-attachments`} value={selectedNodeConfig.attachments} onChange={(attachments) => updateSelectedNodeConfig({ attachments })} groups={inspectorGroups} />
                       : configField(name)))}
@@ -2468,7 +2468,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <MappingTextField key={`${selectedNodeId}-ai-text`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'text', selectedNodeConfig)} placeholder={examplePlaceholder('text')} multiline value={String(selectedNodeConfig.text ?? '')} onChange={(text) => updateSelectedNodeConfig({ text })} groups={inspectorGroups} />
                         {suggestionsFor('text', true)}
                       </>))}
-                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={AI_EXTRACT_ADVANCED.length} defaultOpen={hasValueOrError(AI_EXTRACT_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>{configField('instructions', undefined, true)}</AdvancedSection>
+                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={AI_EXTRACT_ADVANCED.length} defaultOpen={hasValueOrError(AI_EXTRACT_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>{configField('instructions', undefined, true)}</AdvancedSection>
                     </div>
                   )}
                   {selectedNodeType === 'ai.classify' && (
@@ -2483,7 +2483,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       {configField('inputText', undefined, true)}
                       {suggestionsFor('inputText', true)}
                       {/* Whole numbers 1..5000 are saved as numbers, a {{ }} mapping stays text, empty is omitted, anything else is flagged and not saved. */}
-                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={AI_SUMMARIZE_ADVANCED.length} defaultOpen={hasValueOrError(AI_SUMMARIZE_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>{configField('maxLength')}</AdvancedSection>
+                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={AI_SUMMARIZE_ADVANCED.length} defaultOpen={hasValueOrError(AI_SUMMARIZE_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>{configField('maxLength')}</AdvancedSection>
                     </div>
                   )}
                 </div>
@@ -2613,7 +2613,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.ocr_source_hint')}</p>
                   </div>
 
-                  <AdvancedSection key={`ocr-advanced-${selectedNodeId}`} testId="ocr-advanced" count={OCR_ADVANCED.length} defaultOpen={hasValueOrError(OCR_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>
+                  <AdvancedSection key={`ocr-advanced-${selectedNodeId}`} testId="ocr-advanced" count={OCR_ADVANCED.length} defaultOpen={hasValueOrError(OCR_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>
                     <div>
                       {handField('language', 'ocr-language', 'ocr.language', ({ id, describedBy }) => (
                           <select
@@ -2891,9 +2891,9 @@ export const WorkflowBuilderPage: React.FC = () => {
                       </div>
 
                       {googleOperation === 'lookup' && ['lookupColumn', 'lookupValue'].map((name) => configField(name))}
-                      {googleOperation === 'lookup' && <AdvancedSection key={`sheets-advanced-${selectedNodeId}`} testId="sheets-advanced" count={SHEETS_LOOKUP_ADVANCED.length} defaultOpen={hasValueOrError(SHEETS_LOOKUP_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>{configField('limit')}</AdvancedSection>}
+                      {googleOperation === 'lookup' && <AdvancedSection key={`sheets-advanced-${selectedNodeId}`} testId="sheets-advanced" count={SHEETS_LOOKUP_ADVANCED.length} defaultOpen={hasValueOrError(SHEETS_LOOKUP_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>{configField('limit')}</AdvancedSection>}
 
-                      {(googleOperation === 'append' || googleOperation === 'update') && <AdvancedSection key={`sheets-advanced-${selectedNodeId}`} testId="sheets-advanced" count={SHEETS_WRITE_ADVANCED.length} defaultOpen={hasValueOrError(SHEETS_WRITE_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>{configField('valueInputOption')}</AdvancedSection>}
+                      {(googleOperation === 'append' || googleOperation === 'update') && <AdvancedSection key={`sheets-advanced-${selectedNodeId}`} testId="sheets-advanced" count={SHEETS_WRITE_ADVANCED.length} defaultOpen={hasValueOrError(SHEETS_WRITE_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>{configField('valueInputOption')}</AdvancedSection>}
 
                       {(googleOperation === 'append' || googleOperation === 'update') && sheetsValuesMapping !== null && (
                         <div data-testid="google-values-mapping" className="space-y-1">

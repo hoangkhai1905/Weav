@@ -10,6 +10,7 @@ export interface SchemaProperty {
   minimum?: number;
   maximum?: number;
   maxLength?: number;
+  default?: unknown;
   'x-weav-template'?: boolean;
   'x-weav-connection'?: { provider: string };
   'x-weav-personal'?: boolean;

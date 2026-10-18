@@ -112,6 +112,7 @@ test('invalid numbers and credential-like header names are flagged and never sav
   await expect(page.getByTestId('workflow-title')).toHaveValue('Builder correctness');
 
   await addNode(page, 'ai.summarize');
+  await page.getByTestId('ai-advanced').locator('summary').click();
   await page.getByTestId('field-maxLength').fill('0');
   await expect(page.getByTestId('field-maxLength')).toHaveAttribute('aria-invalid', 'true');
   await expect(page.getByText('Enter a whole number', { exact: false })).toBeVisible();
