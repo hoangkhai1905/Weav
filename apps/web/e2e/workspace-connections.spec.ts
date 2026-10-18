@@ -1876,7 +1876,9 @@ test.describe("workflow builder Week 4 node fields", () => {
 
     await page.locator(node("email.send")).click();
     await page.getByLabel("Body format").selectOption("html");
-    await page.getByLabel("Cc", { exact: true }).fill("a@example.test, b@example.test");
+    // Cc, attachments and the other extras live under "More options".
+    await page.getByTestId("email-advanced").locator("summary").click();
+    await page.getByLabel("Copy (Cc)", { exact: true }).fill("a@example.test, b@example.test");
     await page.getByTestId("attachment-add").click();
     // The source select is narrow so the URL input keeps usable width inside the 400px inspector.
     expect((await page.getByTestId("attachment-source").boundingBox())!.width).toBeGreaterThan(150);
@@ -1885,7 +1887,6 @@ test.describe("workflow builder Week 4 node fields", () => {
     await page.getByTestId("attachment-add").click();
     await page.getByLabel("Source of file 2").selectOption("fileId");
     await page.getByTestId("attachment-source").nth(1).fill("{{ trigger.input.attachments[0].fileId }}");
-    await page.getByTestId("email-advanced").locator("summary").click();
     await page.getByLabel("Sender name", { exact: true }).fill("Weav bot");
     await expect(page.locator(node("email.send"))).toHaveAttribute("data-readiness", "ready");
 
@@ -1955,9 +1956,9 @@ test.describe("workflow builder Week 4 node fields", () => {
     await page.locator("#telegram-text").fill("<b>Hi</b>");
     // The less common options live under "Advanced options".
     await page.getByTestId("telegram-advanced").locator("summary").click();
-    await page.getByLabel("Parse mode").selectOption("HTML");
+    await page.getByLabel("Formatting style").selectOption("HTML");
     await page.getByLabel("Send silently").check();
-    await page.getByLabel("Reply to message ID").fill("42");
+    await page.getByLabel("Reply to a message").fill("42");
     await expect(page.locator(node("telegram.send_message"))).toHaveAttribute("data-readiness", "ready");
     await expect(page.getByTestId("integration-readiness")).toHaveCount(0);
 
@@ -2143,6 +2144,7 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await page.locator(node("email.send")).click();
     await page.getByTestId("email-target").selectOption("sender");
     await expect(page.locator("#email-to")).toHaveCount(0);
+    await page.getByTestId("email-advanced").locator("summary").click();
     await page.getByTestId("attachment-add").click();
     await page.getByLabel("Source of file 1").selectOption("fileId");
     await page.getByTestId("attachment-file-pick").selectOption({ label: "Attachment 1 — Trigger data" });
@@ -2206,6 +2208,8 @@ test.describe("workflow builder Week 4 new nodes", () => {
     await gmail.click();
     await expect(gmail).toHaveAttribute("data-readiness", "not-configured");
     await page.getByTestId("field-connectionId").selectOption(CONNECTION_GMAIL_ID);
+    // The search filter and check interval are optional extras under "More options".
+    await page.getByTestId("schema-advanced").locator("summary").click();
     await page.getByTestId("field-query").fill("from:boss@x.test has:attachment");
     await page.getByTestId("field-pollIntervalMinutes").fill("15");
     await expect(gmail).toHaveAttribute("data-readiness", "ready");

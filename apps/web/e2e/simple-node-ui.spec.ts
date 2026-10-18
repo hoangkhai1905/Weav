@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 // Simple node UI: schema fields show label, hint and example; advanced fields sit under "Thêm tùy chọn" (backend stubbed).
@@ -289,7 +292,7 @@ test('publish error for an unnamed step uses the step type name, not its id', as
   await stubPublishError(page, 'nodes[http_1].config.url', 'REQUIRED_FIELD_MISSING: url is required');
   await openBuilder(page);
   await page.getByTestId('workflow-publish').click();
-  await expect(page.getByText(/Bước 'HTTP Request'/).first()).toBeVisible();
+  await expect(page.getByText(/Bước 'Gọi dịch vụ web'/).first()).toBeVisible();
   await expect(page.getByTestId('workflow-builder-error')).not.toContainText('http_1');
 });
 
@@ -628,5 +631,125 @@ test('no builder. keys leak for any node type or operation', async ({ page }) =>
       await expect(inspector).toBeVisible();
       expect((await inspector.innerText()).match(LEAK), `${node.id} ${code}`).toBeNull();
     }
+  }
+});
+
+// Wording pass: the shared check for a step's inspector (Task 8 triggers/messaging, reused by Task 9).
+const JARGON = /\b(ID|JSON|cron|payload|node|config)\b/i;
+
+type InspectedField = { label: string; hint: string; control: 'select' | 'checkbox' | 'text' | 'none'; placeholder: string };
+
+// The e2e project is type-checked without the DOM lib, so the page-side code sees only this shape.
+type DomNode = {
+  id: string; tagName: string; textContent: string | null;
+  querySelectorAll(selector: string): DomNode[];
+  closest(selector: string): DomNode | null;
+  getAttribute(name: string): string | null;
+  ownerDocument: { getElementById(id: string): DomNode | null };
+};
+
+/** Every field the open inspector renders through FieldShell or as a SchemaField checkbox, plus every label/legend text. */
+async function inspectFields(page: Page): Promise<{ fields: InspectedField[]; labels: string[] }> {
+  return page.getByTestId('workflow-inspector').evaluate((element) => {
+    const root = element as unknown as DomNode;
+    const doc = root.ownerDocument;
+    const clean = (text: string | null | undefined) => (text ?? '').replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+    const fields: InspectedField[] = [];
+    for (const label of Array.from(root.querySelectorAll('label[id$="-label"]'))) {
+      const base = label.id.replace(/-label$/, '');
+      const control = doc.getElementById(base);
+      fields.push({
+        label: clean(label.textContent),
+        hint: clean(doc.getElementById(`${base}-hint`)?.textContent),
+        control: !control ? 'none' : control.tagName === 'SELECT' ? 'select' : 'text',
+        placeholder: control?.getAttribute('placeholder') ?? control?.getAttribute('data-placeholder') ?? '',
+      });
+    }
+    for (const box of Array.from(root.querySelectorAll('input[type="checkbox"][id]'))) {
+      fields.push({ label: clean(box.closest('label')?.textContent), hint: clean(doc.getElementById(`${box.id}-hint`)?.textContent), control: 'checkbox', placeholder: '' });
+    }
+    const labels = Array.from(root.querySelectorAll('label, legend'))
+      .filter((node) => !node.closest('[data-testid="inspector-technical"]'))
+      .map((node) => clean(node.textContent));
+    return { fields, labels };
+  });
+}
+
+/** Plain wording of the selected step: short jargon-free labels, a hint under each, and an "Ví dụ:" placeholder in every text box. Returns what is wrong. */
+async function expectPlainWording(page: Page, stepName: string, nodeId: string) {
+  await page.getByTestId(`rf__node-${nodeId}`).getByTestId('workflow-node').dispatchEvent('click');
+  await expect(page.getByTestId('workflow-inspector').getByText(stepName, { exact: true })).toBeVisible();
+  const { fields, labels } = await inspectFields(page);
+  const problems: string[] = [];
+  for (const field of fields) {
+    const name = `${stepName} / ${field.label || '(no label)'}`;
+    if (!field.label) problems.push(`${name}: empty label`);
+    if (JARGON.test(field.label)) problems.push(`${name}: jargon in label`);
+    if (field.label.split(/\s+/).length > 4) problems.push(`${name}: label longer than four words`);
+    if (!field.hint) problems.push(`${name}: no hint`);
+    if (field.control === 'text' && !field.placeholder.startsWith('Ví dụ:')) problems.push(`${name}: placeholder is "${field.placeholder}"`);
+  }
+  for (const label of labels) if (JARGON.test(label)) problems.push(`${stepName} / ${label}: jargon in a label`);
+  return problems;
+}
+
+test('wording: triggers and messaging', async ({ page }) => {
+  test.setTimeout(240_000);
+  const steps: StubNode[] = [
+    { id: 'sched', type: 'trigger.schedule', config: { cron: '0 0 9 * * *', timezone: 'Asia/Ho_Chi_Minh' } },
+    { id: 'sched_adv', type: 'trigger.schedule', config: { cron: '0 0 0 L * ?', timezone: 'Asia/Ho_Chi_Minh' } },
+    { id: 'hook', type: 'trigger.webhook', config: {} },
+    { id: 'tgt', type: 'trigger.telegram', config: {} },
+    { id: 'gm', type: 'trigger.gmail', config: {} },
+    { id: 'wfe', type: 'trigger.workflow_event', config: { events: ['FAILED'] } },
+    { id: 'mail', type: 'email.send', config: {} },
+    { id: 'tg1', type: 'telegram.send_message', config: {} },
+    { id: 'dc', type: 'discord.send_message', config: {} },
+    { id: 'sl', type: 'slack.send_message', config: {} },
+    { id: 'tm', type: 'teams.send_message', config: {} },
+    { id: 'http_1', type: 'http.request', config: { method: 'POST' } },
+    { id: 'wf_cmd', type: 'weav.workflow', config: { operation: 'command' } },
+    { id: 'wf_run', type: 'weav.workflow', config: { operation: 'run' } },
+    { id: 'wf_fail', type: 'weav.workflow', config: { operation: 'list_failures' } },
+  ];
+  const names = Object.fromEntries(steps.map((step) => [step.id, `Step ${step.id}`]));
+  await stubBackend(page, steps, { edges: [['gm', 'mail'], ['tgt', 'tg1']], names });
+  await stubTelegramConnection(page);
+  await openBuilder(page);
+  const problems = [...await expectPlainWording(page, 'Manual trigger', 'manual')];
+  for (const { id } of steps) problems.push(...await expectPlainWording(page, `Step ${id}`, id));
+  expect(problems).toEqual([]);
+});
+
+// The fields a schema flags with x-weav-ui.advanced, read from the same JSON file the app and the backend load.
+const NODES_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../packages/workflow-schema/nodes');
+const flaggedFields = (type: string): string[] => {
+  const schema = JSON.parse(readFileSync(resolve(NODES_DIR, `${type}.json`), 'utf8')) as { properties: Record<string, { 'x-weav-ui'?: { advanced?: boolean } }> };
+  return Object.entries(schema.properties).filter(([, property]) => property['x-weav-ui']?.advanced).map(([name]) => name);
+};
+
+test('flagged fields of triggers and messaging sit under Thêm tùy chọn', async ({ page }) => {
+  test.setTimeout(120_000);
+  // [step type, section test id, test id of each flagged field inside the section]
+  const cases: Array<[string, string, (name: string) => string]> = [
+    ['email.send', 'email-advanced', (name) => (name === 'attachments' ? 'attachment-add' : `field-${name}`)],
+    ['telegram.send_message', 'telegram-advanced', (name) => `field-${name}`],
+    ['http.request', 'http-advanced', (name) => (name === 'headers' || name === 'query' ? `http-${name}` : `field-${name}`)],
+    ['trigger.gmail', 'schema-advanced', (name) => `field-${name}`],
+    ['discord.send_message', 'schema-advanced', (name) => `field-${name}`],
+    ['teams.send_message', 'schema-advanced', (name) => `field-${name}`],
+  ];
+  const nodes: StubNode[] = cases.map(([type], index) => ({ id: `n${index}`, type, config: {} }));
+  await stubBackend(page, nodes, { names: Object.fromEntries(nodes.map((node) => [node.id, `Step ${node.id}`])) });
+  await stubTelegramConnection(page);
+  await openBuilder(page);
+  for (const [index, [type, sectionId, testIdFor]] of cases.entries()) {
+    await page.getByTestId(`rf__node-n${index}`).getByTestId('workflow-node').dispatchEvent('click');
+    await expect(page.getByTestId('workflow-inspector').getByText(`Step n${index}`, { exact: true })).toBeVisible();
+    const flagged = flaggedFields(type);
+    expect(flagged.length, type).toBeGreaterThan(0);
+    const section = page.getByTestId(sectionId);
+    await expect(section.locator('summary'), type).toContainText(`Thêm tùy chọn (${flagged.length})`);
+    for (const name of flagged) await expect(section.getByTestId(testIdFor(name)), `${type}.${name}`).toHaveCount(1);
   }
 });

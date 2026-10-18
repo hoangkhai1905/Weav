@@ -33,14 +33,20 @@
         "type": "string"
       },
       "x-weav-template": true,
-      "x-weav-personal": true
+      "x-weav-personal": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "query": {
       "type": "object",
       "title": "Query parameters",
       "description": "Query string parameters as name and value pairs.",
       "x-weav-template": true,
-      "x-weav-personal": true
+      "x-weav-personal": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "body": {
       "title": "Body",
@@ -53,6 +59,9 @@
       "description": "Optional HTTP connection that supplies credentials for the request.",
       "x-weav-connection": {
         "provider": "HTTP"
+      },
+      "x-weav-ui": {
+        "advanced": true
       }
     }
   },

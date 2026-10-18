@@ -158,7 +158,7 @@ test('a rejected publish names the step and the field in plain language and outl
   }, 400));
   await page.getByTestId('workflow-publish').click();
   const banner = page.getByTestId('workflow-builder-error');
-  await expect(banner).toContainText("Step 'HTTP Request': 'URL'");
+  await expect(banner).toContainText("Step 'Call a web service': 'URL (web address)'");
   await expect(banner).toContainText('full http/https address');
   await expect(banner).not.toContainText('Workflow definition is invalid');
   await expect(page.getByTestId('inspector-node-id')).toHaveText('http_1');

@@ -153,6 +153,8 @@ test('the Slack and Teams steps pick a connection, count text and save their con
 
   await addNode(page, 'teams.send_message');
   await page.getByTestId('field-connectionId').selectOption(teamsConnectionId);
+  // The heading is optional, so it sits under the folded "Thêm tùy chọn".
+  await page.getByTestId('schema-advanced').locator('summary').click();
   await page.getByTestId('field-title').fill('Alert');
   await page.getByTestId('field-text').fill('Build failed');
   const teams = await savedNode(page, backend.drafts, 'teams.send_message');

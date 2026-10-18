@@ -58,6 +58,7 @@ export const WeavWorkflowInspector: React.FC<{ nodeId: string; config: Config; c
           {operation === '' && <option value="">{t('builder.field.default')}</option>}
           {OPERATIONS.map((item) => <option key={item} value={item}>{t(`builder.field.weav.workflow.operation.${item}`)}</option>)}
         </select>
+        <p className={hintCls}>{t('builder.field.weav.workflow.operation_hint')}</p>
       </div>
       {operation !== '' && operation !== 'command' && (
         <div>
@@ -95,7 +96,6 @@ export const WeavWorkflowInspector: React.FC<{ nodeId: string; config: Config; c
       {operation === 'command' && (
         <>
           {field('text')}
-          <p className={hintCls}>{t('builder.field.weav.workflow.text_hint')}</p>
           {field('sender')}
           <div data-testid="allowed-senders">
             <CommaListInput
@@ -116,6 +116,7 @@ export const WeavWorkflowInspector: React.FC<{ nodeId: string; config: Config; c
             id="weav-workflow-input"
             data-testid="weav-workflow-input"
             rows={4}
+            placeholder={`${t('builder.field.example_prefix')}${t('builder.field.weav.workflow.input_example')}`}
             value={inputText}
             aria-invalid={inputError || undefined}
             onChange={(event) => {
@@ -164,6 +165,7 @@ export const WorkflowEventInspector: React.FC<{ config: Config; currentWorkflowI
             </label>
           ))}
         </div>
+        <p className={hintCls}>{t('builder.field.trigger.workflow_event.events_hint')}</p>
         {events.length === 0 && <p role="alert" className="mt-1 text-[10px] text-err">{t('builder.cfg.wf_events_required')}</p>}
       </fieldset>
       <fieldset>

@@ -395,7 +395,7 @@ const ocrModeOf = (config: Record<string, unknown>): OcrSourceMode =>
 // Fields folded under "Thêm tùy chọn" in the hand-written forms (same membership as before).
 const TELEGRAM_ADVANCED = ['parseMode', 'disableNotification', 'replyToMessageId'];
 const HTTP_ADVANCED = ['connectionId', 'headers', 'query'];
-const EMAIL_ADVANCED = ['senderName', 'replyTo', 'replyToMessageId'];
+const EMAIL_ADVANCED = ['cc', 'bcc', 'replyTo', 'senderName', 'replyToMessageId', 'attachments'];
 /** An empty key/value map (what the editor saves after the last row is removed) counts as no value. */
 const withoutEmptyMaps = (config: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(config).map(([name, value]) => [name, value && typeof value === 'object' && !Array.isArray(value) && !Object.keys(value).length ? undefined : value]));
@@ -496,6 +496,11 @@ export const WorkflowBuilderPage: React.FC = () => {
       onChange={(next) => updateSelectedNodeConfig({ [name]: next })}
     />
   );
+  /** The "Ví dụ: …" placeholder of a hand-written text field: same copy source as SchemaField (builder.field.<type>.<name>_example). */
+  const examplePlaceholder = (name: string) => {
+    const { example } = fieldCopy(selectedNodeType, name, t);
+    return example ? `${t('builder.field.example_prefix')}${example}` : undefined;
+  };
   /** FieldShell for a hand-written field of the selected step: `labelKey` keeps the field's existing wording; hint and `*` come from the schema copy. */
   const handField = (name: string, id: string, labelKey: string | undefined, children: (a11y: { id: string; describedBy?: string }) => React.ReactNode, hint?: string, override?: { label: string; required: boolean }) => {
     const copy = fieldCopy(selectedNodeType, name, t);
@@ -2247,6 +2252,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                   <input
                     id={id}
                           aria-describedby={describedBy}
+                    placeholder={examplePlaceholder('buttonLabel')}
                     value={String(selectedNodeConfig.buttonLabel ?? '')}
                     onChange={(event) => updateSelectedNodeConfig({ buttonLabel: event.target.value })}
                     className="w-full rounded-md border border-border-strong bg-card px-3 py-2 text-[13px] text-foreground outline-none hover:border-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring"
@@ -2281,11 +2287,11 @@ export const WorkflowBuilderPage: React.FC = () => {
                               <option value="reply">{t('builder.cfg.tg_target_reply')}</option>
                               <option value="custom">{t('builder.cfg.tg_target_custom')}</option>
                             </select>
-                          ), '')
+                          ))
                         )}
                         {!replying && (
                           handField('chatId', 'telegram-chat-id', 'builder.cfg.chat_id', ({ id, describedBy }) => (
-                            <MappingTextField key={`${selectedNodeId}-chat-id`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={!canReply && isMarkedRequired(selectedNodeType, 'chatId', selectedNodeConfig)} value={chatId} onChange={(next) => updateSelectedNodeConfig({ chatId: next })} groups={inspectorGroups} placeholder="123456789" />
+                            <MappingTextField key={`${selectedNodeId}-chat-id`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={!canReply && isMarkedRequired(selectedNodeType, 'chatId', selectedNodeConfig)} value={chatId} onChange={(next) => updateSelectedNodeConfig({ chatId: next })} groups={inspectorGroups} placeholder={examplePlaceholder('chatId')} />
                           ), t('builder.cfg.tg_chat_hint'),
                           // Next to the target select (which names the field and carries the required marker) the input gets its own label.
                           canReply ? { label: t('builder.field.telegram.send_message.chatId_other'), required: false } : undefined)
@@ -2304,7 +2310,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       value={String(selectedNodeConfig.text ?? '')}
                       onChange={(text) => updateSelectedNodeConfig({ text })}
                       groups={inspectorGroups}
-                      placeholder={t('builder.cfg.tg_text_placeholder')}
+                      placeholder={examplePlaceholder('text')}
                       format={{
                         // MarkdownV2 stays as the user chose it; otherwise formatting turns on Telegram's HTML.
                         syntax: selectedNodeConfig.parseMode === 'MarkdownV2' ? 'telegramMarkdown' : 'telegramHtml',
@@ -2332,10 +2338,10 @@ export const WorkflowBuilderPage: React.FC = () => {
                     </select>
                   ))}
                   {handField('url', 'http-url', 'builder.cfg.url', ({ id, describedBy }) => (
-                    <MappingTextField key={`${selectedNodeId}-url`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'url', selectedNodeConfig)} value={String(selectedNodeConfig.url ?? '')} onChange={(url) => updateSelectedNodeConfig({ url })} groups={inspectorGroups} placeholder="https://example.com/api" />
+                    <MappingTextField key={`${selectedNodeId}-url`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'url', selectedNodeConfig)} value={String(selectedNodeConfig.url ?? '')} onChange={(url) => updateSelectedNodeConfig({ url })} groups={inspectorGroups} placeholder={examplePlaceholder('url')} />
                   ))}
                   {handField('body', 'http-body', 'builder.cfg.body', ({ id, describedBy }) => (
-                    <MappingTextField key={`${selectedNodeId}-body`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'body', selectedNodeConfig)} multiline value={String(selectedNodeConfig.body ?? '')} onChange={(body) => updateSelectedNodeConfig({ body })} groups={inspectorGroups} placeholder={t('builder.cfg.body_placeholder')} />
+                    <MappingTextField key={`${selectedNodeId}-body`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'body', selectedNodeConfig)} multiline value={String(selectedNodeConfig.body ?? '')} onChange={(body) => updateSelectedNodeConfig({ body })} groups={inspectorGroups} placeholder={examplePlaceholder('body')} />
                   ))}
                   {/* Headers, query parameters and a stored connection are rarely needed: kept under Advanced options. */}
                   <AdvancedSection key={`http-advanced-${selectedNodeId}`} testId="http-advanced" count={HTTP_ADVANCED.length} defaultOpen={hasValueOrError(HTTP_ADVANCED, withoutEmptyMaps(selectedNodeConfig), selectedFieldErrors)}>
@@ -2396,18 +2402,18 @@ export const WorkflowBuilderPage: React.FC = () => {
                           <option value="sender">{t('builder.cfg.mail_target_sender')}</option>
                           <option value="custom">{t('builder.cfg.mail_target_custom')}</option>
                         </select>
-                        ), '')}
+                        ), t('builder.cfg.mail_target_hint'))}
                       </div>
                     )}
                     {selectedNodeConfig.to !== GMAIL_REPLY_TO || !inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail')) ? (
                       handField('to', 'email-to', 'builder.cfg.recipient', ({ id, describedBy }) => (
-                        <MappingTextField key={`${selectedNodeId}-to`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'to', selectedNodeConfig) && !inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail'))} value={String(selectedNodeConfig.to ?? '')} onChange={(to) => updateSelectedNodeConfig({ to })} groups={inspectorGroups} />
-                      ), undefined, inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail'))
+                        <MappingTextField key={`${selectedNodeId}-to`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'to', selectedNodeConfig) && !inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail'))} value={String(selectedNodeConfig.to ?? '')} onChange={(to) => updateSelectedNodeConfig({ to })} groups={inspectorGroups} placeholder={examplePlaceholder('to')} />
+                      ), inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail')) ? t('builder.field.email.send.to_other_hint') : undefined, inspectorGroups.some((group) => group.nodeTypes.includes('trigger.gmail'))
                         ? { label: t('builder.field.email.send.to_other'), required: false } : undefined)
                     ) : null}
                   </div>
                   {handField('subject', 'email-subject', 'builder.cfg.subject', ({ id, describedBy }) => (<>
-                    <MappingTextField key={`${selectedNodeId}-subject`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'subject', selectedNodeConfig)} value={String(selectedNodeConfig.subject ?? '')} onChange={(subject) => updateSelectedNodeConfig({ subject })} groups={inspectorGroups} />
+                    <MappingTextField key={`${selectedNodeId}-subject`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'subject', selectedNodeConfig)} value={String(selectedNodeConfig.subject ?? '')} onChange={(subject) => updateSelectedNodeConfig({ subject })} groups={inspectorGroups} placeholder={examplePlaceholder('subject')} />
                     {suggestionsFor('subject')}
                   </>))}
                   {handField('body', 'email-body', 'builder.cfg.body', ({ id, describedBy }) => (<>
@@ -2421,6 +2427,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       value={String(selectedNodeConfig.body ?? '')}
                       onChange={(body) => updateSelectedNodeConfig({ body })}
                       groups={inspectorGroups}
+                      placeholder={examplePlaceholder('body')}
                       format={{
                         syntax: 'html',
                         rich: selectedNodeConfig.bodyType === 'html',
@@ -2434,10 +2441,11 @@ export const WorkflowBuilderPage: React.FC = () => {
                     />
                     {suggestionsFor('body', true)}
                   </>))}
-                  {['bodyType', 'cc', 'bcc'].map((name) => configField(name))}
-                  <AttachmentsEditor key={`${selectedNodeId}-attachments`} value={selectedNodeConfig.attachments} onChange={(attachments) => updateSelectedNodeConfig({ attachments })} groups={inspectorGroups} />
+                  {configField('bodyType')}
                   <AdvancedSection key={`email-advanced-${selectedNodeId}`} testId="email-advanced" count={EMAIL_ADVANCED.length} defaultOpen={hasValueOrError(EMAIL_ADVANCED, selectedNodeConfig, selectedFieldErrors)}>
-                    {EMAIL_ADVANCED.map((name) => configField(name))}
+                    {EMAIL_ADVANCED.map((name) => (name === 'attachments'
+                      ? <AttachmentsEditor key={`${selectedNodeId}-attachments`} value={selectedNodeConfig.attachments} onChange={(attachments) => updateSelectedNodeConfig({ attachments })} groups={inspectorGroups} />
+                      : configField(name)))}
                   </AdvancedSection>
                 </div>
               ) : selectedNodeType.startsWith('ai.') ? (

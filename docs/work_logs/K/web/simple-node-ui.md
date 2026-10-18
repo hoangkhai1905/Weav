@@ -69,6 +69,14 @@ Live check (2026-10-17, in-app browser, dev stack on Neon dev-k, 7 services with
 
 Deferred minors (ledger): `role="menu"` holds inputs; group headings have no step icon; `fileSources` now nearest-first (OCR auto-pick); test hygiene (xpath `../..`, leak test opens the builder twice, orphan edge-click flake).
 
+## Batch 3 - Task 8: triggers, messaging and HTTP wording (2026-10-18)
+
+- Plain names and one-sentence descriptions for the 13 nodes (manual, schedule, webhook, Telegram/Gmail/workflow triggers, email, Telegram, Discord, Slack, Teams, HTTP, control workflows); every field of those nodes has a label (4 words or fewer, no ID/JSON/cron/payload/node/config), a hint and a realistic example (`builder.field.<type>.<name>[_hint|_example]`, vi + en).
+- Schema `x-weav-ui.advanced` added: email (cc, bcc, replyTo, senderName, replyToMessageId, attachments), Telegram (parseMode, disableNotification, replyToMessageId), Gmail trigger (query, pollIntervalMinutes), HTTP (connectionId, headers, query), Discord username, Teams title. Hand-written lists equal the flags (EMAIL_ADVANCED gained cc, bcc, attachments; the attachments editor now sits under Thêm tùy chọn).
+- Hand-written text fields take their placeholder from the same `_example` key as SchemaField (one copy source); old `builder.cfg.*_placeholder` keys stay in the file.
+- Fixed live-check findings: Gmail send description, manual trigger description, "Nội dung (body)", "chat ID", blockers that started with "Node", output labels (scheduledAt, durationMs, weav.workflow items[0].finishedAt).
+- Tests: `wording: triggers and messaging` and `flagged fields of triggers and messaging sit under Thêm tùy chọn` in simple-node-ui.spec.ts; `inspectFields` / `expectPlainWording` are reusable for Task 9.
+
 ## Next
 
 Batch 3 wording (Tasks 8-9; include the Batch 2 live-check wording findings above), then Task 11 (journey test, stale specs, live check). Merge into `dev` only on K's go-ahead.

@@ -24,7 +24,10 @@
       "type": "string",
       "title": "Title",
       "description": "Optional bold heading of the card, at most 200 characters.",
-      "x-weav-template": true
+      "x-weav-template": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
     },
     "text": {
       "type": "string",
