@@ -141,6 +141,7 @@ test('the Discord step picks a connection, counts content and saves its config',
   await page.getByTestId('field-connectionId').selectOption(discordConnectionId);
   await page.getByTestId('field-content').fill('Failed: {{ trigger.input.workflowName }}');
   await expect(page.getByTestId('content-counter')).toContainText('/2000');
+  await page.getByTestId('schema-advanced').locator('summary').click();
   await page.getByTestId('field-username').fill('Weav');
   const node = await savedNode(page, backend.drafts, 'discord.send_message');
   expect(node?.config).toMatchObject({ connectionId: discordConnectionId, content: 'Failed: {{ trigger.input.workflowName }}', username: 'Weav' });
@@ -162,7 +163,7 @@ test('the control step shows the fields of its operation and saves them', async 
 
   await page.getByTestId('field-operation').selectOption('run');
   await page.getByTestId('weav-workflow-input').fill('{"a": ');
-  await expect(page.getByText('The input must be a valid JSON object.')).toBeVisible();
+  await expect(page.getByText('The data is not in the right format', { exact: false })).toBeVisible();
   await page.getByTestId('weav-workflow-input').fill('{"a": 1}');
 
   await page.getByTestId('field-operation').selectOption('list_failures');

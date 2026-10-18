@@ -691,7 +691,7 @@ async function collectWordingProblems(page: Page, stepName: string, nodeId: stri
     const name = `${stepName} / ${field.label || '(no label)'}`;
     if (!field.label) problems.push(`${name}: empty label`);
     if (JARGON.test(field.label)) problems.push(`${name}: jargon in label`);
-    if (field.label.split(/s+/).length > 4) problems.push(`${name}: label longer than four words`);
+    if (field.label.split(/\s+/).length > 4) problems.push(`${name}: label longer than four words`);
     if (!field.hint) problems.push(`${name}: no hint`);
     if (field.control === 'none') problems.push(`${name}: no control with the label's id`);
     if (field.control === 'text' && !field.placeholder.startsWith('Ví dụ:')) problems.push(`${name}: placeholder is "${field.placeholder}"`);
