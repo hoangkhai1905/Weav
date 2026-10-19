@@ -182,24 +182,6 @@ export const executionApi = {
     return executions.sort((left, right) => Date.parse(right.startedAt) - Date.parse(left.startedAt));
   },
 
-  /** Recent runs for a bounded set of workflows (concurrency-limited) to derive list statistics cheaply. */
-  async getRecentExecutions(workflows: WorkflowDefinition[], options: { limit?: number; concurrency?: number } = {}): Promise<ExecutionDetail[]> {
-    if (isWorkflowMockMode) return mockExecutionApi.getExecutions();
-    const limit = options.limit ?? 20;
-    const concurrency = options.concurrency ?? 3;
-    const selected = workflows.filter((workflow) => workflow.status !== 'DRAFT').slice(0, limit);
-    const executions: ExecutionDetail[] = [];
-    for (let index = 0; index < selected.length; index += concurrency) {
-      const group = selected.slice(index, index + concurrency);
-      const pages = await Promise.all(group.map(async (workflow) => {
-        const page = await workflowV1Api.listExecutions(workflow.id, 0, 50, workflow.workspaceId);
-        return page.items.filter((summary) => typeof summary?.executionId === "string").map((summary) => summaryToExecution(summary, workflow));
-      }));
-      executions.push(...pages.flat());
-    }
-    return executions;
-  },
-
   async getExecution(id: string, workflowId?: string): Promise<ExecutionDetail | null> {
     if (isWorkflowMockMode) return mockExecutionApi.getExecution(id);
 

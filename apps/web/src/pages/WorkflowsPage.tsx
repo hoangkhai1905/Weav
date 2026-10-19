@@ -3,11 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { primaryTrigger, triggerTypeLabel } from '../lib/executions/runView';
 import { Copy, Edit3, History, MoreHorizontal, Pause, Play, Plus, Search, Trash2, X } from 'lucide-react';
-import type { ExecutionDetail, WorkflowDefinition } from '../types/workflow.types';
+import type { WorkflowDefinition } from '../types/workflow.types';
+import type { MonitoringRun } from '../api/monitoring.api';
 import { isWorkflowMockMode, workflowApi } from '../api/workflow.api';
 import { getActiveWorkflowWorkspaceId, workflowRequest, workflowV1Api } from '../api/workflow-v1.api';
 import { WORKFLOW_FILE_MAX_BYTES, buildDraftBody, importedWorkflowName, parseWorkflowFile } from '../lib/workflowTransfer';
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchRecentExecutions, fetchWorkflowList, invalidateWorkflowQueries, workflowRunStatsKey } from '../lib/queries/workflows';
 import { statusBadgeClass } from '../components/common/statusBadgeClass';
 import { TypedConfirmDialog } from '../components/common/TypedConfirmDialog';
@@ -24,7 +25,6 @@ import { formatRelativeTime } from '../lib/relativeTime';
 import { runTone } from '../lib/monitoring/format';
 import { nodeLabel } from '../lib/nodeLabels';
 import { describeWorkflow, orderedStepTypes } from '../lib/workflowSummary';
-import { useWorkspaceStore } from '../store/useWorkspaceStore';
 import { BTN_PRIMARY, BTN_SECONDARY, CARD, FOCUS_RING, ICON_BTN } from '../lib/uiClasses';
 
 type WorkflowStatus = 'PUBLISHED' | 'PAUSED' | 'DRAFT';
@@ -33,7 +33,7 @@ type SortKey = 'LAST_RUN' | 'ERROR_RATE' | 'NAME' | 'NEWEST';
 
 interface RunStats {
   lastAt?: string;
-  lastStatus?: ExecutionDetail['status'];
+  lastStatus?: MonitoringRun['status'];
   runs7d: number;
   failed7d: number;
   /** Type of the latest automatic (non-manual) run: proof of a real trigger the list API does not return. */
@@ -49,6 +49,7 @@ interface WorkflowItem {
   status: WorkflowStatus;
   triggerType: string;
   triggerTypes?: string[];
+  stepTypes?: string[];
   ownerName: string;
   createdAt: string;
   updatedAt: string;
@@ -60,24 +61,25 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const field =
   'h-9 rounded-md border border-border-strong bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors hover:border-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
 
-function computeStats(executions: ExecutionDetail[]): Record<string, RunStats> {
+function computeStats(runs: MonitoringRun[]): Record<string, RunStats> {
   const now = Date.now();
   const stats: Record<string, RunStats> = {};
-  for (const execution of executions) {
-    const startedMs = Date.parse(execution.startedAt);
-    const entry = (stats[execution.workflowId] ??= { runs7d: 0, failed7d: 0 });
-    if (execution.triggerType.toUpperCase() !== 'MANUAL' && (entry.autoTriggerAt ?? -1) < (startedMs || 0)) {
-      entry.autoTrigger = execution.triggerType;
+  for (const run of runs) {
+    const startedAt = run.startedAt ?? run.createdAt;
+    const startedMs = Date.parse(startedAt);
+    const entry = (stats[run.workflowId] ??= { runs7d: 0, failed7d: 0 });
+    if (run.triggerType.toUpperCase() !== 'MANUAL' && (entry.autoTriggerAt ?? -1) < (startedMs || 0)) {
+      entry.autoTrigger = run.triggerType;
       entry.autoTriggerAt = startedMs || 0;
     }
     if (Number.isFinite(startedMs)) {
       if (!entry.lastAt || startedMs > Date.parse(entry.lastAt)) {
-        entry.lastAt = execution.startedAt;
-        entry.lastStatus = execution.status;
+        entry.lastAt = startedAt;
+        entry.lastStatus = run.status;
       }
       if (now - startedMs <= WEEK_MS) {
         entry.runs7d += 1;
-        if (execution.status === 'FAILED') entry.failed7d += 1;
+        if (run.status === 'FAILED') entry.failed7d += 1;
       }
     }
   }
@@ -150,6 +152,8 @@ export function WorkflowsPage() {
         status: wf.status as WorkflowStatus,
         triggerType: wf.triggerType,
         ...(wf.triggerTypes ? { triggerTypes: wf.triggerTypes } : {}),
+        // The list API names the steps; mock-mode workflows carry their whole graph instead.
+        ...(wf.stepTypes ? { stepTypes: wf.stepTypes } : wf.nodes.length > 0 ? { stepTypes: orderedStepTypes(wf.nodes, wf.edges) } : {}),
         ownerName: wf.ownerName ?? '',
         createdAt: wf.createdAt,
         updatedAt: wf.updatedAt,
@@ -169,14 +173,14 @@ export function WorkflowsPage() {
     void loadWorkflows();
   }, [loadWorkflows]);
 
-  // Run statistics come from a cached, bounded query (20 workflows, 3 at a time) and never block the list.
+  // Run statistics come from one cached request for the workspace's recent runs and never block the list.
   const statsQuery = useQuery({
     queryKey: workflowRunStatsKey(),
     enabled: workflowsList.some((wf) => wf.status !== 'DRAFT'),
     staleTime: 60_000,
     gcTime: 5 * 60_000,
     retry: false,
-    queryFn: () => fetchRecentExecutions(queryClient),
+    queryFn: fetchRecentExecutions,
     select: computeStats,
   });
   const stats = useMemo<Record<string, RunStats>>(() => statsQuery.data ?? {}, [statsQuery.data]);
@@ -387,25 +391,8 @@ export function WorkflowsPage() {
     });
   }, [workflowsList, search, activeTab, sortKey, locale, errorRate, lastRunOf, triggerLabel, triggerOf]);
 
-  // Each row's "what it does" sentence needs the steps, which the list API does not return: load the detail of the first
-  // rows (cached 60s, bounded) and fall back to the trigger line alone for the rest.
-  const workspaceKey = useWorkspaceStore((state) => state.activeWorkspaceId) ?? 'active';
-  const stepIds = useMemo(() => filteredWorkflows.slice(0, 20).map((wf) => wf.id), [filteredWorkflows]);
-  const updatedById = useMemo(() => new Map(workflowsList.map((wf) => [wf.id, wf.updatedAt])), [workflowsList]);
-  const stepResults = useQueries({
-    queries: stepIds.map((id) => ({
-      queryKey: ['workflows', 'steps', workspaceKey, id, updatedById.get(id) ?? ''],
-      queryFn: () => workflowApi.getWorkflow(id),
-      staleTime: 60_000,
-      retry: false,
-      select: (workflow: WorkflowDefinition | null) => (workflow ? orderedStepTypes(workflow.nodes, workflow.edges) : []),
-    })),
-  });
-  const stepsById: Record<string, string[]> = {};
-  stepIds.forEach((id, index) => {
-    const data = stepResults[index]?.data;
-    if (data) stepsById[id] = data;
-  });
+  // Each row's "what it does" sentence uses the steps from the list response (no per-row detail call); an older API
+  // without them gets the trigger line alone.
   const labelOf = (type: string) => nodeLabel(type, t);
 
   const selectedVisibleCount = filteredWorkflows.filter((w) => selectedIds.has(w.id)).length;
@@ -702,8 +689,7 @@ export function WorkflowsPage() {
                 const isSelected = selectedIds.has(wf.id);
                 const rowStats = stats[wf.id];
                 const lastAt = lastRunOf(wf);
-                const summary = describeWorkflow(triggerOf(wf), stepsById[wf.id], t, labelOf);
-                const stepsLoading = stepIds.includes(wf.id) && !(wf.id in stepsById);
+                const summary = describeWorkflow(triggerOf(wf), wf.stepTypes, t, labelOf);
                 const isOn = wf.status === 'PUBLISHED';
                 const lastPill = wf.status === 'DRAFT'
                   ? <span className={statusBadgeClass('pause')}>{t('workflows.tab_draft')}</span>
@@ -758,8 +744,6 @@ export function WorkflowsPage() {
                         <span><span className="text-muted-foreground">{t('wfl.run_prefix')} </span>{summary.when}</span>
                         {summary.then ? (
                           <span className="text-[13px] text-text-2"><span className="text-muted-foreground">{t('wfl.then_prefix')} </span>{summary.then}</span>
-                        ) : stepsLoading ? (
-                          <span className="text-[13px] text-muted-foreground">…</span>
                         ) : null}
                       </div>
                     </td>
