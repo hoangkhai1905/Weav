@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { addNode, loginAndOpenBuilder } from './support/builder.js';
-import { openStubbedBuilder } from './support/http-builder.js';
+import { expectNoUnmatched, openStubbedBuilder, resetUnmatched } from './support/http-builder.js';
+
+test.beforeEach(resetUnmatched);
+test.afterEach(expectNoUnmatched);
 
 test('ai.extract needs a valid output schema', async ({ page }) => {
   await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });

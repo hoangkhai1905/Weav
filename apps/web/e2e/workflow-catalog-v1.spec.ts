@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { addNode, loginAndOpenBuilder } from './support/builder.js';
-import { openStubbedBuilder } from './support/http-builder.js';
+import { expectNoUnmatched, openStubbedBuilder, resetUnmatched } from './support/http-builder.js';
 
 type WorkflowFixture = {
   id: string;
@@ -50,6 +50,7 @@ const V1_NODE_TYPES = [
 const runtimeErrors = new WeakMap<Page, string[]>();
 
 test.beforeEach(async ({ page }) => {
+  resetUnmatched();
   const errors: string[] = [];
   runtimeErrors.set(page, errors);
   page.on('pageerror', (error) => errors.push(error.message));
@@ -62,6 +63,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.afterEach(async ({ page }) => {
+  expectNoUnmatched();
   expect(runtimeErrors.get(page) ?? [], 'browser console, runtime, and network errors').toEqual([]);
 });
 

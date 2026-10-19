@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { expectNoUnmatched, registerApiFallback, resetUnmatched } from './support/http-builder.js';
 
 const OCR_WORKSPACE_ID = '00000000-0000-4000-8000-000000000001';
 const OCR_WORKFLOW_ID = '00000000-0000-4000-8000-000000000002';
@@ -29,6 +30,8 @@ function ocrSuccessResponse(fileName = 'fixture.png') {
 
 test.describe('OCR Builder Inspector Gateway Integration', () => {
   test.beforeEach(async ({ page }) => {
+    resetUnmatched();
+    await registerApiFallback(page);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.addInitScript({ content: "window.localStorage.setItem('weav_token', 'test-bearer-token-12345')" });
@@ -95,17 +98,22 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       publishedAt: null,
       triggers: [],
     };
-    await page.route(`**/api/v1/workspaces/${OCR_WORKSPACE_ID}/workflows**`, async (route) => {
+    await page.route((url) => url.pathname.startsWith(`/api/v1/workspaces/${OCR_WORKSPACE_ID}/workflows/`), async (route) => {
       const { pathname } = new URL(route.request().url());
-      const body = pathname.endsWith(`/workflows/${OCR_WORKFLOW_ID}`) ? draft
-        : pathname.endsWith('/node-capabilities') ? { nodes: {} }
-          : { items: [], page: 0, size: 100, totalElements: 0, totalPages: 1, hasNext: false };
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+      if (route.request().method() !== 'GET') return route.fallback();
+      if (pathname.endsWith('/node-capabilities')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ nodes: {} }) });
+      if (pathname.endsWith(`/workflows/${OCR_WORKFLOW_ID}`)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(draft) });
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) });
+    });
+    await page.route(/\/workflows\?page=/, async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [], page: 0, size: 100, totalElements: 0, totalPages: 1, hasNext: false }) });
     });
     await page.route(`**/api/v1/workspaces/${OCR_WORKSPACE_ID}/connections**`, async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
     });
   });
+
+  test.afterEach(expectNoUnmatched);
 
   // Opens the saved draft and adds the OCR step from the palette; returns the step inspector.
   async function addOcrStep(page: Page) {
