@@ -95,6 +95,10 @@ async function gotoAuthenticated(page: Page, path: string) {
   if (new URL(page.url()).pathname === '/login') await page.goto(path);
 }
 
+let unmatched: string[] = [];
+test.beforeEach(() => { unmatched = []; });
+test.afterEach(() => { expect(unmatched, 'API calls the stub does not cover').toEqual([]); });
+
 const WORKFLOW_ID = '00000000-0000-4000-8000-000000000009';
 
 // The builder opens a saved draft with a manual trigger only; the OCR step is added from the palette.
@@ -112,16 +116,26 @@ async function stubBuilderWorkflow(page: Page) {
     publishedAt: null,
     triggers: [],
   };
-  await page.route('**/api/v1/workspaces/*/workflows**', async (route) => {
-    const { pathname } = new URL(route.request().url());
-    const body = pathname.endsWith(`/workflows/${WORKFLOW_ID}`) ? draft
-      : pathname.endsWith('/node-capabilities') ? { nodes: {} }
-        : { items: [], page: 0, size: 100, totalElements: 0, totalPages: 1, hasNext: false };
-    await fulfillWorkspaceApi(route, body);
+  // Matches /api/v1/workspaces/<id>/<tail>; with no tail it matches any workflows or connections path.
+  const scoped = (tail?: string) => (url: URL) => {
+    const parts = url.pathname.split('/');
+    const rest = parts.slice(5).join('/');
+    const inScope = parts.slice(0, 4).join('/') === '/api/v1/workspaces' && parts.length > 5;
+    return inScope && (tail ? rest === tail : parts[5] === 'workflows' || parts[5] === 'connections');
+  };
+  // Fallback first (later routes win): a workflow or connection call no stub covers fails with 501 and is recorded.
+  await page.route(scoped(), async (route) => {
+    unmatched.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`);
+    await fulfillWorkspaceApi(route, { error: 'not stubbed' }, 501);
   });
-  await page.route('**/api/v1/workspaces/*/connections**', async (route) => {
-    await fulfillWorkspaceApi(route, []);
-  });
+  const getOnly = (body: unknown) => async (route: Route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return fulfillWorkspaceApi(route, body);
+  };
+  await page.route(scoped('workflows'), getOnly({ items: [], page: 0, size: 100, totalElements: 0, totalPages: 1, hasNext: false }));
+  await page.route(scoped('workflows/node-capabilities'), getOnly({ nodes: {} }));
+  await page.route(scoped(`workflows/${WORKFLOW_ID}`), getOnly(draft));
+  await page.route(scoped('connections'), getOnly([]));
 }
 
 async function addOcrStep(page: Page) {
@@ -549,7 +563,7 @@ test.describe('workspace create and rename mutations', () => {
         return;
       }
       if (url.pathname === `/api/v1/workspaces/${WORKSPACE_A}/members`) {
-        await fulfillWorkspaceApi(route, pageResult([]));
+        await fulfillWorkspaceApi(route, pageResult([member(USER_A, 'User A', 'a@example.com')]));
         return;
       }
       await route.fallback();
@@ -562,6 +576,9 @@ test.describe('workspace create and rename mutations', () => {
     await expect(page.getByTestId('workspace-rename-name')).toHaveValue('Forbidden Rename');
     await expect(page.getByTestId('workspace-selector')).toHaveValue(WORKSPACE_A);
     await expect(page.getByText('Workspace renamed.', { exact: true })).toHaveCount(0);
+    // The persistent owner notice (members tab) keeps the owner-only rule visible for a plain member.
+    await page.goto('/workspace/members');
+    await expect(page.getByTestId('workspace-unsupported-members')).toContainText('Only the workspace owner can add, update, or remove members.');
   });
 
   test('refreshes selection when rename reports that the workspace is no longer accessible', async ({ page }) => {

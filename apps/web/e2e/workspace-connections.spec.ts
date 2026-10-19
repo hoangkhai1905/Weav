@@ -114,6 +114,34 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   });
 }
 
+// A 401 renews the session through the web refresh cookie first; the flag says a cookie exists.
+// The renewal is rejected, so the app signs the user out. Returns a getter for the refresh call count.
+async function rejectWebRefresh(page: Page) {
+  let refreshCalls = 0;
+  await page.addInitScript(() => localStorage.setItem("weav_google_oauth_session_v1", "1"));
+  // The identity client may be cross-origin (credentials + custom header), so answer preflights too.
+  const cors = (route: Route) => {
+    const origin = route.request().headers().origin ?? "*";
+    return {
+      "access-control-allow-origin": origin,
+      "access-control-allow-credentials": "true",
+      "access-control-allow-headers": "content-type, x-xsrf-token, authorization",
+      "access-control-allow-methods": "GET, POST, OPTIONS",
+    };
+  };
+  await page.route("**/auth/web/csrf", (route) =>
+    route.request().method() === "OPTIONS"
+      ? route.fulfill({ status: 204, headers: cors(route) })
+      : route.fulfill({ status: 200, headers: cors(route), contentType: "application/json", body: JSON.stringify({ csrfToken: "C".repeat(43) }) }),
+  );
+  await page.route("**/auth/web/refresh", (route) => {
+    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors(route) });
+    refreshCalls += 1;
+    return route.fulfill({ status: 401, headers: cors(route), contentType: "application/json", body: JSON.stringify({ error: "Refresh session is invalid" }) });
+  });
+  return () => refreshCalls;
+}
+
 async function installAuthFixture(page: Page, workspaces = [workspace]) {
   await page.addInitScript(() => {
     localStorage.setItem("weav_token", "connection-adapter-token");
@@ -489,16 +517,21 @@ test.describe("workspace connection API adapter", () => {
   // (92ca1bd9 session refresh), so the failure shows as the login screen, never as an empty success.
   test("connections 401 ends the session instead of showing an empty success", async ({ page }) => {
     await installAuthFixture(page);
-    await page.route("**/api/v1/workspaces/*/connections", (route) =>
-      fulfillJson(
+    const refreshCalls = await rejectWebRefresh(page);
+    let listCalls = 0;
+    await page.route("**/api/v1/workspaces/*/connections", (route) => {
+      listCalls += 1;
+      return fulfillJson(
         route,
         { error: { code: "UNAUTHORIZED", message: "Connection request failed with 401." }, requestId: "connections-request-401" },
         401,
-      ),
-    );
+      );
+    });
     await gotoAuthenticatedConnections(page);
 
-    await expect(page).toHaveURL(/\/login$/);
+    await expect(page).toHaveURL(/[/]login$/);
+    expect(listCalls).toBeGreaterThan(0);
+    expect(refreshCalls()).toBe(1);
     await expect(page.getByTestId("connections-empty-state")).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.getItem("weav_token"))).toBeNull();
   });
@@ -1247,25 +1280,29 @@ test.describe("workspace connection API adapter", () => {
     });
   }
 
-  test("connection test 401 ends the session without showing the backend message", async ({ page }) => {
+  test("connection test 401 renews once, then ends the session", async ({ page }) => {
     await installAuthFixture(page);
+    const refreshCalls = await rejectWebRefresh(page);
+    let testCalls = 0;
     await page.route("**/api/v1/workspaces/*/connections", (route) =>
       fulfillJson(route, [authorizedOnce(connection(CONNECTION_GMAIL_ID, "GMAIL"))]),
     );
-    await page.route(`**/api/v1/workspaces/*/connections/${CONNECTION_GMAIL_ID}/test`, (route) =>
-      fulfillJson(
+    await page.route(`**/api/v1/workspaces/*/connections/${CONNECTION_GMAIL_ID}/test`, (route) => {
+      testCalls += 1;
+      return fulfillJson(
         route,
         { error: { code: "UNAUTHORIZED", message: "Backend UNAUTHORIZED message must not be shown." }, requestId: "connection-test-request-401" },
         401,
-      ),
-    );
+      );
+    });
     await gotoAuthenticatedConnections(page);
     await openRowMenu(page, CONNECTION_GMAIL_ID);
     await page.getByTestId(`connection-test-${CONNECTION_GMAIL_ID}`).click();
 
     // The rejected renewal signs the user out (92ca1bd9), so the login screen replaces the list.
-    await expect(page).toHaveURL(/\/login$/);
-    await expect(page.locator("body")).not.toContainText("Backend UNAUTHORIZED message");
+    await expect(page).toHaveURL(/[/]login$/);
+    expect(testCalls).toBe(1);
+    expect(refreshCalls()).toBe(1);
   });
 
   test("Google OAuth action is hidden for legacy and non-OAuth connections", async ({
