@@ -51,7 +51,7 @@ Result: 16-17 requests (3/3 runs), `request-budget` passes with the budget uncha
 | workflow-service `JAVA_TOOL_OPTIONS=-Duser.timezone=UTC ./mvnw verify` | 1168 tests, 0 failures, 3 errors = the known environment-only ones (`HttpTransportIntegrationTest` x2 TLS cert, `WorkflowNotificationLifecyclePersistenceIntegrationTest` needs notification-service `dist`) |
 | `git diff --check`; GitNexus `detect_changes --scope all` | clean; 9 changed symbols, not partial/truncated. Rated critical (948 affected) because `WorkflowDefinition` (optional field added) and `executionApi` (unused method removed) are hub symbols; `tsc` and both suites cover them |
 
-Not checked: the list against a live stack (needs the rebuilt workflow-service image); covered by the HTTP/persistence tests and the stubbed Playwright run.
+Live check (2026-10-19, in-app browser, dev stack on Neon dev-k with workflow-service rebuilt from this branch, local live-test account, 24 workflows): PASS. `/workflows` made 6 API calls in total (auth/me, workspaces, unread count, workflow list, workspace executions) and 0 per-workflow calls; all 24 rows show their "what it does" sentence (e.g. "Chạy khi bot Telegram nhận được tin nhắn Rồi gửi tin nhắn Telegram"); the list response carries `stepTypes` on all 24 items; the row menu stays open (5 actions); no console errors. Contract: `stepTypes` documented on `WorkflowSummary` in `packages/contracts/http/workflow/openapi.yaml` (`c9e6d36b`).
 
 ## Risks / next
 
