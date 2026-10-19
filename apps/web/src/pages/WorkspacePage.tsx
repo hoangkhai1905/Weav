@@ -49,6 +49,7 @@ function getWorkspaceErrorMessage(error: unknown, t: (key: string) => string): s
       MEMBER_NOT_FOUND: 'workspace.error.member_not_found',
       USER_NOT_FOUND: 'w5c.user_not_found',
       CONFLICT: 'workspace.error.conflict',
+      USER_ALREADY_MEMBER: 'msg.user_already_workspace_member',
       RATE_LIMITED: 'workspace.error.rate_limited',
       INVALID_RESPONSE: 'workspace.error.invalid_response',
       WORKSPACE_UNAVAILABLE: 'workspace.error.unavailable',

@@ -103,9 +103,22 @@ export function WorkflowsPage() {
   const [sortKey, setSortKey] = useState<SortKey>('LAST_RUN');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  // The table card scrolls horizontally (overflow clips vertically too), so the row menu is fixed-positioned from its trigger.
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [switching, setSwitching] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!activeMenuId) return;
+    const dismiss = () => setActiveMenuId(null);
+    window.addEventListener('scroll', dismiss, true);
+    window.addEventListener('resize', dismiss);
+    return () => {
+      window.removeEventListener('scroll', dismiss, true);
+      window.removeEventListener('resize', dismiss);
+    };
+  }, [activeMenuId]);
 
   const closeMenu = (id: string) => {
     setActiveMenuId(null);
@@ -749,7 +762,7 @@ export function WorkflowsPage() {
                     <td className="px-3 py-3.5 text-right align-top font-mono text-xs text-text-2">
                       {rowStats ? rowStats.runs7d.toLocaleString(locale) : wf.status === 'DRAFT' ? '—' : '…'}
                     </td>
-                    {/* No overflow-hidden here: it would clip the row menu below. */}
+                    {/* The row menu is position: fixed, so the scrolling card cannot clip it. */}
                     <td className="relative whitespace-nowrap py-2.5 pl-3 pr-5 align-top">
                       <div className="flex items-center justify-end gap-0.5">
                         <button
@@ -767,7 +780,11 @@ export function WorkflowsPage() {
                           ref={(element) => {
                             menuButtonRefs.current[wf.id] = element;
                           }}
-                          onClick={() => setActiveMenuId(activeMenuId === wf.id ? null : wf.id)}
+                          onClick={(event) => {
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                            setActiveMenuId(activeMenuId === wf.id ? null : wf.id);
+                          }}
                           className={`${ICON_BTN} h-8 w-8 ${activeMenuId === wf.id ? 'bg-muted text-foreground' : ''}`}
                           title={t('workflows.more_actions')}
                           aria-label={`${t('workflows.more_actions')}: ${wf.name}`}
@@ -790,7 +807,8 @@ export function WorkflowsPage() {
                             onKeyDown={(event) => {
                               if (event.key === 'Escape') closeMenu(wf.id);
                             }}
-                            className="absolute right-5 top-11 z-30 flex w-48 flex-col rounded-xl border border-border bg-popover p-1 text-left text-[13px] text-popover-foreground shadow-pop"
+                            style={menuPos ?? undefined}
+                            className="fixed z-30 flex w-48 flex-col rounded-xl border border-border bg-popover p-1 text-left text-[13px] text-popover-foreground shadow-pop"
                           >
                             <Link
                               role="menuitem"
