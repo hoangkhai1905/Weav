@@ -263,6 +263,38 @@ test.describe('Vietnamese and English web localization', () => {
     }
   });
 
+  test('localizes the run detail screen in both languages', async ({ page }) => {
+    const WS = '00000000-0000-4000-8000-000000000001';
+    const WF = '30000000-0000-4000-8000-000000000001';
+    const RUN = '40000000-0000-4000-8000-000000000001';
+    const at = '2026-10-07T10:00:00Z';
+    const summary = { executionId: RUN, workflowId: WF, workflowVersionId: WF, status: 'SUCCESS', triggerType: 'MANUAL', createdAt: at, startedAt: at, finishedAt: '2026-10-07T10:00:02Z' };
+    const json = (body: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    const getOnly = (path: string) => (url: URL) => url.pathname === path;
+    await page.route(getOnly(`/api/v1/workspaces/${WS}/workflows/${WF}`), (route) => route.request().method() === 'GET' ? route.fulfill(json({
+      ...summary, workflowId: WF, name: 'Run detail flow', status: 'PUBLISHED', currentVersionId: WF, publishedAt: at, updatedAt: at,
+      definition: { schemaVersion: '1.0', nodes: [{ id: 'hook', type: 'trigger.webhook', config: {} }], edges: [], variables: {} },
+      editorState: { nodes: { hook: { name: 'Webhook in', position: { x: 0, y: 0 } } } },
+    })) : route.fallback());
+    await page.route(getOnly(`/api/v1/workspaces/${WS}/workflows/${WF}/executions`), (route) => route.request().method() === 'GET'
+      ? route.fulfill(json({ items: [summary], page: 0, size: 100, totalElements: 1, totalPages: 1 })) : route.fallback());
+    await page.route(getOnly(`/api/v1/workspaces/${WS}/workflows/${WF}/executions/${RUN}`), (route) => route.request().method() === 'GET' ? route.fulfill(json({
+      ...summary,
+      nodes: [{ nodeExecutionId: '60000000-0000-4000-8000-000000000001', nodeId: 'hook', nodeType: 'trigger.webhook', status: 'SUCCESS', attemptCount: 1, startedAt: at, finishedAt: '2026-10-07T10:00:01Z', output: { ok: true }, error: null, attempts: [] }],
+      logs: { items: [], page: 0, size: 100, totalElements: 0, hasNext: false },
+    })) : route.fallback());
+
+    for (const locale of ['VI', 'EN'] as const) {
+      await page.addInitScript((selectedLocale) => (globalThis as unknown as BrowserContext).localStorage.setItem('weav_lang_v1', selectedLocale), locale);
+      await page.goto(`/workflows/${WF}/executions?run=${RUN}`);
+      const steps = locale === 'VI' ? 'Các bước' : 'Steps';
+      const received = locale === 'VI' ? 'Dữ liệu nhận vào' : 'Data received';
+      await expect(page.getByRole('heading', { name: steps, exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: received, exact: true })).toBeVisible();
+      await expect(page.locator('body')).not.toContainText('run2.');
+    }
+  });
+
   test('captures Dashboard in Vietnamese and English at desktop and narrow widths', async ({ page }, testInfo) => {
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));

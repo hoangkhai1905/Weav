@@ -196,7 +196,7 @@ test.describe("run history (stubbed backend)", () => {
     await open(page);
     await expect(page.getByRole("alert").filter({ hasText: "Step 2 (Send email) could not run" })).toBeVisible();
     // The result block names the field next to the plain-language error.
-    await expect(page.getByText("To: This step is not configured correctly")).toBeVisible();
+    await expect(page.getByRole("region", { name: "Step 2 · Send email" }).getByText("To: This step is not configured correctly")).toBeVisible();
     await expect(page.getByTestId("step-error-field")).toContainText("To");
     await expect(page.getByTestId("step-error-message")).toContainText("not configured correctly");
     // The raw server message stays available in the technical details.
