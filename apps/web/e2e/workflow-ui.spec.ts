@@ -178,13 +178,14 @@ test.describe('workflow shell', () => {
     await expect(page.getByTestId('weav-mark').first()).toBeVisible();
     await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute('href', '/favicon.svg');
 
-    // The auth layout shows the same W tile next to the brand name.
+    // The auth layout shows the same app-icon mark next to the brand name.
     await page.evaluate(() => localStorage.removeItem('weav_token'));
     await page.goto('/login');
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByTestId('app-sidebar')).toHaveCount(0);
     await expect(page.getByText('Weav', { exact: true }).first()).toBeVisible();
-    await expect(page.locator('svg path[d="M6 9l4 11 4-8 4 8 4-11"]').first()).toBeAttached();
+    await expect(page.getByTestId('weav-mark').first()).toBeVisible();
+    await expect(page.getByTestId('weav-mark').first().locator('rect')).toHaveAttribute('fill', '#2b5fd9');
   });
 
   test('shows readable navigation and moves the active indicator to Workflows', async ({ page }) => {
