@@ -447,7 +447,6 @@ test.describe("workspace connection API adapter", () => {
   });
 
   for (const [status, code, expectedMessage] of [
-    [401, "UNAUTHORIZED", "Your session expired. Please sign in again."],
     [403, "FORBIDDEN", "You do not have access to this connection."],
     [
       404,
@@ -485,6 +484,24 @@ test.describe("workspace connection API adapter", () => {
       await expect(page.getByTestId("connections-empty-state")).toHaveCount(0);
     });
   }
+
+  // A 401 first tries to renew the session; when the renewal is rejected the app signs the user out
+  // (92ca1bd9 session refresh), so the failure shows as the login screen, never as an empty success.
+  test("connections 401 ends the session instead of showing an empty success", async ({ page }) => {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(
+        route,
+        { error: { code: "UNAUTHORIZED", message: "Connection request failed with 401." }, requestId: "connections-request-401" },
+        401,
+      ),
+    );
+    await gotoAuthenticatedConnections(page);
+
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByTestId("connections-empty-state")).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem("weav_token"))).toBeNull();
+  });
 
   test("connections isolates workspace lists and displays server-owned provider metadata", async ({
     page,
@@ -1195,7 +1212,6 @@ test.describe("workspace connection API adapter", () => {
 
   for (const [status, code, expectedMessage] of [
     [400, "BAD_REQUEST", "Check the connection details and try again."],
-    [401, "UNAUTHORIZED", "Your session expired. Please sign in again."],
   ] as const) {
     test(`connection test maps Gateway ${code} (${status}) errors`, async ({
       page,
@@ -1230,6 +1246,27 @@ test.describe("workspace connection API adapter", () => {
       await expect(actionMessage).not.toContainText(`Backend ${code} message`);
     });
   }
+
+  test("connection test 401 ends the session without showing the backend message", async ({ page }) => {
+    await installAuthFixture(page);
+    await page.route("**/api/v1/workspaces/*/connections", (route) =>
+      fulfillJson(route, [authorizedOnce(connection(CONNECTION_GMAIL_ID, "GMAIL"))]),
+    );
+    await page.route(`**/api/v1/workspaces/*/connections/${CONNECTION_GMAIL_ID}/test`, (route) =>
+      fulfillJson(
+        route,
+        { error: { code: "UNAUTHORIZED", message: "Backend UNAUTHORIZED message must not be shown." }, requestId: "connection-test-request-401" },
+        401,
+      ),
+    );
+    await gotoAuthenticatedConnections(page);
+    await openRowMenu(page, CONNECTION_GMAIL_ID);
+    await page.getByTestId(`connection-test-${CONNECTION_GMAIL_ID}`).click();
+
+    // The rejected renewal signs the user out (92ca1bd9), so the login screen replaces the list.
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.locator("body")).not.toContainText("Backend UNAUTHORIZED message");
+  });
 
   test("Google OAuth action is hidden for legacy and non-OAuth connections", async ({
     page,
@@ -1594,6 +1631,8 @@ test.describe("workflow builder connection readiness", () => {
     expect(await x('[data-testid="workflow-node"][data-node-type="http.request"]')).toBeGreaterThan(await x(emailNode));
 
     // Deleting the Sheets step leaves the mail step unreachable, which blocks publication before the server does.
+    // Adding the step pans the canvas to it; fit the view so the first step is reachable again.
+    await page.locator(".react-flow__controls-fitview").click();
     await page.locator(sheetsNode).click();
     await page.keyboard.press("Backspace");
     await expect(page.locator(sheetsNode)).toHaveCount(0);

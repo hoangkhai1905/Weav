@@ -17,6 +17,11 @@ async function gotoRecovery(page: Page) {
 }
 
 test.describe('web password recovery HTTP integration', () => {
+  // The app defaults to Vietnamese; these assertions read the English copy.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('weav_lang_v1', 'EN'));
+  });
+
   test('sends the exact OTP payload and keeps the forgot response generic', async ({ page }) => {
     let requests = 0;
     await page.route('**/api/auth/forgot-password', async (route) => {
@@ -70,7 +75,7 @@ test.describe('web password recovery HTTP integration', () => {
     await page.getByLabel('New password', { exact: true }).fill('new-password-123');
     await page.getByLabel('Confirm new password').fill('different-password');
     await page.getByTestId('complete-reset-button').click();
-    await expect(page.getByRole('alert')).toContainText('Passwords do not match');
+    await expect(page.getByRole('alert')).toContainText('The passwords do not match.');
     expect(verifyRequests).toBe(0);
 
     await page.getByLabel('Confirm new password').fill('new-password-123');

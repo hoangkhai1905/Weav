@@ -95,6 +95,40 @@ async function gotoAuthenticated(page: Page, path: string) {
   if (new URL(page.url()).pathname === '/login') await page.goto(path);
 }
 
+const WORKFLOW_ID = '00000000-0000-4000-8000-000000000009';
+
+// The builder opens a saved draft with a manual trigger only; the OCR step is added from the palette.
+async function stubBuilderWorkflow(page: Page) {
+  const draft = {
+    workflowId: WORKFLOW_ID,
+    name: 'OCR fixture',
+    status: 'DRAFT',
+    schemaVersion: '1.0',
+    definition: { schemaVersion: '1.0', nodes: [{ id: 'manual', type: 'trigger.manual', config: {} }], edges: [], variables: {} },
+    editorState: { nodes: { manual: { name: 'Manual trigger', position: { x: 100, y: 120 } } } },
+    currentVersionId: null,
+    createdAt: '2026-10-10T10:00:00Z',
+    updatedAt: '2026-10-10T10:00:00Z',
+    publishedAt: null,
+    triggers: [],
+  };
+  await page.route('**/api/v1/workspaces/*/workflows**', async (route) => {
+    const { pathname } = new URL(route.request().url());
+    const body = pathname.endsWith(`/workflows/${WORKFLOW_ID}`) ? draft
+      : pathname.endsWith('/node-capabilities') ? { nodes: {} }
+        : { items: [], page: 0, size: 100, totalElements: 0, totalPages: 1, hasNext: false };
+    await fulfillWorkspaceApi(route, body);
+  });
+  await page.route('**/api/v1/workspaces/*/connections**', async (route) => {
+    await fulfillWorkspaceApi(route, []);
+  });
+}
+
+async function addOcrStep(page: Page) {
+  await page.getByTestId('workflow-add-step').click();
+  await page.locator('[data-testid="workflow-palette-item"][data-node-type="ocr.extract"]').click();
+}
+
 test.describe('workspace read and switch foundation', () => {
   test('maps PageResult, switches by an existing ID, hides stale members, and disables unsupported mutations', async ({ page }) => {
     await installAuthFixture(page);
@@ -174,7 +208,7 @@ test.describe('workspace read and switch foundation', () => {
     });
 
     await gotoAuthenticated(page, '/workspace/members');
-    await expect(page.getByTestId('workspace-members-error')).toContainText('Workspace access denied.');
+    await expect(page.getByTestId('workspace-members-error')).toContainText('You do not have access to this workspace. Select another workspace.');
     await expect(page.getByTestId('workspace-member-row')).toHaveCount(0);
   });
 
@@ -232,6 +266,7 @@ test.describe('workspace read and switch foundation', () => {
 test.describe('workspace-scoped OCR', () => {
   test('uses the selected real workspace ID in the OCR URL', async ({ page }) => {
     await installAuthFixture(page);
+    await stubBuilderWorkflow(page);
     await page.route('**/api/v1/workspaces**', async (route) => {
       const url = new URL(route.request().url());
       if (url.pathname === '/api/v1/workspaces') {
@@ -263,11 +298,10 @@ test.describe('workspace-scoped OCR', () => {
     await gotoAuthenticated(page, '/workspace');
     await expect(page.getByTestId('workspace-selector')).toHaveValue(WORKSPACE_B);
     const membersResponse = page.waitForResponse((response) => response.url().includes(`/api/v1/workspaces/${WORKSPACE_B}/members`));
-    await page.goto('/workflows/wf-001/builder');
+    await page.goto(`/workflows/${WORKFLOW_ID}/builder`);
     await membersResponse;
-    await expect(page.getByTestId('builder-workspace-context')).toContainText(WORKSPACE_B);
-    await page.getByTestId('workflow-add-step').click();
-    await page.getByRole('button', { name: 'Read text from a file' }).click();
+    await expect(page.getByTestId('builder-workspace-context')).toContainText('Beta Workspace');
+    await addOcrStep(page);
     await page.getByTestId('workflow-inspector').getByTestId('ocr-file-input').setInputFiles({
       name: 'contract.pdf',
       mimeType: 'application/pdf',
@@ -280,8 +314,9 @@ test.describe('workspace-scoped OCR', () => {
     expect(capturedUrl).toContain(`/api/v1/workspaces/${WORKSPACE_B}/ocr/extractions`);
   });
 
-  test('blocks OCR before any request when no workspace is selected', async ({ page }) => {
+  test('keeps the builder closed to OCR and sends no OCR request when no workspace is selected', async ({ page }) => {
     await installAuthFixture(page);
+    await stubBuilderWorkflow(page);
     await page.route('**/api/v1/workspaces**', async (route) => {
       const url = new URL(route.request().url());
       if (url.pathname === '/api/v1/workspaces') {
@@ -297,16 +332,10 @@ test.describe('workspace-scoped OCR', () => {
       await route.abort();
     });
 
-    await gotoAuthenticated(page, '/workflows/wf-001/builder');
-    await page.getByTestId('workflow-add-step').click();
-    await page.getByRole('button', { name: 'Read text from a file' }).click();
-    await page.getByTestId('workflow-inspector').getByTestId('ocr-file-input').setInputFiles({
-      name: 'contract.pdf',
-      mimeType: 'application/pdf',
-      buffer: Buffer.from('%PDF-1.4 fixture'),
-    });
-
-    await expect(page.getByTestId('ocr-error')).toContainText('Select a workspace before uploading a document.');
+    await gotoAuthenticated(page, `/workflows/${WORKFLOW_ID}/builder`);
+    // Without a workspace the draft cannot load, so no step (and no OCR upload) can be added.
+    await expect(page.getByTestId('builder-workspace-context')).toContainText('Not selected');
+    await expect(page.getByTestId('workflow-add-step')).toBeDisabled();
     expect(ocrCalled).toBe(false);
   });
 });
@@ -314,6 +343,7 @@ test.describe('workspace-scoped OCR', () => {
 test.describe('workspace create and rename mutations', () => {
   test('creates a workspace from the response ID and OCR uses that selected workspace', async ({ page }) => {
     await installAuthFixture(page);
+    await stubBuilderWorkflow(page);
     let listCalls = 0;
     await page.route('**/api/v1/workspaces**', async (route) => {
       const url = new URL(route.request().url());
@@ -347,8 +377,8 @@ test.describe('workspace create and rename mutations', () => {
     await expect(page.getByTestId('workspace-selector')).toHaveValue(WORKSPACE_C);
     await expect(page.getByTestId('workspace-selected-name')).toContainText('Created Workspace');
 
-    await page.goto('/workflows/wf-001/builder');
-    await expect(page.getByTestId('builder-workspace-context')).toContainText(WORKSPACE_C);
+    await page.goto(`/workflows/${WORKFLOW_ID}/builder`);
+    await expect(page.getByTestId('builder-workspace-context')).toContainText('Created Workspace');
     let capturedOcrUrl = '';
     await page.route('**/api/v1/workspaces/*/ocr/extractions', async (route) => {
       capturedOcrUrl = route.request().url();
@@ -363,8 +393,7 @@ test.describe('workspace create and rename mutations', () => {
         metadata: { language: 'en', processingTimeMs: 1, quality: 'OK', warnings: [] },
       });
     });
-    await page.getByTestId('workflow-add-step').click();
-    await page.getByRole('button', { name: 'Read text from a file' }).click();
+    await addOcrStep(page);
     await page.getByTestId('workflow-inspector').getByTestId('ocr-file-input').setInputFiles({
       name: 'created.pdf',
       mimeType: 'application/pdf',
@@ -529,7 +558,7 @@ test.describe('workspace create and rename mutations', () => {
     await gotoAuthenticated(page, '/workspace/settings');
     await page.getByTestId('workspace-rename-name').fill('Forbidden Rename');
     await page.getByTestId('workspace-rename-submit').click();
-    await expect(page.getByTestId('workspace-rename-error')).toContainText('owner');
+    await expect(page.getByTestId('workspace-rename-error')).toContainText('You do not have access to this workspace.');
     await expect(page.getByTestId('workspace-rename-name')).toHaveValue('Forbidden Rename');
     await expect(page.getByTestId('workspace-selector')).toHaveValue(WORKSPACE_A);
     await expect(page.getByText('Workspace renamed.', { exact: true })).toHaveCount(0);
@@ -565,7 +594,7 @@ test.describe('workspace create and rename mutations', () => {
     await page.getByTestId('workspace-rename-name').fill('Lost Workspace');
     await page.getByTestId('workspace-rename-submit').click();
     await expect(page.getByTestId('workspace-empty')).toBeVisible();
-    await expect(page.getByTestId('workspace-members-error')).toContainText('no longer accessible');
+    await expect(page.getByTestId('workspace-members-error')).toContainText('This workspace no longer exists or you no longer have access to it.');
     await expect(page.getByTestId('workspace-selector')).toHaveCount(0);
   });
 
