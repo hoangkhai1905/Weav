@@ -146,15 +146,15 @@ test.describe("run history (stubbed backend)", () => {
     await open(page);
     await expect(page.getByTestId("execution-step-row")).toHaveCount(3);
     // Graph order: webhook first, then the step that depends on it, the unused legacy trigger last.
-    await expect(rowNames(page)).toHaveText(["Webhook in", "Send email", "Old manual"]);
+    await expect(rowNames(page)).toHaveText(["1. Webhook in", "2. Send email", "3. Old manual"]);
     // The skipped step is labelled, and the default selection is the first executed step.
     const skippedRow = page.getByTestId("execution-step-row").filter({ hasText: "Old manual" });
-    await expect(skippedRow).toContainText("Not run");
+    await expect(skippedRow).toContainText("Skipped, on a branch that was not taken");
     await expect(page.getByTestId("execution-step-row").first()).toHaveAttribute("aria-pressed", "true");
     await expect(skippedRow).toHaveAttribute("aria-pressed", "false");
 
     // It keeps polling while RUNNING and becomes SUCCESS without a manual refresh.
-    await expect(page.locator("h2 + span", { hasText: "Success" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("execution-status").filter({ hasText: "Success" })).toBeVisible({ timeout: 15_000 });
     expect(calls).toBeGreaterThanOrEqual(3);
 
     // Terminal: no further detail requests.
@@ -194,10 +194,13 @@ test.describe("run history (stubbed backend)", () => {
     await install(page, { status: () => "FAILED", nodes: () => nodes, detailCalls: () => {} });
 
     await open(page);
-    await expect(page.getByRole("alert").filter({ hasText: "To: This step is not configured correctly" })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "Step 2 (Send email) could not run" })).toBeVisible();
+    // The result block names the field next to the plain-language error.
+    await expect(page.getByRole("region", { name: "Step 2 · Send email" }).getByText("To: This step is not configured correctly")).toBeVisible();
     await expect(page.getByTestId("step-error-field")).toContainText("To");
-    // The raw server message stays available in the details view.
     await expect(page.getByTestId("step-error-message")).toContainText("not configured correctly");
+    // The raw server message stays available in the technical details.
+    await page.getByText("Technical details").click();
     await expect(page.getByText("The 'to' field is not a valid email address.")).toBeVisible();
     // The failed step is selected by default, not the skipped one.
     await expect(page.getByTestId("execution-step-row").filter({ hasText: "Send email" })).toHaveAttribute("aria-pressed", "true");
@@ -209,7 +212,8 @@ test.describe("run history (stubbed backend)", () => {
     await page.goto("/workflows");
 
     const row = page.getByRole("row").filter({ hasText: "Reply to webhook" });
-    await expect(row).toContainText("WEBHOOK");
+    await expect(row).toContainText("Runs when another system sends data");
+    await expect(row).not.toContainText("when you press run");
     await expect(row.getByRole("button", { name: /More workflow actions: Reply to webhook/ })).toBeVisible();
   });
 });

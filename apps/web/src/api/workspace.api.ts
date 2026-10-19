@@ -459,12 +459,20 @@ export const workspaceApi = {
     input: AddWorkspaceMemberInput,
   ): Promise<WorkspaceMember> {
     if (!isWorkspaceMockMode) {
-      const member = await requestWorkspace<MemberView>({
-        method: 'POST',
-        url: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`,
-        data: { email: input.email.trim() },
-      });
-      return mapMember(member);
+      try {
+        const member = await requestWorkspace<MemberView>({
+          method: 'POST',
+          url: `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/members`,
+          data: { email: input.email.trim() },
+        });
+        return mapMember(member);
+      } catch (error) {
+        // A 409 here can only mean the user is already a member; the generic workspace conflict copy would mislead.
+        if (error instanceof WorkspaceApiError && error.status === 409) {
+          throw new WorkspaceApiError(409, 'USER_ALREADY_MEMBER', tr('msg.user_already_workspace_member'), false, error.requestId);
+        }
+        throw error;
+      }
     }
 
     await delay(300);

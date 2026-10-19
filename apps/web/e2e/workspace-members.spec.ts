@@ -175,11 +175,11 @@ test.describe('workspace member Gateway integration', () => {
 
     await gotoWorkspace(page);
     await page.getByTestId('workspace-member-add-submit').click();
-    await expect(page.getByTestId('workspace-member-error')).toContainText('required');
+    await expect(page.getByTestId('workspace-member-error')).toContainText('Enter the email of a user who already has an account.');
     expect(addCalls).toBe(0);
     await page.getByTestId('workspace-member-email').fill('already@example.com');
     await page.getByTestId('workspace-member-add-submit').click();
-    await expect(page.getByTestId('workspace-member-error')).toContainText('already a workspace member');
+    await expect(page.getByTestId('workspace-member-error')).toContainText('This user is already a member of this workspace.');
     await expect(page.getByTestId('workspace-member-email')).toHaveValue('already@example.com');
     await expect(page.getByTestId('workspace-member-success')).toHaveCount(0);
   });

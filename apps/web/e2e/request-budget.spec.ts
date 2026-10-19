@@ -62,7 +62,7 @@ test('Dashboard to Workflows to run history and back stays within the API reques
   });
 
   await page.goto('/dashboard');
-  await expect(page.getByText('Workflow 1', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('region', { name: '7-day numbers' })).toContainText('24 / 30');
 
   await page.getByRole('link', { name: 'Workflows', exact: true }).first().click();
   const rows = page.getByTestId('workflow-row');
@@ -73,7 +73,7 @@ test('Dashboard to Workflows to run history and back stays within the API reques
   await expect(page.getByTestId('execution-run-item').first()).toBeVisible();
 
   await page.getByRole('link', { name: 'Dashboard', exact: true }).first().click();
-  await expect(page.getByText('Workflow 1', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('region', { name: '7-day numbers' })).toContainText('24 / 30');
 
   console.log('API_REQUESTS', total, JSON.stringify([...counts.entries()]));
   expect(total).toBeLessThan(25);

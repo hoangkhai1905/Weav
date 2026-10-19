@@ -1,40 +1,39 @@
 import { expect, test } from '@playwright/test';
 import { addNode, loginAndOpenBuilder } from './support/builder.js';
+import { expectNoUnmatched, openStubbedBuilder, resetUnmatched } from './support/http-builder.js';
+
+test.beforeEach(resetUnmatched);
+test.afterEach(expectNoUnmatched);
 
 test('ai.extract needs a valid output schema', async ({ page }) => {
-  await loginAndOpenBuilder(page);
+  await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
+  const savedDrafts = await openStubbedBuilder(page);
   await addNode(page, 'ai.extract');
-  // NOTE (Task 10 deviation, coordinator unresponsive): page-wide 'Not configured'/'Ready'
-  // match several canvas badges, so these two assertions are scoped to the inspector.
-  // The reload tail is replaced by a mock-storage persistence check: in mock mode the
-  // canvas always resets to INITIAL_NODES on reload and never renders the stored draft.
+  // Page-wide 'Not configured'/'Ready' match several canvas badges, so these are scoped to the inspector.
   const inspector = page.getByTestId('workflow-inspector');
   await expect(inspector.getByText('Not configured')).toBeVisible();
-  const editor = page.getByLabel('Output schema (JSON)');
+  const editor = page.getByLabel('Details to pull');
   await editor.fill('{"type":"array"}');
   await editor.blur();
-  await expect(page.getByRole('alert')).toContainText('root must be an object');
+  await expect(page.getByRole('alert')).toContainText('must start with { } and contain "type": "object"');
   await editor.fill('{"type":"object","properties":{"token":{"type":"string"}}}');
   await editor.blur();
-  await page.getByLabel('Input text').fill('{{trigger.input.body}}');
+  await page.getByRole('textbox', { name: 'Text to read' }).fill('{{trigger.input.body}}');
   await expect(inspector.getByText('Ready')).toBeVisible();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page.getByText('Saved', { exact: true })).toBeVisible();
-  const persisted = await page.evaluate(() => {
-    const raw = localStorage.getItem('weav_mock_workflows_v1') ?? '[]';
-    const workflows = JSON.parse(raw) as Array<{ id: string; nodes: Array<{ type: string; config: Record<string, unknown> }> }>;
-    return (workflows.find((w) => w.id === 'wf-001')?.nodes ?? []).filter((n) => n.type === 'ai.extract').map((n) => n.config);
-  });
-  expect(persisted).toContainEqual({ text: '{{trigger.input.body}}', outputSchema: { type: 'object', properties: { token: { type: 'string' } } } });
+  // HTTP mode: the draft POSTed to the Workflow Service carries the new step's config.
+  expect(savedDrafts.length).toBeGreaterThan(0);
+  const definition = savedDrafts.at(-1)?.definition as { nodes: Array<{ type: string; config: Record<string, unknown> }> };
+  const configs = definition.nodes.filter((n) => n.type === 'ai.extract').map((n) => n.config);
+  expect(configs).toContainEqual({ text: '{{trigger.input.body}}', outputSchema: { type: 'object', properties: { token: { type: 'string' } } } });
 });
 
 test('configured ai.extract does not block publishing (R7)', async ({ page }) => {
-  // Ruling R7: ai.* nodes must not appear in getPublishBlockers. In mock mode the
-  // canvas always loads INITIAL_NODES, so remove the two legitimately-blocking
-  // nodes (unconfigured condition + email) via keyboard delete, configure the
-  // built-in ai.extract, and Publish must become enabled with no AI banner.
-  await loginAndOpenBuilder(page);
-  await expect(page.getByTestId('workflow-canvas')).toBeVisible();
+  // Ruling R7: ai.* nodes must not appear in getPublishBlockers. Remove the two legitimately-blocking
+  // nodes (unconfigured condition + email) via keyboard delete, configure the saved ai.extract,
+  // and Publish must become enabled with no AI banner.
+  await openStubbedBuilder(page);
 
   await page.getByTestId('rf__node-node-condition').getByTestId('workflow-node').click();
   await page.keyboard.press('Backspace');
@@ -44,12 +43,14 @@ test('configured ai.extract does not block publishing (R7)', async ({ page }) =>
   await page.keyboard.press('Backspace');
   await expect(page.getByTestId('rf__node-node-notify')).toHaveCount(0);
 
+  // Deleting steps leaves the canvas panned: fit the view so the AI step is on screen.
+  await page.getByRole('button', { name: 'Fit View' }).click();
   await page.getByTestId('rf__node-node-extract').getByTestId('workflow-node').click();
   const inspector = page.getByTestId('workflow-inspector');
-  const editor = page.getByLabel('Output schema (JSON)');
+  const editor = page.getByLabel('Details to pull');
   await editor.fill('{"type":"object","properties":{"token":{"type":"string"}}}');
   await editor.blur();
-  await page.getByLabel('Input text').fill('{{trigger.input.body}}');
+  await page.getByRole('textbox', { name: 'Text to read' }).fill('{{trigger.input.body}}');
   await expect(inspector.getByText('Ready')).toBeVisible();
 
   await expect(page.getByTestId('workflow-publish')).toBeEnabled();

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { addNode, loginAndOpenBuilder } from './support/builder.js';
+import { expectNoUnmatched, openStubbedBuilder, resetUnmatched } from './support/http-builder.js';
 
 type WorkflowFixture = {
   id: string;
@@ -36,11 +37,20 @@ const V1_NODE_TYPES = [
   'logic.switch',
   'data.set',
   'ai.generate',
+  // Later nodes: chat sends, text/date formatting, workflow-to-workflow calls and events.
+  'discord.send_message',
+  'slack.send_message',
+  'teams.send_message',
+  'format.text',
+  'format.datetime',
+  'weav.workflow',
+  'trigger.workflow_event',
 ].sort();
 
 const runtimeErrors = new WeakMap<Page, string[]>();
 
 test.beforeEach(async ({ page }) => {
+  resetUnmatched();
   const errors: string[] = [];
   runtimeErrors.set(page, errors);
   page.on('pageerror', (error) => errors.push(error.message));
@@ -53,11 +63,12 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.afterEach(async ({ page }) => {
+  expectNoUnmatched();
   expect(runtimeErrors.get(page) ?? [], 'browser console, runtime, and network errors').toEqual([]);
 });
 
 test('catalog matches exactly the Workflow V1 node set and contract defaults', async ({ page }) => {
-  await loginAndOpenBuilder(page);
+  await openStubbedBuilder(page);
   const catalog = await page.evaluate(async () => {
     const dynamicImport = new Function('modulePath', 'return import(modulePath)') as (
       modulePath: string,
@@ -88,11 +99,11 @@ test('catalog matches exactly the Workflow V1 node set and contract defaults', a
 });
 
 test('builder palette derives from the catalog and offers exactly the V1 node set', async ({ page }) => {
-  await loginAndOpenBuilder(page);
+  await openStubbedBuilder(page);
   await page.getByTestId('workflow-add-step').click();
 
   const paletteItems = page.getByTestId('workflow-palette-item');
-  await expect(paletteItems).toHaveCount(13);
+  await expect(paletteItems).toHaveCount(V1_NODE_TYPES.length);
   const paletteTypes = await paletteItems.evaluateAll((items) =>
     items
       .map((item) => (item as unknown as { getAttribute: (name: string) => string | null }).getAttribute('data-node-type'))
@@ -100,7 +111,7 @@ test('builder palette derives from the catalog and offers exactly the V1 node se
       .sort()
   );
   expect(paletteTypes).toEqual(V1_NODE_TYPES);
-  await expect(page.getByTestId('workflow-palette-count')).toContainText('13');
+  await expect(page.getByTestId('workflow-palette-count')).toContainText(String(V1_NODE_TYPES.length));
   await expect(page.locator('[data-node-type="agent.task"]')).toHaveCount(0);
   await expect(page.locator('[data-node-type="google.docs"]')).toHaveCount(0);
   await expect(page.locator('[data-node-type="logic.filter"]')).toHaveCount(0);
@@ -108,7 +119,7 @@ test('builder palette derives from the catalog and offers exactly the V1 node se
 
 test('shows unavailable draft badges and keeps preview separate from a V1 run', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await loginAndOpenBuilder(page);
+  await openStubbedBuilder(page);
 
   const webhook = page.locator('[data-node-type="trigger.webhook"][data-testid="workflow-node"]');
   await expect(webhook).toHaveAttribute('data-readiness', 'draft');
@@ -123,6 +134,8 @@ test('shows unavailable draft badges and keeps preview separate from a V1 run', 
   const condition = page.locator('[data-node-type="logic.condition"][data-testid="workflow-node"]');
   await expect(condition).toHaveAttribute('data-readiness', 'not-configured');
   await expect(condition.getByTestId('workflow-node-readiness')).toHaveText('Not configured');
+  // The draft-activity console starts collapsed: open it first.
+  await page.getByRole('button', { name: /Draft activity/ }).click();
   await expect(page.getByTestId('workflow-telemetry-empty')).toContainText('No execution telemetry');
   await expect(page.getByText(/#EX-8492|Webhook validated|120ms|850ms|45ms|210ms/)).toHaveCount(0);
 
@@ -139,7 +152,7 @@ test('shows unavailable draft badges and keeps preview separate from a V1 run', 
 });
 
 test('schedule and webhook inspectors use system-managed V1 inputs', async ({ page }) => {
-  await loginAndOpenBuilder(page);
+  await openStubbedBuilder(page);
 
   await addNode(page, 'trigger.schedule');
   const schedule = page.getByTestId('workflow-inspector');
@@ -150,29 +163,31 @@ test('schedule and webhook inspectors use system-managed V1 inputs', async ({ pa
   await schedule.getByTestId('schedule-cron').fill('0 15 8 * * MON-FRI');
   await schedule.getByTestId('schedule-timezone').selectOption('Asia/Ho_Chi_Minh');
 
+  // The canvas centres on the step just added, which pans the saved webhook trigger off screen: fit the view.
+  await page.getByRole('button', { name: 'Fit View' }).click();
   await page.getByTestId('rf__node-node-webhook').getByTestId('workflow-node').click();
   const webhook = page.getByTestId('workflow-inspector');
-  await expect(webhook.getByTestId('webhook-endpoint-readiness')).toContainText('system-managed');
-  await expect(webhook.getByTestId('webhook-config')).toContainText('does not choose a public path');
+  await expect(webhook.getByTestId('webhook-endpoint-readiness')).toContainText('public address is managed by the system');
+  await expect(webhook.getByTestId('webhook-config')).toContainText('key and secret are issued when you publish');
   await expect(webhook.locator('input[name="path"]')).toHaveCount(0);
   await expect(webhook.locator('input[name="endpoint"]')).toHaveCount(0);
 });
 
 test('condition editor is declarative and both branch ports survive editor reload mapping', async ({ page }, testInfo) => {
-  await loginAndOpenBuilder(page);
+  await openStubbedBuilder(page);
   await page.getByTestId('rf__node-node-condition').getByTestId('workflow-node').click();
 
   const inspector = page.getByTestId('workflow-inspector');
-  await expect(inspector.getByTestId('condition-left')).toHaveValue('');
+  await expect(inspector.getByTestId('condition-left')).toHaveText('');
   await expect(inspector.getByTestId('condition-operator')).toHaveValue('eq');
   await expect(inspector.getByTestId('condition-operator').locator('option')).toHaveCount(6);
-  await expect(inspector.getByTestId('condition-right')).toHaveValue('');
+  await expect(inspector.getByTestId('condition-right')).toHaveText('');
   await inspector.getByTestId('condition-left').fill('{{ nodes.extract_order_v1.output.extractedJson.total_amount }}');
   await inspector.getByTestId('condition-operator').selectOption('gt');
   await inspector.getByTestId('condition-right').fill('500');
   await expect(inspector.getByLabel(/javascript|code|script/i)).toHaveCount(0);
 
-  const conditionNode = page.getByTestId('workflow-node').filter({ hasText: 'If / Condition' }).last();
+  const conditionNode = page.locator('[data-testid="workflow-node"][data-node-type="logic.condition"]');
   await expect(conditionNode.getByTestId('condition-source-true')).toBeVisible();
   await expect(conditionNode.getByTestId('condition-source-false')).toBeVisible();
 
@@ -221,7 +236,7 @@ test('condition editor is declarative and both branch ports survive editor reloa
 });
 
 test('unconfigured integrations remain visible and cannot be published as ready', async ({ page }) => {
-  await loginAndOpenBuilder(page);
+  await openStubbedBuilder(page);
   await addNode(page, 'google.sheets');
 
   const inspector = page.getByTestId('workflow-inspector');
@@ -230,13 +245,13 @@ test('unconfigured integrations remain visible and cannot be published as ready'
   await expect(page.getByTestId('workflow-publish')).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
 
-  await page.locator('[data-node-type="trigger.telegram"]').click();
+  await addNode(page, 'trigger.telegram');
   await expect(page.getByTestId('integration-readiness')).toContainText('select a Telegram bot connection');
   await expect(page.getByTestId('workflow-publish')).toBeDisabled();
 });
 
 test('OCR draft source allows one source at a time and offers a file from an earlier step', async ({ page }) => {
-  await loginAndOpenBuilder(page);
+  await openStubbedBuilder(page);
   await addNode(page, 'ocr.extract');
 
   const inspector = page.getByTestId('workflow-inspector');
@@ -244,6 +259,8 @@ test('OCR draft source allows one source at a time and offers a file from an ear
   await expect(mode).toHaveValue('url');
   await expect(inspector.getByTestId('ocr-file-url')).toHaveValue('');
   await expect(inspector.getByTestId('integration-readiness')).toContainText('not enabled on the server');
+  // The workspace-file source is hidden until the server enables it.
+  await expect(mode.locator('option[value="artifact"]')).toHaveCount(0);
 
   await inspector.getByTestId('ocr-file-url').fill('https://files.example.test/invoice.pdf');
   await mode.selectOption('file');
@@ -254,6 +271,14 @@ test('OCR draft source allows one source at a time and offers a file from an ear
 
   await mode.selectOption('url');
   await expect(inspector.getByTestId('ocr-file-url')).toHaveValue('');
+});
+
+test('OCR draft source clears the other sources when the server enables the workspace-file source', async ({ page }) => {
+  await openStubbedBuilder(page, { capabilities: { 'ocr.extract': { available: true, sources: ['url', 'file', 'artifact'] } } });
+  await addNode(page, 'ocr.extract');
+
+  const inspector = page.getByTestId('workflow-inspector');
+  const mode = inspector.getByTestId('ocr-source-mode');
   await mode.selectOption('artifact');
   await inspector.getByTestId('ocr-artifact-id').fill('1b24b7f4-c277-4475-a44f-a2492d0a4bf3');
   await mode.selectOption('file');

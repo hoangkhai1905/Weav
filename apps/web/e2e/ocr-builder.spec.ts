@@ -1,6 +1,9 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import { expectNoUnmatched, getOnly, notFound, registerApiFallback, resetUnmatched } from './support/http-builder.js';
 
 const OCR_WORKSPACE_ID = '00000000-0000-4000-8000-000000000001';
+const OCR_WORKFLOW_ID = '00000000-0000-4000-8000-000000000002';
+const BUILDER_URL = `/workflows/${OCR_WORKFLOW_ID}/builder`;
 
 function ocrSuccessResponse(fileName = 'fixture.png') {
   return {
@@ -27,10 +30,12 @@ function ocrSuccessResponse(fileName = 'fixture.png') {
 
 test.describe('OCR Builder Inspector Gateway Integration', () => {
   test.beforeEach(async ({ page }) => {
+    resetUnmatched();
+    await registerApiFallback(page);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.addInitScript({ content: "window.localStorage.setItem('weav_token', 'test-bearer-token-12345')" });
-    await page.route('**/api/auth/me', async (route) => {
+    await page.route('**/api/auth/me', getOnly(async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -43,13 +48,13 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
           status: 'ACTIVE',
         }),
       });
-    });
+    }));
     await page.route('**/api/v2/notifications/unread-count', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ count: 0 }) });
     });
     await page.route('**/api/v1/workspaces**', async (route) => {
       const pathname = new URL(route.request().url()).pathname;
-      if (pathname === '/api/v1/workspaces') {
+      if (pathname === '/api/v1/workspaces' && route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -79,7 +84,46 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       }
       await route.fallback();
     });
+    // The builder opens a saved draft with a manual trigger only; the OCR step is added from the palette.
+    const draft = {
+      workflowId: OCR_WORKFLOW_ID,
+      name: 'OCR fixture',
+      status: 'DRAFT',
+      schemaVersion: '1.0',
+      definition: { schemaVersion: '1.0', nodes: [{ id: 'manual', type: 'trigger.manual', config: {} }], edges: [], variables: {} },
+      editorState: { nodes: { manual: { name: 'Manual trigger', position: { x: 100, y: 120 } } } },
+      currentVersionId: null,
+      createdAt: '2026-10-10T10:00:00Z',
+      updatedAt: '2026-10-10T10:00:00Z',
+      publishedAt: null,
+      triggers: [],
+    };
+    await page.route((url) => url.pathname.startsWith(`/api/v1/workspaces/${OCR_WORKSPACE_ID}/workflows/`), async (route) => {
+      const { pathname } = new URL(route.request().url());
+      if (route.request().method() !== 'GET') return route.fallback();
+      if (pathname.endsWith('/node-capabilities')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ nodes: {} }) });
+      if (pathname.endsWith(`/workflows/${OCR_WORKFLOW_ID}`)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(draft) });
+      return notFound(route);
+    });
+    await page.route(/\/workflows\?page=/, getOnly(async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [], page: 0, size: 100, totalElements: 0, totalPages: 1, hasNext: false }) });
+    }));
+    await page.route((url) => url.pathname === `/api/v1/workspaces/${OCR_WORKSPACE_ID}/connections`, getOnly(async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    }));
   });
+
+  test.afterEach(expectNoUnmatched);
+
+  // Opens the saved draft and adds the OCR step from the palette; returns the step inspector.
+  async function addOcrStep(page: Page) {
+    await page.goto(BUILDER_URL, { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('workflow-add-step').click();
+    await page.locator('[data-testid="workflow-palette-item"][data-node-type="ocr.extract"]').click();
+    const inspector = page.getByTestId('workflow-inspector');
+    await expect(inspector).toBeVisible();
+    return inspector;
+  }
 
   test('sends typed multipart request to API Gateway public route and renders contract fields', async ({ page }) => {
     let capturedUrl = '';
@@ -154,16 +198,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       });
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-
-    // Add / open OCR node
-    await page.getByTestId('workflow-add-step').click();
-    const ocrBtn = page.getByRole('button', { name: 'Read text from a file' });
-    await expect(ocrBtn).toBeVisible();
-    await ocrBtn.click();
-
-    const inspector = page.getByTestId('workflow-inspector');
-    await expect(inspector).toBeVisible();
+    const inspector = await addOcrStep(page);
     await expect(inspector).toContainText('Read text from a file');
 
     // Select file
@@ -176,7 +211,9 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
 
     await expect(inspector.getByText('contract.pdf', { exact: true })).toBeVisible();
 
-    // Verify language & table detection controls
+    // Verify language & table detection controls (under the advanced section)
+    await inspector.getByTestId('ocr-advanced').locator('summary').click();
+    await inspector.getByTestId('ocr-detect-tables').check();
     const langSelect = inspector.locator('#ocr-language');
     await expect(langSelect).toHaveValue('vi+en');
 
@@ -192,7 +229,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     expect(capturedBody).toContain('name="language"');
     expect(capturedBody).toContain('vi+en');
     expect(capturedBody).toContain('name="detectTables"');
-    expect(capturedBody).toContain('true');
+    expect(capturedBody).toMatch(/name="detectTables"\r\n\r\ntrue/);
     expect(capturedBody).toContain('filename="contract.pdf"');
 
     // Verify response rendering
@@ -228,14 +265,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       await route.abort();
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-    await page.getByTestId('workflow-add-step').click();
-    const ocrBtn = page.getByRole('button', { name: 'Read text from a file' });
-    await expect(ocrBtn).toBeVisible();
-    await ocrBtn.click();
-
-    const inspector = page.getByTestId('workflow-inspector');
-    await expect(inspector).toBeVisible();
+    const inspector = await addOcrStep(page);
     const fileInput = inspector.getByTestId('ocr-file-input');
 
     await fileInput.setInputFiles({
@@ -259,14 +289,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       await route.abort();
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-    await page.getByTestId('workflow-add-step').click();
-    const ocrBtn = page.getByRole('button', { name: 'Read text from a file' });
-    await expect(ocrBtn).toBeVisible();
-    await ocrBtn.click();
-
-    const inspector = page.getByTestId('workflow-inspector');
-    await expect(inspector).toBeVisible();
+    const inspector = await addOcrStep(page);
     const fileInput = inspector.getByTestId('ocr-file-input');
 
     // 11 MiB payload buffer
@@ -327,14 +350,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       });
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-    await page.getByTestId('workflow-add-step').click();
-    const ocrBtn = page.getByRole('button', { name: 'Read text from a file' });
-    await expect(ocrBtn).toBeVisible();
-    await ocrBtn.click();
-
-    const inspector = page.getByTestId('workflow-inspector');
-    await expect(inspector).toBeVisible();
+    const inspector = await addOcrStep(page);
 
     const fileInput = inspector.getByTestId('ocr-file-input');
     await fileInput.setInputFiles({
@@ -397,14 +413,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       });
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-    await page.getByTestId('workflow-add-step').click();
-    const ocrBtn = page.getByRole('button', { name: 'Read text from a file' });
-    await expect(ocrBtn).toBeVisible();
-    await ocrBtn.click();
-
-    const inspector = page.getByTestId('workflow-inspector');
-    await expect(inspector).toBeVisible();
+    const inspector = await addOcrStep(page);
 
     const fileInput = inspector.getByTestId('ocr-file-input');
     await fileInput.setInputFiles({
@@ -448,14 +457,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       });
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-    await page.getByTestId('workflow-add-step').click();
-    const ocrBtn = page.getByRole('button', { name: 'Read text from a file' });
-    await expect(ocrBtn).toBeVisible();
-    await ocrBtn.click();
-
-    const inspector = page.getByTestId('workflow-inspector');
-    await expect(inspector).toBeVisible();
+    const inspector = await addOcrStep(page);
 
     const fileInput = inspector.getByTestId('ocr-file-input');
     await fileInput.setInputFiles({
@@ -491,14 +493,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       });
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-    await page.getByTestId('workflow-add-step').click();
-    const ocrBtn = page.getByRole('button', { name: 'Read text from a file' });
-    await expect(ocrBtn).toBeVisible();
-    await ocrBtn.click();
-
-    const inspector = page.getByTestId('workflow-inspector');
-    await expect(inspector).toBeVisible();
+    const inspector = await addOcrStep(page);
 
     const fileInput = inspector.getByTestId('ocr-file-input');
     await fileInput.setInputFiles({
@@ -533,10 +528,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ocrSuccessResponse('retry.png')) });
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-    const inspector = page.getByTestId('workflow-inspector');
-    await page.getByTestId('workflow-add-step').click();
-    await page.getByRole('button', { name: 'Read text from a file' }).click();
+    const inspector = await addOcrStep(page);
     await inspector.getByTestId('ocr-file-input').setInputFiles({
       name: 'retry.png',
       mimeType: 'image/png',
@@ -561,10 +553,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ocrSuccessResponse('duplicate.png')) });
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-    const inspector = page.getByTestId('workflow-inspector');
-    await page.getByTestId('workflow-add-step').click();
-    await page.getByRole('button', { name: 'Read text from a file' }).click();
+    const inspector = await addOcrStep(page);
     await inspector.getByTestId('ocr-file-input').setInputFiles({
       name: 'duplicate.png',
       mimeType: 'image/png',
@@ -593,10 +582,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       });
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-    const inspector = page.getByTestId('workflow-inspector');
-    await page.getByTestId('workflow-add-step').click();
-    await page.getByRole('button', { name: 'Read text from a file' }).click();
+    const inspector = await addOcrStep(page);
     await inspector.getByTestId('ocr-file-input').setInputFiles({
       name: 'status.png',
       mimeType: 'image/png',
@@ -629,10 +615,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       });
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-    const inspector = page.getByTestId('workflow-inspector');
-    await page.getByTestId('workflow-add-step').click();
-    await page.getByRole('button', { name: 'Read text from a file' }).click();
+    const inspector = await addOcrStep(page);
     await inspector.getByTestId('ocr-file-input').setInputFiles({
       name: 'auth.png',
       mimeType: 'image/png',
@@ -657,10 +640,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       await route.fulfill({ status: 204, body: '' });
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-    const inspector = page.getByTestId('workflow-inspector');
-    await page.getByTestId('workflow-add-step').click();
-    await page.getByRole('button', { name: 'Read text from a file' }).click();
+    const inspector = await addOcrStep(page);
     await inspector.getByTestId('ocr-file-input').setInputFiles({
       name: 'late.png',
       mimeType: 'image/png',
@@ -675,11 +655,13 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     await expect(page.getByTestId('ocr-result')).toHaveCount(0);
   });
 
-  test('does not send an OCR request when no workspace is selected', async ({ page }) => {
+  // The inspector's "Select a workspace" guard is unreachable in the UI now: without a workspace the
+  // draft never loads, so the builder cannot add a step (and so cannot show the OCR panel) at all.
+  test('keeps the builder closed and sends no OCR request when no workspace is selected', async ({ page }) => {
     let networkCalled = false;
     await page.route('**/api/v1/workspaces**', async (route) => {
       const pathname = new URL(route.request().url()).pathname;
-      if (pathname === '/api/v1/workspaces') {
+      if (pathname === '/api/v1/workspaces' && route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -694,17 +676,10 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       await route.abort();
     });
 
-    await page.goto('/workflows/wf-001/builder', { waitUntil: 'domcontentloaded' });
-    const inspector = page.getByTestId('workflow-inspector');
-    await page.getByTestId('workflow-add-step').click();
-    await page.getByRole('button', { name: 'Read text from a file' }).click();
-    await inspector.getByTestId('ocr-file-input').setInputFiles({
-      name: 'no-workspace.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from('png data'),
-    });
-
-    await expect(inspector.getByTestId('ocr-error')).toContainText('Select a workspace');
+    await page.goto(BUILDER_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('workflow-add-step')).toBeDisabled();
+    await expect(page.getByTestId('workflow-inspector')).toHaveCount(0);
+    await expect(page.getByTestId('ocr-file-input')).toHaveCount(0);
     expect(networkCalled).toBe(false);
   });
 });
