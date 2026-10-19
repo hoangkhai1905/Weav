@@ -164,7 +164,12 @@ test.describe('workflow shell', () => {
   test('uses the WEAV mark in the shell and auth brand, and the SVG favicon', async ({ page }) => {
     await stubBackend(page);
     await page.goto('/dashboard');
-    await expect(page.getByTestId('app-sidebar').locator('svg path[d="M6 9l4 11 4-8 4 8 4-11"]')).toBeAttached();
+    // The app-icon mark (public/icon-192.png): brand-blue tile with the white run-weave symbol.
+    await expect(page.getByTestId('weav-mark').first()).toBeVisible();
+    await expect(page.getByTestId('weav-mark').first().locator('rect')).toHaveAttribute('fill', '#2b5fd9');
+
+    await page.goto('/login');
+    await expect(page.getByTestId('weav-mark').first()).toBeVisible();
     await expect(page.locator('link[rel="icon"][type="image/svg+xml"]')).toHaveAttribute('href', '/favicon.svg');
 
     // The auth layout shows the same W tile next to the brand name.
