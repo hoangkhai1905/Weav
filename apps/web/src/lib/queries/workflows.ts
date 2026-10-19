@@ -1,20 +1,25 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { workflowApi } from '../../api/workflow.api';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
-import { executionApi } from '../../api/execution.api';
-import type { ExecutionDetail, WorkflowDefinition } from '../../types/workflow.types';
+import { monitoringApi, type MonitoringRun } from '../../api/monitoring.api';
+import type { WorkflowDefinition } from '../../types/workflow.types';
 
 const WORKFLOW_LIST_STALE_MS = 30_000;
+/** The workspace run history's largest page. */
+const RECENT_RUNS_LIMIT = 100;
 
 const workspaceKey = () => useWorkspaceStore.getState().activeWorkspaceId ?? 'active';
 
 export const workflowListKey = () => ['workflows', 'list', workspaceKey()] as const;
-/** Raw recent executions shared by the Dashboard and Workflows pages; each derives its own numbers with `select`. */
+/** Raw recent runs of the workspace; pages derive their own per-workflow numbers with `select`. */
 export const workflowRunStatsKey = () => ['workflows', 'run-stats', workspaceKey()] as const;
 
-/** Recent runs of up to 10 non-draft workflows, 3 at a time, so the stats never cost more than 10 requests. */
-export async function fetchRecentExecutions(queryClient: QueryClient): Promise<ExecutionDetail[]> {
-  return executionApi.getRecentExecutions(await fetchWorkflowList(queryClient), { limit: 10, concurrency: 3 });
+/**
+ * The workspace's most recent runs (newest first) in one request, however many workflows there are.
+ * ponytail: one page of 100; a workflow whose runs are all older than the newest 100 shows no stats.
+ */
+export async function fetchRecentExecutions(): Promise<MonitoringRun[]> {
+  return (await monitoringApi.listRuns({ size: RECENT_RUNS_LIMIT })).items;
 }
 
 /** One shared, cached workflow list per workspace (Dashboard, Workflows and Runs pages reuse it). */

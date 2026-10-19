@@ -35,6 +35,8 @@ export interface WorkflowDefinition {
   triggerType: string;
   /** Trigger node types in definition order, when the API provides them (list summaries do). */
   triggerTypes?: string[];
+  /** Non-trigger step types in run order, when the API provides them (list summaries do). */
+  stepTypes?: string[];
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
   createdAt: string;

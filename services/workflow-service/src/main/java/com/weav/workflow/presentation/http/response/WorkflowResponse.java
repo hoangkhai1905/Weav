@@ -90,16 +90,19 @@ public record WorkflowResponse(
 
     public record Summary(UUID workflowId, String name, String description, WorkflowStatus status,
                           String schemaVersion, UUID currentVersionId, Instant createdAt,
-                          Instant updatedAt, Instant publishedAt, List<String> triggerTypes) {
+                          Instant updatedAt, Instant publishedAt, List<String> triggerTypes,
+                          List<String> stepTypes) {
         public Summary {
             triggerTypes = List.copyOf(triggerTypes);
+            stepTypes = List.copyOf(stepTypes);
         }
 
+        /** stepTypes: non-trigger node types in run order (additive, lets the list skip per-row detail calls). */
         public static Summary from(WorkflowSummary workflow) {
             return new Summary(workflow.id(), workflow.name(), workflow.description(),
                     workflow.status(), workflow.schemaVersion(), workflow.currentVersionId(),
                     workflow.createdAt(), workflow.updatedAt(), workflow.publishedAt(),
-                    triggerTypes(workflow.nodeTypes()));
+                    triggerTypes(workflow.nodeTypes()), workflow.stepTypes());
         }
 
         /** Every trigger node type (starting "trigger.") in definition order. */

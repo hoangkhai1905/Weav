@@ -1129,6 +1129,14 @@ components:
       properties:
         workflowId: { type: string, format: uuid }
         status: { type: string, enum: [DRAFT, PUBLISHED, PAUSED] }
+        stepTypes:
+          type: array
+          items: { type: string }
+          description: >-
+            Node types of the current definition's non-trigger steps, in run order (for example
+            ["ai.summarize", "telegram.send_message"]); empty when the workflow has no steps yet.
+            Lets a list show what each workflow does without loading every definition. Additive:
+            older services omit it.
     NodeCapabilities:
       type: object
       required: [nodes]

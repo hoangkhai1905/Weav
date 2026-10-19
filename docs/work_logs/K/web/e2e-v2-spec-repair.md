@@ -51,4 +51,4 @@ Near-duplicate stub helpers across specs (could share `http-builder.ts`); `login
 ## Next
 
 - K: review and merge `test/stale-e2e-v2` into `dev` (`git merge --no-ff`); the app fixes can also be cherry-picked alone.
-- Follow-up: cut the workflows-list request fan-out so `request-budget` passes again.
+- Follow-up: cut the workflows-list request fan-out so `request-budget` passes again. Done on `fix/workflows-list-fanout`, see `workflows-list-fanout.md`.

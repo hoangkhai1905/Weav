@@ -100,8 +100,14 @@ async function stubBackend(page: Page, lang: 'EN' | 'VI' = 'EN', ocrSources: str
   // Workflow list (GET) and one workflow (GET detail, DELETE); sub-paths such as /draft or /publish stay unstubbed.
   await page.route((url) => url.pathname === `${ws}/workflows`, get((route) => {
     return json(route, pageOf(wfIds.filter((wf) => remaining.has(wf)).map((wf) => {
-      const { workflowId, name, status, schemaVersion, currentVersionId, createdAt, updatedAt, publishedAt } = detail(wf);
-      return { workflowId, name, status, schemaVersion, currentVersionId, createdAt, updatedAt, publishedAt };
+      const { workflowId, name, status, schemaVersion, currentVersionId, createdAt, updatedAt, publishedAt, definition } = detail(wf);
+      // Like the Workflow Service list: trigger and step types come with each summary, no detail call needed.
+      const types = definition.nodes.map((node) => node.type);
+      return {
+        workflowId, name, status, schemaVersion, currentVersionId, createdAt, updatedAt, publishedAt,
+        triggerTypes: types.filter((type) => type.startsWith('trigger.')),
+        stepTypes: types.filter((type) => !type.startsWith('trigger.')),
+      };
     })));
   }));
   await page.route((url) => url.pathname.startsWith(`${ws}/workflows/`) && url.pathname.split('/').length === ws.split('/').length + 2, (route) => {
@@ -308,6 +314,21 @@ test.describe('workflow operations list', () => {
     await expect(rows).toHaveCount(1);
     await expect(rows.first()).toContainText('Invoice intake');
     await expect(rows.first().getByTestId('workflow-summary')).toBeVisible();
+    // The sentence's steps come from the list's stepTypes, without loading each workflow.
+    await expect(rows.first().getByTestId('workflow-summary')).toContainText('call an outside service, then let AI pick out the details');
+  });
+
+  test('loads the list without a detail or run request per workflow', async ({ page }) => {
+    const perWorkflow: string[] = [];
+    page.on('request', (request) => {
+      const path = new URL(request.url()).pathname;
+      if (/\/workflows\/[0-9a-f-]{36}(\/executions)?$/.test(path)) perWorkflow.push(path);
+    });
+    await stubBackend(page);
+    await page.goto('/workflows');
+    await expect(page.getByTestId('workflow-row')).toHaveCount(3);
+    await expect(page.getByTestId('workflow-summary').first()).toContainText('Then');
+    expect(perWorkflow).toEqual([]);
   });
 
   test('opens row actions with an accessible trigger', async ({ page }) => {

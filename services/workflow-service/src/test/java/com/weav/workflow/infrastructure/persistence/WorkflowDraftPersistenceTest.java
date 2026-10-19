@@ -124,7 +124,11 @@ class WorkflowDraftPersistenceTest {
         definition.put("nodes", List.of(
                 Map.of("id", "send", "type", "email.send", "config", Map.of()),
                 Map.of("id", "hook", "type", "trigger.webhook", "config", Map.of()),
-                Map.of("id", "manual", "type", "trigger.manual", "config", Map.of())));
+                Map.of("id", "manual", "type", "trigger.manual", "config", Map.of()),
+                Map.of("id", "log", "type", "data.set", "config", Map.of())));
+        definition.put("edges", List.of(
+                Map.of("id", "e1", "source", "hook", "target", "log"),
+                Map.of("id", "e2", "source", "log", "target", "send")));
         workflowRepository.save(new Workflow(ordered, workspaceId, "Ordered", null, WorkflowStatus.DRAFT, "1.0",
                 definition, Map.of("blob", "x".repeat(100_000)), null, actorId,
                 createdAt.plusSeconds(1), createdAt.plusSeconds(1), null, null, null));
@@ -135,8 +139,10 @@ class WorkflowDraftPersistenceTest {
         List<WorkflowSummary> page = workflowRepository.findPage(workspaceId, 0, 10);
 
         assertEquals(List.of(ordered, malformed), page.stream().map(WorkflowSummary::id).toList());
-        assertEquals(List.of("email.send", "trigger.webhook", "trigger.manual"), page.get(0).nodeTypes());
+        assertEquals(List.of("email.send", "trigger.webhook", "trigger.manual", "data.set"), page.get(0).nodeTypes());
+        assertEquals(List.of("data.set", "email.send"), page.get(0).stepTypes());
         assertEquals(List.of(), page.get(1).nodeTypes());
+        assertEquals(List.of(), page.get(1).stepTypes());
     }
 
     @Test

@@ -54,6 +54,8 @@ interface WorkflowSummaryV1 {
   publishedAt?: string | null;
   /** Node types of every trigger node, in definition order. */
   triggerTypes?: string[];
+  /** Non-trigger node types in run order (list only; older services omit it). */
+  stepTypes?: string[];
 }
 
 interface WorkflowDetailV1 extends WorkflowSummaryV1 {
@@ -352,6 +354,7 @@ function mapSummary(summary: WorkflowSummaryV1, workspaceId: string): WorkflowDe
     version: 1,
     triggerType: primaryTrigger(summary.triggerTypes) ?? 'trigger.manual',
     ...(Array.isArray(summary.triggerTypes) ? { triggerTypes: summary.triggerTypes } : {}),
+    ...(Array.isArray(summary.stepTypes) ? { stepTypes: summary.stepTypes.filter((type): type is string => typeof type === 'string') } : {}),
     nodes: [],
     edges: [],
     createdAt: safeString(summary.createdAt),
