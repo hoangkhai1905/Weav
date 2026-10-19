@@ -84,6 +84,9 @@ function computeStats(executions: ExecutionDetail[]): Record<string, RunStats> {
   return stats;
 }
 
+/** Approximate height of the row menu (5 items), used to decide whether it opens upward. */
+const ROW_MENU_HEIGHT = 200;
+
 export function WorkflowsPage() {
   const refreshNotifications = useNotificationMilestoneRefresh();
   const { language, t } = useI18nStore();
@@ -104,14 +107,21 @@ export function WorkflowsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   // The table card scrolls horizontally (overflow clips vertically too), so the row menu is fixed-positioned from its trigger.
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [switching, setSwitching] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!activeMenuId) return;
-    const dismiss = () => setActiveMenuId(null);
+    const id = activeMenuId;
+    const dismiss = () => {
+      // Same as closeMenu: focus returns to the trigger only when it was inside the menu.
+      const menu = document.querySelector('[role="menu"][data-workflow-row-menu]');
+      const hadFocus = Boolean(menu?.contains(document.activeElement));
+      setActiveMenuId(null);
+      if (hadFocus) requestAnimationFrame(() => menuButtonRefs.current[id]?.focus());
+    };
     window.addEventListener('scroll', dismiss, true);
     window.addEventListener('resize', dismiss);
     return () => {
@@ -782,7 +792,11 @@ export function WorkflowsPage() {
                           }}
                           onClick={(event) => {
                             const rect = event.currentTarget.getBoundingClientRect();
-                            setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                            const right = Math.max(8, window.innerWidth - rect.right);
+                            // Flip above the trigger when the menu would run off the bottom of the viewport.
+                            setMenuPos(rect.bottom + 4 + ROW_MENU_HEIGHT > window.innerHeight
+                              ? { bottom: window.innerHeight - rect.top + 4, right }
+                              : { top: rect.bottom + 4, right });
                             setActiveMenuId(activeMenuId === wf.id ? null : wf.id);
                           }}
                           className={`${ICON_BTN} h-8 w-8 ${activeMenuId === wf.id ? 'bg-muted text-foreground' : ''}`}
@@ -799,6 +813,7 @@ export function WorkflowsPage() {
                         {activeMenuId === wf.id && (
                           <motion.div
                             role="menu"
+                            data-workflow-row-menu
                             aria-label={`${t('workflows.more_actions')}: ${wf.name}`}
                             initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
                             animate={{ opacity: 1, y: 0 }}

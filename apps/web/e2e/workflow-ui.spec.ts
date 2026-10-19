@@ -304,6 +304,25 @@ test.describe('workflow operations list', () => {
     await rows.first().getByRole('button', { name: /^More workflow actions/ }).click();
     await expect(page.getByRole('menu')).toBeVisible();
   });
+
+  test('keeps the row menu of the last row inside a short viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 400 });
+    await stubBackend(page);
+    await page.goto('/workflows');
+    const rows = page.getByTestId('workflow-row');
+    await expect(rows).toHaveCount(3);
+    const trigger = rows.last().getByRole('button', { name: /^More workflow actions/ });
+    await trigger.scrollIntoViewIfNeeded();
+    await trigger.click();
+    const menu = page.getByRole('menu');
+    await expect(menu).toBeVisible();
+    const box = (await menu.boundingBox())!;
+    const viewport = page.viewportSize()!;
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+  });
 });
 
 test.describe('bulk workflow actions', () => {
