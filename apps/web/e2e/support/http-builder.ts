@@ -34,6 +34,16 @@ export const unmatched: string[] = [];
 export const resetUnmatched = () => { unmatched.length = 0; };
 export const expectNoUnmatched = () => expect(unmatched, 'API calls the stub does not cover').toEqual([]);
 
+/** Answers GET only; every other method falls through to the 501 fallback. */
+export const getOnly = (answer: (route: Route) => Promise<void>) => (route: Route) =>
+  route.request().method() === 'GET' ? answer(route) : route.fallback();
+
+/** Unknown workflow id: a 404 that is also recorded, so a request to the wrong workflow fails the test. */
+export const notFound = (route: Route) => {
+  unmatched.push(`${route.request().method()} ${new URL(route.request().url()).pathname} (404)`);
+  return json(route, { error: 'not found' }, 404);
+};
+
 /** Registers the 501 fallback first (later routes win), so register specific stubs after it. */
 export async function registerApiFallback(page: Page) {
   await page.route((url) => url.pathname.startsWith('/api/'), (route) => {
@@ -76,22 +86,22 @@ export async function openStubbedBuilder(
     localStorage.setItem('weav_lang_v1', 'EN');
   });
   await registerApiFallback(page);
-  await page.route('**/api/auth/me', (route) => json(route, { id: USER_ID, email: 'ui@example.test', displayName: 'UI Tester', systemRole: 'USER', status: 'ACTIVE' }));
+  await page.route('**/api/auth/me', getOnly((route) => json(route, { id: USER_ID, email: 'ui@example.test', displayName: 'UI Tester', systemRole: 'USER', status: 'ACTIVE' })));
   await page.route('**/api/v2/notifications**', (route) =>
     route.request().method() === 'GET'
       ? json(route, route.request().url().includes('unread-count') ? { count: 0 } : { items: [], nextCursor: null })
       : route.fallback());
   const workspace = { id: STUB_WORKSPACE_ID, name: 'Weav Test Workspace', role: 'OWNER', createdBy: USER_ID, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z' };
-  await page.route('**/api/v1/workspaces?**', (route) => json(route, pageOf([workspace])));
-  await page.route(`**/api/v1/workspaces/${STUB_WORKSPACE_ID}`, (route) => json(route, workspace));
+  await page.route('**/api/v1/workspaces?**', getOnly((route) => json(route, pageOf([workspace]))));
+  await page.route(`**/api/v1/workspaces/${STUB_WORKSPACE_ID}`, getOnly((route) => json(route, workspace)));
   await page.route(`**/api/v1/workspaces/${STUB_WORKSPACE_ID}/members**`, (route) => route.request().method() === 'GET' ? json(route, pageOf([])) : route.fallback());
-  await page.route(`**/api/v1/workspaces/${STUB_WORKSPACE_ID}/connections**`, (route) => json(route, []));
+  await page.route((url) => url.pathname === `/api/v1/workspaces/${STUB_WORKSPACE_ID}/connections`, getOnly((route) => json(route, [])));
   await page.route(/\/workflows\?page=/, (route) => json(route, pageOf([])));
-  await page.route(`**/api/v1/workspaces/${STUB_WORKSPACE_ID}/workflows/node-capabilities`, (route) => json(route, { nodes: options.capabilities ?? {} }));
+  await page.route(`**/api/v1/workspaces/${STUB_WORKSPACE_ID}/workflows/node-capabilities`, getOnly((route) => json(route, { nodes: options.capabilities ?? {} })));
   // Workflow detail: only the fixture id exists; any other id is a 404.
   await page.route((url) => url.pathname.startsWith(`/api/v1/workspaces/${STUB_WORKSPACE_ID}/workflows/`) && !url.pathname.endsWith('/node-capabilities') && !url.pathname.endsWith('/draft') && !url.pathname.endsWith('/publish'), (route) => {
     const id = new URL(route.request().url()).pathname.split('/workflows/')[1];
-    return route.request().method() === 'GET' && id === STUB_WORKFLOW_ID ? json(route, current) : route.request().method() === 'GET' ? json(route, { error: 'not found' }, 404) : route.fallback();
+    return route.request().method() === 'GET' && id === STUB_WORKFLOW_ID ? json(route, current) : route.request().method() === 'GET' ? notFound(route) : route.fallback();
   });
   await page.route(`${base}/draft`, (route) => {
     if (route.request().method() !== 'PUT') return route.fallback();

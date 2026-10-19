@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { expectNoUnmatched, registerApiFallback, resetUnmatched } from './support/http-builder.js';
+import { expectNoUnmatched, getOnly, notFound, registerApiFallback, resetUnmatched } from './support/http-builder.js';
 
 const OCR_WORKSPACE_ID = '00000000-0000-4000-8000-000000000001';
 const OCR_WORKFLOW_ID = '00000000-0000-4000-8000-000000000002';
@@ -35,7 +35,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.addInitScript({ content: "window.localStorage.setItem('weav_lang_v1', 'EN')" });
     await page.addInitScript({ content: "window.localStorage.setItem('weav_token', 'test-bearer-token-12345')" });
-    await page.route('**/api/auth/me', async (route) => {
+    await page.route('**/api/auth/me', getOnly(async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -48,13 +48,13 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
           status: 'ACTIVE',
         }),
       });
-    });
+    }));
     await page.route('**/api/v2/notifications/unread-count', async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ count: 0 }) });
     });
     await page.route('**/api/v1/workspaces**', async (route) => {
       const pathname = new URL(route.request().url()).pathname;
-      if (pathname === '/api/v1/workspaces') {
+      if (pathname === '/api/v1/workspaces' && route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -103,14 +103,14 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
       if (route.request().method() !== 'GET') return route.fallback();
       if (pathname.endsWith('/node-capabilities')) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ nodes: {} }) });
       if (pathname.endsWith(`/workflows/${OCR_WORKFLOW_ID}`)) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(draft) });
-      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not found' }) });
+      return notFound(route);
     });
-    await page.route(/\/workflows\?page=/, async (route) => {
+    await page.route(/\/workflows\?page=/, getOnly(async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ items: [], page: 0, size: 100, totalElements: 0, totalPages: 1, hasNext: false }) });
-    });
-    await page.route(`**/api/v1/workspaces/${OCR_WORKSPACE_ID}/connections**`, async (route) => {
+    }));
+    await page.route((url) => url.pathname === `/api/v1/workspaces/${OCR_WORKSPACE_ID}/connections`, getOnly(async (route) => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
-    });
+    }));
   });
 
   test.afterEach(expectNoUnmatched);
@@ -661,7 +661,7 @@ test.describe('OCR Builder Inspector Gateway Integration', () => {
     let networkCalled = false;
     await page.route('**/api/v1/workspaces**', async (route) => {
       const pathname = new URL(route.request().url()).pathname;
-      if (pathname === '/api/v1/workspaces') {
+      if (pathname === '/api/v1/workspaces' && route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
