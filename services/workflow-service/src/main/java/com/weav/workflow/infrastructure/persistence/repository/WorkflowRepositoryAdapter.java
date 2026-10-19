@@ -58,9 +58,16 @@ public class WorkflowRepositoryAdapter implements WorkflowRepository {
         this.pageSql = """
                 SELECT w.id, w.name, w.description, w.status, w.schema_version, w.current_version_id,
                        w.created_at, w.updated_at, w.published_at,
-                       CASE WHEN jsonb_typeof(w.draft_definition -> 'nodes') = 'array'
-                            THEN jsonb_path_query_array(w.draft_definition, '$.nodes[*].type')::text
-                            ELSE '[]' END AS node_types
+                       COALESCE((SELECT jsonb_agg(jsonb_build_array(n.value -> 'id', n.value -> 'type')
+                                                  ORDER BY n.ordinality)
+                                 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.draft_definition -> 'nodes') = 'array'
+                                                                THEN w.draft_definition -> 'nodes' END)
+                                      WITH ORDINALITY AS n(value, ordinality)), '[]'::jsonb)::text AS nodes,
+                       COALESCE((SELECT jsonb_agg(jsonb_build_array(e.value -> 'source', e.value -> 'target')
+                                                  ORDER BY e.ordinality)
+                                 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(w.draft_definition -> 'edges') = 'array'
+                                                                THEN w.draft_definition -> 'edges' END)
+                                      WITH ORDINALITY AS e(value, ordinality)), '[]'::jsonb)::text AS edges
                 FROM %s.workflows w
                 WHERE w.workspace_id = ? AND w.deleted_at IS NULL
                 ORDER BY w.created_at DESC, w.id DESC
@@ -122,11 +129,19 @@ public class WorkflowRepositoryAdapter implements WorkflowRepository {
     }
 
     private WorkflowSummary summary(ResultSet rs, int rowNum) throws SQLException {
+        // Only node ids/types and edge endpoints are projected, never node configs.
+        List<WorkflowSummary.NodeRef> nodes = new ArrayList<>();
         List<String> nodeTypes = new ArrayList<>();
-        for (JsonNode type : objectMapper.readTree(rs.getString("node_types"))) {
-            if (type.isString()) {
-                nodeTypes.add(type.stringValue());
+        for (JsonNode pair : objectMapper.readTree(rs.getString("nodes"))) {
+            WorkflowSummary.NodeRef node = new WorkflowSummary.NodeRef(text(pair.get(0)), text(pair.get(1)));
+            nodes.add(node);
+            if (node.type() != null) {
+                nodeTypes.add(node.type());
             }
+        }
+        List<WorkflowSummary.Link> links = new ArrayList<>();
+        for (JsonNode pair : objectMapper.readTree(rs.getString("edges"))) {
+            links.add(new WorkflowSummary.Link(text(pair.get(0)), text(pair.get(1))));
         }
         return new WorkflowSummary(
                 rs.getObject("id", UUID.class),
@@ -138,7 +153,12 @@ public class WorkflowRepositoryAdapter implements WorkflowRepository {
                 instant(rs, "created_at"),
                 instant(rs, "updated_at"),
                 instant(rs, "published_at"),
-                nodeTypes);
+                nodeTypes,
+                WorkflowSummary.stepTypes(nodes, links));
+    }
+
+    private static String text(JsonNode node) {
+        return node != null && node.isString() ? node.stringValue() : null;
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {

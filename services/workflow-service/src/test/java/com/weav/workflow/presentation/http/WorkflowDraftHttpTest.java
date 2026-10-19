@@ -129,6 +129,15 @@ class WorkflowDraftHttpTest {
         assertEquals(connectionId.toString(), connectionFrom(persisted.getDraftDefinition()));
         assertTrue(persisted.getEditorState().containsKey("selected"));
         assertNull(persisted.getEditorState().get("selected"));
+
+        // List contract: stepTypes (additive) names the non-trigger steps so the list needs no per-row detail call.
+        mockMvc.perform(get("/workspaces/{workspaceId}/workflows", workspaceId)
+                        .header("Authorization", "Bearer " + accessToken(USER_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].triggerTypes[0]").value("trigger.manual"))
+                .andExpect(jsonPath("$.items[0].stepTypes.length()").value(1))
+                .andExpect(jsonPath("$.items[0].stepTypes[0]").value("google.sheets"))
+                .andExpect(jsonPath("$.items[0].definition").doesNotExist());
     }
 
     @Test
@@ -260,6 +269,7 @@ class WorkflowDraftHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(2))
                 .andExpect(jsonPath("$.items[0].triggerTypes[0]").value("trigger.manual"))
+                .andExpect(jsonPath("$.items[0].stepTypes.length()").value(0))
                 .andExpect(jsonPath("$.page").value(0))
                 .andExpect(jsonPath("$.size").value(2))
                 .andExpect(jsonPath("$.totalElements").value(3));
