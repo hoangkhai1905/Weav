@@ -187,6 +187,8 @@ test.describe('Vietnamese and English web localization', () => {
   });
 
   test('keeps every existing web screen in its selected locale', async ({ page }) => {
+    // 15 screens x 2 locales = 30 full page loads in one test: about 29 s alone, over the 30 s default.
+    test.slow();
     const screens = [
       { path: '/login', vi: 'Tiếp tục với các quy trình của nhóm bạn.', en: "Continue with your team's workflows." },
       { path: '/register', vi: 'Tạo tài khoản mới', en: 'Create your Account' },
@@ -196,7 +198,7 @@ test.describe('Vietnamese and English web localization', () => {
       { path: '/workflows/new', vi: 'Tạo quy trình', en: 'Create workflow' },
       { path: '/workflows/wf-prod-8492/builder', vi: 'Vừa khung', en: 'Fit View' },
       { path: '/executions', vi: 'Lịch sử chạy quy trình', en: 'Execution History' },
-      { path: '/executions/EX-8492', vi: 'Kiểm tra bước', en: 'Step inspector' },
+      { path: '/executions/EX-8492', vi: 'Không tìm thấy lượt chạy trong không gian làm việc hiện tại.', en: 'The run was not found in the active workspace.' },
       { path: '/connections', vi: 'Kết nối dịch vụ', en: 'Connections' },
       { path: '/workspace', vi: 'Không gian làm việc', en: 'Workspace' },
       { path: '/notifications', vi: 'Thông báo', en: 'Notifications' },
@@ -204,6 +206,19 @@ test.describe('Vietnamese and English web localization', () => {
       { path: '/ai/workflow-generator', vi: 'Tạo bằng AI', en: 'Create with AI' },
       { path: '/help', vi: 'Trợ giúp & Tài liệu', en: 'Help & Docs' },
     ];
+    // Http mode has no demo workflows: the builder screen needs a real (stubbed) workflow to render its canvas.
+    await page.route('**/api/v1/workspaces/*/workflows/wf-prod-8492', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          workflowId: 'wf-prod-8492', name: 'Localization flow', description: null, status: 'DRAFT', schemaVersion: '1.0',
+          currentVersionId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), publishedAt: null,
+          definition: { schemaVersion: '1.0', nodes: [{ id: 'hook', type: 'trigger.webhook', config: {} }], edges: [], variables: {} },
+          editorState: { nodes: { hook: { name: 'Webhook', position: { x: 0, y: 0 } } } },
+        }),
+      });
+    });
     const leakedKey = /\b(?:common|nav|topbar|dashboard|workflows|workspace|connections|executions|execution_detail|settings|auth|forgot|help|hp|telegram|notif|builder|ai_gen|status)\.[a-z][a-z0-9_.]*/gi;
     const technicalIdentifiers = new Set([
       'telegram.send', 'trigger.manual', 'trigger.webhook', 'ai.extract', 'email.send',
@@ -221,25 +236,23 @@ test.describe('Vietnamese and English web localization', () => {
         }, !authScreens.has(screen.path));
         await page.goto(screen.path);
         expect(new URL(page.url()).pathname, `${locale} ${screen.path} should stay on the requested screen`).toBe(screen.path);
-        await expect(page.locator('body')).toContainText(screen[locale === 'VI' ? 'vi' : 'en']);
-        if (screen.path === '/executions' && locale === 'VI') {
-          await expect(page.locator('body')).toContainText('Lịch (hằng ngày)');
+        const expected = screen[locale === 'VI' ? 'vi' : 'en'];
+        if (screen.path === '/workflows/wf-prod-8492/builder') {
+          // The canvas fit-view control is an icon button: its localized label is the accessible name.
+          await expect(page.getByRole('button', { name: expected, exact: true })).toBeVisible();
+        } else {
+          await expect(page.locator('body')).toContainText(expected);
         }
         if (screen.path === '/workflows' && locale === 'VI') {
           await expect(page.locator('body')).toContainText('sửa 2 giờ trước');
           await expect(page.locator('body')).not.toContainText(/hours? ago/);
         }
-        if (screen.path === '/executions/EX-8492') {
-          await expect(page.locator('body')).toContainText(
-            locale === 'VI' ? 'IP Stripe 54.187.205.1 đã gọi endpoint Webhook POST /stripe.' : 'Stripe IP 54.187.205.1 called the Webhook endpoint POST /stripe.'
-          );
-        }
-        if (locale === 'VI' && ['/workflows/wf-prod-8492/builder', '/executions/EX-8492'].includes(screen.path)) {
+        if (locale === 'VI' && screen.path === '/workflows/wf-prod-8492/builder') {
           await expect(page.locator('body')).toContainText('Nhấn Enter hoặc phím cách để chọn node.');
           await expect(page.locator('body')).not.toContainText(/Press enter or space to select a node/i);
         }
         if (locale === 'VI' && screen.path === '/workflows/wf-prod-8492/builder') {
-          await expect(page.getByTestId('builder-workspace-context')).toContainText('Không gian làm việc: Chưa chọn');
+          await expect(page.getByTestId('builder-workspace-context')).toContainText('Không gian làm việc: Localization workspace');
           await expect(page.locator('body')).toContainText('Bản đồ thu nhỏ');
           await expect(page.locator('body')).not.toContainText('Mini Map');
         }

@@ -627,7 +627,9 @@ test.describe('web notification HTTP integration', () => {
         await expect.poll(() => memberRequestWorkspaceIds.filter((id) => id === WORKSPACE_B).length).toBeGreaterThan(0);
       }
       if (title !== 'Security target') {
-        await page.getByRole('link', { name: /^Notifications/ }).click();
+        // The full-screen workflow builder and run screens have no topbar bell, so go back in history to the inbox.
+        await page.goBack();
+        await expect(page).toHaveURL(/\/notifications$/);
         await expect(page.getByText(title, { exact: true })).toBeVisible();
       }
     }
