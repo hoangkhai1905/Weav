@@ -68,8 +68,11 @@ async function stubBackend(page: Page, lang: 'EN' | 'VI' = 'EN', ocrSources: str
     return json(route, { error: 'not stubbed' }, 501);
   });
   await page.route('**/api/auth/me', (route) => json(route, { id: userId, email: 'ui@example.test', displayName: 'UI Tester', systemRole: 'USER', status: 'ACTIVE' }));
-  await page.route('**/api/v2/notifications**', (route) =>
-    json(route, route.request().url().includes('unread-count') ? { count: 0 } : { items: [], nextCursor: null }));
+  const ws = `/api/v1/workspaces/${workspaceId}`;
+  const get = (answer: (route: Route) => Promise<void>) => (route: Route) =>
+    route.request().method() === 'GET' ? answer(route) : route.fallback();
+  await page.route((url) => url.pathname === '/api/v2/notifications/unread-count', get((route) => json(route, { count: 0 })));
+  await page.route((url) => url.pathname === '/api/v2/notifications', get((route) => json(route, { items: [], nextCursor: null })));
   const workspace = { id: workspaceId, name: 'Weav Test Workspace', role: 'OWNER', createdBy: userId, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z' };
   await page.route('**/api/v1/workspaces?**', (route) => json(route, pageOf([workspace])));
   await page.route(`**/api/v1/workspaces/${workspaceId}`, (route) => json(route, workspace));
@@ -88,22 +91,28 @@ async function stubBackend(page: Page, lang: 'EN' | 'VI' = 'EN', ocrSources: str
   }));
   await page.route((url) => url.pathname === `/api/v1/workspaces/${workspaceId}/executions`, (route) =>
     json(route, { items: [], page: 0, size: 6, totalElements: 0, hasNext: false }));
-  await page.route('**/api/auth/sessions**', (route) => json(route, pageOf([])));
-  await page.route('**/api/v1/invitations**', (route) => json(route, pageOf([])));
-  await page.route(`**/api/v1/workspaces/${workspaceId}/members**`, (route) => json(route, pageOf([])));
-  await page.route(`**/api/v1/workspaces/${workspaceId}/connections**`, (route) => json(route, []));
-  await page.route(`**/api/v1/workspaces/${workspaceId}/workflows**`, (route) => {
-    const url = new URL(route.request().url());
-    const id = url.pathname.split('/workflows/')[1]?.split('/')[0];
-    if (route.request().method() === 'DELETE') {
-      if (id) remaining.delete(id);
-      return route.fulfill({ status: 204, body: '' });
-    }
-    if (id) return wfIds.includes(id) ? json(route, detail(id)) : json(route, { error: 'not found' }, 404);
+  await page.route((url) => url.pathname === '/api/auth/sessions', get((route) => json(route, pageOf([]))));
+  await page.route((url) => url.pathname === '/api/v1/invitations', get((route) => json(route, pageOf([]))));
+  await page.route((url) => url.pathname === `${ws}/members`, get((route) => json(route, pageOf([]))));
+  await page.route((url) => url.pathname === `${ws}/connections`, get((route) => json(route, [])));
+  await page.route((url) => /\/workflows\/[^/]+\/executions$/.test(url.pathname) && url.pathname.startsWith(ws), get((route) =>
+    json(route, { items: [], page: 0, size: 20, totalElements: 0, hasNext: false })));
+  // Workflow list (GET) and one workflow (GET detail, DELETE); sub-paths such as /draft or /publish stay unstubbed.
+  await page.route((url) => url.pathname === `${ws}/workflows`, get((route) => {
     return json(route, pageOf(wfIds.filter((wf) => remaining.has(wf)).map((wf) => {
       const { workflowId, name, status, schemaVersion, currentVersionId, createdAt, updatedAt, publishedAt } = detail(wf);
       return { workflowId, name, status, schemaVersion, currentVersionId, createdAt, updatedAt, publishedAt };
     })));
+  }));
+  await page.route((url) => url.pathname.startsWith(`${ws}/workflows/`) && url.pathname.split('/').length === ws.split('/').length + 2, (route) => {
+    const id = new URL(route.request().url()).pathname.split('/workflows/')[1];
+    const method = route.request().method();
+    if (method === 'DELETE') {
+      remaining.delete(id);
+      return route.fulfill({ status: 204, body: '' });
+    }
+    if (method !== 'GET') return route.fallback();
+    return wfIds.includes(id) ? json(route, detail(id)) : json(route, { error: 'not found' }, 404);
   });
   // Workflow Service capabilities: OCR is only usable when it lists at least one enabled source.
   await page.route(`**/api/v1/workspaces/${workspaceId}/workflows/node-capabilities`, (route) =>
