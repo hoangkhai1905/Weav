@@ -26,6 +26,29 @@
         "type": "string"
       },
       "x-weav-template": true
+    },
+    "connectionId": {
+      "type": "string",
+      "minLength": 1,
+      "title": "AI for this step",
+      "description": "Your own OpenAI, Anthropic or Gemini connection. Leave empty to use the Weav default.",
+      "x-weav-connection": {
+        "provider": [
+          "OPENAI",
+          "ANTHROPIC",
+          "GEMINI"
+        ]
+      }
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "title": "Model name",
+      "description": "Optional model id at your provider, for example gpt-4o-mini. Needs an AI connection.",
+      "x-weav-ui": {
+        "advanced": true
+      }
     }
   },
   "required": [

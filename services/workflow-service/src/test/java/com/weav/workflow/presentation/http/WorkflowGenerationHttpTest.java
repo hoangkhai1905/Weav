@@ -81,7 +81,7 @@ class WorkflowGenerationHttpTest {
         UUID connection = UUID.randomUUID();
         mvc.perform(request("{\"prompt\":\"ping\",\"connections\":{\"http.request\":\"" + connection + "\"}}"))
                 .andExpect(status().isOk());
-        mvc.perform(request("{\"prompt\":\"ping\",\"connections\":{\"ai.summarize\":\"" + connection + "\"}}"))
+        mvc.perform(request("{\"prompt\":\"ping\",\"connections\":{\"data.set\":\"" + connection + "\"}}"))
                 .andExpect(status().isBadRequest());
     }
 

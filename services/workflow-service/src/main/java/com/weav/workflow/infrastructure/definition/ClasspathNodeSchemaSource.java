@@ -115,8 +115,7 @@ public final class ClasspathNodeSchemaSource implements NodeSchemaSource {
         JsonNode items = node.get("items");
         String provider = null;
         if (node.has("x-weav-connection")) {
-            provider = text(node.get("x-weav-connection"), "provider");
-            require(provider != null && !provider.isBlank(), where, "x-weav-connection.provider is required");
+            provider = connectionProvider(node.get("x-weav-connection"), where);
         }
         if (node.has("x-weav-ui")) {
             JsonNode ui = node.get("x-weav-ui");
@@ -135,6 +134,20 @@ public final class ClasspathNodeSchemaSource implements NodeSchemaSource {
                 intValue(node, "maxLength", where),
                 node.has("maximum") ? node.get("maximum").decimalValue() : null,
                 flag(node, "x-weav-personal", where));
+    }
+
+    /** A provider name, or a non-empty array of them (joined with ',' as the non-null marker). */
+    private static String connectionProvider(JsonNode connection, String where) {
+        JsonNode provider = connection.get("provider");
+        List<String> names = new ArrayList<>();
+        if (provider != null && provider.isArray()) {
+            provider.forEach(name -> names.add(name.isString() ? name.stringValue() : null));
+        } else if (provider != null && provider.isString()) {
+            names.add(provider.stringValue());
+        }
+        require(!names.isEmpty() && names.stream().allMatch(name -> name != null && !name.isBlank()), where,
+                "x-weav-connection.provider is required");
+        return String.join(",", names);
     }
 
     /** UI-only hint: validated at load, not stored (the backend ignores it at runtime). */

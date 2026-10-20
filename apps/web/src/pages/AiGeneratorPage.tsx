@@ -258,7 +258,7 @@ export function AiGeneratorPage({ inDialog = false, initialPrompt }: AiGenerator
             <p className="font-semibold">{t('hp.ai.connections_needed')}</p>
             <ul className="mt-1 list-disc pl-4">
               {needsConnection.map((node) => (
-                <li key={node.id}>{node.name} ({NODE_SCHEMAS[node.type]?.properties.connectionId['x-weav-connection']?.provider ?? node.type})</li>
+                <li key={node.id}>{node.name} ({[NODE_SCHEMAS[node.type]?.properties.connectionId['x-weav-connection']?.provider ?? node.type].flat().join(', ')})</li>
               ))}
             </ul>
             <p className="mt-1 text-text-2">{t('hp.ai.connections_hint')}</p>

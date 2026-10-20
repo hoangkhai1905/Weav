@@ -315,6 +315,26 @@ components:
           type: string
           format: uuid
           description: Must equal the workspace_id claim.
+    Llm:
+      type: object
+      additionalProperties: false
+      required: [provider, apiKey]
+      description: >-
+        Optional. The caller's own AI provider for this one request (extract,
+        classify, summarize, prompt); `/v1/generate` rejects it with
+        INVALID_REQUEST. Without it the Weav default provider is used. The key
+        is used for this request only and is never logged or echoed.
+      properties:
+        provider: {type: string, enum: [OPENAI, ANTHROPIC, GEMINI]}
+        apiKey:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: No control characters.
+        model:
+          type: string
+          pattern: '^[A-Za-z0-9._:/-]{1,100}$'
+          description: Optional; a per-provider default is used when omitted.
     ExtractEnvelope:
       allOf:
         - $ref: '#/components/schemas/BaseEnvelope'
@@ -323,6 +343,8 @@ components:
           properties:
             operation:
               const: extract
+            llm:
+              $ref: '#/components/schemas/Llm'
             text:
               type: string
               minLength: 1
@@ -342,6 +364,8 @@ components:
           properties:
             operation:
               const: classify
+            llm:
+              $ref: '#/components/schemas/Llm'
             text:
               type: string
               minLength: 1
@@ -362,6 +386,8 @@ components:
           properties:
             operation:
               const: summarize
+            llm:
+              $ref: '#/components/schemas/Llm'
             text:
               type: string
               minLength: 1
@@ -378,6 +404,8 @@ components:
           properties:
             operation:
               const: prompt
+            llm:
+              $ref: '#/components/schemas/Llm'
             prompt:
               type: string
               minLength: 1
@@ -449,13 +477,18 @@ components:
               enum: [INVALID_REQUEST, UNAUTHENTICATED, FORBIDDEN, PAYLOAD_TOO_LARGE,
                 AI_SCHEMA_INVALID, AI_BUSY, AI_NOT_CONFIGURED, AI_PROVIDER_UNAVAILABLE,
                 AI_PROVIDER_AUTH, AI_OUTPUT_INVALID, AI_TIMEOUT, INTERNAL_ERROR,
-                NOT_FOUND, AI_QUOTA_EXCEEDED, AI_UNAVAILABLE]
+                NOT_FOUND, AI_QUOTA_EXCEEDED, AI_UNAVAILABLE, AI_PROVIDER_RATE_LIMITED,
+                AI_MODEL_NOT_FOUND]
               description: >-
                 Error table (spec §4): 400 INVALID_REQUEST, 401 UNAUTHENTICATED,
                 403 FORBIDDEN, 413 PAYLOAD_TOO_LARGE, 422 AI_SCHEMA_INVALID,
                 429 AI_BUSY, 503 AI_NOT_CONFIGURED, 503 AI_PROVIDER_UNAVAILABLE,
                 502 AI_PROVIDER_AUTH, 502 AI_OUTPUT_INVALID, 504 AI_TIMEOUT,
-                500 INTERNAL_ERROR. Provider and model detail is never echoed.
+                500 INTERNAL_ERROR. When the request carried `llm`: 401/403 from
+                the provider is 502 AI_PROVIDER_AUTH, a provider 429 (rate limit or
+                no credit) is 429 AI_PROVIDER_RATE_LIMITED, and an unknown model
+                (provider 404, or 400 for the model) is 400 AI_MODEL_NOT_FOUND.
+                Provider and model detail is never echoed.
             message:
               type: string
             requestId:
