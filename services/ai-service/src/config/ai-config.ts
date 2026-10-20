@@ -8,6 +8,10 @@ const schema = z.object({
   DEEPSEEK_BASE_URL: z.url().default('https://api.deepseek.com'),
   // Reasoning models spend part of this budget on hidden thinking; 4096 ran out mid-generation (finish_reason=length).
   DEEPSEEK_MAX_TOKENS: z.coerce.number().int().min(256).max(8192).default(8192),
+  // Default models for requests that bring their own key (llm.model overrides per request).
+  AI_OPENAI_DEFAULT_MODEL: z.string().min(1).default('gpt-5-mini'),
+  AI_ANTHROPIC_DEFAULT_MODEL: z.string().min(1).default('claude-haiku-5-5'),
+  AI_GEMINI_DEFAULT_MODEL: z.string().min(1).default('gemini-2.5-flash'),
   AI_SERVICE_JWKS_FILE: z.string().min(1).optional(),
   AI_REQUEST_TIMEOUT_MS: z.coerce
     .number()

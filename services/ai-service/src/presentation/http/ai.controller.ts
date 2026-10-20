@@ -17,6 +17,7 @@ import { prompt } from '../../application/prompt';
 import { summarize } from '../../application/summarize';
 import { AiError } from '../../domain/errors';
 import { Admission } from '../../infrastructure/admission';
+import { providerFor } from '../../infrastructure/llm/provider-for';
 import { RequestDedup } from '../../infrastructure/request-dedup';
 import { ENVELOPES, isOperation } from './envelopes';
 import './request-signal';
@@ -45,11 +46,10 @@ export class AiController {
     @Req() request: FastifyRequest,
   ) {
     const startedAt = Date.now();
-    const { provider, verifier } = this.deps;
+    const { verifier } = this.deps;
     // AI-8: authenticate first so config state is never revealed to unauthenticated callers.
     if (!verifier) throw new AiError('UNAUTHENTICATED');
     const claims = verifier.verify(request.headers.authorization);
-    if (!provider) throw new AiError('AI_NOT_CONFIGURED');
     if (!isOperation(operation)) throw new AiError('INVALID_REQUEST');
     const requestId = request.headers['x-request-id'];
     if (typeof requestId !== 'string' || !UUID.test(requestId))
@@ -58,6 +58,7 @@ export class AiController {
     const parsed = ENVELOPES[operation].safeParse(request.body);
     if (!parsed.success) throw new AiError('INVALID_REQUEST');
     const body = parsed.data;
+    const llm = 'llm' in body ? body.llm : undefined;
     if (
       claims.scope !== `ai:${operation}` ||
       claims.workspaceId !== body.workspaceId ||
@@ -67,6 +68,11 @@ export class AiController {
     ) {
       throw new AiError('FORBIDDEN');
     }
+    // BYOK: a request-supplied key needs no service-owned provider; the key is never stored or logged.
+    const provider = llm
+      ? providerFor(llm, this.deps.byok)
+      : this.deps.provider;
+    if (!provider) throw new AiError('AI_NOT_CONFIGURED');
 
     return this.dedup.run(`${body.workspaceId}:${requestId}`, async () => {
       const release = this.admission.tryAcquire(body.workspaceId);
@@ -100,6 +106,7 @@ export class AiController {
           operation,
           workspaceId: body.workspaceId,
           outcome,
+          llmProvider: llm?.provider ?? 'default',
           durationMs: Date.now() - startedAt,
         });
       }

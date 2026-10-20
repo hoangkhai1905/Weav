@@ -97,7 +97,19 @@ async function bootstrap() {
         );
     });
   }
-  const app = await createAiApp({ config, provider, verifier, assistant });
+  const app = await createAiApp({
+    config,
+    provider,
+    verifier,
+    assistant,
+    byok: {
+      openaiModel: config.AI_OPENAI_DEFAULT_MODEL,
+      anthropicModel: config.AI_ANTHROPIC_DEFAULT_MODEL,
+      geminiModel: config.AI_GEMINI_DEFAULT_MODEL,
+      maxTokens: config.DEEPSEEK_MAX_TOKENS,
+      maxResponseBytes: 1024 * 1024,
+    },
+  });
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
 }
 

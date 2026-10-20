@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { Logger } from '@nestjs/common';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createAiApp } from '../src/app';
 import { loadAiConfig } from '../src/config/ai-config';
 import { ServiceJwtVerifier } from '../src/infrastructure/auth/service-jwt-verifier';
 import { LlmProvider, LlmRequest } from '../src/application/llm-provider';
 import { AiError } from '../src/domain/errors';
+import type { ByokDefaults } from '../src/infrastructure/llm/provider-for';
 import { signJwt, testKeys } from './support/jwt';
 
 const keys = testKeys();
@@ -21,6 +23,13 @@ class Fake implements LlmProvider {
   }
 }
 
+const byok: ByokDefaults = {
+  openaiModel: 'o-default',
+  anthropicModel: 'a-default',
+  geminiModel: 'g-default',
+  maxTokens: 1024,
+  maxResponseBytes: 1024 * 1024,
+};
 let app: NestFastifyApplication;
 let provider: Fake;
 const config = loadAiConfig({
@@ -36,6 +45,7 @@ beforeEach(async () => {
     config,
     provider,
     verifier: ServiceJwtVerifier.fromJwks(keys.jwks),
+    byok,
   });
 });
 afterEach(() => app.close());
@@ -76,6 +86,117 @@ function call(
 const raw = (payload: string, headers: Record<string, string>) =>
   app.inject({ method: 'POST', url: '/v1/summarize', headers, payload });
 const summarizeBody = { text: 'Xin chào', maxLength: 10 };
+
+const chat = (content: string) =>
+  new Response(
+    JSON.stringify({
+      choices: [{ finish_reason: 'stop', message: { content } }],
+    }),
+    {
+      status: 200,
+    },
+  );
+
+describe('per-request llm selection', () => {
+  const llm = { provider: 'OPENAI', apiKey: 'sk-LEAKCHECK-1' };
+  afterEach(() => jest.restoreAllMocks());
+
+  it('runs on the user key even when the default provider is not configured', async () => {
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(chat('{"summary":"user key"}'));
+    const unconfigured = await createAiApp({
+      config,
+      provider: null,
+      verifier: ServiceJwtVerifier.fromJwks(keys.jwks),
+      byok,
+    });
+    const prev = app;
+    app = unconfigured;
+    try {
+      const res = await call('summarize', { ...summarizeBody, llm });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({
+        result: { summary: 'user key' },
+      });
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('https://api.openai.com/v1/chat/completions');
+      expect((init.headers as Record<string, string>).authorization).toBe(
+        'Bearer sk-LEAKCHECK-1',
+      );
+    } finally {
+      app = prev;
+      await unconfigured.close();
+    }
+  });
+
+  it('still answers AI_NOT_CONFIGURED without llm when no provider is configured', async () => {
+    const unconfigured = await createAiApp({
+      config,
+      provider: null,
+      verifier: ServiceJwtVerifier.fromJwks(keys.jwks),
+      byok,
+    });
+    const prev = app;
+    app = unconfigured;
+    try {
+      const res = await call('summarize', summarizeBody);
+      expect(res.json<ErrorBody>().error.code).toBe('AI_NOT_CONFIGURED');
+    } finally {
+      app = prev;
+      await unconfigured.close();
+    }
+  });
+
+  it('rejects llm on generate as INVALID_REQUEST', async () => {
+    const res = await call('generate', {
+      prompt: 'p',
+      capabilities: [{ type: 'a.b', configFields: [] }],
+      llm,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<ErrorBody>().error.code).toBe('INVALID_REQUEST');
+  });
+
+  it('byokFailureIsNotCachedAndKeyNotRetained', async () => {
+    const out: string[] = [];
+    for (const m of ['log', 'warn', 'error', 'debug'] as const)
+      jest
+        .spyOn(Logger.prototype, m)
+        .mockImplementation(
+          (...a: unknown[]) => void out.push(JSON.stringify(a)),
+        );
+    for (const s of [process.stdout, process.stderr])
+      jest.spyOn(s, 'write').mockImplementation((chunk: unknown) => {
+        out.push(String(chunk));
+        return true;
+      });
+    const fetchMock = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('{}', { status: 429 }))
+      .mockResolvedValueOnce(chat('{"summary":"ok"}'));
+    const requestId = randomUUID();
+    const workspaceId = randomUUID();
+    const first = await call('summarize', {
+      ...summarizeBody,
+      requestId,
+      workspaceId,
+      llm,
+    });
+    expect(first.statusCode).toBe(429);
+    expect(first.json<ErrorBody>().error.code).toBe('AI_PROVIDER_RATE_LIMITED');
+    const retry = await call('summarize', {
+      ...summarizeBody,
+      requestId,
+      workspaceId,
+      llm,
+    });
+    expect(retry.statusCode).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(out.join('')).not.toContain('sk-LEAKCHECK-1');
+    expect(first.body + retry.body).not.toContain('sk-LEAKCHECK-1');
+  });
+});
 
 describe('AI HTTP', () => {
   it('summarizes with a valid token', async () => {
@@ -337,6 +458,7 @@ describe('AI HTTP', () => {
       config,
       provider: null,
       verifier: null,
+      byok,
     });
     expect(
       (await unready.inject({ method: 'GET', url: '/health/ready' }))
