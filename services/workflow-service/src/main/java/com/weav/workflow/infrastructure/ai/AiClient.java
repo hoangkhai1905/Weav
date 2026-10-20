@@ -32,8 +32,10 @@ import java.util.regex.Pattern;
 public class AiClient implements AiGenerationPort {
     private static final Set<String> AI_CODES = Set.of("INVALID_REQUEST", "UNAUTHENTICATED", "FORBIDDEN",
             "PAYLOAD_TOO_LARGE", "AI_SCHEMA_INVALID", "AI_BUSY", "AI_NOT_CONFIGURED", "AI_PROVIDER_UNAVAILABLE",
-            "AI_PROVIDER_AUTH", "AI_OUTPUT_INVALID", "AI_TIMEOUT", "INTERNAL_ERROR");
-    private static final Set<String> RETRYABLE = Set.of("AI_BUSY", "AI_PROVIDER_UNAVAILABLE", "AI_TIMEOUT");
+            "AI_PROVIDER_AUTH", "AI_OUTPUT_INVALID", "AI_TIMEOUT", "INTERNAL_ERROR",
+            "AI_PROVIDER_RATE_LIMITED", "AI_MODEL_NOT_FOUND");
+    private static final Set<String> RETRYABLE = Set.of("AI_BUSY", "AI_PROVIDER_UNAVAILABLE", "AI_TIMEOUT",
+            "AI_PROVIDER_RATE_LIMITED");
     private static final Set<String> DEPENDENCY = Set.of("AI_NOT_CONFIGURED", "AI_PROVIDER_AUTH", "UNAUTHENTICATED", "FORBIDDEN");
     private static final Set<String> CONFIGURATION = Set.of("INVALID_REQUEST", "AI_SCHEMA_INVALID", "PAYLOAD_TOO_LARGE");
     private static final Pattern TRACEPARENT = Pattern.compile("^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$");
@@ -155,7 +157,7 @@ public class AiClient implements AiGenerationPort {
         }
         JsonNode root = parseStrict(response.body());
         if (response.status() != 200) {
-            throw errorFailure(root);
+            throw errorFailure(root, payload.get("llm"));
         }
         if (root == null || root.size() != 2 || !root.path("requestId").isString()
                 || !requestId.toString().equals(root.get("requestId").stringValue()) || !root.path("result").isObject()) {
@@ -168,12 +170,25 @@ public class AiClient implements AiGenerationPort {
         return sanitized;
     }
 
-    private NodeExecutor.Failure errorFailure(JsonNode root) {
+    /** @param llm the request's user-key selection, or null when the server's own key was used. */
+    private NodeExecutor.Failure errorFailure(JsonNode root, Object llm) {
         JsonNode code = root == null ? null : root.path("error").path("code");
         if (code == null || !code.isString() || !AI_CODES.contains(code.stringValue())) {
             return invalidResponse();
         }
         String value = code.stringValue();
+        if (llm != null && "AI_PROVIDER_AUTH".equals(value)) {
+            // With a user key this is that key being refused, not the server being unconfigured.
+            return new NodeExecutor.Failure("CONNECTION_AUTHENTICATION_REJECTED",
+                    "The AI provider rejected the API key of this connection.", false);
+        }
+        if ("AI_MODEL_NOT_FOUND".equals(value)) {
+            Object model = llm instanceof Map<?, ?> selection ? selection.get("model") : null;
+            String name = model instanceof String text && AiNodeExecutor.MODEL.matcher(text).matches()
+                    ? " \"" + text + "\"" : "";
+            return NodeExecutor.Failure.forField("CONFIGURATION_ERROR", "model",
+                    "The model" + name + " was not found at this provider.");
+        }
         if (DEPENDENCY.contains(value)) {
             return new NodeExecutor.Failure("DEPENDENCY_NOT_CONFIGURED", "The AI service is not available for this request.", false);
         }

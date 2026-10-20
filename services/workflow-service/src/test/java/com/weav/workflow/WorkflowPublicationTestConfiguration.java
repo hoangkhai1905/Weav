@@ -219,6 +219,7 @@ public class WorkflowPublicationTestConfiguration {
     public static final class PublicationWorkspaceConnections implements WorkspaceConnectionPort {
         private final PublicationAuthorizationGate gate;
         private volatile Set<UUID> deniedAttachments = Set.of();
+        private volatile String[] resolvedAs;
 
         private PublicationWorkspaceConnections(PublicationAuthorizationGate gate) {
             this.gate = gate;
@@ -234,6 +235,10 @@ public class WorkflowPublicationTestConfiguration {
 
         @Override
         public ResolvedConnection resolve(UUID workspaceId, UUID connectionId) {
+            String[] as = resolvedAs;
+            if (as != null) {
+                return new ResolvedConnection(as[0], "TOKEN", Map.of("token", as[1]));
+            }
             throw new UnsupportedOperationException("Publication tests do not resolve credentials");
         }
 
@@ -246,8 +251,14 @@ public class WorkflowPublicationTestConfiguration {
             deniedAttachments = Set.copyOf(connectionIds);
         }
 
+        /** From now on every connection resolves to a TOKEN credential of this provider. */
+        public void resolveAs(String provider, String token) {
+            resolvedAs = new String[] {provider, token};
+        }
+
         public void reset() {
             deniedAttachments = Set.of();
+            resolvedAs = null;
         }
     }
 

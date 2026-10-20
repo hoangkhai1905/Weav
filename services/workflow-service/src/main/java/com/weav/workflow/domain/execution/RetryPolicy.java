@@ -20,7 +20,8 @@ public final class RetryPolicy {
             "HTTP_RATE_LIMITED",
             "HTTP_DEPENDENCY_UNAVAILABLE",
             "CONNECTION_UNAVAILABLE",
-            "OCR_UNAVAILABLE");
+            "OCR_UNAVAILABLE",
+            "AI_PROVIDER_RATE_LIMITED");
     private static final Set<String> PERMANENT_CODES = Set.of(
             "MAPPING_ERROR",
             "CONFIGURATION_ERROR",
