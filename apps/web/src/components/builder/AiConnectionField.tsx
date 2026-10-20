@@ -59,12 +59,13 @@ export const AiConnectionField: React.FC<AiFieldProps> = ({ config, connections,
   );
 };
 
-/** "Model name" of a step that uses its own AI connection; nothing for the default AI. Belongs under the step's extra options. */
+/** "Model name" of a step that uses its own AI connection; nothing for the default AI (unless a model is still set). Belongs under the step's extra options. */
 export const AiModelField: React.FC<AiFieldProps> = ({ config, connections, onChange }) => {
   const { t } = useI18nStore();
   // Text that breaks the model rule is shown with a message but never written to the config.
   const [draft, setDraft] = useState<string | null>(null);
-  if (!String(config.connectionId ?? '').trim()) return null;
+  // An orphan model (a shared template drops the connection but may keep it) stays visible so it can be cleared.
+  if (!String(config.connectionId ?? '').trim() && !String(config.model ?? '').trim()) return null;
   const provider = connections.find((connection) => connection.id === config.connectionId)?.provider;
   const example = provider && isAiProvider(provider) ? `${t('builder.field.example_prefix')}${DEFAULT_MODELS[provider]}` : undefined;
   const shown = draft ?? String(config.model ?? '');

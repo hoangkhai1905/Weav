@@ -695,7 +695,7 @@ test.describe("workspace connection API adapter", () => {
 
   for (const [lang, invalidText] of [
     ["EN", "The key is invalid or was revoked."],
-    ["VI", "Key không hợp lệ hoặc đã bị thu hồi"],
+    ["VI", "Khóa API không hợp lệ hoặc đã bị thu hồi."],
   ] as const) {
     test(`adds a ChatGPT connection (${lang}): trims the key, keeps it hidden, flags an invalid key`, async ({
       page,

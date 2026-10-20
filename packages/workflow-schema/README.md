@@ -25,7 +25,7 @@ render node forms from the same files.
 | `oneOf` | let the user pick a branch (email `to`: one address or a list) |
 | `enum` | select |
 | `x-weav-template: true` | text input with a mapping picker for `{{ ... }}` values; a literal is also fine |
-| `x-weav-connection: {provider}` | dropdown of workspace connections filtered by `provider` |
+| `x-weav-connection: {provider}` | dropdown of workspace connections filtered by `provider`; `provider` is a string or a non-empty array of strings (AI nodes list `OPENAI`, `ANTHROPIC`, `GEMINI`) |
 | `x-weav-static: true` | literal only (no mapping picker) |
 | `x-weav-ui: {advanced: true}` | shown under "More options"; never allowed on a required field; ignored by the backend |
 | `title` / `description` | label / help text |

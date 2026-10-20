@@ -1143,7 +1143,7 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
           onClose={() => setIsCreateOpen(false)}
           onCreated={async (created) => {
             setIsCreateOpen(false);
-            // The key was checked right after saving; the connection stays so the key can be fixed or replaced.
+            // The key was checked right after saving; the connection stays so its row can show the problem (no replace action: remove it and add it again with a new key).
             if (isAiProvider(created.provider) && created.testOutcome === "AUTH_INVALID") {
               setActionMessage(created.id, t("connections.test.ai_key_invalid"));
             }

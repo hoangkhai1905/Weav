@@ -157,6 +157,17 @@ test('a step without a connection is not marked as not configured', async ({ pag
   await expect(page.getByTestId('rf__node-gen')).not.toContainText('Chưa cấu hình');
 });
 
+test('a model left without a connection (shared template) stays visible and can be cleared', async ({ page }) => {
+  const backend = await stubBackend(page, { nodes: [{ id: 'gen', type: 'ai.generate', config: { prompt: 'Write a haiku', model: 'gpt-5-mini' } }] });
+  await openBuilder(page);
+  await page.getByTestId('rf__node-gen').getByTestId('workflow-node').click();
+  const model = page.getByLabel('Tên model');
+  await expect(model).toHaveValue('gpt-5-mini');
+  await model.fill('');
+  expect(await savedConfig(page, backend.drafts, 'ai.generate')).not.toHaveProperty('model');
+  await expect(page.getByLabel('Tên model')).toHaveCount(0);
+});
+
 test('the picker is not duplicated by the generic schema form of ai.generate', async ({ page }) => {
   await stubBackend(page, { nodes: [{ id: 'gen', type: 'ai.generate', config: { prompt: 'Write a haiku', connectionId: openaiId } }] });
   await openBuilder(page);

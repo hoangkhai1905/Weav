@@ -288,8 +288,8 @@ const SCHEMA_FORMS: Record<string, { provider?: SchemaProvider; fields: (config:
       : ['summary', 'start', 'end', 'timeZone', 'description', 'location', 'attendees', 'sendInvitations'])],
     multiline: ['description'],
   },
-  // The AI picker (AiConnectionField) is rendered above the fields; `model` is the marker of its model-name field.
-  'ai.generate': { fields: (config) => ['prompt', 'instructions', 'maxLength', ...(config.connectionId ? ['model'] : [])], multiline: ['prompt', 'instructions'] },
+  // The AI picker (AiConnectionField) is rendered above the fields; `model` is the marker of its model-name field (also shown for an orphan model).
+  'ai.generate': { fields: (config) => ['prompt', 'instructions', 'maxLength', ...(config.connectionId || config.model ? ['model'] : [])], multiline: ['prompt', 'instructions'] },
 };
 // Schema-form fields that get one-click data suggestions under them (the main content of the step).
 const SUGGEST_FIELDS: Record<string, string[]> = {
@@ -507,7 +507,7 @@ export const WorkflowBuilderPage: React.FC = () => {
   /** Props of the AI picker and the model-name field of the four AI steps. */
   const aiFieldProps = { config: selectedNodeConfig, connections: workspaceConnections ?? [], onChange: (patch: { connectionId?: string; model?: string }) => updateSelectedNodeConfig(patch) };
   /** Extra options of an AI step: its own fields, plus the model name once the step uses its own AI connection. */
-  const aiAdvancedNames = (names: string[]) => (selectedNodeConfig.connectionId ? [...names, 'model'] : names);
+  const aiAdvancedNames = (names: string[]) => (selectedNodeConfig.connectionId || selectedNodeConfig.model ? [...names, 'model'] : names);
   /** The "Ví dụ: …" placeholder of a hand-written text field: same copy source as SchemaField (builder.field.<type>.<name>_example). */
   const examplePlaceholder = (name: string) => {
     const { example } = fieldCopy(selectedNodeType, name, t);
