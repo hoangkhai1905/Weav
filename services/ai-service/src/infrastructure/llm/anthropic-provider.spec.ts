@@ -86,6 +86,19 @@ describe('AnthropicProvider', () => {
     ).resolves.toBe('AI_OUTPUT_INVALID');
   });
 
+  it('maps a 400 low-credit message to AI_PROVIDER_RATE_LIMITED', async () => {
+    await expect(
+      run(
+        provider(
+          fakeFetch(
+            400,
+            '{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}',
+          ),
+        ),
+      ),
+    ).resolves.toBe('AI_PROVIDER_RATE_LIMITED');
+  });
+
   it.each([
     [
       'anthropicRejectsNonJsonText',

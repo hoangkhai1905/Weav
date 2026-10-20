@@ -60,7 +60,8 @@ async function readErrorHead(response: Response): Promise<string> {
  * Maps a non-200 provider response to an AiError. userKey=false is the
  * service-owned DeepSeek key (429 counts as unavailable); userKey=true is a
  * workspace's own key (429 = rate limit/credit, 404 or a 400 saying the model
- * is missing = unknown model, a 400 saying the key is invalid = auth; any
+ * is missing = unknown model, a 400 saying the key is invalid = auth, one saying the credit balance
+ * is too low = rate limit; any
  * other 400, such as a parameter-compat error, is an invalid output).
  * Never put provider text or the key in the error.
  */
@@ -78,6 +79,9 @@ export async function failOnStatus(
     throw new AiError('AI_PROVIDER_UNAVAILABLE');
   if (userKey && status === 404) throw new AiError('AI_MODEL_NOT_FOUND');
   if (head !== undefined) {
+    // Anthropic reports an empty balance as a 400, not a 402/429.
+    if (head.includes('credit balance'))
+      throw new AiError('AI_PROVIDER_RATE_LIMITED');
     if (
       head.includes('model_not_found') ||
       (head.includes('model') &&
