@@ -25,6 +25,14 @@ import './request-signal';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_OUTPUT_BYTES = 256 * 1024;
 
+type WithoutLlm<T> = T extends unknown ? Omit<T, 'llm'> : never;
+/** Use cases JSON-serialize their input into the prompt, so the user's key must never reach them. */
+function withoutLlm<T extends object>(body: T): WithoutLlm<T> {
+  const rest = { ...body } as Record<string, unknown>;
+  delete rest.llm;
+  return rest as WithoutLlm<T>;
+}
+
 @Controller('v1')
 export class AiController {
   private readonly logger = new Logger('AiController');
@@ -80,16 +88,17 @@ export class AiController {
       let outcome = 'OK';
       try {
         const signal = request.aiSignal;
+        const input = withoutLlm(body);
         const result =
-          body.operation === 'extract'
-            ? await extract(provider, body, signal)
-            : body.operation === 'classify'
-              ? await classify(provider, body, signal)
-              : body.operation === 'summarize'
-                ? await summarize(provider, body, signal)
-                : body.operation === 'prompt'
-                  ? await prompt(provider, body, signal)
-                  : await generate(provider, body, signal);
+          input.operation === 'extract'
+            ? await extract(provider, input, signal)
+            : input.operation === 'classify'
+              ? await classify(provider, input, signal)
+              : input.operation === 'summarize'
+                ? await summarize(provider, input, signal)
+                : input.operation === 'prompt'
+                  ? await prompt(provider, input, signal)
+                  : await generate(provider, input, signal);
         if (
           Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_OUTPUT_BYTES
         )

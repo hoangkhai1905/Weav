@@ -48,6 +48,8 @@ describe('llm selection in envelopes', () => {
     ['apiKey with newline', { ...llm, apiKey: 'sk-a\nb' }],
     ['empty apiKey', { ...llm, apiKey: '' }],
     ['model with a space', { ...llm, model: 'a b' }],
+    ['empty model', { ...llm, model: '' }],
+    ['model over 100 chars', { ...llm, model: 'm'.repeat(101) }],
     ['unknown provider', { ...llm, provider: 'DEEPSEEK' }],
     ['unknown llm key', { ...llm, baseUrl: 'http://evil' }],
   ])('rejects %s', (_n, l) => {
@@ -58,5 +60,7 @@ describe('llm selection in envelopes', () => {
     expect(
       summarize({ ...llm, apiKey: 'k'.repeat(512), model: 'gemini-2.5-flash' }),
     ).toBe(true);
+    expect(summarize({ ...llm, model: '.a:b/c-1' })).toBe(true);
+    expect(summarize({ ...llm, model: 'm'.repeat(100) })).toBe(true);
   });
 });

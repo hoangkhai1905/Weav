@@ -16,7 +16,7 @@ const llm = z
       .refine((k) => [...k].every((c) => c > '\x1f' && c !== '\x7f')),
     model: z
       .string()
-      .regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/)
+      .regex(/^[A-Za-z0-9._:/-]{1,100}$/)
       .optional(),
   })
   .optional();

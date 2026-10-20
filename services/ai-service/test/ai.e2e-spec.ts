@@ -130,6 +130,45 @@ describe('per-request llm selection', () => {
     }
   });
 
+  it.each([
+    ['summarize', summarizeBody, '{"summary":"s"}'],
+    [
+      'classify',
+      { text: 't', categories: ['a', 'b'] },
+      '{"category":"a","confidence":0.9}',
+    ],
+    [
+      'extract',
+      {
+        text: 't',
+        outputSchema: {
+          type: 'object',
+          properties: { n: { type: 'string' } },
+          required: ['n'],
+          additionalProperties: false,
+        },
+      },
+      '{"n":"x"}',
+    ],
+    ['prompt', { prompt: 'p' }, '{"text":"t"}'],
+  ])(
+    'keeps the user key out of the outbound %s request body',
+    async (op, extra, content) => {
+      const fetchMock = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(chat(content));
+      const res = await call(op, { ...extra, llm });
+      expect(res.statusCode).toBe(200);
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(init.body).toEqual(expect.any(String));
+      expect(init.body).not.toContain('sk-LEAKCHECK-1');
+      expect(init.body).not.toContain('apiKey');
+      expect((init.headers as Record<string, string>).authorization).toBe(
+        'Bearer sk-LEAKCHECK-1',
+      );
+    },
+  );
+
   it('still answers AI_NOT_CONFIGURED without llm when no provider is configured', async () => {
     const unconfigured = await createAiApp({
       config,
@@ -193,7 +232,12 @@ describe('per-request llm selection', () => {
     });
     expect(retry.statusCode).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    // capture really worked: the controller's log line and the error were seen
+    expect(out.join('')).toContain('AI_PROVIDER_RATE_LIMITED');
+    expect(out.join('')).toContain('"llmProvider":"OPENAI"');
     expect(out.join('')).not.toContain('sk-LEAKCHECK-1');
+    for (const [, init] of fetchMock.mock.calls as [string, RequestInit][])
+      expect(init.body).not.toContain('sk-LEAKCHECK-1');
     expect(first.body + retry.body).not.toContain('sk-LEAKCHECK-1');
   });
 });
