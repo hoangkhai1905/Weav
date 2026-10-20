@@ -5,9 +5,14 @@ import {
   ServerResponse,
 } from 'node:http';
 import { AddressInfo } from 'node:net';
-import { AiError } from '../../../domain/errors';
-import { DeepSeekProvider } from './deepseek-provider';
+import { AiError } from '../../domain/errors';
+import { OpenAiCompatibleProvider } from './openai-compatible-provider';
 
+const DEEPSEEK = {
+  tokenParam: 'max_tokens',
+  sendTemperature: true,
+  userKey: false,
+} as const;
 let server: Server;
 let handler: (req: IncomingMessage, res: ServerResponse) => void;
 let hits = 0;
@@ -33,12 +38,13 @@ beforeEach(() => {
 });
 
 const provider = (maxResponseBytes = 1024 * 1024) =>
-  new DeepSeekProvider({
+  new OpenAiCompatibleProvider({
     apiKey: 'test-key',
     model: 'fixture-model',
     baseUrl,
     maxTokens: 4096,
     maxResponseBytes,
+    ...DEEPSEEK,
   });
 const completion = (content: string, finish = 'stop') =>
   JSON.stringify({
@@ -57,7 +63,7 @@ const run = (p = provider(), signal = AbortSignal.timeout(2000)) =>
     (e: AiError) => e.code as string,
   );
 
-describe('DeepSeekProvider', () => {
+describe('OpenAiCompatibleProvider (DeepSeek defaults)', () => {
   it('sends JSON mode without tools or streaming, and returns the parsed object', async () => {
     let sent: { auth?: string; body: Record<string, unknown> } | undefined;
     handler = (req, res) => {
@@ -133,13 +139,101 @@ describe('DeepSeekProvider', () => {
   });
 
   it('maps a refused connection to AI_PROVIDER_UNAVAILABLE', async () => {
-    const dead = new DeepSeekProvider({
+    const dead = new OpenAiCompatibleProvider({
       apiKey: 'k',
       model: 'm',
       baseUrl: 'http://127.0.0.1:1',
       maxTokens: 10,
       maxResponseBytes: 10,
+      ...DEEPSEEK,
     });
     await expect(run(dead)).resolves.toBe('AI_PROVIDER_UNAVAILABLE');
+  });
+});
+
+const LEAK = 'sk-LEAKCHECK-1';
+const userProvider = (
+  fetchImpl: typeof fetch,
+  extra: Partial<
+    ConstructorParameters<typeof OpenAiCompatibleProvider>[0]
+  > = {},
+) =>
+  new OpenAiCompatibleProvider(
+    {
+      apiKey: LEAK,
+      model: 'm',
+      baseUrl: 'https://example.test/v1/',
+      maxTokens: 100,
+      maxResponseBytes: 1024,
+      tokenParam: 'max_tokens',
+      sendTemperature: true,
+      userKey: true,
+      ...extra,
+    },
+    fetchImpl,
+  );
+const fakeFetch = (status: number, body = '{}') =>
+  (() =>
+    Promise.resolve(new Response(body, { status }))) as unknown as typeof fetch;
+const runUser = (p: OpenAiCompatibleProvider) =>
+  p
+    .completeJson({ system: 's json', user: 'u' }, AbortSignal.timeout(2000))
+    .then(
+      () => 'OK',
+      (e: unknown) => {
+        expect(String(e)).not.toContain(LEAK);
+        return (e as AiError).code;
+      },
+    );
+
+describe('OpenAiCompatibleProvider (userKey)', () => {
+  it.each([
+    [401, '{}', 'AI_PROVIDER_AUTH'],
+    [402, '{}', 'AI_PROVIDER_AUTH'],
+    [403, '{}', 'AI_PROVIDER_AUTH'],
+    [429, '{}', 'AI_PROVIDER_RATE_LIMITED'],
+    [404, '{}', 'AI_MODEL_NOT_FOUND'],
+    [
+      400,
+      '{"error":{"message":"The model `x` does not exist"}}',
+      'AI_MODEL_NOT_FOUND',
+    ],
+    [400, '{"error":{"message":"bad request"}}', 'AI_OUTPUT_INVALID'],
+    [500, '{}', 'AI_PROVIDER_UNAVAILABLE'],
+    [503, '{}', 'AI_PROVIDER_UNAVAILABLE'],
+  ])('maps HTTP %i (%s) to %s', async (status, body, code) => {
+    await expect(runUser(userProvider(fakeFetch(status, body)))).resolves.toBe(
+      code,
+    );
+  });
+
+  it('only looks at the first 4 KiB of a 400 body', async () => {
+    const body = `${' '.repeat(5000)}model`;
+    await expect(runUser(userProvider(fakeFetch(400, body)))).resolves.toBe(
+      'AI_OUTPUT_INVALID',
+    );
+  });
+
+  it('keeps the key out of the error when fetch throws it', async () => {
+    const throwing = (() =>
+      Promise.reject(new Error(`boom ${LEAK}`))) as unknown as typeof fetch;
+    await expect(runUser(userProvider(throwing))).resolves.toBe(
+      'AI_PROVIDER_UNAVAILABLE',
+    );
+  });
+
+  it('uses max_completion_tokens and omits temperature when asked', async () => {
+    let sent: Record<string, unknown> = {};
+    const capture = (_: string, init: RequestInit) => {
+      sent = JSON.parse(init.body as string) as Record<string, unknown>;
+      return Promise.resolve(new Response(completion('{"a":1}')));
+    };
+    await userProvider(capture, {
+      tokenParam: 'max_completion_tokens',
+      sendTemperature: false,
+    }).completeJson({ system: 's', user: 'u' }, AbortSignal.timeout(2000));
+    expect(sent.max_completion_tokens).toBe(100);
+    expect(sent).not.toHaveProperty('max_tokens');
+    expect(sent).not.toHaveProperty('temperature');
   });
 });
