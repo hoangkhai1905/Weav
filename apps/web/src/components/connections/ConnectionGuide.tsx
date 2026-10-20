@@ -1,15 +1,18 @@
 import { Copy, ExternalLink } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
 
-export type GuideTopic = 'TELEGRAM' | 'DISCORD' | 'SLACK' | 'TEAMS' | 'GOOGLE' | 'WEBHOOK';
+export type GuideTopic = 'TELEGRAM' | 'DISCORD' | 'SLACK' | 'TEAMS' | 'GOOGLE' | 'WEBHOOK' | 'OPENAI' | 'ANTHROPIC' | 'GEMINI';
 
-const STEP_COUNT: Record<GuideTopic, number> = { TELEGRAM: 4, DISCORD: 4, SLACK: 4, TEAMS: 4, GOOGLE: 3, WEBHOOK: 4 };
+const STEP_COUNT: Record<GuideTopic, number> = { TELEGRAM: 4, DISCORD: 4, SLACK: 4, TEAMS: 4, GOOGLE: 3, WEBHOOK: 4, OPENAI: 3, ANTHROPIC: 3, GEMINI: 3 };
 
 // Only official pages; Teams and Google have no single page worth sending a beginner to.
 const EXTERNAL_LINK: Partial<Record<GuideTopic, string>> = {
   TELEGRAM: 'https://t.me/BotFather',
   DISCORD: 'https://support.discord.com/hc/articles/228383668',
   SLACK: 'https://api.slack.com/apps',
+  OPENAI: 'https://platform.openai.com/api-keys',
+  ANTHROPIC: 'https://console.anthropic.com/settings/keys',
+  GEMINI: 'https://aistudio.google.com/apikey',
 };
 
 const WEBHOOK_URL_SAMPLE: Partial<Record<GuideTopic, string>> = {
@@ -17,6 +20,8 @@ const WEBHOOK_URL_SAMPLE: Partial<Record<GuideTopic, string>> = {
   SLACK: 'https://hooks.slack.com/services/T0…/B0…/xYz…',
   TEAMS: 'https://….logic.azure.com/workflows/…/invoke?…&sig=…',
 };
+
+const AI_KEY_SAMPLE = { OPENAI: 'sk-proj-…xYz', ANTHROPIC: 'sk-ant-…xYz', GEMINI: 'AIza…xYz' } as const;
 
 const GATEWAY_URL = (import.meta.env.VITE_API_GATEWAY_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '');
 
@@ -46,6 +51,15 @@ function GuidePicture({ topic }: { topic: GuideTopic }) {
           <span className="rounded border border-border bg-card px-2 py-0.5 text-text-2">{t('guide.picture.google_cancel')}</span>
           <span className="rounded bg-primary px-2 py-0.5 font-semibold text-primary-foreground ring-2 ring-warn/50">{t('guide.picture.google_allow')}</span>
         </div>
+      </div>
+    );
+  }
+  if (topic === 'OPENAI' || topic === 'ANTHROPIC' || topic === 'GEMINI') {
+    return (
+      <div className="space-y-1.5 rounded-md border border-border bg-subtle p-2.5 text-[11px]">
+        <p className="font-semibold text-foreground">{t('guide.picture.ai_key')}</p>
+        <span className={`block w-fit break-all ${mark}`}>{AI_KEY_SAMPLE[topic]}</span>
+        <p className="text-[10px] text-warn">↑ {t('guide.picture.copy_this')}</p>
       </div>
     );
   }
