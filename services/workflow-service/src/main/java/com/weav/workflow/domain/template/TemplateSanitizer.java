@@ -53,10 +53,12 @@ public final class TemplateSanitizer {
         Set<String> connection = schema.connectionFields();
         Set<String> personal = schema.personalFields();
         Map<String, Object> config = new LinkedHashMap<>();
+        // A model name only validates next to an AI connection, so it leaves with the connection.
+        boolean dropsModel = node.type().startsWith("ai.") && connection.stream().anyMatch(node.config()::containsKey);
         for (Map.Entry<String, Object> entry : node.config().entrySet()) {
             String field = entry.getKey();
             Object value = entry.getValue();
-            if (connection.contains(field) || personal.contains(field) && !isPureExpression(value)) {
+            if (connection.contains(field) || dropsModel && "model".equals(field) || personal.contains(field) && !isPureExpression(value)) {
                 removed.add(new RemovedField(node.id(), field));
                 continue;
             }
