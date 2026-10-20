@@ -59,8 +59,10 @@ async function readErrorHead(response: Response): Promise<string> {
 /**
  * Maps a non-200 provider response to an AiError. userKey=false is the
  * service-owned DeepSeek key (429 counts as unavailable); userKey=true is a
- * workspace's own key (429 = rate limit/credit, 404 or a 400 naming the model
- * = unknown model). Never put provider text or the key in the error.
+ * workspace's own key (429 = rate limit/credit, 404 or a 400 saying the model
+ * is missing = unknown model, a 400 saying the key is invalid = auth; any
+ * other 400, such as a parameter-compat error, is an invalid output).
+ * Never put provider text or the key in the error.
  */
 export async function failOnStatus(
   response: Response,
@@ -74,7 +76,18 @@ export async function failOnStatus(
   if (userKey && status === 429) throw new AiError('AI_PROVIDER_RATE_LIMITED');
   if (status === 429 || status >= 500)
     throw new AiError('AI_PROVIDER_UNAVAILABLE');
-  if (userKey && (status === 404 || head?.includes('model')))
-    throw new AiError('AI_MODEL_NOT_FOUND');
+  if (userKey && status === 404) throw new AiError('AI_MODEL_NOT_FOUND');
+  if (head !== undefined) {
+    if (
+      head.includes('model_not_found') ||
+      (head.includes('model') &&
+        ['not found', 'does not exist', 'not exist'].some((t) =>
+          head.includes(t),
+        ))
+    )
+      throw new AiError('AI_MODEL_NOT_FOUND');
+    if (head.includes('api_key_invalid') || head.includes('api key not valid'))
+      throw new AiError('AI_PROVIDER_AUTH');
+  }
   throw new AiError('AI_OUTPUT_INVALID');
 }

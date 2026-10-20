@@ -102,6 +102,7 @@ describe('OpenAiCompatibleProvider (DeepSeek defaults)', () => {
     [500, 'AI_PROVIDER_UNAVAILABLE'],
     [503, 'AI_PROVIDER_UNAVAILABLE'],
     [400, 'AI_OUTPUT_INVALID'],
+    [404, 'AI_OUTPUT_INVALID'],
   ])('maps HTTP %i to %s with exactly one attempt', async (status, code) => {
     handler = reply(
       status,
@@ -109,6 +110,17 @@ describe('OpenAiCompatibleProvider (DeepSeek defaults)', () => {
     );
     await expect(run()).resolves.toBe(code);
     expect(hits).toBe(1);
+  });
+
+  it('userKey=false does not classify a 400 naming the model or a bad key', async () => {
+    for (const body of [
+      '{"error":{"message":"The model `x` does not exist"}}',
+      '{"error":{"code":"model_not_found"}}',
+      '{"error":{"message":"API key not valid."}}',
+    ]) {
+      handler = reply(400, body);
+      await expect(run()).resolves.toBe('AI_OUTPUT_INVALID');
+    }
   });
 
   it.each([
@@ -199,6 +211,31 @@ describe('OpenAiCompatibleProvider (userKey)', () => {
       'AI_MODEL_NOT_FOUND',
     ],
     [400, '{"error":{"message":"bad request"}}', 'AI_OUTPUT_INVALID'],
+    [
+      400,
+      '{"error":{"code":"model_not_found","message":"no access"}}',
+      'AI_MODEL_NOT_FOUND',
+    ],
+    [
+      400,
+      `{"error":{"message":"Unsupported value: 'temperature' does not support 0 with this model."}}`,
+      'AI_OUTPUT_INVALID',
+    ],
+    [
+      400,
+      `{"error":{"message":"Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."}}`,
+      'AI_OUTPUT_INVALID',
+    ],
+    [
+      400,
+      '[{"error":{"status":"INVALID_ARGUMENT","details":[{"reason":"API_KEY_INVALID"}]}}]',
+      'AI_PROVIDER_AUTH',
+    ],
+    [
+      400,
+      '{"error":{"message":"API key not valid. Please pass a valid API key."}}',
+      'AI_PROVIDER_AUTH',
+    ],
     [500, '{}', 'AI_PROVIDER_UNAVAILABLE'],
     [503, '{}', 'AI_PROVIDER_UNAVAILABLE'],
   ])('maps HTTP %i (%s) to %s', async (status, body, code) => {

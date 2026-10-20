@@ -72,7 +72,14 @@ describe('AnthropicProvider', () => {
 
   it('maps a 400 naming the model to AI_MODEL_NOT_FOUND, other 400 to AI_OUTPUT_INVALID', async () => {
     await expect(
-      run(provider(fakeFetch(400, '{"error":{"message":"model: nope"}}'))),
+      run(
+        provider(
+          fakeFetch(
+            400,
+            '{"error":{"message":"The model `x` does not exist"}}',
+          ),
+        ),
+      ),
     ).resolves.toBe('AI_MODEL_NOT_FOUND');
     await expect(
       run(provider(fakeFetch(400, '{"error":{"message":"bad"}}'))),
