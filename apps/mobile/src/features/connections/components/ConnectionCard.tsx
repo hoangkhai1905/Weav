@@ -11,6 +11,7 @@ import {
   PlugZap,
   Send,
   Sheet,
+  Sparkles,
   TriangleAlert,
   Users,
   type LucideIcon,
@@ -34,6 +35,9 @@ const ICONS: Record<ConnectionProvider, LucideIcon> = {
   DISCORD: MessageCircle,
   SLACK: Hash,
   TEAMS: Users,
+  OPENAI: Sparkles,
+  ANTHROPIC: Sparkles,
+  GEMINI: Sparkles,
 };
 
 /** Result of the last "Test" press: a verdict from the backend or a request failure message. */

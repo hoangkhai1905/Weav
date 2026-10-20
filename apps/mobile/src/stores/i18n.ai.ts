@@ -9,6 +9,9 @@ export const aiVi: Record<string, string> = {
   'provider.DISCORD': 'Discord',
   'provider.SLACK': 'Slack',
   'provider.TEAMS': 'Microsoft Teams',
+  'provider.OPENAI': 'ChatGPT (OpenAI)',
+  'provider.ANTHROPIC': 'Claude (Anthropic)',
+  'provider.GEMINI': 'Gemini (Google)',
 
   'dash.greeting': 'Xin chào, {name}',
   'dash.greetingAnon': 'Xin chào',
@@ -206,6 +209,9 @@ export const aiEn: Record<string, string> = {
   'provider.DISCORD': 'Discord',
   'provider.SLACK': 'Slack',
   'provider.TEAMS': 'Microsoft Teams',
+  'provider.OPENAI': 'ChatGPT (OpenAI)',
+  'provider.ANTHROPIC': 'Claude (Anthropic)',
+  'provider.GEMINI': 'Gemini (Google)',
 
   'dash.greeting': 'Hello, {name}',
   'dash.greetingAnon': 'Hello',

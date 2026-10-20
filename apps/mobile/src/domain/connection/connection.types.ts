@@ -7,7 +7,10 @@ export type ConnectionProvider =
   | 'HTTP'
   | 'DISCORD'
   | 'SLACK'
-  | 'TEAMS';
+  | 'TEAMS'
+  | 'OPENAI'
+  | 'ANTHROPIC'
+  | 'GEMINI';
 export type ConnectionAuthType = 'NONE' | 'TOKEN' | 'API_KEY' | 'BASIC' | 'OAUTH2';
 export type ConnectionStatus = 'ACTIVE' | 'INVALID' | 'DISABLED';
 export type ConnectionTestOutcome = 'VERIFIED' | 'AUTH_INVALID' | 'DEPENDENCY_FAILURE';

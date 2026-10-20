@@ -32,6 +32,13 @@ test('maps the bare-array connection list', () => {
   assert.throws(() => mapConnectionList([dto({ status: 'CONNECTED' })]), /status/);
 });
 
+test('maps AI-provider connections (OPENAI, ANTHROPIC, GEMINI) without failing the list', () => {
+  const items = mapConnectionList(
+    ['OPENAI', 'ANTHROPIC', 'GEMINI'].map((provider) => dto({ provider, authType: 'API_KEY', status: 'ACTIVE' })),
+  );
+  assert.deepEqual(items.map((i) => i.provider), ['OPENAI', 'ANTHROPIC', 'GEMINI']);
+});
+
 test('maps all three test outcomes including DEPENDENCY_FAILURE', () => {
   for (const outcome of ['VERIFIED', 'AUTH_INVALID', 'DEPENDENCY_FAILURE']) {
     assert.equal(mapConnectionTestOutcome({ outcome }), outcome);
