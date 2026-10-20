@@ -40,7 +40,8 @@ public record ResolvedConnectionCredential(
             case NONE, API_KEY, BASIC -> provider == ConnectionProvider.HTTP;
             case TOKEN -> provider == ConnectionProvider.HTTP || provider == ConnectionProvider.TELEGRAM
                     || provider == ConnectionProvider.DISCORD
-                    || provider == ConnectionProvider.SLACK || provider == ConnectionProvider.TEAMS;
+                    || provider == ConnectionProvider.SLACK || provider == ConnectionProvider.TEAMS
+                    || provider.isLlmKey();
             case OAUTH2 -> provider.isGoogleOAuth();
         };
         if (!auth.keySet().equals(expectedAuthKeys) || !validProvider) {

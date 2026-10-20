@@ -34,6 +34,8 @@ import com.weav.workspace.infrastructure.provider.http.HttpTargetValidator;
 import com.weav.workspace.infrastructure.provider.http.PinnedHttpTransport;
 import com.weav.workspace.infrastructure.provider.discord.DiscordConnectionProvider;
 import com.weav.workspace.infrastructure.provider.slack.SlackConnectionProvider;
+import com.weav.workspace.domain.valueobject.ConnectionProvider;
+import com.weav.workspace.infrastructure.provider.llm.LlmKeyConnectionProvider;
 import com.weav.workspace.infrastructure.provider.teams.TeamsConnectionProvider;
 import com.weav.workspace.infrastructure.provider.telegram.TelegramConnectionProvider;
 import com.weav.workspace.infrastructure.workflow.WorkflowConnectionUsageClient;
@@ -320,12 +322,37 @@ public class WorkspaceApplicationConfig {
     }
 
     @Bean
+    public LlmKeyConnectionProvider openAiConnectionProvider(
+            HttpTargetValidator targetValidator, PinnedHttpTransport transport) {
+        return new LlmKeyConnectionProvider(ConnectionProvider.OPENAI,
+                URI.create("https://api.openai.com/v1/models"), targetValidator, transport);
+    }
+
+    @Bean
+    public LlmKeyConnectionProvider anthropicConnectionProvider(
+            HttpTargetValidator targetValidator, PinnedHttpTransport transport) {
+        return new LlmKeyConnectionProvider(ConnectionProvider.ANTHROPIC,
+                URI.create("https://api.anthropic.com/v1/models"), targetValidator, transport);
+    }
+
+    @Bean
+    public LlmKeyConnectionProvider geminiConnectionProvider(
+            HttpTargetValidator targetValidator, PinnedHttpTransport transport) {
+        return new LlmKeyConnectionProvider(ConnectionProvider.GEMINI,
+                URI.create("https://generativelanguage.googleapis.com/v1beta/openai/models"),
+                targetValidator, transport);
+    }
+
+    @Bean
     public ConnectionProviderRegistry connectionProviderRegistry(
             TelegramConnectionProvider telegramConnectionProvider,
             DiscordConnectionProvider discordConnectionProvider,
             SlackConnectionProvider slackConnectionProvider,
             TeamsConnectionProvider teamsConnectionProvider,
             HttpConnectionProvider httpConnectionProvider,
+            @Qualifier("openAiConnectionProvider") LlmKeyConnectionProvider openAiConnectionProvider,
+            @Qualifier("anthropicConnectionProvider") LlmKeyConnectionProvider anthropicConnectionProvider,
+            @Qualifier("geminiConnectionProvider") LlmKeyConnectionProvider geminiConnectionProvider,
             @Qualifier("gmailConnectionProvider") GoogleConnectionProvider gmailConnectionProvider,
             @Qualifier("googleSheetsConnectionProvider") GoogleConnectionProvider googleSheetsConnectionProvider,
             @Qualifier("googleCalendarConnectionProvider") GoogleConnectionProvider googleCalendarConnectionProvider,
@@ -336,6 +363,9 @@ public class WorkspaceApplicationConfig {
                 slackConnectionProvider,
                 teamsConnectionProvider,
                 httpConnectionProvider,
+                openAiConnectionProvider,
+                anthropicConnectionProvider,
+                geminiConnectionProvider,
                 gmailConnectionProvider,
                 googleSheetsConnectionProvider,
                 googleCalendarConnectionProvider,
