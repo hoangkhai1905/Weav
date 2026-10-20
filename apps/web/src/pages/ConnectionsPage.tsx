@@ -666,9 +666,10 @@ export function CreateConnectionDialog({
                   aria-hidden="true"
                 />
               )}
+              {/* submitLabel/pendingLabel describe the Google flow; a token connection (key, bot, webhook) has no Google step. */}
               {busy
-                ? (pendingLabel ?? t("connections.create.pending"))
-                : (submitLabel ?? (isToken ? t("connections.create.submit") : t("w5c.create_and_connect")))}
+                ? ((isToken ? undefined : pendingLabel) ?? t("connections.create.pending"))
+                : ((isToken ? undefined : submitLabel) ?? (isToken ? t("connections.create.submit") : t("w5c.create_and_connect")))}
             </button>
           </div>
         </form>

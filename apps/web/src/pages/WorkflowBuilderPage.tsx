@@ -75,7 +75,8 @@ import { invalidateWorkflowQueries } from '../lib/queries/workflows';
 import { WorkflowSettingsPanel } from '../components/builder/WorkflowSettingsPanel';
 import { useAttachableConnectionIds, useConnections, useStartGoogleOAuth } from '../hooks/useConnections';
 import { useOcrSources } from '../hooks/useNodeCapabilities';
-import type { ConnectionResponse, GoogleProvider } from '../api/connection.api';
+import type { CreatedConnection, GoogleProvider } from '../api/connection.api';
+import { isAiProvider } from '../lib/aiProviders';
 import { CreateConnectionDialog } from './ConnectionsPage';
 import { ConnectionGuide, type GuideTopic } from '../components/connections/ConnectionGuide';
 import { storeOAuthPendingContext } from '../lib/oauthPending';
@@ -84,6 +85,7 @@ import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG, nextNodeId, nodeSourcePorts } from '../lib/constants/nodeCatalog';
 import { getNodeReadinessBadge, isConditionComplete, isMarkedRequired, missingFieldLabels } from '../lib/nodeReadiness';
 import { SchemaField } from '../components/builder/SchemaField';
+import { AiConnectionField, AiModelField } from '../components/builder/AiConnectionField';
 import { AdvancedSection } from '../components/builder/AdvancedSection';
 import { FieldShell } from '../components/builder/FieldShell';
 import { fieldCopy, hasValueOrError } from '../lib/fieldCopy';
@@ -286,7 +288,8 @@ const SCHEMA_FORMS: Record<string, { provider?: SchemaProvider; fields: (config:
       : ['summary', 'start', 'end', 'timeZone', 'description', 'location', 'attendees', 'sendInvitations'])],
     multiline: ['description'],
   },
-  'ai.generate': { fields: () => ['prompt', 'instructions', 'maxLength'], multiline: ['prompt', 'instructions'] },
+  // The AI picker (AiConnectionField) is rendered above the fields; `model` is the marker of its model-name field.
+  'ai.generate': { fields: (config) => ['prompt', 'instructions', 'maxLength', ...(config.connectionId ? ['model'] : [])], multiline: ['prompt', 'instructions'] },
 };
 // Schema-form fields that get one-click data suggestions under them (the main content of the step).
 const SUGGEST_FIELDS: Record<string, string[]> = {
@@ -501,6 +504,10 @@ export const WorkflowBuilderPage: React.FC = () => {
       onChange={(next) => updateSelectedNodeConfig({ [name]: next })}
     />
   );
+  /** Props of the AI picker and the model-name field of the four AI steps. */
+  const aiFieldProps = { config: selectedNodeConfig, connections: workspaceConnections ?? [], onChange: (patch: { connectionId?: string; model?: string }) => updateSelectedNodeConfig(patch) };
+  /** Extra options of an AI step: its own fields, plus the model name once the step uses its own AI connection. */
+  const aiAdvancedNames = (names: string[]) => (selectedNodeConfig.connectionId ? [...names, 'model'] : names);
   /** The "Ví dụ: …" placeholder of a hand-written text field: same copy source as SchemaField (builder.field.<type>.<name>_example). */
   const examplePlaceholder = (name: string) => {
     const { example } = fieldCopy(selectedNodeType, name, t);
@@ -1211,7 +1218,14 @@ export const WorkflowBuilderPage: React.FC = () => {
 
   // New connection from the inspector: attach it to the step, save the draft, then authorize with
   // Google. The OAuth callback (Connections page) returns to `?step=` once the connection is verified.
-  const handleInspectorConnectionCreated = async (connection: ConnectionResponse) => {
+  const handleInspectorConnectionCreated = async (connection: CreatedConnection) => {
+    // An AI key is not a Google account: nothing to authorize and not meant for the open step. The key was checked
+    // right after saving; the connection stays so the key can be fixed or replaced on the Connections page.
+    if (isAiProvider(connection.provider)) {
+      setAddConnectionFor(null);
+      if (connection.testOutcome === 'AUTH_INVALID') toast.warning(t('connections.test.ai_key_invalid'));
+      return;
+    }
     const nodeId = addConnectionFor?.nodeId;
     try {
       if (!nodeId || !workflow || !userId) throw new Error(tr('msg.workflow_is_not_loaded'));
@@ -2140,6 +2154,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                 </div>
               ) : selectedSchemaForm ? (
                 <div data-testid="schema-config" className="space-y-3">
+                  {selectedNodeType === 'ai.generate' && <AiConnectionField key={`${selectedNodeId}-ai-connection`} {...aiFieldProps} />}
                   {selectedSchemaForm.provider && (() => {
                     const provider = selectedSchemaForm.provider;
                     const options = (workspaceConnections ?? []).filter(
@@ -2179,6 +2194,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     const names = selectedSchemaForm.fields(selectedNodeConfig);
                     const advancedNames = names.filter((name) => isAdvanced(selectedNodeType, name));
                     const renderField = (name: string) => {
+                      if (selectedNodeType === 'ai.generate' && name === 'model') return <AiModelField key={`${selectedNodeId}-ai-model`} {...aiFieldProps} />;
                       const multiline = selectedSchemaForm.multiline?.includes(name);
                       return (
                         <React.Fragment key={name}>
@@ -2457,6 +2473,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                 </div>
               ) : selectedNodeType.startsWith('ai.') ? (
                 <div data-testid="ai-config" className="space-y-3">
+                  <AiConnectionField key={`${selectedNodeId}-ai-connection`} {...aiFieldProps} />
                   {selectedNodeType === 'ai.extract' && (
                     <div className="space-y-3">
                       <OutputSchemaEditor
@@ -2468,7 +2485,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                         <MappingTextField key={`${selectedNodeId}-ai-text`} id={id} labelledBy={`${id}-label`} describedBy={describedBy} required={isMarkedRequired(selectedNodeType, 'text', selectedNodeConfig)} placeholder={examplePlaceholder('text')} multiline value={String(selectedNodeConfig.text ?? '')} onChange={(text) => updateSelectedNodeConfig({ text })} groups={inspectorGroups} />
                         {suggestionsFor('text', true)}
                       </>))}
-                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={AI_EXTRACT_ADVANCED.length} defaultOpen={hasValueOrError(AI_EXTRACT_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>{configField('instructions', undefined, true)}</AdvancedSection>
+                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={aiAdvancedNames(AI_EXTRACT_ADVANCED).length} defaultOpen={hasValueOrError(aiAdvancedNames(AI_EXTRACT_ADVANCED), selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>{configField('instructions', undefined, true)}<AiModelField key={`${selectedNodeId}-ai-model`} {...aiFieldProps} /></AdvancedSection>
                     </div>
                   )}
                   {selectedNodeType === 'ai.classify' && (
@@ -2476,6 +2493,9 @@ export const WorkflowBuilderPage: React.FC = () => {
                       {configField('content', undefined, true)}
                       {suggestionsFor('content', true)}
                       <CommaListInput key={selectedNodeId} id="ai-categories" label={t('builder.cfg.categories')} hint={fieldCopy('ai.classify', 'categories', t).hint} placeholder={`${t('builder.field.example_prefix')}${fieldCopy('ai.classify', 'categories', t).example ?? ''}`} value={selectedNodeConfig.categories} onChange={(categories) => updateSelectedNodeConfig({ categories })} />
+                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={aiAdvancedNames([]).length} defaultOpen={hasValueOrError(aiAdvancedNames([]), selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>
+                        <AiModelField key={`${selectedNodeId}-ai-model`} {...aiFieldProps} />
+                      </AdvancedSection>
                     </div>
                   )}
                   {selectedNodeType === 'ai.summarize' && (
@@ -2483,7 +2503,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                       {configField('inputText', undefined, true)}
                       {suggestionsFor('inputText', true)}
                       {/* Whole numbers 1..5000 are saved as numbers, a {{ }} mapping stays text, empty is omitted, anything else is flagged and not saved. */}
-                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={AI_SUMMARIZE_ADVANCED.length} defaultOpen={hasValueOrError(AI_SUMMARIZE_ADVANCED, selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>{configField('maxLength')}</AdvancedSection>
+                      <AdvancedSection key={`ai-advanced-${selectedNodeId}`} testId="ai-advanced" count={aiAdvancedNames(AI_SUMMARIZE_ADVANCED).length} defaultOpen={hasValueOrError(aiAdvancedNames(AI_SUMMARIZE_ADVANCED), selectedNodeConfig, selectedFieldErrors, selectedNodeType)}>{configField('maxLength')}<AiModelField key={`${selectedNodeId}-ai-model`} {...aiFieldProps} /></AdvancedSection>
                     </div>
                   )}
                 </div>
