@@ -60,6 +60,13 @@ class LlmKeyConnectionProviderTest {
     }
 
     @Test
+    void badRequestIsAuthInvalidForGemini() throws Exception {
+        startServer(exchange -> respond(exchange, 400, "{\"error\":{\"message\":\"API key not valid\"}}"));
+        assertEquals(ConnectionTestOutcome.AUTH_INVALID,
+                provider(ConnectionProvider.GEMINI).test(connection(ConnectionProvider.GEMINI), creds()).outcome());
+    }
+
+    @Test
     void transientFailuresAreDependencyFailures() throws Exception {
         for (int status : List.of(408, 429, 500, 503)) {
             startServer(exchange -> respond(exchange, status, "synthetic body " + KEY));
@@ -115,8 +122,11 @@ class LlmKeyConnectionProviderTest {
     void malformedCredentialIsAuthInvalidWithoutRequest() {
         LlmKeyConnectionProvider provider = provider(ConnectionProvider.OPENAI);
         Connection connection = connection(ConnectionProvider.OPENAI);
+        ConnectionTestResult malformed = provider.test(connection, Map.of("token", "bad\r\nkey"));
+        assertEquals(ConnectionTestOutcome.AUTH_INVALID, malformed.outcome());
+        assertFalse(malformed.toString().contains("bad"));
         assertEquals(ConnectionTestOutcome.AUTH_INVALID,
-                provider.test(connection, Map.of("token", "bad\r\nkey")).outcome());
+                provider.test(connection, Map.of("token", "k".repeat(513))).outcome());
         assertEquals(ConnectionTestOutcome.AUTH_INVALID, provider.test(connection, Map.of("token", " ")).outcome());
         assertEquals(ConnectionTestOutcome.AUTH_INVALID, provider.test(connection, Map.of()).outcome());
     }
@@ -134,7 +144,10 @@ class LlmKeyConnectionProviderTest {
     void reportsItsProviderAndRejectsMismatchedConnection() {
         LlmKeyConnectionProvider provider = provider(ConnectionProvider.GEMINI);
         assertEquals(ConnectionProvider.GEMINI, provider.provider());
-        assertThrows(RuntimeException.class, () -> provider.test(connection(ConnectionProvider.OPENAI), creds()));
+        RuntimeException thrown = assertThrows(RuntimeException.class,
+                () -> provider.test(connection(ConnectionProvider.OPENAI), creds()));
+        assertFalse(String.valueOf(thrown.getMessage()).contains(KEY));
+        assertFalse(String.valueOf(thrown.getCause()).contains(KEY));
     }
 
     @Test

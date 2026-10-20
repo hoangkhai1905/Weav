@@ -49,13 +49,19 @@ class AiCredentialTest {
         for (String bad : new String[] {"sk-abc\r\nX-Evil: 1", "sk-abc\n", "sk\u0000abc", "sk abc", "sk-é"}) {
             assertThatThrownBy(() -> codec.encode(provider, ConnectionAuthType.TOKEN, Map.of("token", bad)))
                     .isInstanceOf(BadRequestException.class)
+                    .hasMessageNotContaining(bad)
                     .hasMessageNotContaining("Evil");
         }
     }
 
     @Test
-    void rejectsOverlongKey() {
+    void acceptsKeyUpTo512CharactersAndRejectsLonger() {
+        assertThat(codec.encode(ConnectionProvider.OPENAI, ConnectionAuthType.TOKEN,
+                Map.of("token", "k".repeat(512)))).isNotEmpty();
+        String tooLong = "k".repeat(513);
         assertThatThrownBy(() -> codec.encode(ConnectionProvider.OPENAI, ConnectionAuthType.TOKEN,
-                Map.of("token", "k".repeat(4097)))).isInstanceOf(BadRequestException.class);
+                Map.of("token", tooLong)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageNotContaining(tooLong);
     }
 }

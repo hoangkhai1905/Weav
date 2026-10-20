@@ -177,9 +177,9 @@ public final class CredentialPayloadCodec {
         }
     }
 
-    /** An AI API key is sent verbatim in a header: visible ASCII only (no spaces/controls), bounded length. */
+    /** An AI API key is sent verbatim in a header: visible ASCII only (no spaces/controls), 1..512 chars. */
     public static boolean isLlmApiKey(String key) {
-        return key != null && key.length() <= 4096 && key.chars().allMatch(ch -> ch > 0x20 && ch < 0x7f);
+        return key != null && !key.isEmpty() && key.length() <= 512 && key.chars().allMatch(ch -> ch > 0x20 && ch < 0x7f);
     }
 
     /**
