@@ -5,6 +5,8 @@ import { RequireAdmin } from './components/RequireAdmin';
 import { useT } from './lib/i18n';
 import { LoginPage } from './pages/LoginPage';
 import { OverviewPage } from './pages/OverviewPage';
+import { UserDetailPage } from './pages/UserDetailPage';
+import { UsersPage } from './pages/UsersPage';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
 
@@ -38,6 +40,8 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route element={<Protected />}>
             <Route index element={<OverviewPage />} />
+            <Route path="users" element={<UsersPage />} />
+            <Route path="users/:id" element={<UserDetailPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>
