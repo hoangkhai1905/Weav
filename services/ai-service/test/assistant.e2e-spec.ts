@@ -181,6 +181,13 @@ async function start(rounds: Round[], env: Record<string, string> = {}) {
       completeJson: () => Promise.resolve({ summary: 'ok' }),
     },
     verifier: ServiceJwtVerifier.fromJwks(keys.jwks),
+    byok: {
+      openaiModel: 'o',
+      anthropicModel: 'a',
+      geminiModel: 'g',
+      maxTokens: 1024,
+      maxResponseBytes: 1024 * 1024,
+    },
     assistant: {
       provider,
       store,

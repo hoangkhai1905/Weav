@@ -9,7 +9,15 @@ public enum ConnectionProvider {
     GOOGLE_DRIVE,
     DISCORD,
     SLACK,
-    TEAMS;
+    TEAMS,
+    OPENAI,
+    ANTHROPIC,
+    GEMINI;
+
+    /** True for AI providers connected with the workspace's own API key. */
+    public boolean isLlmKey() {
+        return this == OPENAI || this == ANTHROPIC || this == GEMINI;
+    }
 
     /** True for providers connected through the shared Google OAuth flow. */
     public boolean isGoogleOAuth() {

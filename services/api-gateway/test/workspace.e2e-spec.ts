@@ -796,6 +796,37 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
     expect(fixtureRequests).toHaveLength(providers.length * authTypes.length);
   });
 
+  it('forwards AI provider key connections and still rejects unknown providers', async () => {
+    for (const provider of ['OPENAI', 'ANTHROPIC', 'GEMINI'] as const) {
+      const payload = { name: 'AI key', provider, authType: 'TOKEN' };
+      const response = await app
+        .getHttpAdapter()
+        .getInstance()
+        .inject({
+          method: 'POST',
+          url: `/api/v1/workspaces/${WORKSPACE_ID}/connections`,
+          headers: { authorization: signedAuthorization['normal-token'] },
+          payload,
+        });
+
+      expect(response.statusCode).toBe(201);
+      expect(JSON.parse(fixtureRequests.at(-1)?.body ?? '')).toEqual(payload);
+    }
+
+    const before = fixtureRequests.length;
+    const rejected = await app
+      .getHttpAdapter()
+      .getInstance()
+      .inject({
+        method: 'POST',
+        url: `/api/v1/workspaces/${WORKSPACE_ID}/connections`,
+        headers: { authorization: signedAuthorization['normal-token'] },
+        payload: { name: 'AI key', provider: 'MISTRAL', authType: 'TOKEN' },
+      });
+    expect(rejected.statusCode).toBe(400);
+    expect(fixtureRequests).toHaveLength(before);
+  });
+
   it('rejects invalid UUID/query/body inputs before any upstream request', async () => {
     const authorization = signedAuthorization['normal-token'];
     const invalidRequests: Array<{

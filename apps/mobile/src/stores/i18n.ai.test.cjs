@@ -23,7 +23,7 @@ test('every unsupported reason, question field and weekday used by the screens h
   for (const code of ['HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY']) {
     assert.ok(aiVi[`aig.sched.freq.${code}`] && aiVi[`aig.sched.sentence.${code}`], code);
   }
-  for (const code of ['GMAIL', 'GOOGLE_SHEETS', 'GOOGLE_CALENDAR', 'GOOGLE_DRIVE', 'TELEGRAM', 'HTTP']) {
+  for (const code of ['GMAIL', 'GOOGLE_SHEETS', 'GOOGLE_CALENDAR', 'GOOGLE_DRIVE', 'TELEGRAM', 'HTTP', 'OPENAI', 'ANTHROPIC', 'GEMINI']) {
     assert.ok(aiVi[`provider.${code}`], code);
   }
 });

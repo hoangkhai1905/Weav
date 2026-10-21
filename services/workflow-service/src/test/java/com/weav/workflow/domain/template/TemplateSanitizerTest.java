@@ -51,6 +51,21 @@ class TemplateSanitizerTest {
     }
 
     @Test
+    void removesModelTogetherWithTheAiConnection() {
+        SanitizedTemplate result = sanitizer.sanitize(definition(
+                node("summary", "ai.summarize", "connectionId", "11111111-1111-1111-1111-111111111111",
+                        "model", "gpt-4o", "text", "{{ trigger.input.body }}"),
+                node("plain", "ai.summarize", "model", "gpt-4o", "text", "x")), null);
+
+        assertFalse(config(result, "summary").containsKey("model"));
+        assertEquals("{{ trigger.input.body }}", config(result, "summary").get("text"));
+        assertTrue(result.removedFields().contains(new RemovedField("summary", "connectionId")));
+        assertTrue(result.removedFields().contains(new RemovedField("summary", "model")));
+        // No connection to drop: the model is left alone.
+        assertEquals("gpt-4o", config(result, "plain").get("model"));
+    }
+
+    @Test
     void keepsPureExpressionPersonalField() {
         SanitizedTemplate single = sanitizer.sanitize(definition(node("mail", "email.send",
                 "to", "{{ trigger.input.fromEmail }}")), null);

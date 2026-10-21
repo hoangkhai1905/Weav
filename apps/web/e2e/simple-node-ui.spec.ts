@@ -63,6 +63,15 @@ async function stubBackend(page: Page, extraNodes: StubNode[] = [], graph: StubG
   return savedDrafts;
 }
 
+/** One ACTIVE OpenAI connection, so the AI steps that name it show their model field with an example. */
+async function stubAiConnection(page: Page) {
+  await page.route(`**/api/v1/workspaces/${workspaceId}/connections**`, (route) => json(route, [{
+    id: AI_CONNECTION, workspaceId, createdBy: '00000000-0000-4000-8000-000000000010', name: 'My OpenAI', provider: 'OPENAI', authType: 'TOKEN',
+    status: 'ACTIVE', config: null, hasCredential: true, credentialExpiresAt: null, lastVerifiedAt: null, canManage: true, canAttach: true,
+    createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
+  }]));
+}
+
 async function openBuilder(page: Page) {
   await page.goto(`/workflows/${workflowId}/builder`);
   await expect(page.getByTestId('workflow-title')).toHaveValue('Simple nodes');
@@ -641,6 +650,9 @@ test('no builder. keys leak for any node type or operation', async ({ page }) =>
 
 // Wording pass: the shared check for a step's inspector (Task 8 triggers/messaging, reused by Task 9).
 const JARGON = /\b(ID|JSON|cron|payload|node|config)\b/i;
+// The only label allowed past four words: it names the AI of a step in the user's own words.
+const LONG_LABELS = new Set(['AI dùng cho bước này']);
+const AI_CONNECTION = '20000000-0000-4000-8000-0000000000a1';
 
 type InspectedField = { label: string; hint: string; control: 'select' | 'checkbox' | 'text' | 'none'; placeholder: string };
 
@@ -696,7 +708,7 @@ async function collectWordingProblems(page: Page, stepName: string, nodeId: stri
     const name = `${stepName} / ${field.label || '(no label)'}`;
     if (!field.label) problems.push(`${name}: empty label`);
     if (JARGON.test(field.label)) problems.push(`${name}: jargon in label`);
-    if (field.label.split(/\s+/).length > 4) problems.push(`${name}: label longer than four words`);
+    if (field.label.split(/\s+/).length > 4 && !LONG_LABELS.has(field.label)) problems.push(`${name}: label longer than four words`);
     if (!field.hint) problems.push(`${name}: no hint`);
     if (field.control === 'none') problems.push(`${name}: no control with the label's id`);
     if (field.control === 'text' && !field.placeholder.startsWith('Ví dụ:')) problems.push(`${name}: placeholder is "${field.placeholder}"`);
@@ -792,10 +804,13 @@ test('wording: google, logic, ai, ocr', async ({ page }) => {
     [{ id: 'tx_rep', type: 'format.text', config: { operation: 'replace' } }, 4],
     [{ id: 'tx_split', type: 'format.text', config: { operation: 'split' } }, 3],
     [{ id: 'tx_num', type: 'format.text', config: { operation: 'number_format' } }, 4],
-    [{ id: 'ai_ext', type: 'ai.extract', config: {} }, 2],
-    [{ id: 'ai_cls', type: 'ai.classify', config: {} }, 2],
-    [{ id: 'ai_sum', type: 'ai.summarize', config: {} }, 2],
-    [{ id: 'ai_gen', type: 'ai.generate', config: {} }, 3],
+    [{ id: 'ai_ext', type: 'ai.extract', config: {} }, 3],
+    [{ id: 'ai_cls', type: 'ai.classify', config: {} }, 3],
+    [{ id: 'ai_sum', type: 'ai.summarize', config: {} }, 3],
+    [{ id: 'ai_gen', type: 'ai.generate', config: {} }, 4],
+    // With its own AI connection a step also asks for the model name.
+    [{ id: 'ai_gen_own', type: 'ai.generate', config: { connectionId: AI_CONNECTION } }, 5],
+    [{ id: 'ai_cls_own', type: 'ai.classify', config: { connectionId: AI_CONNECTION } }, 4],
     [{ id: 'ocr_url', type: 'ocr.extract', config: { fileUrl: 'https://example.test/a.pdf' } }, 3],
     [{ id: 'ocr_art', type: 'ocr.extract', config: { artifactId: 'art-1' } }, 3],
     [{ id: 'ocr_file', type: 'ocr.extract', config: { file: '{{ trigger.input.file }}' } }, 3],
@@ -804,6 +819,7 @@ test('wording: google, logic, ai, ocr', async ({ page }) => {
   const names = Object.fromEntries(nodes.map((step) => [step.id, `Step ${step.id}`]));
   // The Telegram trigger hands a file to the OCR step, so its file picker has options.
   await stubBackend(page, nodes, { edges: [['tgt', 'ocr_file']], names });
+  await stubAiConnection(page);
   await openBuilder(page);
   const problems: string[] = [];
   for (const [step, minFields] of steps) problems.push(...await collectWordingProblems(page, `Step ${step.id}`, step.id, minFields));
@@ -843,13 +859,19 @@ test('flagged fields of google, logic, AI and OCR sit under Thêm tùy chọn', 
     ['format.datetime', { operation: 'format' }, 'schema-advanced', ['locale'], byTestId],
     ['format.text', { operation: 'number_format' }, 'schema-advanced', ['decimals', 'locale'], byTestId],
     ['format.text', { operation: 'split' }, 'schema-advanced', ['separator'], byTestId],
+    // The model name only exists for a step that uses its own AI connection.
     ['ai.extract', {}, 'ai-advanced', ['instructions'], byTestId],
+    ['ai.extract', { connectionId: AI_CONNECTION }, 'ai-advanced', ['instructions', 'model'], byTestId],
     ['ai.summarize', {}, 'ai-advanced', ['maxLength'], byTestId],
+    ['ai.summarize', { connectionId: AI_CONNECTION }, 'ai-advanced', ['maxLength', 'model'], byTestId],
+    ['ai.classify', { connectionId: AI_CONNECTION }, 'ai-advanced', ['model'], byTestId],
     ['ai.generate', {}, 'schema-advanced', ['instructions', 'maxLength'], byTestId],
+    ['ai.generate', { connectionId: AI_CONNECTION }, 'schema-advanced', ['instructions', 'maxLength', 'model'], byTestId],
     ['ocr.extract', { fileUrl: 'https://example.test/a.pdf' }, 'ocr-advanced', ['language', 'detectTables'], (section, name) => (name === 'language' ? section.locator('#ocr-language') : section.getByTestId('ocr-detect-tables'))],
   ];
   const nodes: StubNode[] = cases.map(([type, config], index) => ({ id: `n${index}`, type, config }));
   await stubBackend(page, nodes, { names: Object.fromEntries(nodes.map((node) => [node.id, `Step ${node.id}`])) });
+  await stubAiConnection(page);
   await openBuilder(page);
   const covered = new Map<string, Set<string>>();
   for (const [index, [type, , sectionId, shown, place]] of cases.entries()) {

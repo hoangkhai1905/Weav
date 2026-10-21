@@ -14,6 +14,9 @@ const PROVIDERS = [
   'DISCORD',
   'SLACK',
   'TEAMS',
+  'OPENAI',
+  'ANTHROPIC',
+  'GEMINI',
 ] as const;
 const AUTH_TYPES = ['NONE', 'TOKEN', 'API_KEY', 'BASIC', 'OAUTH2'] as const;
 const STATUSES = ['ACTIVE', 'INVALID', 'DISABLED'] as const;

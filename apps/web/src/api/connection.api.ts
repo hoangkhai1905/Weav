@@ -2,9 +2,10 @@ import axios, { type AxiosRequestConfig } from "axios";
 import { getStoredAuthToken } from "./ocr.api";
 import { tr } from '../lib/i18n/tr';
 import { useAuthStore } from '../store/useAuthStore';
+import { AI_PROVIDERS, type AiProvider } from '../lib/aiProviders';
 
 export type ConnectionProvider =
-  "TELEGRAM" | "DISCORD" | "SLACK" | "TEAMS" | "HTTP" | "GMAIL" | "GOOGLE_SHEETS" | "GOOGLE_CALENDAR" | "GOOGLE_DRIVE";
+  "TELEGRAM" | "DISCORD" | "SLACK" | "TEAMS" | "HTTP" | "GMAIL" | "GOOGLE_SHEETS" | "GOOGLE_CALENDAR" | "GOOGLE_DRIVE" | AiProvider;
 export type GoogleProvider = Extract<
   ConnectionProvider,
   "GMAIL" | "GOOGLE_SHEETS" | "GOOGLE_CALENDAR" | "GOOGLE_DRIVE"
@@ -40,13 +41,15 @@ export interface CreateGoogleConnectionRequest {
 
 export interface CreateTelegramConnectionRequest {
   name: string;
-  provider: "TELEGRAM" | "DISCORD" | "SLACK" | "TEAMS";
+  provider: "TELEGRAM" | "DISCORD" | "SLACK" | "TEAMS" | AiProvider;
   authType: "TOKEN";
-  /** Telegram bot token (@BotFather) or a Discord, Slack or Teams webhook URL; write-only, sent once to the credential endpoint and never kept. */
+  /** Telegram bot token (@BotFather), a Discord, Slack or Teams webhook URL, or an AI provider API key; write-only, sent once to the credential endpoint and never kept. */
   token: string;
 }
 
 export type ConnectionTestResponse = { outcome: "VERIFIED" | "AUTH_INVALID" };
+/** A new connection plus the result of the key check run right after saving (absent when that check could not run). */
+export type CreatedConnection = ConnectionResponse & { testOutcome?: ConnectionTestResponse["outcome"] };
 export type OAuthStartResponse = { authorizationUrl: string };
 
 interface ErrorEnvelope {
@@ -177,7 +180,7 @@ function parseConnection(value: unknown): ConnectionResponse {
       tr('msg.workspace_returned_an_invalid_connection_response'),
     );
 
-  const providers = ["TELEGRAM", "DISCORD", "SLACK", "TEAMS", "HTTP", ...GOOGLE_PROVIDERS] as const;
+  const providers = ["TELEGRAM", "DISCORD", "SLACK", "TEAMS", "HTTP", ...GOOGLE_PROVIDERS, ...AI_PROVIDERS] as const;
   const authTypes = ["NONE", "TOKEN", "API_KEY", "BASIC", "OAUTH2"] as const;
   const statuses = ["DISABLED", "ACTIVE", "INVALID"] as const;
   const nullableString = (field: unknown) =>
@@ -311,7 +314,7 @@ export const connectionApi = {
   async create(
     workspaceId: string,
     input: CreateGoogleConnectionRequest | CreateTelegramConnectionRequest,
-  ): Promise<ConnectionResponse> {
+  ): Promise<CreatedConnection> {
     const value = await request<unknown>({
       method: "POST",
       url: basePath(workspaceId),
@@ -332,8 +335,8 @@ export const connectionApi = {
       throw error;
     }
     // A failed verification leaves the row DISABLED/INVALID; the row's Test action retries it.
-    await connectionApi.test(workspaceId, created.id).catch(() => undefined);
-    return created;
+    const test = await connectionApi.test(workspaceId, created.id).catch(() => undefined);
+    return { ...created, testOutcome: test?.outcome };
   },
 
   async saveCredential(

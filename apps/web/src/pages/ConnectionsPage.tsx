@@ -2,13 +2,14 @@ import type { FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, FileSpreadsheet, HardDrive, LoaderCircle, Mail, MessageSquare, MoreHorizontal, Plus, RefreshCw, Send, X } from "lucide-react";
+import { CalendarDays, FileSpreadsheet, HardDrive, LoaderCircle, Mail, MessageSquare, MoreHorizontal, Plus, RefreshCw, Send, Sparkles, X } from "lucide-react";
 import { ConnectionGuide } from "../components/connections/ConnectionGuide";
 import {
   ConnectionApiError,
   connectionApi,
   GOOGLE_PROVIDERS,
   type ConnectionResponse,
+  type CreatedConnection,
   type ConnectionStatus,
   type GoogleProvider,
 } from "../api/connection.api";
@@ -24,6 +25,7 @@ import {
 } from "../hooks/useConnections";
 import { useWorkspaceListContext } from "../hooks/useWorkspace";
 import { ConfirmModal } from "../components/common/ConfirmModal";
+import { AI_PROVIDER_NAMES, isAiProvider, isValidAiKey, type AiProvider } from "../lib/aiProviders";
 import { appLocale } from "../lib/i18n/tr";
 import { formatRelativeTime } from "../lib/relativeTime";
 import { statusBadgeClass, type StatusTone } from "../components/common/statusBadgeClass";
@@ -74,6 +76,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   SLACK: "Slack",
   TEAMS: "Microsoft Teams",
   HTTP: "HTTP",
+  ...AI_PROVIDER_NAMES,
 };
 
 const STATUS_KEYS: Record<ConnectionStatus, string> = {
@@ -103,6 +106,9 @@ const PROVIDER_CODES: Record<string, string> = {
   SLACK: "Sl",
   TEAMS: "Te",
   HTTP: "Wh",
+  OPENAI: "Ai",
+  ANTHROPIC: "Cl",
+  GEMINI: "Ge",
 };
 
 function getErrorMessage(error: unknown, t: (key: string) => string): string {
@@ -407,7 +413,7 @@ function ConnectionRow({
 }
 
 type WebhookProvider = "DISCORD" | "SLACK" | "TEAMS";
-type TokenProvider = "TELEGRAM" | WebhookProvider;
+type TokenProvider = "TELEGRAM" | WebhookProvider | AiProvider;
 const isWebhookProvider = (provider: string): provider is WebhookProvider =>
   provider === "DISCORD" || provider === "SLACK" || provider === "TEAMS";
 // Same rules as workspace-service (CredentialPayloadCodec); the server is the authority.
@@ -440,6 +446,9 @@ const PROVIDER_TILES: { value: GoogleProvider | TokenProvider; icon: React.Eleme
   { value: "DISCORD", icon: MessageSquare },
   { value: "SLACK", icon: MessageSquare },
   { value: "TEAMS", icon: MessageSquare },
+  { value: "OPENAI", icon: Sparkles },
+  { value: "ANTHROPIC", icon: Sparkles },
+  { value: "GEMINI", icon: Sparkles },
 ];
 
 /** "New connection" dialog, shared by the Connections page and the builder inspector. */
@@ -457,7 +466,7 @@ export function CreateConnectionDialog({
   pendingLabel?: string;
   onClose: () => void;
   /** Runs after the connection exists; a rejection is shown in the dialog. */
-  onCreated: (connection: ConnectionResponse) => void | Promise<void>;
+  onCreated: (connection: CreatedConnection) => void | Promise<void>;
 }) {
   const { t } = useI18nStore();
   const createConnection = useCreateConnection();
@@ -465,9 +474,10 @@ export function CreateConnectionDialog({
   const [provider, setProvider] = useState<GoogleProvider | TokenProvider>(initialProvider);
   const [token, setToken] = useState("");
   const webhookProvider = isWebhookProvider(provider) ? provider : null;
+  const aiProvider = isAiProvider(provider) ? provider : null;
   const webhookKey = webhookProvider ? webhookProvider.toLowerCase() : null;
-  // Telegram, Discord, Slack and Teams are token connections: the secret is sent once to the credential endpoint.
-  const isToken = provider === "TELEGRAM" || webhookProvider !== null;
+  // Telegram, Discord, Slack, Teams and the AI providers are token connections: the secret is sent once to the credential endpoint.
+  const isToken = provider === "TELEGRAM" || webhookProvider !== null || aiProvider !== null;
   const [createError, setCreateError] = useState("");
   const [isFinishing, setIsFinishing] = useState(false);
   const busy = createConnection.isPending || isFinishing;
@@ -477,6 +487,10 @@ export function CreateConnectionDialog({
     const normalizedName = name.trim();
     if (!normalizedName || normalizedName.length > 120) {
       setCreateError(t("connections.create.validation"));
+      return;
+    }
+    if (aiProvider && !isValidAiKey(token.trim())) {
+      setCreateError(t("connections.create.ai_key_validation"));
       return;
     }
     if (isToken && (!token.trim() || token.length > 4096)) {
@@ -494,7 +508,7 @@ export function CreateConnectionDialog({
     try {
       const connection = await createConnection.mutateAsync({
         workspaceId,
-        input: provider === "TELEGRAM" || isWebhookProvider(provider)
+        input: provider === "TELEGRAM" || isWebhookProvider(provider) || isAiProvider(provider)
           ? { name: normalizedName, provider, authType: "TOKEN", token: token.trim() }
           : { name: normalizedName, provider, authType: "OAUTH2" },
       });
@@ -598,7 +612,7 @@ export function CreateConnectionDialog({
                 htmlFor="connection-create-token"
                 className="mb-1.5 block text-xs font-medium text-text-2"
               >
-                {t(webhookKey ? `connections.create.${webhookKey}_url` : "connections.create.token")}
+                {t(aiProvider ? "connections.create.ai_key" : webhookKey ? `connections.create.${webhookKey}_url` : "connections.create.token")}
               </label>
               <input
                 id="connection-create-token"
@@ -607,7 +621,7 @@ export function CreateConnectionDialog({
                 autoComplete="off"
                 spellCheck={false}
                 required
-                maxLength={4096}
+                maxLength={aiProvider ? 512 : 4096}
                 value={token}
                 onChange={(event) => {
                   setToken(event.target.value);
@@ -617,7 +631,7 @@ export function CreateConnectionDialog({
                 className={fieldCls}
               />
               <p id="connection-create-token-hint" className="mt-1 text-[11px] text-muted-foreground">
-                {t(webhookKey ? `connections.create.${webhookKey}_hint` : "connections.create.token_hint")}
+                {t(aiProvider ? "connections.create.ai_key_hint" : webhookKey ? `connections.create.${webhookKey}_hint` : "connections.create.token_hint")}
               </p>
             </div>
           )}
@@ -652,9 +666,10 @@ export function CreateConnectionDialog({
                   aria-hidden="true"
                 />
               )}
+              {/* submitLabel/pendingLabel describe the Google flow; a token connection (key, bot, webhook) has no Google step. */}
               {busy
-                ? (pendingLabel ?? t("connections.create.pending"))
-                : (submitLabel ?? (isToken ? t("connections.create.submit") : t("w5c.create_and_connect")))}
+                ? ((isToken ? undefined : pendingLabel) ?? t("connections.create.pending"))
+                : ((isToken ? undefined : submitLabel) ?? (isToken ? t("connections.create.submit") : t("w5c.create_and_connect")))}
             </button>
           </div>
         </form>
@@ -1128,6 +1143,10 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
           onClose={() => setIsCreateOpen(false)}
           onCreated={async (created) => {
             setIsCreateOpen(false);
+            // The key was checked right after saving; the connection stays so its row can show the problem (no replace action: remove it and add it again with a new key).
+            if (isAiProvider(created.provider) && created.testOutcome === "AUTH_INVALID") {
+              setActionMessage(created.id, t("connections.test.ai_key_invalid"));
+            }
             // One step: a Google connection goes straight to Google's consent screen.
             if ((GOOGLE_PROVIDERS as readonly string[]).includes(created.provider)) {
               await handleStartGoogleOAuth(created, Date.now());

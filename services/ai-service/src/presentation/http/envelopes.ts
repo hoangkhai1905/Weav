@@ -5,12 +5,28 @@ const codePoints = (max: number) =>
     .string()
     .min(1)
     .refine((s) => [...s].length <= max);
+// Per-request provider selection (BYOK). Strict: nothing like a base URL can ride along.
+const llm = z
+  .strictObject({
+    provider: z.enum(['OPENAI', 'ANTHROPIC', 'GEMINI']),
+    apiKey: z
+      .string()
+      .min(1)
+      .max(512)
+      .refine((k) => [...k].every((c) => c > '\x1f' && c !== '\x7f')),
+    model: z
+      .string()
+      .regex(/^[A-Za-z0-9._:/-]{1,100}$/)
+      .optional(),
+  })
+  .optional();
 const base = { requestId: z.uuid(), workspaceId: z.uuid() };
 
 export const ENVELOPES = {
   extract: z.strictObject({
     ...base,
     operation: z.literal('extract'),
+    llm,
     text: codePoints(50_000),
     outputSchema: z.record(z.string(), z.unknown()),
     instructions: codePoints(2_000).optional(),
@@ -18,6 +34,7 @@ export const ENVELOPES = {
   classify: z.strictObject({
     ...base,
     operation: z.literal('classify'),
+    llm,
     text: codePoints(50_000),
     categories: z
       .array(codePoints(100))
@@ -28,12 +45,14 @@ export const ENVELOPES = {
   summarize: z.strictObject({
     ...base,
     operation: z.literal('summarize'),
+    llm,
     text: codePoints(50_000),
     maxLength: z.number().int().min(1).max(5_000),
   }),
   prompt: z.strictObject({
     ...base,
     operation: z.literal('prompt'),
+    llm,
     prompt: codePoints(50_000).refine((s) => s.trim() !== ''),
     instructions: codePoints(2_000).optional(),
     maxLength: z.number().int().min(1).max(5_000).default(1_000),

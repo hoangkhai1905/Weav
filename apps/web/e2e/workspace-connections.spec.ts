@@ -11,6 +11,7 @@ const CONNECTION_DRIVE_ID = "20000000-0000-4000-8000-000000000005";
 const CONNECTION_DRIVE_DISABLED_ID = "20000000-0000-4000-8000-000000000006";
 const CONNECTION_DRIVE_LOCKED_ID = "20000000-0000-4000-8000-000000000007";
 const CONNECTION_CALENDAR_ID = "20000000-0000-4000-8000-000000000008";
+const CONNECTION_OPENAI_ID = "20000000-0000-4000-8000-000000000009";
 const ACCESS_TOKEN = "connection-adapter-token";
 const PENDING_OAUTH_CONTEXT_KEY = "weav.workspaceConnectionOAuth.pending";
 
@@ -66,7 +67,8 @@ function connection(
     | "GMAIL"
     | "GOOGLE_SHEETS"
     | "GOOGLE_CALENDAR"
-    | "GOOGLE_DRIVE",
+    | "GOOGLE_DRIVE"
+    | "OPENAI",
   workspaceId = WORKSPACE_ID,
   status: "DISABLED" | "ACTIVE" | "INVALID" = "DISABLED",
   canManage = true,
@@ -689,6 +691,104 @@ test.describe("workspace connection API adapter", () => {
     // The row's Test action verifies the stored token again.
     await row.getByTestId(`connection-test-${CONNECTION_TELEGRAM_ID}`).click();
     await expect.poll(() => testCalls).toBe(2);
+  });
+
+  for (const [lang, invalidText] of [
+    ["EN", "The key is invalid or was revoked."],
+    ["VI", "Khóa API không hợp lệ hoặc đã bị thu hồi."],
+  ] as const) {
+    test(`adds a ChatGPT connection (${lang}): trims the key, keeps it hidden, flags an invalid key`, async ({
+      page,
+    }) => {
+      await installAuthFixture(page);
+      await page.addInitScript((value) => localStorage.setItem("weav_lang_v1", value), lang);
+      const openai = (status: "DISABLED" | "ACTIVE", hasCredential: boolean) => ({
+        ...connection(CONNECTION_OPENAI_ID, "OPENAI", WORKSPACE_ID, status),
+        name: "My ChatGPT",
+        authType: "TOKEN",
+        hasCredential,
+      });
+      let connections: unknown[] = [];
+      let createBody: unknown;
+      let credentialBody: unknown;
+      let testCalls = 0;
+      await page.route("**/api/v1/workspaces/*/connections", async (route) => {
+        if (route.request().method() === "GET") return fulfillJson(route, connections);
+        createBody = route.request().postDataJSON();
+        connections = [openai("DISABLED", false)];
+        return fulfillJson(route, connections[0], 201);
+      });
+      await page.route(
+        `**/api/v1/workspaces/*/connections/${CONNECTION_OPENAI_ID}/credential`,
+        (route) => {
+          credentialBody = route.request().postDataJSON();
+          connections = [openai("DISABLED", true)];
+          return fulfillJson(route, connections[0]);
+        },
+      );
+      await page.route(
+        `**/api/v1/workspaces/*/connections/${CONNECTION_OPENAI_ID}/test`,
+        (route) => {
+          testCalls += 1;
+          return fulfillJson(route, { outcome: "AUTH_INVALID" });
+        },
+      );
+      await gotoAuthenticatedConnections(page);
+      await page.getByTestId("connections-create-open").click();
+      await page.getByTestId("connection-create-name").fill("My ChatGPT");
+      await page.getByTestId("connection-provider-OPENAI").check();
+      await expect(page.getByTestId("connection-provider-ANTHROPIC")).toBeAttached();
+      await expect(page.getByTestId("connection-provider-GEMINI")).toBeAttached();
+      await expect(page.getByTestId("connection-create-dialog")).toContainText("ChatGPT (OpenAI)");
+      const keyInput = page.getByTestId("connection-create-token");
+      await expect(keyInput).toHaveAttribute("type", "password");
+      await expect(keyInput).toHaveAttribute("autocomplete", "off");
+      if (lang === "EN") await expect(page.getByLabel("API key")).toBeAttached();
+      await keyInput.fill("  sk-test  ");
+      await page.getByTestId("connection-create-submit").click();
+
+      const row = page.getByTestId(`connection-row-${CONNECTION_OPENAI_ID}`);
+      await expect(row).toContainText("ChatGPT (OpenAI)");
+      expect(createBody).toEqual({ name: "My ChatGPT", provider: "OPENAI", authType: "TOKEN" });
+      expect(credentialBody).toEqual({ payload: { token: "sk-test" } });
+      await expect(page.getByTestId(`connection-action-message-${CONNECTION_OPENAI_ID}`)).toHaveText(invalidText);
+      expect(testCalls).toBe(1);
+      await expect(page.getByText("sk-test")).toHaveCount(0);
+    });
+  }
+
+  test("a verified ChatGPT key shows no warning and a failed key check keeps the connection", async ({
+    page,
+  }) => {
+    await installAuthFixture(page);
+    const openai = { ...connection(CONNECTION_OPENAI_ID, "OPENAI"), name: "My ChatGPT", authType: "TOKEN" };
+    let connections: unknown[] = [];
+    let outcome: "VERIFIED" | "DOWN" = "VERIFIED";
+    await page.route("**/api/v1/workspaces/*/connections", (route) => {
+      if (route.request().method() === "GET") return fulfillJson(route, connections);
+      connections = [openai];
+      return fulfillJson(route, openai, 201);
+    });
+    await page.route(`**/api/v1/workspaces/*/connections/${CONNECTION_OPENAI_ID}/credential`, (route) =>
+      fulfillJson(route, openai),
+    );
+    await page.route(`**/api/v1/workspaces/*/connections/${CONNECTION_OPENAI_ID}/test`, (route) =>
+      outcome === "VERIFIED"
+        ? fulfillJson(route, { outcome: "VERIFIED" })
+        : fulfillJson(route, { error: { code: "DEPENDENCY_UNAVAILABLE", message: "down" } }, 503),
+    );
+    for (const next of ["VERIFIED", "DOWN"] as const) {
+      outcome = next;
+      connections = [];
+      await gotoAuthenticatedConnections(page);
+      await page.getByTestId("connections-create-open").click();
+      await page.getByTestId("connection-create-name").fill("My ChatGPT");
+      await page.getByTestId("connection-provider-OPENAI").check();
+      await page.getByTestId("connection-create-token").fill("sk-test");
+      await page.getByTestId("connection-create-submit").click();
+      await expect(page.getByTestId(`connection-row-${CONNECTION_OPENAI_ID}`)).toBeVisible();
+      await expect(page.getByTestId(`connection-action-message-${CONNECTION_OPENAI_ID}`)).toHaveCount(0);
+    }
   });
 
   test("Telegram create without a token is blocked and a failed token save removes the empty connection", async ({

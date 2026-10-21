@@ -11,6 +11,8 @@ export const AI_ERROR_STATUS = {
   AI_UNAVAILABLE: 503,
   AI_PROVIDER_UNAVAILABLE: 503,
   AI_PROVIDER_AUTH: 502,
+  AI_PROVIDER_RATE_LIMITED: 429,
+  AI_MODEL_NOT_FOUND: 400,
   AI_OUTPUT_INVALID: 502,
   AI_TIMEOUT: 504,
   INTERNAL_ERROR: 500,
@@ -32,6 +34,9 @@ const MESSAGES: Record<AiErrorCode, string> = {
   AI_UNAVAILABLE: 'The assistant is temporarily unavailable.',
   AI_PROVIDER_UNAVAILABLE: 'The AI provider is temporarily unavailable.',
   AI_PROVIDER_AUTH: 'The AI provider rejected the service credentials.',
+  AI_PROVIDER_RATE_LIMITED:
+    'The AI provider rate limit or credit was exceeded.',
+  AI_MODEL_NOT_FOUND: 'The model was not found at the AI provider.',
   AI_OUTPUT_INVALID: 'The AI provider returned an invalid result.',
   AI_TIMEOUT: 'The AI request timed out.',
   INTERNAL_ERROR: 'The AI service failed unexpectedly.',

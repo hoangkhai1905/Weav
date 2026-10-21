@@ -1,6 +1,7 @@
 package com.weav.workflow.infrastructure.ai;
 
 import com.weav.workflow.application.node.NodeExecutor;
+import com.weav.workflow.application.port.out.WorkspaceConnectionPort;
 import com.weav.workflow.infrastructure.security.ServiceJwtSigner;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -32,22 +33,22 @@ public class AiClientConfiguration {
     }
 
     @Bean
-    NodeExecutor aiExtractExecutor(AiClient client) {
-        return new AiNodeExecutor("ai.extract", client);
+    NodeExecutor aiExtractExecutor(AiClient client, WorkspaceConnectionPort workspaceConnections) {
+        return new AiNodeExecutor("ai.extract", client, workspaceConnections);
     }
 
     @Bean
-    NodeExecutor aiClassifyExecutor(AiClient client) {
-        return new AiNodeExecutor("ai.classify", client);
+    NodeExecutor aiClassifyExecutor(AiClient client, WorkspaceConnectionPort workspaceConnections) {
+        return new AiNodeExecutor("ai.classify", client, workspaceConnections);
     }
 
     @Bean
-    NodeExecutor aiSummarizeExecutor(AiClient client) {
-        return new AiNodeExecutor("ai.summarize", client);
+    NodeExecutor aiSummarizeExecutor(AiClient client, WorkspaceConnectionPort workspaceConnections) {
+        return new AiNodeExecutor("ai.summarize", client, workspaceConnections);
     }
 
     @Bean
-    NodeExecutor aiGenerateExecutor(AiClient client) {
-        return new AiNodeExecutor("ai.generate", client);
+    NodeExecutor aiGenerateExecutor(AiClient client, WorkspaceConnectionPort workspaceConnections) {
+        return new AiNodeExecutor("ai.generate", client, workspaceConnections);
     }
 }

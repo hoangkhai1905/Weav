@@ -16,7 +16,8 @@ class RetryPolicyTest {
     void retriesOnlyTransientCodes() {
         for (String code : new String[] {"NETWORK_ERROR", "TIMEOUT", "WORKER_INTERRUPTED", "AI_BUSY",
                 "AI_PROVIDER_UNAVAILABLE", "AI_TIMEOUT", "HTTP_TIMEOUT", "HTTP_RATE_LIMITED",
-                "HTTP_DEPENDENCY_UNAVAILABLE", "CONNECTION_UNAVAILABLE", "OCR_UNAVAILABLE"}) {
+                "HTTP_DEPENDENCY_UNAVAILABLE", "CONNECTION_UNAVAILABLE", "OCR_UNAVAILABLE",
+                "AI_PROVIDER_RATE_LIMITED"}) {
             assertTrue(policy.retryable(code), code);
         }
         assertFalse(policy.retryable(null));

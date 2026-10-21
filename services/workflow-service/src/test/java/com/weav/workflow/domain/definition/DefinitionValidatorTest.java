@@ -78,6 +78,30 @@ class DefinitionValidatorTest {
     }
 
     @Test
+    void modelWithoutConnectionIsRejected() {
+        for (String type : List.of("ai.extract", "ai.classify", "ai.summarize", "ai.generate")) {
+            Map<String, Object> base = switch (type) {
+                case "ai.extract" -> Map.of("text", "t");
+                case "ai.classify" -> Map.of("content", "c");
+                case "ai.generate" -> Map.of("prompt", "p");
+                default -> Map.of("inputText", "s");
+            };
+            Map<String, Object> withModel = new LinkedHashMap<>(base);
+            withModel.put("model", "gpt-x");
+            List<ValidationIssue> issues = new DefinitionValidator().validatePublish(manualThen("ai", type, withModel));
+            assertTrue(issues.stream().anyMatch(issue -> issue.field().equals("config.model")
+                    && issue.code().equals("INVALID_FIELD_COMBINATION")), type + " " + issues);
+            assertFalse(issues.stream().anyMatch(issue -> issue.code().equals("REQUIRED_FIELD_MISSING")),
+                    "must not ask the AI generator to add a connection: " + issues);
+
+            Map<String, Object> withBoth = new LinkedHashMap<>(withModel);
+            withBoth.put("connectionId", UUID.randomUUID().toString());
+            assertTrue(new DefinitionValidator().validatePublish(manualThen("ai", type, withBoth)).isEmpty(), type);
+            assertTrue(new DefinitionValidator().validatePublish(manualThen("ai", type, base)).isEmpty(), type);
+        }
+    }
+
+    @Test
     void draftAllowsIncompleteConfigurationAndDefersPublishGraphSemantics() {
         WorkflowDefinition draft = definition(
                 List.of(manual("manual"), node("request", "http.request", Map.of())),

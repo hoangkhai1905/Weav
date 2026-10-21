@@ -17,12 +17,21 @@ import { prompt } from '../../application/prompt';
 import { summarize } from '../../application/summarize';
 import { AiError } from '../../domain/errors';
 import { Admission } from '../../infrastructure/admission';
+import { providerFor } from '../../infrastructure/llm/provider-for';
 import { RequestDedup } from '../../infrastructure/request-dedup';
 import { ENVELOPES, isOperation } from './envelopes';
 import './request-signal';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_OUTPUT_BYTES = 256 * 1024;
+
+type WithoutLlm<T> = T extends unknown ? Omit<T, 'llm'> : never;
+/** Use cases JSON-serialize their input into the prompt, so the user's key must never reach them. */
+function withoutLlm<T extends object>(body: T): WithoutLlm<T> {
+  const rest = { ...body } as Record<string, unknown>;
+  delete rest.llm;
+  return rest as WithoutLlm<T>;
+}
 
 @Controller('v1')
 export class AiController {
@@ -45,11 +54,10 @@ export class AiController {
     @Req() request: FastifyRequest,
   ) {
     const startedAt = Date.now();
-    const { provider, verifier } = this.deps;
+    const { verifier } = this.deps;
     // AI-8: authenticate first so config state is never revealed to unauthenticated callers.
     if (!verifier) throw new AiError('UNAUTHENTICATED');
     const claims = verifier.verify(request.headers.authorization);
-    if (!provider) throw new AiError('AI_NOT_CONFIGURED');
     if (!isOperation(operation)) throw new AiError('INVALID_REQUEST');
     const requestId = request.headers['x-request-id'];
     if (typeof requestId !== 'string' || !UUID.test(requestId))
@@ -58,6 +66,7 @@ export class AiController {
     const parsed = ENVELOPES[operation].safeParse(request.body);
     if (!parsed.success) throw new AiError('INVALID_REQUEST');
     const body = parsed.data;
+    const llm = 'llm' in body ? body.llm : undefined;
     if (
       claims.scope !== `ai:${operation}` ||
       claims.workspaceId !== body.workspaceId ||
@@ -67,6 +76,11 @@ export class AiController {
     ) {
       throw new AiError('FORBIDDEN');
     }
+    // BYOK: a request-supplied key needs no service-owned provider; the key is never stored or logged.
+    const provider = llm
+      ? providerFor(llm, this.deps.byok)
+      : this.deps.provider;
+    if (!provider) throw new AiError('AI_NOT_CONFIGURED');
 
     return this.dedup.run(`${body.workspaceId}:${requestId}`, async () => {
       const release = this.admission.tryAcquire(body.workspaceId);
@@ -74,16 +88,17 @@ export class AiController {
       let outcome = 'OK';
       try {
         const signal = request.aiSignal;
+        const input = withoutLlm(body);
         const result =
-          body.operation === 'extract'
-            ? await extract(provider, body, signal)
-            : body.operation === 'classify'
-              ? await classify(provider, body, signal)
-              : body.operation === 'summarize'
-                ? await summarize(provider, body, signal)
-                : body.operation === 'prompt'
-                  ? await prompt(provider, body, signal)
-                  : await generate(provider, body, signal);
+          input.operation === 'extract'
+            ? await extract(provider, input, signal)
+            : input.operation === 'classify'
+              ? await classify(provider, input, signal)
+              : input.operation === 'summarize'
+                ? await summarize(provider, input, signal)
+                : input.operation === 'prompt'
+                  ? await prompt(provider, input, signal)
+                  : await generate(provider, input, signal);
         if (
           Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_OUTPUT_BYTES
         )
@@ -100,6 +115,7 @@ export class AiController {
           operation,
           workspaceId: body.workspaceId,
           outcome,
+          llmProvider: llm?.provider ?? 'default',
           durationMs: Date.now() - startedAt,
         });
       }

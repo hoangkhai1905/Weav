@@ -12,7 +12,7 @@ export interface SchemaProperty {
   maxLength?: number;
   default?: unknown;
   'x-weav-template'?: boolean;
-  'x-weav-connection'?: { provider: string };
+  'x-weav-connection'?: { provider: string | string[] };
   'x-weav-personal'?: boolean;
   'x-weav-ui'?: { advanced?: boolean };
 }

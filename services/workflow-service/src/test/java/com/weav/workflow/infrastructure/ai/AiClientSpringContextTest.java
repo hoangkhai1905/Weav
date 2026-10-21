@@ -29,6 +29,8 @@ class AiClientSpringContextTest {
             AiQuota quota = Mockito.mock(AiQuota.class);
             context.getBeanFactory().registerSingleton("objectMapper", new ObjectMapper());
             context.getBeanFactory().registerSingleton("aiQuota", quota);
+            context.getBeanFactory().registerSingleton("workspaceConnections",
+                    Mockito.mock(com.weav.workflow.application.port.out.WorkspaceConnectionPort.class));
             context.register(AiClientConfiguration.class, AiClient.class, NodeExecutorRegistry.class);
             context.refresh();
 

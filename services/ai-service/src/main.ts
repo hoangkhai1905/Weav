@@ -8,7 +8,7 @@ import {
 } from './infrastructure/llm/circuit-breaker-provider';
 import { UserJwtVerifier } from './infrastructure/auth/user-jwt-verifier';
 import { DeepSeekChatProvider } from './infrastructure/llm/deepseek/deepseek-chat-provider';
-import { DeepSeekProvider } from './infrastructure/llm/deepseek/deepseek-provider';
+import { OpenAiCompatibleProvider } from './infrastructure/llm/openai-compatible-provider';
 import { PrismaConversationStore } from './infrastructure/persistence/prisma-conversation-store';
 import { startRetentionPurge } from './infrastructure/persistence/retention-purge';
 
@@ -26,12 +26,15 @@ async function bootstrap() {
   const provider =
     config.DEEPSEEK_API_KEY && config.DEEPSEEK_MODEL
       ? new CircuitBreakerProvider(
-          new DeepSeekProvider({
+          new OpenAiCompatibleProvider({
             apiKey: config.DEEPSEEK_API_KEY,
             model: config.DEEPSEEK_MODEL,
             baseUrl: config.DEEPSEEK_BASE_URL,
             maxTokens: config.DEEPSEEK_MAX_TOKENS,
             maxResponseBytes: 1024 * 1024,
+            tokenParam: 'max_tokens',
+            sendTemperature: true,
+            userKey: false,
           }),
         )
       : null;
@@ -94,7 +97,19 @@ async function bootstrap() {
         );
     });
   }
-  const app = await createAiApp({ config, provider, verifier, assistant });
+  const app = await createAiApp({
+    config,
+    provider,
+    verifier,
+    assistant,
+    byok: {
+      openaiModel: config.AI_OPENAI_DEFAULT_MODEL,
+      anthropicModel: config.AI_ANTHROPIC_DEFAULT_MODEL,
+      geminiModel: config.AI_GEMINI_DEFAULT_MODEL,
+      maxTokens: config.DEEPSEEK_MAX_TOKENS,
+      maxResponseBytes: 1024 * 1024,
+    },
+  });
   await app.listen({ port: config.PORT, host: '0.0.0.0' });
 }
 

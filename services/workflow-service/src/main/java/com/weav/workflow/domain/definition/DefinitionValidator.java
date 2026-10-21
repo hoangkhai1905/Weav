@@ -28,6 +28,7 @@ public final class DefinitionValidator {
 
     private static final Set<String> CONDITION_OPERATORS = enumValues("logic.condition", "operator");
     private static final Set<String> CONDITION_PORTS = Set.of("true", "false");
+    private static final Set<String> AI_NODE_TYPES = Set.of("ai.extract", "ai.classify", "ai.summarize", "ai.generate");
     private static final String DEFAULT_PORT = "default";
     private static final int MAX_PORT_LENGTH = 64;
     private static final int MAX_SWITCH_CASES = 20;
@@ -297,6 +298,11 @@ public final class DefinitionValidator {
                 add(issues, node.id(), "config.method", "INVALID_HTTP_METHOD", "The HTTP method is not supported.");
             }
             validateAbsoluteHttpUrl(node, issues);
+        }
+        if (AI_NODE_TYPES.contains(node.type()) && config.get("model") != null && config.get("connectionId") == null) {
+            // A different code than REQUIRED_FIELD_MISSING, which would make the AI generator add a connection.
+            add(issues, node.id(), "config.model", "INVALID_FIELD_COMBINATION",
+                    "A model can only be chosen together with an AI connection.");
         }
         if ("logic.switch".equals(node.type())) {
             validateSwitchCases(node, issues);

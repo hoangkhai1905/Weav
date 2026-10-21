@@ -93,7 +93,9 @@ class NodeConfigSchemasTest {
             "discord.send_message.connectionId", "discord.send_message.content",
             "format.datetime.operation", "format.text.operation",
             "slack.send_message.connectionId", "slack.send_message.text",
-            "teams.send_message.connectionId", "teams.send_message.text");
+            "teams.send_message.connectionId", "teams.send_message.text",
+            "ai.extract.connectionId", "ai.extract.model", "ai.classify.connectionId", "ai.classify.model",
+            "ai.summarize.connectionId", "ai.summarize.model", "ai.generate.connectionId", "ai.generate.model");
 
     private static Field field(String type, String name) {
         return NodeCatalog.schema(type).properties().get(name);
@@ -489,6 +491,35 @@ class NodeConfigSchemasTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> ClasspathNodeSchemaSource.parse("x.test.json", node));
         assertTrue(error.getMessage().contains("text"), error.getMessage());
+    }
+
+    @Test
+    void aiNodesDeclareOptionalConnectionAndModel() {
+        for (String type : List.of("ai.summarize", "ai.classify", "ai.extract", "ai.generate")) {
+            NodeConfigSchema schema = NodeCatalog.schema(type);
+            assertTrue(schema.connectionFields().contains("connectionId"), type);
+            assertFalse(schema.required().contains("connectionId"), type);
+            assertFalse(schema.required().contains("model"), type);
+            assertNotNull(schema.properties().get("model"), type);
+        }
+    }
+
+    private static NodeConfigSchema parseConnection(String provider) throws Exception {
+        return ClasspathNodeSchemaSource.parse("x.test.json", uiHintSchema(
+                "{\"type\":\"string\",\"x-weav-connection\":{\"provider\":" + provider + "}}", "[\"b\"]"));
+    }
+
+    @Test
+    void connectionProviderAcceptsArray() throws Exception {
+        assertTrue(parseConnection("[\"A\",\"B\"]").connectionFields().contains("text"));
+        assertTrue(parseConnection("\"A\"").connectionFields().contains("text"));
+    }
+
+    @Test
+    void connectionProviderRejectsEmptyArrayOrBlank() {
+        for (String bad : List.of("[]", "[\"\"]", "\"\"")) {
+            assertThrows(IllegalArgumentException.class, () -> parseConnection(bad), bad);
+        }
     }
 
     @Test

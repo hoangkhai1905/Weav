@@ -133,7 +133,7 @@ class AiClientContractTest {
                         """.formatted(request.getHeaders().getFirst("X-Request-ID")), MediaType.APPLICATION_JSON)
                         .createResponse(request));
 
-        NodeExecutor.Result result = new AiNodeExecutor("ai.generate", counting)
+        NodeExecutor.Result result = new AiNodeExecutor("ai.generate", counting, AiNodeExecutorTest.UNUSED_PORT)
                 .execute(context(), Map.of("prompt", "say hi"));
 
         assertEquals(Map.of("text", "hi", "truncated", false), result.output());
@@ -150,7 +150,7 @@ class AiClientContractTest {
                     throw new NodeExecutor.Failure(AiQuota.EXCEEDED, "quota", false);
                 });
         NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
-                () -> new AiNodeExecutor("ai.generate", limited).execute(context(), Map.of("prompt", "say hi")));
+                () -> new AiNodeExecutor("ai.generate", limited, AiNodeExecutorTest.UNUSED_PORT).execute(context(), Map.of("prompt", "say hi")));
         assertEquals("AI_QUOTA_EXCEEDED", failure.code());
         assertFalse(failure.retryable());
         server.verify(); // no HTTP expectation was set, none was made
@@ -210,6 +210,70 @@ class AiClientContractTest {
                 () -> client.execute(context(), "summarize", Map.of("text", "t", "maxLength", 10)));
         assertEquals(failureCode, failure.code());
         assertEquals(retryable, failure.retryable());
+    }
+
+    private static final Map<String, Object> LLM = Map.of("provider", "OPENAI", "apiKey", "sk-test-secret-key", "model", "gpt-x");
+
+    @ParameterizedTest
+    @CsvSource({
+            "502, AI_PROVIDER_AUTH, CONNECTION_AUTHENTICATION_REJECTED, false",
+            "429, AI_PROVIDER_RATE_LIMITED, AI_PROVIDER_RATE_LIMITED, true",
+            "400, AI_MODEL_NOT_FOUND, CONFIGURATION_ERROR, false",
+            "503, AI_PROVIDER_UNAVAILABLE, AI_PROVIDER_UNAVAILABLE, true"})
+    void errorsWithAUserKeyAreAboutThatKey(int status, String aiCode, String failureCode, boolean retryable) {
+        server.expect(requestTo("http://ai.internal/v1/summarize")).andRespond(withStatus(HttpStatus.valueOf(status))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"error\":{\"code\":\"" + aiCode + "\",\"message\":\"x\",\"requestId\":null}}"));
+        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                () -> client.execute(context(), "summarize", Map.of("text", "t", "maxLength", 10, "llm", LLM)));
+        assertEquals(failureCode, failure.code());
+        assertEquals(retryable, failure.retryable());
+        assertFalse(failure.safeMessage().contains("sk-test-secret-key"));
+    }
+
+    @Test
+    void unknownModelNamesTheModelTheUserChose() {
+        server.expect(requestTo("http://ai.internal/v1/summarize")).andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"error\":{\"code\":\"AI_MODEL_NOT_FOUND\",\"message\":\"x\",\"requestId\":null}}"));
+        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                () -> client.execute(context(), "summarize", Map.of("text", "t", "maxLength", 10, "llm", LLM)));
+        assertEquals("The model \"gpt-x\" was not found at this provider.", failure.safeMessage());
+    }
+
+    @Test
+    void withoutAUserKeyProviderAuthStillMeansTheServerKeyIsMissing() {
+        server.expect(requestTo("http://ai.internal/v1/summarize")).andRespond(withStatus(HttpStatus.BAD_GATEWAY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body("{\"error\":{\"code\":\"AI_PROVIDER_AUTH\",\"message\":\"x\",\"requestId\":null}}"));
+        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                () -> client.execute(context(), "summarize", Map.of("text", "t", "maxLength", 10)));
+        assertEquals("DEPENDENCY_NOT_CONFIGURED", failure.code());
+    }
+
+    @Test
+    void executorSendsTheKeyToAiAndReportsARejectedKey() {
+        java.util.concurrent.atomic.AtomicReference<String> body = new AtomicReference<>();
+        server.expect(requestTo("http://ai.internal/v1/summarize"))
+                .andExpect(request -> body.set(((org.springframework.mock.http.client.MockClientHttpRequest) request)
+                        .getBodyAsString()))
+                .andRespond(withStatus(HttpStatus.BAD_GATEWAY).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"error\":{\"code\":\"AI_PROVIDER_AUTH\",\"message\":\"x\",\"requestId\":null}}"));
+        AiNodeExecutorTest.FakePort port = new AiNodeExecutorTest.FakePort(
+                new com.weav.workflow.application.port.out.ResolvedConnection("OPENAI", "TOKEN",
+                        Map.of("token", "sk-test-secret-key")));
+
+        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class,
+                () -> new AiNodeExecutor("ai.summarize", client, port).execute(context(), Map.of(
+                        "inputText", "hello", "connectionId", "11111111-1111-4111-8111-111111111111",
+                        "model", "gpt-x")));
+
+        assertEquals("CONNECTION_AUTHENTICATION_REJECTED", failure.code());
+        assertFalse(failure.retryable());
+        assertEquals(1, port.reports);
+        org.junit.jupiter.api.Assertions.assertTrue(port.closed());
+        org.junit.jupiter.api.Assertions.assertTrue(body.get().contains(
+                "\"llm\":{\"provider\":\"OPENAI\",\"apiKey\":\"sk-test-secret-key\",\"model\":\"gpt-x\"}"), body.get());
     }
 
     @Test

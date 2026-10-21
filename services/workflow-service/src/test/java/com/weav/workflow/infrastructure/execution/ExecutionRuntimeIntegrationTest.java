@@ -119,6 +119,8 @@ class ExecutionRuntimeIntegrationTest {
     @Autowired
     private WorkflowPublicationTestConfiguration.PublicationWorkspaceAccess workspaceAccess;
     @Autowired
+    private WorkflowPublicationTestConfiguration.PublicationWorkspaceConnections workspaceConnections;
+    @Autowired
     private DeterministicNodeExecutor fakeExecutor;
     @Autowired
     private RuntimeAiClient aiClient;
@@ -151,6 +153,7 @@ class ExecutionRuntimeIntegrationTest {
     @AfterEach
     void tearDown() {
         workspaceAccess.reset();
+        workspaceConnections.reset();
         fakeExecutor.releaseBlockedNodes();
         rabbitAdmin.purgeQueue(RabbitExecutionConfiguration.EXECUTION_QUEUE, false);
         rabbitAdmin.purgeQueue(RabbitExecutionConfiguration.DEAD_LETTER_QUEUE, false);
@@ -336,6 +339,38 @@ class ExecutionRuntimeIntegrationTest {
 
         assertEquals(ExecutionStatus.SUCCESS.name(), status(fixture.executionId()));
         assertEquals(3, aiClient.calls());
+    }
+
+    /** The key is resolved inside the executor and sent to ai-service only; what is persisted is the raw config. */
+    @Test
+    void aiStepWithAWorkspaceKeyStoresTheConnectionIdAndNeverTheKey() throws Exception {
+        String key = "sk-test-secret-key";
+        String connectionId = UUID.randomUUID().toString();
+        workspaceConnections.resolveAs("OPENAI", key);
+        WorkflowDefinition definition = new WorkflowDefinition("1.0", List.of(
+                node("root", "trigger.manual", Map.of()),
+                node("ai", "ai.summarize", Map.of("inputText", "Summarize this", "maxLength", 200,
+                        "connectionId", connectionId, "model", "gpt-x"))),
+                List.of(edge("root-ai", "root", "ai", null)), Map.of());
+        Fixture fixture = admit("ai-byok", definition, Map.of());
+
+        assertTrue(publisher.publishPending() >= 1);
+        awaitTerminal(fixture.executionId());
+
+        assertEquals(ExecutionStatus.SUCCESS.name(), status(fixture.executionId()));
+        assertEquals(Map.of("provider", "OPENAI", "apiKey", key, "model", "gpt-x"),
+                aiClient.capturedConfig.get().get("llm"), "the key reaches ai-service");
+        String stored = scalar("""
+                select string_agg(row_text, ' ') from (
+                    select to_jsonb(n)::text as row_text from workflow.node_executions n where n.execution_id = ?
+                    union all
+                    select to_jsonb(a)::text from workflow.node_execution_attempts a
+                        join workflow.node_executions n on n.id = a.node_execution_id where n.execution_id = ?
+                    union all
+                    select to_jsonb(l)::text from workflow.execution_logs l where l.execution_id = ?) r
+                """, fixture.executionId(), fixture.executionId(), fixture.executionId());
+        assertTrue(stored.contains(connectionId), "the stored step input names the connection");
+        assertFalse(stored.contains(key), "the stored execution never holds the key");
     }
 
     @Test

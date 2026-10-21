@@ -145,7 +145,7 @@ public final class CredentialPayloadCodec {
         }
 
         Set<String> expectedFields = switch (provider) {
-            case TELEGRAM, DISCORD, SLACK, TEAMS -> authType == ConnectionAuthType.TOKEN ? TOKEN_FIELDS : null;
+            case TELEGRAM, DISCORD, SLACK, TEAMS, OPENAI, ANTHROPIC, GEMINI -> authType == ConnectionAuthType.TOKEN ? TOKEN_FIELDS : null;
             case HTTP -> switch (authType) {
                 case TOKEN -> TOKEN_FIELDS;
                 case API_KEY -> API_KEY_FIELDS;
@@ -169,9 +169,17 @@ public final class CredentialPayloadCodec {
                 && !SLACK_WEBHOOK_URL.matcher((String) payload.get("token")).matches()) {
             throw invalidPayload();
         }
+        if (provider.isLlmKey() && !isLlmApiKey((String) payload.get("token"))) {
+            throw invalidPayload();
+        }
         if (provider == ConnectionProvider.TEAMS && !isTeamsWebhookUrl((String) payload.get("token"))) {
             throw invalidPayload();
         }
+    }
+
+    /** An AI API key is sent verbatim in a header: visible ASCII only (no spaces/controls), 1..512 chars. */
+    public static boolean isLlmApiKey(String key) {
+        return key != null && !key.isEmpty() && key.length() <= 512 && key.chars().allMatch(ch -> ch > 0x20 && ch < 0x7f);
     }
 
     /**

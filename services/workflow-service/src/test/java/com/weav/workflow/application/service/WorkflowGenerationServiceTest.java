@@ -238,6 +238,17 @@ class WorkflowGenerationServiceTest {
         assertEquals(List.of("cases", "value"), sw.get("configFields"));
     }
 
+    @Test void aiCapabilitiesKeepConnectionAndModelOutOfTheGenerator() {
+        List<Map<String, Object>> ai = WorkflowGenerationService.capabilities().stream()
+                .filter(capability -> ((String) capability.get("type")).startsWith("ai.")).toList();
+        assertFalse(ai.isEmpty());
+        for (Map<String, Object> capability : ai) {
+            List<?> fields = (List<?>) capability.get("configFields");
+            assertFalse(fields.contains("model"), capability.toString());
+            assertFalse(fields.contains("connectionId"), capability.toString());
+        }
+    }
+
     @Test void switchIntentWithCaseAndDefaultPortsCompilesToValidDefinition() {
         Map<String, Object> intent = Map.of("name", "Route", "nodes", List.of(
                 node("start", "trigger.manual", Map.of()),

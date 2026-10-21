@@ -1,18 +1,23 @@
-import { LlmProvider, LlmRequest } from '../../../application/llm-provider';
-import { AiError, isPlainObject } from '../../../domain/errors';
-import { parseStrictJson } from '../../../domain/json/strict-json';
+import { LlmProvider, LlmRequest } from '../../application/llm-provider';
+import { AiError, isPlainObject } from '../../domain/errors';
+import { parseStrictJson } from '../../domain/json/strict-json';
+import { failOnStatus, readCapped } from './provider-http';
 
-export interface DeepSeekConfig {
+export interface OpenAiCompatibleConfig {
   apiKey: string;
   model: string;
   baseUrl: string;
   maxTokens: number;
   maxResponseBytes: number;
+  tokenParam: 'max_tokens' | 'max_completion_tokens';
+  sendTemperature: boolean;
+  /** false keeps the service-owned DeepSeek status mapping. */
+  userKey: boolean;
 }
 
-export class DeepSeekProvider implements LlmProvider {
+export class OpenAiCompatibleProvider implements LlmProvider {
   constructor(
-    private readonly config: DeepSeekConfig,
+    private readonly config: OpenAiCompatibleConfig,
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
@@ -40,8 +45,8 @@ export class DeepSeekProvider implements LlmProvider {
               { role: 'user', content: request.user },
             ],
             response_format: { type: 'json_object' },
-            max_tokens: this.config.maxTokens,
-            temperature: 0,
+            [this.config.tokenParam]: this.config.maxTokens,
+            ...(this.config.sendTemperature ? { temperature: 0 } : {}),
             stream: false,
           }),
         },
@@ -52,16 +57,14 @@ export class DeepSeekProvider implements LlmProvider {
       );
     }
 
-    if (response.status !== 200) {
-      await response.body?.cancel().catch(() => undefined);
-      if ([401, 402, 403].includes(response.status))
-        throw new AiError('AI_PROVIDER_AUTH');
-      if (response.status === 429 || response.status >= 500)
-        throw new AiError('AI_PROVIDER_UNAVAILABLE');
-      throw new AiError('AI_OUTPUT_INVALID');
-    }
+    if (response.status !== 200)
+      return failOnStatus(response, this.config.userKey);
 
-    const bytes = await this.readCapped(response, signal);
+    const bytes = await readCapped(
+      response,
+      signal,
+      this.config.maxResponseBytes,
+    );
     let envelope: unknown;
     try {
       envelope = JSON.parse(Buffer.from(bytes).toString('utf8'));
@@ -93,33 +96,5 @@ export class DeepSeekProvider implements LlmProvider {
     }
     if (!isPlainObject(parsed)) throw new AiError('AI_OUTPUT_INVALID');
     return parsed;
-  }
-
-  private async readCapped(
-    response: Response,
-    signal: AbortSignal,
-  ): Promise<Uint8Array> {
-    if (!response.body) throw new AiError('AI_OUTPUT_INVALID');
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        total += value.byteLength;
-        if (total > this.config.maxResponseBytes) {
-          await reader.cancel().catch(() => undefined);
-          throw new AiError('AI_OUTPUT_INVALID');
-        }
-        chunks.push(value);
-      }
-    } catch (error) {
-      if (error instanceof AiError) throw error;
-      throw new AiError(
-        signal.aborted ? 'AI_TIMEOUT' : 'AI_PROVIDER_UNAVAILABLE',
-      );
-    }
-    return Buffer.concat(chunks);
   }
 }

@@ -707,6 +707,15 @@
                   },
                   "schemaDescription": {
                     "type": "string"
+                  },
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z0-9._:/-]{1,100}$"
                   }
                 },
                 "additionalProperties": false
@@ -738,6 +747,15 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z0-9._:/-]{1,100}$"
                   }
                 },
                 "additionalProperties": false
@@ -767,6 +785,15 @@
                   "maxLength": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z0-9._:/-]{1,100}$"
                   }
                 },
                 "additionalProperties": false
@@ -924,6 +951,15 @@
                   "maxLength": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "^[A-Za-z0-9._:/-]{1,100}$"
                   }
                 },
                 "additionalProperties": false
