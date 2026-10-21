@@ -34,17 +34,8 @@ public final class AdminExecutionService {
 
     public AdminRunPage history(ExecutionStatus status, UUID workspaceId, Instant from, Instant to,
                                 int page, int size) {
-        if (page < 0 || size < 1 || size > MonitoringService.MAX_PAGE_SIZE || (long) page * size > Integer.MAX_VALUE) {
-            throw new BadRequestException("Execution page bounds are invalid");
-        }
-        // Same window rules as MonitoringService.history: the cap always applies; a missing "to" stays open.
-        int maxDays = MonitoringService.MAX_RANGE_DAYS;
-        Instant upper = to != null ? to : clock.instant();
-        Instant lower = from != null ? from : upper.minus(Duration.ofDays(maxDays));
-        if (!lower.isBefore(upper) || Duration.between(lower, upper).compareTo(Duration.ofDays(maxDays)) > 0) {
-            throw new BadRequestException("The time range must be positive and at most " + maxDays + " days");
-        }
-        return queryPort.history(workspaceId, new RunFilter(status, null, lower, to), page, size);
+        MonitoringService.RunRange range = MonitoringService.validateRunRange(page, size, from, to, clock.instant());
+        return queryPort.history(workspaceId, new RunFilter(status, null, range.from(), range.to()), page, size);
     }
 
     public AdminRunDetail detail(UUID executionId) {

@@ -27,7 +27,6 @@ import java.util.regex.Pattern;
 @Repository
 public class MonitoringQueryAdapter implements MonitoringQueryPort {
     private static final Pattern SQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
-    private static final int MAX_ERROR_MESSAGE = 300;
     private static final int TOP_LIMIT = 5;
 
     private final JdbcTemplate jdbc;
@@ -168,16 +167,13 @@ public class MonitoringQueryAdapter implements MonitoringQueryPort {
     }
 
     private RunItem runItem(ResultSet rs, int row) throws SQLException {
-        String message = ExecutionQueryAdapter.sanitizeString(rs.getString("error_message"));
-        if (message != null && message.length() > MAX_ERROR_MESSAGE) {
-            message = message.substring(0, MAX_ERROR_MESSAGE) + "…";
-        }
         return new RunItem(
                 rs.getObject("id", UUID.class), rs.getObject("workflow_id", UUID.class),
                 rs.getString("workflow_name"), ExecutionStatus.valueOf(rs.getString("status")),
                 ExecutionTriggerType.valueOf(rs.getString("trigger_type")), instant(rs, "created_at"),
                 instant(rs, "started_at"), instant(rs, "finished_at"),
-                ExecutionQueryAdapter.sanitizeString(rs.getString("error_code")), message);
+                ExecutionQueryAdapter.sanitizeString(rs.getString("error_code")),
+                ExecutionQueryAdapter.sanitizeRunError(rs.getString("error_message")));
     }
 
     private static Long millis(ResultSet rs, String column) throws SQLException {

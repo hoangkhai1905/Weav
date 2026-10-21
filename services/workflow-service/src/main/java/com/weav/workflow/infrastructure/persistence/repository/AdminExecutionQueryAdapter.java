@@ -29,7 +29,6 @@ import java.util.regex.Pattern;
 @Repository
 public class AdminExecutionQueryAdapter implements AdminExecutionQueryPort {
     private static final Pattern SQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
-    private static final int MAX_ERROR_MESSAGE = 300;
     private static final String RUN_COLUMNS = """
             e.id, e.workflow_id, w.name AS workflow_name, w.workspace_id, e.status, e.trigger_type,
             e.created_at, e.started_at, e.finished_at,
@@ -135,7 +134,7 @@ public class AdminExecutionQueryAdapter implements AdminExecutionQueryPort {
                 NodeExecutionStatus.valueOf(rs.getString("status")), rs.getInt("attempt_count"),
                 instant(rs, "started_at"), instant(rs, "finished_at"),
                 ExecutionQueryAdapter.sanitizeString(rs.getString("error_code")),
-                message(rs.getString("error_message"))), executionId);
+                ExecutionQueryAdapter.sanitizeRunError(rs.getString("error_message"))), executionId);
     }
 
     private AdminRunItem runItem(ResultSet rs, int row) throws SQLException {
@@ -145,13 +144,8 @@ public class AdminExecutionQueryAdapter implements AdminExecutionQueryPort {
                 ExecutionTriggerType.valueOf(rs.getString("trigger_type")), instant(rs, "created_at"),
                 instant(rs, "started_at"), instant(rs, "finished_at"),
                 ExecutionQueryAdapter.sanitizeString(rs.getString("error_code")),
-                message(rs.getString("error_message"))), rs.getObject("workspace_id", UUID.class));
-    }
-
-    private static String message(String raw) {
-        String message = ExecutionQueryAdapter.sanitizeString(raw);
-        return message != null && message.length() > MAX_ERROR_MESSAGE
-                ? message.substring(0, MAX_ERROR_MESSAGE) + "…" : message;
+                ExecutionQueryAdapter.sanitizeRunError(rs.getString("error_message"))),
+                rs.getObject("workspace_id", UUID.class));
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {
