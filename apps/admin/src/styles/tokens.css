@@ -1,0 +1,239 @@
+/* Copied from apps/web/src/index.css (2026-10-21). Mirror palette changes there. */
+@import "tailwindcss";
+@import "@fontsource/be-vietnam-pro/400.css";
+@import "@fontsource/be-vietnam-pro/500.css";
+@import "@fontsource/be-vietnam-pro/600.css";
+@import "@fontsource/be-vietnam-pro/700.css";
+@import "@fontsource-variable/jetbrains-mono";
+
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --sans: 'Be Vietnam Pro', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: 'Be Vietnam Pro', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono Variable', ui-monospace, Consolas, monospace;
+
+  color-scheme: light;
+  font: 16px/1.45 var(--sans);
+  letter-spacing: 0;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* Weav light tokens (docs: Tokens.dc.html) */
+  --background: #f6f5f2;
+  --foreground: #1d1b18;
+
+  --card: #ffffff;
+  --card-foreground: #1d1b18;
+
+  --popover: #ffffff;
+  --popover-foreground: #1d1b18;
+
+  --primary: #1d1b18;
+  --primary-hover: #3a3631;
+  --primary-foreground: #ffffff;
+  --accent-ink: #2456c7;
+
+  --secondary: #f1efeb;
+  --secondary-foreground: #1d1b18;
+
+  --subtle: #f1efeb;
+  --muted: #ece9e4;
+  --muted-foreground: #6b655d;
+  --text-2: #54504a;
+
+  --accent: #e9effb;
+  --accent-foreground: #2456c7;
+
+  --destructive: #a1302a;
+
+  --border: #e6e3de;
+  --border-strong: #d3cec6;
+  --input: #d3cec6;
+  --ring: #2456c7;
+
+  --sidebar: #f1efeb;
+  --sidebar-foreground: #1d1b18;
+  --sidebar-muted: #6b655d;
+  --sidebar-active: #ece9e4;
+
+  /* Status */
+  --ok: #2b6a37;
+  --ok-bg: #e5f0e3;
+  --run: #2456c7;
+  --run-bg: #e9effb;
+  --warn: #7f5300;
+  --warn-bg: #f6eccf;
+  --err: #a1302a;
+  --err-bg: #fae7e5;
+  --err-border: #efc4bf;
+  --pause: #6b655d;
+  --pause-bg: #f1efeb;
+
+  /* Step type stripes */
+  --t-trigger: #5a534b;
+  --t-action: #33578e;
+  --t-logic: #0e6a62;
+  --t-ai: #7a2983;
+  --t-trigger-bg: #ece8e2;
+  --t-action-bg: #e6ecf6;
+  --t-logic-bg: #dfefec;
+  --t-ai-bg: #f2e5f3;
+
+  /* Legacy brand helpers are flat accent now (no gradients) */
+  --brand-from: #2456c7;
+  --brand-to: #2456c7;
+  --canvas-dot: rgba(28, 25, 23, 0.12);
+
+  --pop: 0 8px 24px -6px rgba(28, 25, 23, 0.18), 0 2px 6px rgba(28, 25, 23, 0.08);
+  --shadow-soft: none;
+  --shadow-lift: var(--pop);
+  --shadow-brand: none;
+
+  --radius: 0.5rem;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #131211;
+  --foreground: #ece9e4;
+
+  --card: #1a1917;
+  --card-foreground: #ece9e4;
+
+  --popover: #1a1917;
+  --popover-foreground: #ece9e4;
+
+  --primary: #ece9e4;
+  --primary-hover: #d3cec6;
+  --primary-foreground: #131211;
+  --accent-ink: #8eaef3;
+
+  --secondary: #211f1d;
+  --secondary-foreground: #ece9e4;
+
+  --subtle: #211f1d;
+  --muted: #272522;
+  --muted-foreground: #968f86;
+  --text-2: #b5afa7;
+
+  --accent: #1c2538;
+  --accent-foreground: #8eaef3;
+
+  --destructive: #f2948a;
+
+  --border: #2c2926;
+  --border-strong: #3a3632;
+  --input: #3a3632;
+  --ring: #8eaef3;
+
+  --sidebar: #1a1917;
+  --sidebar-foreground: #ece9e4;
+  --sidebar-muted: #968f86;
+  --sidebar-active: #272522;
+
+  --ok: #86c595;
+  --ok-bg: #18271c;
+  --run: #8eaef3;
+  --run-bg: #1c2538;
+  --warn: #e3b860;
+  --warn-bg: #2a2214;
+  --err: #f2948a;
+  --err-bg: #2e1a18;
+  --err-border: #5a2e29;
+  --pause: #968f86;
+  --pause-bg: #211f1d;
+
+  --t-trigger: #c2bbb2;
+  --t-action: #9db8e8;
+  --t-logic: #6fcfc3;
+  --t-ai: #dca2e3;
+  --t-trigger-bg: #2a2724;
+  --t-action-bg: #1d2535;
+  --t-logic-bg: #142826;
+  --t-ai-bg: #2a1b2c;
+
+  --brand-from: #8eaef3;
+  --brand-to: #8eaef3;
+  --canvas-dot: rgba(237, 235, 233, 0.09);
+
+  --pop: 0 8px 24px -6px rgba(0, 0, 0, 0.6), 0 0 0 1px #3d3a37;
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: 'Be Vietnam Pro', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-subtle: var(--subtle);
+  --color-border-strong: var(--border-strong);
+  --color-text-2: var(--text-2);
+  --color-accent-ink: var(--accent-ink);
+  --color-primary-hover: var(--primary-hover);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-run: var(--run);
+  --color-run-bg: var(--run-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-err: var(--err);
+  --color-err-bg: var(--err-bg);
+  --color-err-border: var(--err-border);
+  --color-pause: var(--pause);
+  --color-pause-bg: var(--pause-bg);
+  --color-t-trigger: var(--t-trigger);
+  --color-t-action: var(--t-action);
+  --color-t-logic: var(--t-logic);
+  --color-t-ai: var(--t-ai);
+  --color-t-trigger-bg: var(--t-trigger-bg);
+  --color-t-action-bg: var(--t-action-bg);
+  --color-t-logic-bg: var(--t-logic-bg);
+  --color-t-ai-bg: var(--t-ai-bg);
+  --shadow-pop: var(--pop);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 10px;
+  --radius-3xl: 8px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    margin: 0;
+    font-size: 14px;
+  }
+}

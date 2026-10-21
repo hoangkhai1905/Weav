@@ -24,7 +24,7 @@ Not responsible for: users/sessions (Identity), workspaces, membership, permissi
 | UC021 | Trigger via webhook | Implemented | `POST /webhooks/{endpointKey}` with `X-Webhook-Secret`; public ingress via Gateway (Gateway side owned by partner). |
 | UC022 | Trigger via Telegram | Implemented | `trigger.telegram` needs a `TELEGRAM` connection and `WORKFLOW_PUBLIC_BASE_URL` (https; otherwise it publishes disabled with `DEPENDENCY_NOT_CONFIGURED`). Publish and resume call Bot API `setWebhook` with a random `secret_token` (only its hash is stored); pause and a superseding republish call `deleteWebhook`. Ingress is `POST /webhooks/telegram/{endpointKey}` (header `X-Telegram-Bot-Api-Secret-Token`, `telegram:<update_id>` idempotency). One bot serves one active workflow (`TELEGRAM_BOT_IN_USE`); registration failures return `TELEGRAM_WEBHOOK_REGISTRATION_FAILED` (502) and publish nothing. |
 | UC024 | Interact via Telegram bot | Implemented (reduced) | A `trigger.telegram` message plus a `telegram.send_message` reply is the interaction; there is no chat command surface. |
-| UC028 | Monitor all executions (admin) | Planned | No system-admin, cross-workspace endpoint found; only workspace-scoped monitoring. |
+| UC028 | Monitor all executions (admin) | Implemented | `GET /admin/executions`, `/admin/executions/summary`, `/admin/executions/{id}`, JWT `system_role=ADMIN` only ([AdminExecutionController](../../../services/workflow-service/src/main/java/com/weav/workflow/presentation/http/AdminExecutionController.java)); Flyway V17 index; consumed by `apps/admin` through Gateway `/api/admin/executions`. |
 | UC020 | Receive result notifications | Partial | Producer side Implemented (outbox to RabbitMQ); consumer is Notification. |
 
 ## Business rules
@@ -171,7 +171,7 @@ Names and defaults from [application.properties](../../../services/workflow-serv
 
 ## Status and known gaps
 
-- Planned: workflow delete (UC017), Telegram trigger and `telegram.send_message`, admin cross-workspace execution monitoring (UC028), Agent Runtime / `agent.task`, execution cancellation endpoint (status `CANCELLED` exists, no route found).
+- Planned: workflow delete (UC017), Telegram trigger and `telegram.send_message`, Agent Runtime / `agent.task`, execution cancellation endpoint (status `CANCELLED` exists, no route found).
 - Partial: AI generation and AI nodes are off by default; OCR gated; `email.send` not yet run against real Gmail; Gateway generate route pending partner handoff.
 - Worker is disabled by default in the dev overlay; enable on an intended worker deployment only.
 - No Workflow-specific metrics or alert thresholds; webhook limiter is per instance.
@@ -190,7 +190,7 @@ Names and defaults from [application.properties](../../../services/workflow-serv
 
 1. `email.send`: the service README (gaps table) still says it fails closed with `DEPENDENCY_NOT_CONFIGURED`, but `GmailNodeExecutor`/`GmailClient` are unconditional Spring components and `UnavailableNodeExecutor` lists only `telegram.send_message`. Code wins: marked Implemented. Suggest: update the README row and run one live Gmail send.
 2. UC017 Delete workflow: schema supports soft delete, thesis requires it, no endpoint exists. Suggest: add `DELETE .../workflows/{id}` (soft delete, permission `WORKFLOW_DELETE`-style) for V1, or drop UC017 from V1 scope.
-3. UC028 Monitor all executions (System Admin): no admin route in Workflow. Suggest: decide whether admin monitoring goes through a Workflow internal route called by a Gateway admin path, or is out of V1.
+3. UC028 Monitor all executions (System Admin): resolved. Workflow exposes the admin-only `/admin/executions` routes; the Gateway proxies them at `/api/admin/executions`.
 4. Bot to Workflow: brief says Bot lists/status/runs workflows; Workflow has no bot-specific or service-JWT route, only user-JWT routes. Suggest: document how Bot obtains a user-scoped token, or add a service route.
 5. Telegram trigger: thesis and catalog include it; ingress is unconfigured. Suggest: keep Planned for V1 unless Bot ingress contract is agreed with Bot Service.
 6. Execution cancellation: `CANCELLED` status exists without an API. Suggest: add a cancel route or remove the status from the public contract.

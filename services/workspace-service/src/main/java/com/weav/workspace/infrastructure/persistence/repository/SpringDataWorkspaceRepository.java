@@ -44,6 +44,29 @@ public interface SpringDataWorkspaceRepository
             @Param("searchPattern") String searchPattern,
             Pageable pageable);
 
+    @Query(value = "select workspace as workspace, "
+            + "(select count(m) from MembershipJpaEntity m where m.workspaceId = workspace.id) as memberCount "
+            + "from WorkspaceJpaEntity workspace "
+            + "where workspace.status = com.weav.workspace.domain.valueobject.WorkspaceStatus.ACTIVE "
+            + "and (:ownerId is null or workspace.createdBy = :ownerId) "
+            + "and (:noIds = true or workspace.id in :ids) "
+            + "and (:searchPattern is null or "
+            + "lower(workspace.nameNormalized) like :searchPattern escape '!') "
+            + "order by workspace.createdAt desc, workspace.id asc",
+            countQuery = "select count(workspace.id) "
+                    + "from WorkspaceJpaEntity workspace "
+                    + "where workspace.status = com.weav.workspace.domain.valueobject.WorkspaceStatus.ACTIVE "
+                    + "and (:ownerId is null or workspace.createdBy = :ownerId) "
+                    + "and (:noIds = true or workspace.id in :ids) "
+                    + "and (:searchPattern is null or "
+                    + "lower(workspace.nameNormalized) like :searchPattern escape '!')")
+    Page<AdminWorkspaceProjection> findAllForAdmin(
+            @Param("ownerId") UUID ownerId,
+            @Param("noIds") boolean noIds,
+            @Param("ids") java.util.Collection<UUID> ids,
+            @Param("searchPattern") String searchPattern,
+            Pageable pageable);
+
     @Query("select case when count(workspace) > 0 then true else false end "
             + "from WorkspaceJpaEntity workspace "
             + "where workspace.createdBy = :ownerId "

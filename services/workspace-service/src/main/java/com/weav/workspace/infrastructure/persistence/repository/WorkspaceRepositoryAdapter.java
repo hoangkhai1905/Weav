@@ -1,9 +1,11 @@
 package com.weav.workspace.infrastructure.persistence.repository;
 
+import com.weav.workspace.domain.model.AdminWorkspaceRow;
 import com.weav.workspace.domain.model.PageResult;
 import com.weav.workspace.domain.model.Workspace;
 import com.weav.workspace.domain.model.WorkspaceMembershipView;
 import com.weav.workspace.domain.port.out.WorkspaceRepository;
+import com.weav.workspace.domain.query.AdminWorkspaceQuery;
 import com.weav.workspace.domain.query.WorkspaceListQuery;
 import com.weav.workspace.domain.valueobject.WorkspaceStatus;
 import com.weav.workspace.infrastructure.persistence.mapper.WorkspacePersistenceMapper;
@@ -14,6 +16,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -25,6 +28,7 @@ public class WorkspaceRepositoryAdapter implements WorkspaceRepository {
     private static final Pattern DEFAULT_WORKSPACE_NAME =
             Pattern.compile("^my workspace ([1-9][0-9]*)$", Pattern.CASE_INSENSITIVE);
     private static final char LIKE_ESCAPE = '!';
+    private static final UUID NO_ID_PLACEHOLDER = new UUID(0L, 0L);
 
     private final SpringDataWorkspaceRepository repository;
     private final WorkspacePersistenceMapper mapper;
@@ -98,6 +102,23 @@ public class WorkspaceRepositoryAdapter implements WorkspaceRepository {
         List<WorkspaceMembershipView> items = page.getContent().stream()
                 .map(row -> new WorkspaceMembershipView(
                         mapper.toDomain(row.getWorkspace()), row.getRole()))
+                .toList();
+        return new PageResult<>(items, page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
+    }
+
+    @Override
+    public PageResult<AdminWorkspaceRow> findAllForAdmin(AdminWorkspaceQuery query) {
+        boolean noIds = query.ids().isEmpty();
+        // An empty collection must never reach JPQL IN: bind a placeholder and let :noIds skip the clause.
+        Set<UUID> ids = noIds ? Set.of(NO_ID_PLACEHOLDER) : query.ids();
+        Page<AdminWorkspaceProjection> page = repository.findAllForAdmin(
+                query.ownerId(),
+                noIds,
+                ids,
+                query.searchPattern() == null ? null : likePattern(query.searchPattern()),
+                PageRequest.of(query.page(), query.size()));
+        List<AdminWorkspaceRow> items = page.getContent().stream()
+                .map(row -> new AdminWorkspaceRow(mapper.toDomain(row.getWorkspace()), row.getMemberCount()))
                 .toList();
         return new PageResult<>(items, page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
     }

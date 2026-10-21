@@ -19,6 +19,8 @@ tags:
     description: Service-to-service operations
   - name: Templates
     description: Shared workflow templates (W6-C1) - share, browse and copy sanitized snapshots
+  - name: Admin
+    description: System-admin (system_role ADMIN) cross-workspace operations
 paths:
   /workspaces/{workspaceId}/workflows:
     post:
@@ -896,6 +898,101 @@ paths:
         '429': { $ref: '#/components/responses/TooManyRequests' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /admin/executions:
+    get:
+      tags: [Admin]
+      operationId: adminListExecutions
+      summary: Cross-workspace run history (system admin)
+      description: >-
+        UC028. Requires system_role ADMIN (403 otherwise). Runs of every non-deleted workflow in every
+        workspace, newest first (created time, then ID); workspaceId narrows to one workspace. The time range
+        rules are those of the workspace run history (always capped at 90 days, to exclusive). Never returns
+        node input or output; errorCode is the stored run error, redacted.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [QUEUED, RUNNING, WAITING, SUCCESS, FAILED, CANCELLED] }
+        - name: workspaceId
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          required: false
+          description: Inclusive lower bound on the run creation time (ISO-8601 instant).
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          required: false
+          description: Exclusive upper bound on the run creation time (ISO-8601 instant).
+          schema: { type: string, format: date-time }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+      responses:
+        '200':
+          description: Page of runs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRunPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /admin/executions/summary:
+    get:
+      tags: [Admin]
+      operationId: adminExecutionsSummary
+      summary: Cross-workspace run counts (system admin)
+      description: >-
+        UC028. Requires system_role ADMIN (403 otherwise). Counts runs of non-deleted workflows created in
+        [now - hours, now). active is QUEUED, RUNNING and WAITING.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: hours
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 168, default: 24 }
+      responses:
+        '200':
+          description: Counts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminExecutionSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /admin/executions/{executionId}:
+    get:
+      tags: [Admin]
+      operationId: adminGetExecution
+      summary: Run detail with steps (system admin)
+      description: >-
+        UC028. Requires system_role ADMIN (403 otherwise). Returns the run and its steps ordered by creation.
+        Step input and output are never returned; error codes and messages are redacted and messages are
+        truncated to 300 characters. 404 when the run does not exist or its workflow is deleted.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: executionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Run detail.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminRunDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
   /internal/workspaces/{workspaceId}/connections/{connectionId}/usage:
     get:
       tags: [Internal]
@@ -1340,6 +1437,68 @@ components:
         size: { type: integer, minimum: 1, maximum: 100 }
         totalElements: { type: integer, format: int64, minimum: 0 }
         hasNext: { type: boolean }
+    AdminRun:
+      type: object
+      required: [executionId, workflowId, workflowName, workspaceId, status, triggerType, createdAt]
+      properties:
+        executionId: { type: string, format: uuid }
+        workflowId: { type: string, format: uuid }
+        workflowName: { type: string }
+        workspaceId: { type: string, format: uuid }
+        status: { type: string, enum: [QUEUED, RUNNING, WAITING, SUCCESS, FAILED, CANCELLED] }
+        triggerType: { type: string, enum: [MANUAL, SCHEDULE, WEBHOOK, TELEGRAM, GMAIL, WORKFLOW_EVENT] }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time, nullable: true }
+        durationMs: { type: integer, format: int64, nullable: true, description: Present when both startedAt and finishedAt are. }
+        errorCode: { type: string, nullable: true }
+    AdminRunPage:
+      type: object
+      required: [items, page, size, totalElements, hasNext]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AdminRun' } }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+        totalElements: { type: integer, format: int64, minimum: 0 }
+        hasNext: { type: boolean }
+    AdminStep:
+      type: object
+      required: [nodeId, nodeType, status, attemptCount]
+      properties:
+        nodeId: { type: string }
+        nodeType: { type: string }
+        status: { type: string, enum: [PENDING, READY, RUNNING, WAITING, SUCCESS, FAILED, SKIPPED, CANCELLED] }
+        attemptCount: { type: integer, minimum: 0 }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        errorCode: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true, maxLength: 301 }
+    AdminRunDetail:
+      type: object
+      required: [executionId, workflowId, workflowName, workspaceId, status, triggerType, createdAt, steps]
+      properties:
+        executionId: { type: string, format: uuid }
+        workflowId: { type: string, format: uuid }
+        workflowName: { type: string }
+        workspaceId: { type: string, format: uuid }
+        status: { type: string, enum: [QUEUED, RUNNING, WAITING, SUCCESS, FAILED, CANCELLED] }
+        triggerType: { type: string, enum: [MANUAL, SCHEDULE, WEBHOOK, TELEGRAM, GMAIL, WORKFLOW_EVENT] }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        errorCode: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true, maxLength: 301 }
+        steps: { type: array, items: { $ref: '#/components/schemas/AdminStep' } }
+    AdminExecutionSummary:
+      type: object
+      required: [hours, from, to, total, success, failed, active]
+      properties:
+        hours: { type: integer, minimum: 1, maximum: 168 }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        total: { type: integer, format: int64, minimum: 0 }
+        success: { type: integer, format: int64, minimum: 0 }
+        failed: { type: integer, format: int64, minimum: 0 }
+        active: { type: integer, format: int64, minimum: 0 }
     MonitoringSummary:
       type: object
       required: [days, from, to, workflows, runs, successRate, averageDurationMs, p95DurationMs, trend, topFailingWorkflows, recentFailures]

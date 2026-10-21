@@ -372,6 +372,78 @@ describe('Gateway routes added for full service coverage (Fastify e2e)', () => {
     });
   });
 
+  it('guards and forwards admin workspace and execution routes', async () => {
+    const ws2 = '4fa85f64-5717-4562-b3fc-2c963f66afa6';
+    const paths = [
+      '/api/admin/workspaces',
+      '/api/admin/executions',
+      '/api/admin/executions/summary',
+      `/api/admin/executions/${USER_ID}`,
+    ];
+    for (const url of paths) {
+      const res = await inject({
+        method: 'GET',
+        url,
+        headers: { authorization: user },
+      });
+      expect(res.statusCode).toBe(403);
+    }
+    expect(fixtureRequests).toHaveLength(0);
+
+    const headers = { authorization: admin };
+    const workspaceQuery = `page=0&size=20&q=ops&ids=${WORKSPACE_ID},${ws2}`;
+    const unknownKey = await inject({
+      method: 'GET',
+      url: `/api/admin/workspaces?${workspaceQuery}&unexpected=x`,
+      headers,
+    });
+    expect(unknownKey.statusCode).toBe(400);
+    expect(fixtureRequests).toHaveLength(0);
+
+    const results = [
+      await inject({
+        method: 'GET',
+        url: `/api/admin/workspaces?${workspaceQuery}`,
+        headers,
+      }),
+      await inject({
+        method: 'GET',
+        url: `/api/admin/executions?status=FAILED&workspaceId=${WORKSPACE_ID}`,
+        headers,
+      }),
+      await inject({
+        method: 'GET',
+        url: '/api/admin/executions/summary?hours=24',
+        headers,
+      }),
+      await inject({
+        method: 'GET',
+        url: `/api/admin/executions/${USER_ID}`,
+        headers,
+      }),
+    ];
+    expect(results.map((r) => r.statusCode)).toEqual([200, 200, 200, 200]);
+    expect(
+      fixtureRequests.map((r) => `${r.method} ${decodeURIComponent(r.path)}`),
+    ).toEqual([
+      `GET /admin/workspaces?page=0&size=20&q=ops&ids=${WORKSPACE_ID},${ws2}`,
+      `GET /admin/executions?status=FAILED&workspaceId=${WORKSPACE_ID}`,
+      'GET /admin/executions/summary?hours=24',
+      `GET /admin/executions/${USER_ID}`,
+    ]);
+
+    for (const url of [
+      '/api/admin/executions/not-a-uuid',
+      '/api/admin/workspaces?ids=bad',
+      '/api/admin/workspaces?size=101',
+      '/api/admin/executions/summary?hours=169',
+    ]) {
+      const res = await inject({ method: 'GET', url, headers });
+      expect(res.statusCode).toBe(400);
+    }
+    expect(fixtureRequests).toHaveLength(4);
+  });
+
   it('routes workspace credential replace and delete', async () => {
     const saved = await inject({
       method: 'PUT',

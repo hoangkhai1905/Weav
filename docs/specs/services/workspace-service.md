@@ -1,6 +1,6 @@
 # Workspace Service
 
-> Status: V1 core (workspaces, membership, authorization snapshot, connections/credentials, Google OAuth, notification outbox) is implemented; System Admin listing (UC027) is not. Owner: K. Last verified: 2026-09-30 against `dev`.
+> Status: V1 core (workspaces, membership, authorization snapshot, connections/credentials, Google OAuth, notification outbox) is implemented; System Admin listing (UC027, `GET /admin/workspaces`) is implemented. Owner: K. Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 
@@ -25,7 +25,7 @@ Not responsible for: user identity, profiles, account state, login and token iss
 | UC010 | Manage connections/credentials | Implemented | Full CRUD, credential write/remove, test, disable, Google OAuth. Providers: `GMAIL`, `GOOGLE_SHEETS`, `TELEGRAM`, `HTTP` |
 | UC015 | Publish workflow (authorization part) | Implemented | Internal access snapshot exposes `WORKFLOW_PUBLISH`; `authorize-attachment` gates connection use. The decision is taken by Workflow |
 | UC016 | Pause/Resume (authorization part) | Implemented | Snapshot exposes `WORKFLOW_MANAGE_STATE` |
-| UC027 | List all workspaces (System Admin) | Planned | No admin route or ADMIN-based rule; the JWT `ADMIN` role is only validated as an allowed claim value (`JwtAccessTokenValidator`) |
+| UC027 | List all workspaces (System Admin) | Implemented | `GET /admin/workspaces`, JWT `system_role=ADMIN` only ([AdminWorkspaceController](../../../services/workspace-service/src/main/java/com/weav/workspace/presentation/http/AdminWorkspaceController.java)); consumed by `apps/admin` through Gateway `/api/admin/workspaces` |
 
 ## Business rules
 
@@ -166,7 +166,7 @@ Names and defaults only; see the [README table](../../../services/workspace-serv
 
 ## Status and known gaps
 
-- UC027 (admin lists all workspaces): Planned; no admin authorization path.
+- UC027 (admin lists all workspaces): Implemented (`GET /admin/workspaces`).
 - UC007: workspace delete/archive, invitations, ownership transfer, custom roles: not implemented by design in V1.
 - Gateway lacks the credential PUT/DELETE routes (public credential entry from web blocked) and the generic Connection routes need handoff confirmation.
 - Notification outbox has no retention/cleanup job; can grow if publisher disabled.
@@ -188,7 +188,7 @@ Suites include domain tests, architecture tests (ArchUnit clean-architecture rul
 ## Open questions
 
 1. Google redirect defaults differ: service `application.properties` uses `localhost:8080`/`3000`, Compose and `.env.example` use `8082`/`5173`. Suggested: keep as is (direct-run vs Compose) and document per environment.
-2. UC027 (admin lists all workspaces) has no owner: neither Workspace nor Identity implements it. Suggested: add an admin-only `GET /admin/workspaces` in Workspace, gated by the JWT `ADMIN` role, plus a Gateway route (handoff).
+2. UC027 (admin lists all workspaces): resolved. Workspace owns the admin-only `GET /admin/workspaces`, with a Gateway route `/api/admin/workspaces`.
 3. Internal auth: brief baseline mentions Service JWT; code uses a static `X-Internal-Service-Key`. Suggested: accept static key for V1, list Service JWT as a hardening item.
 4. Gateway credential routes: `PUT/DELETE .../credential` are absent in the Gateway contract. Suggested: request a documented Gateway handoff, or decide web uses Google OAuth only in V1 (matches the 2026-09-24 web design, which offers Google providers only).
 5. Notion says Redis and one physical DB with `*_schema`; code uses Valkey (Redis client, `spring.data.redis`) and Neon `workspace_db` with schema `workspace`. Suggested: follow code.

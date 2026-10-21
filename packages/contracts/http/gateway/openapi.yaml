@@ -16,6 +16,7 @@ tags:
   - name: Invitations
   - name: Connections
   - name: OAuth
+  - name: Admin
 security:
   - bearerAuth: []
 paths:
@@ -734,6 +735,99 @@ paths:
         "404": { $ref: "../workspace/openapi.yaml#/components/responses/NotFound" }
         "409": { $ref: "../workspace/openapi.yaml#/components/responses/Conflict" }
         "410": { $ref: "../workspace/openapi.yaml#/components/responses/Gone" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+  /api/admin/workspaces:
+    get:
+      tags: [Admin]
+      operationId: gatewayAdminListWorkspaces
+      summary: List all workspaces (admin)
+      description: Lists workspaces across the platform. Requires a system ADMIN access token; other callers get 403. Unknown query parameters are rejected with 400.
+      parameters:
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: q, in: query, required: false, schema: { type: string, maxLength: 100 } }
+        - { name: ownerId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: ids, in: query, required: false, schema: { type: string }, description: "Comma-separated workspace UUIDs, at most 100." }
+      responses:
+        "200":
+          description: Upstream service response.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+  /api/admin/executions:
+    get:
+      tags: [Admin]
+      operationId: gatewayAdminListExecutions
+      summary: List executions across workspaces (admin)
+      description: Run history across all workspaces. Requires a system ADMIN access token; other callers get 403. Unknown query parameters are rejected with 400.
+      parameters:
+        - { name: status, in: query, required: false, schema: { type: string, enum: [QUEUED, RUNNING, WAITING, SUCCESS, FAILED, CANCELLED] } }
+        - { name: workspaceId, in: query, required: false, schema: { type: string, format: uuid } }
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 0 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100 } }
+      responses:
+        "200":
+          description: Upstream service response.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+  /api/admin/executions/summary:
+    get:
+      tags: [Admin]
+      operationId: gatewayAdminExecutionSummary
+      summary: Execution metrics across workspaces (admin)
+      description: Aggregated execution metrics for the last N hours. Requires a system ADMIN access token; other callers get 403. Unknown query parameters are rejected with 400.
+      parameters:
+        - { name: hours, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 168, default: 24 } }
+      responses:
+        "200":
+          description: Upstream service response.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
+        "500": { $ref: "#/components/responses/GatewayInternalError" }
+        "502": { $ref: "#/components/responses/GatewayBadGateway" }
+        "503": { $ref: "#/components/responses/GatewayUnavailable" }
+  /api/admin/executions/{executionId}:
+    parameters:
+      - { name: executionId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Admin]
+      operationId: gatewayAdminGetExecution
+      summary: Get one execution (admin)
+      description: Execution detail from any workspace. Requires a system ADMIN access token; other callers get 403. Unknown query parameters are rejected with 400.
+      responses:
+        "200":
+          description: Upstream service response.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/GatewayBadRequest" }
+        "401": { $ref: "#/components/responses/GatewayUnauthorized" }
+        "403":
+          { $ref: "../workspace/openapi.yaml#/components/responses/Forbidden" }
         "500": { $ref: "#/components/responses/GatewayInternalError" }
         "502": { $ref: "#/components/responses/GatewayBadGateway" }
         "503": { $ref: "#/components/responses/GatewayUnavailable" }

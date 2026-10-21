@@ -49,20 +49,30 @@ public final class MonitoringService {
     public RunPage history(UUID workspaceId, UUID actorId, ExecutionStatus status, UUID workflowId,
                            Instant from, Instant to, int page, int size) {
         workspaceAuthorization.require(workspaceId, actorId, MONITOR_CAPABILITY);
+        RunRange range = validateRunRange(page, size, from, to, clock.instant());
+        return queryPort.history(workspaceId, new RunFilter(status, workflowId, range.from(), range.to()),
+                page, size);
+    }
+
+    /**
+     * The single place for run-list paging and time-range rules (shared with the admin run list). The 90-day cap
+     * always applies: a missing "from" is "to" (or now) minus 90 days; a missing "to" stays open upwards so runs
+     * created right now are included.
+     */
+    static RunRange validateRunRange(int page, int size, Instant from, Instant to, Instant now) {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE || (long) page * size > Integer.MAX_VALUE) {
             throw new BadRequestException("Execution page bounds are invalid");
         }
-        // The 90-day cap always applies: a missing "from" is "to" (or now) minus 90 days; a missing "to" stays open
-        // upwards so runs created right now are included.
-        Instant upper = to != null ? to : clock.instant();
+        Instant upper = to != null ? to : now;
         Instant lower = from != null ? from : upper.minus(Duration.ofDays(MAX_RANGE_DAYS));
         if (!lower.isBefore(upper) || Duration.between(lower, upper).compareTo(Duration.ofDays(MAX_RANGE_DAYS)) > 0) {
             throw new BadRequestException("The time range must be positive and at most " + MAX_RANGE_DAYS + " days");
         }
-        Instant effectiveFrom = lower;
-        Instant effectiveTo = to;
-        return queryPort.history(workspaceId, new RunFilter(status, workflowId, effectiveFrom, effectiveTo),
-                page, size);
+        return new RunRange(lower, to);
+    }
+
+    /** Effective lower bound (always set) and upper bound (null = open). */
+    record RunRange(Instant from, Instant to) {
     }
 
     public Summary summary(UUID workspaceId, UUID actorId, int days) {

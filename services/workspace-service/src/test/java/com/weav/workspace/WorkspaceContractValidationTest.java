@@ -19,6 +19,7 @@ class WorkspaceContractValidationTest {
     private static final List<String> WORKSPACE_OPERATION_IDS = List.of(
             "createWorkspace",
             "listMyWorkspaces",
+            "adminListWorkspaces",
             "getWorkspace",
             "renameWorkspace",
             "deleteWorkspace",

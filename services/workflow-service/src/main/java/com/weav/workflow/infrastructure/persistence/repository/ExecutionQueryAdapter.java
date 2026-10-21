@@ -43,6 +43,7 @@ public class ExecutionQueryAdapter implements ExecutionQueryPort {
                     + "client_secret|password)=[^&#\\s]+");
     private static final int MAX_SANITIZED_DEPTH = 32;
     private static final int MAX_STRING_LENGTH = 8_192;
+    private static final int MAX_RUN_ERROR_MESSAGE = 300;
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
@@ -314,6 +315,13 @@ public class ExecutionQueryAdapter implements ExecutionQueryPort {
         return sanitized.length() <= MAX_STRING_LENGTH
                 ? sanitized
                 : sanitized.substring(0, MAX_STRING_LENGTH) + "…";
+    }
+
+    /** Run-history error text: redacted like {@link #sanitizeString}, then capped at 300 characters plus an ellipsis. */
+    static String sanitizeRunError(String value) {
+        String sanitized = sanitizeString(value);
+        return sanitized != null && sanitized.length() > MAX_RUN_ERROR_MESSAGE
+                ? sanitized.substring(0, MAX_RUN_ERROR_MESSAGE) + "…" : sanitized;
     }
 
     private Map<String, Object> castStringMap(Map<?, ?> map) {
