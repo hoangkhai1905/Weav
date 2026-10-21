@@ -50,12 +50,20 @@ const TONES: Record<string, StatusTone> = {
 };
 export const statusTone = (status: string): StatusTone => TONES[status] ?? 'pause';
 
-const NODE_PREFIXES = ['trigger', 'telegram', 'gmail', 'sheets', 'http', 'ocr', 'ai', 'calendar', 'discord', 'transform', 'logic', 'condition'];
+// The real node types (packages/workflow-schema). Labels live in the dictionary as node.type.<type> and node.prefix.<prefix>.
+const NODE_TYPES = new Set([
+  'ai.classify', 'ai.extract', 'ai.generate', 'ai.summarize', 'data.set', 'discord.send_message', 'email.send', 'format.datetime', 'format.text',
+  'google.calendar', 'google.drive', 'google.sheets', 'http.request', 'logic.condition', 'logic.switch', 'ocr.extract', 'slack.send_message',
+  'teams.send_message', 'telegram.send_message', 'trigger.gmail', 'trigger.manual', 'trigger.schedule', 'trigger.telegram', 'trigger.webhook',
+  'trigger.workflow_event', 'weav.workflow',
+]);
+const NODE_PREFIXES = new Set(['ai', 'data', 'discord', 'email', 'format', 'google', 'http', 'logic', 'ocr', 'slack', 'teams', 'telegram', 'trigger', 'weav']);
 
-/** i18n key for a node type such as "telegram.send_message" by its prefix, or null when unknown (show the raw id). */
+/** i18n key for a node type: its own label, else its prefix label, else null (show the raw id). */
 export const nodeTypeKey = (nodeType: string): string | null => {
+  if (NODE_TYPES.has(nodeType)) return `node.type.${nodeType}`;
   const prefix = nodeType.split('.')[0];
-  return NODE_PREFIXES.includes(prefix) ? `node.${prefix}` : null;
+  return NODE_PREFIXES.has(prefix) ? `node.prefix.${prefix}` : null;
 };
 
 /** Translated label for an enum value such as MANUAL, or the raw value when no label exists. */

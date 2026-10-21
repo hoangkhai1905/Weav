@@ -40,8 +40,11 @@ const detail = {
   errorMessage: 'The mail step gave up',
   steps: [
     { nodeId: 'n1', nodeType: 'trigger.telegram', status: 'SUCCESS', attemptCount: 1, startedAt: '2026-05-01T09:00:01Z', finishedAt: '2026-05-01T09:00:02Z', errorCode: null, errorMessage: null },
-    { nodeId: 'n2', nodeType: 'gmail.send', status: 'FAILED', attemptCount: 3, startedAt: '2026-05-01T09:00:02Z', finishedAt: '2026-05-01T09:03:05Z', errorCode: 'SMTP_REFUSED', errorMessage: 'Mailbox unavailable', },
+    { nodeId: 'n2', nodeType: 'email.send', status: 'FAILED', attemptCount: 3, startedAt: '2026-05-01T09:00:02Z', finishedAt: '2026-05-01T09:03:05Z', errorCode: 'SMTP_REFUSED', errorMessage: 'Mailbox unavailable', },
     { nodeId: 'n3', nodeType: 'custom.thing', status: 'SKIPPED', attemptCount: 0, startedAt: null, finishedAt: null, errorCode: null, errorMessage: null },
+    { nodeId: 'n4', nodeType: 'google.sheets', status: 'SUCCESS', attemptCount: 1, startedAt: null, finishedAt: null, errorCode: null, errorMessage: null },
+    { nodeId: 'n5', nodeType: 'google.unknown', status: 'SUCCESS', attemptCount: 1, startedAt: null, finishedAt: null, errorCode: null, errorMessage: null },
+    { nodeId: 'n6', nodeType: 'foo.bar', status: 'SUCCESS', attemptCount: 1, startedAt: null, finishedAt: null, errorCode: null, errorMessage: null },
   ],
 };
 
@@ -183,14 +186,19 @@ test('the execution panel shows steps and errors read-only', async ({ page }) =>
   await expect(panel).toContainText('The mail step gave up');
   await expect(panel).toContainText('3 min 4 s');
   const steps = panel.getByRole('list', { name: 'Steps' }).getByRole('listitem');
-  await expect(steps).toHaveCount(3);
-  await expect(steps.nth(0)).toContainText('Workflow start');
-  await expect(steps.nth(1)).toContainText('Gmail');
+  await expect(steps).toHaveCount(6);
+  await expect(steps.nth(0)).toContainText('Telegram trigger');
+  await expect(steps.nth(1)).toContainText('Send email');
   await expect(steps.nth(1)).toContainText('3 attempts');
   await expect(steps.nth(1)).toContainText('SMTP_REFUSED');
   await expect(steps.nth(1)).toContainText('Mailbox unavailable');
   await expect(steps.nth(2)).toContainText('custom.thing');
   await expect(steps.nth(2)).toContainText('Skipped');
+  // Known type -> its own label; known prefix only -> the prefix label; unknown prefix -> the raw id.
+  await expect(steps.nth(3)).toContainText('Google Sheets');
+  await expect(steps.nth(4)).toContainText('Google');
+  await expect(steps.nth(4)).not.toContainText('google.unknown');
+  await expect(steps.nth(5)).toContainText('foo.bar');
   await expect(panel.getByRole('button', { name: /retry|stop|run|cancel/i })).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'Close' })).toBeFocused();
 
