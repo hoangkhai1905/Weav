@@ -159,6 +159,10 @@ interface OverviewOpts {
   /** Replaces the generated trend (any length). */
   trend?: ReturnType<typeof trendOf>;
   topFailing?: typeof FAILING;
+  /** Top-failing list for the 30-day range, so the workspace ids change with the range. */
+  topFailing30?: typeof FAILING;
+  /** Delays every workspace-name lookup after the first, to expose names that blink while it runs. */
+  slowNames?: boolean;
 }
 
 async function stubOverview(page: Page, opts: OverviewOpts = {}) {
@@ -176,11 +180,12 @@ async function stubOverview(page: Page, opts: OverviewOpts = {}) {
     calls.users.push(params);
     return json(route, 200, { items: [], page: 0, size: 1, totalItems: params.get('status') === 'DISABLED' ? 2 : 7, totalPages: 1 });
   });
-  await page.route(`${GATEWAY}/api/admin/workspaces**`, (route) => {
+  await page.route(`${GATEWAY}/api/admin/workspaces**`, async (route) => {
     const params = new URL(route.request().url()).searchParams;
     calls.workspaces.push(params);
     const ids = params.get('ids');
     if (ids) {
+      if (opts.slowNames && calls.workspaces.filter((p) => p.get('ids')).length > 1) await new Promise((resolve) => setTimeout(resolve, 600));
       const known = [{ id: 'wA', name: 'Marketing' }, { id: 'wB', name: 'Sales' }];
       const items = known.filter((w) => ids.split(',').includes(w.id)).map((w) => ({ ...w, ownerId: 'u9', ownerEmail: null, ownerDisplayName: null, memberCount: 1, createdAt: '2026-04-01T12:00:00Z' }));
       return json(route, 200, { items, page: 0, size: 100, totalElements: items.length, totalPages: 1 });
@@ -193,7 +198,7 @@ async function stubOverview(page: Page, opts: OverviewOpts = {}) {
       const days = url.searchParams.get('days');
       const body = (n: number) => ({
         hours: 24, from: '2026-05-01T00:00:00Z', to: '2026-05-02T00:00:00Z', total: 40 + (opts.cancelled ?? 0), success: 30, failed: 6, active: 4,
-        trend: opts.trend ?? trendOf(n), topFailing: opts.topFailing ?? FAILING,
+        trend: opts.trend ?? trendOf(n), topFailing: (n === 30 && opts.topFailing30) || opts.topFailing || FAILING,
       });
       if (days === null) {
         calls.summary++;
@@ -272,8 +277,8 @@ test('overview draws one bar group per day with an accessible summary and table'
   await expect(chart.getByRole('img')).toHaveAttribute('aria-label', 'Chart of 104 runs over 14 days, split into succeeded and failed');
   const table = chart.getByRole('table', { name: 'Runs per day (UTC)' });
   await expect(table.getByRole('row')).toHaveCount(15);
-  await expect(table.getByRole('row').nth(14)).toContainText('2026-05-14');
-  await expect(table.getByRole('row').nth(14)).toContainText('14');
+  // Last day (index 13): total 14 = 13 succeeded + 1 failed.
+  await expect(table.getByRole('row').nth(14).getByRole('cell')).toHaveText(['2026-05-14', '14', '13', '1']);
   await expect(chart.getByRole('button', { name: '14 days' })).toHaveAttribute('aria-pressed', 'true');
   expect(calls.chart).toHaveLength(1);
   expect(calls.chart[0].get('days')).toBe('14');
@@ -295,6 +300,19 @@ test('choosing 30 days refetches the charts and leaves the tiles alone', async (
   await expect(chart.getByTestId('trend-day')).toHaveCount(7);
   expect(calls.chart.map((p) => p.get('days'))).toEqual(['14', '30', '7']);
   await expect(page.getByTestId('overview-runs-total')).toHaveText('40');
+});
+
+test('workspace names stay visible while a new range loads', async ({ page }) => {
+  const other = { workflowId: 'wf9', workflowName: 'New flow', workspaceId: 'wC', failures: 1, lastFailureAt: '2026-05-10T10:00:00Z' };
+  await stubOverview(page, { slowNames: true, topFailing30: [FAILING[0], other] });
+  await page.goto('/');
+  const failedRow = page.getByTestId('failed-run-row').first();
+  await expect(failedRow).toContainText('Marketing');
+  await page.getByTestId('overview-trend').getByRole('button', { name: '30 days' }).click();
+  await expect(page.getByTestId('trend-day')).toHaveCount(30);
+  // A one-shot read (no retry): the lookup for the new ids is still in flight, and the old names must still show.
+  expect(await failedRow.textContent()).toContain('Marketing');
+  expect(await page.getByTestId('top-failing-row').first().textContent()).toContain('Marketing');
 });
 
 test('top failing workflows show names, one workspace lookup and a link to that workspace', async ({ page }) => {

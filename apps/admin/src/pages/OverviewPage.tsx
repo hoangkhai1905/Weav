@@ -35,7 +35,7 @@ export function OverviewPage() {
   const health = useQuery({ queryKey: ['admin', 'upstreams'], queryFn: getUpstreams });
 
   // One lookup turns the workspace ids of the failed runs and the top-failing list into names, like the Executions page.
-  // It waits until both have answered (or failed) so the two lists share a single request.
+  // It starts as soon as either source has ids and keeps the previous names while a new range loads, so names never blink to a dash.
   const wsIds = useMemo(
     () => [...new Set([...(failed.data?.items ?? []).map((run) => run.workspaceId), ...(trend.data?.topFailing ?? []).map((row) => row.workspaceId)])].sort(),
     [failed.data, trend.data],
@@ -43,7 +43,8 @@ export function OverviewPage() {
   const names = useQuery({
     queryKey: ['admin', 'workspace-names', wsIds],
     queryFn: () => listWorkspaces({ ids: wsIds, size: 100 }),
-    enabled: wsIds.length > 0 && !failed.isPending && !trend.isPending,
+    enabled: wsIds.length > 0,
+    placeholderData: keepPreviousData,
   });
   const nameOf = (id: string) => names.data?.items.find((w) => w.id === id)?.name ?? '—';
 
