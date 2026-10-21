@@ -62,7 +62,7 @@ function isAsyncIterable(value: unknown): boolean {
   );
 }
 
-function uuidParam(value: string): string {
+export function uuidParam(value: string): string {
   if (!uuidSchema.safeParse(value).success) {
     throw new BadRequestException('Request validation failed');
   }
@@ -70,7 +70,7 @@ function uuidParam(value: string): string {
 }
 
 // Coarse edge check only; Identity re-verifies the session and ADMIN role.
-function requireAdmin(req: FastifyRequest): void {
+export function requireAdmin(req: FastifyRequest): void {
   const principal = (req as { principal?: AccessPrincipal }).principal;
   if (principal?.system_role !== 'ADMIN') {
     throw new ForbiddenException('Administrator role required');

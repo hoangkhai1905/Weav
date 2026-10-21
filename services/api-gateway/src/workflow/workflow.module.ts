@@ -39,6 +39,7 @@ import {
   startUpstreamCall,
 } from '../common/upstream-proxy';
 import { readCapped } from '../common/read-capped';
+import { requireAdmin, uuidParam } from '../identity/identity.module';
 
 const MAX_WORKFLOW_REQUEST_BYTES = 1_048_576;
 const uuidSchema = z.string().uuid();
@@ -116,6 +117,19 @@ const runHistoryQuerySchema = z
   .strict();
 const summaryQuerySchema = z
   .object({ days: queryInteger(1, 30).optional() })
+  .strict();
+const adminExecutionQuerySchema = z
+  .object({
+    status: executionStatusSchema.optional(),
+    workspaceId: uuidSchema.optional(),
+    from: isoInstantSchema.optional(),
+    to: isoInstantSchema.optional(),
+    page: queryInteger(0).optional(),
+    size: queryInteger(1, 100).optional(),
+  })
+  .strict();
+const adminSummaryQuerySchema = z
+  .object({ hours: queryInteger(1, 168).optional() })
   .strict();
 const alertRuleSchema = z
   .object({
@@ -605,6 +619,57 @@ export class WorkflowProxyController {
   }
 }
 
+/** Cross-workspace execution monitoring for system administrators. */
+@Controller('api/admin/executions')
+@AuthPolicy('required')
+export class AdminExecutionProxyController {
+  constructor(private readonly proxy: WorkflowProxyService) {}
+
+  @Get()
+  list(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Query() query: unknown,
+  ) {
+    requireAdmin(request);
+    return this.proxy.forward('GET', request, reply, '/admin/executions', {
+      query: parse(adminExecutionQuerySchema, query),
+    });
+  }
+
+  // Declared before ':executionId' so 'summary' is not read as an id.
+  @Get('summary')
+  summary(
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+    @Query() query: unknown,
+  ) {
+    requireAdmin(request);
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      '/admin/executions/summary',
+      { query: parse(adminSummaryQuerySchema, query) },
+    );
+  }
+
+  @Get(':executionId')
+  detail(
+    @Param('executionId') executionId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    requireAdmin(request);
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      `/admin/executions/${uuidParam(executionId)}`,
+    );
+  }
+}
+
 /** Workspace-wide monitoring: run history, metrics summary and alert rules (W6-A). */
 @Controller('api/v1/workspaces/:workspaceId')
 @AuthPolicy('required')
@@ -956,6 +1021,7 @@ export class TelegramWebhookProxyController {
   controllers: [
     WorkflowProxyController,
     MonitoringProxyController,
+    AdminExecutionProxyController,
     WorkflowTemplateProxyController,
     TemplateProxyController,
     WebhookProxyController,

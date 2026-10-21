@@ -27,6 +27,8 @@ export interface WorkspaceForwardOptions {
   query?: Record<string, string | number | boolean>;
   /** Upstream deadline; defaults to 10 s. Workspace delete waits for the Workflow Service to pause workflows. */
   timeoutMs?: number;
+  /** Upstream path prefix; defaults to '/workspaces'. Admin routes pass ''. */
+  rootPath?: string;
 }
 
 // Returns null (and cancels the body) when the upstream exceeds the size cap.
@@ -130,7 +132,7 @@ export class WorkspaceProxyService {
       query.set(key, String(value));
     }
     const queryString = query.toString();
-    const targetPath = `/workspaces${path}${queryString ? `?${queryString}` : ''}`;
+    const targetPath = `${options.rootPath ?? '/workspaces'}${path}${queryString ? `?${queryString}` : ''}`;
     const gateway = this.config.get<GatewayConfig>('gateway');
     const base =
       gateway?.upstreams?.workspace ??

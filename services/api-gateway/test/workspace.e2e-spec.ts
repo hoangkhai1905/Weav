@@ -1458,9 +1458,12 @@ describe('Workspace gateway public API (Fastify e2e)', () => {
       'PUT /api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential',
       'DELETE /api/v1/workspaces/{workspaceId}/connections/{connectionId}/credential',
     ];
-    // W7-A1 invitation routes are asserted in their own test below.
+    // W7-A1 invitation routes are asserted in their own test below; admin
+    // routes are covered by routes.e2e-spec.ts.
     const actual = extractOperations(gatewayDocument).filter(
-      (operation) => !operation.includes('/invitations'),
+      (operation) =>
+        !operation.includes('/invitations') &&
+        !operation.includes('/api/admin/'),
     );
 
     expect(actual).toHaveLength(expected.length);
