@@ -16,6 +16,7 @@ tags:
   - name: Connections
   - name: OAuth
   - name: Internal
+  - name: Admin
 security:
   - bearerAuth: []
 paths:
@@ -1000,6 +1001,52 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /admin/workspaces:
+    get:
+      tags: [Admin]
+      operationId: adminListWorkspaces
+      summary: List workspaces of every owner (system admin)
+      description: >-
+        UC027. Requires system_role ADMIN (403 otherwise). Active workspaces only, newest first (created time,
+        then ID). The owner is the workspace creator; ownerEmail and ownerDisplayName come from Identity and are
+        null when that lookup fails. q is a case-insensitive literal substring match on the workspace name.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 100
+        - name: ownerId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: ids
+          in: query
+          required: false
+          description: Comma-separated workspace IDs (at most 100); restricts the result to these workspaces.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Page of workspaces with owner details and member counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWorkspacePageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1451,6 +1498,54 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/WorkspaceResponse'
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+        totalElements:
+          type: integer
+          format: int64
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+    AdminWorkspaceResponse:
+      type: object
+      additionalProperties: false
+      required: [id, name, ownerId, ownerEmail, ownerDisplayName, memberCount, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 255
+        ownerId:
+          type: string
+          format: uuid
+        ownerEmail:
+          type: [string, 'null']
+        ownerDisplayName:
+          type: [string, 'null']
+        memberCount:
+          type: integer
+          format: int64
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+    AdminWorkspacePageResponse:
+      type: object
+      additionalProperties: false
+      required: [items, page, size, totalElements, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminWorkspaceResponse'
         page:
           type: integer
           minimum: 0
