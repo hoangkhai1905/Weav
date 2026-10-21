@@ -31,8 +31,19 @@ async function stubGateway(page: Page, opts: { role?: 'ADMIN' | 'USER'; loginSta
     calls.users++;
     const authorized = route.request().headers()['authorization'] === 'Bearer a2';
     if (opts.firstUsers401 && !authorized) return json(route, 401, { message: 'expired' });
-    return json(route, 200, { items: [], page: 0, size: 1, totalItems: 7, totalPages: 7 });
+    const disabled = new URL(route.request().url()).searchParams.get('status') === 'DISABLED';
+    return json(route, 200, { items: [], page: 0, size: 1, totalItems: disabled ? 2 : 7, totalPages: 7 });
   });
+  // The overview also loads these; they only need to answer without errors.
+  await page.route(`${GATEWAY}/api/admin/workspaces**`, (route) => json(route, 200, { items: [], page: 0, size: 1, totalElements: 5, totalPages: 5 }));
+  await page.route(`${GATEWAY}/api/admin/executions**`, (route) =>
+    route.request().url().includes('/summary')
+      ? json(route, 200, { hours: 24, from: '2026-05-01T00:00:00Z', to: '2026-05-02T00:00:00Z', total: 0, success: 0, failed: 0, active: 0 })
+      : json(route, 200, { items: [], page: 0, size: 5, totalElements: 0, hasNext: false }),
+  );
+  await page.route(`${GATEWAY}/ready/upstreams`, (route) =>
+    json(route, 200, { status: 'ok', details: { identity: { status: 'up' }, workspace: { status: 'up' } }, requestId: 'r1' }),
+  );
   return calls;
 }
 
@@ -75,7 +86,7 @@ test('an expired token refreshes once then retries', async ({ page }) => {
   await signIn(page);
   await expect(page.getByTestId('overview-users-total')).toHaveText('7');
   expect(calls.refresh).toBe(1);
-  expect(calls.users).toBe(2);
+  expect(calls.users).toBe(4); // the overview asks for total and disabled users, each retried once
 });
 
 test('a failed refresh returns to login without looping', async ({ page }) => {

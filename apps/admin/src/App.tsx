@@ -8,6 +8,8 @@ import { OverviewPage } from './pages/OverviewPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { UsersPage } from './pages/UsersPage';
 import { ExecutionsPage } from './pages/ExecutionsPage';
+import { SystemPage } from './pages/SystemPage';
+import { TemplatesPage } from './pages/TemplatesPage';
 import { WorkspacesPage } from './pages/WorkspacesPage';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
@@ -46,7 +48,9 @@ export default function App() {
             <Route path="users/:id" element={<UserDetailPage />} />
             <Route path="workspaces" element={<WorkspacesPage />} />
             <Route path="executions" element={<ExecutionsPage />} />
-            <Route path="*"element={<NotFoundPage />} />
+            <Route path="templates" element={<TemplatesPage />} />
+            <Route path="system" element={<SystemPage />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
