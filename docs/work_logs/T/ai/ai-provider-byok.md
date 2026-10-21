@@ -6,7 +6,7 @@
 | Nhánh | `feature/ai-provider-byok` từ `dev` @ `0ffc7247` |
 | Spec / plan | `docs/superpowers/specs/2026-10-20-ai-provider-byo-key-design.md`, `docs/superpowers/plans/2026-10-20-ai-provider-byo-key.md` |
 | Cách làm | Subagent-driven: Sonnet code, Opus review từng task + review toàn nhánh |
-| Trạng thái | Code xong, đã test thật với Gemini; chờ duyệt merge vào `dev` |
+| Trạng thái | Đã merge vào `dev` (`ef05f106`, local, chưa push) sau khi test thật với Gemini |
 
 ## Kết quả
 
@@ -56,7 +56,7 @@
 - Tên model sai `gemini-khong-ton-tai`: lượt `51e0e213` Lỗi, "Bước này thiếu hoặc sai phần thiết lập", trường lỗi `model`, nút "Mở quy trình"; log ai-service `AI_MODEL_NOT_FOUND`.
 - Log 4 service (ai, workflow, workspace, gateway) không có chuỗi nào giống key Gemini (đếm `AIza` = 0).
 - Không thử OpenAI/Anthropic (không có key), chưa thử key sai thật và hết tín dụng thật (đã có test tự động).
-- Workflow "Test Gemini BYOK" vẫn để lại trong workspace "test 1" với model sai; có thể xóa hoặc bỏ trống ô model.
+- Dữ liệu test còn lại trong workspace "test 1" (Neon dùng chung): kết nối "test gehihi (Gemini)" (`8b3b27b7-…`) và workflow "Test Gemini BYOK" (`818db416-…`, bản mới nhất đã chuyển về AI mặc định của Weav). Không xóa được kết nối vì các phiên bản đã xuất bản cũ vẫn tham chiếu nó (`ConnectionReferenceAdapter.inUse`, `version_id is not null`); code trước merge này không đọc được provider `GEMINI` nên phải dùng code từ `ef05f106` trở đi.
 
 ## Sửa thêm trong lúc test
 
@@ -68,4 +68,5 @@
 - `GET /models` của OpenAI có thể vượt giới hạn body 64 KiB với tổ chức có nhiều model → báo lỗi phụ thuộc khi kiểm tra key.
 - Thứ tự lỗi khi không có `llm` và DeepSeek chưa cấu hình: `INVALID_REQUEST`/`FORBIDDEN` đến trước `AI_NOT_CONFIGURED`.
 - Gộp `resolveConnection` dùng chung cho các executor (bản sao thứ 4) để sau.
-- Merge `--no-ff` vào `dev` sau khi người dùng duyệt.
+- Đã merge vào `dev`; người dùng push khi sẵn sàng. Ai chạy stack phải build lại ai-service, workspace-service, workflow-service, api-gateway và web.
+- Kết nối đã từng dùng trong một phiên bản xuất bản thì không xóa được qua giao diện (theo thiết kế); cân nhắc thông báo rõ hơn "đang được sử dụng bởi lịch sử xuất bản".
