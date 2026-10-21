@@ -38,7 +38,7 @@ async function stubGateway(page: Page, opts: { role?: 'ADMIN' | 'USER'; loginSta
   await page.route(`${GATEWAY}/api/admin/workspaces**`, (route) => json(route, 200, { items: [], page: 0, size: 1, totalElements: 5, totalPages: 5 }));
   await page.route(`${GATEWAY}/api/admin/executions**`, (route) =>
     route.request().url().includes('/summary')
-      ? json(route, 200, { hours: 24, from: '2026-05-01T00:00:00Z', to: '2026-05-02T00:00:00Z', total: 0, success: 0, failed: 0, active: 0 })
+      ? json(route, 200, { hours: 24, from: '2026-05-01T00:00:00Z', to: '2026-05-02T00:00:00Z', total: 0, success: 0, failed: 0, active: 0, trend: [], topFailing: [] })
       : json(route, 200, { items: [], page: 0, size: 5, totalElements: 0, hasNext: false }),
   );
   await page.route(`${GATEWAY}/ready/upstreams`, (route) =>

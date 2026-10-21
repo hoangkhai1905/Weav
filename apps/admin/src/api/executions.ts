@@ -59,6 +59,25 @@ export interface ExecutionSummary {
   success: number;
   failed: number;
   active: number;
+  /** One entry per UTC day, oldest first, zero-filled; as many entries as the requested `days`. */
+  trend: TrendDay[];
+  /** Up to 5 workflows with the most failed runs over the `days` window. */
+  topFailing: FailingWorkflow[];
+}
+
+export interface TrendDay {
+  day: string;
+  total: number;
+  success: number;
+  failed: number;
+}
+
+export interface FailingWorkflow {
+  workflowId: string;
+  workflowName: string;
+  workspaceId: string;
+  failures: number;
+  lastFailureAt: string;
 }
 
 export interface ListExecutionsParams {
@@ -77,5 +96,6 @@ export const listExecutions = async ({ status, workspaceId, from, to, page, size
 export const getExecution = async (executionId: string): Promise<ExecutionDetail> =>
   (await api.get<ExecutionDetail>(`/api/admin/executions/${encodeURIComponent(executionId)}`)).data;
 
-export const getSummary = async (hours: number): Promise<ExecutionSummary> =>
-  (await api.get<ExecutionSummary>('/api/admin/executions/summary', { params: { hours } })).data;
+/** `days` (1-30) sizes the trend and top-failing list; leave it out for the server default. */
+export const getSummary = async (hours: number, days?: number): Promise<ExecutionSummary> =>
+  (await api.get<ExecutionSummary>('/api/admin/executions/summary', { params: { hours, days } })).data;

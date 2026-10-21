@@ -139,8 +139,38 @@ const failedRun = (id: string, workspaceId: string) => ({
   errorCode: 'STEP_FAILED',
 });
 
-async function stubOverview(page: Page, opts: { summaryStatus?: number; cancelled?: number } = {}) {
-  const calls = { users: [] as URLSearchParams[], executions: [] as URLSearchParams[], workspaces: [] as URLSearchParams[], summary: 0 };
+const FAILING = [
+  { workflowId: 'wf1', workflowName: 'Nightly sync', workspaceId: 'wA', failures: 5, lastFailureAt: '2026-05-13T08:30:00Z' },
+  { workflowId: 'wf2', workflowName: 'Lead alert', workspaceId: 'wB', failures: 2, lastFailureAt: '2026-05-12T10:00:00Z' },
+  { workflowId: 'wf3', workflowName: 'Orphan flow', workspaceId: 'gone', failures: 1, lastFailureAt: '2026-05-11T10:00:00Z' },
+];
+
+/** Zero-filled UTC days ending 2026-05-14; success grows with the index and failed cycles 0, 1, 2. */
+const trendOf = (days: number) =>
+  Array.from({ length: days }, (_, i) => {
+    const date = new Date(Date.UTC(2026, 4, 14 - (days - 1 - i)));
+    return { day: date.toISOString().slice(0, 10), total: i + (i % 3), success: i, failed: i % 3 };
+  });
+
+interface OverviewOpts {
+  summaryStatus?: number;
+  cancelled?: number;
+  trendStatus?: number;
+  /** Replaces the generated trend (any length). */
+  trend?: ReturnType<typeof trendOf>;
+  topFailing?: typeof FAILING;
+}
+
+async function stubOverview(page: Page, opts: OverviewOpts = {}) {
+  const calls = {
+    users: [] as URLSearchParams[],
+    executions: [] as URLSearchParams[],
+    workspaces: [] as URLSearchParams[],
+    /** Summary calls without `days` are the 24 h tiles; the ones with `days` feed the charts. */
+    summary: 0,
+    chart: [] as URLSearchParams[],
+  };
+  let trendFailures = opts.trendStatus ? 1 : 0;
   await page.route(`${GATEWAY}/api/admin/users**`, (route) => {
     const params = new URL(route.request().url()).searchParams;
     calls.users.push(params);
@@ -149,18 +179,30 @@ async function stubOverview(page: Page, opts: { summaryStatus?: number; cancelle
   await page.route(`${GATEWAY}/api/admin/workspaces**`, (route) => {
     const params = new URL(route.request().url()).searchParams;
     calls.workspaces.push(params);
-    if (params.get('ids')) {
-      const items = [{ id: 'wA', name: 'Marketing' }].map((w) => ({ ...w, ownerId: 'u9', ownerEmail: null, ownerDisplayName: null, memberCount: 1, createdAt: '2026-04-01T12:00:00Z' }));
-      return json(route, 200, { items, page: 0, size: 100, totalElements: 1, totalPages: 1 });
+    const ids = params.get('ids');
+    if (ids) {
+      const known = [{ id: 'wA', name: 'Marketing' }, { id: 'wB', name: 'Sales' }];
+      const items = known.filter((w) => ids.split(',').includes(w.id)).map((w) => ({ ...w, ownerId: 'u9', ownerEmail: null, ownerDisplayName: null, memberCount: 1, createdAt: '2026-04-01T12:00:00Z' }));
+      return json(route, 200, { items, page: 0, size: 100, totalElements: items.length, totalPages: 1 });
     }
     return json(route, 200, { items: [], page: 0, size: 1, totalElements: 5, totalPages: 5 });
   });
   await page.route(`${GATEWAY}/api/admin/executions**`, (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith('/summary')) {
-      calls.summary++;
-      if (opts.summaryStatus && calls.summary === 1) return json(route, opts.summaryStatus, { message: 'boom' });
-      return json(route, 200, { hours: 24, from: '2026-05-01T00:00:00Z', to: '2026-05-02T00:00:00Z', total: 40 + (opts.cancelled ?? 0), success: 30, failed: 6, active: 4 });
+      const days = url.searchParams.get('days');
+      const body = (n: number) => ({
+        hours: 24, from: '2026-05-01T00:00:00Z', to: '2026-05-02T00:00:00Z', total: 40 + (opts.cancelled ?? 0), success: 30, failed: 6, active: 4,
+        trend: opts.trend ?? trendOf(n), topFailing: opts.topFailing ?? FAILING,
+      });
+      if (days === null) {
+        calls.summary++;
+        if (opts.summaryStatus && calls.summary === 1) return json(route, opts.summaryStatus, { message: 'boom' });
+        return json(route, 200, body(14));
+      }
+      calls.chart.push(url.searchParams);
+      if (trendFailures-- > 0) return json(route, opts.trendStatus!, { message: 'boom' });
+      return json(route, 200, body(Number(days)));
     }
     calls.executions.push(url.searchParams);
     return json(route, 200, { items: [failedRun('e1', 'wA'), failedRun('e2', 'gone')], page: 0, size: 5, totalElements: 2, hasNext: false });
@@ -218,4 +260,98 @@ test('overview lists the latest failed runs and the system health', async ({ pag
   await expect(health.getByText('Up', { exact: true })).toHaveCount(2);
   await health.getByRole('link', { name: 'See details' }).click();
   await expect(page).toHaveURL(/\/system$/);
+});
+
+test('overview draws one bar group per day with an accessible summary and table', async ({ page }) => {
+  const calls = await stubOverview(page);
+  await page.goto('/');
+  const chart = page.getByTestId('overview-trend');
+  await expect(chart.getByTestId('trend-day')).toHaveCount(14);
+  await expect(chart.getByTestId('trend-day').first()).toHaveAttribute('data-date', '2026-05-01');
+  await expect(chart.getByTestId('trend-day').last()).toHaveAttribute('data-date', '2026-05-14');
+  await expect(chart.getByRole('img')).toHaveAttribute('aria-label', 'Chart of 104 runs over 14 days, split into succeeded and failed');
+  const table = chart.getByRole('table', { name: 'Runs per day (UTC)' });
+  await expect(table.getByRole('row')).toHaveCount(15);
+  await expect(table.getByRole('row').nth(14)).toContainText('2026-05-14');
+  await expect(table.getByRole('row').nth(14)).toContainText('14');
+  await expect(chart.getByRole('button', { name: '14 days' })).toHaveAttribute('aria-pressed', 'true');
+  expect(calls.chart).toHaveLength(1);
+  expect(calls.chart[0].get('days')).toBe('14');
+  expect(calls.chart[0].get('hours')).toBe('24');
+});
+
+test('choosing 30 days refetches the charts and leaves the tiles alone', async ({ page }) => {
+  const calls = await stubOverview(page);
+  await page.goto('/');
+  await expect(page.getByTestId('overview-runs-total')).toHaveText('40');
+  const chart = page.getByTestId('overview-trend');
+  await chart.getByRole('button', { name: '30 days' }).click();
+  await expect(chart.getByTestId('trend-day')).toHaveCount(30);
+  await expect(chart.getByRole('button', { name: '30 days' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(chart.getByRole('button', { name: '14 days' })).toHaveAttribute('aria-pressed', 'false');
+  expect(calls.chart.map((p) => p.get('days'))).toEqual(['14', '30']);
+  expect(calls.summary).toBe(1);
+  await chart.getByRole('button', { name: '7 days' }).click();
+  await expect(chart.getByTestId('trend-day')).toHaveCount(7);
+  expect(calls.chart.map((p) => p.get('days'))).toEqual(['14', '30', '7']);
+  await expect(page.getByTestId('overview-runs-total')).toHaveText('40');
+});
+
+test('top failing workflows show names, one workspace lookup and a link to that workspace', async ({ page }) => {
+  const calls = await stubOverview(page);
+  await page.goto('/');
+  const rows = page.getByTestId('top-failing-row');
+  await expect(rows).toHaveCount(3);
+  await expect(rows.first()).toContainText('Nightly sync');
+  await expect(rows.first()).toContainText('Marketing');
+  await expect(rows.first()).toContainText('5 failed');
+  await expect(rows.first()).toContainText('May 2026');
+  await expect(rows.first()).toHaveAttribute('href', '/executions?workspaceId=wA');
+  await expect(rows.nth(1)).toContainText('Sales');
+  await expect(rows.nth(2)).toContainText('—');
+  await expect(rows.nth(2)).toHaveAttribute('href', '/executions?workspaceId=gone');
+  const width = (index: number) => rows.nth(index).getByTestId('top-failing-bar').getAttribute('style');
+  expect(await width(0)).toContain('width: 100%');
+  expect(await width(1)).toContain('width: 40%');
+  const lookups = calls.workspaces.filter((p) => p.get('ids'));
+  expect(lookups).toHaveLength(1);
+  expect(lookups[0].get('ids')?.split(',').sort()).toEqual(['gone', 'wA', 'wB']);
+  expect(lookups[0].get('size')).toBe('100');
+  await rows.first().click();
+  await expect(page).toHaveURL(/\/executions\?workspaceId=wA$/);
+});
+
+test('the charts show friendly empty states when nothing ran or failed', async ({ page }) => {
+  await stubOverview(page, { trend: trendOf(14).map((d) => ({ ...d, total: 0, success: 0, failed: 0 })), topFailing: [] });
+  await page.goto('/');
+  await expect(page.getByTestId('overview-trend')).toContainText('No runs in this period');
+  await expect(page.getByTestId('trend-day')).toHaveCount(0);
+  await expect(page.getByTestId('overview-top-failing')).toContainText('No failed runs in this period');
+  await expect(page.getByTestId('top-failing-row')).toHaveCount(0);
+});
+
+test('a failing chart request shows Retry and leaves the other sections working', async ({ page }) => {
+  const calls = await stubOverview(page, { trendStatus: 500 });
+  await page.goto('/');
+  await expect(page.getByTestId('overview-users-total')).toHaveText('7');
+  await expect(page.getByTestId('overview-runs-total')).toHaveText('40');
+  await expect(page.getByTestId('failed-run-row')).toHaveCount(2);
+  await expect(page.getByTestId('overview-trend').getByRole('button', { name: 'Retry' })).toBeVisible();
+  await expect(page.getByTestId('overview-top-failing').getByRole('button', { name: 'Retry' })).toBeVisible();
+  await page.getByTestId('overview-trend').getByRole('button', { name: 'Retry' }).click();
+  await expect(page.getByTestId('trend-day')).toHaveCount(14);
+  await expect(page.getByTestId('top-failing-row')).toHaveCount(3);
+  expect(calls.chart).toHaveLength(2);
+});
+
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+  test('the overview does not scroll sideways', async ({ page }) => {
+    await stubOverview(page);
+    await page.goto('/');
+    await expect(page.getByTestId('top-failing-row')).toHaveCount(3);
+    await expect(page.getByTestId('trend-day')).toHaveCount(14);
+    const { scrollWidth, innerWidth } = await page.evaluate<{ scrollWidth: number; innerWidth: number }>('({ scrollWidth: document.documentElement.scrollWidth, innerWidth: window.innerWidth })');
+    expect(scrollWidth).toBeLessThanOrEqual(innerWidth);
+  });
 });
