@@ -7,6 +7,8 @@ import { LoginPage } from './pages/LoginPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { UserDetailPage } from './pages/UserDetailPage';
 import { UsersPage } from './pages/UsersPage';
+import { ExecutionsPage } from './pages/ExecutionsPage';
+import { WorkspacesPage } from './pages/WorkspacesPage';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } });
 
@@ -42,7 +44,9 @@ export default function App() {
             <Route index element={<OverviewPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="users/:id" element={<UserDetailPage />} />
-            <Route path="*" element={<NotFoundPage />} />
+            <Route path="workspaces" element={<WorkspacesPage />} />
+            <Route path="executions" element={<ExecutionsPage />} />
+            <Route path="*"element={<NotFoundPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
