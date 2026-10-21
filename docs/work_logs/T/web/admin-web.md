@@ -62,7 +62,15 @@
 
 ## 6. Bàn giao
 
-1. Review toàn nhánh, rồi merge `feature/admin-web` vào `dev` bằng `git merge --no-ff`.
+1. Đã merge `feature/admin-web` vào `dev` (`dd50a4c4`, 2026-10-22, chưa push).
 2. Các lỗi nhỏ để sau (đã ghi trong review): ConfirmDialog/panel chưa có focus trap; double-submit khi gỡ mẫu; ô ngày bắn request khi gõ dở năm; WARN tra owner thiếu loại lỗi.
 3. Đối tác: `.env` đã có sẵn `CORS_ALLOWED_ORIGINS` thì phải tự thêm `http://localhost:5174,http://127.0.0.1:5174` (giá trị mặc định trong compose không ghi đè khóa đã đặt); nếu `.env` chưa đặt khóa này thì dùng mặc định mới, không cần làm gì. Thiếu 5174 thì app admin bị Gateway chặn CORS.
 4. Chạy `node .gitnexus/run.cjs analyze --index-only` và `detect-changes` khi CLI hết segfault.
+
+## 7. Biểu đồ ở trang Tổng quan (nhánh `feature/admin-charts`, 2026-10-22)
+
+- Backend (cộng thêm, không đổi trường cũ): `GET /admin/executions/summary` nhận thêm `days` (1–30, mặc định 14; ngoài khoảng → 400) và trả thêm `trend` (đúng `days` ngày UTC, điền 0, `{day,total,success,failed}`) cùng `topFailing` (tối đa 5 `{workflowId,workflowName,workspaceId,failures,lastFailureAt}`), loại workflow đã xóa mềm. Gateway cho phép `days` (zod strict). OpenAPI workflow + gateway cập nhật.
+- App admin: biểu đồ cột chồng thành công/thất bại/khác theo ngày (SVG tự vẽ, có bảng ẩn cho screen reader, nút 7/14/30 ngày) và thẻ "Quy trình thất bại nhiều nhất" (thanh ngang, tên workspace tra một lần, bấm mở `/executions?workspaceId=`). Không thêm thư viện biểu đồ.
+- Commit: `59751890`, `26ee356f`, `717d9cb3`, `49a55618` (tên workspace không nhấp nháy, nhãn trục đọc được trên điện thoại), `781ffbce` (test khôi phục workflow đã xóa mềm).
+- Kiểm tra: workflow `verify` 1158 test (3 lỗi môi trường đã biết) + `AdminExecutionHttpTest` 8/8 sau sửa; gateway unit 192 + e2e 164; admin Playwright 38/38, `tsc`/`eslint`/`build` sạch. Stack thật (workflow-service + gateway rebuild, healthy): `days=14` → 55 lượt chạy, top 5 đúng dữ liệu; `days=31` → 400; trên app: biểu đồ 7/14/30 ngày (10/55/111 lượt), top 5 có tên workspace, console không lỗi mới.
+- Ghi chú: dev server Vite từng nạp mất CSS sau nhiều lần reload lúc chạy Playwright (`tokens.css` 404 giữa chừng); khởi động lại là hết, không phải lỗi code. Còn để sau: link top-failing chưa lọc sẵn `status=FAILED` (trang Lượt chạy chưa đọc status từ URL).

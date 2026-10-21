@@ -1,6 +1,7 @@
 package com.weav.workflow.infrastructure.persistence.repository;
 
 import com.weav.workflow.application.port.out.AdminExecutionQueryPort;
+import com.weav.workflow.application.port.out.MonitoringQueryPort.DayCount;
 import com.weav.workflow.application.port.out.MonitoringQueryPort.RunFilter;
 import com.weav.workflow.application.port.out.MonitoringQueryPort.RunItem;
 import com.weav.workflow.domain.valueobject.ExecutionStatus;
@@ -15,6 +16,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -120,6 +122,37 @@ public class AdminExecutionQueryAdapter implements AdminExecutionQueryPort {
                 """.formatted(executionTable, workflowTable), (rs, row) -> new AdminCounts(
                 rs.getLong("total"), rs.getLong("success"), rs.getLong("failed"), rs.getLong("active")),
                 Timestamp.from(from), Timestamp.from(to));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DayCount> dayCounts(Instant from, Instant to) {
+        return jdbc.query("""
+                SELECT (e.created_at AT TIME ZONE 'UTC')::date AS day, count(*) AS total,
+                       count(*) FILTER (WHERE e.status = 'SUCCESS') AS success,
+                       count(*) FILTER (WHERE e.status = 'FAILED') AS failed
+                FROM %s e JOIN %s w ON w.id = e.workflow_id
+                WHERE w.deleted_at IS NULL AND e.created_at >= ? AND e.created_at < ?
+                GROUP BY 1 ORDER BY 1
+                """.formatted(executionTable, workflowTable), (rs, row) -> new DayCount(
+                rs.getObject("day", LocalDate.class), rs.getLong("total"), rs.getLong("success"),
+                rs.getLong("failed")), Timestamp.from(from), Timestamp.from(to));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AdminFailingWorkflow> topFailing(Instant from, Instant to, int limit) {
+        return jdbc.query("""
+                SELECT w.id, w.name, w.workspace_id, count(*) AS failures, max(e.created_at) AS last_failure
+                FROM %s e JOIN %s w ON w.id = e.workflow_id
+                WHERE w.deleted_at IS NULL AND e.status = 'FAILED' AND e.created_at >= ? AND e.created_at < ?
+                GROUP BY w.id, w.name, w.workspace_id
+                ORDER BY failures DESC, last_failure DESC, w.id
+                LIMIT ?
+                """.formatted(executionTable, workflowTable), (rs, row) -> new AdminFailingWorkflow(
+                rs.getObject("id", UUID.class), rs.getString("name"), rs.getObject("workspace_id", UUID.class),
+                rs.getLong("failures"), instant(rs, "last_failure")),
+                Timestamp.from(from), Timestamp.from(to), limit);
     }
 
     private List<AdminStep> steps(UUID executionId) {

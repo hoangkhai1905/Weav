@@ -28,13 +28,17 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -218,6 +222,96 @@ class AdminExecutionHttpTest {
         summary("?hours=169").andExpect(status().isBadRequest());
     }
 
+    @Test
+    void summaryTrendIsZeroFilledPerUtcDayAcrossWorkspacesAndSkipsDeletedWorkflows() throws Exception {
+        UUID flowA = workflow(UUID.randomUUID(), "Trend A");
+        UUID flowB = workflow(UUID.randomUUID(), "Trend B");
+        UUID deleted = workflow(UUID.randomUUID(), "Trend deleted");
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        JsonNode before = json(summary("?days=5"));
+
+        execution(flowA, "SUCCESS", dayStart(today), 1, null);
+        execution(flowB, "FAILED", dayStart(today), 1, null);
+        execution(flowA, "RUNNING", dayStart(today), null, null);
+        execution(flowA, "SUCCESS", dayNoon(today.minusDays(2)), 1, null);
+        execution(flowB, "SUCCESS", dayNoon(today.minusDays(2)), 1, null);
+        execution(flowB, "FAILED", dayNoon(today.minusDays(4)), 1, null);
+        execution(flowA, "SUCCESS", dayNoon(today.minusDays(5)), 1, null); // before the 5-day window
+        execution(deleted, "FAILED", dayNoon(today.minusDays(1)), 1, null);
+        jdbc.update("update workflow.workflows set deleted_at = now() where id = ?", deleted);
+
+        JsonNode after = json(summary("?days=5"));
+        JsonNode trend = after.get("trend");
+        assertEquals(5, trend.size());
+        for (int i = 0; i < 5; i++) {
+            assertEquals(today.minusDays(4L - i).toString(), trend.get(i).get("day").asText());
+        }
+        // [total, success, failed] gained per day, oldest first; yesterday stays 0 because its only run belongs to a deleted workflow.
+        long[][] expected = {{1, 0, 1}, {0, 0, 0}, {2, 2, 0}, {0, 0, 0}, {3, 1, 1}};
+        for (int i = 0; i < 5; i++) {
+            assertEquals(expected[i][0], delta(before.get("trend").get(i), trend.get(i), "total"), "total " + i);
+            assertEquals(expected[i][1], delta(before.get("trend").get(i), trend.get(i), "success"), "success " + i);
+            assertEquals(expected[i][2], delta(before.get("trend").get(i), trend.get(i), "failed"), "failed " + i);
+        }
+        assertEquals(14, json(summary("")).get("trend").size());
+        assertEquals(1, json(summary("?days=1")).get("trend").size());
+        assertEquals(30, json(summary("?days=30&hours=1")).get("trend").size());
+        summary("?days=0").andExpect(status().isBadRequest());
+        summary("?days=31").andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void summaryTopFailingRanksFailedRunsAcrossWorkspacesAndSkipsDeletedWorkflows() throws Exception {
+        UUID[] workspaces = new UUID[7];
+        UUID[] flows = new UUID[7];
+        for (int i = 0; i < 7; i++) {
+            workspaces[i] = UUID.randomUUID();
+            flows[i] = workflow(workspaces[i], "Top " + i);
+        }
+        // Isolate from rows other tests left behind in the shared database.
+        String mine = Arrays.stream(flows).map(id -> "'" + id + "'").collect(Collectors.joining(","));
+        // Remember exactly which rows this test hides so the finally block can bring them back.
+        List<UUID> hidden = jdbc.queryForList("select id from workflow.workflows where deleted_at is null "
+                + "and id::text not in (" + mine + ")", UUID.class);
+        try {
+            jdbc.update("update workflow.workflows set deleted_at = now() where deleted_at is null "
+                    + "and id::text not in (" + mine + ")");
+            Instant now = Instant.now();
+            // Flows 0 and 1 tie on failures; flow 1 failed more recently, so it ranks first.
+            int[] failures = {3, 3, 5, 4, 2, 1, 9};
+            for (int i = 0; i < 7; i++) {
+                for (int run = 0; run < failures[i]; run++) {
+                    execution(flows[i], "FAILED", now.minus(Duration.ofHours(1)).minusSeconds(i == 0 ? 600 : 0)
+                            .minusSeconds(run), 1, null);
+                }
+                execution(flows[i], "SUCCESS", now.minus(Duration.ofMinutes(30)), 1, null);
+            }
+            jdbc.update("update workflow.workflows set deleted_at = now() where id = ?", flows[6]);
+
+            JsonNode top = json(summary("?days=7")).get("topFailing");
+
+            assertEquals(5, top.size());
+            int[] order = {2, 3, 1, 0, 4};
+            for (int rank = 0; rank < order.length; rank++) {
+                int i = order[rank];
+                JsonNode item = top.get(rank);
+                assertEquals(flows[i].toString(), item.get("workflowId").asText());
+                assertEquals("Top " + i, item.get("workflowName").asText());
+                assertEquals(workspaces[i].toString(), item.get("workspaceId").asText());
+                assertEquals(failures[i], item.get("failures").asInt());
+                assertTrue(Instant.parse(item.get("lastFailureAt").asText()).isBefore(now));
+            }
+            for (JsonNode item : top) {
+                assertFalse(item.get("workflowId").asText().equals(flows[6].toString()), "deleted workflow listed");
+            }
+            assertFalse(top.get(0).has("input") || top.get(0).has("output"));
+        } finally {
+            for (UUID id : hidden) {
+                jdbc.update("update workflow.workflows set deleted_at = null where id = ?", id);
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private ResultActions list(String query) throws Exception {
@@ -234,6 +328,14 @@ class AdminExecutionHttpTest {
 
     private JsonNode json(ResultActions actions) throws Exception {
         return objectMapper.readTree(actions.andReturn().getResponse().getContentAsString());
+    }
+
+    private static Instant dayStart(LocalDate day) {
+        return day.atStartOfDay(ZoneOffset.UTC).toInstant();
+    }
+
+    private static Instant dayNoon(LocalDate day) {
+        return day.atTime(12, 0).toInstant(ZoneOffset.UTC);
     }
 
     private static long delta(JsonNode before, JsonNode after, String field) {

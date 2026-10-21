@@ -413,7 +413,7 @@ describe('Gateway routes added for full service coverage (Fastify e2e)', () => {
       }),
       await inject({
         method: 'GET',
-        url: '/api/admin/executions/summary?hours=24',
+        url: '/api/admin/executions/summary?hours=24&days=14',
         headers,
       }),
       await inject({
@@ -428,7 +428,7 @@ describe('Gateway routes added for full service coverage (Fastify e2e)', () => {
     ).toEqual([
       `GET /admin/workspaces?page=0&size=20&q=ops&ids=${WORKSPACE_ID},${ws2}`,
       `GET /admin/executions?status=FAILED&workspaceId=${WORKSPACE_ID}`,
-      'GET /admin/executions/summary?hours=24',
+      'GET /admin/executions/summary?hours=24&days=14',
       `GET /admin/executions/${USER_ID}`,
     ]);
 
@@ -437,6 +437,8 @@ describe('Gateway routes added for full service coverage (Fastify e2e)', () => {
       '/api/admin/workspaces?ids=bad',
       '/api/admin/workspaces?size=101',
       '/api/admin/executions/summary?hours=169',
+      '/api/admin/executions/summary?days=31',
+      '/api/admin/executions/summary?days=0',
     ]) {
       const res = await inject({ method: 'GET', url, headers });
       expect(res.statusCode).toBe(400);
