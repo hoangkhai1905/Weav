@@ -139,7 +139,7 @@ const failedRun = (id: string, workspaceId: string) => ({
   errorCode: 'STEP_FAILED',
 });
 
-async function stubOverview(page: Page, opts: { summaryStatus?: number } = {}) {
+async function stubOverview(page: Page, opts: { summaryStatus?: number; cancelled?: number } = {}) {
   const calls = { users: [] as URLSearchParams[], executions: [] as URLSearchParams[], workspaces: [] as URLSearchParams[], summary: 0 };
   await page.route(`${GATEWAY}/api/admin/users**`, (route) => {
     const params = new URL(route.request().url()).searchParams;
@@ -160,7 +160,7 @@ async function stubOverview(page: Page, opts: { summaryStatus?: number } = {}) {
     if (url.pathname.endsWith('/summary')) {
       calls.summary++;
       if (opts.summaryStatus && calls.summary === 1) return json(route, opts.summaryStatus, { message: 'boom' });
-      return json(route, 200, { hours: 24, from: '2026-05-01T00:00:00Z', to: '2026-05-02T00:00:00Z', total: 40, success: 30, failed: 6, active: 4 });
+      return json(route, 200, { hours: 24, from: '2026-05-01T00:00:00Z', to: '2026-05-02T00:00:00Z', total: 40 + (opts.cancelled ?? 0), success: 30, failed: 6, active: 4 });
     }
     calls.executions.push(url.searchParams);
     return json(route, 200, { items: [failedRun('e1', 'wA'), failedRun('e2', 'gone')], page: 0, size: 5, totalElements: 2, hasNext: false });
@@ -186,6 +186,16 @@ test('overview tiles load independently', async ({ page }) => {
   await expect(runsTile).toContainText('30 succeeded');
   await expect(runsTile).toContainText('6 failed');
   await expect(runsTile).toContainText('4 in progress');
+  await expect(page.getByTestId('overview-runs-other')).toHaveCount(0);
+});
+
+test('overview adds an "other" count when cancelled runs make the total exceed the breakdown', async ({ page }) => {
+  await stubOverview(page, { cancelled: 3 });
+  await page.goto('/');
+  const runsTile = page.getByTestId('tile-runs');
+  await expect(page.getByTestId('overview-runs-total')).toHaveText('43');
+  await expect(runsTile).toContainText('4 in progress');
+  await expect(page.getByTestId('overview-runs-other')).toHaveText('· 3 other');
 });
 
 test('overview lists the latest failed runs and the system health', async ({ page }) => {

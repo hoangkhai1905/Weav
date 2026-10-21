@@ -55,12 +55,19 @@ export function OverviewPage() {
           {(data) => <p data-testid="overview-workspaces-total" className={bigNumber}>{data.totalElements}</p>}
         </QueryCard>
         <QueryCard title={t('overview.runs')} testId="tile-runs" query={summary}>
-          {(data) => (
+          {(data) => {
+            const other = data.total - data.success - data.failed - data.active;
+            return (
             <>
               <p data-testid="overview-runs-total" className={bigNumber}>{data.total}</p>
-              <p className="mt-1 text-xs text-text-2">{t('overview.runs_breakdown', { success: data.success, failed: data.failed, active: data.active })}</p>
+              {/* Cancelled runs are only in the total, so the remainder keeps the breakdown adding up. */}
+              <p className="mt-1 text-xs text-text-2">
+                {t('overview.runs_breakdown', { success: data.success, failed: data.failed, active: data.active })}
+                {other > 0 && <span data-testid="overview-runs-other">{` · ${t('overview.runs_other', { count: other })}`}</span>}
+              </p>
             </>
-          )}
+            );
+          }}
         </QueryCard>
       </div>
 

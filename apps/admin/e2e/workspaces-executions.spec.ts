@@ -26,6 +26,13 @@ const run = (executionId: string, workspaceId: string, extra: Record<string, unk
   ...extra,
 });
 
+/** A local calendar day n days back, as the YYYY-MM-DD a date input takes. */
+const daysAgo = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 const detail = {
   executionId: 'e2',
   workflowId: 'wf-e2',
@@ -45,6 +52,7 @@ const detail = {
     { nodeId: 'n4', nodeType: 'google.sheets', status: 'SUCCESS', attemptCount: 1, startedAt: null, finishedAt: null, errorCode: null, errorMessage: null },
     { nodeId: 'n5', nodeType: 'google.unknown', status: 'SUCCESS', attemptCount: 1, startedAt: null, finishedAt: null, errorCode: null, errorMessage: null },
     { nodeId: 'n6', nodeType: 'foo.bar', status: 'SUCCESS', attemptCount: 1, startedAt: null, finishedAt: null, errorCode: null, errorMessage: null },
+    { nodeId: 'n7', nodeType: 'http.request', status: 'CANCELLED', attemptCount: 0, startedAt: null, finishedAt: null, errorCode: null, errorMessage: null },
   ],
 };
 
@@ -145,12 +153,44 @@ test('status and date filters go to the request as ISO instants', async ({ page 
 
   await page.getByLabel('Status').selectOption('FAILED');
   await expect.poll(() => runs.length).toBe(2);
-  await page.getByLabel('From').fill('2026-05-01');
-  await page.getByLabel('To').fill('2026-05-03');
+  await page.getByLabel('From').fill(daysAgo(10));
+  await page.getByLabel('To').fill(daysAgo(8));
   await expect.poll(() => runs.length).toBe(4);
   const last = runs[3];
   expect(last.get('status')).toBe('FAILED');
   expect(Date.parse(last.get('to')!) - Date.parse(last.get('from')!)).toBe(3 * 86_400_000);
+});
+
+test('CANCELLED is a status filter option and cancelled / workflow-event runs show friendly labels', async ({ page }) => {
+  await stubWorkspaces(page);
+  const runs = await stubExecutions(page, [run('e1', 'wA', { status: 'CANCELLED', triggerType: 'WORKFLOW_EVENT' })]);
+  await page.goto('/executions');
+  const row = page.getByTestId('execution-row');
+  await expect(row).toContainText('Cancelled');
+  await expect(row).toContainText('From another workflow');
+  await expect(row).not.toContainText('CANCELLED');
+  await expect(row).not.toContainText('WORKFLOW_EVENT');
+
+  await page.getByLabel('Status').selectOption({ label: 'Cancelled' });
+  await expect.poll(() => runs.length).toBe(2);
+  expect(runs[1].get('status')).toBe('CANCELLED');
+});
+
+test('a start date more than 90 days back with no end date shows the range error and sends no request', async ({ page }) => {
+  await stubWorkspaces(page);
+  const runs = await stubExecutions(page, [run('e1', 'wA')]);
+  await page.goto('/executions');
+  await expect(page.getByTestId('execution-row')).toHaveCount(1);
+
+  await page.getByLabel('From').fill(daysAgo(120));
+  await expect(page.getByRole('alert')).toHaveText(/at most 90 days/);
+  await page.waitForTimeout(300);
+  expect(runs).toHaveLength(1);
+  await expect(page.getByTestId('execution-row')).toHaveCount(0);
+
+  await page.getByLabel('From').fill(daysAgo(30));
+  await expect(page.getByRole('alert')).toBeHidden();
+  await expect(page.getByTestId('execution-row')).toHaveCount(1);
 });
 
 test('a date range over 90 days shows an inline error and sends no request', async ({ page }) => {
@@ -159,15 +199,15 @@ test('a date range over 90 days shows an inline error and sends no request', asy
   await page.goto('/executions');
   await expect(page.getByTestId('execution-row')).toHaveCount(1);
 
-  await page.getByLabel('From').fill('2026-01-01');
-  await expect.poll(() => runs.length).toBe(2); // a lone start date is a valid filter
-  await page.getByLabel('To').fill('2026-06-30');
+  await page.getByLabel('From').fill(daysAgo(30));
+  await expect.poll(() => runs.length).toBe(2); // a recent lone start date is a valid filter
+  await page.getByLabel('To').fill(daysAgo(-70));
   await expect(page.getByRole('alert')).toHaveText(/at most 90 days/);
   await page.waitForTimeout(300);
   expect(runs).toHaveLength(2);
   await expect(page.getByTestId('execution-row')).toHaveCount(0);
 
-  await page.getByLabel('To').fill('2026-02-15');
+  await page.getByLabel('To').fill(daysAgo(15));
   await expect(page.getByRole('alert')).toBeHidden();
   await expect(page.getByTestId('execution-row')).toHaveCount(1);
 });
@@ -186,7 +226,7 @@ test('the execution panel shows steps and errors read-only', async ({ page }) =>
   await expect(panel).toContainText('The mail step gave up');
   await expect(panel).toContainText('3 min 4 s');
   const steps = panel.getByRole('list', { name: 'Steps' }).getByRole('listitem');
-  await expect(steps).toHaveCount(6);
+  await expect(steps).toHaveCount(7);
   await expect(steps.nth(0)).toContainText('Telegram trigger');
   await expect(steps.nth(1)).toContainText('Send email');
   await expect(steps.nth(1)).toContainText('3 attempts');
@@ -199,6 +239,8 @@ test('the execution panel shows steps and errors read-only', async ({ page }) =>
   await expect(steps.nth(4)).toContainText('Google');
   await expect(steps.nth(4)).not.toContainText('google.unknown');
   await expect(steps.nth(5)).toContainText('foo.bar');
+  await expect(steps.nth(6)).toContainText('Cancelled');
+  await expect(steps.nth(6)).not.toContainText('CANCELLED');
   await expect(panel.getByRole('button', { name: /retry|stop|run|cancel/i })).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'Close' })).toBeFocused();
 

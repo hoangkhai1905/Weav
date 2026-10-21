@@ -1,8 +1,8 @@
 import { api } from './client';
 
-export type ExecutionStatus = 'QUEUED' | 'RUNNING' | 'WAITING' | 'SUCCESS' | 'FAILED';
-export type StepStatus = 'PENDING' | 'READY' | 'RUNNING' | 'WAITING' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
-export type TriggerType = 'MANUAL' | 'SCHEDULE' | 'WEBHOOK' | 'TELEGRAM' | 'GMAIL';
+export type ExecutionStatus = 'QUEUED' | 'RUNNING' | 'WAITING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
+export type StepStatus = 'PENDING' | 'READY' | 'RUNNING' | 'WAITING' | 'SUCCESS' | 'FAILED' | 'SKIPPED' | 'CANCELLED';
+export type TriggerType = 'MANUAL' | 'SCHEDULE' | 'WEBHOOK' | 'TELEGRAM' | 'GMAIL' | 'WORKFLOW_EVENT';
 
 export interface ExecutionRow {
   executionId: string;

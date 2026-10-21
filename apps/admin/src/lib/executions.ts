@@ -18,9 +18,11 @@ export function dayEndExclusiveIso(value: string): string | undefined {
 }
 
 /** Null when the range is fine, otherwise which rule it breaks (the server rejects both with 400). */
-export function rangeProblem(from?: string, to?: string): 'order' | 'long' | null {
-  if (!from || !to) return null;
-  const span = Date.parse(to) - Date.parse(from);
+export function rangeProblem(from?: string, to?: string, now = Date.now()): 'order' | 'long' | null {
+  if (!from) return null;
+  // An empty "to" is open upwards: the server measures the range up to now.
+  const span = (to ? Date.parse(to) : now) - Date.parse(from);
+  if (!to) return span > MAX_RANGE_DAYS * DAY_MS ? 'long' : null;
   if (span <= 0) return 'order';
   return span > MAX_RANGE_DAYS * DAY_MS ? 'long' : null;
 }
@@ -47,6 +49,7 @@ const TONES: Record<string, StatusTone> = {
   PENDING: 'pause',
   READY: 'pause',
   SKIPPED: 'pause',
+  CANCELLED: 'pause',
 };
 export const statusTone = (status: string): StatusTone => TONES[status] ?? 'pause';
 

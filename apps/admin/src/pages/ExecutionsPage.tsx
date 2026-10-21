@@ -12,7 +12,7 @@ import { useT } from '../lib/i18n';
 import { btnCls, fieldCls, tableWrapCls, td, th } from '../lib/ui';
 
 const PAGE_SIZE = 20;
-const STATUSES: ExecutionStatus[] = ['QUEUED', 'RUNNING', 'WAITING', 'SUCCESS', 'FAILED'];
+const STATUSES: ExecutionStatus[] = ['QUEUED', 'RUNNING', 'WAITING', 'SUCCESS', 'FAILED', 'CANCELLED'];
 
 /** UC028: runs across all workspaces, read-only, with a side panel for the steps of one run. */
 export function ExecutionsPage() {
