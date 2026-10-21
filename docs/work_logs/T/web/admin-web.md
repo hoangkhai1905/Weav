@@ -62,7 +62,7 @@
 
 ## 6. Bàn giao
 
-1. Review toàn nhánh, rồi merge `feature/admin-web` vào `dev` bằng `git merge --no-ff`.
+1. Đã merge `feature/admin-web` vào `dev` (`dd50a4c4`, 2026-10-22, chưa push).
 2. Các lỗi nhỏ để sau (đã ghi trong review): ConfirmDialog/panel chưa có focus trap; double-submit khi gỡ mẫu; ô ngày bắn request khi gõ dở năm; WARN tra owner thiếu loại lỗi.
 3. Đối tác: `.env` đã có sẵn `CORS_ALLOWED_ORIGINS` thì phải tự thêm `http://localhost:5174,http://127.0.0.1:5174` (giá trị mặc định trong compose không ghi đè khóa đã đặt); nếu `.env` chưa đặt khóa này thì dùng mặc định mới, không cần làm gì. Thiếu 5174 thì app admin bị Gateway chặn CORS.
 4. Chạy `node .gitnexus/run.cjs analyze --index-only` và `detect-changes` khi CLI hết segfault.
