@@ -1,6 +1,6 @@
 # API Gateway
 
-> Status: Partial. Identity (incl. avatar, OAuth-account list, admin users), Workspace (incl. credential replace/delete), Notification, OCR and Workflow (draft/publish/run/monitor, AI generate, public webhook ingress) routes are proxied at the edge; Bot routes, identity browser cookie/OAuth flows and distributed rate limiting are not. Owner: T (partner). Last verified: 2026-10-01 against `refactor/optimize-backend`.
+> Status: Partial. Identity (incl. avatar, OAuth-account list, admin users), Workspace (incl. credential replace/delete), Notification, OCR and Workflow (draft/publish/run/monitor, AI generate, public webhook ingress, admin executions) routes are proxied at the edge; Bot routes, identity browser cookie/OAuth flows and distributed rate limiting are not. Owner: T (partner). Last verified: 2026-10-01 against `refactor/optimize-backend`.
 
 ## Purpose and scope
 
@@ -24,7 +24,7 @@ The Gateway only carries these use cases; the owning service implements them.
 | UC020 | Result notifications | Implemented | `api/v1`, `api/v2`, `api/notifications` routes |
 | UC021 | Trigger via webhook | Implemented (gateway level) | Public `POST /api/v1/webhooks/{endpointKey}` in `WebhookProxyController` |
 | UC022-UC024 | Telegram trigger, connect a bot, use the bot | Implemented (gateway level) | Public `POST /api/v1/webhooks/telegram/{endpointKey}` in `TelegramWebhookProxyController`; the bot itself is a workspace connection and `telegram.send_message` runs in Workflow. There is no Bot service or Bot route |
-| UC025-UC028 | Admin: users, lock, all workspaces, all executions | Implemented (gateway level) | `api/admin/users` list, detail, status (edge ADMIN check); depends on the Identity admin endpoints |
+| UC025-UC028 | Admin: users, lock, all workspaces, all executions | Implemented (gateway level) | `api/admin/users` list, detail, status; `api/admin/workspaces`; `api/admin/executions` list, summary, detail (edge ADMIN check); depend on the Identity, Workspace and Workflow admin endpoints |
 | n/a | OCR extraction (used by workflow OCR nodes/UI) | Implemented | [ocr.controller.ts](../../../services/api-gateway/src/ocr/ocr.controller.ts) |
 
 ## Business rules
@@ -68,6 +68,8 @@ Upstream paths drop the `/api` or `/api/v1` prefix except Notification. Auth: Pu
 | GET, PUT, DELETE | `/api/users/me/avatar` | Identity `/users/me/avatar` (PUT streams multipart, 2 MiB + 64 KiB cap, 415 if not multipart) | Required |
 | GET | `/api/admin/users`, `/api/admin/users/{userId}` (list forwards `page`,`size`,`search`,`status`) | Identity `/admin/users` | Required, `system_role=ADMIN` else 403 |
 | PATCH | `/api/admin/users/{userId}/status` | Identity `/admin/users/{id}/status` | Required, ADMIN |
+| GET | `/api/admin/workspaces` (strict query schema) | Workspace `/admin/workspaces` | Required, ADMIN |
+| GET | `/api/admin/executions`, `/api/admin/executions/summary`, `/api/admin/executions/{executionId}` (strict query schema) | Workflow `/admin/executions...` | Required, ADMIN |
 | POST, GET | `/api/v1/workspaces` | Workspace `/workspaces` | Required |
 | GET, PATCH | `/api/v1/workspaces/{workspaceId}` | Workspace `/workspaces/{id}` | Required |
 | GET, POST | `.../{workspaceId}/members` | Workspace `.../members` | Required |
@@ -175,7 +177,7 @@ Compose ([compose.yml](../../../compose.yml), profile `app`, port 3000) hardcode
 
 ## Status and known gaps
 
-- Done at gateway level: generate (UC014, per [AI Service design §9](../../../docs/superpowers/specs/2026-09-25-ai-service-v1-design.md)), webhook ingress (UC021) and admin user routes (UC025-UC028 as far as Identity exposes them).
+- Done at gateway level: generate (UC014, per [AI Service design §9](../../../docs/superpowers/specs/2026-09-25-ai-service-v1-design.md)), webhook ingress (UC021) and admin routes for users, workspaces and executions (UC025-UC028).
 - Planned: Bot routes, workflow delete (UC017), realtime/WebSocket (empty `src/websocket`), identity browser cookie/OAuth flows through the Gateway.
 - Unchanged: upstream timeouts surface as 503, not 504; OCR upload has no byte cap.
 - Partial: distributed rate limiting (in-memory only, `VALKEY_URL` unused); readiness ignores Workflow, Notification, OCR.

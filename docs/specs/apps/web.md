@@ -1,6 +1,6 @@
 # Web App (`apps/web`)
 
-> Status: Partial. Auth, workspaces, members, connections, workflow Builder, executions, OCR node, notifications and AI generate UI run against the Gateway; Telegram screen is mock-only, workflow delete and admin screens do not exist. Owner: T (partner) for now; shared later (includes web admin). Last verified: 2026-09-30 against `dev`.
+> Status: Partial. Auth, workspaces, members, connections, workflow Builder, executions, OCR node, notifications and AI generate UI run against the Gateway; Telegram screen is mock-only, workflow delete is unsupported; the admin screens moved to `apps/admin`. Owner: T (partner) for now; shared later. Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 
@@ -38,7 +38,7 @@ React 19 + Vite + TypeScript single-page client for Weav (Tailwind 4, shadcn/Rad
 | UC022 | Trigger via Telegram | Partial | `trigger.telegram` node exists in the catalog; no live Telegram wiring in web. |
 | UC023 | Link Telegram account | Planned | `pages/TelegramPage.tsx` uses `api/telegram.api.ts`, which returns hard-coded data with `delay()`; no HTTP. |
 | UC024 | Interact via Telegram bot | Not a web use case | Bot-side only. |
-| UC025-UC028 | Admin (users, lock, all workspaces, all executions) | Planned | No admin routes or pages. `systemRole` is read only to label the role in Settings. |
+| UC025-UC028 | Admin (users, lock, all workspaces, all executions) | Moved to `apps/admin` | See [admin.md](admin.md). The `/admin/users` page and its Settings link were removed from this app; `/admin/users` now falls through to `/dashboard`. `systemRole` is read only to label the role in Settings. |
 
 ## Business rules
 
@@ -132,7 +132,7 @@ Mock mode in detail: `isAuthMockMode`, `isWorkflowMockMode`, `isWorkspaceMockMod
 - Telegram page is mock-only (UC023). No Bot API in web.
 - Workflow delete is unsupported by Workflow V1 (405 surfaced in UI); list "delete" actions are effectively dead in live mode.
 - Gateway generate route pending, so UC014 works only with `compose.ai-local.yml` plus the route.
-- No admin surfaces (UC025-UC028).
+- Admin surfaces (UC025-UC028) live in `apps/admin`, not here.
 - Legacy demo screens remain in the tree (`MockExecutionsPage`, `MockExecutionDetailPage`, Dashboard mock branches).
 - Notifications: no provider delivery status or retry controls by design.
 - `apps/web/debug.log`, `test-results`, `dist` are present in the working tree; ensure they stay untracked.

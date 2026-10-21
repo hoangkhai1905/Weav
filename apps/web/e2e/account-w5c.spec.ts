@@ -2,7 +2,6 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 
 const WORKSPACE = '00000000-0000-4000-8000-000000000001';
 const USER_A = '10000000-0000-4000-8000-000000000001';
-const USER_B = '10000000-0000-4000-8000-000000000002';
 const CONN_NEW = '20000000-0000-4000-8000-000000000001';
 const CONN_ACTIVE = '20000000-0000-4000-8000-000000000002';
 const CHALLENGE_ID = 'A'.repeat(43);
@@ -241,22 +240,17 @@ test.describe('connections', () => {
   });
 });
 
-test.describe('admin users', () => {
-  test('is visible for ADMIN and lists users', async ({ page }) => {
+test.describe('admin users moved to apps/admin', () => {
+  test('an ADMIN visiting /admin/users lands on the dashboard', async ({ page }) => {
     await installAuth(page, 'ADMIN');
-    await page.route('**/api/admin/users**', (route) => json(route, {
-      items: [{ id: USER_B, email: 'b@example.com', displayName: 'User B', systemRole: 'USER', status: 'ACTIVE', createdAt: '2026-08-01T00:00:00Z', emailVerifiedAt: null, avatarPresent: false }],
-      page: 0, size: 20, totalItems: 1, totalPages: 1,
-    }));
     await page.goto('/admin/users');
-    await expect(page.getByTestId('admin-users-page')).toBeVisible();
-    await expect(page.getByTestId('admin-user-row')).toContainText('b@example.com');
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/dashboard');
   });
 
-  test('redirects a normal user away', async ({ page }) => {
-    await installAuth(page, 'USER');
-    await page.goto('/admin/users');
-    await expect(page.getByTestId('admin-users-page')).toHaveCount(0);
-    await expect.poll(() => new URL(page.url()).pathname).not.toBe('/admin/users');
+  test('Settings has no admin users link for an ADMIN', async ({ page }) => {
+    await installAuth(page, 'ADMIN');
+    await page.goto('/settings/profile');
+    await expect(page.getByTestId('profile-save-button')).toBeVisible();
+    await expect(page.getByTestId('admin-users-link')).toHaveCount(0);
   });
 });

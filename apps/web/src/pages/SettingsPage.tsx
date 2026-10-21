@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import {
   Camera,
@@ -15,7 +14,6 @@ import {
   Settings2,
   Shield,
   User,
-  Users,
 } from 'lucide-react';
 import { accessTokenExpiresSoon, authApi, getAuthApiErrorStatus, isAuthMockMode, type IdentitySessionView, type OAuthAccountMetadata } from '../api/auth.api';
 import { ConfirmButton } from '../components/common/ConfirmButton';
@@ -639,7 +637,6 @@ export function SettingsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
             <span>{t('settings.role')}: <strong className="text-text-2">{roleLabel}</strong></span>
-            {user?.systemRole === 'ADMIN' && <Link to="/admin/users" data-testid="admin-users-link" className="inline-flex items-center gap-1 font-semibold text-run hover:underline"><Users size={13} aria-hidden="true" />{t('w5c.admin_users')}</Link>}
             <span>{t('settings.email')}: <strong className={user?.emailVerifiedAt ? 'text-ok' : 'text-warn'}>{user?.emailVerifiedAt ? t('settings.verified') : t('settings.unverified')}</strong></span>
           </div>
           {profileLoading && <p data-testid="profile-loading" className="text-xs font-medium text-muted-foreground" aria-live="polite">{t('settings.loading')}</p>}
