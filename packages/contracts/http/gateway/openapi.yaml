@@ -794,9 +794,10 @@ paths:
       tags: [Admin]
       operationId: gatewayAdminExecutionSummary
       summary: Execution metrics across workspaces (admin)
-      description: Aggregated execution metrics for the last N hours. Requires a system ADMIN access token; other callers get 403. Unknown query parameters are rejected with 400.
+      description: Aggregated execution metrics for the last N hours, plus a zero-filled per-UTC-day `trend` (exactly `days` entries, oldest first, each `{ day, total, success, failed }`) and up to 5 `topFailing` workflows (`{ workflowId, workflowName, workspaceId, failures, lastFailureAt }`) over the same `days` window. Requires a system ADMIN access token; other callers get 403. Unknown query parameters are rejected with 400.
       parameters:
         - { name: hours, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 168, default: 24 } }
+        - { name: days, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 30, default: 14 } }
       responses:
         "200":
           description: Upstream service response.

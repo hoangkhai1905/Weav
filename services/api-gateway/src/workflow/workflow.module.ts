@@ -129,7 +129,10 @@ const adminExecutionQuerySchema = z
   })
   .strict();
 const adminSummaryQuerySchema = z
-  .object({ hours: queryInteger(1, 168).optional() })
+  .object({
+    hours: queryInteger(1, 168).optional(),
+    days: queryInteger(1, 30).optional(),
+  })
   .strict();
 const alertRuleSchema = z
   .object({
