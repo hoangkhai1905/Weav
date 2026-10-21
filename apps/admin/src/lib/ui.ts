@@ -7,6 +7,8 @@ export const iconBtnCls = 'relative inline-flex h-9 w-9 shrink-0 items-center ju
 export const th = 'h-8 whitespace-nowrap border-b border-border bg-subtle px-3 text-left text-xs font-medium text-muted-foreground';
 export const td = 'h-10 border-b border-border px-3';
 export const CARD = 'rounded-xl border border-border bg-card';
+/** `relative` makes the wrapper the containing block, so absolutely positioned sr-only cells are clipped by its overflow instead of widening the page. */
+export const tableWrapCls = 'relative overflow-x-auto rounded-lg border border-border bg-card';
 
 export type StatusTone = 'ok' | 'run' | 'warn' | 'err' | 'pause';
 

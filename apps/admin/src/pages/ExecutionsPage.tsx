@@ -9,7 +9,7 @@ import { RunStatusBadge } from '../components/RunStatusBadge';
 import { dayEndExclusiveIso, dayStartIso, enumLabel, formatDuration, rangeProblem } from '../lib/executions';
 import { useFormatDateTime } from '../lib/format';
 import { useT } from '../lib/i18n';
-import { btnCls, fieldCls, td, th } from '../lib/ui';
+import { btnCls, fieldCls, tableWrapCls, td, th } from '../lib/ui';
 
 const PAGE_SIZE = 20;
 const STATUSES: ExecutionStatus[] = ['QUEUED', 'RUNNING', 'WAITING', 'SUCCESS', 'FAILED'];
@@ -111,7 +111,7 @@ export function ExecutionsPage() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+      <div className={tableWrapCls}>
         <table className="w-full min-w-[820px] border-collapse text-[13px]">
           <caption className="sr-only">{t('exec.caption')}</caption>
           <thead>

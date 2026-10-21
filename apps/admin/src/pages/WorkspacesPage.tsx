@@ -5,7 +5,7 @@ import { AlertTriangle, LoaderCircle, RefreshCw, Search } from 'lucide-react';
 import { listWorkspaces } from '../api/workspaces';
 import { useFormatDate } from '../lib/format';
 import { useT } from '../lib/i18n';
-import { btnCls, fieldCls, td, th } from '../lib/ui';
+import { btnCls, fieldCls, tableWrapCls, td, th } from '../lib/ui';
 
 const PAGE_SIZE = 20;
 
@@ -64,7 +64,7 @@ export function WorkspacesPage() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+      <div className={tableWrapCls}>
         <table className="w-full min-w-[640px] border-collapse text-[13px]">
           <caption className="sr-only">{t('ws.caption')}</caption>
           <thead>

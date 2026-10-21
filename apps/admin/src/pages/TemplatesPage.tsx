@@ -6,7 +6,7 @@ import { listPublicTemplates, takeDown, type PublicTemplate } from '../api/templ
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useFormatDate } from '../lib/format';
 import { useT } from '../lib/i18n';
-import { btnCls, fieldCls, td, th } from '../lib/ui';
+import { btnCls, fieldCls, tableWrapCls, td, th } from '../lib/ui';
 
 const PAGE_SIZE = 20;
 const takeDownBtnCls = btnCls.replace('h-8', 'h-7').replace('px-3 text-[13px]', 'px-2.5 text-xs').replace('text-foreground', 'text-err').replace('hover:bg-subtle', 'hover:bg-err-bg');
@@ -85,7 +85,7 @@ export function TemplatesPage() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+      <div className={tableWrapCls}>
         <table className="w-full min-w-[720px] border-collapse text-[13px]">
           <caption className="sr-only">{t('tpl.caption')}</caption>
           <thead>

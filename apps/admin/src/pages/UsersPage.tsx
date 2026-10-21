@@ -8,7 +8,7 @@ import { UserStatusButton } from '../components/UserStatusButton';
 import { useFormatDate } from '../lib/format';
 import { useT } from '../lib/i18n';
 import { getProfile } from '../lib/session';
-import { btnCls, fieldCls, td, th } from '../lib/ui';
+import { btnCls, fieldCls, tableWrapCls, td, th } from '../lib/ui';
 
 const PAGE_SIZE = 20;
 
@@ -107,7 +107,7 @@ export function UsersPage() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+      <div className={tableWrapCls}>
         <table className="w-full min-w-[720px] border-collapse text-[13px]">
           <caption className="sr-only">{t('users.caption')}</caption>
           <thead>
