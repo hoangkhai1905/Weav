@@ -148,7 +148,7 @@ Names and defaults from [gateway.config.ts](../../../services/api-gateway/src/co
 | `NOTIFICATION_SERVICE_URL` | `http://notification-service:3000` | Upstream |
 | `OCR_SERVICE_URL` | `http://ocr-service:8000` | Upstream |
 | `AI_SERVICE_URL` | `http://ai-service:3000` | Upstream of the assistant routes: `POST /api/v1/assistant/chat` (SSE) and the conversation history proxies (`GET /api/v1/assistant/conversations`, `GET .../conversations/{id}/messages`, `DELETE .../conversations/{id}`) |
-| `CORS_ALLOWED_ORIGINS` | localhost/127.0.0.1 on 5173 and 8081; required in production | Comma list of origins |
+| `CORS_ALLOWED_ORIGINS` | Service default: localhost/127.0.0.1 on 5173 and 8081; `compose.dev.yml` also adds 5174 (admin app); required in production | Comma list of origins |
 | `OCR_ALLOW_UNAUTHENTICATED_DEV` | `false` | Dev-only OCR bypass with no Authorization header |
 | `GATEWAY_GENERAL_RATE_LIMIT` | `120` | Requests per window per socket IP |
 | `GATEWAY_AUTH_RATE_LIMIT` | `10` | Public auth mutations per window per IP |

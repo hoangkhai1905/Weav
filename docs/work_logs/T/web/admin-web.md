@@ -51,17 +51,18 @@
 ### Chưa kiểm tra
 
 - Đăng nhập bằng tài khoản USER trên stack thật (không có tài khoản USER biết mật khẩu). Đã có test tự động ở service, Gateway và app.
-- `WorkspaceNotificationRuntimeIntegrationTest` ×3 lỗi trong container JDK 25 (thiếu `node` + `notification-service/dist`): coi là môi trường, chưa đối chiếu trên `dev`.
+- `WorkspaceNotificationRuntimeIntegrationTest` ×3 (lỗi môi trường, đã xác nhận): báo cáo surefire ghi `Cannot run program "node" ... error=2` tại `ProcessBuilder.start` (test dựng cầu Nest từ `services/notification-service/dist` + `node_modules` bằng lệnh `node`; container JDK 25 không có `node`) và lỗi xảy ra trước khi chạm code workspace. Nhánh chỉ thêm API admin (một hàm `default` trong `WorkspaceRepository`, controller/use case admin mới), không đổi luồng thông báo. Đã ghi vào mục "Known environment-only test errors" của CLAUDE.md/AGENTS.md.
 - Máy chỉ có JDK 21, Maven chạy trong container `eclipse-temurin:25-jdk`.
 
 ## 5. Dữ liệu đã thay đổi
 
-- `identity.users`: tài khoản test `nguyentruong091004+weavtest@gmail.com` nâng lên `ADMIN` (2026-10-21, theo yêu cầu). Muốn trả lại: UPDATE `system_role` về `USER` cho đúng id đó.
+- `identity.users`: tài khoản ADMIN test (user id 33d0e6ad-150e-4bab-8200-3be7c2f8dab2) nâng lên `ADMIN` (2026-10-21, theo yêu cầu). Muốn trả lại: UPDATE `system_role` về `USER` cho đúng id đó.
 - `smoke2c-…@example.test`: khóa rồi mở lại, trạng thái cuối `ACTIVE`.
 - `workflow` schema: thêm index `idx_workflow_executions_created`.
 
 ## 6. Bàn giao
 
 1. Review toàn nhánh, rồi merge `feature/admin-web` vào `dev` bằng `git merge --no-ff`.
-2. Các lỗi nhỏ để sau (đã ghi trong review): ConfirmDialog/panel chưa có focus trap; double-submit khi gỡ mẫu; ô ngày bắn request khi gõ dở năm; WARN tra owner thiếu loại lỗi; `compose.dev.yml` CORS mặc định chưa có 5174.
-3. Chạy `node .gitnexus/run.cjs analyze --index-only` và `detect-changes` khi CLI hết segfault.
+2. Các lỗi nhỏ để sau (đã ghi trong review): ConfirmDialog/panel chưa có focus trap; double-submit khi gỡ mẫu; ô ngày bắn request khi gõ dở năm; WARN tra owner thiếu loại lỗi.
+3. Đối tác: `.env` đã có sẵn `CORS_ALLOWED_ORIGINS` thì phải tự thêm `http://localhost:5174,http://127.0.0.1:5174` (giá trị mặc định trong compose không ghi đè khóa đã đặt); nếu `.env` chưa đặt khóa này thì dùng mặc định mới, không cần làm gì. Thiếu 5174 thì app admin bị Gateway chặn CORS.
+4. Chạy `node .gitnexus/run.cjs analyze --index-only` và `detect-changes` khi CLI hết segfault.

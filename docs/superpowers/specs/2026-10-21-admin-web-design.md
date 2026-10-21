@@ -19,7 +19,7 @@ Out of scope: editing or deleting other users' workspaces, re-running or stoppin
 
 - Stack and versions match `apps/web`: Vite, React 19, Tailwind v4, React Query, react-router, lucide-react, axios. Dev server `localhost:5174`.
 - `src/styles/tokens.css`: copy of the colour, font and dark-mode tokens from `apps/web/src/index.css`, headed by a comment naming the source file so a web palette change is mirrored here.
-- `src/api/`: one axios client for the Gateway (`VITE_GATEWAY_URL`) plus modules `users`, `workspaces`, `executions`, `templates`, `health`.
+- `src/api/`: one axios client for the Gateway (`VITE_API_GATEWAY_URL`) plus modules `users`, `workspaces`, `executions`, `templates`, `health`.
 - Shell: sidebar, topbar with breadcrumb, VI/EN switch, light/dark toggle, sign-out. A "Weav Admin" label so it is never mistaken for the user web. Visual language follows the user web's monitoring page: `th`/`td` table classes, `statusBadgeClass`-style pills, error box with Retry, "Page x/y · n items" pagination.
 
 Sign-in:
@@ -34,7 +34,7 @@ Authorization stays three-layered: the admin app guards routes; the Gateway reje
 
 | Route | Purpose | Data |
 | --- | --- | --- |
-| `/login` | Email + password, errors for wrong password, disabled account, non-admin | `POST /api/auth/login` |
+| `/login` | Email + password, one friendly error for wrong password or disabled account (Identity returns the same 401 for both), a separate one for non-admin | `POST /api/auth/login` |
 | `/` Overview | Tiles: users and disabled users, workspaces, executions in the last 24 h by status; 5 latest failed executions; health card | `totalItems` of filtered lists, `GET /api/admin/executions/summary`, health |
 | `/users` | Debounced search (300 ms), status filter, disable (with confirmation) / enable; no button for ADMIN rows or self | `GET/PATCH /api/admin/users…` (existing) |
 | `/users/:id` | Profile, joined date, email verification, workspaces the user owns | `GET /api/admin/users/{id}` (existing), `GET /api/admin/workspaces?ownerId=` |
