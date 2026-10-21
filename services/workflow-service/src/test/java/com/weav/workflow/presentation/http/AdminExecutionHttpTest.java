@@ -270,37 +270,46 @@ class AdminExecutionHttpTest {
         }
         // Isolate from rows other tests left behind in the shared database.
         String mine = Arrays.stream(flows).map(id -> "'" + id + "'").collect(Collectors.joining(","));
-        jdbc.update("update workflow.workflows set deleted_at = now() where deleted_at is null "
-                + "and id::text not in (" + mine + ")");
-        Instant now = Instant.now();
-        // Flows 0 and 1 tie on failures; flow 1 failed more recently, so it ranks first.
-        int[] failures = {3, 3, 5, 4, 2, 1, 9};
-        for (int i = 0; i < 7; i++) {
-            for (int run = 0; run < failures[i]; run++) {
-                execution(flows[i], "FAILED", now.minus(Duration.ofHours(1)).minusSeconds(i == 0 ? 600 : 0)
-                        .minusSeconds(run), 1, null);
+        // Remember exactly which rows this test hides so the finally block can bring them back.
+        List<UUID> hidden = jdbc.queryForList("select id from workflow.workflows where deleted_at is null "
+                + "and id::text not in (" + mine + ")", UUID.class);
+        try {
+            jdbc.update("update workflow.workflows set deleted_at = now() where deleted_at is null "
+                    + "and id::text not in (" + mine + ")");
+            Instant now = Instant.now();
+            // Flows 0 and 1 tie on failures; flow 1 failed more recently, so it ranks first.
+            int[] failures = {3, 3, 5, 4, 2, 1, 9};
+            for (int i = 0; i < 7; i++) {
+                for (int run = 0; run < failures[i]; run++) {
+                    execution(flows[i], "FAILED", now.minus(Duration.ofHours(1)).minusSeconds(i == 0 ? 600 : 0)
+                            .minusSeconds(run), 1, null);
+                }
+                execution(flows[i], "SUCCESS", now.minus(Duration.ofMinutes(30)), 1, null);
             }
-            execution(flows[i], "SUCCESS", now.minus(Duration.ofMinutes(30)), 1, null);
-        }
-        jdbc.update("update workflow.workflows set deleted_at = now() where id = ?", flows[6]);
+            jdbc.update("update workflow.workflows set deleted_at = now() where id = ?", flows[6]);
 
-        JsonNode top = json(summary("?days=7")).get("topFailing");
+            JsonNode top = json(summary("?days=7")).get("topFailing");
 
-        assertEquals(5, top.size());
-        int[] order = {2, 3, 1, 0, 4};
-        for (int rank = 0; rank < order.length; rank++) {
-            int i = order[rank];
-            JsonNode item = top.get(rank);
-            assertEquals(flows[i].toString(), item.get("workflowId").asText());
-            assertEquals("Top " + i, item.get("workflowName").asText());
-            assertEquals(workspaces[i].toString(), item.get("workspaceId").asText());
-            assertEquals(failures[i], item.get("failures").asInt());
-            assertTrue(Instant.parse(item.get("lastFailureAt").asText()).isBefore(now));
+            assertEquals(5, top.size());
+            int[] order = {2, 3, 1, 0, 4};
+            for (int rank = 0; rank < order.length; rank++) {
+                int i = order[rank];
+                JsonNode item = top.get(rank);
+                assertEquals(flows[i].toString(), item.get("workflowId").asText());
+                assertEquals("Top " + i, item.get("workflowName").asText());
+                assertEquals(workspaces[i].toString(), item.get("workspaceId").asText());
+                assertEquals(failures[i], item.get("failures").asInt());
+                assertTrue(Instant.parse(item.get("lastFailureAt").asText()).isBefore(now));
+            }
+            for (JsonNode item : top) {
+                assertFalse(item.get("workflowId").asText().equals(flows[6].toString()), "deleted workflow listed");
+            }
+            assertFalse(top.get(0).has("input") || top.get(0).has("output"));
+        } finally {
+            for (UUID id : hidden) {
+                jdbc.update("update workflow.workflows set deleted_at = null where id = ?", id);
+            }
         }
-        for (JsonNode item : top) {
-            assertFalse(item.get("workflowId").asText().equals(flows[6].toString()), "deleted workflow listed");
-        }
-        assertFalse(top.get(0).has("input") || top.get(0).has("output"));
     }
 
     // ---------------------------------------------------------------- helpers
