@@ -279,7 +279,7 @@ function ConnectionRow({
   return (
     <li
       data-testid={`connection-row-${connection.id}`}
-      className="flex flex-wrap items-center gap-3.5 border-b border-border px-[18px] py-3.5 transition-colors last:border-b-0 hover:bg-subtle"
+      className="flex flex-wrap items-center gap-3.5 border-b border-border px-[18px] py-3.5 transition-colors last:rounded-b-xl last:border-b-0 hover:bg-subtle"
     >
       <span aria-hidden="true" className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-t-trigger-bg text-[11px] font-semibold text-t-trigger">
         {PROVIDER_CODES[connection.provider] ?? connection.provider.slice(0, 2)}
@@ -963,7 +963,7 @@ export function ConnectionsPage({ embedded = false }: { embedded?: boolean } = {
   return (
     <main
       data-testid="connections-page"
-      className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card"
+      className="flex min-h-0 flex-col rounded-xl border border-border bg-card"
     >
       <header className="flex min-h-14 shrink-0 flex-col gap-2 border-b border-border px-[18px] py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
