@@ -19,6 +19,12 @@ public interface AdminExecutionQueryPort {
     /** Counts the runs created in [from, to). */
     AdminCounts counts(Instant from, Instant to);
 
+    /** Runs created in [from, to) of non-deleted workflows per UTC day; days without runs are absent. */
+    List<MonitoringQueryPort.DayCount> dayCounts(Instant from, Instant to);
+
+    /** FAILED runs created in [from, to) per non-deleted workflow: most failures first, then most recent. */
+    List<AdminFailingWorkflow> topFailing(Instant from, Instant to, int limit);
+
     record AdminRunItem(MonitoringQueryPort.RunItem run, UUID workspaceId) {
     }
 
@@ -36,6 +42,10 @@ public interface AdminExecutionQueryPort {
         public AdminRunDetail {
             steps = List.copyOf(steps);
         }
+    }
+
+    record AdminFailingWorkflow(UUID workflowId, String workflowName, UUID workspaceId, long failures,
+                                Instant lastFailureAt) {
     }
 
     record AdminCounts(long total, long success, long failed, long active) {

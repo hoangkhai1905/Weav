@@ -945,19 +945,28 @@ paths:
     get:
       tags: [Admin]
       operationId: adminExecutionsSummary
-      summary: Cross-workspace run counts (system admin)
+      summary: Cross-workspace run counts, daily trend and top failing workflows (system admin)
       description: >-
         UC028. Requires system_role ADMIN (403 otherwise). Counts runs of non-deleted workflows created in
-        [now - hours, now). active is QUEUED, RUNNING and WAITING.
+        [now - hours, now). active is QUEUED, RUNNING and WAITING. trend has exactly `days` entries, oldest
+        first, one per UTC day ending today and zero-filled (runs created from the start of the first UTC day
+        until now). topFailing lists at most 5 workflows with FAILED runs over the same `days` window,
+        ordered by failures, then most recent failure, then workflow id. Runs of deleted workflows are
+        excluded from every field.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: hours
           in: query
           required: false
           schema: { type: integer, minimum: 1, maximum: 168, default: 24 }
+        - name: days
+          in: query
+          required: false
+          description: Number of UTC days covered by trend and topFailing.
+          schema: { type: integer, minimum: 1, maximum: 30, default: 14 }
       responses:
         '200':
-          description: Counts.
+          description: Counts, trend and top failing workflows.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AdminExecutionSummary' }
@@ -1490,7 +1499,7 @@ components:
         steps: { type: array, items: { $ref: '#/components/schemas/AdminStep' } }
     AdminExecutionSummary:
       type: object
-      required: [hours, from, to, total, success, failed, active]
+      required: [hours, from, to, total, success, failed, active, trend, topFailing]
       properties:
         hours: { type: integer, minimum: 1, maximum: 168 }
         from: { type: string, format: date-time }
@@ -1499,6 +1508,30 @@ components:
         success: { type: integer, format: int64, minimum: 0 }
         failed: { type: integer, format: int64, minimum: 0 }
         active: { type: integer, format: int64, minimum: 0 }
+        trend:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: object
+            required: [day, total, success, failed]
+            properties:
+              day: { type: string, format: date, description: UTC day }
+              total: { type: integer, format: int64, minimum: 0 }
+              success: { type: integer, format: int64, minimum: 0 }
+              failed: { type: integer, format: int64, minimum: 0 }
+        topFailing:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            required: [workflowId, workflowName, workspaceId, failures, lastFailureAt]
+            properties:
+              workflowId: { type: string, format: uuid }
+              workflowName: { type: string }
+              workspaceId: { type: string, format: uuid }
+              failures: { type: integer, format: int64, minimum: 1 }
+              lastFailureAt: { type: string, format: date-time }
     MonitoringSummary:
       type: object
       required: [days, from, to, workflows, runs, successRate, averageDurationMs, p95DurationMs, trend, topFailingWorkflows, recentFailures]

@@ -49,9 +49,10 @@ public class AdminExecutionController {
 
     @GetMapping("/summary")
     public Summary summary(@AuthenticationPrincipal Jwt jwt,
-                           @RequestParam(name = "hours", defaultValue = "24") int hours) {
+                           @RequestParam(name = "hours", defaultValue = "24") int hours,
+                           @RequestParam(name = "days", defaultValue = "14") int days) {
         requireAdmin(jwt);
-        return Summary.from(service.summary(hours));
+        return Summary.from(service.summary(hours, days));
     }
 
     @GetMapping("/{executionId}")
@@ -132,11 +133,13 @@ public class AdminExecutionController {
         }
     }
 
-    public record Summary(int hours, Instant from, Instant to, long total, long success, long failed, long active) {
+    public record Summary(int hours, Instant from, Instant to, long total, long success, long failed, long active,
+                          List<MonitoringQueryPort.DayCount> trend,
+                          List<AdminExecutionQueryPort.AdminFailingWorkflow> topFailing) {
         static Summary from(AdminExecutionService.Summary summary) {
             AdminExecutionQueryPort.AdminCounts counts = summary.counts();
             return new Summary(summary.hours(), summary.from(), summary.to(), counts.total(), counts.success(),
-                    counts.failed(), counts.active());
+                    counts.failed(), counts.active(), summary.trend(), summary.topFailing());
         }
     }
 }
