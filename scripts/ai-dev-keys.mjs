@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 
 // Separate folders so Compose mounts only the public JWKS into ai-service/ocr-service and only a service's own private key into that service.
 // Existing key files are never overwritten, so keys already in use stay valid on re-run.
-const dir = 'tmp/service-keys';
+const dir = process.env.WEAV_SERVICE_KEYS_DIR ?? 'tmp/service-keys';
 
 function writePair(privatePath, publicPath, kid) {
   if (existsSync(privatePath) && existsSync(publicPath)) {
