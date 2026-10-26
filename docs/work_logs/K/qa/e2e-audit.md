@@ -240,3 +240,30 @@ Follow-ups (low): `workflow_triggers.last_triggered_at` stays null after webhook
 Left on `dev-k`: workflows `f7af76ba` (published, manual), `2fe244a3` (published, manual, fails by design), `430298b3` (SePay, published webhook; K disables the SePay webhook), 3 empty drafts "New AI Workflow" (`1d1595b7`, `ef016b6f`, `f31e3155`); connections "Test Slack", "Test MS Teams"; account `ttgkevin1905@…` now MEMBER of "QA WS One"; invitation `703b047c` ACCEPTED.
 
 W7-B live check (2026-10-10, `week6` 8002d02, same stack): "Tạo quy trình" on `/workflows` opened `/workflows/new` and created nothing (0 new rows). K exported the SePay workflow `430298b3` ("Xuất JSON", downloaded `weav-…json`) and imported it: draft `f408d03e` "SePay payment → Google Sheets + Telegram (đã nhập)" with 4 nodes, 3 edges and the layout; sheets config only `range/values/operation`, telegram only `text` (connection ids, spreadsheet id and chat id stripped by the server sanitizer); the server accepted the draft. PASS. Left on `dev-k`: draft `f408d03e`.
+
+## 13. Freeze regression plan (written 2026-10-26, run before the 10-31 freeze)
+
+Why: the last full live check was section 12 (10-10, `week6`). Merged into `dev` since, never checked live together: ui-redesign-v2, simple-node-ui, builder-friendly-fields, manual-cap-retention-429, neon-suspend, web-boot-429-logout, gateway-public-auth-bearer, workflows-list-fanout, ui-layout-overlaps, ai-provider-byok, admin-web + admin-charts, google-select-account, no-workspace-notice, telegram-photo-hints, mobile-google-sign-in, plus the partner's live-node-test fix.
+
+Where: preferably on the laptop rehearsal of `compose.prod.yml` (demo-deployment plan Task 6), so one pass proves both the features and the deployable stack; fallback the dev stack on Neon `dev-k`. In-app browser, console and network watched on every step (no request to `localhost` on the prod stack). Record PASS/FAIL with ids here.
+
+| # | Flow (demo order) | Covers |
+| --- | --- | --- |
+| R1 | Register a new account, OTP e-mail arrives, first page loads with a workspace (no "Could not load data", #3) | identity, Resend, no-workspace-notice |
+| R2 | Forgot password: request, leave the page, come back, finish the reset (#40) | password-recovery |
+| R3 | Google sign-in from the login page (account chooser shows) and link/unlink in Settings | identity OAuth, google-select-account |
+| R4 | Dashboard and Workflows list load in under the request budget (no fan-out storm, no 429 logout) | workflows-list-fanout, web-boot-429-logout |
+| R5 | Template gallery → create → edit in the simple node UI → publish → manual run → run detail SUCCESS | ui-redesign-v2, simple-node-ui, builder-friendly-fields |
+| R6 | Google connection (Gmail/Sheets) connect, then a run that writes a Sheets row | workspace OAuth callback, connections |
+| R7 | Telegram trigger + send (needs a public URL), control bot `/status` | trigger.telegram, control bot |
+| R8 | format.text with a mapped number (the partner fix) and format.datetime | live-node-test fix, W7-A2 |
+| R9 | AI: generate a workflow from a Vietnamese prompt, assistant chat answers with a tool call, "Ask AI why it failed" on a failed run, BYOK provider key saved and used | ai-service, ai-provider-byok |
+| R10 | Manual run cap: hit the cap, see 429 handled in the UI (no logout) | manual-cap-retention-429 |
+| R11 | Invite by e-mail → invitee accepts | invitations, notification e-mail |
+| R12 | Monitoring page + in-app notification after a failed run; stop a running execution | monitoring, cancel |
+| R13 | Export → import workflow JSON | W7-B |
+| R14 | Admin app: ADMIN login, overview charts, users, workspaces, executions, templates (unpublish), system health; USER login is refused | admin-web, admin-charts |
+| R15 | Neon cold start: after compute suspend, the first request recovers without an error page | neon-suspend |
+| R16 | Layout at 390 px and 1280 px, light and dark, on Dashboard, Builder, Run detail, Admin overview | ui-layout-overlaps |
+
+Out of scope: OCR, mobile (partner handoff `docs/handoff/2026-10-demo-mobile.md`).
