@@ -93,7 +93,7 @@ K approved a **schema-only** branch (decision D5). `production` and `dev-k` are 
    for v in $(sed -n 's/^\([A-Z][A-Z0-9_]*\)=.*/\1/p' "$WEAV_SECRETS_DIR/prod.env"); do [ -n "${!v+x}" ] && echo "$v is set in the shell"; done
    ```
    Unset any it lists (`unset NAME`) or open a new shell.
-7. Before the demo, rotate the Telegram bot token in @BotFather and use the new token in the Weav connection.
+7. Before the demo, rotate the Telegram bot token in @BotFather and use the new token in the Weav connection. Use a bot that only the demo stack uses: publishing a Telegram trigger with the same token on a dev stack moves the bot's webhook there and the demo bot goes silent.
 
 ## 5. One-time Google Cloud Console
 
