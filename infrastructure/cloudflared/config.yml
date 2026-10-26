@@ -1,0 +1,19 @@
+# Locally-managed named tunnel `weav-demo` (compose.prod.yml passes the name on the command line).
+# Checked offline by scripts/check-tunnel-ingress.sh. Rules are matched top to bottom.
+credentials-file: /etc/cloudflared/creds.json
+ingress:
+  # Identity's browser OAuth and cookie paths only; /actuator/** and /auth/me stay behind the gateway.
+  - hostname: api.weav.id.vn
+    path: ^/auth/(oauth|web)/[A-Za-z0-9/_-]*$
+    service: http://identity-edge:8080
+  # Workspace's Google connection callback (the gateway does not proxy it).
+  - hostname: api.weav.id.vn
+    path: ^/oauth/google/callback$
+    service: http://workspace-service:8080
+  - hostname: api.weav.id.vn
+    service: http://api-gateway:3000
+  - hostname: app.weav.id.vn
+    service: http://web:8080
+  - hostname: admin.weav.id.vn
+    service: http://admin:8080
+  - service: http_status:404

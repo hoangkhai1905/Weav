@@ -1,0 +1,314 @@
+# Demo / production stack. Standalone (do not combine with compose.yml or compose.dev.yml):
+#   docker compose -f compose.prod.yml --env-file "$WEAV_SECRETS_DIR/prod.env" up -d
+# No service publishes a port: the only way in is the Cloudflare Tunnel (docs/architecture/deployment-exposure.md).
+# OCR is never part of this stack. Databases (Neon), Valkey (Aiven) and object storage (R2) are remote.
+name: weav-prod
+
+x-rabbit: &rabbit
+  RABBITMQ_HOST: rabbitmq
+  RABBITMQ_PORT: 5672
+  RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?set RABBITMQ_USERNAME in prod.env}
+  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in prod.env}
+  NOTIFICATION_EXCHANGE: weav.events
+
+x-smtp: &smtp
+  SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST in prod.env}
+  SMTP_PORT: 587
+  SMTP_USERNAME: ${SMTP_USERNAME:?set SMTP_USERNAME in prod.env}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:?set SMTP_PASSWORD in prod.env}
+  SMTP_FROM_ADDRESS: ${SMTP_FROM_ADDRESS:?set SMTP_FROM_ADDRESS in prod.env}
+  SMTP_AUTH_ENABLED: "true"
+  SMTP_STARTTLS_ENABLED: "true"
+  SMTP_STARTTLS_REQUIRED: "true"
+  SMTP_SSL_ENABLED: "false"
+
+x-jwt: &jwt
+  JWT_ISSUER: weav-identity
+  JWT_AUDIENCE: weav-api
+
+x-jwt-secret: &jwt-secret
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET in prod.env}
+
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:?set RABBITMQ_USERNAME in prod.env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in prod.env}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  identity-service:
+    build:
+      context: ./services/identity-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      <<: [*rabbit, *smtp, *jwt, *jwt-secret]
+      DB_HOST: ${IDENTITY_DB_HOST:?set IDENTITY_DB_HOST in prod.env}
+      DB_PORT: 5432
+      DB_NAME: ${IDENTITY_DB_NAME:?set IDENTITY_DB_NAME in prod.env}
+      DB_USERNAME: ${IDENTITY_DB_USERNAME:?set IDENTITY_DB_USERNAME in prod.env}
+      DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in prod.env}
+      DB_SSL_MODE: require
+      DB_SCHEMA: identity
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET in prod.env}
+      # RS256 so ai-service, workflow and workspace can verify user tokens against identity's JWKS.
+      JWT_ACCESS_ALG: RS256
+      JWT_SIGNING_KEY_LOCATION: /run/identity-keys/identity-access.pem
+      JWT_SIGNING_KEY_ID: identity-demo-1
+      IDENTITY_INTERNAL_SERVICE_KEY: ${IDENTITY_INTERNAL_SERVICE_KEY:?set IDENTITY_INTERNAL_SERVICE_KEY in prod.env}
+      # Honour X-Forwarded-For only from the gateway pin (.10) and the cloudflared pin (.11) on `edge`.
+      IDENTITY_TRUSTED_PROXY_PATTERN: "172[.]31[.]250[.](10|11)"
+      GOOGLE_OAUTH_ENABLED: "true"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID in prod.env}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?set GOOGLE_CLIENT_SECRET in prod.env}
+      GOOGLE_REDIRECT_URI: https://api.weav.id.vn/auth/oauth/google/callback
+      OAUTH_WEB_RETURN_TARGET_URI: https://app.weav.id.vn/auth/callback
+      OAUTH_WEB_ALLOWED_ORIGIN: https://app.weav.id.vn
+      OAUTH_MOBILE_RETURN_TARGET_URI: ${OAUTH_MOBILE_RETURN_TARGET_URI:-}
+      VALKEY_URL: ${VALKEY_URL:?set VALKEY_URL in prod.env}
+      OTP_HMAC_SECRET: ${OTP_HMAC_SECRET:?set OTP_HMAC_SECRET in prod.env}
+      AVATAR_S3_ENDPOINT: ${R2_ENDPOINT:?set R2_ENDPOINT in prod.env}
+      AVATAR_S3_REGION: auto
+      AVATAR_S3_BUCKET: ${R2_BUCKET:?set R2_BUCKET in prod.env}
+      AVATAR_S3_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?set R2_ACCESS_KEY_ID in prod.env}
+      AVATAR_S3_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?set R2_SECRET_ACCESS_KEY in prod.env}
+      AVATAR_S3_PATH_STYLE_ACCESS: "true"
+      AVATAR_S3_KEY_PREFIX: avatars
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ${WEAV_SECRETS_DIR:-./tmp/prod}/service-keys/identity:/run/identity-keys:ro
+    networks:
+      default: {}
+      edge:
+        # Only the gateway and cloudflared reach identity through this alias, so their pinned IPs are what it sees.
+        aliases:
+          - identity-edge
+
+  workspace-service:
+    build:
+      context: ./services/workspace-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      <<: [*rabbit, *jwt, *jwt-secret]
+      DB_HOST: ${WORKSPACE_DB_HOST:?set WORKSPACE_DB_HOST in prod.env}
+      DB_PORT: 5432
+      DB_NAME: ${WORKSPACE_DB_NAME:?set WORKSPACE_DB_NAME in prod.env}
+      DB_USERNAME: ${WORKSPACE_DB_USERNAME:?set WORKSPACE_DB_USERNAME in prod.env}
+      DB_PASSWORD: ${WORKSPACE_DB_PASSWORD:?set WORKSPACE_DB_PASSWORD in prod.env}
+      DB_SSL_MODE: require
+      DB_SCHEMA: workspace
+      IDENTITY_SERVICE_URL: http://identity-service:8080
+      IDENTITY_INTERNAL_SERVICE_KEY: ${IDENTITY_INTERNAL_SERVICE_KEY:?set IDENTITY_INTERNAL_SERVICE_KEY in prod.env}
+      WEAV_INTERNAL_SERVICE_KEY: ${WEAV_INTERNAL_SERVICE_KEY:?set WEAV_INTERNAL_SERVICE_KEY in prod.env}
+      WORKSPACE_SERVICE_JWKS_FILE: /run/weav-keys/workflow-service.jwks.json
+      REDIS_URL: ${VALKEY_URL:?set VALKEY_URL in prod.env}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?set CREDENTIAL_ENCRYPTION_KEY in prod.env}
+      CREDENTIAL_ENCRYPTION_KEY_VERSION: v1
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID in prod.env}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?set GOOGLE_CLIENT_SECRET in prod.env}
+      GOOGLE_OAUTH_REDIRECT_URI: https://api.weav.id.vn/oauth/google/callback
+      GOOGLE_OAUTH_FRONTEND_RETURN_URL: https://app.weav.id.vn/connections
+      WORKFLOW_SERVICE_URL: http://workflow-service:8080
+      WORKFLOW_INTERNAL_SERVICE_KEY: ${WORKFLOW_INTERNAL_SERVICE_KEY:?set WORKFLOW_INTERNAL_SERVICE_KEY in prod.env}
+    volumes:
+      # Public half only (workflow's service-JWT JWKS).
+      - ${WEAV_SECRETS_DIR:-./tmp/prod}/service-keys/public:/run/weav-keys:ro
+
+  workflow-service:
+    build:
+      context: ./services/workflow-service
+      dockerfile: Dockerfile
+      additional_contexts:
+        workflow-schema: ./packages/workflow-schema
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      <<: [*rabbit, *jwt, *jwt-secret]
+      DB_HOST: ${WORKFLOW_DB_HOST:?set WORKFLOW_DB_HOST in prod.env}
+      DB_PORT: 5432
+      DB_NAME: ${WORKFLOW_DB_NAME:?set WORKFLOW_DB_NAME in prod.env}
+      DB_USERNAME: ${WORKFLOW_DB_USERNAME:?set WORKFLOW_DB_USERNAME in prod.env}
+      DB_PASSWORD: ${WORKFLOW_DB_PASSWORD:?set WORKFLOW_DB_PASSWORD in prod.env}
+      DB_SSL_MODE: require
+      DB_SCHEMA: workflow
+      WORKFLOW_INTERNAL_SERVICE_KEY: ${WORKFLOW_INTERNAL_SERVICE_KEY:?set WORKFLOW_INTERNAL_SERVICE_KEY in prod.env}
+      WEAV_INTERNAL_SERVICE_KEY: ${WEAV_INTERNAL_SERVICE_KEY:?set WEAV_INTERNAL_SERVICE_KEY in prod.env}
+      WORKSPACE_SERVICE_URL: http://workspace-service:8080
+      WORKFLOW_PUBLIC_BASE_URL: https://api.weav.id.vn
+      WORKFLOW_WEB_BASE_URL: https://app.weav.id.vn
+      # Without the worker no run executes.
+      WORKFLOW_EXECUTION_WORKER_ENABLED: "true"
+      WORKFLOW_EXECUTION_WORKER_OWNER: workflow-demo-worker
+      WORKFLOW_FILES_S3_ENDPOINT: ${R2_ENDPOINT:?set R2_ENDPOINT in prod.env}
+      WORKFLOW_FILES_S3_REGION: auto
+      WORKFLOW_FILES_S3_BUCKET: ${R2_BUCKET:?set R2_BUCKET in prod.env}
+      WORKFLOW_FILES_S3_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?set R2_ACCESS_KEY_ID in prod.env}
+      WORKFLOW_FILES_S3_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?set R2_SECRET_ACCESS_KEY in prod.env}
+      WORKFLOW_FILES_S3_PATH_STYLE_ACCESS: "true"
+      WORKFLOW_FILES_S3_KEY_PREFIX: workflow-files
+      # OCR belongs to the partner and is not part of the demo.
+      WORKFLOW_OCR_ENABLED: "false"
+      WORKFLOW_AI_ENABLED: "true"
+      WORKFLOW_AI_GENERATION_ENABLED: "true"
+      WORKFLOW_AI_DAILY_LIMIT_PER_WORKSPACE: 50
+      AI_SERVICE_PRIVATE_URL: http://ai-service:3000
+      # Must equal the kid scripts/ai-dev-keys.mjs writes into workflow-service.jwks.json.
+      WORKFLOW_AI_SIGNING_KEY_ID: workflow-dev-1
+      WORKFLOW_AI_SIGNING_KEY_LOCATION: file:/run/weav-keys/workflow-service.pem
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      # Private half: readable by uid 10001 (see the runbook permissions step).
+      - ${WEAV_SECRETS_DIR:-./tmp/prod}/service-keys/private:/run/weav-keys:ro
+
+  ai-service:
+    build:
+      context: .
+      dockerfile: services/ai-service/Dockerfile
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      <<: *jwt
+      AI_PROVIDER: deepseek
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?set DEEPSEEK_API_KEY in prod.env}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:?set DEEPSEEK_MODEL in prod.env}
+      AI_SERVICE_JWKS_FILE: /run/weav-keys/workflow-service.jwks.json
+      AI_ASSISTANT_ENABLED: "true"
+      AI_WORKFLOW_API_URL: http://workflow-service:8080
+      AI_WORKSPACE_API_URL: http://workspace-service:8080
+      DB_HOST: ${AI_DB_HOST:?set AI_DB_HOST in prod.env}
+      DB_PORT: 5432
+      DB_NAME: ${AI_DB_NAME:?set AI_DB_NAME in prod.env}
+      DB_USERNAME: ${AI_DB_USERNAME:?set AI_DB_USERNAME in prod.env}
+      DB_PASSWORD: ${AI_DB_PASSWORD:?set AI_DB_PASSWORD in prod.env}
+      DB_SSL_MODE: require
+      JWT_JWKS_URI: http://identity-service:8080/.well-known/jwks.json
+    volumes:
+      - ${WEAV_SECRETS_DIR:-./tmp/prod}/service-keys/public:/run/weav-keys:ro
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      <<: [*jwt, *jwt-secret]
+      APP_ENV: production
+      # Rate-limit storage (the gateway reads only this variable, not VALKEY_URL).
+      GATEWAY_THROTTLER_REDIS_URL: ${VALKEY_URL:?set VALKEY_URL in prod.env}
+      # Via the `edge` network so identity sees the pinned gateway IP (X-Forwarded-For trust).
+      IDENTITY_SERVICE_URL: http://identity-edge:8080
+      WORKSPACE_SERVICE_URL: http://workspace-service:8080
+      WORKFLOW_SERVICE_URL: http://workflow-service:8080
+      AI_SERVICE_URL: http://ai-service:3000
+      NOTIFICATION_SERVICE_URL: http://notification-service:3000
+      CORS_ALLOWED_ORIGINS: https://app.weav.id.vn,https://admin.weav.id.vn
+      # One proxy (cloudflared) in front; the gateway port is never published.
+      GATEWAY_TRUST_PROXY_HOPS: 1
+    networks:
+      default: {}
+      edge:
+        ipv4_address: 172.31.250.10
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      <<: [*rabbit, *smtp, *jwt, *jwt-secret]
+      DB_HOST: ${NOTIFICATION_DB_HOST:?set NOTIFICATION_DB_HOST in prod.env}
+      DB_PORT: 5432
+      DB_NAME: ${NOTIFICATION_DB_NAME:?set NOTIFICATION_DB_NAME in prod.env}
+      DB_USERNAME: ${NOTIFICATION_DB_USERNAME:?set NOTIFICATION_DB_USERNAME in prod.env}
+      DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in prod.env}
+      DB_SSL_MODE: require
+      DB_SCHEMA: notification
+      # Fresh broker: there is no old classic queue to drain.
+      NOTIFICATION_LEGACY_DRAIN: "false"
+      NOTIFICATION_DETAIL_BASE_URL: https://app.weav.id.vn
+      NOTIFICATION_EMAIL_ENABLED: "true"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_BASE_URL: https://api.weav.id.vn
+        VITE_IDENTITY_SERVICE_URL: https://api.weav.id.vn
+        VITE_API_MODE: http
+    restart: unless-stopped
+    mem_limit: 64m
+    healthcheck:
+      # nginx-unprivileged has no HEALTHCHECK of its own; busybox wget ships in the alpine image.
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        VITE_API_GATEWAY_URL: https://api.weav.id.vn
+    restart: unless-stopped
+    mem_limit: 64m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  cloudflared:
+    # Locally-managed named tunnel `weav-demo`; hostnames and path rules live in infrastructure/cloudflared/config.yml.
+    image: cloudflare/cloudflared:2026.10.0
+    restart: unless-stopped
+    mem_limit: 128m
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run weav-demo
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+    volumes:
+      - ./infrastructure/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ${WEAV_SECRETS_DIR:-./tmp/prod}/cloudflared/creds.json:/etc/cloudflared/creds.json:ro
+    networks:
+      default: {}
+      edge:
+        ipv4_address: 172.31.250.11
+
+volumes:
+  rabbitmq_data:
+
+networks:
+  # Fixed subnet so the gateway (.10) and cloudflared (.11) IPs can be pinned for identity's X-Forwarded-For trust.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
