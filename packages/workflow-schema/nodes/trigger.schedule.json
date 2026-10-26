@@ -14,7 +14,7 @@
     "cron": {
       "type": "string",
       "title": "Cron expression",
-      "description": "When to run, as a cron expression (for example 0 9 * * 1-5).",
+      "description": "When to run, as a six-field cron expression starting with seconds (for example 0 0 9 * * 1-5: 09:00 on weekdays).",
       "x-weav-template": true,
       "minLength": 1
     },

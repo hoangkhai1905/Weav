@@ -51,13 +51,25 @@ public record NodeConfigSchema(
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
-    /** Template fields declared as plain {@code type: string} (no oneOf, no untyped "any value"). */
+    /**
+     * Template fields that take text but no number or boolean: plain {@code type: string}, or a oneOf with a
+     * string alternative and no number, integer or boolean one (format.text value: string or list). Never an
+     * untyped "any value".
+     */
     public Set<String> stringOnlyFields() {
         return properties.entrySet().stream()
-                .filter(entry -> entry.getValue().template() && "string".equals(entry.getValue().type())
-                        && entry.getValue().oneOf().isEmpty())
+                .filter(entry -> entry.getValue().template() && takesTextNotScalar(entry.getValue()))
                 .map(Map.Entry::getKey)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    private static boolean takesTextNotScalar(Field field) {
+        if (field.oneOf().isEmpty()) {
+            return "string".equals(field.type());
+        }
+        Set<String> types = field.oneOf().stream().map(Field::type).collect(java.util.stream.Collectors.toSet());
+        return types.contains("string") && !types.contains("number") && !types.contains("integer")
+                && !types.contains("boolean");
     }
 
     /**
