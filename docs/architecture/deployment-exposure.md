@@ -4,9 +4,13 @@
 
 ## Public surface
 
-- Only the reverse proxy (Caddy) is published to the internet. It forwards to the API Gateway.
-- The API Gateway port must **not** be published when it runs behind Caddy. Set `GATEWAY_TRUST_PROXY_HOPS=1`
-  so client IPs (rate limits, audit logs) come from Caddy's `X-Forwarded-For`. With `APP_ENV=production` the
+- Only the Cloudflare Tunnel (`cloudflared`, named tunnel `weav-demo`, `infrastructure/cloudflared/config.yml`) is
+  reachable from the internet; no service publishes a port. By default it forwards to the API Gateway. Two
+  path-restricted exceptions on `api.`: `^/auth/(oauth|web)/[A-Za-z0-9/_-]*$` goes to identity-service (browser
+  OAuth and cookie refresh) and `^/oauth/google/callback$` goes to workspace-service (Google connection callback).
+  Everything else, including `/actuator/**`, goes to the gateway.
+- The API Gateway port must **not** be published when it runs behind the tunnel. Set `GATEWAY_TRUST_PROXY_HOPS=1`
+  so client IPs (rate limits, audit logs) come from the tunnel's `X-Forwarded-For`. With `APP_ENV=production` the
   gateway refuses to start when the value is `0`. If the gateway port were reachable directly, a client could
   forge `X-Forwarded-For` and bypass per-IP limits.
 - `GET /ready/upstreams` on the gateway needs an access token with `system_role=ADMIN` (401 without a token,
