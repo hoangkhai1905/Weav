@@ -267,3 +267,20 @@ Where: preferably on the laptop rehearsal of `compose.prod.yml` (demo-deployment
 | R16 | Layout at 390 px and 1280 px, light and dark, on Dashboard, Builder, Run detail, Admin overview | ui-layout-overlaps |
 
 Out of scope: OCR, mobile (partner handoff `docs/handoff/2026-10-demo-mobile.md`).
+
+### 13.1 Results, run 1 (2026-10-27, laptop rehearsal of `compose.prod.yml`, `feature/demo-deploy` c0a2cedb, Neon `demo` schema-only branch, public https://app.weav.id.vn)
+
+Stack: 10 services up (9 healthy + cloudflared, 4 tunnel connections), idle memory about 1.7 GB in total (identity 55 % of 768m, workspace 55 %, workflow 39 % of 1g). Public checks: deep links 200, `/actuator/health` and `--path-as-is /auth/web/../../actuator/prometheus` 404, identity `/auth/web/csrf` 200 with the app origin, gateway CORS allows only the app origin. Account sign-up and sign-in were done by K (passwords are never typed by the agent on a public host); flows after sign-in driven in the in-app browser, some fixtures created through the same API the UI calls.
+
+| # | Result | Evidence |
+| --- | --- | --- |
+| R1 | PASS | account created via OTP, first page is the "create your first workspace" notice (no "Could not load data"); workspace created; no console errors, no request to localhost |
+| R4 | PASS | Dashboard → Workflows: 5 API requests empty, 7 with 3 workflows (no per-workflow fan-out); slowest 0.5 s |
+| R5 | FAIL → fixed → PASS | builder blocked publishing a step using `{{ workflow.name }}` ("data from an earlier step is invalid"): `publishBlockers.ts` never learned the W6-C3 run expressions (`now`, `run.id`, `workflow.id`, `workflow.name`) the picker offers and the server accepts. Fixed in `fd0d9ffe` (merged to dev `f79a58ba`, Playwright test fails without the fix), web image rebuilt: banner gone, "Xuất bản" → "Đã xuất bản quy trình." Run `95d8c4c2` SUCCESS 4/4 steps, run detail renders every step |
+| R8 | PASS | partner fix live: `{{ nodes.set.output.amount }}` (1234567) → `format.text number_format` = `1.234.567` |
+| R9 | PASS (partial) | assistant streams through the tunnel, two tool calls, honest about missing run-history tool (nit: mixes "workflow"/"execution" English words); AI generation from a Vietnamese prompt asks follow-ups (recipient pre-filled with the signed-in e-mail, answers kept across turns) and then requires a Gmail connection (submit disabled, link to Connections; by design) — full draft needs R6; "Hỏi AI vì sao lỗi" on run `3d54a9ab` names step `conv`, `FORMAT_INVALID_DATETIME` and fixes in Vietnamese |
+| R12 | PASS | failed run `3d54a9ab` → in-app notification "Quy trình chạy thất bại" linking the run; stop run `c3002b64` → confirm dialog → "Đang dừng…" → `CANCELLED`; monitoring: 3 runs, 50 %, daily chart, top failing workflow, recent error code |
+| R16 | PASS with 2 low findings | 390 px: no page-level horizontal scroll on Dashboard, Workflows, Builder, Run detail, Monitoring, Notifications, Settings (wide tables scroll inside their card). Low: the builder header cuts off "Xuất bản" at 390 px; a "needs a trigger" blocker banner flashes while the workflow is still loading |
+| R2, R3, R6, R7, R10, R11, R13, R14, R15 | PENDING | need K: password reset e-mail (R2), Google sign-in (R3) and consent (R6), Telegram bot token (R7), second account (R11), ADMIN account (R14); R10 manual cap, R13 import file picker and R15 Neon suspend still to run |
+
+Test data on Neon `demo`: account by K, workspace "Demo Hội đồng" (`0692ed60`), workflows `e45b5c8d` (R5), `ffdb6b7b` (R12 fails by design), `18940022` (R12 slow, calls httpbin.org). Delete or keep for the defense rehearsal.
