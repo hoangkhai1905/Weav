@@ -11,6 +11,8 @@ export function VerifyEmailPage() {
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuthStore();
 
+  const goDashboard = () => navigate('/dashboard', { replace: true });
+
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (isAuthMockMode || user?.emailVerifiedAt) return <Navigate to="/dashboard" replace />;
 
@@ -19,11 +21,9 @@ export function VerifyEmailPage() {
       <div className="flex w-full max-w-[380px] flex-col gap-5">
         <div className="flex flex-col gap-1.5">
           <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-foreground">{t('settings.verify_email')}</h1>
-          <p className="text-text-2">
-            {t('verify.page_intro')}{user ? ` ${user.email}` : ''}
-          </p>
+          {user && <p className="text-text-2">{`${t('verify.page_intro')} ${user.email}`}</p>}
         </div>
-        {user && <EmailVerifyInline autoSend onVerified={() => navigate('/dashboard')} onSkip={() => navigate('/dashboard')} />}
+        {user && <EmailVerifyInline autoSend onVerified={goDashboard} onSkip={goDashboard} />}
       </div>
     </AuthLayout>
   );
