@@ -225,6 +225,30 @@ test('publish is blocked for ordering conditions without numbers and needs no ma
   await expect(page.getByTestId('workflow-publish')).toBeEnabled();
 });
 
+test('run expressions are valid mappings, unknown run values still block publish', async ({ page }) => {
+  await stubBackend(page);
+  const withSet = (value: string) => ({
+    ...draft(),
+    definition: {
+      schemaVersion: '1.0',
+      nodes: [{ id: 'hook', type: 'trigger.webhook', config: {} }, { id: 'set', type: 'data.set', config: { fields: { name: value } } }],
+      edges: [{ id: 'e1', source: 'hook', target: 'set' }],
+      variables: {},
+    },
+    editorState: { nodes: { hook: { name: 'Webhook', position: { x: 100, y: 120 } }, set: { name: 'Set', position: { x: 400, y: 120 } } } },
+  });
+  await page.route(base, (route) => json(route, withSet('{{ workflow.name }} at {{ now }}')));
+  await page.goto(`/workflows/${workflowId}/builder`);
+  await expect(page.getByTestId('workflow-title')).toHaveValue('Builder correctness');
+  await expect(page.getByTestId('workflow-publish')).toBeEnabled();
+  await expect(page.getByTestId('publish-blocker-summary')).toHaveCount(0);
+
+  await page.unroute(base);
+  await page.route(base, (route) => json(route, withSet('{{ run.idx }}')));
+  await page.reload();
+  await expect(page.getByTestId('workflow-publish')).toBeDisabled();
+});
+
 test('calendar date-time picker, one "no formatting" option and several sheet rows', async ({ page }) => {
   const backend = await stubBackend(page);
   await page.goto(`/workflows/${workflowId}/builder`);
