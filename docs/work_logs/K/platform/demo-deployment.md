@@ -108,3 +108,4 @@ K decisions 2026-10-26: demo DB = new Neon branch `demo` (off `production`, back
 - Stack healthy, idle memory about 1.7 GB; public routing checked (actuator and `..` blocked, CORS app origin only).
 - Freeze regression R1-R16 run on this stack (e2e-audit section 13.1): all pass after two fixes found by the run: builder run-expression blocker (`fd0d9ffe`, merged to dev) and the missing tunnel route for identity Google link/unlink (`fe1d25b6`). Google Console needed `https://api.weav.id.vn/oauth/google/callback` on client `795495011695-…`.
 - Open: e-mail verification is not part of sign-up (K wants it automatic); low UI findings in e2e-audit 13.1; Task 7 (VPS) waits for a host. The laptop stack is still running.
+- 2026-10-27 afternoon: e-mail verification at sign-up + inline on Invitations merged to dev (1a4d03e9); `feature/demo-deploy` merged into dev (c942c0ea, detect_changes vs dev: risk low, 0 processes). Not pushed.
