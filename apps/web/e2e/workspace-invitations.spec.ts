@@ -237,13 +237,14 @@ test.describe('workspace invitations: invitee side', () => {
       ],
       workspaces: [] as ReturnType<typeof workspace>[],
       declined: [] as string[],
+      verified: options.emailVerified !== false,
     };
     await installAuth(page, OTHER);
     await page.route('**/api/v1/invitations**', async (route) => {
       const url = new URL(route.request().url());
       const method = route.request().method();
       if (url.pathname === '/api/v1/invitations' && method === 'GET') {
-        return fulfill(route, { items: options.emailVerified === false ? [] : state.items, emailVerified: options.emailVerified !== false });
+        return fulfill(route, { items: state.verified ? state.items : [], emailVerified: state.verified });
       }
       if (url.pathname.endsWith('/accept') && method === 'POST') {
         if (options.acceptStatus && options.acceptStatus !== 410) return fulfill(route, apiError(options.acceptCode ?? 'X'), options.acceptStatus);
@@ -301,13 +302,35 @@ test.describe('workspace invitations: invitee side', () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  test('an unverified e-mail shows the notice linking to Settings', async ({ page }) => {
-    await installInvitee(page, { emailVerified: false });
+  test('an unverified e-mail verifies inline, then the invitations can be accepted without a reload', async ({ page }) => {
+    const consoleErrors = watchConsole(page);
+    const state = await installInvitee(page, { emailVerified: false });
+    let otpRequests = 0;
+    await page.route('**/api/auth/otp/request', (route) => {
+      otpRequests += 1;
+      return fulfill(route, { challengeId: 'challenge-1', expiresIn: 300, retryAfter: 0 });
+    });
+    await page.route('**/api/auth/otp/verify', (route) => {
+      state.verified = true;
+      return fulfill(route, { purpose: 'EMAIL_VERIFICATION', verified: true });
+    });
     await gotoPath(page, '/invitations');
     const notice = page.getByTestId('invitations-unverified');
     await expect(notice).toBeVisible();
-    await expect(notice.getByRole('link')).toHaveAttribute('href', '/settings/profile');
+    await expect(notice.getByRole('link')).toHaveCount(0);
     await expect(page.getByTestId('invitation-card')).toHaveCount(0);
+    expect(otpRequests).toBe(0);
+
+    await notice.getByRole('button', { name: 'Send code' }).click();
+    await notice.getByLabel('6-digit code').fill('123456');
+    await notice.getByRole('button', { name: 'Verify' }).click();
+
+    await expect(page.getByTestId('invitations-unverified')).toHaveCount(0);
+    expect(otpRequests).toBe(1);
+    await expect(page.getByTestId('invitation-card')).toHaveCount(2);
+    await page.getByTestId('invitation-card').filter({ hasText: 'Beta team' }).getByTestId('invitation-accept').click();
+    await expect(page).toHaveURL(/\/workspace$/);
+    expect(consoleErrors).toEqual([]);
   });
 
   test('410 on accept shows the expired message and refreshes the list', async ({ page }) => {
