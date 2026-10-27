@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 
 // RS256 access-token signing key for identity-service (ID-6). Private key only lives here; verifiers read the JWKS endpoint.
 // Idempotent: keeps an existing key unless --force. Prints paths and kid only, never key material.
-const dir = 'tmp/service-keys/identity';
+const dir = `${process.env.WEAV_SERVICE_KEYS_DIR ?? 'tmp/service-keys'}/identity`;
 const priv = `${dir}/identity-access.pem`;
 const pub = `${dir}/identity-access.pub.pem`;
 const kid = process.env.JWT_SIGNING_KEY_ID || 'identity-dev-1';
