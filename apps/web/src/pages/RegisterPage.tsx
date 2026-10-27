@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
 import { useI18nStore } from '../store/useI18nStore';
-import { authApi, getAuthApiErrorStatus, getAuthApiFieldErrors } from '../api/auth.api';
+import { authApi, getAuthApiErrorStatus, getAuthApiFieldErrors, isAuthMockMode } from '../api/auth.api';
 import { AuthLayout } from '../components/auth/AuthLayout';
 import { BTN_LG, BTN_PRIMARY, INPUT_LG, LINK } from '../lib/uiClasses';
 
@@ -31,7 +31,7 @@ export function RegisterPage() {
     try {
       const session = await authApi.register(email, name, password);
       setUser(session.user);
-      navigate('/dashboard');
+      navigate(session.user.emailVerifiedAt || isAuthMockMode ? '/dashboard' : '/verify-email');
     } catch (err) {
       const server = getAuthApiFieldErrors(err);
       const mapped: Record<string, string> = {};

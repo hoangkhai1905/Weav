@@ -121,7 +121,9 @@ class AuthApiError extends Error {
   readonly code: string | null;
   /** Server-side field errors from `error.details[]`, keyed by field name. */
   readonly fieldErrors: Record<string, string>;
-  constructor(status: number, code: string | null = null, fieldErrors: Record<string, string> = {}) {
+  /** Seconds from the Retry-After header of a 429, when the response carried one. */
+  readonly retryAfterSeconds: number | null;
+  constructor(status: number, code: string | null = null, fieldErrors: Record<string, string> = {}, retryAfterSeconds: number | null = null) {
     const messages: Record<number, string> = {
       400: tr('msg.please_check_your_email_password_and_display'),
       401: tr('msg.invalid_credentials_or_expired_session'),
@@ -134,6 +136,7 @@ class AuthApiError extends Error {
     this.status = status;
     this.code = code;
     this.fieldErrors = fieldErrors;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -162,6 +165,10 @@ function parseErrorBody(error: unknown): { code: string | null; fieldErrors: Rec
   return { code, fieldErrors };
 }
 
+export function getAuthApiRetryAfter(error: unknown): number | null {
+  return error instanceof AuthApiError ? error.retryAfterSeconds : null;
+}
+
 export function getAuthApiErrorStatus(error: unknown): number | null {
   return error instanceof AuthApiError ? error.status : null;
 }
@@ -172,10 +179,12 @@ async function request<T>(client: typeof apiClient, config: AxiosRequestConfig):
   } catch (error) {
     // No raw Axios errors: they contain passwords and authorization headers.
     const { code, fieldErrors } = parseErrorBody(error);
+    const retryAfter = axios.isAxiosError(error) ? Number(error.response?.headers?.['retry-after']) : NaN;
     throw new AuthApiError(
       axios.isAxiosError(error) ? (error.response?.status ?? 0) : 0,
       code,
       fieldErrors,
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null,
     );
   }
 }
