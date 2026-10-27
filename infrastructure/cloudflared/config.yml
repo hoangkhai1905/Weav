@@ -6,6 +6,10 @@ ingress:
   - hostname: api.weav.id.vn
     path: ^/auth/(oauth|web)/[A-Za-z0-9/_-]*$
     service: http://identity-edge:8080
+  # Identity's Google link/unlink in Settings (web calls them with the refresh cookie, not through the gateway).
+  - hostname: api.weav.id.vn
+    path: ^/users/me/(oauth/google/link|oauth-accounts(/[A-Za-z0-9-]+)?)$
+    service: http://identity-edge:8080
   # Workspace's Google connection callback (the gateway does not proxy it).
   - hostname: api.weav.id.vn
     path: ^/oauth/google/callback$
