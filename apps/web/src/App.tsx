@@ -3,6 +3,7 @@ import { WorkspaceHeader, WorkspaceTabs } from './components/workspace/Workspace
 import { AppLayout } from './components/layout/AppLayout';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { GoogleOAuthCallbackPage } from './pages/GoogleOAuthCallbackPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
@@ -65,6 +66,7 @@ export function App() {
       {/* Auth Routes */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/auth/callback" element={<GoogleOAuthCallbackPage />} />
 

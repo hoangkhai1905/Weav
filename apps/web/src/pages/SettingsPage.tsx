@@ -16,6 +16,7 @@ import {
   User,
 } from 'lucide-react';
 import { accessTokenExpiresSoon, authApi, getAuthApiErrorStatus, isAuthMockMode, type IdentitySessionView, type OAuthAccountMetadata } from '../api/auth.api';
+import { EmailVerifyInline } from '../components/auth/EmailVerifyInline';
 import { ConfirmButton } from '../components/common/ConfirmButton';
 import { useAuthStore } from '../store/useAuthStore';
 import { useI18nStore } from '../store/useI18nStore';
@@ -85,10 +86,6 @@ function ErrorText({ children }: { children: string }) {
   return <p className="text-xs font-medium text-err">{children}</p>;
 }
 
-function SuccessText({ children }: { children: string }) {
-  return <p className="text-xs font-medium text-ok">{children}</p>;
-}
-
 function sessionErrorMessage(error: unknown, translate: (key: string) => string): string {
   const status = getAuthApiErrorStatus(error);
   switch (status) {
@@ -155,11 +152,6 @@ export function SettingsPage() {
   const [oauthPassword, setOauthPassword] = useState('');
   const [oauthAction, setOauthAction] = useState<string | null>(null);
 
-  const [verificationChallenge, setVerificationChallenge] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
-  const [verificationMessage, setVerificationMessage] = useState('');
-  const [verificationError, setVerificationError] = useState('');
-  const [verificationLoading, setVerificationLoading] = useState(false);
   const [settingsLoadState, setSettingsLoadState] = useState<SettingsLoadState | null>(() => (
     isAuthMockMode ? { userId: null, page: 0, refreshKey: 0 } : null
   ));
@@ -398,40 +390,6 @@ export function SettingsPage() {
     }
   };
 
-  const requestEmailVerification = async () => {
-    setVerificationError('');
-    setVerificationMessage('');
-    setVerificationLoading(true);
-    try {
-      const receipt = await authApi.requestEmailVerification();
-      setVerificationChallenge(receipt.challengeId);
-      setVerificationMessage(`${t('settings.verification_sent')} ${receipt.expiresIn} ${t('settings.seconds')}`);
-    } catch (error) {
-      setVerificationError(error instanceof Error ? error.message : t('settings.verification_error'));
-    } finally {
-      setVerificationLoading(false);
-    }
-  };
-
-  const verifyEmail = async () => {
-    setVerificationError('');
-    setVerificationMessage('');
-    setVerificationLoading(true);
-    try {
-      const result = await authApi.verifyOtp(verificationChallenge, verificationCode);
-      if (result.purpose !== 'EMAIL_VERIFICATION') throw new Error(t('settings.verification_error'));
-      const refreshed = await authApi.getCurrentUser();
-      if (refreshed) setUser(refreshed);
-      setVerificationChallenge('');
-      setVerificationCode('');
-      setVerificationMessage(t('settings.email_verified'));
-    } catch (error) {
-      setVerificationError(error instanceof Error ? error.message : t('settings.verification_error'));
-    } finally {
-      setVerificationLoading(false);
-    }
-  };
-
   const retrySessions = () => {
     if (isAuthMockMode || currentSessionAction !== null || hasCurrentSessionMutation()) return;
     setSessionsError('');
@@ -646,10 +604,8 @@ export function SettingsPage() {
 
         {!user?.emailVerifiedAt && !isAuthMockMode && (
           <div className="mt-6 max-w-lg space-y-3 border-t border-border pt-6">
-            <div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-bold text-foreground">{t('settings.verify_email')}</h3><p className="mt-1 text-xs text-muted-foreground">{t('settings.verify_email_desc')}</p></div><button onClick={() => void requestEmailVerification()} disabled={verificationLoading} className="rounded-xl border border-run/30 px-3 py-2 text-xs font-semibold text-run hover:bg-run-bg disabled:opacity-60">{verificationLoading ? t('settings.sending') : t('settings.send_code')}</button></div>
-            {verificationChallenge && <div className="flex gap-2"><input aria-label={t('settings.code_placeholder')} value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" placeholder={t('settings.code_placeholder')} className="min-w-0 flex-1 rounded-xl border border-border bg-subtle px-3 py-2 text-xs" /><button onClick={() => void verifyEmail()} disabled={verificationLoading || verificationCode.length !== 6} className="rounded-xl bg-ok px-3 py-2 text-xs font-semibold text-background disabled:opacity-60">{verificationLoading ? t('settings.verifying') : t('settings.verify')}</button></div>}
-            {verificationMessage && <SuccessText>{verificationMessage}</SuccessText>}
-            {verificationError && <ErrorText>{verificationError}</ErrorText>}
+            <div><h3 className="text-sm font-bold text-foreground">{t('settings.verify_email')}</h3><p className="mt-1 text-xs text-muted-foreground">{t('settings.verify_email_desc')}</p></div>
+            <EmailVerifyInline />
           </div>
         )}
       </motion.section>
