@@ -1,6 +1,7 @@
 import type { Edge, Node } from '@xyflow/react';
 import { isValidPath } from './mappingGrammar';
 import { stepName } from './nodeLabels';
+import { RUN_PATHS } from './variablePaths';
 
 // Client-side mirror of the publish rules in workflow-service DefinitionValidator (graph, mappings, ordering
 // operands, required AI fields, absolute URL). Only rules the validator really has are checked here.
@@ -32,7 +33,7 @@ function expressionsOf(text: string): string[] | null {
 }
 
 function parseExpression(expression: string, ids: string[]): Expression {
-  if (expression === 'trigger.input' || expression === 'variables') return { ok: true };
+  if (expression === 'trigger.input' || expression === 'variables' || RUN_PATHS.some((run) => run.path === expression)) return { ok: true };
   if (expression.startsWith('trigger.input.')) return { ok: isValidPath(expression.slice('trigger.input.'.length)) };
   if (expression.startsWith('variables.')) return { ok: isValidPath(expression.slice('variables.'.length)) };
   if (!expression.startsWith('nodes.')) return { ok: false };
