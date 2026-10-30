@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, Loader2, Mail } from 'lucide-react';
 import { WorkspaceApiError, workspaceApi, type MyInvitation } from '../api/workspace.api';
+import { EmailVerifyInline } from '../components/auth/EmailVerifyInline';
 import { useMyInvitations, workspaceKeys } from '../hooks/useWorkspace';
 import { useAuthStore } from '../store/useAuthStore';
 import { useI18nStore } from '../store/useI18nStore';
@@ -76,12 +77,12 @@ export function InvitationsPage() {
       </div>
 
       {!emailVerified && (
-        <div data-testid="invitations-unverified" className="flex items-start gap-2 rounded-2xl border border-warn/30 bg-warn-bg p-4 text-xs text-warn" role="status">
-          <AlertCircle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <p>
-            {t('invitations.unverified')}{' '}
-            <Link to="/settings/profile" className="font-bold underline">{t('invitations.unverified_link')}</Link>
+        <div data-testid="invitations-unverified" className="space-y-3 rounded-2xl border border-warn/30 bg-warn-bg p-4 text-xs text-warn">
+          <p className="flex items-start gap-2">
+            <AlertCircle size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+            {t('invitations.unverified')}
           </p>
+          <EmailVerifyInline onVerified={() => void refetch()} />
         </div>
       )}
 

@@ -23,6 +23,7 @@ jobs:
       node: ${{ steps.node.outputs.changes }}
       web: ${{ steps.apps.outputs.web }}
       mobile: ${{ steps.apps.outputs.mobile }}
+      admin: ${{ steps.apps.outputs.admin }}
     steps:
       - uses: actions/checkout@v7
       - id: java
@@ -67,6 +68,9 @@ jobs:
             mobile:
               - *shared
               - 'apps/mobile/**'
+            admin:
+              - *shared
+              - 'apps/admin/**'
 
   java:
     name: java (${{ matrix.service }})
@@ -217,10 +221,28 @@ jobs:
         working-directory: apps/mobile
         run: pnpm exec tsc --noEmit -p .
 
+  admin:
+    needs: changes
+    if: needs.changes.outputs.admin == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter ./apps/admin
+      - run: pnpm --dir apps/admin exec tsc --noEmit -p tsconfig.app.json
+      - run: pnpm --dir apps/admin exec eslint .
+      # Playwright suite intentionally excluded (mirrors web).
+      - run: pnpm --dir apps/admin build
+
   # Single required status check. Skipped jobs count as success so path-filtered PRs can still merge.
   ci-ok:
     name: ci-ok
-    needs: [changes, java, node, notification-integration, web, mobile]
+    needs: [changes, java, node, notification-integration, web, mobile, admin]
     if: always()
     runs-on: ubuntu-latest
     steps:

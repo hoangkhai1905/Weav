@@ -55,6 +55,133 @@ test.describe('account: register and password', () => {
     await expect(page.getByRole('alert').filter({ hasText: 'Password must be 8 to 72 characters.' })).toBeVisible();
   });
 
+  /** Stubs a successful sign-up for an unverified e-mail; identity's cross-origin web login needs CORS headers. */
+  async function stubSignUp(page: Page) {
+    const state = { verified: false, otpRequests: 0, verifyBodies: [] as unknown[], requestStatus: 200, verifyStatus: 200 };
+    const cors = (route: Route) => ({
+      'access-control-allow-origin': route.request().headers().origin ?? '*',
+      'access-control-allow-credentials': 'true',
+      'access-control-allow-headers': 'content-type, x-xsrf-token, authorization',
+      'access-control-allow-methods': 'GET, POST, OPTIONS',
+    });
+    const webRoute = (body: unknown) => (route: Route) => (
+      route.request().method() === 'OPTIONS'
+        ? route.fulfill({ status: 204, headers: cors(route) })
+        : route.fulfill({ status: 200, headers: cors(route), contentType: 'application/json', body: JSON.stringify(body) })
+    );
+    const user = () => ({ ...identityUser('USER'), emailVerifiedAt: state.verified ? '2026-10-27T00:00:00Z' : null });
+    await page.addInitScript(() => localStorage.setItem('weav_lang_v1', 'EN'));
+    await page.route('**/api/auth/register', (route) => json(route, user(), 201));
+    await page.route('**/auth/web/csrf', webRoute({ csrfToken: 'C'.repeat(43) }));
+    await page.route('**/auth/web/login', webRoute({ outcome: 'LOGIN', accessToken: 'token-a', tokenType: 'Bearer', expiresIn: 900, user: user() }));
+    await page.route('**/api/auth/me', (route) => json(route, user()));
+    await page.route('**/api/auth/logout', (route) => route.fulfill({ status: 204, body: '' }));
+    await page.route('**/api/auth/otp/request', async (route) => {
+      state.otpRequests += 1;
+      if (state.requestStatus === 429) {
+        await route.fulfill({ status: 429, headers: { 'retry-after': '45' }, contentType: 'application/json', body: JSON.stringify({ error: { code: 'OTP_RATE_LIMITED', message: 'slow down', details: [] } }) });
+        return;
+      }
+      await json(route, { challengeId: CHALLENGE_ID, expiresIn: 300, retryAfter: 30 });
+    });
+    await page.route('**/api/auth/otp/verify', async (route) => {
+      state.verifyBodies.push(route.request().postDataJSON());
+      if (state.verifyStatus === 400) {
+        await json(route, { error: { code: 'BAD_REQUEST', message: 'OTP challenge is invalid', details: [] } }, 400);
+        return;
+      }
+      state.verified = true;
+      await json(route, { purpose: 'EMAIL_VERIFICATION', verified: true });
+    });
+    await page.route('**/api/v2/notifications**', (route) => (
+      new URL(route.request().url()).pathname.endsWith('/unread-count') ? json(route, { count: 0 }) : json(route, { items: [], nextCursor: null })
+    ));
+    return state;
+  }
+
+  async function fillSignUp(page: Page) {
+    await page.goto('/register');
+    await page.getByLabel('Full name').fill('New User');
+    await page.getByLabel('Email').fill('a@example.com');
+    await page.getByLabel('Password').fill('abcdefgh1');
+    await page.getByRole('button', { name: /create account/i }).click();
+  }
+
+  test('sign-up sends a verification code on its own, then the code leads to the dashboard', async ({ page }) => {
+    const state = await stubSignUp(page);
+    await fillSignUp(page);
+    await expect(page).toHaveURL(/\/verify-email$/);
+    await expect(page.getByRole('status').filter({ hasText: 'Verification code sent' })).toBeVisible();
+    expect(state.otpRequests).toBe(1);
+
+    const code = page.getByLabel('6-digit code');
+    await expect(code).toHaveAttribute('autocomplete', 'one-time-code');
+    await code.fill('123456');
+    await page.getByRole('button', { name: 'Verify', exact: true }).click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    expect(state.verifyBodies).toEqual([{ challengeId: CHALLENGE_ID, code: '123456' }]);
+  });
+
+  test('"Later" on the verification step goes to the dashboard without verifying', async ({ page }) => {
+    const state = await stubSignUp(page);
+    await fillSignUp(page);
+    await expect(page).toHaveURL(/\/verify-email$/);
+    await page.getByRole('button', { name: 'Later' }).click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    expect(state.verifyBodies).toEqual([]);
+  });
+
+  test('reloading the verification step reuses the live code instead of requesting a new one', async ({ page }) => {
+    const state = await stubSignUp(page);
+    await fillSignUp(page);
+    await expect(page.getByLabel('6-digit code')).toBeVisible();
+    expect(state.otpRequests).toBe(1);
+    await page.reload();
+    await expect(page.getByLabel('6-digit code')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Resend code \(\d+s\)$/ })).toBeDisabled();
+    expect(state.otpRequests).toBe(1);
+  });
+
+  test('a rate-limited code request still lets the user wait, with a cooldown, and shows the error', async ({ page }) => {
+    const state = await stubSignUp(page);
+    state.requestStatus = 429;
+    await fillSignUp(page);
+    await expect(page).toHaveURL(/\/verify-email$/);
+    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Send code \(\d+s\)$/ })).toBeDisabled();
+    expect(state.otpRequests).toBe(1);
+  });
+
+  test('Enter submits the code', async ({ page }) => {
+    const state = await stubSignUp(page);
+    await fillSignUp(page);
+    const code = page.getByLabel('6-digit code');
+    await expect(code).toBeFocused();
+    await code.fill('654321');
+    await code.press('Enter');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    expect(state.verifyBodies).toEqual([{ challengeId: CHALLENGE_ID, code: '654321' }]);
+  });
+
+  test('a wrong code shows the specific message and stays on the step', async ({ page }) => {
+    const state = await stubSignUp(page);
+    state.verifyStatus = 400;
+    await fillSignUp(page);
+    await page.getByLabel('6-digit code').fill('000000');
+    await page.getByRole('button', { name: 'Verify', exact: true }).click();
+    await expect(page.getByRole('alert')).toHaveText('The code is wrong or expired.');
+    await expect(page).toHaveURL(/\/verify-email$/);
+  });
+
+  test('a verified user opening the verification step goes straight to the dashboard', async ({ page }) => {
+    const state = await stubSignUp(page);
+    state.verified = true;
+    await page.addInitScript(() => localStorage.setItem('weav_token', 'token-a'));
+    await page.goto('/verify-email');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    expect(state.otpRequests).toBe(0);
+  });
+
   test('register blocks a short password before any request', async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem('weav_lang_v1', 'EN'));
     let requests = 0;
