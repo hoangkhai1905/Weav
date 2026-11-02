@@ -1,6 +1,6 @@
 # Week 4 node contracts (frontend handover)
 
-Source of truth: `packages/workflow-schema/nodes/*.json`, `docs/work_logs/K/workflow/attachments.md` and `node-polish.md`, spec `docs/superpowers/specs/2026-10-06-email-attachments-design.md`. All changes are additive: every old config stays valid.
+Source of truth: `packages/workflow-schema/nodes/*.json`, `docs/work_logs/K/workflow/2026-W41/attachments.md` and `node-polish.md`, spec `docs/superpowers/specs/2026-10-06-email-attachments-design.md`. All changes are additive: every old config stays valid.
 
 ## Rules that apply to every node below
 

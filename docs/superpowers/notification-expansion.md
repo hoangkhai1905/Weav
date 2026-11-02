@@ -6,7 +6,7 @@ Trạng thái: **đã implement phần lớn, đang paused để local test; ch�
 
 Tài liệu này hợp nhất thiết kế, kế hoạch triển khai, rollout và đề xuất deferred
 của chuỗi notification expansion. Bằng chứng chi tiết theo từng milestone và
-runtime handoff nằm trong [work log tổng hợp](../work_logs/T/2026-09-29-notification-local-test-handoff.md).
+runtime handoff nằm trong [work log tổng hợp](../work_logs/T/notification/2026-W40/notification-local-test-handoff.md).
 
 ## Quyết định sản phẩm
 

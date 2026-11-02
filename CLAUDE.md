@@ -120,7 +120,7 @@ Refactoring is allowed when it clearly improves correctness, maintainability, or
 
 ## Work logs
 
-- One log per feature or area, updated in place: `docs/work_logs/<member>/<area>/<feature>.md` (member folders `K/` and `T/`), using `docs/work_logs/log_template.md`. Do not create a new file for every session; extend the feature's existing log.
+- One log per feature or area, updated in place: `docs/work_logs/<member>/<area>/<feature>.md` (member folders `K/` and `T/`), using `docs/work_logs/log_template.md`. Do not create a new file for every session; extend the feature's existing log. Logs not updated for about 5 days move to `<member>/<area>/<YYYY>-W<ww>/`, the ISO week they started; `docs/work_logs/README.md` indexes them all.
 - Record decisions, changed files, commands with one-line results, runtime/browser evidence, risks, blockers, and next steps. Keep it short and reproducible, mark what is done, in progress, or blocked, and redact all secrets.
 
 ## Git and collaboration
