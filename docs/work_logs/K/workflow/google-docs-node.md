@@ -5,7 +5,7 @@
 | Nhánh | `feature/google-docs-node` (từ `dev` `397443b2`) |
 | Spec | `docs/superpowers/specs/2026-11-02-google-docs-node-design.md` |
 | Người thực hiện | K (Claude, các task giao cho subagent Sonnet/Haiku, mỗi task có review riêng) |
-| Trạng thái | Code và live check xong; chờ review toàn nhánh, chưa merge |
+| Trạng thái | Xong: review toàn nhánh + vòng sửa đã qua, live check đạt; chưa merge |
 
 ## Quyết định
 
@@ -35,6 +35,8 @@
 - Live (stack local, kết nối "QA Drive" của workspace QA WS One, 2026-11-02):
   - Lượt `39ab2fa3`: `trigger.manual → google.docs create` thành công (6.2 s), trả `documentId`, `title`, `url`.
   - Lượt `ed1aafc8`: create rồi append vào Doc vừa tạo qua `{{ nodes.docs_1.output.documentId }}`, `appendedCharacters: 28` (tiếng Việt + emoji).
+  - Lượt `0df1af55` (sau bản sửa): append với link dán vào `https://docs.google.com/document/d/<id>/edit?usp=sharing` thành công;
+    output `documentId`/`url` dùng ID trần. Review lại vòng sửa: cả 5 điểm đã xử lý, không có lỗi mới.
   - Log workflow-service 15 phút: 0 dòng chứa `Bearer`/`ya29.`.
 - Môi trường: cổng 8081 bị container `orderworder-mongo-ui` của dự án khác chiếm, nên identity chạy ở cổng host 18081 bằng file override ngoài repo
   (Google sign-in local không dùng được trong lúc đó; đăng nhập bằng mật khẩu). Đã xóa network rỗng `weav-prod_edge` còn sót từ buổi tập prod
