@@ -1,6 +1,6 @@
 # Workflow Service
 
-> Status: V1 core (drafts, publish, versions, manual/webhook/schedule runs, monitoring, notification events, AI generation endpoint) Implemented; workflow delete and Agent Runtime Planned or fail-closed. The Telegram trigger and `telegram.send_message` node are Implemented (2026-10-04, see `docs/work_logs/K/workflow/telegram-nodes.md`). Owner: K. Last verified: 2026-09-30 against `dev`.
+> Status: V1 core (drafts, publish, versions, manual/webhook/schedule runs, monitoring, notification events, AI generation endpoint) Implemented; workflow delete and Agent Runtime Planned or fail-closed. The Telegram trigger and `telegram.send_message` node are Implemented (2026-10-04, see `docs/work_logs/K/workflow/2026-W40/telegram-nodes.md`). Owner: K. Last verified: 2026-09-30 against `dev`.
 
 ## Purpose and scope
 

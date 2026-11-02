@@ -167,4 +167,4 @@ Mock mode in detail: `isAuthMockMode`, `isWorkflowMockMode`, `isWorkspaceMockMod
 - Router: [App.tsx](../../../apps/web/src/App.tsx); API layer: [api/](../../../apps/web/src/api); mock seed: [api/client.ts](../../../apps/web/src/api/client.ts)
 - Builder: [WorkflowBuilderPage.tsx](../../../apps/web/src/pages/WorkflowBuilderPage.tsx), [nodeCatalog.ts](../../../apps/web/src/lib/constants/nodeCatalog.ts), [nodeReadiness.ts](../../../apps/web/src/lib/nodeReadiness.ts)
 - E2E: [e2e/](../../../apps/web/e2e)
-- Docs: [README](../../../apps/web/README.md), [FRONTEND_GUIDE](../../development/FRONTEND_GUIDE.md), [AI Service V1 design](../../superpowers/specs/2026-09-25-ai-service-v1-design.md), [web Google connections design](../../superpowers/specs/2026-09-24-web-workspace-google-connections-design.md), [rulebook](../../rulebook.md), [specs index](../README.md)
+- Docs: [README](../../../apps/web/README.md), [AI Service V1 design](../../superpowers/specs/2026-09-25-ai-service-v1-design.md), [web Google connections design](../../superpowers/specs/2026-09-24-web-workspace-google-connections-design.md), [rulebook](../../rulebook.md), [specs index](../README.md)

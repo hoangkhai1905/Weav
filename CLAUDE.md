@@ -66,7 +66,7 @@ Weav is a graduation-thesis platform for automating and monitoring work processe
 - Package manager: `pnpm@11.22.0` (from `package.json`). In a fresh checkout or worktree, run `pnpm install --frozen-lockfile` first.
 - Dev stack: `docker compose -f compose.yml -f compose.dev.yml --profile app up -d --build [services]`. Overlays: `compose.ai-local.yml` (fake AI provider), `compose.workflow-smoke.yml`, `compose.*ocr*.dev.yml`.
 - Database: Neon PostgreSQL, project `Weav`, branch `production`. One database per service (`identity-db`, `workspace_db`, `workflow_db`, `notification_db`); each service uses the schema named by its `DB_SCHEMA`.
-- Docs: specs and plans in `docs/superpowers/`, architecture/API/decisions under `docs/`, work logs under `docs/work_logs/`.
+- Docs: feature design specs in `docs/superpowers/specs/` (old plans: git tag `archive/plans-2026-11-02`), architecture/API/decisions under `docs/`, work logs under `docs/work_logs/` (index in its `README.md`).
 
 ## Boundaries
 
@@ -120,7 +120,7 @@ Refactoring is allowed when it clearly improves correctness, maintainability, or
 
 ## Work logs
 
-- One log per feature or area, updated in place: `docs/work_logs/<member>/<area>/<feature>.md` (member folders `K/` and `T/`), using `docs/work_logs/log_template.md`. Do not create a new file for every session; extend the feature's existing log.
+- One log per feature or area, updated in place: `docs/work_logs/<member>/<area>/<feature>.md` (member folders `K/` and `T/`), using `docs/work_logs/log_template.md`. Do not create a new file for every session; extend the feature's existing log. Logs not updated for about 5 days move to `<member>/<area>/<YYYY>-W<ww>/`, the ISO week they started; `docs/work_logs/README.md` indexes them all.
 - Record decisions, changed files, commands with one-line results, runtime/browser evidence, risks, blockers, and next steps. Keep it short and reproducible, mark what is done, in progress, or blocked, and redact all secrets.
 
 ## Git and collaboration

@@ -1,7 +1,5 @@
 # WEAV Web Application (`apps/web`)
 
-> 📖 **Hướng dẫn Lập trình Frontend & Agent Skills**: Xem chi tiết tại [FRONTEND_GUIDE.md](../../docs/development/FRONTEND_GUIDE.md).
-
 React + TypeScript + Vite web application for WEAV platform.
 
 ## Notification API

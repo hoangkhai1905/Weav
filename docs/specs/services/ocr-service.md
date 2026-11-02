@@ -156,6 +156,6 @@ Overlays: [compose.ocr-models.dev.yml](../../../compose.ocr-models.dev.yml) (loc
 - Code: [services/ocr-service](../../../services/ocr-service), [pyproject.toml](../../../services/ocr-service/pyproject.toml), [Dockerfile.dev](../../../services/ocr-service/Dockerfile.dev)
 - Contract: [packages/contracts/http/ocr](../../../packages/contracts/http/ocr)
 - Docs: [OCR benchmark](../../development/OCR_BENCHMARK.md), [production design](../../superpowers/specs/2026-09-06-ocr-service-production-design.md)
-- Plans: [production](../../superpowers/plans/2026-09-06-ocr-service-production.md), [builder/gateway](../../superpowers/plans/2026-09-07-ocr-builder-gateway-integration.md), [backend runtime](../../superpowers/plans/2026-09-08-ocr-backend-runtime.md)
+- Plans (in git tag `archive/plans-2026-11-02`, read with `git show archive/plans-2026-11-02:docs/superpowers/plans/<file>`): `2026-09-06-ocr-service-production.md`, `2026-09-07-ocr-builder-gateway-integration.md`, `2026-09-08-ocr-backend-runtime.md`
 - Compose: [compose.dev.yml](../../../compose.dev.yml), [compose.ocr-models.dev.yml](../../../compose.ocr-models.dev.yml), [compose.colab-ocr.dev.yml](../../../compose.colab-ocr.dev.yml)
 - Rules: [rulebook](../../rulebook.md), [specs index](../README.md)

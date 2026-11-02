@@ -400,7 +400,7 @@ automatically.
 run `!tail -n 100 /content/ocr-service.log` in a notebook cell before
 restarting; it shows crashes, out-of-memory kills, and model-load errors.
 Review it before pasting it anywhere. Known OCR-service issues found with this
-setup are in `docs/handoffs/2026-10-08-ocr-service-colab-findings.md`.
+setup are in `docs/handoff/2026-10-08-ocr-service-colab-findings.md`.
 
 For direct Maven startup, inject the same names into the process environment through the local shell or secret manager before starting `services/identity-service`; do not pass secret values on the command line or commit `.env`.
 
