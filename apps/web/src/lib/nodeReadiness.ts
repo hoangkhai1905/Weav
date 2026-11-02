@@ -39,6 +39,8 @@ const CONNECTION_NODE_FIELDS: Record<string, (config: Record<string, unknown>) =
     ...(config.operation === 'upload' && isBlank(config.file) ? ['name'] : []),
     // Download needs the id of the Drive file to fetch.
     ...(config.operation === 'download' ? ['fileId'] : [])],
+  // create needs a title; append needs the Doc and the text to add (the executor rejects blank content for append).
+  'google.docs': (config) => (config.operation === 'append' ? ['documentId', 'content'] : ['title']),
   'google.calendar': (config) => (isBlank(config.operation) || config.operation === 'create' ? ['summary', 'start', 'end'] : []),
 };
 
@@ -94,6 +96,7 @@ export const isConditionComplete = (config: Record<string, unknown>): boolean =>
 const RULE_OWNED_FIELDS: Record<string, string[]> = {
   'email.send': ['subject', 'body'],
   'google.drive': ['name', 'fileId'],
+  'google.docs': ['title', 'documentId', 'content'],
   'google.calendar': ['summary', 'start', 'end'],
   'format.datetime': ['value', 'amount', 'unit', 'pattern', 'timezone'],
   'format.text': ['value', 'search', 'maxLength'],

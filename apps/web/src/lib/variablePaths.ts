@@ -56,7 +56,7 @@ const FEATURED_PATHS = new Set([
   'trigger.telegram:message.text', 'trigger.telegram:message.from.firstName',
   'trigger.gmail:subject', 'trigger.gmail:body', 'trigger.gmail:fromName',
   'ocr.extract:text.rawText', 'ai.summarize:summary', 'ai.classify:category', 'ai.generate:text',
-  'google.drive:webViewLink',
+  'google.drive:webViewLink', 'google.docs:url',
 ]);
 
 /**

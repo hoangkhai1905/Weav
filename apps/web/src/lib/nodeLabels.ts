@@ -11,6 +11,7 @@ export const NODE_NAME_KEYS: Record<string, string> = {
   'email.send': 'builder.node.email',
   'google.sheets': 'builder.node.google_sheets',
   'google.drive': 'builder.node.google_drive',
+  'google.docs': 'builder.node.google_docs',
   'google.calendar': 'builder.node.google_calendar',
   'telegram.send_message': 'builder.node.telegram_send',
   'logic.condition': 'builder.node.condition',
