@@ -1,6 +1,6 @@
 # Design: asymmetric access-token signing (ID-6 / GW-3 / WS-15 / X-8)
 
-Status: proposed, not implemented. Source: `docs/reviews/2026-10-01-backend-review.md` (ID-6 section and 5.4 item 1). Related: X-7 (service JWTs for workflow to workspace, verified against a JWKS file) is independent and can ship first or in parallel.
+Status: implemented 2026-10-03 as an option (HS256 stays the default; RS256 publishes a JWKS). Log: `docs/work_logs/K/identity/2026-W40/rs256-access-tokens.md`. Source: `docs/reviews/2026-10-01-backend-review.md` (ID-6 section and 5.4 item 1). Related: X-7 (service JWTs for workflow to workspace, verified against a JWKS file) is independent and can ship first or in parallel.
 
 ## 1. Problem
 

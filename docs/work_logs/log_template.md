@@ -4,7 +4,7 @@
 
 ## Cách dùng
 
-- Tạo một file mới trong `docs/work_logs/` cho mỗi ngày theo tên `YYYY-MM-DD.md`. Nếu một ngày có nhiều session, giữ chung một file và thêm một mục `Session` mới. Nếu việc nhiều thì có thể tạo file mới và thêm tóm tắt việc đã làm ở sau ngày.
+- Mỗi tính năng hoặc khu vực có một file `docs/work_logs/<K|T>/<area>/<feature>.md`, cập nhật tại chỗ; mỗi session thêm một mục `Session` mới. Log không cập nhật khoảng 5 ngày được chuyển vào `<area>/<YYYY>-W<ww>/` (xem `README.md`).
 - Ghi thông tin có thể kiểm chứng: file, endpoint, lệnh, kết quả, ticket/PR và quyết định. Phân biệt rõ `đã hoàn thành`, `đã kiểm tra`, `đang làm`, `chưa làm`.
 - Không ghi mật khẩu, connection string có token, JWT secret, API key, cookie, dữ liệu cá nhân nhạy cảm hoặc nội dung `.env`. Chỉ ghi tên biến môi trường, loại cấu hình và nơi quản lý secret.
 - Cập nhật log ngay sau một thay đổi đáng kể hoặc trước khi bàn giao. Người tiếp nhận phải đọc phần `Trạng thái bàn giao` và `Việc tiếp theo` trước khi sửa code.

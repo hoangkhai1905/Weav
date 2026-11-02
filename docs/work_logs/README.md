@@ -24,6 +24,7 @@ One log per feature, written by K or T (see `log_template.md`). Each member has 
 
 ### K/docs
 
+- active: [docs-cleanup.md](K/docs/docs-cleanup.md): Nhật ký: dọn thư mục docs (2026-11-02)
 - 2026-W40: [rulebook-and-specs.md](K/docs/2026-W40/rulebook-and-specs.md): Work log: Rulebook and component specs
 
 ### K/gateway

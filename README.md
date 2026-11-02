@@ -13,4 +13,4 @@ AI-powered workflow automation and process monitoring platform.
 - `examples/` — sample workflows
 - `scripts/` — development/build/test/database scripts
 
-See `docs/architecture/repository-structure.md` for the planned repository layout.
+See [docs/README.md](docs/README.md) for the documentation map and [docs/architecture/overview.md](docs/architecture/overview.md) for the system architecture.

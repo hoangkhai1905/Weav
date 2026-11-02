@@ -137,4 +137,3 @@ The code is followed in each case. Keep these in mind when writing the thesis re
 | Workflow engine | Early intro: NestJS | Spring Boot |
 | Use-case count | "32 use cases" | 28 listed and used |
 | Triggers | §1.2.2: Manual, Webhook, Telegram | §3.2.3 and code also have Schedule (`trigger.schedule`) |
-| Repository layout | [repository-structure.md](architecture/repository-structure.md) lists `auth-service`, `docker-compose*.yml` | `identity-service`, `workspace-service`, `notification-service`; `compose*.yml` |
