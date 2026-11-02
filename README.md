@@ -78,11 +78,3 @@ The full guide, including Google OAuth, the AI provider and OCR, is [docs/develo
 
 CI runs on every push and pull request. When CI passes on `main`, images are published to GHCR and the demo VM deploys
 them within a few minutes ([runbook](docs/deployment/demo-runbook.md)).
-
-## Documentation
-
-- [Architecture overview](docs/architecture/overview.md) and [rulebook](docs/rulebook.md)
-- [Component specs](docs/specs/README.md), one per service and app
-- [Demo runbook](docs/deployment/demo-runbook.md)
-- [Work logs](docs/work_logs/README.md)
-- How we work (branches, tests, logs, commits): [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md)
