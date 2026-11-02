@@ -42,6 +42,9 @@
 
 ## Rủi ro và việc tiếp
 
-- Gợi ý ô "Tài liệu" ở append bảo dán link Doc nhưng executor chỉ nhận ID: sửa trong vòng review cuối (nhận cả link).
+- Đã sửa (review cuối): ô "Tài liệu" ở append nhận cả ID lẫn link Doc (`docs.google.com/document/d/<id>/...`, kể cả `/u/0/`), executor rút ra ID; link khác host/http/sheets/ID ngắn vẫn là CONFIGURATION_ERROR. Gợi ý ô Thư mục nay nói dùng ID thư mục (không dán link); gợi ý chung chỉ hiện khi thao tác là append.
+- Bản nháp lưu theo dạng W39 cũ (`contentVariable`) giờ không qua validate và phải cấu hình lại.
+- Append retry sau timeout/5xx có thể thêm chữ hai lần (create thì tạo trùng Doc), giống Sheets append và Drive upload. `appendedCharacters` đếm UTF-16 code unit, không tính dấu xuống dòng đầu.
+- Nội dung append gồm nhiều ký tự điều khiển có thể vượt giới hạn request 1 MiB sau khi JSON escape dù chưa tới 512 KiB; khi đó lỗi không phải CONFIGURATION_ERROR.
 - Nội dung tối đa 512 KiB/lần; OCR dài hơn sẽ lỗi cấu hình. Chỉ Doc do Weav tạo mới append được.
 - Dữ liệu test: workflow "Docs live test" (`78d4e3c4`) và 3 Doc "Weav docs live test" trong Drive của tài khoản QA, có thể xóa.

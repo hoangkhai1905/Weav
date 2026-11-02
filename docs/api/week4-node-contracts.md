@@ -61,9 +61,9 @@ Neither `content` nor `file` still uploads an empty file (backward compatible). 
 | `title` | string (template) | create, required; one line |
 | `content` | string (template), max 512 KiB UTF-8 | create optional; append required |
 | `folderId` | string (template) | create; only folders Weav created or opened |
-| `documentId` | string (template), `^[A-Za-z0-9_-]{10,200}$` | append, required |
+| `documentId` | string (template), the Doc ID `^[A-Za-z0-9_-]{10,200}$` or its Google Docs link (reduced to the ID) | append, required |
 
-Create output: `{documentId, title, url}`. Append output: `{documentId, url, appendedCharacters}`; the text starts a new paragraph at the end of the Doc. Google Drive `drive.file` scope: only Docs Weav created are reachable; others return `HTTP_BUSINESS_REJECTED`. Bad config returns `CONFIGURATION_ERROR` before any request.
+Create output: `{documentId, title, url}`. Append output: `{documentId, url, appendedCharacters}`; the text starts a new paragraph at the end of the Doc. Google Drive `drive.file` scope: only Docs Weav created are reachable; others return `HTTP_BUSINESS_REJECTED`. Bad config returns `CONFIGURATION_ERROR` before any request. Limits: a retried append or create after a timeout or 5xx may duplicate text or a Doc (same as Sheets append and Drive upload); `appendedCharacters` counts UTF-16 code units and excludes the leading newline.
 
 ## google.sheets
 

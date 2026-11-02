@@ -31,7 +31,7 @@ Schema `packages/workflow-schema/nodes/google.docs.json`, category `action`, `si
 | `title` | string, template | create (required) | One line, at most the Drive node's name limit |
 | `content` | string, template | create (optional), append (required) | At most 512 KiB UTF-8, same as the Drive upload |
 | `folderId` | string, template, advanced | create | Only folders Weav created or opened (`drive.file`) |
-| `documentId` | string, template, personal | append (required) | Must match `^[A-Za-z0-9_-]{10,200}$` |
+| `documentId` | string, template, personal | append (required) | The Doc ID (`^[A-Za-z0-9_-]{10,200}$`) or its `https://docs.google.com/document/d/<id>/...` link; the link is reduced to the ID (output `documentId` and `url` use the bare ID) |
 
 Outputs:
 
@@ -78,6 +78,8 @@ Reuse the Google mapping: 401 → `AUTHENTICATION_REJECTED` (reported to Workspa
 `HTTP_RATE_LIMITED` (retryable), 403/404/other 4xx → `HTTP_BUSINESS_REJECTED`, 408/5xx → `HTTP_DEPENDENCY_UNAVAILABLE`.
 Bad config (missing field, bad `documentId`, content over 512 KiB) → `CONFIGURATION_ERROR` before any request.
 The access token never appears in output or logs.
+
+Known limits: a retried append or create after a timeout or 5xx may duplicate text or a Doc (same as Sheets append and Drive upload); `appendedCharacters` counts UTF-16 code units and excludes the leading newline.
 
 ## Testing
 
