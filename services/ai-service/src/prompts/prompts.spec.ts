@@ -7,6 +7,15 @@ describe('GENERATE_SYSTEM', () => {
     expect(GENERATE_SYSTEM).toContain('"status":"ready"');
   });
 
+  it('lists google.docs outputs', () => {
+    expect(GENERATE_SYSTEM).toContain(
+      'google.docs create -> {documentId, title, url}',
+    );
+    expect(GENERATE_SYSTEM).toContain(
+      'google.docs append -> {documentId, url, appendedCharacters}',
+    );
+  });
+
   it.each([
     'google.sheets lookup -> {range, rows:[{row, values}], count, truncated}',
     'google.calendar list -> {events:',

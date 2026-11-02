@@ -241,6 +241,16 @@ public final class DefinitionValidator {
             add(issues, node.id(), "config.fileId", "REQUIRED_FIELD_MISSING",
                     "A required configuration field is missing.");
         }
+        if ("google.docs".equals(node.type())) {
+            List<String> required = "create".equals(config.get("operation")) ? List.of("title")
+                    : "append".equals(config.get("operation")) ? List.of("documentId", "content") : List.of();
+            for (String field : required) {
+                if (!(config.get(field) instanceof String value && !value.isBlank())) {
+                    add(issues, node.id(), "config." + field, "REQUIRED_FIELD_MISSING",
+                            "A required configuration field is missing.");
+                }
+            }
+        }
         if ("ocr.extract".equals(node.type())) {
             boolean hasNonblankSource = config.get("artifactId") instanceof String artifactId && !artifactId.isBlank()
                     || config.get("fileUrl") instanceof String fileUrl && !fileUrl.isBlank()

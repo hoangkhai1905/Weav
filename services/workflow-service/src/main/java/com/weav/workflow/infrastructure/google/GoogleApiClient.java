@@ -14,11 +14,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-/** Bounded client for the fixed Google Calendar and Drive endpoints on www.googleapis.com. */
+/** Bounded client for the fixed Google Calendar, Drive and Docs endpoints. */
 @Component
 public class GoogleApiClient {
 
     private static final String BASE_URL = "https://www.googleapis.com";
+    private static final String DOCS_BASE_URL = "https://docs.googleapis.com";
     private static final int MAX_PATH_PARAMETER_LENGTH = 1024;
     private static final int MAX_ACCESS_TOKEN_LENGTH = 16 * 1024;
     private static final Set<String> ACCESS_TOKEN_FIELDS = Set.of("accessToken");
@@ -100,6 +101,23 @@ public class GoogleApiClient {
         successfulObject(response == null ? null
                 : new PinnedHttpTransport.HttpResponse(response.status(), null, response.headers()), service);
         throw invalidResponse(service);
+    }
+
+    /** Sends one Docs {@code batchUpdate} to a document and returns the JSON object response. */
+    public Map<String, Object> docsBatchUpdate(
+            ResolvedConnection connection,
+            String provider,
+            String service,
+            String documentId,
+            Map<String, Object> body) {
+        String accessToken = accessToken(connection, provider, service);
+        URI target;
+        try {
+            target = URI.create(DOCS_BASE_URL + "/v1/documents/" + encodePathSegment(documentId, service) + ":batchUpdate");
+        } catch (IllegalArgumentException exception) {
+            throw configurationFailure(service);
+        }
+        return successfulObject(transport.executeGoogleDocsWithBearerToken(target, body, accessToken), service);
     }
 
     /** Percent-encodes one path segment (UTF-8, space as %20). */

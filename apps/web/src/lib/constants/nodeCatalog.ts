@@ -278,6 +278,16 @@ export const NODE_CATALOG: NodeCatalogItem[] = [
     outputs: [], // depends on the operation: see nodeOutputPaths
   },
   {
+    type: 'google.docs',
+    title: 'Google Docs',
+    description: 'Create a Google Doc, or append text to a Doc created by Weav.',
+    category: 'action',
+    iconName: 'FileText',
+    defaultConfig: { operation: 'create' },
+    inputs: [{ name: 'data', type: 'any' }],
+    outputs: [], // depends on the operation: see nodeOutputPaths
+  },
+  {
     type: 'google.calendar',
     title: 'Google Calendar',
     description: 'Create or list Google Calendar events.',
@@ -361,6 +371,10 @@ export const OUTPUTS_BY_OPERATION: Record<string, Record<string, string[]>> = {
     // `file` is the whole downloaded file, usable as the file source of a later step (for example OCR).
     download: ['file', 'file.fileId', 'file.filename', 'file.mimeType', 'file.size'],
   },
+  'google.docs': {
+    create: ['documentId', 'title', 'url'],
+    append: ['documentId', 'url', 'appendedCharacters'],
+  },
   'google.calendar': {
     create: ['eventId', 'htmlLink', 'status', 'start', 'end'],
     list: ['events', 'count', 'truncated', 'events[0].id', 'events[0].summary', 'events[0].start', 'events[0].end', 'events[0].htmlLink'],
@@ -374,7 +388,7 @@ OUTPUTS_BY_OPERATION['weav.workflow'] = {
   list_failures: ['items', 'items[0].workflowId', 'items[0].workflowName', 'items[0].executionId', 'items[0].finishedAt', 'items[0].errorCode', 'items[0].errorMessage'],
   command: ['reply', 'ok'],
 };
-const DEFAULT_OPERATION: Record<string, string> = { 'google.sheets': 'read', 'google.drive': 'upload', 'google.calendar': 'create' };
+const DEFAULT_OPERATION: Record<string, string> = { 'google.sheets': 'read', 'google.drive': 'upload', 'google.docs': 'create', 'google.calendar': 'create' };
 
 /**
  * Paths a later step can read under `nodes.<id>.output.` (steps) or `trigger.input.` (triggers), taken
@@ -411,6 +425,7 @@ const NODE_ID_PREFIX: Record<string, string> = {
   'email.send': 'send_email',
   'google.sheets': 'sheets',
   'google.drive': 'drive',
+  'google.docs': 'docs',
   'google.calendar': 'calendar',
   'telegram.send_message': 'telegram_send',
   'logic.condition': 'condition',

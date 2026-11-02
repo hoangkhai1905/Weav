@@ -158,6 +158,7 @@ const PALETTE_PRESENTATION: Record<
   'ocr.extract': { nameKey: 'builder.node.ocr', descKey: 'builder.node.ocr_desc', icon: Scan },
   'trigger.gmail': { nameKey: 'builder.node.gmail_trigger', descKey: 'builder.node.gmail_trigger_desc', icon: Inbox },
   'google.drive': { nameKey: 'builder.node.google_drive', descKey: 'builder.node.google_drive_desc', icon: HardDrive },
+  'google.docs': { nameKey: 'builder.node.google_docs', descKey: 'builder.node.google_docs_desc', icon: FileText },
   'google.calendar': { nameKey: 'builder.node.google_calendar', descKey: 'builder.node.google_calendar_desc', icon: CalendarDays },
   'logic.switch': { nameKey: 'builder.node.switch', descKey: 'builder.node.switch_desc', icon: Split },
   'data.set': { nameKey: 'builder.node.data_set', descKey: 'builder.node.data_set_desc', icon: Braces },
@@ -225,6 +226,7 @@ const CONNECTION_STEP_MESSAGES: Record<string, [string, string, string]> = {
   'trigger.telegram': ['builder.cfg.msg_tg_select', 'builder.cfg.msg_tg_auth', 'builder.cfg.msg_tg_select'],
   'trigger.gmail': ['builder.cfg.msg_gmail_select', 'builder.cfg.msg_gmail_auth', 'builder.cfg.msg_gmail_select'],
   'google.drive': ['builder.cfg.msg_drive_select', 'builder.cfg.msg_drive_auth', 'builder.cfg.msg_drive_fields'],
+  'google.docs': ['builder.cfg.msg_docs_select', 'builder.cfg.msg_docs_auth', 'builder.cfg.msg_docs_fields'],
   'discord.send_message': ['builder.cfg.msg_discord_select', 'builder.cfg.msg_discord_auth', 'builder.cfg.msg_discord_fields'],
   'slack.send_message': ['builder.cfg.msg_slack_select', 'builder.cfg.msg_slack_auth', 'builder.cfg.msg_slack_fields'],
   'teams.send_message': ['builder.cfg.msg_teams_select', 'builder.cfg.msg_teams_auth', 'builder.cfg.msg_teams_fields'],
@@ -282,6 +284,11 @@ const SCHEMA_FORMS: Record<string, { provider?: SchemaProvider; fields: (config:
       : config.operation === 'download' ? ['fileId'] : ['file', 'content', 'name', 'mimeType', 'folderId'])],
     multiline: ['content'],
   },
+  'google.docs': {
+    provider: 'GOOGLE_DRIVE',
+    fields: (config) => ['operation', ...(config.operation === 'append' ? ['documentId', 'content'] : ['title', 'content', 'folderId'])],
+    multiline: ['content'],
+  },
   'google.calendar': {
     provider: 'GOOGLE_CALENDAR',
     fields: (config) => ['operation', 'calendarId', ...(config.operation === 'list'
@@ -297,6 +304,7 @@ const SUGGEST_FIELDS: Record<string, string[]> = {
   'ai.generate': ['prompt'],
   'google.calendar': ['summary', 'description'],
   'google.drive': ['content'],
+  'google.docs': ['content'],
 };
 
 const getNodeReadinessMessage = (
@@ -560,7 +568,6 @@ export const WorkflowBuilderPage: React.FC = () => {
   const selectedMissingFields = selectedNode ? missingFieldLabels(selectedNodeType, selectedNodeConfig, t) : [];
   const isUnsupportedNode = Boolean(selectedNodeType) && !SUPPORTED_NODE_TYPES.has(selectedNodeType);
   const isGoogleSheetsNode = selectedNodeType === 'google.sheets';
-  const isGoogleDocsNode = selectedNodeType === 'google.docs';
   const isGoogleNode = isGoogleSheetsNode;
   const googleOperation = String(selectedNodeConfig.operation ?? 'read');
   // Sheets writes edit the first row of `values` cell by cell; any further rows are kept as they are.
@@ -2280,6 +2287,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                   })()}
                   {selectedNodeType === 'trigger.telegram' && <p data-testid="telegram-trigger-hint" className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.telegram_trigger_hint')}</p>}
                   {selectedNodeType === 'google.drive' && <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.drive_hint')}</p>}
+                  {selectedNodeType === 'google.docs' && selectedNodeConfig.operation === 'append' && <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.docs_hint')}</p>}
                   {selectedNodeType === 'trigger.gmail' && (
                     // Builds the Gmail search for people who do not know its syntax; "from:"/"subject:" wait for the value.
                     <div data-testid="gmail-quick-filters" className="flex flex-wrap items-center gap-1">
@@ -3053,51 +3061,6 @@ export const WorkflowBuilderPage: React.FC = () => {
                         </fieldset>
                       )}
                     </>
-                  )}
-
-                  {isGoogleDocsNode && googleOperation === 'create' && (
-                    <div>
-                      {handField('title', 'google-document-title', 'builder.google.title_field', ({ id, describedBy }) => (
-                          <input
-                        id={id}
-                          aria-describedby={describedBy}
-                        type="text"
-                        value={String(selectedNodeConfig.title ?? '')}
-                        onChange={(event) => updateSelectedNodeConfig({ title: event.target.value })}
-                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-                      />
-                        ))}
-                    </div>
-                  )}
-
-                  {isGoogleDocsNode && googleOperation !== 'create' && (
-                    <div>
-                      {handField('documentId', 'google-document-id', 'builder.google.document_id', ({ id, describedBy }) => (
-                          <input
-                        id={id}
-                          aria-describedby={describedBy}
-                        type="text"
-                        value={String(selectedNodeConfig.documentId ?? '')}
-                        onChange={(event) => updateSelectedNodeConfig({ documentId: event.target.value })}
-                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-                      />
-                        ))}
-                    </div>
-                  )}
-
-                  {isGoogleDocsNode && (googleOperation === 'create' || googleOperation === 'append') && (
-                    <div>
-                      {handField('contentVariable', 'google-content-variable', 'builder.google.content_variable', ({ id, describedBy }) => (
-                          <input
-                        id={id}
-                          aria-describedby={describedBy}
-                        type="text"
-                        value={String(selectedNodeConfig.contentVariable ?? '')}
-                        onChange={(event) => updateSelectedNodeConfig({ contentVariable: event.target.value })}
-                        className="w-full rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-mono text-xs text-foreground outline-none transition-colors hover:border-muted-foreground focus:border-ring focus:ring-1 focus:ring-ring"
-                      />
-                        ))}
-                    </div>
                   )}
 
                   <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.google.id_hint')}</p>

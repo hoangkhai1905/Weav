@@ -35,7 +35,7 @@ class NodeConfigSchemasTest {
     private static final Set<String> TYPES = Set.of(
             "trigger.manual", "trigger.schedule", "trigger.webhook", "trigger.telegram", "http.request",
             "email.send", "google.sheets", "telegram.send_message", "logic.condition", "ai.extract",
-            "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive", "logic.switch",
+            "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive", "google.docs", "logic.switch",
             "data.set", "ai.generate", "trigger.gmail", "weav.workflow", "trigger.workflow_event",
             "discord.send_message", "format.datetime", "format.text", "slack.send_message", "teams.send_message");
 
@@ -53,6 +53,7 @@ class NodeConfigSchemasTest {
             Map.entry("ai.summarize", List.of("inputText")),
             Map.entry("google.calendar", List.of("connectionId")), // summary/start/end: required for create only
             Map.entry("google.drive", List.of("connectionId", "operation")),
+            Map.entry("google.docs", List.of("connectionId", "operation")),
             Map.entry("logic.switch", List.of("value", "cases")),
             Map.entry("data.set", List.of("fields")),
             Map.entry("ai.generate", List.of("prompt")),
@@ -66,7 +67,7 @@ class NodeConfigSchemasTest {
             Map.entry("teams.send_message", List.of("connectionId", "text")));
 
     @Test
-    void registryLoadsAllThirteenNodeTypes() {
+    void registryLoadsAllNodeTypes() {
         assertEquals(TYPES, NodeConfigSchemas.all().keySet());
         assertEquals(TYPES, NodeCatalog.supportedTypes());
         assertEquals(Set.of("buttonLabel"), NodeCatalog.configFields("trigger.manual"));
@@ -89,7 +90,8 @@ class NodeConfigSchemasTest {
             "ai.extract.text", "ai.classify.content", "ai.summarize.inputText",
             "ocr.extract.artifactId", "ocr.extract.fileUrl", "google.calendar.connectionId",
             "google.calendar.summary", "google.calendar.start", "google.calendar.end",
-            "google.drive.connectionId", "google.drive.operation", "ai.generate.prompt", "trigger.gmail.connectionId",
+            "google.drive.connectionId", "google.drive.operation", "google.docs.connectionId",
+            "google.docs.operation", "ai.generate.prompt", "trigger.gmail.connectionId",
             "discord.send_message.connectionId", "discord.send_message.content",
             "format.datetime.operation", "format.text.operation",
             "slack.send_message.connectionId", "slack.send_message.text",

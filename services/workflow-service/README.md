@@ -70,6 +70,7 @@ These database fields and warning events are diagnostic sources, not production 
 | Manual, webhook, scheduled triggers | Implemented; schedule and webhook registrations are persisted and version-scoped |
 | `http.request` | Implemented with URL policy, socket validation, bounded request/response bytes, and timeouts; real external effects require controlled allowlisted targets |
 | `google.sheets` | Implemented; requires an authorized Workspace connection and provider credential |
+| `google.docs` | Implemented; requires a Google Drive connection; reaches only Docs Weav created (`drive.file`) |
 | OCR | Adapter is present but disabled by default. Keep all OCR flags false until the private verifier, URL-source controls, and artifact resolver are proven together |
 | `email.send`, Telegram triggers (no `WORKFLOW_PUBLIC_BASE_URL`), and AI nodes without configured adapters | Fail closed or publish disabled with `DEPENDENCY_NOT_CONFIGURED`; do not treat editor visibility as service readiness |
 

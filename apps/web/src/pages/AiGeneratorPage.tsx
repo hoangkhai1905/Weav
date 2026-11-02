@@ -22,6 +22,7 @@ const PROVIDER_BY_NODE: Record<string, ConnectionProvider> = {
   'google.sheets': 'GOOGLE_SHEETS',
   'google.calendar': 'GOOGLE_CALENDAR',
   'google.drive': 'GOOGLE_DRIVE',
+  'google.docs': 'GOOGLE_DRIVE',
   'email.send': 'GMAIL',
   'trigger.gmail': 'GMAIL',
   'telegram.send_message': 'TELEGRAM',

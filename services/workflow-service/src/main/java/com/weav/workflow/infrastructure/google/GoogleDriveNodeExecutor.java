@@ -7,7 +7,6 @@ import com.weav.workflow.infrastructure.http.PinnedHttpTransport;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -108,7 +107,7 @@ public final class GoogleDriveNodeExecutor extends GoogleApiNodeExecutor {
             metadata.put("parents", List.of(folderId));
         }
         String boundary = "weav-" + UUID.randomUUID().toString().replace("-", "");
-        PinnedHttpTransport.RawBody body = multipart(boundary, JSON.writeValueAsString(metadata), mimeType, content);
+        PinnedHttpTransport.RawBody body = GoogleMultipart.related(boundary, JSON.writeValueAsString(metadata), mimeType, content);
         Map<String, String> query = Map.of(
                 "uploadType", "multipart", "fields", "id,name,mimeType,webViewLink");
 
@@ -233,19 +232,5 @@ public final class GoogleDriveNodeExecutor extends GoogleApiNodeExecutor {
     /** Escapes a value for a single-quoted Drive query string literal. */
     private static String escape(String value) {
         return value.replace("\\", "\\\\").replace("'", "\\'");
-    }
-
-    private static PinnedHttpTransport.RawBody multipart(
-            String boundary, String metadataJson, String mimeType, byte[] content) {
-        ByteArrayOutputStream out = new ByteArrayOutputStream(content.length + metadataJson.length() + 256);
-        write(out, "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
-                + metadataJson + "\r\n--" + boundary + "\r\nContent-Type: " + mimeType + "\r\n\r\n");
-        out.writeBytes(content);
-        write(out, "\r\n--" + boundary + "--");
-        return new PinnedHttpTransport.RawBody(out.toByteArray(), "multipart/related; boundary=" + boundary);
-    }
-
-    private static void write(ByteArrayOutputStream out, String text) {
-        out.writeBytes(text.getBytes(StandardCharsets.UTF_8));
     }
 }
