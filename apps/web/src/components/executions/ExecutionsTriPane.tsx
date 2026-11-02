@@ -336,8 +336,8 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
           <span className="hidden sm:inline">{t('nav.workflows')}</span>
         </Link>
         <span aria-hidden="true" className="text-muted-foreground">/</span>
-        <p className="min-w-0 truncate text-sm font-semibold text-foreground">{workflow?.name ?? t('nav.workflows')}</p>
-        <nav aria-label={t('builder.workflow_sections')} className="ml-4 flex h-14 shrink-0 items-stretch gap-5 whitespace-nowrap">
+        <p className="min-w-[3.5rem] truncate text-sm font-semibold text-foreground">{workflow?.name ?? t('nav.workflows')}</p>
+        <nav aria-label={t('builder.workflow_sections')} className="ml-1 flex h-14 min-w-0 items-stretch gap-4 overflow-x-auto whitespace-nowrap sm:ml-4 sm:gap-5">
           <Link
             to={`/workflows/${encodeURIComponent(workflowId)}/builder`}
             className={`inline-flex items-center border-b-2 border-transparent px-0.5 text-[13px] font-medium text-text-2 transition-colors hover:text-foreground ${FOCUS_RING}`}
@@ -354,7 +354,7 @@ export function ExecutionsTriPane({ workflowId, selectedExecutionId }: Props) {
             {t('builder.section_settings')}
           </Link>
         </nav>
-        <button type="button" onClick={() => void loadRuns()} className={`${BTN_SECONDARY} ${BTN_SM} ml-auto`}>
+        <button type="button" onClick={() => void loadRuns()} className={`${BTN_SECONDARY} ${BTN_SM} ml-auto shrink-0`}>
           <RefreshCw size={14} strokeWidth={1.75} aria-hidden="true" />
           <span className="hidden sm:inline">{t('runs.refresh')}</span>
         </button>

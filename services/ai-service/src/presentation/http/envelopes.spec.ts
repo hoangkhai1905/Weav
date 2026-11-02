@@ -35,6 +35,22 @@ describe('llm selection in envelopes', () => {
     expect(parsed.success).toBe(false);
   });
 
+  it('accepts a boolean allowBlanks on generate and rejects other types', () => {
+    const body = {
+      ...base(),
+      operation: 'generate',
+      prompt: 'p',
+      capabilities: [{ type: 'a.b', configFields: [] }],
+    };
+    expect(
+      ENVELOPES.generate.safeParse({ ...body, allowBlanks: true }).success,
+    ).toBe(true);
+    expect(ENVELOPES.generate.safeParse(body).success).toBe(true);
+    expect(
+      ENVELOPES.generate.safeParse({ ...body, allowBlanks: 'yes' }).success,
+    ).toBe(false);
+  });
+
   const summarize = (l: unknown) =>
     ENVELOPES.summarize.safeParse({
       ...base(),

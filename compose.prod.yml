@@ -257,6 +257,7 @@ services:
         VITE_API_BASE_URL: https://api.weav.id.vn
         VITE_IDENTITY_SERVICE_URL: https://api.weav.id.vn
         VITE_API_MODE: http
+        VITE_ANDROID_APK_URL: ${WEAV_ANDROID_APK_URL:-}
     restart: unless-stopped
     mem_limit: 64m
     healthcheck:

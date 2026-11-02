@@ -56,6 +56,8 @@ public class SecurityConfig {
     private static final String TELEGRAM_WEBHOOK_PATH = "/webhooks/telegram/*";
     private static final String INTERNAL_USAGE_PATH = "/internal/workspaces/*/connections/*/usage";
     private static final String INTERNAL_PAUSE_ALL_PATH = "/internal/workspaces/*/pause-all";
+    // Not "weav.internal.service-key": Spring would read WEAV_INTERNAL_SERVICE_KEY (the outbound key) for it.
+    static final String INBOUND_SERVICE_KEY_PROPERTY = "weav.workflow.inbound-service-key";
 
     @Bean
     public SecurityFilterChain securityFilterChain(
@@ -91,7 +93,7 @@ public class SecurityConfig {
 
     @Bean
     public InternalServiceKeyFilter internalServiceKeyFilter(
-            @Value("${weav.internal.service-key:}") String configuredServiceKey,
+            @Value("${" + INBOUND_SERVICE_KEY_PROPERTY + ":}") String configuredServiceKey,
             ApiAuthenticationEntryPoint authenticationEntryPoint) {
         return new InternalServiceKeyFilter(configuredServiceKey, authenticationEntryPoint);
     }

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { HelpCircle } from 'lucide-react';
+import { ANDROID_APK_URL } from '../lib/androidApk';
 import { useI18nStore } from '../store/useI18nStore';
 import { useUIStore } from '../store/useUIStore';
 
@@ -26,6 +27,7 @@ export function HelpPage() {
           <Link to="/workflows/new#templates-list" className="hover:underline">{t('hp.help.link_templates')}</Link>
           <button type="button" onClick={() => openAiGenerator()} className="hover:underline">{t('hp.help.link_ai')}</button>
           <Link to="/connections" className="hover:underline">{t('hp.help.link_connections')}</Link>
+          {ANDROID_APK_URL && <a href={ANDROID_APK_URL} data-testid="help-android-apk-link" className="hover:underline">{t('lp.android_apk')}</a>}
         </p>
       </div>
 

@@ -40,7 +40,7 @@ export const AppLayout: React.FC = () => {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         {!fullBleed && <Topbar />}
-        <main className={`relative min-w-0 flex-1 bg-background ${fullBleed ? 'overflow-hidden' : 'overflow-x-hidden overflow-y-auto p-4 sm:p-8'}`}>
+        <main className={`relative min-w-0 flex-1 bg-background ${fullBleed ? 'overflow-hidden' : 'overflow-x-hidden overflow-y-auto p-4 sm:p-8 max-md:pb-24'}`}>
           <Outlet />
         </main>
       </div>

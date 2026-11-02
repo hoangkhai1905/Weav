@@ -502,6 +502,17 @@ describe('Gateway routes added for full service coverage (Fastify e2e)', () => {
     expect(JSON.parse(fixtureRequests[1].body.toString())).toMatchObject({
       answers: { 'email.send.body': 'Hello' },
     });
+    const blanks = await inject({
+      method: 'POST',
+      url: `/api/v1/workspaces/${WORKSPACE_ID}/workflows/generate`,
+      headers: { authorization: user },
+      payload: { prompt: 'email me', allowBlanks: true },
+    });
+    expect(blanks.statusCode).toBe(200);
+    expect(JSON.parse(fixtureRequests[2].body.toString())).toMatchObject({
+      prompt: 'email me',
+      allowBlanks: true,
+    });
     fixtureRequests.length = 1;
 
     const tooLarge = await inject({
@@ -521,8 +532,15 @@ describe('Gateway routes added for full service coverage (Fastify e2e)', () => {
       headers: { authorization: user },
       payload: { prompt: '', extra: true },
     });
+    const nonBoolean = await inject({
+      method: 'POST',
+      url: `/api/v1/workspaces/${WORKSPACE_ID}/workflows/generate`,
+      headers: { authorization: user },
+      payload: { prompt: 'email me', allowBlanks: 'true' },
+    });
     expect(tooLarge.statusCode).toBe(413);
     expect(invalid.statusCode).toBe(400);
+    expect(nonBoolean.statusCode).toBe(400);
     expect(fixtureRequests).toHaveLength(1);
   });
 

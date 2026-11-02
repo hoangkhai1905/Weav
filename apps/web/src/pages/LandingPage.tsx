@@ -4,6 +4,7 @@ import { ArrowRight, Check } from 'lucide-react';
 import { LanguageSwitch, ThemeToggle } from '../components/layout/ShellControls';
 import { WeavMark } from '../components/common/WeavMark';
 import { statusBadgeClass } from '../components/common/statusBadgeClass';
+import { ANDROID_APK_URL } from '../lib/androidApk';
 import { BTN_PRIMARY, BTN_SECONDARY, CARD, FOCUS_RING } from '../lib/uiClasses';
 import { useI18nStore } from '../store/useI18nStore';
 
@@ -256,6 +257,11 @@ export function LandingPage() {
                 <span className="inline-flex h-[22px] items-center rounded-full bg-subtle px-2 text-xs font-medium text-text-2">Android</span>
                 <span className="inline-flex h-[22px] items-center rounded-full bg-subtle px-2 text-xs font-medium text-text-2">iOS</span>
               </div>
+              {ANDROID_APK_URL && (
+                <a href={ANDROID_APK_URL} data-testid="android-apk-link" className={`${BTN_SECONDARY} h-9 self-start px-3.5 text-sm`}>
+                  {t('lp.android_apk')}
+                </a>
+              )}
             </article>
           </div>
         </section>

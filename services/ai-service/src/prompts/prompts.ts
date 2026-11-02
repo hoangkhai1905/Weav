@@ -33,3 +33,6 @@ Return exactly one of:
 {"status":"needs_input","questions":[{"code":"URL"|"SCHEDULE"|"TIMEZONE"|"VALUE","field":"<nodeId>.config.<field>"}]}
 {"status":"unsupported","reasons":[{"code":"CAPABILITY_UNAVAILABLE"|"OUT_OF_SCOPE"|"AMBIGUOUS_REQUEST"}]}
 Ask (needs_input) instead of guessing any URL, schedule, timezone, or required value. If "timezone" is absent and a schedule is needed, ask for TIMEZONE.`;
+
+/** Appended to GENERATE_SYSTEM when the user asked for a draft now and will fill the blanks in the builder. */
+export const GENERATE_ALLOW_BLANKS_RULE = `"allowBlanks" is true: the user wants a draft now and will fill in the blanks later. Never return needs_input. Build the complete workflow and simply OMIT every config field whose value the request does not give (a URL, schedule, cron, timezone, an email to/subject/body, a sheet id and the like). Do not invent placeholder values and do not output empty strings; this overrides the rules above that tell you to ask.`;

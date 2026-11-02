@@ -578,7 +578,7 @@ export const workflowV1Api = {
     );
   },
 
-  async generateWorkflow(input: { prompt: string; timezone?: string; connections?: Record<string, string>; answers?: Record<string, string> }): Promise<GenerationResponse> {
+  async generateWorkflow(input: { prompt: string; timezone?: string; connections?: Record<string, string>; answers?: Record<string, string>; allowBlanks?: boolean }): Promise<GenerationResponse> {
     const workspaceId = await getActiveWorkflowWorkspaceId();
     return request<GenerationResponse>(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/workflows/generate`, {
       method: 'POST',

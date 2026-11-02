@@ -3,6 +3,10 @@ import { extract } from './extract';
 import { classify } from './classify';
 import { summarize } from './summarize';
 import { generate } from './generate';
+import {
+  GENERATE_ALLOW_BLANKS_RULE,
+  GENERATE_SYSTEM,
+} from '../prompts/prompts';
 import { prompt } from './prompt';
 import { AiError } from '../domain/errors';
 import { codePointLength, truncateGraphemes } from '../domain/text/unicode';
@@ -220,6 +224,23 @@ describe('generate', () => {
         signal,
       ),
     ).resolves.toEqual(ready);
+  });
+  it('appends the allow-blanks rule to the system prompt only when allowBlanks is true', async () => {
+    const plain = new FakeProvider(ready);
+    await generate(plain, { prompt: 'ping', capabilities }, signal);
+    expect(plain.calls[0].system).toBe(GENERATE_SYSTEM);
+    const blanks = new FakeProvider(ready);
+    await generate(
+      blanks,
+      { prompt: 'ping', allowBlanks: true, capabilities },
+      signal,
+    );
+    expect(blanks.calls[0].system).toBe(
+      `${GENERATE_SYSTEM}
+${GENERATE_ALLOW_BLANKS_RULE}`,
+    );
+    expect(blanks.calls[0].system).toContain('Never return needs_input');
+    expect(blanks.calls[0].user).toContain('"allowBlanks":true');
   });
   it('accepts needs_input and unsupported', async () => {
     const needs = {

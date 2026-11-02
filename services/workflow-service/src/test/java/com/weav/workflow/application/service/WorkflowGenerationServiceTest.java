@@ -101,6 +101,27 @@ class WorkflowGenerationServiceTest {
         assertEquals(List.of(Map.of("code", "VALUE", "field", "email.send.body")), result.get("questions"));
     }
 
+    @Test void allowBlanksReturnsReadyDraftAndSendsTheFlagToTheAiOnlyWhenTrue() {
+        FakeAi ai = new FakeAi(Map.of("status", "ready", "intent", emailWithoutBody()),
+                Map.of("status", "ready", "intent", emailWithoutBody()));
+        Map<String, Object> result = service(ai, new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null,
+                Map.of(), Map.of(), true);
+        assertEquals("ready", result.get("status"));
+        assertEquals(true, ai.payload.get("allowBlanks"));
+        service(ai, new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null, Map.of());
+        assertFalse(ai.payload.containsKey("allowBlanks"));
+    }
+
+    @Test void allowBlanksStillTurnsAGraphProblemIntoInvalidIntent() {
+        Map<String, Object> cycle = Map.of("name", "Loop", "nodes", List.of(node("start", "trigger.manual", Map.of()),
+                node("a", "http.request", Map.of("method", "GET", "url", "https://e.com")),
+                node("b", "http.request", Map.of("method", "GET", "url", "https://e.com"))),
+                "edges", List.of(edge("start", "a"), edge("a", "b"), edge("b", "a")));
+        Map<String, Object> result = service(new FakeAi(Map.of("status", "ready", "intent", cycle)),
+                new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null, Map.of(), Map.of(), true);
+        assertEquals("unsupported", result.get("status"));
+    }
+
     @Test void answersFillTheMissingValueAndAreSentToTheAi() {
         FakeAi ai = new FakeAi(Map.of("status", "ready", "intent", emailWithoutBody()));
         Map<String, Object> result = service(ai, new Connections(), () -> true).generate(WORKSPACE, ACTOR, "x", null,

@@ -2654,6 +2654,8 @@ test.describe("workflow builder Telegram trigger", () => {
     await expect(page.getByTestId("telegram-trigger-hint")).toContainText("public HTTPS address");
     await expect(page.getByTestId("telegram-trigger-hint")).not.toContainText("WORKFLOW_PUBLIC_BASE_URL");
     await expect(page.getByTestId("add-connection-TELEGRAM")).toHaveAttribute("href", "/workspace/connections");
+    // Opens in a new tab so the unsaved builder is not left behind.
+    await expect(page.getByTestId("add-connection-TELEGRAM")).toHaveAttribute("target", "_blank");
 
     const select = page.getByLabel("Telegram bot connection");
     await expect(select.locator("option")).toHaveCount(2);

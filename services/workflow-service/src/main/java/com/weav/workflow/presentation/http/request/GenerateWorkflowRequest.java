@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.UUID;
 
 public record GenerateWorkflowRequest(String prompt, String timezone, Map<String, UUID> connections,
-                                      Map<String, String> answers) {
+                                      Map<String, String> answers, Boolean allowBlanks) {
     public void validate() {
         if (prompt == null || prompt.isBlank() || prompt.codePointCount(0, prompt.length()) > 4000) {
             throw new BadRequestException("prompt must be 1-4000 characters");

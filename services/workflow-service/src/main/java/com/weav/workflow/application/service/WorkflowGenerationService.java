@@ -54,6 +54,12 @@ public class WorkflowGenerationService {
     /** {@code answers}: the user's replies to earlier VALUE/URL/SCHEDULE/TIMEZONE questions, keyed by the question's field. */
     public Map<String, Object> generate(UUID workspaceId, UUID actorId, String prompt, String timezone,
                                         Map<String, UUID> picked, Map<String, String> answers) {
+        return generate(workspaceId, actorId, prompt, timezone, picked, answers, false);
+    }
+
+    /** {@code allowBlanks}: return a draft with the missing values left empty instead of asking for them. */
+    public Map<String, Object> generate(UUID workspaceId, UUID actorId, String prompt, String timezone,
+                                        Map<String, UUID> picked, Map<String, String> answers, boolean allowBlanks) {
         if (!enabled.getAsBoolean()) throw new AiUnavailableException();
         if (!rateLimiter.tryAcquire(actorId, workspaceId)) throw new GenerationRateLimitedException();
         authorization.require(workspaceId, actorId, "WORKFLOW_CREATE");
@@ -63,6 +69,7 @@ public class WorkflowGenerationService {
                 + answers.entrySet().stream().map(a -> "- " + a.getKey() + ": " + a.getValue())
                         .collect(java.util.stream.Collectors.joining("\n")));
         if (timezone != null) payload.put("timezone", timezone);
+        if (allowBlanks) payload.put("allowBlanks", true);
         payload.put("capabilities", capabilities());
         Map<String, Object> result;
         try { result = ai.generate(workspaceId, payload); }
@@ -74,7 +81,7 @@ public class WorkflowGenerationService {
             throw new AiUnavailableException();
         }
         return switch (String.valueOf(result.get("status"))) {
-            case "ready" -> switch (compiler.compile(result.get("intent"), picked, answers)) {
+            case "ready" -> switch (compiler.compile(result.get("intent"), picked, answers, allowBlanks)) {
                 case IntentCompiler.Ready ready -> ready(ready);
                 case IntentCompiler.NeedsConnections needs -> Map.of("status", "needs_input", "questions",
                         needs.nodeTypes().stream().map(type -> Map.of("code", "CONNECTION", "field", type)).toList());

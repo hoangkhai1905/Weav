@@ -4,16 +4,30 @@ import {
   GenerationResult,
   generationResultSchema,
 } from '../domain/workflow-generation/generation-result';
-import { GENERATE_SYSTEM } from '../prompts/prompts';
+import {
+  GENERATE_SYSTEM,
+  GENERATE_ALLOW_BLANKS_RULE,
+} from '../prompts/prompts';
 import { LlmProvider } from './llm-provider';
 
 export async function generate(
   provider: LlmProvider,
-  input: { prompt: string; timezone?: string; capabilities: Capability[] },
+  input: {
+    prompt: string;
+    timezone?: string;
+    allowBlanks?: boolean;
+    capabilities: Capability[];
+  },
   signal: AbortSignal,
 ): Promise<GenerationResult> {
   const output = await provider.completeJson(
-    { system: GENERATE_SYSTEM, user: JSON.stringify(input) },
+    {
+      system: input.allowBlanks
+        ? `${GENERATE_SYSTEM}
+${GENERATE_ALLOW_BLANKS_RULE}`
+        : GENERATE_SYSTEM,
+      user: JSON.stringify(input),
+    },
     signal,
   );
   const parsed = generationResultSchema(input.capabilities).safeParse(output);

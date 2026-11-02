@@ -115,7 +115,8 @@ export function AiGeneratorPage({ inDialog = false, initialPrompt }: AiGenerator
   const defaultAnswer = (question: Question) =>
     question.code === 'VALUE' && RECIPIENT_FIELD.test(question.field) ? userEmail : '';
 
-  const submitAnswers = async (questions: Question[]) => {
+  // allowBlanks: the user wants the draft now; the builder's publish checks flag whatever stays empty.
+  const submitAnswers = async (questions: Question[], allowBlanks = false) => {
     if (isPending) return;
     const next = { ...known };
     questions.forEach((question, index) => {
@@ -126,7 +127,7 @@ export function AiGeneratorPage({ inDialog = false, initialPrompt }: AiGenerator
     setLocalError(null);
     setKnown(next);
     setAnswers({});
-    await generate({ prompt: trimmedPrompt, answers: next, connections: picked });
+    await generate({ prompt: trimmedPrompt, answers: next, connections: picked, ...(allowBlanks ? { allowBlanks: true } : {}) });
   };
 
   const createDraft = async (ready: ReadyGeneration) => {
@@ -224,7 +225,10 @@ export function AiGeneratorPage({ inDialog = false, initialPrompt }: AiGenerator
           );
         })}
       </ul>
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
+        <button type="button" onClick={() => void submitAnswers(questions, true)} disabled={isPending} className={secondaryButton}>
+          {t('hp.ai.draft_with_blanks')}
+        </button>
         <button type="button" onClick={() => void submitAnswers(questions)} disabled={isPending || !connectionsChosen(questions)} className={primaryButton}>
           {isPending ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : null}
           {t('hp.ai.send_answers')}
