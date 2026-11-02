@@ -1,6 +1,6 @@
 # Báo cáo cuối: thiết kế lại app mobile Weav
 
-Nhánh `feature/mobile`. App mobile là app đồng hành để giám sát và điều khiển (không có builder). Theo quyết định của người dùng: **không có lớp mock**, mọi màn gọi gateway thật (`EXPO_PUBLIC_API_MODE=mock` chỉ còn giả lập auth, workspace, notification cũ). Chi tiết đối chiếu contract: `api-alignment.md`; nhật ký từng làn: `docs/work_logs/K/mobile/mobile-ui.md`.
+Nhánh `feature/mobile`. App mobile là app đồng hành để giám sát và điều khiển (không có builder). Theo quyết định của người dùng: **không có lớp mock**, mọi màn gọi gateway thật (`EXPO_PUBLIC_API_MODE=mock` chỉ còn giả lập auth, workspace, notification cũ). Chi tiết đối chiếu contract: `api-alignment.md`; nhật ký từng làn: `docs/work_logs/K/mobile/2026-W41/mobile-ui.md`.
 
 ## 1. Endpoint đã nối (qua API Gateway)
 
@@ -34,7 +34,7 @@ Lỗi/chỗ lạ tìm thấy ở gateway:
 - Ba dạng error envelope khác nhau; một số lỗi (ví dụ test connection HTTP cấu hình sai) trả `{code,message,requestId}` không bọc `error`.
 - `definition` thật khác brief (`edges.source/target`, `connectionId` trong `config`, nhãn node ở `editorState`).
 - Kết nối mới tạo ở trạng thái DISABLED; test đạt mới thành ACTIVE.
-- Giờ thông báo lệch ~9 giờ (đã điều tra, không phải lỗi mã): xem mục "Giờ thông báo lệch ~9 giờ" trong `docs/work_logs/K/mobile/mobile-ui.md`. Nguyên nhân là đồng hồ của máy ảo Docker Desktop (WSL2) chạy chậm ~9 giờ so với máy thật (sau khi laptop ngủ); khởi động lại Docker thì hết. App và backend đã kiểm: giờ thông báo mới tạo hiển thị đúng giờ địa phương.
+- Giờ thông báo lệch ~9 giờ (đã điều tra, không phải lỗi mã): xem mục "Giờ thông báo lệch ~9 giờ" trong `docs/work_logs/K/mobile/2026-W41/mobile-ui.md`. Nguyên nhân là đồng hồ của máy ảo Docker Desktop (WSL2) chạy chậm ~9 giờ so với máy thật (sau khi laptop ngủ); khởi động lại Docker thì hết. App và backend đã kiểm: giờ thông báo mới tạo hiển thị đúng giờ địa phương.
 
 ## 3. Quyết định thiết kế chính
 
