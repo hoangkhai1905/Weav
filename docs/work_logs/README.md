@@ -85,6 +85,7 @@ One log per feature, written by K or T (see `log_template.md`). Each member has 
 
 ### K/workflow
 
+- active: [google-docs-node.md](K/workflow/google-docs-node.md): Nhật ký: node `google.docs` (tạo và thêm chữ vào Google Docs)
 - 2026-W39: [workflow-service-acceptance-and-release.md](K/workflow/2026-W39/workflow-service-acceptance-and-release.md): Workflow Service V1 detailed record — acceptance and release
 - 2026-W39: [workflow-service-admission-and-execution.md](K/workflow/2026-W39/workflow-service-admission-and-execution.md): Workflow Service V1 detailed record — admission and execution
 - 2026-W39: [workflow-service-authoring-and-connections.md](K/workflow/2026-W39/workflow-service-authoring-and-connections.md): Workflow Service V1 detailed record — authoring and connections
