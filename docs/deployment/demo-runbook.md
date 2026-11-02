@@ -1,6 +1,6 @@
 # Demo runbook (compose.prod.yml + Cloudflare Tunnel)
 
-Run every command from the repo root (Linux host or Git Bash). Plan: `docs/superpowers/plans/2026-10-26-demo-deployment.md`. Nothing here is automated: each step that touches Neon, Cloudflare or Google is yours to approve and run.
+Run every command from the repo root (Linux host or Git Bash). Log: `docs/work_logs/K/platform/demo-deployment.md`. Nothing here is automated: each step that touches Neon, Cloudflare or Google is yours to approve and run.
 
 Public URLs: `https://app.weav.id.vn`, `https://admin.weav.id.vn`, `https://api.weav.id.vn`.
 

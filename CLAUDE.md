@@ -66,7 +66,7 @@ Weav is a graduation-thesis platform for automating and monitoring work processe
 - Package manager: `pnpm@11.22.0` (from `package.json`). In a fresh checkout or worktree, run `pnpm install --frozen-lockfile` first.
 - Dev stack: `docker compose -f compose.yml -f compose.dev.yml --profile app up -d --build [services]`. Overlays: `compose.ai-local.yml` (fake AI provider), `compose.workflow-smoke.yml`, `compose.*ocr*.dev.yml`.
 - Database: Neon PostgreSQL, project `Weav`, branch `production`. One database per service (`identity-db`, `workspace_db`, `workflow_db`, `notification_db`); each service uses the schema named by its `DB_SCHEMA`.
-- Docs: specs and plans in `docs/superpowers/`, architecture/API/decisions under `docs/`, work logs under `docs/work_logs/`.
+- Docs: feature design specs in `docs/superpowers/specs/` (old plans: git tag `archive/plans-2026-11-02`), architecture/API/decisions under `docs/`, work logs under `docs/work_logs/` (index in its `README.md`).
 
 ## Boundaries
 

@@ -18,7 +18,7 @@ One spec per service and app, describing the **V1 target** and marking each capa
 ## How these specs relate to other docs
 
 - **Code wins.** When a spec and the code disagree, fix the spec or list the conflict under its "Open questions".
-- **Feature designs** (one change, with alternatives and a plan) go in [docs/superpowers/specs](../superpowers/specs) and [plans](../superpowers/plans). When a feature lands, update the component spec's status tables.
+- **Feature designs** (one change, with alternatives and a plan) go in [docs/superpowers/specs](../superpowers/specs). Old implementation plans were removed on 2026-11-02; they are in git tag `archive/plans-2026-11-02`. When a feature lands, update the component spec's status tables.
 - **Contracts** (OpenAPI, event schemas) live in [packages/contracts](../../packages/contracts). Specs link to them; they don't copy them.
 
 ## Spec template
