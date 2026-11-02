@@ -662,8 +662,8 @@ export function WorkflowsPage() {
         </div>
       ) : (
         <section aria-label={t('wfl.list_label')} className={`${CARD} overflow-x-auto`}>
-          <table className="w-full min-w-[860px] border-collapse text-sm">
-            <thead>
+          <table className="w-full border-collapse text-sm md:min-w-[860px] max-md:block">
+            <thead className="max-md:hidden">
               <tr>
                 <th className={`${th} w-11 pl-5`}>
                   <input
@@ -684,7 +684,7 @@ export function WorkflowsPage() {
                 </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="max-md:block">
               {filteredWorkflows.map((wf) => {
                 const isSelected = selectedIds.has(wf.id);
                 const rowStats = stats[wf.id];
@@ -702,9 +702,9 @@ export function WorkflowsPage() {
                     key={wf.id}
                     data-testid="workflow-row"
                     data-status={wf.status}
-                    className={`border-t border-border transition-colors ${isSelected ? 'bg-run-bg' : 'hover:bg-subtle'}`}
+                    className={`border-t border-border transition-colors max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:gap-y-2 max-md:px-4 max-md:py-3 ${isSelected ? 'bg-run-bg' : 'hover:bg-subtle'}`}
                   >
-                    <td className="py-3.5 pl-5 pr-3 align-top">
+                    <td className="py-3.5 pl-5 pr-3 align-top max-md:p-0">
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -713,7 +713,7 @@ export function WorkflowsPage() {
                         aria-label={`${t('workflows.select')} ${wf.name}`}
                       />
                     </td>
-                    <td className="px-3 py-3.5 align-top">
+                    <td className="px-3 py-3.5 align-top max-md:p-0">
                       {wf.status === 'DRAFT' ? (
                         <span title={t('wfl.draft_no_switch')} aria-label={t('wfl.draft_no_switch')} className="inline-flex h-[22px] items-center text-muted-foreground">—</span>
                       ) : (
@@ -731,7 +731,7 @@ export function WorkflowsPage() {
                         </button>
                       )}
                     </td>
-                    <td className="px-3 py-3.5 align-top">
+                    <td className="px-3 py-3.5 align-top max-md:min-w-0 max-md:flex-1 max-md:p-0">
                       <Link to={`/workflows/${wf.id}/builder`} className={`rounded-sm font-medium text-foreground hover:underline ${FOCUS_RING}`}>
                         {wf.name}
                       </Link>
@@ -739,7 +739,7 @@ export function WorkflowsPage() {
                         {[wf.ownerName, t('wfl.edited').replace('{when}', relativeTime(wf.updatedAt))].filter(Boolean).join(' · ')}
                       </div>
                     </td>
-                    <td className="max-w-[360px] px-3 py-3.5 align-top">
+                    <td className="max-w-[360px] px-3 py-3.5 align-top max-md:order-5 max-md:w-full max-md:max-w-none max-md:p-0">
                       <div data-testid="workflow-summary" className="flex flex-col gap-0.5">
                         <span><span className="text-muted-foreground">{t('wfl.run_prefix')} </span>{summary.when}</span>
                         {summary.then ? (
@@ -747,17 +747,17 @@ export function WorkflowsPage() {
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-3 py-3.5 align-top" title={exactTime(lastAt)}>
+                    <td className="px-3 py-3.5 align-top max-md:order-6 max-md:p-0" title={exactTime(lastAt)}>
                       <div className="flex flex-col items-start gap-0.5">
                         {lastPill}
                         {lastAt && <span className="font-mono text-xs text-muted-foreground">{relativeTime(lastAt)}</span>}
                       </div>
                     </td>
-                    <td className="px-3 py-3.5 text-right align-top font-mono text-xs text-text-2">
+                    <td className="px-3 py-3.5 text-right align-top font-mono text-xs text-text-2 max-md:hidden">
                       {rowStats ? rowStats.runs7d.toLocaleString(locale) : wf.status === 'DRAFT' ? '—' : '…'}
                     </td>
                     {/* The row menu is position: fixed, so the scrolling card cannot clip it. */}
-                    <td className="relative whitespace-nowrap py-2.5 pl-3 pr-5 align-top">
+                    <td className="relative whitespace-nowrap py-2.5 pl-3 pr-5 align-top max-md:order-4 max-md:p-0">
                       <div className="flex items-center justify-end gap-0.5">
                         <button
                           type="button"

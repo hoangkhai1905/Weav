@@ -58,6 +58,7 @@ import {
   Type,
   HelpCircle,
   AlertTriangle,
+  MoreHorizontal,
 } from 'lucide-react';
 import { CustomWorkflowNode } from '../components/builder/CustomWorkflowNode';
 import { ExecutionEdge } from '../components/builder/ExecutionEdge';
@@ -424,6 +425,8 @@ const OCR_FILE_CUSTOM = '__custom';
 type OcrErrorState = { code: string; message: string; retryable?: boolean };
 type OcrScope = { userId: string | null; workspaceId: string | null };
 
+const MORE_ITEM = 'flex h-9 items-center gap-2 rounded-md px-2 text-left text-[13px] text-foreground hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
+
 export const WorkflowBuilderPage: React.FC = () => {
   const refreshNotifications = useNotificationMilestoneRefresh();
   const { workflowId } = useParams<{ workflowId: string }>();
@@ -611,6 +614,26 @@ export const WorkflowBuilderPage: React.FC = () => {
   const [activeEdgeId, setActiveEdgeId] = useState<string | null>(null);
   const [isGeneratePanelOpen, setIsGeneratePanelOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  // Phones fold the four secondary header icons into one overflow menu so Publish and Save stay on screen.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement | null>(null);
+  // Below md the initial fit may zoom out far enough to show the whole graph (desktop keeps its 0.85 floor).
+  const [fitMinZoom] = useState(() => (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 767px)').matches ? 0.2 : 0.85));
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (event: PointerEvent) => {
+      if (!moreRef.current?.contains(event.target as globalThis.Node)) setMoreOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [moreOpen]);
 
   // Inspector Form State (for selected node)
   const [ocrSourceMode, setOcrSourceMode] = useState<OcrSourceMode>('url');
@@ -927,7 +950,16 @@ export const WorkflowBuilderPage: React.FC = () => {
     getNode: (id: string) => Node | undefined;
     getViewport: () => { x: number; y: number; zoom: number };
     setViewport: (viewport: { x: number; y: number; zoom: number }, options?: { duration?: number }) => Promise<boolean>;
+    fitView: (options?: { padding?: `${number}%`; minZoom?: number; maxZoom?: number }) => Promise<boolean>;
   } | null>(null);
+  // The prop-driven fit runs on the placeholder graph; on phones refit once the loaded graph is measured.
+  useEffect(() => {
+    if (loadEpoch === 0 || fitMinZoom >= 0.85) return;
+    const timer = window.setTimeout(() => {
+      void flowRef.current?.fitView({ padding: '15%', minZoom: fitMinZoom, maxZoom: 1.2 });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [loadEpoch, fitMinZoom]);
   const canvasRef = useRef<HTMLElement | null>(null);
   const [logs, setLogs] = useState<Array<{ id: string; time: string; level: 'info' | 'success' | 'warn'; msg: string }>>([]);
 
@@ -1639,7 +1671,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             disabled={isLoadingWorkflow || !workflow}
             title={t('ai.generate_with_ai')}
             aria-label={t('ai.generate_with_ai')}
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors max-md:hidden hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Sparkles size={15} aria-hidden="true" />
           </button>
@@ -1650,7 +1682,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             disabled={isLoadingWorkflow || !workflow || hasUnsavedChanges}
             title={hasUnsavedChanges ? t('tpl.share.save_first') : t('tpl.share.menu')}
             aria-label={t('tpl.share.menu')}
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors max-md:hidden hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Share2 size={15} aria-hidden="true" />
           </button>
@@ -1661,7 +1693,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             disabled={isLoadingWorkflow || !workflow || hasUnsavedChanges || isExporting}
             title={hasUnsavedChanges ? t('tpl.share.save_first') : t('workflows.transfer.export')}
             aria-label={hasUnsavedChanges ? `${t('workflows.transfer.export')}. ${t('tpl.share.save_first')}` : t('workflows.transfer.export')}
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors max-md:hidden hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download size={15} aria-hidden="true" />
           </button>
@@ -1672,10 +1704,44 @@ export const WorkflowBuilderPage: React.FC = () => {
             title={t('builder.preview_title')}
             aria-label={t('builder.preview_aria')}
             aria-busy={isPreviewing}
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors max-md:hidden hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70"
           >
             {isPreviewing ? <Loader2 size={15} className="motion-safe:animate-spin" aria-hidden="true" /> : <Play size={15} aria-hidden="true" />}
           </button>
+          <div ref={moreRef} className="relative md:hidden">
+            <button
+              type="button"
+              data-testid="workflow-more-actions"
+              onClick={() => setMoreOpen((open) => !open)}
+              title={t('workflows.more_actions')}
+              aria-label={t('workflows.more_actions')}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-2 transition-colors hover:bg-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <MoreHorizontal size={16} aria-hidden="true" />
+            </button>
+            {moreOpen && (
+              <div role="menu" className="absolute right-0 top-9 z-30 flex min-w-[12rem] flex-col rounded-lg border border-border bg-card p-1 shadow-pop">
+                <button type="button" role="menuitem" data-testid="workflow-more-ai" disabled={isLoadingWorkflow || !workflow} onClick={() => { setMoreOpen(false); setIsGeneratePanelOpen(true); }} className={MORE_ITEM}>
+                  <Sparkles size={15} aria-hidden="true" />
+                  <span>{t('ai.generate_with_ai')}</span>
+                </button>
+                <button type="button" role="menuitem" data-testid="workflow-more-share" disabled={isLoadingWorkflow || !workflow || hasUnsavedChanges} onClick={() => { setMoreOpen(false); setIsShareOpen(true); }} className={MORE_ITEM}>
+                  <Share2 size={15} aria-hidden="true" />
+                  <span>{t('tpl.share.menu')}</span>
+                </button>
+                <button type="button" role="menuitem" data-testid="workflow-more-export" disabled={isLoadingWorkflow || !workflow || hasUnsavedChanges || isExporting} onClick={() => { setMoreOpen(false); void handleExportJson(); }} className={MORE_ITEM}>
+                  <Download size={15} aria-hidden="true" />
+                  <span>{t('workflows.transfer.export')}</span>
+                </button>
+                <button type="button" role="menuitem" data-testid="workflow-more-preview" disabled={isPreviewing} onClick={() => { setMoreOpen(false); handlePreviewFlow(); }} className={MORE_ITEM}>
+                  <Play size={15} aria-hidden="true" />
+                  <span>{t('builder.preview_aria')}</span>
+                </button>
+              </div>
+            )}
+          </div>
           {(workflow?.status === 'PUBLISHED' || workflow?.status === 'PAUSED') && (
             <button
               type="button"
@@ -1864,7 +1930,7 @@ export const WorkflowBuilderPage: React.FC = () => {
             }}
             fitViewOptions={{
               padding: { top: '15%', left: '15%', bottom: '15%', right: inspectorOpen && selectedNode ? `${INSPECTOR_WIDTH + 24}px` : '15%' },
-              minZoom: 0.85,
+              minZoom: fitMinZoom,
               maxZoom: 1.2,
             }}
             minZoom={0.2}
@@ -3125,13 +3191,13 @@ export const WorkflowBuilderPage: React.FC = () => {
           }}
           className="flex h-8 cursor-pointer items-center justify-between border-b border-border bg-card px-3 font-mono text-[11px] transition-colors hover:bg-muted/60 sm:px-4"
         >
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 font-semibold text-foreground">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap font-semibold text-foreground">
               <Terminal size={13} className="text-text-2" />
               {t('builder.draft_activity')}
             </span>
-            <span aria-hidden="true" className="text-border-strong">|</span>
-            <span className="text-muted-foreground">{t('builder.no_execution_history')}</span>
+            <span aria-hidden="true" className="hidden text-border-strong sm:inline">|</span>
+            <span className="hidden truncate whitespace-nowrap text-muted-foreground sm:inline">{t('builder.no_execution_history')}</span>
           </div>
 
           <div className="flex items-center gap-2 text-muted-foreground">
@@ -3140,7 +3206,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                 e.stopPropagation();
                 setLogs([]);
               }}
-              className="rounded px-1.5 py-0.5 text-[10px] hover:bg-muted hover:text-foreground"
+              className="whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] hover:bg-muted hover:text-foreground"
             >
           {t('builder.telemetry.clear_logs')}
             </button>

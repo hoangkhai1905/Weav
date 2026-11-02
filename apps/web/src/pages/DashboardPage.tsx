@@ -262,8 +262,8 @@ export function DashboardPage() {
                   <p className="p-6 text-sm text-text-2">{t('dashboard.no_runs_yet')}</p>
                 ) : (
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[520px] border-collapse text-left">
-                      <thead>
+                    <table className="w-full border-collapse text-left md:min-w-[520px] max-md:block">
+                      <thead className="max-md:hidden">
                         <tr className="text-xs text-muted-foreground">
                           <th scope="col" className="px-[18px] py-2.5 font-medium">{t('home.recent.col_workflow')}</th>
                           <th scope="col" className="px-3 py-2.5 font-medium">{t('home.recent.col_status')}</th>
@@ -271,10 +271,10 @@ export function DashboardPage() {
                           <th scope="col" className="px-[18px] py-2.5 text-right font-medium">{t('home.recent.col_duration')}</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="max-md:block">
                         {recentRuns.map((run) => (
-                          <tr key={run.executionId} className={`border-t border-border ${ROW}`}>
-                            <td className="px-[18px] py-[11px] font-medium text-foreground">
+                          <tr key={run.executionId} className={`border-t border-border ${ROW} max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-3 max-md:gap-y-1 max-md:px-[18px] max-md:py-3`}>
+                            <td className="px-[18px] py-[11px] font-medium text-foreground max-md:min-w-0 max-md:basis-full max-md:truncate max-md:p-0">
                               <Link
                                 to={`/workflows/${encodeURIComponent(run.workflowId)}/executions?run=${encodeURIComponent(run.executionId)}`}
                                 aria-label={`${t('dashboard.view_run')}: ${run.workflowName}`}
@@ -283,11 +283,11 @@ export function DashboardPage() {
                                 {run.workflowName}
                               </Link>
                             </td>
-                            <td className="px-3 py-[11px]"><span className={statusBadgeClass(runTone(run.status))}>{t(`monitoring.status.${run.status.toLowerCase()}`)}</span></td>
-                            <td className="px-3 py-[11px] font-mono text-xs text-text-2">
+                            <td className="px-3 py-[11px] max-md:p-0"><span className={statusBadgeClass(runTone(run.status))}>{t(`monitoring.status.${run.status.toLowerCase()}`)}</span></td>
+                            <td className="px-3 py-[11px] font-mono text-xs text-text-2 max-md:p-0">
                               <time dateTime={run.startedAt ?? run.createdAt}>{formatClock(run.startedAt ?? run.createdAt, locale)}</time>
                             </td>
-                            <td className="px-[18px] py-[11px] text-right font-mono text-xs text-text-2">{formatDurationMs(run.durationMs, locale)}</td>
+                            <td className="px-[18px] py-[11px] text-right font-mono text-xs text-text-2 max-md:ml-auto max-md:p-0">{formatDurationMs(run.durationMs, locale)}</td>
                           </tr>
                         ))}
                       </tbody>
