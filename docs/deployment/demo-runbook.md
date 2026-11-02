@@ -152,6 +152,19 @@ Shorthand used below (define it, and export `WEAV_SECRETS_DIR`, again in every n
 8. ai-service reports `healthy` even if its JWKS failed to load: test the assistant explicitly (section 8, item 7).
 9. If `dc up` stops on `set X in prod.env`, add the variable (compare with `.env.prod.example`).
 
+## 7b. Automatic deploy from main (CI images on GHCR)
+
+Since 2026-11-02 the VM does not build images. On every push to `main`, CI runs all checks; when `ci-ok` passes, the `publish-images` job builds the 8 images and pushes `ghcr.io/hoangkhai1905/weav-<service>:main` (and `:<commit>`), each labelled `org.opencontainers.image.revision=<commit>`. The VM pulls; nothing in GitHub can reach the VM.
+
+One-time setup:
+1. After the first `publish-images` run, give the VM read access to the packages: either GitHub -> profile -> Packages -> each `weav-*` package -> Package settings -> Change visibility -> Public (the repo is public and the images hold no secrets), or keep them private and run once on the VM `docker login ghcr.io -u <github user>` with a classic token that has only `read:packages` (typed by K, never pasted into chat or a file in git).
+2. Optional APK link: GitHub -> repo -> Settings -> Secrets and variables -> Actions -> Variables: `WEAV_ANDROID_APK_URL` (https).
+3. On the VM: `cd ~/Weav && git fetch --depth 1 origin main && git checkout --detach FETCH_HEAD`, then `sudo cp infrastructure/deploy/weav-deploy.* /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now weav-deploy.timer`.
+
+How it runs: `weav-deploy.timer` starts `scripts/deploy-pull.sh` every 2 minutes. It pulls the `main` images, waits until all 8 carry the same revision (a half-finished publish is skipped), checks out that commit so `compose.prod.yml` matches the images, then `dc up -d --no-build --remove-orphans --wait` recreates only what changed. Logs: `journalctl -u weav-deploy -f` (lines start with `deploy:`).
+
+Limits: Prisma migrations (notification, ai) are still run by hand from the laptop (section 6) before pushing a release that adds one; Flyway runs at boot. To pause automatic deploys (for example during the defense): `sudo systemctl stop weav-deploy.timer`; resume with `start`. To roll back: push a revert to `main`, or on the VM stop the timer and `WEAV_IMAGE_TAG=<older commit> dc up -d --no-build`.
+
 ## 8. Smoke test
 
 Browser with DevTools open. Record PASS/FAIL per item in `docs/work_logs/K/platform/demo-deployment.md` (run ids, no secrets).

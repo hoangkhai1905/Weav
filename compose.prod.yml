@@ -46,6 +46,7 @@ services:
       retries: 5
 
   identity-service:
+    image: ${WEAV_IMAGE_REGISTRY:-ghcr.io/hoangkhai1905}/weav-identity-service:${WEAV_IMAGE_TAG:-main}
     build:
       context: ./services/identity-service
       dockerfile: Dockerfile
@@ -97,6 +98,7 @@ services:
           - identity-edge
 
   workspace-service:
+    image: ${WEAV_IMAGE_REGISTRY:-ghcr.io/hoangkhai1905}/weav-workspace-service:${WEAV_IMAGE_TAG:-main}
     build:
       context: ./services/workspace-service
       dockerfile: Dockerfile
@@ -129,6 +131,7 @@ services:
       - ${WEAV_SECRETS_DIR:-./tmp/prod}/service-keys/public:/run/weav-keys:ro
 
   workflow-service:
+    image: ${WEAV_IMAGE_REGISTRY:-ghcr.io/hoangkhai1905}/weav-workflow-service:${WEAV_IMAGE_TAG:-main}
     build:
       context: ./services/workflow-service
       dockerfile: Dockerfile
@@ -177,6 +180,7 @@ services:
       - ${WEAV_SECRETS_DIR:-./tmp/prod}/service-keys/private:/run/weav-keys:ro
 
   ai-service:
+    image: ${WEAV_IMAGE_REGISTRY:-ghcr.io/hoangkhai1905}/weav-ai-service:${WEAV_IMAGE_TAG:-main}
     build:
       context: .
       dockerfile: services/ai-service/Dockerfile
@@ -202,6 +206,7 @@ services:
       - ${WEAV_SECRETS_DIR:-./tmp/prod}/service-keys/public:/run/weav-keys:ro
 
   api-gateway:
+    image: ${WEAV_IMAGE_REGISTRY:-ghcr.io/hoangkhai1905}/weav-api-gateway:${WEAV_IMAGE_TAG:-main}
     build:
       context: .
       dockerfile: services/api-gateway/Dockerfile
@@ -227,6 +232,7 @@ services:
         ipv4_address: 172.31.250.10
 
   notification-service:
+    image: ${WEAV_IMAGE_REGISTRY:-ghcr.io/hoangkhai1905}/weav-notification-service:${WEAV_IMAGE_TAG:-main}
     build:
       context: .
       dockerfile: services/notification-service/Dockerfile
@@ -250,6 +256,7 @@ services:
         condition: service_healthy
 
   web:
+    image: ${WEAV_IMAGE_REGISTRY:-ghcr.io/hoangkhai1905}/weav-web:${WEAV_IMAGE_TAG:-main}
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -269,6 +276,7 @@ services:
       start_period: 10s
 
   admin:
+    image: ${WEAV_IMAGE_REGISTRY:-ghcr.io/hoangkhai1905}/weav-admin:${WEAV_IMAGE_TAG:-main}
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
