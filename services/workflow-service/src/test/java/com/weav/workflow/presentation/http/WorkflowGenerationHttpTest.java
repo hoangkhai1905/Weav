@@ -94,6 +94,17 @@ class WorkflowGenerationHttpTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test void allowBlanksIsParsedAndForwardedAndDefaultsToFalse() throws Exception {
+        mvc.perform(request("{\"prompt\":\"ping\",\"allowBlanks\":true}")).andExpect(status().isOk());
+        assertTrue(Boolean.TRUE.equals(ai.lastPayload.get("allowBlanks")));
+        mvc.perform(request("{\"prompt\":\"ping\"}")).andExpect(status().isOk());
+        assertTrue(!ai.lastPayload.containsKey("allowBlanks"));
+        mvc.perform(request("{\"prompt\":\"ping\",\"allowBlanks\":false}")).andExpect(status().isOk());
+        assertTrue(!ai.lastPayload.containsKey("allowBlanks"));
+        mvc.perform(request("{\"prompt\":\"ping\",\"allowBlanks\":\"yes\"}")).andExpect(status().isBadRequest());
+        mvc.perform(request("{\"prompt\":\"ping\",\"allowBlanks\":[true]}")).andExpect(status().isBadRequest());
+    }
+
     @Test void exhaustedAiQuotaIs429() throws Exception {
         ai.failure = new com.weav.workflow.application.node.NodeExecutor.Failure("AI_QUOTA_EXCEEDED", "quota", false);
         mvc.perform(request("{\"prompt\":\"ping\"}")).andExpect(status().isTooManyRequests())
@@ -148,10 +159,12 @@ class WorkflowGenerationHttpTest {
     }
     static class FakeAi implements AiGenerationPort {
         int calls;
+        Map<String,Object> lastPayload = Map.of();
         com.weav.workflow.application.node.NodeExecutor.Failure failure;
         void reset() { calls = 0; failure = null; }
         public Map<String,Object> generate(UUID workspaceId, Map<String,Object> payload) {
             calls++;
+            lastPayload = payload;
             if (failure != null) throw failure;
             Map<String,Object> n1 = Map.of("id","start","type","trigger.manual","config",Map.of());
             Map<String,Object> n2 = Map.of("id","ping","type","http.request","config",

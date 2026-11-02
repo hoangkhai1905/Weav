@@ -78,6 +78,43 @@ class IntentCompilerTest {
     }
 
     @Test
+    void allowBlanksReturnsADraftValidDraftWithMissingValuesAndConnectionsLeftOut() {
+        Map<String, Object> schedule = intent(
+                List.of(node("start", "trigger.schedule", Map.of("cron", "0 0 9 * * *")), node("a", "http.request", GET)),
+                List.of(edge("start", "a")));
+        assertInstanceOf(IntentCompiler.NeedsValues.class, compiler.compile(schedule, Map.of(), Map.of(), false));
+        IntentCompiler.Ready blankTimezone = assertInstanceOf(IntentCompiler.Ready.class,
+                compiler.compile(schedule, Map.of(), Map.of(), true));
+        assertEquals(false, blankTimezone.definition().nodes().get(0).config().containsKey("timezone"));
+
+        Map<String, Object> sheets = intent(
+                List.of(node("start", "trigger.manual", Map.of()),
+                        node("read", "google.sheets", Map.of("operation", "read", "range", "A1:B2")),
+                        node("mail", "email.send", Map.of("to", "a@example.test"))),
+                List.of(edge("start", "read"), edge("read", "mail")));
+        assertInstanceOf(IntentCompiler.NeedsValues.class, compiler.compile(sheets, Map.of(), Map.of(), false));
+        IntentCompiler.Ready ready = assertInstanceOf(IntentCompiler.Ready.class,
+                compiler.compile(sheets, Map.of(), Map.of(), true));
+        DefinitionValidator validator = new DefinitionValidator();
+        assertEquals(List.of(), validator.validateDraft(ready.definition()));
+        assertEquals(false, validator.validatePublish(ready.definition()).isEmpty());
+        assertEquals(false, ready.definition().nodes().get(2).config().containsKey("subject"));
+    }
+
+    @Test
+    void allowBlanksStillRejectsGraphProblemsAndNonAskableFields() {
+        Map<String, Object> cycle = intent(
+                List.of(node("start", "trigger.manual", Map.of()), node("a", "http.request", GET), node("b", "http.request", GET)),
+                List.of(edge("start", "a"), edge("a", "b"), edge("b", "a")));
+        assertInstanceOf(IntentCompiler.Invalid.class, compiler.compile(cycle, Map.of(), Map.of(), true));
+        Map<String, Object> noOperation = intent(
+                List.of(node("start", "trigger.manual", Map.of()),
+                        node("w", "google.sheets", Map.of("spreadsheetId", "a", "range", "A1"))),
+                List.of(edge("start", "w")));
+        assertInstanceOf(IntentCompiler.Invalid.class, compiler.compile(noOperation, Map.of(), Map.of(), true));
+    }
+
+    @Test
     void asksForAMissingConnectionAndBindsAPickedOne() {
         Map<String, Object> sheets = intent(
                 List.of(node("start", "trigger.manual", Map.of()),

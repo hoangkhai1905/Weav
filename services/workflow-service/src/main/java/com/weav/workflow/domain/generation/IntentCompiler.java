@@ -65,6 +65,16 @@ public final class IntentCompiler {
      * that fills a config field the model left empty.
      */
     public Compilation compile(Object intent, Map<String, UUID> connections, Map<String, String> answers) {
+        return compile(intent, connections, answers, false);
+    }
+
+    /**
+     * {@code allowBlanks}: the user asked for a draft now. Missing required plain-text values and missing connections
+     * no longer become questions; the definition is returned as is and the builder flags the blanks at publish.
+     * Every other issue still makes the intent {@link Invalid}.
+     */
+    public Compilation compile(Object intent, Map<String, UUID> connections, Map<String, String> answers,
+                               boolean allowBlanks) {
         if (!(intent instanceof Map<?, ?> root) || !(root.get("name") instanceof String name)
                 || name.isBlank() || name.codePointCount(0, name.length()) > 120
                 || !(root.get("nodes") instanceof List<?> rawNodes) || rawNodes.size() < 2 || rawNodes.size() > 20
@@ -138,6 +148,9 @@ public final class IntentCompiler {
                 if (!"REQUIRED_FIELD_MISSING".equals(issue.code()) || type == null || field == null) {
                     return new Invalid();
                 }
+                if (allowBlanks && (field.equals("connectionId") || askable(type, field))) {
+                    continue;
+                }
                 if (field.equals("connectionId")) {
                     connectionTypes.add(type);
                 } else if (askable(type, field) && values.size() < 10) {
@@ -145,6 +158,9 @@ public final class IntentCompiler {
                 } else {
                     return new Invalid();
                 }
+            }
+            if (allowBlanks) {
+                return new Ready(name, definition, layout(nodes, edges), Map.copyOf(nodeNames));
             }
             // Values first: the connection question comes back on the next round, once the values are filled.
             return values.isEmpty() ? new NeedsConnections(List.copyOf(connectionTypes))

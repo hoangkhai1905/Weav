@@ -107,6 +107,47 @@ test.describe("Create with AI page", () => {
     expect(generates).toHaveLength(1);
     expect((generates[0] as { prompt: string }).prompt).toBe(PROMPT);
   });
+
+  test("offers a draft with blanks: resends the prompt with allowBlanks, then creates the draft", async ({ page }) => {
+    await installAuthFixture(page);
+    const ready = {
+      status: "ready",
+      name: "Email report",
+      definition: {
+        schemaVersion: "1.0",
+        nodes: [
+          { id: "start", type: "trigger.manual", config: {} },
+          { id: "send_email", type: "email.send", config: { to: "owner@example.test" } },
+        ],
+        edges: [{ id: "e1", source: "start", target: "send_email" }],
+        variables: {},
+      },
+      layout: { start: { x: 100, y: 100 }, send_email: { x: 400, y: 100 } },
+    };
+    const { generates, posts } = await stubWorkflows(page, {
+      generate: (body) =>
+        body.allowBlanks === true
+          ? ready
+          : { status: "needs_input", questions: [{ code: "VALUE", field: "send_email.config.body" }] },
+    });
+    await gotoGenerator(page);
+
+    await page.getByLabel("What should this workflow do?").fill(PROMPT);
+    await page.getByRole("button", { name: "Generate workflow", exact: true }).click();
+    const later = page.getByRole("button", { name: "Create the draft now, I'll fill in the rest" });
+    await expect(later).toBeEnabled();
+    expect(generates).toHaveLength(1);
+    expect(generates[0]).not.toHaveProperty("allowBlanks");
+
+    await later.click();
+    await expect(page.getByTestId("ai-generator-preview")).toContainText("Email report");
+    expect(generates).toHaveLength(2);
+    expect(generates[1]).toMatchObject({ prompt: PROMPT, allowBlanks: true });
+
+    await page.getByRole("button", { name: "Create draft", exact: true }).click();
+    await page.waitForURL(`**/workflows/${WORKFLOW_ID}/builder`);
+    expect(posts).toHaveLength(1);
+  });
 });
 
 test.describe("Generate with AI panel in the builder", () => {

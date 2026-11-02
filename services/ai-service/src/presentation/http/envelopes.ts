@@ -62,6 +62,7 @@ export const ENVELOPES = {
     operation: z.literal('generate'),
     prompt: codePoints(4_000),
     timezone: z.string().min(1).max(64).optional(),
+    allowBlanks: z.boolean().optional(),
     capabilities: z
       .array(
         z.strictObject({
