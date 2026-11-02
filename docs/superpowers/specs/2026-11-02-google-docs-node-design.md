@@ -58,8 +58,8 @@ Outputs:
   - `GoogleDocsNodeExecutor` extends `GoogleApiNodeExecutor` (type `google.docs`, provider `GOOGLE_DRIVE`).
     `prepare` validates config without I/O. The multipart builder from `GoogleDriveNodeExecutor` moves to a shared
     package-private helper instead of being copied.
-  - `GoogleApiClient`: a Docs call that goes through the new transport method; the 404 message becomes per service
-    ("Doc not found, or not created by Weav").
+  - `GoogleApiClient`: a Docs call that goes through the new transport method. The existing 404 message already says
+    that only files Weav created or opened are visible, so it is reused as is.
   - `PinnedHttpTransport`: the Docs host, validator and execute method.
   - `DefinitionValidator`: per-operation required fields (`title` for create; `documentId` and `content` for append).
   - `NodeSideEffects`: no change (unknown action types are side-effecting by default; both operations write).
