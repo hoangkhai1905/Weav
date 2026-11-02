@@ -143,3 +143,12 @@ Freeze was 2026-11-01: F2 and F3 are bugs (fix allowed); F1, F4, F5 are features
 - F5 `4379b354`: audit at 390x844 (Chrome DevTools): no page-level horizontal scroll, but clipped tables (Workflows, dashboard recent runs), builder header pushing Publish/Save off-screen, canvas not fitted, activity bar wrapping, run-history header without the name, assistant button over the last row. Fixed with md-breakpoint stacked rows, a builder overflow menu, mobile refit, `max-md:pb-24`. New `mobile-layout.spec.ts`.
 - Web checks on the combined branch: `tsc` clean, `build` ok, Playwright 165/165 (11 specs) + 79/79 (workspace-connections, ai-generator, request-budget, mobile-layout).
 - Next: merge to dev, push, fast-forward main (K approval), redeploy VM (`git pull`, `~/build.sh`, `dc up -d`), live check of connection delete, Telegram picker, AI draft with blanks, phone layout.
+
+### CD live and F1-F5 verified on the VM (2026-11-02 16:30)
+
+- `dev` and `main` pushed (`469fea19`, main fast-forward; GitHub noted the `ci-ok` requirement, pushed with admin rights). CI run 41418745120 on main: every job green, then `publish-images` 8/8 (web image passed the node-schema guard).
+- GHCR packages inherited the public repo visibility: the VM pulled all 8 anonymously; every image carries revision `469fea19`.
+- VM: `weav-deploy.service` + `.timer` installed; first run pulled, checked out `469fea19`, recreated the 8 app containers from GHCR (all healthy, `deploy: running 469fea19...`); the next run 09:24:07 UTC was a no-op. Timer every 2 minutes. The VM no longer builds images (`~/build.sh` is obsolete).
+- Live checks: F2 internal usage call with the key Workspace sends -> `{"inUse":false}` (was 401). F3 public bundle contains the node schemas; Telegram step shows "Kết nối bot Telegram*" with the two bots, "Thêm tùy chọn (3)" has its fields. F4 with the real model: prompt "Mỗi sáng đọc Google Sheets rồi gửi email báo cáo" -> 6 questions -> "Tạo bản nháp, tôi sẽ điền sau" -> 3-step preview -> draft `f80bae64` saved, builder blocker lists the blanks. F5 at 390px: builder header keeps back/name/⋯/Xuất bản/Lưu, all nodes fitted, activity bar one line.
+- Not checked live: deleting a connection from the UI (K to try; the server side is fixed), the APK link (needs `WEAV_ANDROID_APK_URL` repository variable and an APK).
+- Test data on Neon `demo`: drafts `1d782053` ("F3 repro") and `f80bae64` (AI draft).
