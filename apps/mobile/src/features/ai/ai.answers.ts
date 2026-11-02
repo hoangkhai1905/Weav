@@ -35,6 +35,7 @@ export function providerForNodeType(nodeType: string): ConnectionProvider | null
     case 'google.calendar':
       return 'GOOGLE_CALENDAR';
     case 'google.drive':
+    case 'google.docs':
       return 'GOOGLE_DRIVE';
     case 'telegram.send_message':
     case 'trigger.telegram':
