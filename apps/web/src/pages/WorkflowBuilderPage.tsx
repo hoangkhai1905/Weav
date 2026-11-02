@@ -2287,7 +2287,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                   })()}
                   {selectedNodeType === 'trigger.telegram' && <p data-testid="telegram-trigger-hint" className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.telegram_trigger_hint')}</p>}
                   {selectedNodeType === 'google.drive' && <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.drive_hint')}</p>}
-                  {selectedNodeType === 'google.docs' && <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.docs_hint')}</p>}
+                  {selectedNodeType === 'google.docs' && selectedNodeConfig.operation === 'append' && <p className="text-xs leading-relaxed text-muted-foreground">{t('builder.cfg.docs_hint')}</p>}
                   {selectedNodeType === 'trigger.gmail' && (
                     // Builds the Gmail search for people who do not know its syntax; "from:"/"subject:" wait for the value.
                     <div data-testid="gmail-quick-filters" className="flex flex-wrap items-center gap-1">
