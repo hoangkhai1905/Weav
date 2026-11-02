@@ -91,6 +91,7 @@ Node catalog ([NodeCatalog](../../../services/workflow-service/src/main/java/com
 | `logic.condition` | Implemented | Ports `true`/`false`. |
 | `http.request` | Implemented | [HttpRequestNodeExecutor](../../../services/workflow-service/src/main/java/com/weav/workflow/infrastructure/http/HttpRequestNodeExecutor.java); URL policy, pinned transport, bounded bytes. |
 | `google.sheets` | Implemented | read/append/update; needs Workspace connection. |
+| `google.docs` | Implemented | create/append; needs Google Drive connection; reaches only Docs Weav created (`drive.file`). |
 | `email.send` | Implemented | [GmailNodeExecutor](../../../services/workflow-service/src/main/java/com/weav/workflow/infrastructure/gmail/GmailNodeExecutor.java) and `GmailClient` are unconditional Spring components with a unit test; needs a Workspace Gmail connection. Max 10 recipients, 64 KiB body. Not yet run against real Gmail. |
 | `ai.extract`, `ai.classify`, `ai.summarize` | Partial | `AiNodeExecutor` exists; gated by `WORKFLOW_AI_ENABLED` (default false). |
 | `ocr.extract` | Partial | Adapter present, disabled unless six verification gates are true. |

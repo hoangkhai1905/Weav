@@ -52,6 +52,19 @@ Config unchanged (`connectionId` required, `query` max 500, `pollIntervalMinutes
 
 Neither `content` nor `file` still uploads an empty file (backward compatible). Errors: `FILE_TOO_LARGE`, `FILE_NOT_FOUND`, `DEPENDENCY_NOT_CONFIGURED`. Example: `file: "{{ trigger.input.attachments[0] }}"` uploads the first email attachment.
 
+## google.docs
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `operation` | `create` or `append` | required |
+| `connectionId` | string | required; `GOOGLE_DRIVE` connection |
+| `title` | string (template) | create, required; one line |
+| `content` | string (template), max 512 KiB UTF-8 | create optional; append required |
+| `folderId` | string (template) | create; only folders Weav created or opened |
+| `documentId` | string (template), `^[A-Za-z0-9_-]{10,200}$` | append, required |
+
+Create output: `{documentId, title, url}`. Append output: `{documentId, url, appendedCharacters}`; the text starts a new paragraph at the end of the Doc. Google Drive `drive.file` scope: only Docs Weav created are reachable; others return `HTTP_BUSINESS_REJECTED`. Bad config returns `CONFIGURATION_ERROR` before any request.
+
 ## google.sheets
 
 | Field | Type | Notes |
