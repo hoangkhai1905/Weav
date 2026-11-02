@@ -190,6 +190,6 @@ From `services/identity-service`:
 ## References
 
 - Code: [services/identity-service](../../../services/identity-service), [pom.xml](../../../services/identity-service/pom.xml) (Spring Boot 4.1.0, Java 25), [application.properties](../../../services/identity-service/src/main/resources/application.properties), [migrations](../../../services/identity-service/src/main/resources/db/migration).
-- Docs: [notification-outbox.md](../../../services/identity-service/notification-outbox.md), [identity core auth design](../../superpowers/specs/2026-09-05-identity-core-auth-design.md), [identity readiness log](../../work_logs/K/identity-core-auth-readiness.md).
+- Docs: [notification-outbox.md](../../../services/identity-service/notification-outbox.md), [identity core auth design](../../superpowers/specs/2026-09-05-identity-core-auth-design.md), [identity readiness log](../../work_logs/K/identity/2026-W36/identity-core-auth-readiness.md).
 - Contracts: [auth OpenAPI](../../../packages/contracts/http/auth/openapi.yaml), [auth README](../../../packages/contracts/http/auth/README.md), [notifications-v2](../../../packages/contracts/http/notifications-v2.md), [event-v2 schema](../../../packages/contracts/events/notification/event-v2.schema.json).
 - Related: [../README.md](../README.md), [../../rulebook.md](../../rulebook.md), Workspace [IdentityDirectoryHttpClient](../../../services/workspace-service/src/main/java/com/weav/workspace/infrastructure/identity/IdentityDirectoryHttpClient.java).

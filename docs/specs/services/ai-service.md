@@ -148,7 +148,7 @@ Fake provider overlay: [compose.ai-local.yml](../../../compose.ai-local.yml) add
 ## References
 
 - Code: [services/ai-service](../../../services/ai-service), [scripts/ai-dev-keys.mjs](../../../scripts/ai-dev-keys.mjs)
-- Design and plan: [design](../../superpowers/specs/2026-09-25-ai-service-v1-design.md), [plan](../../superpowers/plans/2026-09-25-ai-service-v1.md)
+- Design: [design](../../superpowers/specs/2026-09-25-ai-service-v1-design.md) (plan `2026-09-25-ai-service-v1.md` is in git tag `archive/plans-2026-11-02`)
 - Contract: [packages/contracts/http/ai](../../../packages/contracts/http/ai)
 - Compose: [compose.dev.yml](../../../compose.dev.yml), [compose.ai-local.yml](../../../compose.ai-local.yml)
 - Rules: [rulebook](../../rulebook.md), [specs index](../README.md)

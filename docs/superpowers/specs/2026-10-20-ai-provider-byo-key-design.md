@@ -152,7 +152,7 @@ One branch `feature/ai-provider-byok` from `dev`, one commit per step:
 3. workspace-service: enum, policy, codec, three key-check classes.
 4. workflow-service: schema loader array form, `model`-needs-`connectionId` rule, executor (provider check + `llm`), error mapping.
 5. web: connections, picker helper, model field, i18n, friendlyError.
-6. Live check, work log `docs/work_logs/T/ai/ai-provider-byok.md`, GitNexus `detect_changes`, `git merge --no-ff` into `dev` after review.
+6. Live check, work log `docs/work_logs/T/ai/2026-W43/ai-provider-byok.md`, GitNexus `detect_changes`, `git merge --no-ff` into `dev` after review.
 
 Steps 2 and 3 are independent and can run in parallel lanes.
 
