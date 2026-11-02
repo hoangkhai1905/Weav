@@ -55,7 +55,7 @@
     "documentId": {
       "type": "string",
       "title": "Document ID",
-      "description": "The Doc to append to. Required for append. Only Docs created by Weav are reachable.",
+      "description": "The Doc ID or its Google Docs link. Required for append. Only Docs created by Weav are reachable.",
       "x-weav-template": true,
       "x-weav-personal": true
     }

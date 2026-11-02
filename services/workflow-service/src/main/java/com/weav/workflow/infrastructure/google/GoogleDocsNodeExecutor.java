@@ -25,6 +25,9 @@ public final class GoogleDocsNodeExecutor extends GoogleApiNodeExecutor {
     private static final String SERVICE = "Google Docs";
     private static final String DOC_MIME_TYPE = "application/vnd.google-apps.document";
     private static final Pattern DOCUMENT_ID = Pattern.compile("^[A-Za-z0-9_-]{10,200}$");
+    /** A Docs link as copied from the browser; group 1 is the Doc ID. */
+    private static final Pattern DOCS_LINK = Pattern.compile(
+            "^https://docs\\.google\\.com/document/(?:u/\\d+/)?d/([A-Za-z0-9_-]{10,200})(?:[/?#].*)?$");
     private static final int MAX_LINE_LENGTH = 1024;
     /** Stays below the outbound request cap (1 MiB) once the multipart envelope is added. */
     private static final int MAX_CONTENT_BYTES = 512 * 1024;
@@ -80,7 +83,13 @@ public final class GoogleDocsNodeExecutor extends GoogleApiNodeExecutor {
     }
 
     private Call append(UUID connectionId, Map<String, Object> config) {
-        if (!(config.get("documentId") instanceof String documentId) || !DOCUMENT_ID.matcher(documentId).matches()) {
+        if (!(config.get("documentId") instanceof String rawDocumentId)) {
+            throw configurationFailure();
+        }
+        String trimmed = rawDocumentId.trim();
+        var link = DOCS_LINK.matcher(trimmed);
+        String documentId = link.matches() ? link.group(1) : trimmed;
+        if (!DOCUMENT_ID.matcher(documentId).matches()) {
             throw configurationFailure();
         }
         if (!(config.get("content") instanceof String content) || content.isBlank()) {

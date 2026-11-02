@@ -106,6 +106,69 @@ class GoogleDocsNodeExecutorTest {
     }
 
     @Test
+    void appendAcceptsADocsLinkAndUsesTheBareId() {
+        for (String link : List.of(
+                "https://docs.google.com/document/d/doc1234567/edit",
+                "https://docs.google.com/document/d/doc1234567/edit?usp=sharing",
+                "https://docs.google.com/document/d/doc1234567/edit?usp=drivesdk",
+                "https://docs.google.com/document/u/0/d/doc1234567/edit",
+                "  https://docs.google.com/document/d/doc1234567/edit  ",
+                "  doc1234567  ")) {
+            Fixture f = new Fixture("GOOGLE_DRIVE", 200, Map.of());
+
+            NodeExecutor.Result result = f.docs().execute(f.context(), config("append", Map.of(
+                    "documentId", link, "content", "x")));
+
+            assertEquals("https://docs.googleapis.com/v1/documents/doc1234567:batchUpdate",
+                    f.transport.uri.toString(), link);
+            assertEquals(DOC_ID, result.output().get("documentId"), link);
+            assertEquals(VIEW_URL, result.output().get("url"), link);
+        }
+    }
+
+    @Test
+    void appendRejectsLinksThatAreNotAGoogleDoc() {
+        for (String value : List.of(
+                "http://docs.google.com/document/d/doc1234567/edit",
+                "https://evil.com/document/d/doc1234567/edit",
+                "https://docs.google.com/spreadsheets/d/doc1234567/edit",
+                "https://docs.google.com/document/d/short")) {
+            Fixture f = new Fixture("GOOGLE_DRIVE", 200, Map.of());
+            NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class, () -> f.docs().execute(
+                    f.context(), config("append", Map.of("documentId", value, "content", "x"))), value);
+            assertEquals("CONFIGURATION_ERROR", failure.code(), value);
+            assertFalse(f.transport.called, value);
+        }
+    }
+
+    @Test
+    void appendDocumentIdLengthBoundaries() {
+        Fixture ok = new Fixture("GOOGLE_DRIVE", 200, Map.of());
+        ok.docs().execute(ok.context(), config("append", Map.of("documentId", "a".repeat(200), "content", "x")));
+        assertTrue(ok.transport.called);
+        for (String id : List.of("a".repeat(201), "a".repeat(9))) {
+            Fixture f = new Fixture("GOOGLE_DRIVE", 200, Map.of());
+            NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class, () -> f.docs().execute(
+                    f.context(), config("append", Map.of("documentId", id, "content", "x"))));
+            assertEquals("CONFIGURATION_ERROR", failure.code());
+            assertFalse(f.transport.called);
+        }
+    }
+
+    @Test
+    void appendContentSizeBoundary() {
+        Fixture ok = new Fixture("GOOGLE_DRIVE", 200, Map.of());
+        ok.docs().execute(ok.context(), config("append", Map.of("documentId", DOC_ID, "content", "a".repeat(512 * 1024))));
+        assertTrue(ok.transport.called);
+
+        Fixture over = new Fixture("GOOGLE_DRIVE", 200, Map.of());
+        NodeExecutor.Failure failure = assertThrows(NodeExecutor.Failure.class, () -> over.docs().execute(
+                over.context(), config("append", Map.of("documentId", DOC_ID, "content", "a".repeat(512 * 1024 + 1)))));
+        assertEquals("CONFIGURATION_ERROR", failure.code());
+        assertFalse(over.transport.called);
+    }
+
+    @Test
     void rejectsBadConfigBeforeAnyRequest() {
         List<Map<String, Object>> invalid = List.of(
                 config("delete", Map.of()),
