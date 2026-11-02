@@ -74,7 +74,7 @@ test('every trigger reason code, trigger type and node type has friendly vi and 
     ...['ERROR', 'WARN', 'INFO', 'DEBUG'].map((x) => `log.level.${x}`),
     ...[
       'trigger.manual', 'trigger.schedule', 'trigger.webhook', 'trigger.telegram', 'trigger.gmail',
-      'http.request', 'email.send', 'google.sheets', 'google.calendar', 'google.drive',
+      'http.request', 'email.send', 'google.sheets', 'google.calendar', 'google.drive', 'google.docs',
       'telegram.send_message', 'logic.condition', 'logic.switch', 'ai.extract', 'ai.classify',
       'ai.summarize', 'ai.generate', 'ocr.extract', 'data.set',
     ].map((x) => `node.type.${x}`),

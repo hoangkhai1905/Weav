@@ -172,7 +172,7 @@ class DefinitionValidatorTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"agent.task", "google.docs"})
+    @ValueSource(strings = {"agent.task"})
     void rejectsRemovedTypesDuringDraftSave(String type) {
         var graph = definition(List.of(manual("manual"), node("removed", type, Map.of())), List.of());
 
@@ -184,7 +184,7 @@ class DefinitionValidatorTest {
     void exposesExactlyTheSupportedNodeTypes() {
         assertEquals(Set.of("trigger.manual", "trigger.schedule", "trigger.webhook", "trigger.telegram",
                 "http.request", "email.send", "google.sheets", "telegram.send_message", "logic.condition",
-                "ai.extract", "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive",
+                "ai.extract", "ai.classify", "ai.summarize", "ocr.extract", "google.calendar", "google.drive", "google.docs",
                 "logic.switch", "data.set", "ai.generate", "trigger.gmail", "weav.workflow",
                 "trigger.workflow_event", "discord.send_message", "format.datetime", "format.text",
                 "slack.send_message", "teams.send_message"),
@@ -325,6 +325,39 @@ class DefinitionValidatorTest {
         assertTrue(validator.validatePublish(mapped).stream().noneMatch(issue -> issue.code().startsWith("OCR_SOURCE")));
         assertTrue(validator.validatePublish(reference).stream().noneMatch(issue -> issue.code().startsWith("OCR_SOURCE")));
         assertTrue(validator.validatePublish(empty).stream().anyMatch(issue -> issue.code().equals("OCR_SOURCE_REQUIRED")));
+    }
+
+    @Test
+    void docsCreateRequiresTitle() {
+        String connection = java.util.UUID.randomUUID().toString();
+        var missing = definition(List.of(manual("manual"), node("docs", "google.docs",
+                Map.of("connectionId", connection, "operation", "create", "title", " "))), List.of());
+        var present = definition(List.of(manual("manual"), node("docs", "google.docs",
+                Map.of("connectionId", connection, "operation", "create", "title", "{{ trigger.input.title }}"))),
+                List.of());
+
+        assertTrue(validator.validatePublish(missing).stream().anyMatch(issue ->
+                issue.code().equals("REQUIRED_FIELD_MISSING") && "config.title".equals(issue.field())));
+        assertTrue(validator.validatePublish(present).stream().noneMatch(issue ->
+                "config.title".equals(issue.field())));
+    }
+
+    @Test
+    void docsAppendRequiresDocumentIdAndContent() {
+        String connection = java.util.UUID.randomUUID().toString();
+        var missing = definition(List.of(manual("manual"), node("docs", "google.docs",
+                Map.of("connectionId", connection, "operation", "append"))), List.of());
+        var present = definition(List.of(manual("manual"), node("docs", "google.docs",
+                Map.of("connectionId", connection, "operation", "append",
+                        "documentId", "{{ trigger.input.doc }}", "content", "{{ trigger.input.text }}"))), List.of());
+
+        var issues = validator.validatePublish(missing);
+        assertTrue(issues.stream().anyMatch(issue ->
+                issue.code().equals("REQUIRED_FIELD_MISSING") && "config.documentId".equals(issue.field())));
+        assertTrue(issues.stream().anyMatch(issue ->
+                issue.code().equals("REQUIRED_FIELD_MISSING") && "config.content".equals(issue.field())));
+        assertTrue(validator.validatePublish(present).stream().noneMatch(issue ->
+                "config.documentId".equals(issue.field()) || "config.content".equals(issue.field())));
     }
 
     @Test

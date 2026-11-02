@@ -56,7 +56,7 @@ export const statusTone = (status: string): StatusTone => TONES[status] ?? 'paus
 // The real node types (packages/workflow-schema). Labels live in the dictionary as node.type.<type> and node.prefix.<prefix>.
 const NODE_TYPES = new Set([
   'ai.classify', 'ai.extract', 'ai.generate', 'ai.summarize', 'data.set', 'discord.send_message', 'email.send', 'format.datetime', 'format.text',
-  'google.calendar', 'google.drive', 'google.sheets', 'http.request', 'logic.condition', 'logic.switch', 'ocr.extract', 'slack.send_message',
+  'google.calendar', 'google.docs', 'google.drive', 'google.sheets', 'http.request', 'logic.condition', 'logic.switch', 'ocr.extract', 'slack.send_message',
   'teams.send_message', 'telegram.send_message', 'trigger.gmail', 'trigger.manual', 'trigger.schedule', 'trigger.telegram', 'trigger.webhook',
   'trigger.workflow_event', 'weav.workflow',
 ]);

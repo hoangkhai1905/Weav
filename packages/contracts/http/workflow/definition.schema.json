@@ -59,6 +59,7 @@
             "google.sheets",
             "google.calendar",
             "google.drive",
+            "google.docs",
             "telegram.send_message",
             "logic.condition",
             "ai.extract",
@@ -540,6 +541,50 @@
                   "pageSize": {
                     "type": "integer",
                     "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "google.docs"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "$ref": "#/$defs/connectionId"
+                  },
+                  "operation": {
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "append"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "folderId": {
+                    "type": "string"
+                  },
+                  "documentId": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": false

@@ -55,6 +55,9 @@ public class PinnedHttpTransport {
             "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
     private static final Pattern HEADER_NAME = Pattern.compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$");
     private static final String GOOGLE_SHEETS_HOST = "sheets.googleapis.com";
+    private static final String GOOGLE_DOCS_HOST = "docs.googleapis.com";
+    private static final Pattern GOOGLE_DOCS_BATCH_UPDATE_PATH = Pattern.compile(
+            "^/v1/documents/[A-Za-z0-9_-]{10,200}:batchUpdate$");
     private static final String GMAIL_HOST = "gmail.googleapis.com";
     private static final String GOOGLE_API_HOST = "www.googleapis.com";
     private static final Pattern GOOGLE_CALENDAR_EVENTS_PATH = Pattern.compile("^/calendar/v3/calendars/[^/]+/events$");
@@ -182,6 +185,19 @@ public class PinnedHttpTransport {
         OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
         return executeWithAuthentication(target, method, Map.of(),
                 Map.of("Authorization", "Bearer " + accessToken), query, body);
+    }
+
+    /**
+     * Posts one Google Docs {@code documents.batchUpdate} call with Workspace-owned
+     * OAuth credentials. The endpoint is fixed to the Docs HTTPS host; DNS is
+     * approved and pinned here immediately before the request is sent.
+     */
+    public HttpResponse executeGoogleDocsWithBearerToken(URI uri, Object body, String accessToken) {
+        validateGoogleDocsUri(uri);
+        requireBearerToken(accessToken, "Google Docs");
+        OutboundTargetPolicy.ApprovedTarget target = targetPolicy.approve(uri);
+        return executeWithAuthentication(target, "POST", Map.of(),
+                Map.of("Authorization", "Bearer " + accessToken), null, body);
     }
 
     /**
@@ -778,6 +794,26 @@ public class PinnedHttpTransport {
                 || !uri.getRawPath().startsWith("/v4/spreadsheets/")) {
             throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
                     "The Sheets destination is invalid.", false);
+        }
+    }
+
+    private void validateGoogleDocsUri(URI uri) {
+        String path = uri == null ? null : uri.getRawPath();
+        if (uri == null
+                || !uri.isAbsolute()
+                || uri.getScheme() == null
+                || !uri.getScheme().equalsIgnoreCase("https")
+                || uri.getHost() == null
+                || !uri.getHost().equalsIgnoreCase(GOOGLE_DOCS_HOST)
+                || (uri.getPort() != -1 && uri.getPort() != 443)
+                || uri.getRawUserInfo() != null
+                || uri.getRawFragment() != null
+                || uri.getRawQuery() != null
+                || path == null
+                || !GOOGLE_DOCS_BATCH_UPDATE_PATH.matcher(path).matches()
+                || hasUnsafePathSequence(path)) {
+            throw new NodeExecutor.Failure("HTTP_REQUEST_INVALID",
+                    "The Google Docs destination is invalid.", false);
         }
     }
 

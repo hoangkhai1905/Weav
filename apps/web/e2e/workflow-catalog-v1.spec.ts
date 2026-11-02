@@ -33,6 +33,7 @@ const V1_NODE_TYPES = [
   // Week 4 nodes; the catalog now covers every packages/workflow-schema node.
   'trigger.gmail',
   'google.drive',
+  'google.docs',
   'google.calendar',
   'logic.switch',
   'data.set',
@@ -95,7 +96,7 @@ test('catalog matches exactly the Workflow V1 node set and contract defaults', a
   expect(catalog.find((item) => item.type === 'google.sheets')?.defaultConfig).not.toHaveProperty('connectionId');
   expect(JSON.stringify(catalog)).not.toContain('$json');
   expect(JSON.stringify(catalog)).not.toContain('google-workspace');
-  expect(catalog.some((item) => ['agent.task', 'google.docs', 'logic.filter'].includes(item.type))).toBe(false);
+  expect(catalog.some((item) => ['agent.task', 'logic.filter'].includes(item.type))).toBe(false);
 });
 
 test('builder palette derives from the catalog and offers exactly the V1 node set', async ({ page }) => {
@@ -113,7 +114,6 @@ test('builder palette derives from the catalog and offers exactly the V1 node se
   expect(paletteTypes).toEqual(V1_NODE_TYPES);
   await expect(page.getByTestId('workflow-palette-count')).toContainText(String(V1_NODE_TYPES.length));
   await expect(page.locator('[data-node-type="agent.task"]')).toHaveCount(0);
-  await expect(page.locator('[data-node-type="google.docs"]')).toHaveCount(0);
   await expect(page.locator('[data-node-type="logic.filter"]')).toHaveCount(0);
 });
 
@@ -285,6 +285,24 @@ test('OCR draft source clears the other sources when the server enables the work
   await expect(inspector.getByTestId('ocr-file-mapping')).toHaveValue('');
 });
 
+test('google docs node shows the fields for each operation', async ({ page }) => {
+  await openStubbedBuilder(page);
+  await addNode(page, 'google.docs');
+
+  const inspector = page.getByTestId('workflow-inspector');
+  await expect(inspector.getByTestId('field-operation')).toHaveValue('create');
+  await expect(inspector.getByTestId('field-title')).toBeVisible();
+  await expect(inspector.getByTestId('field-content')).toBeVisible();
+  await expect(inspector.getByTestId('field-documentId')).toHaveCount(0);
+  // Folder ID is flagged advanced in the schema: it sits under the options section, not in the main form.
+  await expect(inspector.getByTestId('schema-advanced').getByTestId('field-folderId')).toHaveCount(1);
+
+  await inspector.getByTestId('field-operation').selectOption('append');
+  await expect(inspector.getByTestId('field-documentId')).toBeVisible();
+  await expect(inspector.getByTestId('field-content')).toBeVisible();
+  await expect(inspector.getByTestId('field-title')).toHaveCount(0);
+});
+
 test('legacy unsupported node data survives the editor mapper unchanged', async ({ page }) => {
   await loginAndOpenBuilder(page);
   const legacy: WorkflowFixture = {
@@ -294,7 +312,6 @@ test('legacy unsupported node data survives the editor mapper unchanged', async 
     version: 2,
     triggerType: 'MANUAL',
     nodes: [
-      { id: 'old-docs', type: 'google.docs', name: 'Old Docs action', config: { documentId: 'kept-document-id', contentVariable: '{{ nodes.old.output.data }}' } },
       { id: 'old-agent', type: 'agent.task', name: 'Old agent action', config: { goal: 'Keep this saved value' } },
     ],
     edges: [],
