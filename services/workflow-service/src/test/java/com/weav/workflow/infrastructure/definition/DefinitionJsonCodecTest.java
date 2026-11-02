@@ -119,7 +119,7 @@ class DefinitionJsonCodecTest {
 
         assertEquals(NodeCatalog.supportedTypes(), types);
         assertFalse(types.contains("agent.task"));
-        assertFalse(types.contains("google.docs"));
+        assertTrue(types.contains("google.docs"));
         assertEquals(200, schema.at("/properties/nodes/maxItems").intValue());
         assertEquals(1000, schema.at("/properties/edges/maxItems").intValue());
         assertEquals(3, schema.at("/$defs/node/required").size());

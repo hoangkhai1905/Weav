@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "weav:node/google.docs",
+  "title": "Google Docs",
+  "description": "Creates a Google Doc from text, or appends text to a Doc. Only Docs created by Weav are reachable.",
+  "x-weav-node": {
+    "type": "google.docs",
+    "category": "action",
+    "label": "Google Docs",
+    "sideEffect": true
+  },
+  "type": "object",
+  "properties": {
+    "connectionId": {
+      "type": "string",
+      "minLength": 1,
+      "title": "Connection",
+      "description": "Google Drive connection used to access Docs.",
+      "x-weav-connection": {
+        "provider": "GOOGLE_DRIVE"
+      }
+    },
+    "operation": {
+      "type": "string",
+      "title": "Operation",
+      "description": "Create a new Doc, or append text to a Doc.",
+      "enum": [
+        "create",
+        "append"
+      ],
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "title": "Title",
+      "description": "Name of the new Doc. Required for create.",
+      "x-weav-template": true
+    },
+    "content": {
+      "type": "string",
+      "title": "Content",
+      "description": "Text of the new Doc (optional) for create, or the text to add on a new paragraph at the end for append (required). Up to 512 KiB. Plain text; the Doc is not formatted.",
+      "x-weav-template": true
+    },
+    "folderId": {
+      "type": "string",
+      "title": "Folder ID",
+      "description": "Drive folder for the new Doc. Optional, used by create. Only folders created by Weav are accessible.",
+      "x-weav-template": true,
+      "x-weav-personal": true,
+      "x-weav-ui": {
+        "advanced": true
+      }
+    },
+    "documentId": {
+      "type": "string",
+      "title": "Document ID",
+      "description": "The Doc to append to. Required for append. Only Docs created by Weav are reachable.",
+      "x-weav-template": true,
+      "x-weav-personal": true
+    }
+  },
+  "required": [
+    "connectionId",
+    "operation"
+  ],
+  "additionalProperties": false
+}
