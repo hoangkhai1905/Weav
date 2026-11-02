@@ -2168,7 +2168,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                             {!isLoadingConnections && options.length === 0 && (
                               <p className="mt-1 text-xs text-muted-foreground">{t(`builder.cfg.no_${provider.toLowerCase()}`)}</p>
                             )}
-                            <Link to="/workspace/connections" data-testid={`add-connection-${provider}`} className={addConnectionButtonCls}>
+                            <Link to="/workspace/connections" target="_blank" rel="noopener" data-testid={`add-connection-${provider}`} className={addConnectionButtonCls}>
                               <Plus size={12} aria-hidden="true" />{t(`builder.cfg.connect_${provider.toLowerCase()}`)}
                             </Link>
                           </>
@@ -2287,7 +2287,7 @@ export const WorkflowBuilderPage: React.FC = () => {
                     {configField('connectionId', telegramConnections)}
                     {!isLoadingConnections && telegramConnections.length === 0 && (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {t('builder.cfg.no_telegram')} <Link to="/workspace/connections" className="text-run underline">{t('builder.cfg.connect_telegram')}</Link> {t('builder.cfg.connect_first')}
+                        {t('builder.cfg.no_telegram')} <Link to="/workspace/connections" target="_blank" rel="noopener" className="text-run underline">{t('builder.cfg.connect_telegram')}</Link> {t('builder.cfg.connect_first')}
                       </p>
                     )}
                   </div>

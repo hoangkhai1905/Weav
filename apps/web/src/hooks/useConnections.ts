@@ -49,6 +49,8 @@ export function useConnections() {
     ),
     queryFn: ({ signal }) => connectionApi.list(workspaceId!, signal),
     gcTime: 0,
+    // A connection created in another tab (builder links open the Connections page there) shows up on return.
+    refetchOnWindowFocus: true,
   });
 
   return { ...query, userId, workspaceId };

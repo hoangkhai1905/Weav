@@ -11,6 +11,8 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --filter ./apps/web... --frozen-lockfile
 
 COPY apps/web ./apps/web
+# nodeSchemas.ts reads these node schemas at build time (import.meta.glob); without them every schema-rendered field is empty.
+COPY packages/workflow-schema/nodes ./packages/workflow-schema/nodes
 
 ARG VITE_API_BASE_URL
 ARG VITE_IDENTITY_SERVICE_URL
@@ -25,6 +27,9 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
 RUN test -n "$VITE_API_BASE_URL" -a -n "$VITE_IDENTITY_SERVICE_URL" \
     || { echo "ERROR: build args VITE_API_BASE_URL and VITE_IDENTITY_SERVICE_URL are required" >&2; exit 1; }
 RUN pnpm --filter ./apps/web build
+# Fail the image when the node schemas were not bundled (empty inspector fields, no connection picker).
+RUN grep -rqF "weav:node/telegram.send_message" apps/web/dist/assets \
+    || { echo "ERROR: node schemas missing from the bundle" >&2; exit 1; }
 # The fallback literals stay in the bundle, so prove the configured URLs were baked in instead.
 RUN grep -rqF "$VITE_API_BASE_URL" apps/web/dist/assets && grep -rqF "$VITE_IDENTITY_SERVICE_URL" apps/web/dist/assets \
     || { echo "ERROR: configured API URLs not found in the bundle" >&2; exit 1; }
