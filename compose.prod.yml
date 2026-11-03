@@ -75,7 +75,8 @@ services:
       GOOGLE_REDIRECT_URI: https://api.weav.id.vn/auth/oauth/google/callback
       OAUTH_WEB_RETURN_TARGET_URI: https://app.weav.id.vn/auth/callback
       OAUTH_WEB_ALLOWED_ORIGIN: https://app.weav.id.vn
-      OAUTH_MOBILE_RETURN_TARGET_URI: ${OAUTH_MOBILE_RETURN_TARGET_URI:-}
+      # The deep link the mobile app registers (apps/mobile GOOGLE_RETURN_URL); blank disables mobile Google sign-in (503).
+      OAUTH_MOBILE_RETURN_TARGET_URI: weav://auth/callback
       VALKEY_URL: ${VALKEY_URL:?set VALKEY_URL in prod.env}
       OTP_HMAC_SECRET: ${OTP_HMAC_SECRET:?set OTP_HMAC_SECRET in prod.env}
       AVATAR_S3_ENDPOINT: ${R2_ENDPOINT:?set R2_ENDPOINT in prod.env}

@@ -352,3 +352,10 @@ Xem thêm `docs/work_logs/K/web/2026-W41/ui-redesign.md` mục 10.
 ### Tổng kết mobile v2 (chưa kiểm thiết bị, chưa push)
 - Việc cần máy thật: thanh dưới + `router.navigate` từ màn chi tiết về tab; phím tắt Home (`filter`, `segment`); công tắc quy trình; chọn ảnh đại diện; JsonViewer lồng trong bước; hiển thị font Be Vietnam Pro trên Android; kiểm tương phản bằng mắt ở chế độ tối.
 - Câu hỏi cho chủ dự án: (1) nhóm việc của mẫu suy từ trigger vì API không có category; (2) hàng "Của nhóm" không có dãy ô bước vì danh sách không trả bước; (3) bỏ bộ chọn lọc theo quy trình ở Lịch sử (ô tìm kiếm thay thế); (4) nút trợ lý chuyển từ header Lịch sử sang mục Công việc ở "Tôi".
+
+### 2026-11-03: tên app, nút trợ lý nổi, màn chưa có workspace, Google 503 (T)
+- `app.json`: `expo.name` "mobile" -> "Weav" (giữ `slug: mobile` vì dự án EAS gắn với slug). Cần build APK lại mới đổi tên trên máy.
+- Nút trợ lý AI nổi góc dưới phải (`AppTabBar.tsx`, `testID=assistant-fab`): nằm trên thanh dưới (đo `onLayout`), mở `/assistant/chat`; ẩn ở `/assistant*`, khi bàn phím mở và ở màn ẩn thanh dưới.
+- Chưa có workspace thì tab Quy trình/Lịch sử xoay mãi: query `enabled: !!workspaceId` bị tắt nên TanStack v5 giữ `isPending`. Thêm `features/workspace/components/NoWorkspaceState.tsx` (giống trạng thái trống ở Trang chủ) và hiện nó trước skeleton trong `TeamWorkflowsPane` và `executions.tsx`.
+- Google trên mobile 503: `GET https://api.weav.id.vn/auth/oauth/google/mobile/start` trả `503 DEPENDENCY_UNAVAILABLE` vì `OAUTH_MOBILE_RETURN_TARGET_URI` trống trong prod (client `mobile` không đăng ký, `OAuthFlowCoordinator.registration`). Cố định `weav://auth/callback` trong `compose.prod.yml` + thêm kiểm tra vào `scripts/check-compose-prod.sh` (PASS). Còn phải: máy chạy stack recreate `identity-service`.
+- Kiểm: `npx tsc --noEmit -p .` sạch; chưa kiểm trên máy thật.

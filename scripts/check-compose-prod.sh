@@ -77,6 +77,7 @@ eq('identity-service', 'IDENTITY_TRUSTED_PROXY_PATTERN', '172[.]31[.]250[.](10|1
 eq('identity-service', 'GOOGLE_REDIRECT_URI', 'https://api.weav.id.vn/auth/oauth/google/callback');
 eq('identity-service', 'OAUTH_WEB_RETURN_TARGET_URI', 'https://app.weav.id.vn/auth/callback');
 eq('identity-service', 'OAUTH_WEB_ALLOWED_ORIGIN', 'https://app.weav.id.vn');
+eq('identity-service', 'OAUTH_MOBILE_RETURN_TARGET_URI', 'weav://auth/callback');
 eq('workspace-service', 'GOOGLE_OAUTH_REDIRECT_URI', 'https://api.weav.id.vn/oauth/google/callback');
 eq('workspace-service', 'GOOGLE_OAUTH_FRONTEND_RETURN_URL', 'https://app.weav.id.vn/connections');
 eq('notification-service', 'NOTIFICATION_DETAIL_BASE_URL', 'https://app.weav.id.vn');
