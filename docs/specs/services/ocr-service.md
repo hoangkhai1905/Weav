@@ -29,7 +29,7 @@ OCR has no thesis use case of its own; it serves the Workflow OCR node and the B
 | --- | --- |
 | BR08 | OCR runs only inside published, configured workflow executions (Workflow gate) or the interactive inspector; it never triggers or publishes anything. |
 | BR03 | Tenant context comes from the workspace ID; artifact resolution rejects cross-workspace, missing, deleted, or expired artifacts before any download ([workflow_artifact_resolver.py](../../../services/ocr-service/src/infrastructure/files/workflow_artifact_resolver.py)). |
-| BR01 | Bearer token required at the private ingress (presence only today, see Security). |
+| BR01 | Service JWT verified at the private ingress (see Security). |
 
 Component rules (code):
 - Exactly one document source per request: multipart file, artifact ID, or allowlisted URL ([ocr_request.py](../../../services/ocr-service/src/domain/models/ocr_request.py)).
@@ -145,7 +145,7 @@ Overlays: [compose.ocr-models.dev.yml](../../../compose.ocr-models.dev.yml) (loc
 
 ## Open questions
 
-1. **Deferred (2026-09-30):** OCR is still being tested on Google Colab; revisit before enabling any `WORKFLOW_OCR_*` flag. Contract says Service JWT must be verified; code verifies it (see Security). Suggested: still verify the live Workflow signing path before enabling any `WORKFLOW_OCR_*` flag.
+1. **Deferred (2026-09-30):** OCR is still being tested on Google Colab; revisit before enabling any `WORKFLOW_OCR_*` flag. Contract says Service JWT must be verified; code verifies it (see Security). The demo enables the file source with these claims (see docs/deployment/demo-runbook.md section 7c); URL and artifact sources stay off.
 2. Contract requires rejecting a missing `X-Request-ID`; code generates one when absent (invalid values are rejected). Suggested: change code to match the contract.
 3. Contract makes `X-Workspace-ID` non-authoritative; code uses it. Suggested: derive from the verified JWT.
 4. Notion's diagram routes Gateway directly to OCR; the contract also has a public Gateway route plus a private route, which matches code. Suggested: keep both, document Gateway as ingress only.
