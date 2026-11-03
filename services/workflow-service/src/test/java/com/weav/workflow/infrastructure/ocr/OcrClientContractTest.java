@@ -182,6 +182,54 @@ class OcrClientContractTest {
     }
 
     @Test
+    void acceptsATableCellWithEmptyText() throws Exception {
+        Map<String, Object> output = extractWithFirstCell(cell -> cell.put("text", ""));
+
+        Map<?, ?> cell = firstCell(output);
+        assertEquals("", cell.get("text"));
+    }
+
+    @Test
+    void rejectsATableCellWithMissingOrNullText() throws Exception {
+        for (java.util.function.Consumer<tools.jackson.databind.node.ObjectNode> mutation : java.util.List.<
+                java.util.function.Consumer<tools.jackson.databind.node.ObjectNode>>of(
+                cell -> cell.remove("text"), cell -> cell.putNull("text"), cell -> cell.put("text", 7))) {
+            NodeExecutor.Failure failure = org.junit.jupiter.api.Assertions.assertThrows(
+                    NodeExecutor.Failure.class, () -> extractWithFirstCell(mutation));
+            assertEquals("OCR_INVALID_RESPONSE", failure.code());
+        }
+    }
+
+    private Map<String, Object> extractWithFirstCell(
+            java.util.function.Consumer<tools.jackson.databind.node.ObjectNode> mutation) throws Exception {
+        OcrClientProperties properties = properties(true, true, true, true, true, true,
+                writePrivateKey(keyPair()));
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        ObjectMapper mapper = new ObjectMapper();
+        tools.jackson.databind.JsonNode tree = mapper.readTree(
+                Files.readString(contractFixture("success-with-tables.json")));
+        mutation.accept((tools.jackson.databind.node.ObjectNode) tree.get("tables").get(0).get("cells").get(0));
+        String fixture = mapper.writeValueAsString(tree);
+        server.expect(requestTo("http://ocr.internal/v1/extractions"))
+                .andRespond(request -> {
+                    String id = request.getHeaders().getFirst("X-Request-ID");
+                    return withSuccess(fixture.replace("eeb24fb2-df80-4dcb-b22d-3a4884799c73", id)
+                            .replace("4c9d5ea3-7fa2-43ce-95b8-8c17042a969f", id), MediaType.APPLICATION_JSON)
+                            .createResponse(request);
+                });
+        return new OcrClient(properties, new WorkflowServiceJwtIssuer(properties, new DefaultResourceLoader()),
+                builder.build(), mapper)
+                .extract(context(), Map.of("source", Map.of("type", "url",
+                        "fileUrl", "https://approved.example/file.pdf")));
+    }
+
+    private Map<?, ?> firstCell(Map<String, Object> output) {
+        Map<?, ?> table = (Map<?, ?>) ((java.util.List<?>) output.get("tables")).get(0);
+        return (Map<?, ?>) ((java.util.List<?>) table.get("cells")).get(0);
+    }
+
+    @Test
     void postsAnUploadedFileAsMultipartWithTheSameAuthAndChecksTheEchoedRequestId() throws Exception {
         OcrClientProperties properties = properties(true, false, false, true, false, false,
                 writePrivateKey(keyPair()));

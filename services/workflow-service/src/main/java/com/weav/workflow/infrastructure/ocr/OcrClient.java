@@ -446,7 +446,7 @@ public class OcrClient {
                         || !nonNegativeInteger(cell.get("column"))
                         || !positiveInteger(cell.get("rowSpan"), Integer.MAX_VALUE)
                         || !positiveInteger(cell.get("columnSpan"), Integer.MAX_VALUE)
-                        || !textFieldValid(cell, "text", 1_048_576)
+                        || !stringFieldWithin(cell, "text", 1_048_576)
                         || !validConfidence(cell.get("confidence"))
                         || !stringArray(cell.get("sourceBlockIds"))) {
                     return false;
@@ -547,6 +547,12 @@ public class OcrClient {
     private boolean textFieldValid(JsonNode parent, String field, int maxLength) {
         String value = textField(parent, field);
         return value != null && !value.isBlank() && value.length() <= maxLength;
+    }
+
+    /** Like {@link #textFieldValid} but an empty or blank string is allowed (empty table cells). */
+    private boolean stringFieldWithin(JsonNode parent, String field, int maxLength) {
+        String value = textField(parent, field);
+        return value != null && value.length() <= maxLength;
     }
 
     private String textField(JsonNode parent, String field) {
