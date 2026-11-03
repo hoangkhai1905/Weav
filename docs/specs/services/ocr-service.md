@@ -125,7 +125,7 @@ Overlays: [compose.ocr-models.dev.yml](../../../compose.ocr-models.dev.yml) (loc
 
 ## Status and known gaps
 
-- Planned: Service JWT signature/claim verification and ignoring `X-Workspace-ID` (production blocker).
+- Implemented: Service JWT verification (RS256, per-issuer JWKS, `aud`/`scope`/`mode`/`workspace_id`, 120 s max lifetime); `X-Workspace-ID` is only compared against the claim.
 - Planned: concrete artifact descriptor/download contract and resolver wiring (`artifact_resolver=None` in dependencies.py).
 - Planned: URL allowlist configuration and provider/object-store approval.
 - Planned: `/health/live` and `/health/ready` (model readiness), compose healthcheck.
@@ -145,7 +145,7 @@ Overlays: [compose.ocr-models.dev.yml](../../../compose.ocr-models.dev.yml) (loc
 
 ## Open questions
 
-1. **Deferred (2026-09-30):** OCR is still being tested on Google Colab; revisit before enabling any `WORKFLOW_OCR_*` flag. Contract says Service JWT must be verified; code checks presence only. Suggested: treat as a blocker for enabling any `WORKFLOW_OCR_*` flag, implement JWKS verification mirroring AI Service.
+1. **Deferred (2026-09-30):** OCR is still being tested on Google Colab; revisit before enabling any `WORKFLOW_OCR_*` flag. Contract says Service JWT must be verified; code verifies it (see Security). Suggested: still verify the live Workflow signing path before enabling any `WORKFLOW_OCR_*` flag.
 2. Contract requires rejecting a missing `X-Request-ID`; code generates one when absent (invalid values are rejected). Suggested: change code to match the contract.
 3. Contract makes `X-Workspace-ID` non-authoritative; code uses it. Suggested: derive from the verified JWT.
 4. Notion's diagram routes Gateway directly to OCR; the contract also has a public Gateway route plus a private route, which matches code. Suggested: keep both, document Gateway as ingress only.
