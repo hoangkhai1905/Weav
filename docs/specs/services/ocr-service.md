@@ -1,6 +1,8 @@
 # OCR Service
 
-> Status: Partial. Text and table extraction pipeline and HTTP ingress are Implemented and smoke-tested; Service JWT verification, URL allowlist wiring, artifact resolution, health endpoints, and production quality/load gates are Planned. Owner: T (partner). Last verified: 2026-09-30 against `dev`.
+> Status: Partial. Text and table extraction pipeline and HTTP ingress and Service JWT verification are Implemented; URL allowlist wiring, artifact resolution, health endpoints, and production quality/load gates are Planned. Owner: T (partner). Last verified: 2026-09-30 against `dev`.
+
+Deployment status: runs in the demo stack since 2026-11 (ONNX runtime, `file` source only); see [demo runbook, OCR](../../deployment/demo-runbook.md#7c-ocr-ocr-service-onnx-file-source-only) and the [partner handoff](../../handoff/2026-11-demo-ocr.md).
 
 ## Purpose and scope
 
@@ -27,7 +29,7 @@ OCR has no thesis use case of its own; it serves the Workflow OCR node and the B
 | --- | --- |
 | BR08 | OCR runs only inside published, configured workflow executions (Workflow gate) or the interactive inspector; it never triggers or publishes anything. |
 | BR03 | Tenant context comes from the workspace ID; artifact resolution rejects cross-workspace, missing, deleted, or expired artifacts before any download ([workflow_artifact_resolver.py](../../../services/ocr-service/src/infrastructure/files/workflow_artifact_resolver.py)). |
-| BR01 | Bearer token required at the private ingress (presence only today, see Security). |
+| BR01 | Service JWT verified at the private ingress (see Security). |
 
 Component rules (code):
 - Exactly one document source per request: multipart file, artifact ID, or allowlisted URL ([ocr_request.py](../../../services/ocr-service/src/domain/models/ocr_request.py)).
@@ -49,7 +51,7 @@ Internal API (callers: API Gateway public route, Workflow worker). Public route 
 | POST | `/v1/extractions` | Extract text/tables; `multipart/form-data` (`file`, `language`, `detectTables`) or `application/json` (`source`: `artifact`/`url`) | `Authorization: Bearer` required (Service JWT per contract); `X-Request-ID` UUID required; dev bypass only if `APP_ENV=development` and `OCR_ALLOW_UNAUTHENTICATED_DEV=true` | see table |
 | GET | `/docs`, `/openapi.json` | FastAPI docs | none | none |
 
-No `/health` endpoint exists in code (Planned). Compose has no OCR healthcheck.
+No `/health` endpoint exists in code (Planned). `compose.prod.yml` has a healthcheck on `/openapi.json`, which only proves the server is up (models load lazily).
 
 Error envelope: `{error: {code, message, retryable, details}, requestId}`; `X-Request-ID` echoed. Codes in [errors.py](../../../services/ocr-service/src/domain/errors.py):
 
@@ -83,7 +85,7 @@ None. Synchronous REST only.
 
 ## Security
 
-- Auth today: [routes.py](../../../services/ocr-service/src/api/routes.py) only checks a well-formed `Bearer <token>` header. It does not verify signature or claims. `X-Workspace-ID` is accepted as workspace context. This contradicts the contract (verify `iss` in `weav-api-gateway|weav-workflow`, `aud=weav-ocr`, `scope=ocr:extract`, `mode`, `workspace_id`, 120 s TTL) and is a documented production blocker.
+- Auth: [service_auth.py](../../../services/ocr-service/src/api/service_auth.py) verifies the Service JWT (RS256, explicit `kid`, per-issuer JWKS from `OCR_TRUSTED_ISSUERS`, `aud=weav-ocr`, `scope=ocr:extract`, per-issuer `mode`, `workspace_id`, 120 s max lifetime). Tenant context is the verified `workspace_id` claim; `X-Workspace-ID` is only compared against it. Fails closed when no issuer is configured.
 - Dev bypass: requires both `APP_ENV=development` and `OCR_ALLOW_UNAUTHENTICATED_DEV=true`; the OCR/Colab compose overlays set it. Keep `false` otherwise (default in `.env.example`).
 - SSRF defence ([safe_url_fetcher.py](../../../services/ocr-service/src/infrastructure/files/safe_url_fetcher.py)): default-deny domain allowlist, DNS pinning, strict schemes, no credentials forwarded. `create_extract_text_use_case` builds `SafeUrlFetcher()` with no allowlist, so URL sources are rejected until wiring is added.
 - File validation: MIME/signature check, encrypted PDF and animated image rejection, page/dimension limits, bounded spool ([document_loader.py](../../../services/ocr-service/src/infrastructure/files/document_loader.py)).
@@ -123,7 +125,7 @@ Overlays: [compose.ocr-models.dev.yml](../../../compose.ocr-models.dev.yml) (loc
 
 ## Status and known gaps
 
-- Planned: Service JWT signature/claim verification and ignoring `X-Workspace-ID` (production blocker).
+- Implemented: Service JWT verification (RS256, per-issuer JWKS, `aud`/`scope`/`mode`/`workspace_id`, 120 s max lifetime); `X-Workspace-ID` is only compared against the claim.
 - Planned: concrete artifact descriptor/download contract and resolver wiring (`artifact_resolver=None` in dependencies.py).
 - Planned: URL allowlist configuration and provider/object-store approval.
 - Planned: `/health/live` and `/health/ready` (model readiness), compose healthcheck.
@@ -143,7 +145,7 @@ Overlays: [compose.ocr-models.dev.yml](../../../compose.ocr-models.dev.yml) (loc
 
 ## Open questions
 
-1. **Deferred (2026-09-30):** OCR is still being tested on Google Colab; revisit before enabling any `WORKFLOW_OCR_*` flag. Contract says Service JWT must be verified; code checks presence only. Suggested: treat as a blocker for enabling any `WORKFLOW_OCR_*` flag, implement JWKS verification mirroring AI Service.
+1. **Deferred (2026-09-30):** OCR is still being tested on Google Colab; revisit before enabling any `WORKFLOW_OCR_*` flag. Contract says Service JWT must be verified; code verifies it (see Security). The demo enables the file source with these claims (see docs/deployment/demo-runbook.md section 7c); URL and artifact sources stay off.
 2. Contract requires rejecting a missing `X-Request-ID`; code generates one when absent (invalid values are rejected). Suggested: change code to match the contract.
 3. Contract makes `X-Workspace-ID` non-authoritative; code uses it. Suggested: derive from the verified JWT.
 4. Notion's diagram routes Gateway directly to OCR; the contract also has a public Gateway route plus a private route, which matches code. Suggested: keep both, document Gateway as ingress only.

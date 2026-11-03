@@ -22,7 +22,7 @@ const check = (ok, msg) => { if (!ok) errors.push(msg); };
 check(cfg.name === 'weav-prod', `project name is ${cfg.name}, expected weav-prod`);
 
 const expected = ['rabbitmq', 'identity-service', 'workspace-service', 'workflow-service', 'ai-service',
-  'api-gateway', 'notification-service', 'web', 'admin', 'cloudflared'].sort();
+  'api-gateway', 'notification-service', 'web', 'admin', 'cloudflared', 'ocr-service'].sort();
 check(JSON.stringify(Object.keys(svc).sort()) === JSON.stringify(expected), `service set is ${Object.keys(svc).sort()}`);
 
 const hasDockerfileHealthcheck = (s) => {
@@ -32,7 +32,6 @@ const hasDockerfileHealthcheck = (s) => {
 };
 
 for (const [name, s] of Object.entries(svc)) {
-  check(!/ocr/i.test(name), `${name}: OCR service must not exist`);
   check(!s.ports || s.ports.length === 0, `${name}: must not publish ports`);
   check(s.restart === 'unless-stopped', `${name}: restart is ${s.restart}`);
   check(Number(s.mem_limit) > 0, `${name}: missing mem_limit`);
@@ -45,7 +44,7 @@ for (const [name, s] of Object.entries(svc)) {
 
 const MB = 1024 * 1024;
 const limits = { 'identity-service': 768, 'workspace-service': 768, 'workflow-service': 1024, 'ai-service': 384,
-  'api-gateway': 384, 'notification-service': 384, rabbitmq: 512, web: 64, admin: 64, cloudflared: 128 };
+  'api-gateway': 384, 'notification-service': 384, rabbitmq: 512, web: 64, admin: 64, cloudflared: 128, 'ocr-service': 3072 };
 for (const [n, mb] of Object.entries(limits)) check(Number(svc[n]?.mem_limit) === mb * MB, `${n}: mem_limit is not ${mb}m`);
 
 for (const n of ['web', 'admin']) check(svc[n]?.healthcheck?.test?.join(' ').includes('wget -qO- http://127.0.0.1:8080/'), `${n}: wget healthcheck missing`);
@@ -62,7 +61,12 @@ eq('workflow-service', 'WORKFLOW_EXECUTION_WORKER_OWNER', 'workflow-demo-worker'
 eq('workflow-service', 'WORKFLOW_AI_ENABLED', 'true');
 eq('workflow-service', 'WORKFLOW_AI_GENERATION_ENABLED', 'true');
 eq('workflow-service', 'WORKFLOW_AI_DAILY_LIMIT_PER_WORKSPACE', '50');
-eq('workflow-service', 'WORKFLOW_OCR_ENABLED', 'false');
+eq('workflow-service', 'WORKFLOW_OCR_ENABLED', 'true');
+eq('workflow-service', 'WORKFLOW_OCR_SERVICE_CLAIMS_VERIFIED', 'true');
+eq('workflow-service', 'WORKFLOW_OCR_URL_SOURCE_ENABLED', 'false');
+eq('workflow-service', 'WORKFLOW_OCR_ARTIFACT_SOURCE_ENABLED', 'false');
+eq('workflow-service', 'WORKFLOW_OCR_SIGNING_KEY_ID', 'workflow-dev-1');
+eq('workflow-service', 'WORKFLOW_OCR_SIGNING_KEY_LOCATION', 'file:/run/weav-keys/workflow-service.pem');
 eq('workflow-service', 'WORKFLOW_PUBLIC_BASE_URL', 'https://api.weav.id.vn');
 eq('workflow-service', 'WORKFLOW_WEB_BASE_URL', 'https://app.weav.id.vn');
 eq('ai-service', 'AI_ASSISTANT_ENABLED', 'true');
@@ -80,6 +84,15 @@ eq('notification-service', 'NOTIFICATION_EMAIL_ENABLED', 'true');
 eq('notification-service', 'NOTIFICATION_LEGACY_DRAIN', 'false');
 
 eq('api-gateway', 'GATEWAY_TRUST_PROXY_HOPS', '1');
+eq('api-gateway', 'GATEWAY_OCR_SIGNING_KEY_LOCATION', '/run/gateway-keys/api-gateway.pem');
+eq('api-gateway', 'GATEWAY_OCR_SIGNING_KEY_ID', 'gateway-dev-1');
+eq('api-gateway', 'GATEWAY_OCR_TIMEOUT_MS', '95000');
+// OCR runs the ONNX runtime, verifies service JWTs from the workflow and gateway JWKS, and has no dev bypass or URL source.
+eq('ocr-service', 'APP_ENV', 'production');
+eq('ocr-service', 'OCR_TRUSTED_ISSUERS', 'weav-workflow=/run/weav-keys/workflow-service.jwks.json,weav-api-gateway=/run/weav-keys/api-gateway.jwks.json');
+check(!('OCR_ALLOW_UNAUTHENTICATED_DEV' in env('ocr-service')), 'ocr-service: OCR_ALLOW_UNAUTHENTICATED_DEV must not be set');
+check(!('OCR_URL_ALLOWLIST' in env('ocr-service')), 'ocr-service: OCR_URL_ALLOWLIST must not be set');
+check(!!svc['ocr-service']?.healthcheck, 'ocr-service: healthcheck missing');
 eq('api-gateway', 'CORS_ALLOWED_ORIGINS', 'https://app.weav.id.vn,https://admin.weav.id.vn');
 eq('api-gateway', 'IDENTITY_SERVICE_URL', 'http://identity-edge:8080');
 check(svc['api-gateway']?.networks?.edge?.ipv4_address === '172.31.250.10', 'api-gateway: edge ipv4_address is not 172.31.250.10');
