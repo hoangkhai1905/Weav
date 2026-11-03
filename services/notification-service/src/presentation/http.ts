@@ -1,9 +1,11 @@
 import {
   ArgumentsHost,
   BadRequestException,
+  Body,
   CanActivate,
   Catch,
   Controller,
+  Delete,
   ExceptionFilter,
   ExecutionContext,
   Get,
@@ -15,10 +17,12 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Expo } from 'expo-server-sdk';
 import {
   createRemoteJWKSet,
   decodeProtectedHeader,
@@ -250,7 +254,37 @@ export class InboxNotificationsController {
       result.data.locale ?? 'vi',
     );
   }
+
+  @Put('devices')
+  @HttpCode(204)
+  async savePushDevice(@Req() req: Request, @Body() body: unknown) {
+    const result = pushDeviceSchema.safeParse(body);
+    if (!result.success) throw new BadRequestException('Invalid push device');
+    await this.notifications.savePushDevice(
+      req.userId,
+      result.data.token,
+      result.data.locale,
+    );
+  }
+
+  @Delete('devices')
+  @HttpCode(204)
+  async removePushDevice(@Req() req: Request, @Body() body: unknown) {
+    const result = pushDeviceSchema.pick({ token: true }).safeParse(body);
+    if (!result.success) throw new BadRequestException('Invalid push device');
+    await this.notifications.removePushDevice(req.userId, result.data.token);
+  }
 }
+
+const pushDeviceSchema = z
+  .object({
+    token: z
+      .string()
+      .max(512)
+      .refine((token) => Expo.isExpoPushToken(token)),
+    locale: z.enum(['vi', 'en']),
+  })
+  .strict();
 
 @Controller()
 export class HealthController {

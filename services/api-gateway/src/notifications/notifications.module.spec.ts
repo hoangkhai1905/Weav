@@ -74,6 +74,32 @@ describe('notification gateway routes', () => {
     });
     expect(response.statusCode).toBe(404);
   });
+  it.each(['PUT', 'DELETE'] as const)(
+    'forwards the v2 %s push device JSON body',
+    async (method) => {
+      const fetchRequest = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue(new Response(null, { status: 204 }));
+      const payload = { token: 'ExponentPushToken[abc]', locale: 'vi' };
+      const response = await app.inject({
+        method,
+        url: '/api/v2/notifications/devices',
+        headers: { authorization: 'Bearer token' },
+        payload,
+      });
+      expect(response.statusCode).toBe(204);
+      expect(fetchRequest).toHaveBeenCalledWith(
+        'http://notification.internal:3000/api/v2/notifications/devices',
+        expect.objectContaining({
+          method,
+          body: JSON.stringify(payload),
+          headers: expect.objectContaining({
+            'content-type': 'application/json',
+          }) as unknown,
+        }),
+      );
+    },
+  );
   it.each([
     [
       'GET',

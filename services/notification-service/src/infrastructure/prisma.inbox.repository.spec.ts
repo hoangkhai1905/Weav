@@ -29,11 +29,18 @@ const invitation = notificationEventV2Schema.parse({
 type Row = Record<string, any>;
 
 /** Minimal in-memory stand-in for the Prisma transaction used by ingest. */
-function fakeClient() {
+function fakeClient(devices: Row[] = []) {
   const inbox: Row[] = [];
   const deliveries: Row[] = [];
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(0),
+    pushDevice: {
+      findMany: jest.fn(({ where }: any) =>
+        Promise.resolve(
+          devices.filter((d) => where.userId.in.includes(d.userId)),
+        ),
+      ),
+    },
     notificationInbox: {
       findMany: jest.fn(({ where }: any) =>
         Promise.resolve(
@@ -114,5 +121,45 @@ describe('PrismaInboxRepository.ingest for workspace.invitation.created', () => 
         expiresAt: '2026-10-17T04:00:00Z',
       },
     });
+  });
+});
+
+describe('PrismaInboxRepository.ingest push fan-out', () => {
+  const user = '00000000-0000-4000-8000-000000000021';
+  const passwordChanged = notificationEventV2Schema.parse({
+    schemaVersion: 2,
+    eventId: '00000000-0000-4000-8000-000000000022',
+    eventType: 'identity.password_changed',
+    occurredAt: '2026-11-03T04:00:00Z',
+    producer: 'identity-service',
+    actorUserId: user,
+    recipientUserIds: [user],
+    workspaceId: null,
+    entity: { kind: 'USER', id: user },
+    data: {},
+  });
+
+  it('queues one localized push per device, and a replay neither duplicates nor conflicts', async () => {
+    const repo = new PrismaInboxRepository(testSettings());
+    const fake = fakeClient([
+      { token: 'ExponentPushToken[vi-device]', userId: user, locale: 'vi' },
+      { token: 'ExponentPushToken[en-device]', userId: user, locale: 'en' },
+    ]);
+    (repo as unknown as { client: unknown }).client = fake.client;
+
+    await repo.ingest(passwordChanged);
+    await expect(repo.ingest(passwordChanged)).resolves.toBeUndefined();
+
+    expect(fake.inbox).toHaveLength(1);
+    expect(fake.deliveries).toHaveLength(2);
+    const [vi, en] = fake.deliveries;
+    expect(vi).toMatchObject({
+      provider: 'EXPO_PUSH',
+      destination: 'ExponentPushToken[vi-device]',
+      inboxId: fake.inbox[0].id,
+      payload: { source: 'inbox', title: fake.inbox[0].content.vi.title },
+    });
+    expect(en.payload.title).toBe(fake.inbox[0].content.en.title);
+    expect(vi.readAt).toBeInstanceOf(Date);
   });
 });
