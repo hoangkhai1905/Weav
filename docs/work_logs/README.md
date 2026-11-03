@@ -184,6 +184,7 @@ One log per feature, written by K or T (see `log_template.md`). Each member has 
 
 ### T/notification
 
+- [mobile-push.md](T/notification/mobile-push.md): Mobile push notifications (Expo/FCM) — 2026-11-03
 - 2026-W37: [notification-fe.md](T/notification/2026-W37/notification-fe.md): Notification FE — 2026-09-10
 - 2026-W37: [notification-service-research.md](T/notification/2026-W37/notification-service-research.md): Notification Service research and implementation prompt
 - 2026-W37: [notification-service.md](T/notification/2026-W37/notification-service.md): Nhật ký 2026-09-10 — Notification Service
