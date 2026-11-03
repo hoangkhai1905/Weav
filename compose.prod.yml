@@ -1,7 +1,7 @@
 # Demo / production stack. Standalone (do not combine with compose.yml or compose.dev.yml):
 #   docker compose -f compose.prod.yml --env-file "$WEAV_SECRETS_DIR/prod.env" up -d
 # No service publishes a port: the only way in is the Cloudflare Tunnel (docs/architecture/deployment-exposure.md).
-# OCR is never part of this stack. Databases (Neon), Valkey (Aiven) and object storage (R2) are remote.
+# OCR runs here with the ONNX runtime (file source only). Databases (Neon), Valkey (Aiven) and object storage (R2) are remote.
 name: weav-prod
 
 x-rabbit: &rabbit
@@ -163,8 +163,13 @@ services:
       WORKFLOW_FILES_S3_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?set R2_SECRET_ACCESS_KEY in prod.env}
       WORKFLOW_FILES_S3_PATH_STYLE_ACCESS: "true"
       WORKFLOW_FILES_S3_KEY_PREFIX: workflow-files
-      # OCR belongs to the partner and is not part of the demo.
-      WORKFLOW_OCR_ENABLED: "false"
+      # OCR (partner's service, ONNX runtime): file source only; URL and artifact sources stay off.
+      WORKFLOW_OCR_ENABLED: "true"
+      WORKFLOW_OCR_SERVICE_CLAIMS_VERIFIED: "true"
+      WORKFLOW_OCR_URL_SOURCE_ENABLED: "false"
+      WORKFLOW_OCR_ARTIFACT_SOURCE_ENABLED: "false"
+      WORKFLOW_OCR_SIGNING_KEY_ID: workflow-dev-1
+      WORKFLOW_OCR_SIGNING_KEY_LOCATION: file:/run/weav-keys/workflow-service.pem
       WORKFLOW_AI_ENABLED: "true"
       WORKFLOW_AI_GENERATION_ENABLED: "true"
       WORKFLOW_AI_DAILY_LIMIT_PER_WORKSPACE: 50
@@ -226,10 +231,44 @@ services:
       CORS_ALLOWED_ORIGINS: https://app.weav.id.vn,https://admin.weav.id.vn
       # One proxy (cloudflared) in front; the gateway port is never published.
       GATEWAY_TRUST_PROXY_HOPS: 1
+      # OCR preview: the gateway signs its own service JWT (OCR reads api-gateway.jwks.json).
+      GATEWAY_OCR_SIGNING_KEY_LOCATION: /run/gateway-keys/api-gateway.pem
+      GATEWAY_OCR_SIGNING_KEY_ID: gateway-dev-1
+      GATEWAY_OCR_TIMEOUT_MS: "95000"
+    volumes:
+      - ${WEAV_SECRETS_DIR:-./tmp/prod}/service-keys/gateway:/run/gateway-keys:ro
     networks:
       default: {}
       edge:
         ipv4_address: 172.31.250.10
+
+  ocr-service:
+    image: ${WEAV_IMAGE_REGISTRY:-ghcr.io/hoangkhai1905}/weav-ocr-service:${WEAV_IMAGE_TAG:-main}
+    build:
+      context: ./services/ocr-service
+      dockerfile: Dockerfile.dev
+      args:
+        OCR_RUNTIME: onnx
+    restart: unless-stopped
+    mem_limit: 3g
+    environment:
+      APP_ENV: production
+      OCR_MODEL_ROOT: /models
+      WEAV_OCR_MODEL_MANIFEST: /app/config/model-manifest.onnx.json
+      # Callers are verified against the workflow and gateway public JWKS (no unauthenticated dev mode, no URL allowlist).
+      OCR_TRUSTED_ISSUERS: weav-workflow=/run/weav-keys/workflow-service.jwks.json,weav-api-gateway=/run/weav-keys/api-gateway.jwks.json
+      OMP_NUM_THREADS: "2"
+    volumes:
+      # Converted ONNX models, filled once by scripts/setup-ocr-models.sh.
+      - ${WEAV_OCR_MODELS_DIR:-./tmp/prod/ocr-models}:/models:ro
+      - ${WEAV_SECRETS_DIR:-./tmp/prod}/service-keys/public:/run/weav-keys:ro
+    healthcheck:
+      # No /health route: healthy means the server is up, not that the models are loaded.
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/openapi.json',timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   notification-service:
     image: ${WEAV_IMAGE_REGISTRY:-ghcr.io/hoangkhai1905}/weav-notification-service:${WEAV_IMAGE_TAG:-main}
