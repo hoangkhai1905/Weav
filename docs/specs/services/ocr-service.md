@@ -1,6 +1,6 @@
 # OCR Service
 
-> Status: Partial. Text and table extraction pipeline and HTTP ingress are Implemented and smoke-tested; Service JWT verification, URL allowlist wiring, artifact resolution, health endpoints, and production quality/load gates are Planned. Owner: T (partner). Last verified: 2026-09-30 against `dev`.
+> Status: Partial. Text and table extraction pipeline and HTTP ingress and Service JWT verification are Implemented; URL allowlist wiring, artifact resolution, health endpoints, and production quality/load gates are Planned. Owner: T (partner). Last verified: 2026-09-30 against `dev`.
 
 Deployment status: runs in the demo stack since 2026-11 (ONNX runtime, `file` source only); see [demo runbook, OCR](../../deployment/demo-runbook.md#7c-ocr-ocr-service-onnx-file-source-only) and the [partner handoff](../../handoff/2026-11-demo-ocr.md).
 
@@ -85,7 +85,7 @@ None. Synchronous REST only.
 
 ## Security
 
-- Auth today: [routes.py](../../../services/ocr-service/src/api/routes.py) only checks a well-formed `Bearer <token>` header. It does not verify signature or claims. `X-Workspace-ID` is accepted as workspace context. This contradicts the contract (verify `iss` in `weav-api-gateway|weav-workflow`, `aud=weav-ocr`, `scope=ocr:extract`, `mode`, `workspace_id`, 120 s TTL) and is a documented production blocker.
+- Auth: [service_auth.py](../../../services/ocr-service/src/api/service_auth.py) verifies the Service JWT (RS256, explicit `kid`, per-issuer JWKS from `OCR_TRUSTED_ISSUERS`, `aud=weav-ocr`, `scope=ocr:extract`, per-issuer `mode`, `workspace_id`, 120 s max lifetime). Tenant context is the verified `workspace_id` claim; `X-Workspace-ID` is only compared against it. Fails closed when no issuer is configured.
 - Dev bypass: requires both `APP_ENV=development` and `OCR_ALLOW_UNAUTHENTICATED_DEV=true`; the OCR/Colab compose overlays set it. Keep `false` otherwise (default in `.env.example`).
 - SSRF defence ([safe_url_fetcher.py](../../../services/ocr-service/src/infrastructure/files/safe_url_fetcher.py)): default-deny domain allowlist, DNS pinning, strict schemes, no credentials forwarded. `create_extract_text_use_case` builds `SafeUrlFetcher()` with no allowlist, so URL sources are rejected until wiring is added.
 - File validation: MIME/signature check, encrypted PDF and animated image rejection, page/dimension limits, bounded spool ([document_loader.py](../../../services/ocr-service/src/infrastructure/files/document_loader.py)).

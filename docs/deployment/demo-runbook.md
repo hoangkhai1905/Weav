@@ -169,16 +169,19 @@ Limits: Prisma migrations (notification, ai) are still run by hand from the lapt
 
 The partner's `ocr-service` runs in `compose.prod.yml` (image `ghcr.io/hoangkhai1905/weav-ocr-service:main`, `mem_limit: 3g`, no published port). Only the `file` source is on: workflow-service sends the bytes of a file from an earlier step (Gmail attachment, Telegram photo, Drive download). The URL and artifact sources stay off (`WORKFLOW_OCR_URL_SOURCE_ENABLED` / `WORKFLOW_OCR_ARTIFACT_SOURCE_ENABLED` false). The gateway route `POST /api/v1/workspaces/{workspaceId}/ocr/extractions` is live behind a user JWT, workspace membership and 10 requests/min.
 
-One-time setup on the VM, **before** the first deploy that includes `ocr-service`:
-1. Models (needs Docker and network; skips files already present; downloads from Hugging Face and converts to ONNX in a throwaway image): `bash scripts/setup-ocr-models.sh /home/azureuser/weav-ocr-models`. Expected: `paddlex-cache/official_models/` and `onnx/` under that folder, 8 model folders each.
-2. Add `WEAV_OCR_MODELS_DIR=/home/azureuser/weav-ocr-models` to `/home/azureuser/weav-secrets/prod.env` (compare `.env.prod.example`). If it is unset or the folder is missing when the container starts, Docker creates an empty root-owned directory and OCR fails on every call.
-3. The public keys in `service-keys/public` (`workflow-service.jwks.json`, `api-gateway.jwks.json`), `service-keys/private/workflow-service.pem` and `service-keys/gateway/api-gateway.pem` come from `node scripts/ai-dev-keys.mjs` (section 4 step 4) and are already on the VM.
+One-time setup on the VM, in this order, **before** the OCR compose change reaches `main` (the timer would otherwise start `ocr-service` first and Docker would create an empty root-owned `/home/azureuser/weav-ocr-models`):
+1. Models. The script is not in the VM checkout yet, so copy it from the branch to a folder outside `~/Weav` (an untracked file inside `~/Weav` makes the timer's `git checkout` fail) and link `services`: `mkdir -p ~/ocr-setup/scripts && cp scripts/setup-ocr-models.sh ~/ocr-setup/scripts/ && ln -sfn ~/Weav/services ~/ocr-setup/services`, then `cd ~/ocr-setup && bash scripts/setup-ocr-models.sh /home/azureuser/weav-ocr-models` (needs Docker and network; skips files already present; downloads from Hugging Face and converts to ONNX in a throwaway image). Expected: `paddlex-cache/official_models/` and `onnx/` under that folder, 8 model folders each. Later re-runs, once the script is in the checkout: `bash ~/Weav/scripts/setup-ocr-models.sh /home/azureuser/weav-ocr-models`.
+2. Add `WEAV_OCR_MODELS_DIR=/home/azureuser/weav-ocr-models` to `~/weav-secrets/prod.env` (compare `.env.prod.example`).
+3. Only then merge to `main`; the timer deploys. No timer stop is needed.
+4. The public keys in `service-keys/public` (`workflow-service.jwks.json`, `api-gateway.jwks.json`), `service-keys/private/workflow-service.pem` and `service-keys/gateway/api-gateway.pem` come from `node scripts/ai-dev-keys.mjs` (section 4 step 4) and are already on the VM.
+
+Recovery: if the folder was already created root-owned and empty, run `sudo chown -R azureuser:azureuser /home/azureuser/weav-ocr-models` and re-run the script.
 
 Warm-up after every deploy or restart of `ocr-service`: there is no `/health` and the models load lazily, so `healthy` only means the server is up. The first OCR call takes about 45-67 s on CPU (workflow read timeout is 100 s). Run one manual workflow with an `ocr.extract` node on a small image and wait for SUCCESS; there is no unauthenticated endpoint to curl. Later calls take about 7 s per page for text, about 11 s with tables.
 
-Memory check: `docker stats --no-stream` and `free -m`. Warm OCR sits at about 2.3-2.5 GiB. If host `available` drops under about 500 MiB, lower the `ocr-service` `mem_limit` in `compose.prod.yml` and set `detectTables` to false in the demo workflow.
+Memory check: `docker stats --no-stream` and `free -m`. Warm OCR sits at about 2.3-2.5 GiB and table mode peaks higher. Keep `ocr-service` `mem_limit` at 3g (never below about 2.5g: it gets OOM-killed). If host `available` drops under about 500 MiB: first set `detectTables` to false in the demo workflow; if that is not enough, stop OCR (below).
 
-Turn OCR off: set `WORKFLOW_OCR_ENABLED` and `WORKFLOW_OCR_SERVICE_CLAIMS_VERIFIED` to `"false"` in `compose.prod.yml` (commit to `main`; the timer deploys it). Optionally free the memory: `dc stop ocr-service` (the next `dc up -d` starts it again).
+Turn OCR off: set `WORKFLOW_OCR_ENABLED` and `WORKFLOW_OCR_SERVICE_CLAIMS_VERIFIED` to `"false"` in `compose.prod.yml` (commit to `main`; the timer deploys it). To free the memory at once as a temporary measure: `docker compose -f compose.prod.yml --env-file ~/weav-secrets/prod.env stop ocr-service` (the next deploy starts it again).
 
 ## 8. Smoke test
 
