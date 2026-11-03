@@ -5,11 +5,13 @@ import { useAuthStore } from '../../stores/auth.store';
 import { AppTabBar } from '../../components/ui/AppTabBar';
 import { OfflineBanner } from '../../components/ui/OfflineBanner';
 import { useThemeColors } from '../../hooks/useThemeColors';
+import { usePushNotifications } from '../../features/notifications/push-notifications';
 
 export default function AppLayout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isHydrating = useAuthStore((s) => s.isHydrating);
   const colors = useThemeColors();
+  usePushNotifications(isAuthenticated && !isHydrating);
 
   if (isHydrating) {
     return (

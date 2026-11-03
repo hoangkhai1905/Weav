@@ -5,6 +5,7 @@ import { registerAuthSessionInvalidator } from '../../infrastructure/auth/auth-s
 import { useAuthStore } from '../../stores/auth.store';
 import { setUnauthorizedHandler } from '../../infrastructure/http/http-client';
 import { createAuthSessionCoordinator } from './auth-session.coordinator';
+import { unregisterPushDevice } from '../notifications/push-notifications';
 
 const isMockMode = process.env.EXPO_PUBLIC_API_MODE === 'mock';
 const persistenceEnabled = !isMockMode && Platform.OS !== 'web';
@@ -40,6 +41,10 @@ export const bootstrapAuthSession = coordinator.bootstrap;
 export const retryBootstrapAuthSession = coordinator.retryBootstrap;
 export const beginAuthOperation = coordinator.beginAuthOperation;
 export const establishAuthSession = coordinator.establishSession;
-export const logoutAuthSession = coordinator.logout;
+// Unregister push first: the DELETE needs the access token that logout clears.
+export const logoutAuthSession = async () => {
+  await unregisterPushDevice();
+  return coordinator.logout();
+};
 export const expireAuthSession = coordinator.expire;
 export const refreshAuthSession = coordinator.refresh;
