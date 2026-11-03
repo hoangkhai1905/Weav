@@ -15,6 +15,8 @@ import { SearchField } from '../../../components/ui/SearchField';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
 import { useUIStore } from '../../../stores/ui.store';
+import { useWorkspaceStore } from '../../../stores/workspace.store';
+import { NoWorkspaceState } from '../../workspace/components/NoWorkspaceState';
 import { MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
 import type { ApiError } from '../../../domain/common/error.types';
 import type { WorkflowSummary } from '../../../domain/workflow/workflow.types';
@@ -34,6 +36,7 @@ export const TeamWorkflowsPane: React.FC<{ onCreate: () => void }> = ({ onCreate
   const colors = useThemeColors();
   const { t } = useTranslation();
   const showToast = useUIStore((s) => s.showToast);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const query = useInfiniteWorkflows();
   const perms = useWorkflowPermissions();
   const pause = usePauseWorkflow();
@@ -124,6 +127,7 @@ export const TeamWorkflowsPane: React.FC<{ onCreate: () => void }> = ({ onCreate
     </View>
   );
 
+  if (!activeWorkspaceId) return <NoWorkspaceState />;
   if (query.isPending) return <ListSkeleton />;
   if (query.isError && loaded.length === 0) {
     return <ErrorState error={query.error as unknown as ApiError} onRetry={() => void query.refetch()} />;

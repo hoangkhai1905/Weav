@@ -21,6 +21,8 @@ import { TriggerTile } from '../../../components/ui/TriggerTile';
 import { formatDuration } from '../../../components/ui/status';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
+import { useWorkspaceStore } from '../../../stores/workspace.store';
+import { NoWorkspaceState } from '../../../features/workspace/components/NoWorkspaceState';
 import { FontFamily, Radius, Spacing, Typography } from '../../../constants/theme';
 import type { ApiError } from '../../../domain/common/error.types';
 import type { ExecutionSummary } from '../../../domain/execution/execution.types';
@@ -30,6 +32,7 @@ export default function ExecutionsScreen() {
   const colors = useThemeColors();
   const { t, language } = useTranslation();
   const params = useLocalSearchParams<{ filter?: string }>();
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const query = useExecutions();
   const names = useWorkflowNames();
   const [filter, setFilter] = useState<RunFilter>('all');
@@ -113,7 +116,9 @@ export default function ExecutionsScreen() {
   const footer = <Text style={[Typography.caption, styles.note, { color: colors.textSubtle }]}>{t('exl.note')}</Text>;
 
   let body: React.ReactNode;
-  if (query.isPending) {
+  if (!activeWorkspaceId) {
+    body = <NoWorkspaceState />;
+  } else if (query.isPending) {
     body = <ListSkeleton />;
   } else if (query.isError && all.length === 0) {
     body = <ErrorState error={query.error as unknown as ApiError} onRetry={() => void query.refetch()} />;

@@ -1,0 +1,19 @@
+{
+  "cli": {
+    "version": ">= 18.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_MODE": "http",
+        "EXPO_PUBLIC_API_BASE_URL": "https://api.weav.id.vn",
+        "EXPO_PUBLIC_IDENTITY_URL": "https://api.weav.id.vn"
+      }
+    }
+  }
+}
