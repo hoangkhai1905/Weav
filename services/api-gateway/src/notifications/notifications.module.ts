@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
   forwardRef,
   Get,
   HttpException,
@@ -11,6 +12,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -158,6 +160,17 @@ export class NotificationV2ProxyController {
       serializeQuery(query),
     );
   }
+
+  // Expo push token registration; Notification validates the JSON body.
+  @Put('devices')
+  savePushDevice(@Req() request: FastifyRequest, @Res() reply: FastifyReply) {
+    return this.transport.forward(request, reply, 'v2', '/devices');
+  }
+
+  @Delete('devices')
+  removePushDevice(@Req() request: FastifyRequest, @Res() reply: FastifyReply) {
+    return this.transport.forward(request, reply, 'v2', '/devices');
+  }
 }
 
 function serializeQuery(query: Record<string, string>): string {
@@ -194,6 +207,7 @@ export class NotificationProxyTransport {
       this.config.get<string>('NOTIFICATION_SERVICE_URL') ??
       'http://notification-service:3000';
     const headers = buildUpstreamHeaders(req, requestId, { authorization });
+    const body = req.body == null ? undefined : JSON.stringify(req.body);
 
     const fail = createProxyFail(request, reply, requestId, {
       skipWhenClosed: false,
@@ -208,7 +222,11 @@ export class NotificationProxyTransport {
           method: req.method,
           redirect: 'error',
           signal: abortHandle.signal,
-          headers,
+          headers:
+            body === undefined
+              ? headers
+              : { ...headers, 'content-type': 'application/json' },
+          body,
         },
       );
       const responseHeaders = collectSafeUpstreamResponseHeaders(

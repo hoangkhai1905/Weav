@@ -93,6 +93,14 @@ export class InboxNotifications {
     return { updatedCount: await this.repository.markAllRead(userId) };
   }
 
+  savePushDevice(userId: string, token: string, locale: NotificationLocale) {
+    return this.repository.savePushDevice(userId, token, locale);
+  }
+
+  removePushDevice(userId: string, token: string) {
+    return this.repository.removePushDevice(userId, token);
+  }
+
   private view(item: InboxItem, locale: NotificationLocale): InboxView {
     const content = item.content[locale] as unknown as Record<string, unknown>;
     const title = z.string().min(1).max(500).parse(content.title);

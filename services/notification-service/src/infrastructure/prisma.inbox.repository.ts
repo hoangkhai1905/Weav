@@ -7,11 +7,17 @@ import type { Settings } from '../config/settings';
 import { renderNotification } from '../domain/notification-catalog';
 import type {
   NotificationCategory,
+  NotificationLocale,
   NotificationSeverity,
 } from '../domain/notification-catalog';
 import type { NotificationEventV2 } from '../domain/notification-event';
 import { notificationEventV2Schema } from '../domain/notification-event';
-import { InboxRepository, inboxDedupKey, inboxIdForKey } from '../domain/inbox';
+import {
+  InboxRepository,
+  inboxDedupKey,
+  inboxIdForKey,
+  MAX_PUSH_DEVICES_PER_USER,
+} from '../domain/inbox';
 import type { InboxItem, InboxQuery } from '../domain/inbox';
 import {
   assertDeliveryEventIdentity,
@@ -22,8 +28,17 @@ import {
 
 const uuidSchema = z.uuid();
 const invitationEventType = 'workspace.invitation.created';
+const INBOX_PUSH_SOURCE = 'inbox';
 
 type InboxRecord = Prisma.NotificationInboxGetPayload<Record<string, never>>;
+
+function isInboxPush(row: {
+  provider: string;
+  payload: Prisma.JsonValue;
+}): boolean {
+  const payload = row.payload as { source?: unknown } | null;
+  return row.provider === 'EXPO_PUSH' && payload?.source === INBOX_PUSH_SOURCE;
+}
 
 function canonicalUuid(value: string): string {
   return uuidSchema.parse(value).toLowerCase();
@@ -138,10 +153,13 @@ export class PrismaInboxRepository
           });
         }
 
-        const storedDeliveries = await tx.notificationDelivery.findMany({
-          where: { sourceEventId: event.eventId },
-          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        });
+        // Inbox pushes are written by this path; a redelivery re-runs the idempotent inserts below.
+        const storedDeliveries = (
+          await tx.notificationDelivery.findMany({
+            where: { sourceEventId: event.eventId },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          })
+        ).filter((row) => !isInboxPush(row));
         if (storedDeliveries.length > 0) {
           // W7-A1: an invitation event owns its EMAIL delivery; a broker redelivery is a no-op.
           if (
@@ -203,6 +221,37 @@ export class PrismaInboxRepository
         });
         if (stored !== event.recipientUserIds.length)
           throw new InboxPersistenceConflictError();
+
+        // One push per registered device, in the language that device asked for.
+        const devices = await tx.pushDevice.findMany({
+          where: { userId: { in: event.recipientUserIds } },
+        });
+        if (devices.length > 0)
+          await tx.notificationDelivery.createMany({
+            skipDuplicates: true,
+            data: devices.map((device) => {
+              const text = localized[device.locale === 'en' ? 'en' : 'vi'];
+              return {
+                userId: device.userId,
+                inboxId: inboxIdForKey(
+                  inboxDedupKey(device.userId, event.eventId),
+                ),
+                sourceEventId: event.eventId,
+                provider: 'EXPO_PUSH' as const,
+                destination: device.token,
+                eventType: event.eventType,
+                executionId:
+                  event.entity.kind === 'EXECUTION' ? event.entity.id : null,
+                // readAt: the legacy v1 list must not count the push as an unread notification.
+                readAt: new Date(),
+                payload: {
+                  source: INBOX_PUSH_SOURCE,
+                  title: text.title,
+                  message: text.message,
+                },
+              };
+            }),
+          });
 
         if (event.eventType === invitationEventType) {
           // Owned by the inviter (the only recipient), linked to the inviter's inbox row (D4).
@@ -305,6 +354,37 @@ export class PrismaInboxRepository
       where: { userId: canonicalUserId, id: canonicalId },
     });
     return row ? mapInbox(row) : null;
+  }
+
+  async savePushDevice(
+    userId: string,
+    token: string,
+    locale: NotificationLocale,
+  ): Promise<void> {
+    const owner = canonicalUuid(userId);
+    await this.client.$transaction(async (tx) => {
+      await tx.pushDevice.upsert({
+        where: { token },
+        create: { token, userId: owner, locale },
+        update: { userId: owner, locale },
+      });
+      await tx.$executeRaw`
+        DELETE FROM notification.push_devices
+        WHERE user_id = ${owner}::uuid
+          AND token NOT IN (
+            SELECT token FROM notification.push_devices
+            WHERE user_id = ${owner}::uuid
+            ORDER BY updated_at DESC
+            LIMIT ${MAX_PUSH_DEVICES_PER_USER}
+          )
+      `;
+    });
+  }
+
+  async removePushDevice(userId: string, token: string): Promise<void> {
+    await this.client.pushDevice.deleteMany({
+      where: { token, userId: canonicalUuid(userId) },
+    });
   }
 
   markAllRead(userId: string): Promise<number> {

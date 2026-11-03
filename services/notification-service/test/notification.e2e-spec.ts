@@ -48,6 +48,8 @@ describe('notification HTTP (real Nest + Fastify)', () => {
     markRead: jest.fn(),
     markAllRead: jest.fn(),
     ready: jest.fn(),
+    savePushDevice: jest.fn(),
+    removePushDevice: jest.fn(),
   };
   const settings = testSettings();
   const userId = randomUUID();
@@ -385,6 +387,57 @@ describe('notification HTTP (real Nest + Fastify)', () => {
     });
     expect(response.statusCode).toBe(500);
     expect(response.body).not.toContain('private-password');
+  });
+
+  it('saves and removes a push device for the token subject only', async () => {
+    const pushToken = 'ExponentPushToken[abc123]';
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/api/v2/notifications/devices',
+      headers: headers(),
+      payload: { token: pushToken, locale: 'en' },
+    });
+    expect(put.statusCode).toBe(204);
+    expect(inboxRepository.savePushDevice).toHaveBeenCalledWith(
+      userId,
+      pushToken,
+      'en',
+    );
+
+    const del = await app.inject({
+      method: 'DELETE',
+      url: '/api/v2/notifications/devices',
+      headers: headers(),
+      payload: { token: pushToken },
+    });
+    expect(del.statusCode).toBe(204);
+    expect(inboxRepository.removePushDevice).toHaveBeenCalledWith(
+      userId,
+      pushToken,
+    );
+  });
+
+  it.each([
+    { token: 'not-a-token', locale: 'vi' },
+    { token: 'ExponentPushToken[abc]', locale: 'fr' },
+    { token: 'ExponentPushToken[abc]', locale: 'vi', userId: 'forged' },
+  ])('rejects an invalid push device %j', async (payload) => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/v2/notifications/devices',
+      headers: headers(),
+      payload,
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('requires a token to register a push device', async () => {
+    const response = await app.inject({
+      method: 'PUT',
+      url: '/api/v2/notifications/devices',
+      payload: { token: 'ExponentPushToken[abc]', locale: 'vi' },
+    });
+    expect(response.statusCode).toBe(401);
   });
 });
 

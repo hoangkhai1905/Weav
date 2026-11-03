@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type {
   NotificationCategory,
   NotificationContent,
+  NotificationLocale,
   NotificationSeverity,
 } from './notification-catalog';
 import type { NotificationEventV2 } from './notification-event';
@@ -38,7 +39,16 @@ export abstract class InboxRepository {
   abstract unreadCount(userId: string): Promise<number>;
   abstract markRead(userId: string, id: string): Promise<InboxItem | null>;
   abstract markAllRead(userId: string): Promise<number>;
+  abstract savePushDevice(
+    userId: string,
+    token: string,
+    locale: NotificationLocale,
+  ): Promise<void>;
+  abstract removePushDevice(userId: string, token: string): Promise<void>;
 }
+
+/** Newest devices kept per user; older registrations are dropped on the next save. */
+export const MAX_PUSH_DEVICES_PER_USER = 10;
 
 const uuidSchema = z.uuid();
 const namespace = Buffer.from('d9d2029effbf4ff394a4927bb68c44c0', 'hex');
