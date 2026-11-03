@@ -253,7 +253,8 @@ jobs:
   # The VM pulls them (infrastructure/deploy/weav-deploy.timer); nothing here can reach the VM.
   publish-images:
     needs: ci-ok
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.ci-ok.result == 'success'
+    # always(): without it GitHub adds success(), which is false when path-filtered jobs upstream of ci-ok were skipped.
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.ci-ok.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
