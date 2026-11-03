@@ -32,6 +32,13 @@
 - Neon: `prisma migrate deploy` applied `202611030001_push_devices` to `notification_db` (the DB in local `.env`); `migrate status` up to date; table has 5 columns, 0 rows. No backup branch (no Neon CLI/API key here; additive change, rollback `DROP TABLE notification.push_devices`).
 - Note: `npx expo lint` auto-added `eslint` deps to mobile `package.json`/lockfile; reverted and reinstalled with `--frozen-lockfile`.
 
+### Real-stack check (local Compose, Neon `notification_db`, `NOTIFICATION_EXPO_ENABLED=true`)
+
+- Rebuilt `notification-service` and `api-gateway` (`docker compose -f compose.yml -f compose.dev.yml --profile app up -d --build --no-deps notification-service api-gateway`); both healthy, `devices` routes mapped.
+- Throwaway user + HS256 test token, through the Gateway on `localhost:3000`: `PUT devices` invalid token 400, valid 204 (row with locale `en`); published `identity.password_changed` to `weav.events`; one `EXPO_PUSH` delivery (`source=inbox`, title "Password changed") reached Expo, which answered `EXPO_DeviceNotRegistered` for the fake token (proves the Expo call path; terminal FAILED, no retry). Republishing the same event: still 1 delivery, 1 inbox row, DLQ 0. `GET` inbox 200; `DELETE devices` 204, 0 rows left. Cleanup deleted the test user's 1 delivery and 1 inbox row.
+- Firebase: `google-services.json` in `apps/mobile` (git-ignored) and as EAS secret file `GOOGLE_SERVICES_JSON` (preview); FCM V1 service account key assigned to `com.truong0910.mobile` on EAS project `mobile`.
+- Not pushed: `dev` CI/CD deploys on push. Still to verify on a phone with a new preview APK.
+
 ### Risks and limits
 
 - Not tested on a real device: needs Firebase `google-services.json`, an FCM V1 key in EAS, and `NOTIFICATION_EXPO_ENABLED=true`. Steps are in `apps/mobile/docs/push-notifications.md`.
