@@ -20,7 +20,7 @@ Use the same string in `prod.env` (`WEAV_SECRETS_DIR=`). A new shell loses the e
 5. `systemctl is-enabled docker` -> `enabled` (Docker starts at boot). On Docker Desktop: enable "Start when you sign in".
 6. `timedatectl | grep synchronized` -> `System clock synchronized: yes` (JWT and OTP expiry depend on the clock).
 7. If a dev stack ever ran on this machine: `docker compose -f compose.yml -f compose.dev.yml down` (the dev `edge` network uses the same subnet 172.31.250.0/24). Also stop any quick tunnel.
-8. Never start `ocr-service`; it is not part of this stack.
+8. `ocr-service` is part of this stack (section 7c). The models must exist on the host before the first deploy that includes it.
 
 ## 2. One-time Cloudflare
 
@@ -164,6 +164,21 @@ One-time setup:
 How it runs: `weav-deploy.timer` starts `scripts/deploy-pull.sh` every 2 minutes. It pulls the `main` images, waits until all 8 carry the same revision (a half-finished publish is skipped), checks out that commit so `compose.prod.yml` matches the images, then `dc up -d --no-build --remove-orphans --wait` recreates only what changed. Logs: `journalctl -u weav-deploy -f` (lines start with `deploy:`).
 
 Limits: Prisma migrations (notification, ai) are still run by hand from the laptop (section 6) before pushing a release that adds one; Flyway runs at boot. To pause automatic deploys (for example during the defense): `sudo systemctl stop weav-deploy.timer`; resume with `start`. To roll back: push a revert to `main`, or on the VM stop the timer and `WEAV_IMAGE_TAG=<older commit> dc up -d --no-build`.
+
+## 7c. OCR (ocr-service, ONNX, file source only)
+
+The partner's `ocr-service` runs in `compose.prod.yml` (image `ghcr.io/hoangkhai1905/weav-ocr-service:main`, `mem_limit: 3g`, no published port). Only the `file` source is on: workflow-service sends the bytes of a file from an earlier step (Gmail attachment, Telegram photo, Drive download). The URL and artifact sources stay off (`WORKFLOW_OCR_URL_SOURCE_ENABLED` / `WORKFLOW_OCR_ARTIFACT_SOURCE_ENABLED` false). The gateway route `POST /api/v1/workspaces/{workspaceId}/ocr/extractions` is live behind a user JWT, workspace membership and 10 requests/min.
+
+One-time setup on the VM, **before** the first deploy that includes `ocr-service`:
+1. Models (needs Docker and network; skips files already present; downloads from Hugging Face and converts to ONNX in a throwaway image): `bash scripts/setup-ocr-models.sh /home/azureuser/weav-ocr-models`. Expected: `paddlex-cache/official_models/` and `onnx/` under that folder, 8 model folders each.
+2. Add `WEAV_OCR_MODELS_DIR=/home/azureuser/weav-ocr-models` to `/home/azureuser/weav-secrets/prod.env` (compare `.env.prod.example`). If it is unset or the folder is missing when the container starts, Docker creates an empty root-owned directory and OCR fails on every call.
+3. The public keys in `service-keys/public` (`workflow-service.jwks.json`, `api-gateway.jwks.json`), `service-keys/private/workflow-service.pem` and `service-keys/gateway/api-gateway.pem` come from `node scripts/ai-dev-keys.mjs` (section 4 step 4) and are already on the VM.
+
+Warm-up after every deploy or restart of `ocr-service`: there is no `/health` and the models load lazily, so `healthy` only means the server is up. The first OCR call takes about 45-67 s on CPU (workflow read timeout is 100 s). Run one manual workflow with an `ocr.extract` node on a small image and wait for SUCCESS; there is no unauthenticated endpoint to curl. Later calls take about 7 s per page for text, about 11 s with tables.
+
+Memory check: `docker stats --no-stream` and `free -m`. Warm OCR sits at about 2.3-2.5 GiB. If host `available` drops under about 500 MiB, lower the `ocr-service` `mem_limit` in `compose.prod.yml` and set `detectTables` to false in the demo workflow.
+
+Turn OCR off: set `WORKFLOW_OCR_ENABLED` and `WORKFLOW_OCR_SERVICE_CLAIMS_VERIFIED` to `"false"` in `compose.prod.yml` (commit to `main`; the timer deploys it). Optionally free the memory: `dc stop ocr-service` (the next `dc up -d` starts it again).
 
 ## 8. Smoke test
 

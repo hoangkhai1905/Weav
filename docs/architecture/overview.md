@@ -16,7 +16,7 @@
 | Workflow | Spring Boot | Drafts, versions, publish, triggers, executions, node runtime, AI generation | Neon `workflow` schema | [workflow](../specs/services/workflow-service.md) |
 | AI | NestJS | DeepSeek calls for AI nodes, generation and the assistant | Neon (BYOK provider keys) | [ai](../specs/services/ai-service.md) |
 | Notification | NestJS | Consumes notification events, keeps each user's inbox | Neon `notification` schema | [notification](../specs/services/notification-service.md) |
-| OCR | FastAPI | Text extraction from documents (partner-owned, not in the demo stack) | none | [ocr](../specs/services/ocr-service.md) |
+| OCR | FastAPI | Text extraction from documents (partner-owned; runs in the demo with the ONNX runtime, file source only) | none | [ocr](../specs/services/ocr-service.md) |
 
 Infrastructure: RabbitMQ (exchange `weav.events`), Neon PostgreSQL in `ap-southeast-1` with one database per service,
 Cloudflare R2 for avatars, Cloudflare Tunnel for public access, SMTP for email.
@@ -71,7 +71,7 @@ Contracts: HTTP OpenAPI files under [packages/contracts/http](../../packages/con
 
 - One Azure VM (Indonesia Central, 2 vCPU / 8 GiB) runs `compose.prod.yml`. Only SSH is open; traffic arrives through the
   `weav-demo` Cloudflare Tunnel at `app.`, `api.` and `admin.weav.id.vn`.
-- Databases are on the Neon `demo` branch. OCR is not deployed.
+- Databases are on the Neon `demo` branch. OCR runs on the same VM (ONNX runtime, `file` source only; [runbook](../deployment/demo-runbook.md#7c-ocr-ocr-service-onnx-file-source-only)).
 - Continuous delivery: when CI passes on `main`, the `publish-images` job pushes images to GHCR; `weav-deploy.timer` on
   the VM pulls them every 2 minutes and recreates changed containers (`scripts/deploy-pull.sh`).
 - Step-by-step: [demo runbook](../deployment/demo-runbook.md). Public-surface rules: [deployment exposure](deployment-exposure.md).

@@ -2,6 +2,8 @@
 
 > Status: Partial. Text and table extraction pipeline and HTTP ingress are Implemented and smoke-tested; Service JWT verification, URL allowlist wiring, artifact resolution, health endpoints, and production quality/load gates are Planned. Owner: T (partner). Last verified: 2026-09-30 against `dev`.
 
+Deployment status: runs in the demo stack since 2026-11 (ONNX runtime, `file` source only); see [demo runbook, OCR](../../deployment/demo-runbook.md#7c-ocr-ocr-service-onnx-file-source-only) and the [partner handoff](../../handoff/2026-11-demo-ocr.md).
+
 ## Purpose and scope
 
 A private, stateless FastAPI service that performs generic OCR (text blocks with bounding boxes and confidence) and table structure extraction on images and PDFs, using PaddleOCR/PP-StructureV3 on CPU with offline models. Contract: [OCR README](../../../packages/contracts/http/ocr/README.md), [openapi.yaml](../../../packages/contracts/http/ocr/openapi.yaml). Design: [production design](../../superpowers/specs/2026-09-06-ocr-service-production-design.md) (Vietnamese).
@@ -49,7 +51,7 @@ Internal API (callers: API Gateway public route, Workflow worker). Public route 
 | POST | `/v1/extractions` | Extract text/tables; `multipart/form-data` (`file`, `language`, `detectTables`) or `application/json` (`source`: `artifact`/`url`) | `Authorization: Bearer` required (Service JWT per contract); `X-Request-ID` UUID required; dev bypass only if `APP_ENV=development` and `OCR_ALLOW_UNAUTHENTICATED_DEV=true` | see table |
 | GET | `/docs`, `/openapi.json` | FastAPI docs | none | none |
 
-No `/health` endpoint exists in code (Planned). Compose has no OCR healthcheck.
+No `/health` endpoint exists in code (Planned). `compose.prod.yml` has a healthcheck on `/openapi.json`, which only proves the server is up (models load lazily).
 
 Error envelope: `{error: {code, message, retryable, details}, requestId}`; `X-Request-ID` echoed. Codes in [errors.py](../../../services/ocr-service/src/domain/errors.py):
 
