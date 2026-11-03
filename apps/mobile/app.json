@@ -1,13 +1,17 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "Weav",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": ["mobile", "weav"],
+    "scheme": [
+      "mobile",
+      "weav"
+    ],
     "userInterfaceStyle": "automatic",
     "android": {
+      "package": "com.truong0910.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#2b5fd9",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -43,6 +47,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "fb51e0d9-f7b4-4458-bb38-c4418fe299b9"
+      }
+    },
+    "owner": "truong0910"
   }
 }
