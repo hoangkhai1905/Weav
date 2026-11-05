@@ -16,6 +16,8 @@ All inbox routes require an Identity HS256 access JWT (issuer/audience, expiry, 
 | GET | /api/v2/notifications/unread-count | `{count}` (inbox unread count) |
 | PATCH | /api/v2/notifications/:id/read | `{item}` (inbox view) |
 | POST | /api/v2/notifications/read-all | `{updatedCount}` (inbox read state) |
+| PUT | /api/v2/notifications/devices | 204; body `{token, locale}` registers an Expo push token |
+| DELETE | /api/v2/notifications/devices | 204; body `{token}` removes the caller's token |
 | GET | /health | Liveness |
 | GET | /ready | Delivery table + inbox table + broker readiness; 503 when unavailable |
 

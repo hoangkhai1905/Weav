@@ -72,3 +72,14 @@ model NotificationInbox {
   @@map("notification_inbox")
   @@schema("notification")
 }
+
+model PushDevice {
+  token String @id @db.VarChar(512)
+  userId String @map("user_id") @db.Uuid
+  locale String @db.VarChar(2)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  @@index([userId, updatedAt], map: "push_devices_user_id_updated_at_idx")
+  @@map("push_devices")
+  @@schema("notification")
+}

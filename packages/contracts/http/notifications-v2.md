@@ -60,6 +60,13 @@ The `items` object has exactly the fields shown. Only the requested locale's sto
 
 `locale` on the PATCH is optional and defaults to `vi`; no other PATCH query parameter is accepted. The ID must be a UUID. Missing and foreign-user IDs both return `404`. Repeating a read is idempotent and preserves the original `readAt`; read-all changes only previously unread inbox rows. Invalid IDs/query values return `400`.
 
+## Push devices
+
+- `PUT /api/v2/notifications/devices` body `{ "token": "ExponentPushToken[...]", "locale": "vi" | "en" }` → `204`
+- `DELETE /api/v2/notifications/devices` body `{ "token": "ExponentPushToken[...]" }` → `204`
+
+The token must be a valid Expo push token (at most 512 characters); unknown body fields return `400`. Saving an existing token moves it to the JWT subject and updates its locale; each user keeps the 10 most recently saved devices. Delete only removes the subject's own token and is idempotent. Every new inbox item queues one Expo push per registered device of its recipient, rendered in the device's locale; the push carries only the inbox title and message.
+
 ## Errors and compatibility
 
 Errors use the service envelope `{ "error": { "code", "message", "details": [] }, "status", "timestamp", "path" }`. Relevant statuses are `400` invalid input, `401` invalid/missing JWT, `404` missing or foreign inbox item, and `503` unavailable dependency; internal failures do not expose database details.

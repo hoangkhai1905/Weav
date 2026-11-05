@@ -291,6 +291,9 @@ services:
       NOTIFICATION_LEGACY_DRAIN: "false"
       NOTIFICATION_DETAIL_BASE_URL: https://app.weav.id.vn
       NOTIFICATION_EMAIL_ENABLED: "true"
+      # Mobile push (apps/mobile/docs/push-notifications.md); off until FCM is set up in EAS.
+      NOTIFICATION_EXPO_ENABLED: ${NOTIFICATION_EXPO_ENABLED:-false}
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
     depends_on:
       rabbitmq:
         condition: service_healthy
