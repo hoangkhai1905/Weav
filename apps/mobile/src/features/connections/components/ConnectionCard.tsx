@@ -23,7 +23,7 @@ import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
 import { FontFamily, Radius, Spacing, Typography } from '../../../constants/theme';
 import { formatRelativeTime } from '../../common/time';
-import { credentialExpiry } from '../connection.expiry';
+import { credentialDaysLeft, credentialExpiry } from '../connection.expiry';
 
 const ICONS: Record<ConnectionProvider, LucideIcon> = {
   GMAIL: Mail,
@@ -62,9 +62,7 @@ export const ConnectionCard: React.FC<ConnectionCardProps> = ({ item, testing, r
   const { t, language } = useTranslation();
   const Icon = ICONS[item.provider] ?? PlugZap;
   const expiry = credentialExpiry(item.credentialExpiresAt);
-  const daysLeft = item.credentialExpiresAt
-    ? Math.max(1, Math.ceil((new Date(item.credentialExpiresAt).getTime() - Date.now()) / 86_400_000))
-    : 0;
+  const daysLeft = credentialDaysLeft(item.credentialExpiresAt);
   const warnTone = expiry === 'expired' ? colors.tones.danger : colors.tones.warning;
   const verified = !!result && 'outcome' in result && result.outcome === 'VERIFIED';
   const resultTone = !result

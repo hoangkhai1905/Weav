@@ -37,7 +37,11 @@ function fakeClient(devices: Row[] = []) {
     pushDevice: {
       findMany: jest.fn(({ where }: any) =>
         Promise.resolve(
-          devices.filter((d) => where.userId.in.includes(d.userId)),
+          devices.filter(
+            (d) =>
+              where.userId.in.includes(d.userId) &&
+              d.updatedAt >= where.updatedAt.gte,
+          ),
         ),
       ),
     },
@@ -141,9 +145,27 @@ describe('PrismaInboxRepository.ingest push fan-out', () => {
 
   it('queues one localized push per device, and a replay neither duplicates nor conflicts', async () => {
     const repo = new PrismaInboxRepository(testSettings());
+    const now = new Date();
     const fake = fakeClient([
-      { token: 'ExponentPushToken[vi-device]', userId: user, locale: 'vi' },
-      { token: 'ExponentPushToken[en-device]', userId: user, locale: 'en' },
+      {
+        token: 'ExponentPushToken[vi-device]',
+        userId: user,
+        locale: 'vi',
+        updatedAt: now,
+      },
+      {
+        token: 'ExponentPushToken[en-device]',
+        userId: user,
+        locale: 'en',
+        updatedAt: now,
+      },
+      // Not re-registered for 8 days: its session lapsed, so it gets no push.
+      {
+        token: 'ExponentPushToken[stale-device]',
+        userId: user,
+        locale: 'vi',
+        updatedAt: new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000),
+      },
     ]);
     (repo as unknown as { client: unknown }).client = fake.client;
 

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
@@ -9,6 +9,10 @@ import { useI18nStore } from '../../stores/i18n.store';
 
 const DEVICES_URL = '/api/v2/notifications/devices';
 let registeredToken: string | null = null;
+// expo-notifications has no last-response API on web (the hook throws there) and the web build has
+// no push, so web reads "no tapped push". Picked once per platform, so the hook order never changes.
+const useLastNotificationResponse =
+  Platform.OS === 'web' ? () => null : Notifications.useLastNotificationResponse;
 
 // While the app is open a push still shows as a banner; the inbox screen refreshes on its own.
 Notifications.setNotificationHandler({
@@ -20,8 +24,12 @@ Notifications.setNotificationHandler({
   }),
 });
 
-/** Asks for permission once, then registers this device's Expo push token for the signed-in user. */
-async function registerPushDevice(locale: 'vi' | 'en'): Promise<void> {
+/**
+ * Registers this device's Expo push token for the signed-in user. With `ask`, first asks for
+ * permission; without it (app back in the foreground) it only refreshes an already granted token,
+ * which keeps the server's 7-day freshness window open while the session is alive.
+ */
+async function registerPushDevice(locale: 'vi' | 'en', ask: boolean): Promise<void> {
   if (Platform.OS === 'web' || !Device.isDevice) return;
   if (Platform.OS === 'android') {
     // Android 13+ only shows the permission prompt once a channel exists.
@@ -32,7 +40,9 @@ async function registerPushDevice(locale: 'vi' | 'en'): Promise<void> {
   }
   const current = await Notifications.getPermissionsAsync();
   const permission =
-    current.granted || !current.canAskAgain ? current : await Notifications.requestPermissionsAsync();
+    current.granted || !current.canAskAgain || !ask
+      ? current
+      : await Notifications.requestPermissionsAsync();
   if (!permission.granted) return;
   const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
   const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
@@ -56,13 +66,20 @@ export async function unregisterPushDevice(): Promise<void> {
 export function usePushNotifications(enabled: boolean): void {
   const router = useRouter();
   const language = useI18nStore((s) => s.language);
-  const response = Notifications.useLastNotificationResponse();
+  const response = useLastNotificationResponse();
 
   useEffect(() => {
     if (!enabled) return;
-    registerPushDevice(language === 'EN' ? 'en' : 'vi').catch(() => {
-      // No permission, no FCM config or offline: the in-app inbox still works.
+    const locale = language === 'EN' ? 'en' : 'vi';
+    const register = (ask: boolean) =>
+      registerPushDevice(locale, ask).catch(() => {
+        // No permission, no FCM config or offline: the in-app inbox still works.
+      });
+    void register(true);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void register(false);
     });
+    return () => subscription.remove();
   }, [enabled, language]);
 
   useEffect(() => {

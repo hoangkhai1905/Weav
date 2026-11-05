@@ -97,6 +97,10 @@ export function mockRepository(): {
       ReturnType<DeliveryRepository['finish']>,
       Parameters<DeliveryRepository['finish']>
     >(),
+    forgetPushDevice: jest.fn<
+      ReturnType<DeliveryRepository['forgetPushDevice']>,
+      Parameters<DeliveryRepository['forgetPushDevice']>
+    >(),
     nextDueInMs: jest.fn<
       ReturnType<DeliveryRepository['nextDueInMs']>,
       Parameters<DeliveryRepository['nextDueInMs']>

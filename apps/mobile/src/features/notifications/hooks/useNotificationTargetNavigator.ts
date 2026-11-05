@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter, type Href } from 'expo-router';
 import { workspaceRepository } from '../../../infrastructure/repository-factory';
@@ -16,9 +16,8 @@ import {
 export function useNotificationTargetNavigator() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const navigatorRef = useRef<ReturnType<typeof createNotificationTargetNavigator> | null>(null);
-
-  if (!navigatorRef.current) {
+  // Built once per mount; the lazy initializer keeps it stable without reading a ref during render.
+  const [navigator] = useState(() => {
     const dependencies: NotificationTargetNavigatorDependencies = {
       isSessionCurrent: isAuthSessionScopeCurrent,
       authorizeWorkspace: (workspaceId, signal) =>
@@ -62,8 +61,8 @@ export function useNotificationTargetNavigator() {
         });
       },
     };
-    navigatorRef.current = createNotificationTargetNavigator(dependencies);
-  }
+    return createNotificationTargetNavigator(dependencies);
+  });
 
-  return navigatorRef.current;
+  return navigator;
 }

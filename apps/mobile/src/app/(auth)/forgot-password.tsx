@@ -43,7 +43,8 @@ export default function ForgotPasswordScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [retryAvailableAt, setRetryAvailableAt] = useState<number | null>(null);
-  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  // Clock for the resend cooldown: ticks once a second while a cooldown is set.
+  const [now, setNow] = useState(() => Date.now());
   const [grantConsumed, setGrantConsumed] = useState(false);
   const [validationErrors, setValidationErrors] = useState<PasswordRecoveryValidationErrors>({});
   const [error, setError] = useState<string | null>(null);
@@ -58,17 +59,11 @@ export default function ForgotPasswordScreen() {
   }, []);
 
   useEffect(() => {
-    if (!retryAvailableAt) {
-      setCooldownRemaining(0);
-      return undefined;
-    }
-    const update = () => {
-      setCooldownRemaining(Math.max(0, Math.ceil((retryAvailableAt - Date.now()) / 1000)));
-    };
-    update();
-    const timer = setInterval(update, 1000);
+    if (!retryAvailableAt) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [retryAvailableAt]);
+  const cooldownRemaining = retryAvailableAt ? Math.max(0, Math.ceil((retryAvailableAt - now) / 1000)) : 0;
 
   const isCurrentFlow = (generation: number) =>
     isPasswordRecoveryFlowCurrent(generation, flowGeneration.current, mounted.current);
@@ -106,7 +101,9 @@ export default function ForgotPasswordScreen() {
       setNewPassword('');
       setConfirmPassword('');
       setGrantConsumed(false);
-      setRetryAvailableAt(Date.now() + receipt.retryAfter * 1000);
+      const sentAt = Date.now();
+      setNow(sentAt);
+      setRetryAvailableAt(sentAt + receipt.retryAfter * 1000);
       setMessage(t('au.forgot.sent').replace('{n}', String(receipt.expiresIn)));
     } catch (requestError: unknown) {
       if (isCurrentFlow(generation)) setError(t(recoveryErrorKey(requestError, false)));

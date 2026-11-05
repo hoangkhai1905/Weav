@@ -15,3 +15,11 @@ export function credentialExpiry(
   if (left <= 0) return 'expired';
   return left <= warnDays * 24 * 60 * 60 * 1000 ? 'soon' : 'ok';
 }
+
+/** Whole days left before the credential expires (at least 1); 0 when there is no valid expiry. */
+export function credentialDaysLeft(credentialExpiresAt: string | null, now: Date = new Date()): number {
+  if (!credentialExpiresAt) return 0;
+  const at = new Date(credentialExpiresAt).getTime();
+  if (Number.isNaN(at)) return 0;
+  return Math.max(1, Math.ceil((at - now.getTime()) / 86_400_000));
+}
