@@ -50,3 +50,13 @@
 
 - Firebase/EAS setup, rebuild the preview APK, check a push arrives with the app closed.
 - Optional: delete `push_devices` rows on `DeviceNotRegistered`; deep-link the tap to the notification target.
+
+## Session 2026-11-05: dead tokens and lapsed sessions
+
+Branch `fix/push-device-lifecycle` (from `dev` `eaaf2a6f`).
+
+- **Dead tokens:** when Expo answers `EXPO_DeviceNotRegistered` (ticket or receipt), the worker deletes that token from `push_devices`, but only when its `updated_at` is older than the delivery's `created_at`, so a token registered again after the push was queued survives. A failed delete is logged (`notification_push_device_forget_failed`) and never breaks delivery.
+- **Lapsed sessions:** an expired session cannot call `DELETE /devices` (no valid access token). Pushes now go only to devices re-registered within 7 days (`PUSH_DEVICE_TTL_MS`, the identity refresh-token lifetime `JWT_REFRESH_EXPIRES_IN=7d`). The app re-registers on every return to the foreground (without re-asking for permission), so a phone with a live session stays inside the window. A phone whose session lapsed stops receiving pushes within 7 days.
+- Changed: `domain/notification.ts` (`DeliveryRepository.forgetPushDevice`), `prisma.repository.ts`, `delivery.worker.ts` (+spec), `domain/inbox.ts`, `prisma.inbox.repository.ts` (+spec), `testing/fixtures.ts`, mobile `push-notifications.ts`.
+- Verified: notification-service unit 202/202, e2e 24/24, build, eslint on changed files; mobile `tsc` clean. Real-stack check not run yet: Docker Desktop was not running.
+- Limit: the 7-day window is a constant; make it a setting if the refresh-token lifetime changes. Stale `push_devices` rows are not purged, only ignored (the per-user cap of 10 bounds them).

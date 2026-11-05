@@ -17,6 +17,7 @@ import {
   inboxDedupKey,
   inboxIdForKey,
   MAX_PUSH_DEVICES_PER_USER,
+  PUSH_DEVICE_TTL_MS,
 } from '../domain/inbox';
 import type { InboxItem, InboxQuery } from '../domain/inbox';
 import {
@@ -224,7 +225,10 @@ export class PrismaInboxRepository
 
         // One push per registered device, in the language that device asked for.
         const devices = await tx.pushDevice.findMany({
-          where: { userId: { in: event.recipientUserIds } },
+          where: {
+            userId: { in: event.recipientUserIds },
+            updatedAt: { gte: new Date(Date.now() - PUSH_DEVICE_TTL_MS) },
+          },
         });
         if (devices.length > 0)
           await tx.notificationDelivery.createMany({

@@ -234,6 +234,11 @@ export class PrismaDeliveryRepository
       ) - NOW()) * 1000)::float8 AS ms`;
     return row?.ms ?? null;
   }
+  async forgetPushDevice(token: string, registeredBefore: Date) {
+    await this.client.pushDevice.deleteMany({
+      where: { token, updatedAt: { lt: registeredBefore } },
+    });
+  }
   async finish(delivery: Delivery, patch: DeliveryPatch) {
     await this.client.notificationDelivery.updateMany({
       where: {
