@@ -38,6 +38,14 @@
 | `no-undef __dirname` (8 file `.cjs`) | Thêm `/* global __dirname */` ở đầu file (không sửa `eslint.config.js` vì hook chặn) | Xong |
 | Kiểm tra trên web (mock mode, gateway local) | Quên mật khẩu: gửi mã mock → "Gửi lại mã sau 59 giây" → 48 giây, đếm đúng. Sau đăng nhập web crash ở `usePushNotifications` (`getLastNotificationResponse` không có trên web) — lỗi có sẵn trên `dev`, cùng mã ở expo-notifications 57.0.12 và 57.0.24 | Một phần |
 
+## 5c. Session 3 — 2026-11-05: crash bản web sau đăng nhập
+
+| Việc | Kết quả | Trạng thái |
+| --- | --- | --- |
+| `push-notifications.ts`: trên web dùng `() => null` thay `Notifications.useLastNotificationResponse` (chọn một lần theo platform, thứ tự hook không đổi) | Native giữ nguyên. Chỉ đổi dòng gọi hook + một hằng module, không chạm các dòng mà `fix/push-device-lifecycle` sửa | Xong |
+| Web mock (gateway local) | Đăng nhập → Home có tab bar, không crash. Workspace: ô đổi tên = tên workspace. Chuyển tab Lịch sử/Quy trình: không lỗi render. `/workflows?segment=templates` gọi API templates (tham số được áp dụng) | Xong |
+| Mở thẳng `/workflows?segment=templates` khi tải nguội | "Attempted to navigate before mounting the Root Layout" từ `router.setParams` trong effect — bản `dev` lỗi y hệt (đã thử), chỉ xảy ra khi deep link tải nguội trên web | Ghi nhận |
+
 ## 6. Quyết định
 
 | Quyết định | Lý do | Hệ quả |
@@ -76,7 +84,8 @@
 | --- | --- | --- |
 | Đã xử lý | 24 lỗi lint (Session 2). Còn 24 cảnh báo (`import/no-named-as-default-member` axios, `exhaustive-deps`) | Tuỳ chọn |
 | Thấp | `.expo/export-check*` (bản export cũ, gitignore) vẫn bị `expo lint` quét nếu không có `--ignore-pattern ".expo/**"` | Thêm `.expo/*` vào ignores của `eslint.config.js` (cần tắt tạm hook `config-protection`) hoặc xoá hai thư mục đó |
-| Trung bình | Bản web của mobile crash sau đăng nhập: `usePushNotifications` gọi `useLastNotificationResponse` trên web | Chặn push trên web (`Platform.OS !== 'web'`); không ảnh hưởng APK |
+| Đã xử lý | Bản web của mobile crash sau đăng nhập (Session 3) | — |
+| Thấp | Deep link tải nguội trên web có tham số `segment`/`filter` → `router.setParams` trước khi Root Layout mount (có sẵn trên `dev`) | Hoãn `setParams` tới khi navigation sẵn sàng (`useRootNavigationState`) nếu cần deep link web |
 | Thấp | Chưa kiểm tra trên thiết bị các màn sau đăng nhập đã sửa (executions/workflows param, workspace reset, connections, skeleton) | Cài APK mới và bấm thử |
 | Thấp | Keystore chỉ nằm trên EAS | `eas credentials` → Android → preview → tải keystore, cất ngoài repo |
 
