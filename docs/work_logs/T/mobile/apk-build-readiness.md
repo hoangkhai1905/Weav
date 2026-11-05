@@ -53,6 +53,15 @@
 | `(tabs)/executions.tsx`: bỏ `useMemo` thiếu `nameOf` (nhãn "workflow không xác định" theo ngôn ngữ); React Compiler tự memo | Tìm kiếm tính lại khi đổi ngôn ngữ | Xong |
 | Hook mới `src/hooks/useClearRouteParam.ts`: xoá param một lần, đợi sự kiện `ready` của navigation container nếu chưa sẵn sàng; dùng ở `executions.tsx` (`filter`) và `workflows.tsx` (`segment=templates`) | Web mock: mở thẳng `/workflows?segment=templates` → tab "Mẫu có sẵn", URL về `/workflows`, không lỗi; `/executions?filter=failed` → URL về `/executions`, không lỗi | Xong |
 
+## 5e. Session 5 — 2026-11-05: merge, PR lên main, build APK
+
+| Việc | Kết quả | Trạng thái |
+| --- | --- | --- |
+| Merge `fix/push-device-lifecycle` rồi `chore/mobile-apk-readiness` vào `dev` (`--no-ff`) | `03b93590`, `da26ac1f`; `push-notifications.ts` tự gộp, không xung đột | Xong |
+| Kiểm tra trên `dev` đã gộp | Mobile: eslint 0 lỗi, tsc ok, 257/257 test, doctor 21/21. notification-service: 202/202 test, build ok. GitNexus compare `origin/dev`: 36 file, risk high (do số màn mobile đã sửa + notification-service) | Xong |
+| Push `dev`, mở PR dev→main | https://github.com/hoangkhai1905/Weav/pull/6 — merge vào main sẽ publish image và VM tự deploy production; cần review | Chờ review/CI |
+| `eas build -p android --profile preview` từ `dev` | Build `6afbd4e2-df19-4a2d-ad83-e070f410888b`; versionCode remote khởi tạo 1 → 2; keystore EAS `Djpah4NqTk (default)` như các bản trước; archive 552 MB (cân nhắc `.easignore`). FINISHED 15:13, APK versionCode 2 (link trên trang build EAS) | Xong; chưa cài thử trên máy |
+
 ## 6. Quyết định
 
 | Quyết định | Lý do | Hệ quả |
