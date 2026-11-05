@@ -99,6 +99,28 @@ describe('durable delivery worker', () => {
       expect(send).not.toHaveBeenCalled();
     },
   );
+  it('forgets a dead push token, without letting that failure break delivery', async () => {
+    const row = testDelivery();
+    row.provider = 'EXPO_PUSH';
+    row.destination = 'ExponentPushToken[dead]';
+    send.mockRejectedValue(
+      new DeliveryError('EXPO_DeviceNotRegistered', false, 0, true),
+    );
+    repo.forgetPushDevice.mockRejectedValue(new Error('db blip'));
+    await worker.deliver(row);
+    expect(repo.finish.mock.calls[0][1]).toMatchObject({ status: 'FAILED' });
+    expect(repo.forgetPushDevice).toHaveBeenCalledWith(
+      'ExponentPushToken[dead]',
+      row.createdAt,
+    );
+  });
+  it('keeps the push token on other Expo failures', async () => {
+    const row = testDelivery();
+    row.provider = 'EXPO_PUSH';
+    send.mockRejectedValue(new DeliveryError('EXPO_UNAVAILABLE', true));
+    await worker.deliver(row);
+    expect(repo.forgetPushDevice).not.toHaveBeenCalled();
+  });
   it('does not convert a database failure after send into a provider retry', async () => {
     send.mockResolvedValue({ kind: 'sent' });
     repo.finish.mockRejectedValue(new Error('database down'));

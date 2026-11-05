@@ -234,6 +234,18 @@ export class DeliveryWorker implements OnModuleInit, OnModuleDestroy {
         code: error.code,
         retryable,
       });
+      // The app was uninstalled or its token rotated: stop queueing pushes for this token.
+      if (error.code === 'EXPO_DeviceNotRegistered') {
+        try {
+          await this.repo.forgetPushDevice(d.destination, d.createdAt);
+        } catch (forgetError) {
+          this.logger.warn({
+            event: 'notification_push_device_forget_failed',
+            deliveryId: d.id,
+            errorClass: errorClass(forgetError),
+          });
+        }
+      }
     }
   }
 }

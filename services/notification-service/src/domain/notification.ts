@@ -95,6 +95,11 @@ export abstract class DeliveryRepository {
     leaseMs: number,
   ): Promise<Delivery | null>;
   abstract finish(delivery: Delivery, patch: DeliveryPatch): Promise<void>;
+  /** Drops a dead Expo push token unless it was registered again after `registeredBefore`. */
+  abstract forgetPushDevice(
+    token: string,
+    registeredBefore: Date,
+  ): Promise<void>;
   /** Milliseconds until the earliest scheduled retry or lease expiry, or null when none is pending. */
   abstract nextDueInMs(
     maxAttempts: number,

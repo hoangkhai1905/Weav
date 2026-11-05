@@ -50,6 +50,14 @@ export abstract class InboxRepository {
 /** Newest devices kept per user; older registrations are dropped on the next save. */
 export const MAX_PUSH_DEVICES_PER_USER = 10;
 
+/**
+ * Pushes go only to devices registered within this window. The app re-registers every time it
+ * opens while signed in, so a phone whose session lapsed (refresh token JWT_REFRESH_EXPIRES_IN=7d)
+ * stops getting pushes even though it could not unregister.
+ */
+// ponytail: fixed 7 days, make it a setting if the refresh-token lifetime changes.
+export const PUSH_DEVICE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 const uuidSchema = z.uuid();
 const namespace = Buffer.from('d9d2029effbf4ff394a4927bb68c44c0', 'hex');
 
