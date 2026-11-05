@@ -36,7 +36,9 @@ const styles = StyleSheet.create({
   wrap: { gap: Spacing.one },
   line: { flexDirection: 'row', gap: Spacing.one },
   marker: { minWidth: 18 },
-  text: { flex: 1 },
+  // flexShrink, not flex: 1. Yoga gives `flex: 1` a zero basis, so inside a bubble that sizes to its
+  // content the text measured 0 wide on Android (one character per line, nothing visible).
+  text: { flexShrink: 1 },
   bold: { fontFamily: FontFamily.bold },
   code: { fontFamily: Fonts?.mono, fontSize: 13, borderRadius: Radius.sm },
 });
