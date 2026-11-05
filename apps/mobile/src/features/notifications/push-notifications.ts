@@ -9,6 +9,10 @@ import { useI18nStore } from '../../stores/i18n.store';
 
 const DEVICES_URL = '/api/v2/notifications/devices';
 let registeredToken: string | null = null;
+// expo-notifications has no last-response API on web (the hook throws there) and the web build has
+// no push, so web reads "no tapped push". Picked once per platform, so the hook order never changes.
+const useLastNotificationResponse =
+  Platform.OS === 'web' ? () => null : Notifications.useLastNotificationResponse;
 
 // While the app is open a push still shows as a banner; the inbox screen refreshes on its own.
 Notifications.setNotificationHandler({
@@ -62,7 +66,7 @@ export async function unregisterPushDevice(): Promise<void> {
 export function usePushNotifications(enabled: boolean): void {
   const router = useRouter();
   const language = useI18nStore((s) => s.language);
-  const response = Notifications.useLastNotificationResponse();
+  const response = useLastNotificationResponse();
 
   useEffect(() => {
     if (!enabled) return;

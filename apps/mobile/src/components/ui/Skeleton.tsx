@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, Platform, type DimensionValue, type ViewStyle } from 'react-native';
 import { useThemeColors } from '../../hooks/useThemeColors';
 import { Radius } from '../../constants/theme';
@@ -13,7 +13,7 @@ interface SkeletonProps {
 /** Placeholder block. Pulses, unless the OS asks for reduced motion. */
 export const Skeleton: React.FC<SkeletonProps> = ({ width = '100%', height = 16, radius = Radius.sm, style }) => {
   const colors = useThemeColors();
-  const opacity = useRef(new Animated.Value(1)).current;
+  const [opacity] = useState(() => new Animated.Value(1));
   const [reduceMotion, setReduceMotion] = useState(false);
 
   useEffect(() => {

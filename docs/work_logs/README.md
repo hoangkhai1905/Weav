@@ -169,6 +169,7 @@ One log per feature, written by K or T (see `log_template.md`). Each member has 
 
 ### T/mobile
 
+- [apk-build-readiness.md](T/mobile/apk-build-readiness.md): Sẵn sàng build APK Android — 2026-11-05
 - 2026-W39: [mobile-auth-session.md](T/mobile/2026-W39/mobile-auth-session.md): Nhật ký làm việc - 2026-09-22
 - 2026-W39: [mobile-auth-sessions.md](T/mobile/2026-W39/mobile-auth-sessions.md): Nhật ký làm việc - 2026-09-22
 - 2026-W39: [mobile-change-password.md](T/mobile/2026-W39/mobile-change-password.md): Nhật ký làm việc - 2026-09-22

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -7,6 +7,7 @@ import { TeamWorkflowsPane } from '../../../features/workflows/components/TeamWo
 import { TemplatesPane } from '../../../features/templates/components/TemplatesPane';
 import { HeaderActions } from '../../../components/ui/HeaderActions';
 import { SegmentedControl } from '../../../components/ui/SegmentedControl';
+import { useClearRouteParam } from '../../../hooks/useClearRouteParam';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
 import { FontFamily, MinTouch, Radius, Spacing } from '../../../constants/theme';
@@ -20,14 +21,14 @@ export default function WorkflowsScreen() {
   const params = useLocalSearchParams<{ segment?: string }>();
   const [segment, setSegment] = useState<Segment>('team');
 
-  // Home's "Dùng mẫu có sẵn" opens this tab on the templates list; the tab stays mounted, so read the
-  // parameter whenever it arrives and clear it so the same shortcut works again later.
-  useEffect(() => {
-    if (params.segment === 'templates') {
-      setSegment('templates');
-      router.setParams({ segment: undefined });
-    }
-  }, [params.segment, router]);
+  // Home's "Dùng mẫu có sẵn" opens this tab on the templates list; the tab stays mounted, so apply the
+  // parameter whenever it changes (during render) and clear it so the same shortcut works again later.
+  const [seenSegment, setSeenSegment] = useState<string | undefined>(undefined);
+  if (params.segment !== seenSegment) {
+    setSeenSegment(params.segment);
+    if (params.segment === 'templates') setSegment('templates');
+  }
+  useClearRouteParam('segment', params.segment === 'templates' ? params.segment : undefined);
 
   const openAi = () => router.push('/(app)/ai/generator');
 
