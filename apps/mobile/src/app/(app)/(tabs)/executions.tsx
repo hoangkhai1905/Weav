@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -19,6 +19,7 @@ import { SearchField } from '../../../components/ui/SearchField';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import { TriggerTile } from '../../../components/ui/TriggerTile';
 import { formatDuration } from '../../../components/ui/status';
+import { useClearRouteParam } from '../../../hooks/useClearRouteParam';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
 import { useWorkspaceStore } from '../../../stores/workspace.store';
@@ -46,14 +47,13 @@ export default function ExecutionsScreen() {
     setSeenFilter(params.filter);
     if (params.filter !== undefined) setFilter(parseRunFilter(params.filter));
   }
-  useEffect(() => {
-    if (params.filter !== undefined) router.setParams({ filter: undefined });
-  }, [params.filter, router]);
+  useClearRouteParam('filter', params.filter);
 
   const all = query.data ?? [];
   const nameOf = (id: string) => names.get(id) ?? t('exl.unknownWorkflow');
 
-  const visible = useMemo(() => filterRuns(all, filter, search, nameOf), [all, filter, search, names]);
+  // No manual memo: `nameOf` follows the language, and the React Compiler memoizes this already.
+  const visible = filterRuns(all, filter, search, nameOf);
   const groups = useMemo(() => groupByDay(visible, (run) => run.createdAt), [visible]);
 
   const chips: ChipOption<RunFilter>[] = RUN_FILTERS.map((value) => ({

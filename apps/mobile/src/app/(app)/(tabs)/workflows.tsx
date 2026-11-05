@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -7,6 +7,7 @@ import { TeamWorkflowsPane } from '../../../features/workflows/components/TeamWo
 import { TemplatesPane } from '../../../features/templates/components/TemplatesPane';
 import { HeaderActions } from '../../../components/ui/HeaderActions';
 import { SegmentedControl } from '../../../components/ui/SegmentedControl';
+import { useClearRouteParam } from '../../../hooks/useClearRouteParam';
 import { useThemeColors } from '../../../hooks/useThemeColors';
 import { useTranslation } from '../../../hooks/useTranslation';
 import { FontFamily, MinTouch, Radius, Spacing } from '../../../constants/theme';
@@ -27,9 +28,7 @@ export default function WorkflowsScreen() {
     setSeenSegment(params.segment);
     if (params.segment === 'templates') setSegment('templates');
   }
-  useEffect(() => {
-    if (params.segment === 'templates') router.setParams({ segment: undefined });
-  }, [params.segment, router]);
+  useClearRouteParam('segment', params.segment === 'templates' ? params.segment : undefined);
 
   const openAi = () => router.push('/(app)/ai/generator');
 
