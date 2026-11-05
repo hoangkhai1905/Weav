@@ -97,7 +97,7 @@ export default function WorkspaceScreen() {
   const [createOpen, setCreateOpen] = React.useState(false);
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [createName, setCreateName] = React.useState('');
-  const [renameName, setRenameName] = React.useState('');
+  const [renameName, setRenameName] = React.useState(activeWorkspace?.name ?? '');
   const [memberEmail, setMemberEmail] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [createError, setCreateError] = React.useState<string | null>(null);
@@ -112,7 +112,12 @@ export default function WorkspaceScreen() {
   const [deleteError, setDeleteError] = React.useState<string | null>(null);
   const busyRef = React.useRef(false);
 
-  React.useEffect(() => {
+  // Reset the per-workspace form state when the workspace or the signed-in user changes
+  // (during render, React's "previous value" pattern).
+  const scopeKey = `${activeWorkspace?.id ?? ''}:${sessionUserId ?? ''}`;
+  const [seenScopeKey, setSeenScopeKey] = React.useState(scopeKey);
+  if (scopeKey !== seenScopeKey) {
+    setSeenScopeKey(scopeKey);
     setRenameName(activeWorkspace?.name ?? '');
     setRenameError(null);
     setMemberEmail('');
@@ -123,7 +128,7 @@ export default function WorkspaceScreen() {
     setDeleteOpen(false);
     setDeleteName('');
     setDeleteError(null);
-  }, [activeWorkspace?.id, sessionUserId]);
+  }
 
   const me = members.find((m) => m.id === sessionUserId);
   const isOwner = canManageWorkspaceMember(me);

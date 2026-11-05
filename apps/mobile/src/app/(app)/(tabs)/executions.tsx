@@ -38,13 +38,16 @@ export default function ExecutionsScreen() {
   const [filter, setFilter] = useState<RunFilter>('all');
   const [search, setSearch] = useState('');
 
-  // Home links here with `filter=failed` / `running`. The tab stays mounted, so read the parameter
-  // whenever it arrives and clear it so the same shortcut works again later.
+  // Home links here with `filter=failed` / `running`. The tab stays mounted, so apply the parameter
+  // whenever it changes (during render, React's "previous value" pattern) and clear it so the same
+  // shortcut works again later.
+  const [seenFilter, setSeenFilter] = useState<string | undefined>(undefined);
+  if (params.filter !== seenFilter) {
+    setSeenFilter(params.filter);
+    if (params.filter !== undefined) setFilter(parseRunFilter(params.filter));
+  }
   useEffect(() => {
-    if (params.filter !== undefined) {
-      setFilter(parseRunFilter(params.filter));
-      router.setParams({ filter: undefined });
-    }
+    if (params.filter !== undefined) router.setParams({ filter: undefined });
   }, [params.filter, router]);
 
   const all = query.data ?? [];

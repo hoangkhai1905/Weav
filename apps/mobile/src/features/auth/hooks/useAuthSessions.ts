@@ -55,10 +55,12 @@ export function useAuthSessions() {
   const userId = useAuthStore((state) => state.user?.id ?? null);
   const hasAccessToken = useAuthStore((state) => Boolean(state.tokens?.accessToken));
   const [page, setPage] = useState(0);
-
-  useEffect(() => {
+  // Back to the first page when the signed-in user changes (during render, "previous value" pattern).
+  const [pageUserId, setPageUserId] = useState(userId);
+  if (userId !== pageUserId) {
+    setPageUserId(userId);
     setPage(0);
-  }, [userId]);
+  }
 
   const listQuery = useQuery<AuthSessionPage>({
     queryKey: userId

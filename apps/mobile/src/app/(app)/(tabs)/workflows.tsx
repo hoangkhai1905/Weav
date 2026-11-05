@@ -20,13 +20,15 @@ export default function WorkflowsScreen() {
   const params = useLocalSearchParams<{ segment?: string }>();
   const [segment, setSegment] = useState<Segment>('team');
 
-  // Home's "Dùng mẫu có sẵn" opens this tab on the templates list; the tab stays mounted, so read the
-  // parameter whenever it arrives and clear it so the same shortcut works again later.
+  // Home's "Dùng mẫu có sẵn" opens this tab on the templates list; the tab stays mounted, so apply the
+  // parameter whenever it changes (during render) and clear it so the same shortcut works again later.
+  const [seenSegment, setSeenSegment] = useState<string | undefined>(undefined);
+  if (params.segment !== seenSegment) {
+    setSeenSegment(params.segment);
+    if (params.segment === 'templates') setSegment('templates');
+  }
   useEffect(() => {
-    if (params.segment === 'templates') {
-      setSegment('templates');
-      router.setParams({ segment: undefined });
-    }
+    if (params.segment === 'templates') router.setParams({ segment: undefined });
   }, [params.segment, router]);
 
   const openAi = () => router.push('/(app)/ai/generator');

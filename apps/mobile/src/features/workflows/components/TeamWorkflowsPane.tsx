@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { GitFork } from 'lucide-react-native';
@@ -52,7 +52,11 @@ export const TeamWorkflowsPane: React.FC<{ onCreate: () => void }> = ({ onCreate
   const filtering = status !== 'ALL' || search.trim() !== '';
   const partial = query.hasNextPage === true;
 
-  useEffect(() => {
+  // Drop the switches the list has caught up with, whenever a new list arrives (during render,
+  // React's "previous value" pattern).
+  const [prunedFor, setPrunedFor] = useState(loaded);
+  if (loaded !== prunedFor) {
+    setPrunedFor(loaded);
     setPending((current) => {
       const ids = Object.keys(current);
       if (ids.length === 0) return current;
@@ -60,7 +64,7 @@ export const TeamWorkflowsPane: React.FC<{ onCreate: () => void }> = ({ onCreate
       for (const w of loaded) if (w.workflowId in next && (w.status === 'PUBLISHED') === next[w.workflowId]) delete next[w.workflowId];
       return Object.keys(next).length === ids.length ? current : next;
     });
-  }, [loaded]);
+  }
 
   const chips: ChipOption<WorkflowStatusFilter>[] = STATUS_FILTERS.map((value) => ({
     value,

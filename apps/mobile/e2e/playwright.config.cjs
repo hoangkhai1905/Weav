@@ -1,3 +1,4 @@
+/* global __dirname */
 const path = require('node:path');
 const { defineConfig } = require(require.resolve('@playwright/test', {
   paths: [path.resolve(__dirname, '../../web')],
