@@ -28,6 +28,16 @@
 | Thêm `eslint` ^9 + `eslint-config-expo` ~57.0.2 (dev) | ESLint 10 làm `eslint-plugin-react` 7.37.5 crash (`getFilename is not a function`) nên ghim v9 | Xong |
 | `eas.json`: `appVersionSource: remote`, `preview.autoIncrement: true` | Trước đó mọi build đều `versionCode 1`. EAS chưa có version remote; build đầu sẽ khởi tạo từ local (1) rồi tăng | Xong |
 
+## 5b. Session 2 — 2026-11-05: sửa lỗi lint
+
+| Việc | Kết quả | Trạng thái |
+| --- | --- | --- |
+| `react-hooks/set-state-in-effect` (6 file) | Đổi effect đồng bộ state sang mẫu "previous value" trong render: `(tabs)/executions.tsx`, `(tabs)/workflows.tsx` (param từ Home), `workspace/index.tsx` (reset form khi đổi workspace/user), `useAuthSessions.ts` (về trang 0 khi đổi user), `TeamWorkflowsPane.tsx` (bỏ switch đã khớp list); `forgot-password.tsx` tính cooldown từ state `now`; `use-color-scheme.web.ts` dùng `useSyncExternalStore` | Xong |
+| `react-hooks/refs` | `Skeleton.tsx`, `useNotificationTargetNavigator.ts`: lazy `useState(() => …)` thay ref đọc trong render | Xong |
+| `react-hooks/purity` | `ConnectionCard.tsx` dùng helper mới `credentialDaysLeft` (`connection.expiry.ts`, có test) | Xong |
+| `no-undef __dirname` (8 file `.cjs`) | Thêm `/* global __dirname */` ở đầu file (không sửa `eslint.config.js` vì hook chặn) | Xong |
+| Kiểm tra trên web (mock mode, gateway local) | Quên mật khẩu: gửi mã mock → "Gửi lại mã sau 59 giây" → 48 giây, đếm đúng. Sau đăng nhập web crash ở `usePushNotifications` (`getLastNotificationResponse` không có trên web) — lỗi có sẵn trên `dev`, cùng mã ở expo-notifications 57.0.12 và 57.0.24 | Một phần |
+
 ## 6. Quyết định
 
 | Quyết định | Lý do | Hệ quả |
@@ -64,8 +74,10 @@
 
 | Mức | Vấn đề | Bước tiếp |
 | --- | --- | --- |
-| Trung bình | 15 lỗi React Compiler (`set-state-in-effect`, `refs`, `purity`) trong 10 file; compiler bỏ qua tối ưu các component đó | Sửa từng file, có test |
-| Thấp | 9 lỗi `no-undef __dirname` trong file `.cjs`; `.expo/export-check*` (build cũ) bị lint quét | Thêm globals Node cho `**/*.cjs` và ignore `.expo/*` trong `eslint.config.js` |
+| Đã xử lý | 24 lỗi lint (Session 2). Còn 24 cảnh báo (`import/no-named-as-default-member` axios, `exhaustive-deps`) | Tuỳ chọn |
+| Thấp | `.expo/export-check*` (bản export cũ, gitignore) vẫn bị `expo lint` quét nếu không có `--ignore-pattern ".expo/**"` | Thêm `.expo/*` vào ignores của `eslint.config.js` (cần tắt tạm hook `config-protection`) hoặc xoá hai thư mục đó |
+| Trung bình | Bản web của mobile crash sau đăng nhập: `usePushNotifications` gọi `useLastNotificationResponse` trên web | Chặn push trên web (`Platform.OS !== 'web'`); không ảnh hưởng APK |
+| Thấp | Chưa kiểm tra trên thiết bị các màn sau đăng nhập đã sửa (executions/workflows param, workspace reset, connections, skeleton) | Cài APK mới và bấm thử |
 | Thấp | Keystore chỉ nằm trên EAS | `eas credentials` → Android → preview → tải keystore, cất ngoài repo |
 
 ## 11. Bàn giao
