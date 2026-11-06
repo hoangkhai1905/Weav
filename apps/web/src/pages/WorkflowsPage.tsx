@@ -17,6 +17,7 @@ import { isNoWorkspaceError } from '../api/workflow-v1.api';
 import { REDUCED_MOTION_TRANSITION } from '../lib/motion';
 import { useI18nStore } from '../store/useI18nStore';
 import { useUIStore } from '../store/useUIStore';
+import { useWorkspaceStore } from '../store/useWorkspaceStore';
 import { captureNotificationSession, isCurrentNotificationSession } from '../lib/notifications/session';
 import { showSuccessToast } from '../lib/feedback/toast';
 import { useNotificationMilestoneRefresh } from '../hooks/useNotificationMilestoneRefresh';
@@ -93,6 +94,8 @@ export function WorkflowsPage() {
   const refreshNotifications = useNotificationMilestoneRefresh();
   const { language, t } = useI18nStore();
   const openAiGenerator = useUIStore((state) => state.openAiGenerator);
+  // The list reloads when the user switches workspace in the top bar (the page stays mounted).
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const menuButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -171,7 +174,7 @@ export function WorkflowsPage() {
 
   useEffect(() => {
     void loadWorkflows();
-  }, [loadWorkflows]);
+  }, [loadWorkflows, activeWorkspaceId]);
 
   // Run statistics come from one cached request for the workspace's recent runs and never block the list.
   const statsQuery = useQuery({
