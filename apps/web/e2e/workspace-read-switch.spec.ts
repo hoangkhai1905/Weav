@@ -277,6 +277,59 @@ test.describe('workspace read and switch foundation', () => {
   });
 });
 
+test.describe('workflow APIs follow the selected workspace', () => {
+  test('lists the workflows of the workspace picked in the switcher, not a stale stored one', async ({ page }) => {
+    await installAuthFixture(page);
+    // A key left from an earlier session: the workflow APIs used to read it even after the user switched.
+    await page.addInitScript(({ stale }) => {
+      (globalThis as unknown as { localStorage: { setItem: (k: string, v: string) => void } })
+        .localStorage.setItem('weav_active_workspace_id', stale);
+    }, { stale: WORKSPACE_A });
+    const listed: string[] = [];
+    await page.route('**/api/v1/workspaces**', async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname === '/api/v1/workspaces') {
+        await fulfillWorkspaceApi(route, pageResult([
+          workspace(WORKSPACE_A, 'Alpha Workspace', USER_A),
+          workspace(WORKSPACE_B, 'Beta Workspace', USER_A),
+        ]));
+        return;
+      }
+      const list = url.pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/workflows$/);
+      if (list && route.request().method() === 'GET') {
+        const workspaceId = list[1];
+        listed.push(workspaceId);
+        const beta = workspaceId === WORKSPACE_B;
+        await fulfillWorkspaceApi(route, {
+          items: [{
+            workflowId: beta ? '00000000-0000-4000-8000-00000000000b' : '00000000-0000-4000-8000-00000000000a',
+            name: beta ? 'Beta flow' : 'Alpha flow',
+            status: 'DRAFT',
+            triggerTypes: ['trigger.manual'],
+            createdAt: '2026-10-10T10:00:00Z',
+            updatedAt: '2026-10-10T10:00:00Z',
+          }],
+          page: 0, size: 100, totalElements: 1, totalPages: 1, hasNext: false,
+        });
+        return;
+      }
+      if (url.pathname.endsWith('/members')) {
+        await fulfillWorkspaceApi(route, pageResult([]));
+        return;
+      }
+      await route.fallback();
+    });
+
+    await gotoAuthenticated(page, '/workflows');
+    await expect(page.getByText('Alpha flow')).toBeVisible();
+
+    await page.getByTestId('topbar-workspace-selector').selectOption(WORKSPACE_B);
+    await expect(page.getByText('Beta flow')).toBeVisible();
+    await expect(page.getByText('Alpha flow')).toHaveCount(0);
+    expect(listed.at(-1)).toBe(WORKSPACE_B);
+  });
+});
+
 test.describe('workspace-scoped OCR', () => {
   test('uses the selected real workspace ID in the OCR URL', async ({ page }) => {
     await installAuthFixture(page);
