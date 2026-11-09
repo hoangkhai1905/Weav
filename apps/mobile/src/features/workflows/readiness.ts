@@ -3,18 +3,6 @@ import { fieldName, humanizeField, providerForNodeType } from '../ai/ai.answers'
 
 export type { ReadinessIssue };
 
-const PROVIDER_LABEL: Record<string, string> = {
-  GMAIL: 'Gmail',
-  GOOGLE_SHEETS: 'Google Sheets',
-  GOOGLE_CALENDAR: 'Google Calendar',
-  GOOGLE_DRIVE: 'Google Drive',
-  TELEGRAM: 'Telegram',
-  HTTP: 'HTTP',
-  DISCORD: 'Discord',
-  SLACK: 'Slack',
-  TEAMS: 'Teams',
-};
-
 /** Issues of known steps by step id; the rest (null or unknown node) are graph-level issues. */
 export function groupIssues(issues: ReadinessIssue[], stepIds: readonly string[]) {
   const known = new Set(stepIds);
@@ -32,7 +20,7 @@ export function groupIssues(issues: ReadinessIssue[], stepIds: readonly string[]
 
 /**
  * Plain-language reason for a red step. i18n keys used (Task 6 adds the strings):
- * workflows.readiness.notAuthorized, .pickAccount {provider}, .missingField {field}, .generic.
+ * workflows.readiness.notAuthorized, .pickAccount {provider: t(provider.<CODE>)}, .missingField {field: aig.field.<name> else humanized}, .missingField {field}, .generic.
  */
 export function reasonFor(
   issue: ReadinessIssue,
@@ -43,9 +31,14 @@ export function reasonFor(
   const name = issue.field ? fieldName(issue.field) : '';
   if (name === 'connectionId') {
     const provider = providerForNodeType(nodeType);
-    return t('workflows.readiness.pickAccount', { provider: (provider && PROVIDER_LABEL[provider]) || provider || '' });
+    return provider
+      ? t('workflows.readiness.pickAccount', { provider: t(`provider.${provider}`) })
+      : t('workflows.readiness.generic');
   }
-  if (name) return t('workflows.readiness.missingField', { field: humanizeField(name) });
+  if (name) {
+    const known = t(`aig.field.${name}`);
+    return t('workflows.readiness.missingField', { field: known !== `aig.field.${name}` ? known : humanizeField(name) });
+  }
   return t('workflows.readiness.generic');
 }
 
@@ -53,5 +46,5 @@ export function reasonFor(
 export function webStepUrl(base: string | undefined, workflowId: string, nodeId: string): string | null {
   const root = (base ?? '').trim().replace(/\/+$/, '');
   if (!root) return null;
-  return `${root}/workflows/${workflowId}/builder?step=${encodeURIComponent(nodeId)}`;
+  return `${root}/workflows/${encodeURIComponent(workflowId)}/builder?step=${encodeURIComponent(nodeId)}`;
 }
