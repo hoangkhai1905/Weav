@@ -15,6 +15,7 @@ import com.weav.workflow.application.node.IntegrationReadiness;
 import com.weav.workflow.domain.definition.DefinitionValidator;
 import com.weav.workflow.domain.definition.ValidationIssue;
 import com.weav.workflow.domain.definition.WorkflowDefinition;
+import com.weav.workflow.domain.exception.ForbiddenException;
 import com.weav.workflow.domain.exception.InvalidStateException;
 import com.weav.workflow.domain.exception.ResourceNotFoundException;
 import com.weav.workflow.domain.model.aggregate.workflow.Workflow;
@@ -183,6 +184,50 @@ public class WorkflowPublicationService {
 
         return transactions.execute(status -> publishLocked(workspaceId, workflowId, actorId,
                 beforeAuthorization, validatedDefinition, referencedConnections));
+    }
+
+    /**
+     * Read-only preview of what publish would reject: the same definition, validator and connection checks, but
+     * issues are returned instead of thrown. Validator issues short-circuit (publish stops there too), which also
+     * means a malformed connection id is already reported by the validator as INVALID_CONNECTION_ID.
+     */
+    public Readiness readiness(UUID workspaceId, UUID workflowId, UUID actorId) {
+        workspaceAuthorization.require(workspaceId, actorId, "WORKSPACE_VIEW");
+        Workflow workflow = workflowRepository.findByWorkspaceAndId(workspaceId, workflowId)
+                .orElseThrow(() -> new ResourceNotFoundException("Workflow not found"));
+        WorkflowDefinition definition = definitionFor(workflow);
+        List<ValidationIssue> issues = definitionValidator.validatePublish(definition);
+        if (issues.size() == 1 && "SCHEDULE_VALIDATION_UNAVAILABLE".equals(issues.getFirst().code())) {
+            throw new TriggerDependencyUnavailableException();
+        }
+        if (!issues.isEmpty()) {
+            return new Readiness(issues);
+        }
+        List<ValidationIssue> unauthorized = new ArrayList<>();
+        for (UUID connectionId : connectionIds(definition)) {
+            try {
+                workspaceConnections.authorizeAttachment(workspaceId, connectionId, actorId);
+            } catch (ForbiddenException exception) {
+                for (WorkflowDefinition.Node node : definition.nodes()) {
+                    if (node != null && node.config().get("connectionId") instanceof String text
+                            && text.equalsIgnoreCase(connectionId.toString())) {
+                        unauthorized.add(new ValidationIssue(node.id(), "connectionId",
+                                "CONNECTION_NOT_AUTHORIZED", null));
+                    }
+                }
+            }
+        }
+        return new Readiness(unauthorized);
+    }
+
+    public record Readiness(List<ValidationIssue> issues) {
+        public Readiness {
+            issues = List.copyOf(issues);
+        }
+
+        public boolean ready() {
+            return issues.isEmpty();
+        }
     }
 
     private Publication publishLocked(UUID workspaceId, UUID workflowId, UUID actorId,
