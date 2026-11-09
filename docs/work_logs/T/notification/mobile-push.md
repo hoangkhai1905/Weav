@@ -60,3 +60,12 @@ Branch `fix/push-device-lifecycle` (from `dev` `eaaf2a6f`).
 - Changed: `domain/notification.ts` (`DeliveryRepository.forgetPushDevice`), `prisma.repository.ts`, `delivery.worker.ts` (+spec), `domain/inbox.ts`, `prisma.inbox.repository.ts` (+spec), `testing/fixtures.ts`, mobile `push-notifications.ts`.
 - Verified: notification-service unit 202/202, e2e 24/24, build, eslint on changed files; mobile `tsc` clean. Real stack (rebuilt notification-service, Gateway, RabbitMQ, Neon), throwaway users: a token registered through the Gateway got `EXPO_DeviceNotRegistered` and its `push_devices` row was deleted (0 left, no `forget_failed` log); a device last registered 8 days ago got the inbox item but no push delivery (1 / 0); DLQ 0; cleanup removed all test rows.
 - Limit: the 7-day window is a constant; make it a setting if the refresh-token lifetime changes. Stale `push_devices` rows are not purged, only ignored (the per-user cap of 10 bounds them).
+
+## Session 2026-11-09: sound and heads-up
+
+Branch `fix/push-sound` (from `dev`). Requested: notifications should play a sound.
+
+- `ExpoProvider.send` now sends `sound: 'default'` (iOS), `channelId: 'default'` and `priority: 'high'`. Before, Android fell back to Expo's "Miscellaneous" channel (no pop-up); now it uses the app's own HIGH-importance `default` channel (system sound + heads-up). Every registered device has that channel: the app creates it before asking for the token, since the first push commit `0620f70b`.
+- No app change and no new APK needed; the foreground handler already had `shouldPlaySound: true`.
+- Verified: notification-service unit 202/202 (spec asserts the three fields), build, eslint on changed files. Not checked on a phone yet (needs the change deployed via `main`).
+- Next: a custom Weav sound would need an audio file, the `expo-notifications` `sounds` plugin option, a new channel id (Android channel sounds cannot change) and a new APK.
