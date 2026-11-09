@@ -5,12 +5,13 @@ import type {
   WorkflowNode,
   WorkflowPage,
   WorkflowPublication,
+  WorkflowReadiness,
   WorkflowRunAccepted,
   WorkflowStatus,
   WorkflowSummary,
   WorkflowTrigger,
 } from '../../domain/workflow/workflow.types';
-import { arr, int, invalid, oneOf, oneOfOrNull, rec, recOrEmpty, str, strOrNull } from './mapper-utils';
+import { arr, bool, int, invalid, oneOf, oneOfOrNull, rec, recOrEmpty, str, strOrNull } from './mapper-utils';
 import type { Rec } from './mapper-utils';
 
 const STATUSES = ['DRAFT', 'PUBLISHED', 'PAUSED'] as const;
@@ -167,6 +168,22 @@ export function mapWorkflowPublication(value: unknown): WorkflowPublication {
         triggerId: str(x, 'triggerId', 'webhook'),
         endpointKey: str(x, 'endpointKey', 'webhook'),
         secret: str(x, 'secret', 'webhook'),
+      };
+    }),
+  };
+}
+
+/** GET .../readiness -> { ready, issues[] }; unknown keys are dropped. */
+export function mapWorkflowReadiness(value: unknown): WorkflowReadiness {
+  const r = rec(value, 'readiness');
+  return {
+    ready: bool(r, 'ready', 'readiness'),
+    issues: arr(r, 'issues', 'readiness').map((i) => {
+      const x = rec(i, 'readiness.issue');
+      return {
+        nodeId: strOrNull(x, 'nodeId', 'readiness.issue'),
+        field: strOrNull(x, 'field', 'readiness.issue'),
+        code: str(x, 'code', 'readiness.issue'),
       };
     }),
   };

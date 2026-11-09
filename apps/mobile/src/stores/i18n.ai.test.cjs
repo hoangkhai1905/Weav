@@ -15,15 +15,18 @@ test('Home / AI generator / assistant strings exist in both languages with the s
   }
 });
 
-test('every unsupported reason, question field and weekday used by the screens has copy', () => {
+test('every unsupported reason and provider used by the screens has copy', () => {
   for (const code of ['CAPABILITY_UNAVAILABLE', 'OUT_OF_SCOPE', 'AMBIGUOUS_REQUEST', 'INVALID_INTENT']) {
     assert.ok(aiVi[`aig.reason.${code}`], code);
-  }
-  for (const code of ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']) assert.ok(aiVi[`aig.sched.weekday.${code}`], code);
-  for (const code of ['HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY']) {
-    assert.ok(aiVi[`aig.sched.freq.${code}`] && aiVi[`aig.sched.sentence.${code}`], code);
   }
   for (const code of ['GMAIL', 'GOOGLE_SHEETS', 'GOOGLE_CALENDAR', 'GOOGLE_DRIVE', 'TELEGRAM', 'HTTP', 'OPENAI', 'ANTHROPIC', 'GEMINI']) {
     assert.ok(aiVi[`provider.${code}`], code);
   }
+});
+
+test('needs_input and unsupported headings exist in both languages', () => {
+  assert.equal(aiVi['aig.needs.heading'], 'AI chưa hiểu rõ mô tả. Hãy nói thêm về:');
+  assert.equal(aiEn['aig.needs.heading'], 'The AI needs a clearer description. Please say more about:');
+  assert.equal(aiVi['aig.unsupported.heading'], 'AI không dựng được quy trình này:');
+  assert.equal(aiEn['aig.unsupported.heading'], 'AI cannot build this workflow:');
 });

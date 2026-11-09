@@ -36,6 +36,7 @@ export function useSaveGeneratedWorkflow() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['workflows'] });
+      void queryClient.invalidateQueries({ queryKey: ['workflow-readiness'] });
     },
   });
   return {

@@ -7,6 +7,7 @@ const {
   buildPauseWorkflowRequest,
   buildResumeWorkflowRequest,
   buildRunWorkflowRequest,
+  buildWorkflowReadinessRequest,
   isValidIdempotencyKey,
   newIdempotencyKey,
 } = require('./workflow.http.contract.ts');
@@ -95,4 +96,12 @@ test('publication mapper keeps the one-time webhook secret and rejects bad shape
   assert.equal(mapWorkflowPublication(dto).webhooks[0].secret, 's'.repeat(43));
   assert.throws(() => mapWorkflowPublication({ ...dto, status: 'DRAFT' }), /status/);
   assert.deepEqual(mapWorkflowCreated({ workflowId: WF, status: 'DRAFT' }), { workflowId: WF, status: 'DRAFT' });
+});
+
+test('readiness is a GET under the workflow route and validates ids', () => {
+  assert.deepEqual(buildWorkflowReadinessRequest(WS, WF), {
+    url: `/api/v1/workspaces/${WS}/workflows/${WF}/readiness`,
+  });
+  assert.throws(() => buildWorkflowReadinessRequest(WS, 'nope'), /workflow/i);
+  assert.throws(() => buildWorkflowReadinessRequest('nope', WF), /workspace/i);
 });

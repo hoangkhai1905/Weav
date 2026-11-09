@@ -5,6 +5,7 @@ const {
   mapWorkflowPage,
   mapWorkflow,
   mapWorkflowRunAccepted,
+  mapWorkflowReadiness,
 } = require('./workflow.mapper.ts');
 
 const summary = (overrides = {}) => ({
@@ -105,4 +106,32 @@ test('detail maps a WORKFLOW_EVENT trigger registration', () => {
     ],
   });
   assert.equal(wf.triggers[0].type, 'WORKFLOW_EVENT');
+});
+
+test('maps readiness, keeping null nodeId/field and dropping unknown keys', () => {
+  const out = mapWorkflowReadiness({
+    ready: false,
+    extra: 1,
+    issues: [
+      { nodeId: 'n1', field: 'url', code: 'REQUIRED', other: 'x' },
+      { nodeId: null, field: null, code: 'NO_TRIGGER' },
+      { code: 'NO_ACTION' },
+    ],
+  });
+  assert.deepEqual(out, {
+    ready: false,
+    issues: [
+      { nodeId: 'n1', field: 'url', code: 'REQUIRED' },
+      { nodeId: null, field: null, code: 'NO_TRIGGER' },
+      { nodeId: null, field: null, code: 'NO_ACTION' },
+    ],
+  });
+  assert.deepEqual(mapWorkflowReadiness({ ready: true, issues: [] }), { ready: true, issues: [] });
+});
+
+test('rejects a readiness body without a boolean ready or with a bad issue', () => {
+  assert.throws(() => mapWorkflowReadiness({ issues: [] }), /Invalid response/);
+  assert.throws(() => mapWorkflowReadiness({ ready: 'yes', issues: [] }), /Invalid response/);
+  assert.throws(() => mapWorkflowReadiness({ ready: true }), /Invalid response/);
+  assert.throws(() => mapWorkflowReadiness({ ready: false, issues: [{ nodeId: 'n' }] }), /Invalid response/);
 });

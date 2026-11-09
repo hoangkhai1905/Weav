@@ -456,6 +456,23 @@ export class WorkflowProxyController {
     );
   }
 
+  @Get(':workflowId/readiness')
+  readiness(
+    @Param('workspaceId') rawWorkspaceId: string,
+    @Param('workflowId') rawWorkflowId: string,
+    @Req() request: FastifyRequest,
+    @Res() reply: FastifyReply,
+  ) {
+    const workspace = workflowId(rawWorkspaceId);
+    const workflow = workflowId(rawWorkflowId);
+    return this.proxy.forward(
+      'GET',
+      request,
+      reply,
+      `/workspaces/${workspace}/workflows/${workflow}/readiness`,
+    );
+  }
+
   @Put(':workflowId/draft')
   saveDraft(
     @Param('workspaceId') rawWorkspaceId: string,

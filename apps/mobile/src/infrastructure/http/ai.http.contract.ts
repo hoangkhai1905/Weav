@@ -62,6 +62,7 @@ export function buildGenerateWorkflowRequest(
       ...(request.answers && Object.keys(request.answers).length > 0
         ? { answers: request.answers }
         : {}),
+      ...(request.allowBlanks ? { allowBlanks: true } : {}),
     },
     timeout: GENERATE_TIMEOUT_MS,
     ...(signal ? { signal } : {}),

@@ -1,22 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Check, CircleCheck, Lightbulb, TriangleAlert } from 'lucide-react-native';
+import { Check, Lightbulb, TriangleAlert } from 'lucide-react-native';
 import { useAiGenerator } from '../../../features/ai/hooks/useAiGenerator';
 import { useSaveGeneratedWorkflow } from '../../../features/ai/hooks/useSaveGeneratedWorkflow';
-import { QuestionsForm, initialValues } from '../../../features/ai/components/QuestionsForm';
-import { buildAnswers, type Answers } from '../../../features/ai/ai.answers';
+import { questionLabel } from '../../../features/ai/ai.answers';
+import { autoPickConnections, requiredConnectionProvider } from '../../../features/ai/auto-pick';
+import { buildGenerateRequest, shouldForgetDraft, shouldOpenDraft } from '../../../features/ai/generate-request';
+import { useConnections } from '../../../features/connections/hooks/useConnections';
 import { AI_PROMPT_MAX_LENGTH } from '../../../infrastructure/http/ai.http.contract';
-import { FlowList, useNodeLabel } from '../../../features/workflows/components/FlowList';
-import { PublishResultSheet } from '../../../features/workflows/components/PublishResultSheet';
-import { usePublishWorkflow } from '../../../features/workflows/hooks/useWorkflows';
-import { useWorkflowPermissions } from '../../../features/workflows/hooks/useWorkflowPermissions';
+import { useNodeLabel } from '../../../features/workflows/components/FlowList';
 import { fill } from '../../../features/common/fill';
 import { friendlyErrorMessage } from '../../../features/common/friendly-error';
 import { deviceTimeZone } from '../../../features/common/timezone';
 import { Button } from '../../../components/ui/Button';
-import { ConfirmSheet } from '../../../components/ui/ConfirmSheet';
 import { ErrorState } from '../../../components/ui/ErrorState';
 import { ScreenHeader } from '../../../components/ui/ScreenHeader';
 import { useThemeColors } from '../../../hooks/useThemeColors';
@@ -26,13 +24,10 @@ import { useWorkspaceStore } from '../../../stores/workspace.store';
 import { FontFamily, MinTouch, Radius, Spacing, Typography } from '../../../constants/theme';
 import type { ApiError } from '../../../domain/common/error.types';
 import type { AiGenerationResult } from '../../../domain/ai/ai.types';
-import type { WorkflowPublication } from '../../../domain/workflow/workflow.types';
 
 const EXAMPLE_KEYS = ['aig.example.1', 'aig.example.2', 'aig.example.3'] as const;
-const EMPTY_ANSWERS: Answers = { answers: {}, connections: {} };
 
-type Ready = Extract<AiGenerationResult, { status: 'ready' }>;
-type NeedsInput = Extract<AiGenerationResult, { status: 'needs_input' }>;
+type Notice = Exclude<AiGenerationResult, { status: 'ready' }>;
 
 export default function AiGeneratorScreen() {
   const router = useRouter();
@@ -43,219 +38,135 @@ export default function AiGeneratorScreen() {
   const showToast = useUIStore((s) => s.showToast);
   const generate = useAiGenerator();
   const save = useSaveGeneratedWorkflow();
-  const publish = usePublishWorkflow();
-  const perms = useWorkflowPermissions();
   const labelOf = useNodeLabel();
+  const connections = useConnections();
+  // Read at save time (generation takes up to a minute), not captured at submit.
+  const connectionsRef = useRef(connections.data);
+  useEffect(() => {
+    connectionsRef.current = connections.data;
+  }, [connections.data]);
 
   const [prompt, setPrompt] = useState(typeof params.prompt === 'string' ? params.prompt : '');
-  const [result, setResult] = useState<AiGenerationResult | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
-  const [collected, setCollected] = useState<Answers>(EMPTY_ANSWERS);
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [invalidKeys, setInvalidKeys] = useState<string[]>([]);
-  const [urlErrorKeys, setUrlErrorKeys] = useState<string[]>([]);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [name, setName] = useState('');
-  const [savedId, setSavedId] = useState<string | null>(null);
-  const [confirmPublish, setConfirmPublish] = useState(false);
-  const [publication, setPublication] = useState<WorkflowPublication | null>(null);
+  const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const saveFailed = useRef(false);
 
   const promptLength = Array.from(prompt).length;
   const tooLong = promptLength > AI_PROMPT_MAX_LENGTH;
 
   const back = () => (router.canGoBack() ? router.back() : router.replace('/(app)/(tabs)'));
 
-  const run = async (answers: Answers) => {
+  /** Generate (blanks allowed) -> attach the single matching connections -> save the draft -> open it. */
+  const submitPrompt = async () => {
+    if (inFlight.current || !prompt.trim() || tooLong) return;
+    inFlight.current = true;
+    const workspaceId = activeWorkspaceId;
+    const stale = () => useWorkspaceStore.getState().activeWorkspaceId !== workspaceId;
+    setBusy(true);
     setError(null);
-    setFormError(null);
+    setNotice(null);
+    let keepBusy = false;
+    let stage: 'generate' | 'save' = 'generate';
     try {
-      const res = await generate.mutateAsync({
-        prompt: prompt.trim(),
-        timezone: deviceTimeZone(),
-        ...(Object.keys(answers.answers).length > 0 ? { answers: answers.answers } : {}),
-        ...(Object.keys(answers.connections).length > 0 ? { connections: answers.connections } : {}),
-      });
-      setResult(res);
-      if (res.status === 'needs_input') {
-        setValues(initialValues(res.questions, t));
-        setInvalidKeys([]);
-        setUrlErrorKeys([]);
+      const res = await generate.mutateAsync(buildGenerateRequest(prompt, deviceTimeZone()));
+      if (stale()) return;
+      if (res.status !== 'ready') {
+        setNotice(res);
+        return;
       }
-      if (res.status === 'ready') setName(res.name);
-    } catch (e) {
-      setError(e as ApiError);
-    }
-  };
-
-  const startOver = () => {
-    setResult(null);
-    setError(null);
-    setCollected(EMPTY_ANSWERS);
-    setSavedId(null);
-    save.forget();
-  };
-
-  const submitPrompt = () => {
-    if (!prompt.trim() || tooLong) return;
-    setCollected(EMPTY_ANSWERS);
-    void run(EMPTY_ANSWERS);
-  };
-
-  const submitAnswers = (res: NeedsInput) => {
-    const built = buildAnswers({ prompt: prompt.trim(), questions: res.questions, values, previous: collected });
-    if (built.ok === false) {
-      setInvalidKeys(built.keys);
-      setUrlErrorKeys(built.urlKeys);
-      setFormError(t(built.reason === 'missing' || built.reason === 'invalid_url' ? 'aig.err.missing' : built.reason === 'too_long' ? 'aig.err.tooLong' : 'aig.err.invalid'));
-      return;
-    }
-    setInvalidKeys([]);
-    setUrlErrorKeys([]);
-    setCollected(built.value);
-    void run(built.value);
-  };
-
-  const saveDraft = async (res: Ready) => {
-    try {
+      stage = 'save';
+      const definition = autoPickConnections(res.definition, connectionsRef.current ?? [], requiredConnectionProvider);
       const id = await save.mutateAsync({
-        name: name.trim(),
-        definition: res.definition,
+        name: res.name.trim().slice(0, 255) || prompt.trim().slice(0, 60),
+        definition,
         layout: res.layout,
         labelOf: (node) => labelOf({ type: node.type, name: null }),
       });
-      setSavedId(id);
+      if (stale()) {
+        save.forget(); // the half-made workflow belongs to the other workspace
+        return;
+      }
+      // The user left during the wait: the draft is saved and shows in the list, so do not pull them back.
+      if (!shouldOpenDraft(mounted.current)) return;
+      keepBusy = true; // stay on the progress view until the workflow screen replaces this one
+      router.replace(`/(app)/workflows/${id}`);
     } catch (e) {
-      showToast({ type: 'error', title: t('aig.ready.saveFail'), message: friendlyErrorMessage(e) });
+      if (shouldForgetDraft(stage, stale())) save.forget();
+      if (stale()) return;
+      if (stage === 'generate') setError(e as ApiError);
+      else if (mounted.current) {
+        saveFailed.current = true; // a retry of the same prompt reuses the half-made draft
+        showToast({ type: 'error', title: t('aig.ready.saveFail'), message: friendlyErrorMessage(e) });
+      }
+    } finally {
+      inFlight.current = false;
+      if (!keepBusy && mounted.current) setBusy(false);
     }
   };
 
-  const doPublish = async () => {
-    if (!savedId) return;
-    try {
-      const out = await publish.mutateAsync(savedId);
-      setConfirmPublish(false);
-      setPublication(out);
-    } catch (e) {
-      setConfirmPublish(false);
-      showToast({ type: 'error', title: t('pub.failTitle'), message: friendlyErrorMessage(e) });
+  const changePrompt = (text: string) => {
+    if (saveFailed.current) {
+      saveFailed.current = false;
+      save.forget(); // a new description makes a new workflow
     }
-  };
-
-  const closePublication = () => {
-    setPublication(null);
-    publish.reset(); // drop the one-time webhook secrets
+    setPrompt(text);
   };
 
   let body: React.ReactNode;
   if (!activeWorkspaceId) {
     body = <Text style={[Typography.body, { color: colors.textMuted }]}>{t('aig.noWorkspace')}</Text>;
-  } else if (generate.isPending) {
+  } else if (busy) {
     body = <GeneratingProgress />;
-  } else if (savedId && result?.status === 'ready') {
-    body = (
-      <View style={styles.stack}>
-        <View style={[styles.banner, { backgroundColor: colors.tones.success.bg, borderColor: colors.tones.success.border }]}>
-          <CircleCheck size={22} color={colors.tones.success.fg} />
-          <View style={styles.flex}>
-            <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>{t('aig.saved.title')}</Text>
-            <Text style={[Typography.body, { color: colors.textMuted }]}>{t('aig.saved.body')}</Text>
-          </View>
-        </View>
-        <Button label={t('aig.saved.open')} onPress={() => router.replace(`/(app)/workflows/${savedId}`)} />
-        {perms.loaded && perms.canPublish ? (
-          <Button label={t('aig.saved.publish')} variant="secondary" onPress={() => setConfirmPublish(true)} />
-        ) : perms.loaded ? (
-          <Text style={[Typography.caption, { color: colors.textMuted }]}>{t('aig.saved.noPublish')}</Text>
-        ) : null}
-        <Button label={t('aig.saved.another')} variant="secondary" onPress={() => { setPrompt(''); startOver(); }} />
-      </View>
-    );
-  } else if (result?.status === 'needs_input') {
-    body = (
-      <View style={styles.stack}>
-        <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>{t('aig.needs.title')}</Text>
-        <Text style={[Typography.body, { color: colors.textMuted }]}>{t('aig.needs.hint')}</Text>
-        <QuestionsForm
-          questions={result.questions}
-          values={values}
-          invalidKeys={invalidKeys}
-          urlErrorKeys={urlErrorKeys}
-          onChange={(key, value) => {
-            setValues((v) => ({ ...v, [key]: value }));
-            setInvalidKeys((k) => k.filter((x) => x !== key));
-            setUrlErrorKeys((k) => k.filter((x) => x !== key));
-          }}
-        />
-        {formError ? <Text accessibilityRole="alert" style={[Typography.label, { color: colors.danger }]}>{formError}</Text> : null}
-        {error ? <ErrorState error={error} onRetry={() => submitAnswers(result)} /> : null}
-        <Button label={t('aig.needs.submit')} onPress={() => submitAnswers(result)} />
-        <Button label={t('aig.editPrompt')} variant="secondary" onPress={startOver} />
-      </View>
-    );
-  } else if (result?.status === 'unsupported') {
-    body = (
-      <View style={styles.stack}>
-        <View style={[styles.banner, { backgroundColor: colors.tones.warning.bg, borderColor: colors.tones.warning.border }]}>
-          <TriangleAlert size={22} color={colors.tones.warning.fg} />
-          <View style={styles.flex}>
-            <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>{t('aig.unsupported.title')}</Text>
-            {result.reasons.map((r) => (
-              <Text key={r.code} style={[Typography.body, { color: colors.text }]}>{t(`aig.reason.${r.code}`)}</Text>
-            ))}
-          </View>
-        </View>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.row}>
-            <Lightbulb size={18} color={colors.primary} />
-            <Text style={[Typography.label, { color: colors.text }]}>{t('aig.hints.title')}</Text>
-          </View>
-          {['aig.hint.1', 'aig.hint.2', 'aig.hint.3'].map((k) => (
-            <Text key={k} style={[Typography.body, { color: colors.textMuted }]}>• {t(k)}</Text>
-          ))}
-        </View>
-        <Button label={t('aig.editPrompt')} onPress={startOver} />
-      </View>
-    );
-  } else if (result?.status === 'ready') {
-    const emptyName = name.trim() === '';
-    body = (
-      <View style={styles.stack}>
-        <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>{t('aig.ready.title')}</Text>
-        <Text style={[Typography.caption, { color: colors.textMuted }]}>{t('aig.ready.note')}</Text>
-        <View style={styles.field}>
-          <Text style={[Typography.label, { color: colors.text }]}>{t('aig.ready.name')}</Text>
-          <TextInput
-            accessibilityLabel={t('aig.ready.name')}
-            value={name}
-            onChangeText={setName}
-            maxLength={255}
-            style={[styles.input, { backgroundColor: colors.card, borderColor: emptyName ? colors.danger : colors.borderStrong, color: colors.text, outlineColor: colors.primary }]}
-          />
-          {emptyName ? <Text accessibilityRole="alert" style={[Typography.caption, { color: colors.danger }]}>{t('aig.ready.name.empty')}</Text> : null}
-        </View>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[Typography.label, { color: colors.text }]}>{t('aig.ready.steps')}</Text>
-          <FlowList workflow={result} />
-        </View>
-        <Button
-          label={save.isError ? t('aig.ready.saveRetry') : t('aig.ready.save')}
-          busy={save.isPending}
-          disabled={emptyName}
-          icon={<Check size={18} color={colors.onButton} />}
-          onPress={() => void saveDraft(result)}
-        />
-        <Button label={t('aig.regenerate')} variant="secondary" onPress={() => void run(collected)} />
-        <Button label={t('aig.editPrompt')} variant="secondary" onPress={startOver} />
-      </View>
-    );
   } else {
     body = (
       <View style={styles.stack}>
+        {notice?.status === 'needs_input' ? (
+          <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.banner, { backgroundColor: colors.tones.warning.bg, borderColor: colors.tones.warning.border }]}>
+            <TriangleAlert size={22} color={colors.tones.warning.fg} />
+            <View style={styles.flex}>
+              <Text style={[Typography.label, { color: colors.text }]}>{t('aig.needs.heading')}</Text>
+              {notice.questions.map((q) => (
+                <Text key={`${q.code}:${q.field}`} style={[Typography.body, { color: colors.text }]}>• {questionLabel(q, t)}</Text>
+              ))}
+            </View>
+          </View>
+        ) : null}
+        {notice?.status === 'unsupported' ? (
+          <>
+            <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.banner, { backgroundColor: colors.tones.warning.bg, borderColor: colors.tones.warning.border }]}>
+              <TriangleAlert size={22} color={colors.tones.warning.fg} />
+              <View style={styles.flex}>
+                <Text style={[Typography.label, { color: colors.text }]}>{t('aig.unsupported.heading')}</Text>
+                {notice.reasons.map((r) => (
+                  <Text key={r.code} style={[Typography.body, { color: colors.text }]}>• {t(`aig.reason.${r.code}`)}</Text>
+                ))}
+              </View>
+            </View>
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.row}>
+                <Lightbulb size={18} color={colors.primary} />
+                <Text style={[Typography.label, { color: colors.text }]}>{t('aig.hints.title')}</Text>
+              </View>
+              {['aig.hint.1', 'aig.hint.2', 'aig.hint.3'].map((k) => (
+                <Text key={k} style={[Typography.body, { color: colors.textMuted }]}>• {t(k)}</Text>
+              ))}
+            </View>
+          </>
+        ) : null}
         <Text accessibilityRole="header" style={[Typography.title, { color: colors.text }]}>{t('aig.prompt.title')}</Text>
         <TextInput
           accessibilityLabel={t('aig.prompt.label')}
           value={prompt}
-          onChangeText={setPrompt}
+          onChangeText={changePrompt}
           multiline
           placeholder={t('aig.prompt.placeholder')}
           placeholderTextColor={colors.textSubtle}
@@ -276,20 +187,15 @@ export default function AiGeneratorScreen() {
               key={k}
               accessibilityRole="button"
               accessibilityLabel={t(k)}
-              onPress={() => setPrompt(t(k))}
+              onPress={() => changePrompt(t(k))}
               style={[styles.example, { backgroundColor: colors.card, borderColor: colors.border }]}
             >
               <Text style={[Typography.body, { color: colors.text }]}>{t(k)}</Text>
             </Pressable>
           ))}
         </View>
-        {error ? <ErrorState error={error} onRetry={submitPrompt} /> : null}
-        <Button
-          label={t('aig.generate')}
-
-          disabled={!prompt.trim() || tooLong}
-          onPress={submitPrompt}
-        />
+        {error ? <ErrorState error={error} onRetry={() => void submitPrompt()} /> : null}
+        <Button label={t('aig.generate')} disabled={!prompt.trim() || tooLong} onPress={() => void submitPrompt()} />
       </View>
     );
   }
@@ -302,16 +208,6 @@ export default function AiGeneratorScreen() {
           {body}
         </ScrollView>
       </KeyboardAvoidingView>
-      <ConfirmSheet
-        visible={confirmPublish}
-        title={t('pub.confirm.title')}
-        message={t('pub.confirm.body')}
-        confirmLabel={t('pub.confirm.action')}
-        busy={publish.isPending}
-        onConfirm={() => void doPublish()}
-        onClose={() => setConfirmPublish(false)}
-      />
-      <PublishResultSheet publication={publication} onClose={closePublication} />
     </SafeAreaView>
   );
 }
@@ -373,7 +269,6 @@ const styles = StyleSheet.create({
   stack: { gap: Spacing.three },
   center: { textAlign: 'center' },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  field: { gap: Spacing.one },
   card: { gap: Spacing.two, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.lg },
   banner: { flexDirection: 'row', gap: Spacing.two, padding: Spacing.three, borderWidth: 1, borderRadius: Radius.lg },
   prompt: {
@@ -384,7 +279,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlignVertical: 'top',
   },
-  input: { minHeight: MinTouch, paddingHorizontal: Spacing.three, borderWidth: 1, borderRadius: Radius.md, fontSize: 15 },
   counter: { textAlign: 'right' },
   examples: { gap: Spacing.two },
   example: { minHeight: MinTouch, justifyContent: 'center', padding: Spacing.three, borderWidth: 1, borderRadius: Radius.md },
