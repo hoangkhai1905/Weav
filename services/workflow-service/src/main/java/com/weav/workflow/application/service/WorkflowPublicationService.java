@@ -187,9 +187,12 @@ public class WorkflowPublicationService {
     }
 
     /**
-     * Read-only preview of what publish would reject: the same definition, validator and connection checks, but
-     * issues are returned instead of thrown. Validator issues short-circuit (publish stops there too), which also
-     * means a malformed connection id is already reported by the validator as INVALID_CONNECTION_ID.
+     * Read-only, advisory preview of what blocks publishing. It checks: the stored draft definition, the publish
+     * validation rules (DefinitionValidator.validatePublish, which also reports a malformed connection id as
+     * INVALID_CONNECTION_ID) and, only when those pass, whether the actor may attach each referenced connection
+     * (CONNECTION_NOT_AUTHORIZED). Issues are returned instead of thrown. Publish additionally enforces the Telegram
+     * trigger limit, that watched workflows belong to the workspace, and the connection reference projection, so
+     * {@code ready: true} does not guarantee that publish succeeds.
      */
     public Readiness readiness(UUID workspaceId, UUID workflowId, UUID actorId) {
         workspaceAuthorization.require(workspaceId, actorId, "WORKSPACE_VIEW");

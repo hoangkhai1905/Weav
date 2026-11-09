@@ -2,21 +2,16 @@ package com.weav.workflow.presentation.http;
 
 import com.weav.workflow.WorkflowPublicationTestConfiguration;
 import com.weav.workflow.domain.model.aggregate.workflow.Workflow;
-import com.weav.workflow.domain.model.aggregate.workflow.WorkflowVersion;
 import com.weav.workflow.domain.port.out.WorkflowRepository;
-import com.weav.workflow.application.port.out.WorkflowVersionPort;
 import com.weav.workflow.domain.valueobject.WorkflowStatus;
-import com.weav.workflow.infrastructure.web.CorrelationIdFilter;
 import com.weav.workflow.infrastructure.web.WorkflowRequestBodyLimitFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.http.MediaType;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.ObjectMapper;
@@ -33,11 +28,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -56,11 +47,11 @@ class WorkflowReadinessHttpTest {
     @Autowired
     private WorkflowRepository workflows;
     @Autowired
-    private WorkflowVersionPort versions;
-    @Autowired
     private WorkflowPublicationTestConfiguration.PublicationWorkspaceAccess workspaceAccess;
     @Autowired
     private WorkflowRequestBodyLimitFilter bodyLimitFilter;
+    @Autowired
+    private WorkflowPublicationTestConfiguration.PublicationWorkspaceConnections connections;
 
     private UUID workspaceId;
     private MockMvc mockMvc;
@@ -75,9 +66,6 @@ class WorkflowReadinessHttpTest {
                 .apply(SecurityMockMvcConfigurers.springSecurity())
                 .build();
     }
-
-    @Autowired
-    private WorkflowPublicationTestConfiguration.PublicationWorkspaceConnections connections;
 
     @Test
     void readyForPublishableDraft() throws Exception {
