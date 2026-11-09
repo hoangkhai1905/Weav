@@ -147,3 +147,6 @@ export interface WorkflowRepository {
   publishWorkflow(workspaceId: string, workflowId: string): Promise<WorkflowPublication>;
   deleteWorkflow(workspaceId: string, workflowId: string): Promise<void>;
 }
+
+/** One problem found by the server-side readiness check of a workflow draft. */
+export type ReadinessIssue = { nodeId: string | null; field: string | null; code: string };
