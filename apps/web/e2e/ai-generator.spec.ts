@@ -318,4 +318,10 @@ test.describe("Unfinished steps", () => {
     await expect(page.locator('[data-testid="workflow-node"]')).toHaveCount(2);
     await expect(page.getByTestId("setup-step-chip")).toHaveCount(0);
   });
+
+  test("lists a red step even when it has no publish blocker message", async ({ page }) => {
+    await openBuilderWith(page, [{ id: "events", type: "trigger.workflow_event", config: {} }]);
+    await expect(page.locator('[data-testid="workflow-node"][data-node-type="trigger.workflow_event"]')).toHaveAttribute("data-readiness", "not-configured");
+    await expect(page.getByTestId("setup-step-chip")).toHaveCount(1);
+  });
 });

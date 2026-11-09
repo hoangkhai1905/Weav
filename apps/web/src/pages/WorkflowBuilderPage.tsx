@@ -1876,15 +1876,19 @@ export const WorkflowBuilderPage: React.FC = () => {
         </section>
       )}
 
-      {publishBlockers.length > 0 && (
+      {(publishBlockers.length > 0 || setupSteps.length > 0) && (
         <div
           id="publish-blocker-summary"
           data-testid="publish-blocker-summary"
           role="status"
           className="shrink-0 border-b border-warn/30 bg-warn-bg px-3 py-1 text-xs text-warn"
         >
-          {t('builder.publish_unavailable')}: {publishBlockers[0]}
-          {publishBlockers.length > 1 ? ` (+${publishBlockers.length - 1} ${t('builder.more')})` : ''}
+          {publishBlockers.length > 0 && (
+            <>
+              {t('builder.publish_unavailable')}: {publishBlockers[0]}
+              {publishBlockers.length > 1 ? ` (+${publishBlockers.length - 1} ${t('builder.more')})` : ''}
+            </>
+          )}
           {setupSteps.length > 0 && (
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               <span className="font-medium">{t('builder.needs_setup')}:</span>
