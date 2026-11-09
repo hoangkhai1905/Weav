@@ -279,4 +279,43 @@ test.describe("Unfinished steps", () => {
     await expect(email.getByTestId("workflow-node-readiness")).toHaveClass(/text-err/);
     await expect(page.locator('[data-testid="workflow-node"][data-node-type="trigger.manual"]')).not.toHaveClass(/border-err/);
   });
+  const openBuilderWith = async (page: Page, nodes: unknown[], edges: unknown[] = []) => {
+    await installAuthFixture(page);
+    await stubWorkflows(page, {
+      detail: { ...emptyDetail, definition: { schemaVersion: "1.0", nodes, edges, variables: {} } },
+    });
+    const profileResponse = page.waitForResponse((response) => response.url().includes("/api/auth/me"));
+    await page.goto(`/workflows/${WORKFLOW_ID}/builder`);
+    await profileResponse;
+  };
+  const emailNodes = [
+    { id: "start", type: "trigger.manual", config: {} },
+    { id: "send_email", type: "email.send", config: { to: "owner@example.test", subject: "Hi" } },
+  ];
+  const emailEdges = [{ id: "e1", source: "start", target: "send_email" }];
+
+  test("lists unfinished steps and opens one on click", async ({ page }) => {
+    await openBuilderWith(page, emailNodes, emailEdges);
+    const chip = page.getByTestId("publish-blocker-summary").getByRole("button", { name: /^Set up step / });
+    await expect(chip).toHaveCount(1);
+    await chip.click();
+    await expect(page.getByTestId("workflow-inspector")).toBeVisible();
+    await expect(page.locator('[data-testid="workflow-node"][data-node-type="email.send"]')).toHaveClass(/ring-run/);
+  });
+
+  test("a step without a name falls back to its type label", async ({ page }) => {
+    await openBuilderWith(page, emailNodes, emailEdges);
+    const chip = page.getByTestId("setup-step-chip");
+    await expect(chip).toContainText("Send an email with Gmail");
+    await expect(chip).not.toContainText("send_email");
+  });
+
+  test("shows no step chips when every step is ready", async ({ page }) => {
+    await openBuilderWith(page, [
+      { id: "start", type: "trigger.manual", config: {} },
+      { id: "check", type: "logic.condition", config: { left: "{{a}}", operator: "equals", right: "1" } },
+    ], [{ id: "e1", source: "start", target: "check" }]);
+    await expect(page.locator('[data-testid="workflow-node"]')).toHaveCount(2);
+    await expect(page.getByTestId("setup-step-chip")).toHaveCount(0);
+  });
 });

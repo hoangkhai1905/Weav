@@ -12,6 +12,10 @@ export type NodeReadinessState =
   | 'unavailable'
   | 'unsupported';
 
+/** Steps the user still has to set up (shown in red, listed in the publish bar). */
+export const isUnfinishedReadiness = (state: NodeReadinessState): boolean =>
+  state === 'not-configured' || state === 'authorization-required' || state === 'unsupported';
+
 export interface NodeReadinessBadge {
   state: NodeReadinessState;
   label: string;

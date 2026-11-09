@@ -84,7 +84,7 @@ import { storeOAuthPendingContext } from '../lib/oauthPending';
 import { useAuthStore } from '../store/useAuthStore';
 import { ocrApi, OcrApiError, type OcrExtractionResult } from '../api/ocr.api';
 import { NODE_CATALOG, nextNodeId, nodeSourcePorts } from '../lib/constants/nodeCatalog';
-import { getNodeReadinessBadge, isConditionComplete, isMarkedRequired, missingFieldLabels } from '../lib/nodeReadiness';
+import { getNodeReadinessBadge, isConditionComplete, isUnfinishedReadiness, isMarkedRequired, missingFieldLabels } from '../lib/nodeReadiness';
 import { SchemaField } from '../components/builder/SchemaField';
 import { AiConnectionField, AiModelField } from '../components/builder/AiConnectionField';
 import { AdvancedSection } from '../components/builder/AdvancedSection';
@@ -554,6 +554,12 @@ export const WorkflowBuilderPage: React.FC = () => {
     () => getPublishBlockers(nodes, edges, t, attachableConnectionIds, ocrSources),
     [nodes, edges, t, attachableConnectionIds, ocrSources],
   );
+  const setupSteps = useMemo(
+    () => nodes
+      .filter((node) => isUnfinishedReadiness(getNodeReadinessBadge(String(node.data?.nodeType ?? ''), (node.data?.config ?? {}) as Record<string, unknown>, attachableConnectionIds, ocrSources).state))
+      .map((node) => ({ id: node.id, name: stepName(node, t) })),
+    [nodes, t, attachableConnectionIds, ocrSources],
+  );
   // A step whose chosen connection expired or was switched off fails at run time: say so in the inspector.
   const selectedConnectionId = String(selectedNodeConfig.connectionId ?? '').trim();
   const brokenConnection = selectedConnectionId
@@ -958,6 +964,8 @@ export const WorkflowBuilderPage: React.FC = () => {
     getViewport: () => { x: number; y: number; zoom: number };
     setViewport: (viewport: { x: number; y: number; zoom: number }, options?: { duration?: number }) => Promise<boolean>;
     fitView: (options?: { padding?: `${number}%`; minZoom?: number; maxZoom?: number }) => Promise<boolean>;
+    setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => Promise<boolean>;
+    getZoom: () => number;
   } | null>(null);
   // The prop-driven fit runs on the placeholder graph; on phones refit once the loaded graph is measured.
   useEffect(() => {
@@ -1292,6 +1300,18 @@ export const WorkflowBuilderPage: React.FC = () => {
     }
   };
 
+  // Select a step, open its inspector and (when asked) centre it, keeping the current zoom.
+  const focusStep = useCallback((nodeId: string, center = false) => {
+    setSelectedNodeId(nodeId);
+    setInspectorOpen(true);
+    setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, selected: n.id === nodeId } })));
+    const flow = flowRef.current;
+    const node = flow?.getNode(nodeId);
+    if (center && flow && node) {
+      void flow.setCenter(node.position.x + (node.measured?.width ?? 0) / 2, node.position.y + (node.measured?.height ?? 0) / 2, { zoom: flow.getZoom(), duration: 300 });
+    }
+  }, [setNodes]);
+
   // Reopen the step named by `?step=` (return from Google authorization).
   const stepParam = searchParams.get('step');
   const handledStepEpochRef = useRef(-1);
@@ -1300,11 +1320,9 @@ export const WorkflowBuilderPage: React.FC = () => {
     if (!nodes.some((node) => node.id === stepParam)) return;
     handledStepEpochRef.current = loadEpoch;
     /* eslint-disable react-hooks/set-state-in-effect -- one-shot selection after load */
-    setSelectedNodeId(stepParam);
-    setInspectorOpen(true);
+    focusStep(stepParam);
     /* eslint-enable react-hooks/set-state-in-effect */
-    setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, selected: n.id === stepParam } })));
-  }, [stepParam, loadEpoch, nodes, setNodes]);
+  }, [stepParam, loadEpoch, nodes, focusStep]);
 
   const handleOcrFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -1867,6 +1885,23 @@ export const WorkflowBuilderPage: React.FC = () => {
         >
           {t('builder.publish_unavailable')}: {publishBlockers[0]}
           {publishBlockers.length > 1 ? ` (+${publishBlockers.length - 1} ${t('builder.more')})` : ''}
+          {setupSteps.length > 0 && (
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <span className="font-medium">{t('builder.needs_setup')}:</span>
+              {setupSteps.map((step) => (
+                <button
+                  key={step.id}
+                  type="button"
+                  data-testid="setup-step-chip"
+                  aria-label={t('builder.setup_step').replace('{name}', step.name)}
+                  onClick={() => focusStep(step.id, true)}
+                  className="rounded-full border border-err-border bg-err-bg px-2 py-0.5 text-err hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {step.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
