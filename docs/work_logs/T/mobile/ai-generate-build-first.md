@@ -103,3 +103,25 @@ Commit `fix(mobile): keep FlowList as before and guard the generator`:
 - Chú thích dưới nút Publish hiện mỗi khi Publish bị chặn; chỉ có lỗi graph thì dùng câu "Quy trình còn lỗi cần sửa trên máy tính." (readiness chỉ mang tính tư vấn, server vẫn có thể từ chối Publish).
 
 Kết quả: `node --test` 274 pass / 0 fail; `npx tsc --noEmit -p .` PASS; `expo lint` các file đổi không có lỗi; `git diff --check` sạch. Chưa kiểm tra trên thiết bị.
+
+## 12. Kiểm tra trên stack local bằng Expo web (2026-11-09)
+
+Môi trường: stack dev build lại từ nhánh này (gateway, workflow-service, workspace-service, identity-service, ai-service); app mobile chạy Expo web ở `localhost:5173` trong Browser pane, `apps/mobile/.env.local` (git-ignored) trỏ API về `http://localhost:3000` và `EXPO_PUBLIC_WEB_URL=http://localhost:5173`. Tài khoản thử chưa có workspace nên tạo workspace "My workspace 1".
+
+| Bước | Kết quả |
+| --- | --- |
+| Gọi route readiness không đăng nhập | 401, tức gateway mới đã có route |
+| Màn "Tạo quy trình bằng AI" | Chỉ còn ô mô tả, 3 gợi ý, nút "Tạo quy trình"; không còn câu hỏi |
+| AI giả lập (`compose.ai-local.yml`) | ai-service trả `AI_OUTPUT_INVALID`: intent mẫu trong `services/ai-service/test/fixtures/fake-deepseek.mjs` đã cũ. Có từ trước, không do nhánh này |
+| DeepSeek thật, gợi ý "Mỗi sáng 8 giờ, gửi email nhắc lịch họp..." | ai-service OK, workflow-service trả `unsupported` / `INVALID_INTENT`; màn hình hiện đúng "AI không dựng được quy trình này:" kèm gợi ý viết lại, giữ nguyên mô tả |
+| DeepSeek thật, gợi ý "Khi có yêu cầu mới từ webhook, ghi thông tin vào Google Sheets" | Tạo nháp và tự chuyển sang `/workflows/21938c98-…`; thẻ "Còn 1 bước cần thiết lập"; bước Google Sheets đỏ, nhãn "Cần thiết lập", lý do "Chọn tài khoản Google Sheets"; Publish `disabled` với chú thích "Hoàn tất 1 bước đỏ để xuất bản quy trình." |
+| `GET .../readiness` | 200 `{"ready":false,"issues":[connectionId, spreadsheetId, range của ghi_sheets, mã REQUIRED_FIELD_MISSING]}` |
+| Chạm bước đỏ | Sheet "Google Sheets", "Bước này cần thiết lập trên máy tính.", "Còn thiếu": Chọn tài khoản Google Sheets / Thiếu: Mã bảng tính Google Sheets / Thiếu: range |
+| "Mở bước này trên web" | Mở `http://localhost:5173/workflows/21938c98-…/builder?step=ghi_sheets` (đúng bước) |
+| Console | Chỉ có 2 cảnh báo React có sẵn của bản web (`importantForAccessibility`, `accessibilityElementsHidden` từ `Logo.tsx`) và một 401 do phiên đăng nhập web mất sau khi tải lại trang |
+
+Ghi nhận thêm:
+- "Thiếu: range" vẫn hiện tên trường tiếng Anh vì chưa có nhãn `aig.field.range` (lỗi nhỏ đã biết).
+- Readiness được tải lại mỗi lần cửa sổ lấy lại focus, cùng lúc với chi tiết workflow và lịch sử chạy (hành vi `refetchOnWindowFocus` có sẵn của react-query), không phải vòng lặp riêng.
+- Workspace thử "My workspace 1" và nháp "Ghi yêu cầu từ webhook vào Google Sheets" còn lại trong database dùng chung; xoá khi không cần.
+- Chưa kiểm tra trên điện thoại Android thật.
