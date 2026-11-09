@@ -1,28 +1,7 @@
-import type { AiGenerateRequest, AiQuestion } from '../../domain/ai/ai.types';
+import type { AiQuestion } from '../../domain/ai/ai.types';
 import type { ConnectionProvider } from '../../domain/connection/connection.types';
 import type { WorkflowDefinition } from '../../domain/workflow/workflow.types';
-import { assertGenerateRequest } from '../../infrastructure/http/ai.http.contract';
-
-/** One form control per question: the backend question code decides which control is shown. */
-export type QuestionControl = 'URL' | 'SCHEDULE' | 'TIMEZONE' | 'TEXT' | 'CONNECTION';
-
-export function controlFor(question: AiQuestion): QuestionControl {
-  switch (question.code) {
-    case 'URL':
-      return 'URL';
-    case 'SCHEDULE':
-      return 'SCHEDULE';
-    case 'TIMEZONE':
-      return 'TIMEZONE';
-    case 'CONNECTION':
-      return 'CONNECTION';
-    default:
-      return 'TEXT';
-  }
-}
-
-/** Questions are keyed by their `field` (that is what the backend expects as the answer key). */
-export const questionKey = (question: AiQuestion): string => `${question.code}:${question.field}`;
+import { fill } from '../common/fill';
 
 /** Which connection provider can serve a node type (a CONNECTION question names the node type). */
 export function providerForNodeType(nodeType: string): ConnectionProvider | null {
@@ -71,75 +50,18 @@ export function humanizeField(name: string): string {
     .toLowerCase();
 }
 
-export function isValidHttpUrl(text: string): boolean {
-  try {
-    const url = new URL(text.trim());
-    return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname.length > 0;
-  } catch {
-    return false;
+/** "email.send.subject" -> "Tiêu đề email"; unknown fields are humanized, never shown as raw codes. */
+export function questionLabel(q: AiQuestion, t: (key: string) => string): string {
+  if (q.code === 'URL') return t('aig.q.URL');
+  if (q.code === 'SCHEDULE') return t('aig.q.SCHEDULE');
+  if (q.code === 'TIMEZONE') return t('aig.q.TIMEZONE');
+  if (q.code === 'CONNECTION') {
+    const provider = providerForNodeType(q.field);
+    return provider ? fill(t('aig.q.CONNECTION'), { provider: t(`provider.${provider}`) }) : t('aig.q.CONNECTION.generic');
   }
-}
-
-export interface Answers {
-  answers: Record<string, string>;
-  connections: Record<string, string>;
-}
-
-export type BuildAnswersResult =
-  | { ok: true; value: Answers }
-  | {
-      ok: false;
-      reason: 'missing' | 'invalid_url' | 'too_long' | 'invalid';
-      /** Questions left blank. */
-      keys: string[];
-      /** URL questions that are filled but not an http(s) address. */
-      urlKeys: string[];
-    };
-
-/**
- * Merges the previous rounds with this round's form values into the `answers` / `connections`
- * of the next generate call. Text answers are trimmed; a CONNECTION question is answered with the
- * picked connection id, keyed by node type. The whole request is validated with the same limits as
- * the HTTP contract (10 answers, prompt + answers <= 3900 characters).
- */
-export function buildAnswers(input: {
-  prompt: string;
-  questions: readonly AiQuestion[];
-  values: Readonly<Record<string, string>>;
-  previous?: Answers;
-}): BuildAnswersResult {
-  const answers = { ...(input.previous?.answers ?? {}) };
-  const connections = { ...(input.previous?.connections ?? {}) };
-  const missing: string[] = [];
-  const badUrl: string[] = [];
-
-  for (const question of input.questions) {
-    const key = questionKey(question);
-    const value = (input.values[key] ?? '').trim();
-    if (value === '') {
-      missing.push(key);
-      continue;
-    }
-    if (question.code === 'URL' && !isValidHttpUrl(value)) {
-      badUrl.push(key);
-      continue;
-    }
-    if (question.code === 'CONNECTION') connections[question.field] = value;
-    else answers[question.field] = value;
-  }
-
-  if (missing.length > 0 || badUrl.length > 0) {
-    return { ok: false, reason: missing.length > 0 ? 'missing' : 'invalid_url', keys: missing, urlKeys: badUrl };
-  }
-
-  const request: AiGenerateRequest = { prompt: input.prompt, answers, connections };
-  try {
-    assertGenerateRequest(request);
-  } catch (error) {
-    const tooLong = error instanceof Error && error.message.includes('too long');
-    return { ok: false, reason: tooLong ? 'too_long' : 'invalid', keys: [], urlKeys: [] };
-  }
-  return { ok: true, value: { answers, connections } };
+  const name = fieldName(q.field);
+  const known = t(`aig.field.${name}`);
+  return known !== `aig.field.${name}` ? known : fill(t('aig.q.VALUE.generic'), { field: humanizeField(name) });
 }
 
 /**

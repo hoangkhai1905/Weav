@@ -351,6 +351,106 @@ class WorkflowPublicationTest {
         verify(workflows, never()).lockByWorkspaceAndId(any(), any());
     }
 
+    @Test
+    void readinessIsReadyForPublishableDraftAndWritesNothing() {
+        Workflow draft = workflow(WORKSPACE_ID, ACTOR_ID, WorkflowStatus.DRAFT, null, withConnection("r"));
+        lenient().when(workspaceAccess.getAccess(WORKSPACE_ID, ACTOR_ID)).thenReturn(
+                new WorkspaceAccessPort.Access(WORKSPACE_ID, ACTOR_ID, "MEMBER", Set.of("WORKSPACE_VIEW")));
+        when(workflows.findByWorkspaceAndId(WORKSPACE_ID, draft.getId())).thenReturn(Optional.of(draft));
+
+        WorkflowPublicationService.Readiness result =
+                service(Optional.of(connectionReferences)).readiness(WORKSPACE_ID, draft.getId(), ACTOR_ID);
+
+        assertTrue(result.ready());
+        assertTrue(result.issues().isEmpty());
+        verify(workflows, never()).lockByWorkspaceAndId(any(), any());
+        verify(workflows, never()).save(any());
+        verifyNoInteractions(versions, triggers, connectionReferences);
+    }
+
+    @Test
+    void readinessReportsMissingConnectionOnItsNode() {
+        Map<String, Object> email = Map.of("to", "a@example.test", "subject", "s", "body", "b");
+        Workflow draft = workflow(WORKSPACE_ID, ACTOR_ID, WorkflowStatus.DRAFT, null,
+                definition(List.of(node("manual", "trigger.manual", Map.of()), node("mail", "email.send", email)),
+                        List.of(edge("e1", "manual", "mail")), "r"));
+        grantView();
+        when(workflows.findByWorkspaceAndId(WORKSPACE_ID, draft.getId())).thenReturn(Optional.of(draft));
+
+        WorkflowPublicationService.Readiness result =
+                service(Optional.empty()).readiness(WORKSPACE_ID, draft.getId(), ACTOR_ID);
+
+        assertFalse(result.ready());
+        assertTrue(result.issues().stream().anyMatch(issue -> "mail".equals(issue.nodeId())
+                && issue.field().endsWith("connectionId")));
+    }
+
+    @Test
+    void readinessReportsUnauthorizedConnectionOnReferencingNode() {
+        Workflow draft = workflow(WORKSPACE_ID, ACTOR_ID, WorkflowStatus.DRAFT, null, withConnection("r"));
+        grantView();
+        when(workflows.findByWorkspaceAndId(WORKSPACE_ID, draft.getId())).thenReturn(Optional.of(draft));
+        org.mockito.Mockito.doThrow(new ForbiddenException()).when(workspaceConnections)
+                .authorizeAttachment(WORKSPACE_ID, CONNECTION_ID, ACTOR_ID);
+
+        WorkflowPublicationService.Readiness result =
+                service(Optional.of(connectionReferences)).readiness(WORKSPACE_ID, draft.getId(), ACTOR_ID);
+
+        assertEquals(List.of(new com.weav.workflow.domain.definition.ValidationIssue("request", "connectionId",
+                "CONNECTION_NOT_AUTHORIZED", null)), result.issues());
+    }
+
+    @Test
+    void readinessReportsGraphIssueWithNullNode() {
+        Workflow draft = workflow(WORKSPACE_ID, ACTOR_ID, WorkflowStatus.DRAFT, null,
+                definition(List.of(), List.of(), "r"));
+        grantView();
+        when(workflows.findByWorkspaceAndId(WORKSPACE_ID, draft.getId())).thenReturn(Optional.of(draft));
+
+        WorkflowPublicationService.Readiness result =
+                service(Optional.empty()).readiness(WORKSPACE_ID, draft.getId(), ACTOR_ID);
+
+        assertFalse(result.ready());
+        assertTrue(result.issues().stream().anyMatch(issue -> issue.nodeId() == null));
+    }
+
+    @Test
+    void readinessOfUnknownWorkflowIsNotFound() {
+        grantView();
+        UUID id = UUID.randomUUID();
+        when(workflows.findByWorkspaceAndId(WORKSPACE_ID, id)).thenReturn(Optional.empty());
+
+        assertThrows(com.weav.workflow.domain.exception.ResourceNotFoundException.class,
+                () -> service(Optional.empty()).readiness(WORKSPACE_ID, id, ACTOR_ID));
+    }
+
+    @Test
+    void readinessWithoutViewCapabilityIsForbidden() {
+        assertThrows(ForbiddenException.class,
+                () -> service(Optional.empty()).readiness(WORKSPACE_ID, UUID.randomUUID(), ACTOR_ID));
+        verifyNoInteractions(workflows);
+    }
+
+    @Test
+    void readinessWithOnlyScheduleValidationUnavailableIsDependencyUnavailable() {
+        Map<String, Object> schedule = Map.of("cron", "0 * * * *", "timezone", "UTC");
+        Workflow draft = workflow(WORKSPACE_ID, ACTOR_ID, WorkflowStatus.DRAFT, null,
+                definition(List.of(node("tick", "trigger.schedule", schedule)), List.of(), "r"));
+        grantView();
+        when(workflows.findByWorkspaceAndId(WORKSPACE_ID, draft.getId())).thenReturn(Optional.of(draft));
+        when(schedules.validate(any(), any(), any())).thenReturn(List.of(
+                new com.weav.workflow.domain.definition.ValidationIssue("tick", "config.cron",
+                        "SCHEDULE_VALIDATION_UNAVAILABLE", "unavailable")));
+
+        assertThrows(com.weav.workflow.application.service.TriggerDependencyUnavailableException.class,
+                () -> service(Optional.empty()).readiness(WORKSPACE_ID, draft.getId(), ACTOR_ID));
+    }
+
+    private void grantView() {
+        lenient().when(workspaceAccess.getAccess(WORKSPACE_ID, ACTOR_ID)).thenReturn(
+                new WorkspaceAccessPort.Access(WORKSPACE_ID, ACTOR_ID, "MEMBER", Set.of("WORKSPACE_VIEW")));
+    }
+
     private WorkflowPublicationService service(Optional<ConnectionReferencePort> referencePort) {
         return new WorkflowPublicationService(workflows, versions, triggers, authorization,
                 workspaceConnections, referencePort, schedules, webhookSecrets);

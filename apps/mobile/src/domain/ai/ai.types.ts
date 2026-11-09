@@ -15,6 +15,8 @@ export interface AiGenerateRequest {
   connections?: Record<string, string>;
   /** field -> text; answers URL / SCHEDULE / TIMEZONE / VALUE questions (max 10). */
   answers?: Record<string, string>;
+  /** Let the generator leave required values empty instead of asking questions. */
+  allowBlanks?: boolean;
 }
 
 export interface AiQuestion {

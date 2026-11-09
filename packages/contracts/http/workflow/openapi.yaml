@@ -129,6 +129,35 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/InternalError' }
 
+  /workspaces/{workspaceId}/workflows/{workflowId}/readiness:
+    get:
+      tags: [Workflows]
+      operationId: getWorkflowReadiness
+      summary: Check whether a workflow draft is ready to publish
+      description: >-
+        Read-only: runs the publish checks against the saved draft without publishing or changing anything.
+        `issues` is empty when `ready` is true. The API Gateway exposes this operation at
+        /api/v1/workspaces/{workspaceId}/workflows/{workflowId}/readiness.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WorkspaceId' }
+        - { $ref: '#/components/parameters/WorkflowId' }
+      responses:
+        '200':
+          description: Readiness verdict.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkflowReadiness' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503':
+          description: Schedule validation is temporarily unavailable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
   /workspaces/{workspaceId}/workflows/generate:
     post:
       tags: [Workflows]
@@ -1132,6 +1161,23 @@ components:
         alreadyPaused: { type: integer, minimum: 0, description: Workflows that were already paused. }
         failedTelegramUnregister: { type: integer, minimum: 0, description: Telegram bots whose webhook could not be removed. }
         failed: { type: integer, minimum: 0, description: Workflows that could not be paused (logged and skipped; the caller must retry when above 0). }
+    WorkflowReadiness:
+      type: object
+      additionalProperties: false
+      required: [ready, issues]
+      properties:
+        ready: { type: boolean }
+        issues:
+          type: array
+          items: { $ref: '#/components/schemas/WorkflowReadinessIssue' }
+    WorkflowReadinessIssue:
+      type: object
+      additionalProperties: false
+      required: [nodeId, field, code]
+      properties:
+        nodeId: { type: [string, 'null'], description: The node at fault, or null for a workflow-level issue. }
+        field: { type: [string, 'null'], description: The setting at fault, when known. }
+        code: { type: string, description: Stable machine-readable reason; clients map it to wording. }
     CreateWorkflowRequest:
       type: object
       additionalProperties: false
