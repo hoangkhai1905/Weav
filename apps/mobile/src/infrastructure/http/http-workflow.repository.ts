@@ -6,6 +6,7 @@ import type {
   WorkflowListQuery,
   WorkflowPage,
   WorkflowPublication,
+  WorkflowReadiness,
   WorkflowRepository,
   WorkflowRunAccepted,
   WorkflowStatus,
@@ -21,6 +22,7 @@ import {
   buildRunWorkflowRequest,
   buildWorkflowDetailRequest,
   buildWorkflowListRequest,
+  buildWorkflowReadinessRequest,
   newIdempotencyKey,
 } from './workflow.http.contract';
 import {
@@ -29,6 +31,7 @@ import {
   mapWorkflowCreated,
   mapWorkflowPage,
   mapWorkflowPublication,
+  mapWorkflowReadiness,
   mapWorkflowRunAccepted,
 } from './workflow.mapper';
 
@@ -85,6 +88,10 @@ export class HttpWorkflowRepository implements WorkflowRepository {
   /** The response carries one-time webhook secrets; callers must not cache or log it. */
   publishWorkflow(workspaceId: string, workflowId: string): Promise<WorkflowPublication> {
     return requestGateway(buildPublishWorkflowRequest(workspaceId, workflowId), mapWorkflowPublication);
+  }
+
+  getReadiness(workspaceId: string, workflowId: string): Promise<WorkflowReadiness> {
+    return requestGateway(buildWorkflowReadinessRequest(workspaceId, workflowId), mapWorkflowReadiness);
   }
 
   deleteWorkflow(workspaceId: string, workflowId: string): Promise<void> {

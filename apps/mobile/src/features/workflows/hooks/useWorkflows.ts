@@ -33,6 +33,17 @@ export function useInfiniteWorkflows() {
   });
 }
 
+/** Server-side check of which steps of a draft are unfinished; refetched after publish and draft saves. */
+export function useWorkflowReadiness(workflowId: string) {
+  const workspaceId = useActiveWorkspaceId();
+  return useQuery({
+    queryKey: ['workflow-readiness', workspaceId, workflowId],
+    queryFn: () => workflowRepository.getReadiness(workspaceId ?? '', workflowId),
+    enabled: !!workspaceId && !!workflowId,
+    staleTime: 5000,
+  });
+}
+
 export function usePublishWorkflow() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -40,6 +51,7 @@ export function usePublishWorkflow() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['workflows'] });
       void queryClient.invalidateQueries({ queryKey: ['workflow'] });
+      void queryClient.invalidateQueries({ queryKey: ['workflow-readiness'] });
     },
   });
 }
