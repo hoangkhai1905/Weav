@@ -40,16 +40,20 @@ public final class DefinitionValidator {
     private static final Set<String> CONDITION_ITEM_FIELDS = Set.of("left", "operator", "right");
     private static final java.util.regex.Pattern SHEETS_COLUMN = java.util.regex.Pattern.compile("[A-Za-z]{1,3}");
     /** New enum fields whose literal values are checked on draft save; mappings resolve at run time. */
-    private static final Map<String, Set<String>> LITERAL_ENUMS = Map.of(
-            "telegram.send_message.parseMode", enumValues("telegram.send_message", "parseMode"),
-            "google.sheets.valueInputOption", enumValues("google.sheets", "valueInputOption"),
-            "google.calendar.operation", enumValues("google.calendar", "operation"),
-            "weav.workflow.operation", enumValues("weav.workflow", "operation"),
-            "format.datetime.operation", enumValues("format.datetime", "operation"),
-            "format.datetime.unit", enumValues("format.datetime", "unit"),
-            "format.datetime.locale", enumValues("format.datetime", "locale"),
-            "format.text.operation", enumValues("format.text", "operation"),
-            "format.text.locale", enumValues("format.text", "locale"));
+    private static final Map<String, Set<String>> LITERAL_ENUMS = Map.ofEntries(
+            Map.entry("telegram.send_message.parseMode", enumValues("telegram.send_message", "parseMode")),
+            Map.entry("google.sheets.valueInputOption", enumValues("google.sheets", "valueInputOption")),
+            Map.entry("google.calendar.operation", enumValues("google.calendar", "operation")),
+            // An unknown Docs/Drive operation otherwise passed publish and only failed at run time.
+            Map.entry("google.docs.operation", enumValues("google.docs", "operation")),
+            Map.entry("google.drive.operation", enumValues("google.drive", "operation")),
+            Map.entry("email.send.bodyType", enumValues("email.send", "bodyType")),
+            Map.entry("weav.workflow.operation", enumValues("weav.workflow", "operation")),
+            Map.entry("format.datetime.operation", enumValues("format.datetime", "operation")),
+            Map.entry("format.datetime.unit", enumValues("format.datetime", "unit")),
+            Map.entry("format.datetime.locale", enumValues("format.datetime", "locale")),
+            Map.entry("format.text.operation", enumValues("format.text", "operation")),
+            Map.entry("format.text.locale", enumValues("format.text", "locale")));
     private static final Set<String> WORKFLOW_EVENTS = Set.of("FAILED", "SUCCEEDED");
     private static final Set<String> HTTP_METHODS = Set.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
 

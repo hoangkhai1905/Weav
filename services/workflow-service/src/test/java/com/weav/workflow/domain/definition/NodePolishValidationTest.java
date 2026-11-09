@@ -215,6 +215,38 @@ class NodePolishValidationTest {
     }
 
     @Test
+    void unknownDocsDriveAndEmailBodyTypeValuesAreRejectedInDraftAndPublish() {
+        Map<String, Object> docs = new LinkedHashMap<>();
+        docs.put("connectionId", CONNECTION);
+        docs.put("operation", "create");
+        docs.put("title", "Report");
+        assertEquals(List.of(), codes("google.docs", docs, true));
+        docs.put("operation", "{{ trigger.input.op }}");
+        assertEquals(List.of(), codes("google.docs", docs, true));
+        // An AI-generated "get" used to pass publish and fail only at run time with CONFIGURATION_ERROR.
+        docs.put("operation", "get");
+        assertTrue(codes("google.docs", docs, false).contains("INVALID_ENUM_VALUE@config.operation"));
+        assertTrue(codes("google.docs", docs, true).contains("INVALID_ENUM_VALUE@config.operation"));
+
+        Map<String, Object> drive = new LinkedHashMap<>();
+        drive.put("connectionId", CONNECTION);
+        drive.put("operation", "list");
+        assertEquals(List.of(), codes("google.drive", drive, true));
+        drive.put("operation", "delete");
+        assertTrue(codes("google.drive", drive, false).contains("INVALID_ENUM_VALUE@config.operation"));
+
+        Map<String, Object> email = new LinkedHashMap<>();
+        email.put("connectionId", CONNECTION);
+        email.put("to", "a@example.com");
+        email.put("subject", "s");
+        email.put("body", "b");
+        email.put("bodyType", "html");
+        assertEquals(List.of(), codes("email.send", email, true));
+        email.put("bodyType", "markdown");
+        assertTrue(codes("email.send", email, false).contains("INVALID_ENUM_VALUE@config.bodyType"));
+    }
+
+    @Test
     void calendarListNeedsOnlyAConnectionAndChecksItsBounds() {
         Map<String, Object> list = new LinkedHashMap<>();
         list.put("connectionId", CONNECTION);

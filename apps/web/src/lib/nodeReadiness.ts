@@ -26,6 +26,15 @@ const NOT_CONFIGURED: NodeReadinessBadge = { state: 'not-configured', label: 'No
 
 const isBlank = (value: unknown) => !String(value ?? '').trim();
 
+/** Fields holding a literal value outside the schema's enum (DefinitionValidator INVALID_ENUM_VALUE); a {{mapping}} resolves at run time. */
+const invalidEnumFields = (nodeType: string, config: Record<string, unknown>): string[] =>
+  Object.entries(NODE_SCHEMAS[nodeType]?.properties ?? {})
+    .filter(([name, property]) => {
+      const value = config[name];
+      return property.enum && typeof value === 'string' && !isBlank(value) && !value.includes('{{') && !property.enum.includes(value);
+    })
+    .map(([name]) => name);
+
 // Fields the Workflow Service requires before publication (DefinitionValidator and the executors),
 // besides connectionId, for the steps that use a workspace connection.
 const CONNECTION_NODE_FIELDS: Record<string, (config: Record<string, unknown>) => string[]> = {
@@ -121,7 +130,8 @@ export const isMarkedRequired = (nodeType: string, name: string, config: Record<
 
 /** Plain-language labels of the required fields that are still blank. */
 export const missingFieldLabels = (nodeType: string, config: Record<string, unknown>, t: (key: string) => string): string[] =>
-  requiredFields(nodeType, config).filter((name) => isBlank(config[name])).map((name) => fieldCopy(nodeType, name, t).label);
+  [...new Set([...requiredFields(nodeType, config).filter((name) => isBlank(config[name])), ...invalidEnumFields(nodeType, config)])]
+    .map((name) => fieldCopy(nodeType, name, t).label);
 
 /**
  * `attachableConnectionIds`: ids of the workspace's ACTIVE connections the user can attach.
@@ -137,6 +147,8 @@ export const getNodeReadinessBadge = (
 ): NodeReadinessBadge => {
   if (!SUPPORTED_NODE_TYPES.has(nodeType)) return { state: 'unsupported', label: 'Unsupported', labelKey: 'builder.readiness.unsupported' };
   if (nodeType === 'trigger.webhook') return { state: 'draft', label: 'Not published', labelKey: 'builder.readiness.not_published' };
+  // e.g. an AI-generated google.docs "get": the server rejects it, so never show the step as ready.
+  if (invalidEnumFields(nodeType, config).length) return NOT_CONFIGURED;
   if (nodeType === 'ocr.extract') {
     const unavailable: NodeReadinessBadge = { state: 'unavailable', label: 'Unavailable', labelKey: 'builder.readiness.unavailable' };
     if (!ocrSources?.length) return unavailable;
