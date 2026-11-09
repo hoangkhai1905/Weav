@@ -54,7 +54,7 @@ async function setup(
 }
 
 test.describe('honest pages', () => {
-  test('AI generator sends the prompt, asks the needs_input questions and creates the draft from the result', async ({ page }) => {
+  test('AI generator sends the prompt, then creates the draft with the matching connection and opens the builder', async ({ page }) => {
     const definition = {
       schemaVersion: '1.0',
       nodes: [
@@ -66,9 +66,7 @@ test.describe('honest pages', () => {
     };
     const requests = await setup(page, {
       connections: [{ id: '20000000-0000-4000-8000-000000000001', workspaceId, createdBy: userId, name: 'Work Gmail', provider: 'GMAIL', authType: 'OAUTH2', status: 'ACTIVE', config: null, hasCredential: true, credentialExpiresAt: null, lastVerifiedAt: null, canManage: true, canAttach: true, createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z' }],
-      generate: (_body, call) => call === 0
-        ? { status: 'needs_input', questions: [{ code: 'VALUE', field: 'email.send.to' }, { code: 'CONNECTION', field: 'email.send' }] }
-        : { status: 'ready', name: 'Gửi thư chào', definition, layout: { manual_trigger: { name: 'Chạy thủ công', x: 80, y: 160 }, send_mail: { name: 'Gửi email', x: 360, y: 160 } } },
+      generate: () => ({ status: 'ready', name: 'Gửi thư chào', definition, layout: { manual_trigger: { name: 'Chạy thủ công', x: 80, y: 160 }, send_mail: { name: 'Gửi email', x: 360, y: 160 } } }),
     });
     await page.goto('/ai/workflow-generator');
 
@@ -77,23 +75,14 @@ test.describe('honest pages', () => {
     await page.getByRole('textbox', { name: 'What should this workflow do?' }).fill('Send me a greeting email');
     await page.getByRole('button', { name: 'Generate workflow', exact: true }).click();
 
-    // needs_input: the recipient defaults to the signed-in user's email and the connection is a select.
-    await expect(page.getByLabel(/Which address should the email go to/)).toHaveValue(userEmail);
-    await expect(page.getByRole('button', { name: 'Send answers' })).toBeDisabled();
-    await page.getByLabel(/Pick a connection for this step/).selectOption({ label: 'Work Gmail' });
-    await page.getByRole('button', { name: 'Send answers' }).click();
-
-    await expect(page.getByTestId('ai-generator-preview')).toContainText('Gửi thư chào');
-    const generateCalls = requests.filter((entry) => entry.path === `${base}/generate`);
-    expect(generateCalls).toHaveLength(2);
-    expect(generateCalls[0].body).toMatchObject({ prompt: 'Send me a greeting email' });
-    expect(generateCalls[1].body).toMatchObject({ prompt: 'Send me a greeting email', answers: { 'email.send.to': userEmail } });
-    expect((generateCalls[1].body as { connections: Record<string, string> }).connections).toEqual({ 'email.send': '20000000-0000-4000-8000-000000000001' });
-
-    await page.getByRole('button', { name: 'Create draft' }).click();
     await page.waitForURL(`**/workflows/${newWorkflowId}/builder`);
+    const generateCalls = requests.filter((entry) => entry.path === `${base}/generate`);
+    expect(generateCalls).toHaveLength(1);
+    expect(generateCalls[0].body).toMatchObject({ prompt: 'Send me a greeting email', allowBlanks: true });
     const saved = requests.find((entry) => entry.method === 'PUT' && entry.path === `${base}/${newWorkflowId}/draft`);
-    expect(saved?.body).toMatchObject({ name: 'Gửi thư chào', definition });
+    expect(saved?.body).toMatchObject({ name: 'Gửi thư chào' });
+    const savedNodes = (saved?.body as { definition: { nodes: Array<{ type: string; config: Record<string, unknown> }> } }).definition.nodes;
+    expect(savedNodes.find((node) => node.type === 'email.send')?.config.connectionId).toBe('20000000-0000-4000-8000-000000000001');
     expect(JSON.stringify(requests)).not.toContain('wf-prod-8492');
   });
 

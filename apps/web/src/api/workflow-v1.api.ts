@@ -3,6 +3,7 @@ import { tr } from '../lib/i18n/tr';
 import { primaryTrigger } from '../lib/executions/runView';
 import { nodeLabel } from '../lib/nodeLabels';
 import { useAuthStore } from '../store/useAuthStore';
+import { useWorkspaceStore } from '../store/useWorkspaceStore';
 
 const ACTIVE_WORKSPACE_KEY = 'weav_active_workspace_id';
 const PAGE_SIZE = 100;
@@ -270,14 +271,18 @@ export async function getActiveWorkflowWorkspaceId(): Promise<string> {
     throw new WorkflowApiError(409, tr('msg.create_or_join_a_workspace_before_using'));
   }
 
-  const selectedId = typeof localStorage === 'undefined'
+  const storedId = typeof localStorage === 'undefined'
     ? null
     : localStorage.getItem(ACTIVE_WORKSPACE_KEY);
-  const active = workspaces.find((workspace) => workspace.id === selectedId) ?? workspaces[0];
-  if (!selectedId || !workspaces.some((workspace) => workspace.id === selectedId)) {
-    localStorage.setItem(ACTIVE_WORKSPACE_KEY, active.id);
+  // The workspace the UI shows wins. The switcher only updates the store, so the stored key alone went
+  // stale and workflow calls (with connections listed for the shown workspace) hit another workspace.
+  const shownId = useWorkspaceStore.getState().activeWorkspaceId;
+  const activeId = shownId
+    ?? (workspaces.find((workspace) => workspace.id === storedId) ?? workspaces[0]).id;
+  if (typeof localStorage !== 'undefined' && storedId !== activeId) {
+    localStorage.setItem(ACTIVE_WORKSPACE_KEY, activeId);
   }
-  return active.id;
+  return activeId;
 }
 
 function safeString(value: unknown, fallback = ''): string {

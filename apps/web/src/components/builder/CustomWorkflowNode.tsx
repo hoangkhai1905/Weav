@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { NODE_CATALOG, nodeSourcePorts } from '../../lib/constants/nodeCatalog';
-import { getNodeReadinessBadge } from '../../lib/nodeReadiness';
+import { getNodeReadinessBadge, isUnfinishedReadiness } from '../../lib/nodeReadiness';
 import { useAttachableConnectionIds } from '../../hooks/useConnections';
 import { useOcrSources } from '../../hooks/useNodeCapabilities';
 
@@ -155,11 +155,11 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
         </>
       ));
     }
-    const readinessClass = readiness.state === 'unsupported'
-      ? 'bg-err-bg text-err'
+    const readinessClass = readiness.state === 'unavailable'
+      ? 'bg-warn-bg text-warn'
       : readiness.state === 'ready' || readiness.state === 'draft'
         ? 'bg-muted text-text-2'
-        : 'bg-warn-bg text-warn';
+        : 'bg-err-bg text-err';
     return (
       <span
         data-testid="workflow-node-readiness"
@@ -178,6 +178,8 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
   } else if (status === 'processing') {
     borderStyle = 'border-run motion-safe:animate-[weav-node-pulse_1.4s_ease-in-out_infinite]';
   } else if (status === 'error') {
+    borderStyle = 'border-err';
+  } else if (isUnfinishedReadiness(readiness.state)) {
     borderStyle = 'border-err';
   }
 

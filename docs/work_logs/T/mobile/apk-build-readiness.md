@@ -62,6 +62,14 @@
 | Push `dev`, mở PR dev→main | https://github.com/hoangkhai1905/Weav/pull/6 — merge vào main sẽ publish image và VM tự deploy production; cần review | Chờ review/CI |
 | `eas build -p android --profile preview` từ `dev` | Build `6afbd4e2-df19-4a2d-ad83-e070f410888b`; versionCode remote khởi tạo 1 → 2; keystore EAS `Djpah4NqTk (default)` như các bản trước; archive 552 MB (cân nhắc `.easignore`). FINISHED 15:13, APK versionCode 2 (link trên trang build EAS) | Xong; chưa cài thử trên máy |
 
+## 5f. Session 6 — 2026-11-05: bong bóng chat trống trên APK
+
+| Việc | Kết quả | Trạng thái |
+| --- | --- | --- |
+| Lỗi trên máy (APK vc=2): bong bóng Trợ lý AI chỉ là cột hẹp cao, không thấy chữ | `MessageText` đặt chữ `flex: 1` trong bong bóng co theo nội dung (`maxWidth: '88%'`, không có `width`). Yoga cho `flex: 1` basis 0 → chữ đo rộng 0. Có từ 2026-10-08 (style không đổi); web (CSS) vẫn hiện đúng nên lọt qua. Không do RN 0.86.3: Yoga và text layout giống hệt 0.86.2 | Xong |
+| Kiểm chứng bằng `yoga-layout` 3.2.1 (scratchpad) dựng lại cây bong bóng | `flex: 1` → bong bóng 24 × 1104, chữ 0 × 1080; `flexShrink: 1` → bong bóng 317 × 64, chữ 293 × 40 | Xong |
+| Sửa `MessageText.tsx`: `text: { flexShrink: 1 }` (nhánh `fix/mobile-chat-bubble-width`) | eslint 0 lỗi, tsc ok, 257/257 test | Xong; cần build APK mới để thấy trên máy |
+
 ## 6. Quyết định
 
 | Quyết định | Lý do | Hệ quả |

@@ -194,6 +194,8 @@ One log per feature, written by K or T (see `log_template.md`). Each member has 
 
 ### T/web
 
+- [ai-generate-zapier-style.md](T/web/ai-generate-zapier-style.md): AI tạo workflow kiểu Zapier trên web (tạo ngay, bước đỏ, chip nhảy tới bước) — 2026-11-09
+- [workspace-switch-workflow-api.md](T/web/workspace-switch-workflow-api.md): API workflow đi theo workspace đang chọn (403 khi tạo workflow Google Sheets) — 2026-11-05
 - 2026-W39: [fe-integration-coverage-audit.md](T/web/2026-W39/fe-integration-coverage-audit.md): FE integration coverage audit — 2026-09-22
 - 2026-W39: [fe-integration-final-handoff.md](T/web/2026-W39/fe-integration-final-handoff.md): FE integration final handoff — 2026-09-22
 - 2026-W39: [web-auth-sessions.md](T/web/2026-W39/web-auth-sessions.md): Nhật ký ngày `2026-09-22`
