@@ -55,7 +55,7 @@ const emptyDetail = { workflowId: WORKFLOW_ID, name: "x", status: "DRAFT", defin
 
 async function stubWorkflows(
   page: Page,
-  opts: { createStatus?: number; generate?: (body: Record<string, unknown>) => unknown } = {},
+  opts: { createStatus?: number; detail?: unknown; generate?: (body: Record<string, unknown>) => unknown } = {},
 ) {
   const posts: unknown[] = [];
   const generates: unknown[] = [];
@@ -72,7 +72,7 @@ async function stubWorkflows(
       if (opts.createStatus) return fulfillJson(route, { error: { code: "INTERNAL", message: "boom" } }, opts.createStatus);
       return fulfillJson(route, { workflowId: WORKFLOW_ID }, 201);
     }
-    if (path.endsWith(`/workflows/${WORKFLOW_ID}`)) return fulfillJson(route, emptyDetail);
+    if (path.endsWith(`/workflows/${WORKFLOW_ID}`)) return fulfillJson(route, opts.detail ?? emptyDetail);
     return fulfillJson(route, { items: [], page: 0, size: 100, totalElements: 0 });
   });
   return { posts, generates };
@@ -249,5 +249,34 @@ test.describe("Generate with AI panel in the builder", () => {
     await dialog.getByRole("button", { name: "Continue", exact: true }).click();
     await expect.poll(() => generates.length).toBe(2);
     expect((generates[1] as { answers: unknown }).answers).toEqual({ "send_email.config.to": "owner@example.test" });
+  });
+});
+
+test.describe("Unfinished steps", () => {
+  test("marks a step without a connection in red", async ({ page }) => {
+    await installAuthFixture(page);
+    await stubWorkflows(page, {
+      detail: {
+        ...emptyDetail,
+        definition: {
+          schemaVersion: "1.0",
+          nodes: [
+            { id: "start", type: "trigger.manual", config: {} },
+            { id: "send_email", type: "email.send", config: { to: "owner@example.test", subject: "Hi" } },
+          ],
+          edges: [{ id: "e1", source: "start", target: "send_email" }],
+          variables: {},
+        },
+      },
+    });
+    const profileResponse = page.waitForResponse((response) => response.url().includes("/api/auth/me"));
+    await page.goto(`/workflows/${WORKFLOW_ID}/builder`);
+    await profileResponse;
+
+    const email = page.locator('[data-testid="workflow-node"][data-node-type="email.send"]');
+    await expect(email).toHaveAttribute("data-readiness", "not-configured");
+    await expect(email).toHaveClass(/border-err/);
+    await expect(email.getByTestId("workflow-node-readiness")).toHaveClass(/text-err/);
+    await expect(page.locator('[data-testid="workflow-node"][data-node-type="trigger.manual"]')).not.toHaveClass(/border-err/);
   });
 });

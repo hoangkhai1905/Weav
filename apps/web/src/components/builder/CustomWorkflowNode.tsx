@@ -155,11 +155,11 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
         </>
       ));
     }
-    const readinessClass = readiness.state === 'unsupported'
-      ? 'bg-err-bg text-err'
+    const readinessClass = readiness.state === 'unavailable'
+      ? 'bg-warn-bg text-warn'
       : readiness.state === 'ready' || readiness.state === 'draft'
         ? 'bg-muted text-text-2'
-        : 'bg-warn-bg text-warn';
+        : 'bg-err-bg text-err';
     return (
       <span
         data-testid="workflow-node-readiness"
@@ -178,6 +178,8 @@ export const CustomWorkflowNode: React.FC<NodeProps> = memo(({ id, data, selecte
   } else if (status === 'processing') {
     borderStyle = 'border-run motion-safe:animate-[weav-node-pulse_1.4s_ease-in-out_infinite]';
   } else if (status === 'error') {
+    borderStyle = 'border-err';
+  } else if (['not-configured', 'authorization-required', 'unsupported'].includes(readiness.state)) {
     borderStyle = 'border-err';
   }
 
