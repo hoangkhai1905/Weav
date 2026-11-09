@@ -69,17 +69,19 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
               className="w-full resize-y rounded border border-border bg-subtle px-2.5 py-1.5 text-xs text-foreground"
             />
           </div>
-          {error ? <p role="alert" className="text-[11px] text-err">{error}</p> : null}
-          {result?.status === 'needs_input' || result?.status === 'unsupported' ? (
-            <div className="rounded border border-warn/30 bg-warn-bg px-2.5 py-1.5 text-[11px] text-foreground">
-              <p className="font-medium">{t('hp.ai.unclear')}</p>
-              <ul className="mt-1 list-disc pl-4 text-text-2">
-                {result.status === 'needs_input'
-                  ? result.questions.map((question, index) => <li key={`${question.code}-${index}`}>{t(`ai.question.${question.code}`)}</li>)
-                  : result.reasons.map((reason, index) => <li key={`${reason.code}-${index}`}>{t(`ai.reason.${reason.code}`)}</li>)}
-              </ul>
-            </div>
-          ) : null}
+          <div aria-live="polite" className="space-y-3">
+            {error ? <p role="alert" className="text-[11px] text-err">{error}</p> : null}
+            {result?.status === 'needs_input' || result?.status === 'unsupported' ? (
+              <div className="rounded border border-warn/30 bg-warn-bg px-2.5 py-1.5 text-[11px] text-foreground">
+                <p className="font-medium">{t('hp.ai.unclear')}</p>
+                <ul className="mt-1 list-disc pl-4 text-text-2">
+                  {result.status === 'needs_input'
+                    ? result.questions.map((question, index) => <li key={`${question.code}-${index}`}>{t(`ai.question.${question.code}`)}</li>)
+                    : result.reasons.map((reason, index) => <li key={`${reason.code}-${index}`}>{t(`ai.reason.${reason.code}`)}</li>)}
+                </ul>
+              </div>
+            ) : null}
+          </div>
           <div className="flex justify-end gap-2">
             <button
               type="button"

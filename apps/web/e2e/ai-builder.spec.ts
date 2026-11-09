@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { addNode } from './support/builder.js';
+import { addNode, loginAndOpenBuilder } from './support/builder.js';
 import { expectNoUnmatched, openStubbedBuilder, resetUnmatched, STUB_WORKSPACE_ID } from './support/http-builder.js';
 
 test.beforeEach(resetUnmatched);
@@ -137,4 +137,16 @@ test('generate with AI explains an unclear request without asking for answers', 
   await expect(dialog.getByRole('textbox')).toHaveCount(1);
   await expect(dialog.getByRole('button', { name: 'Continue' })).toHaveCount(0);
   expect(generates).toHaveLength(1);
+});
+
+test('generate with AI against the real Gateway', async ({ page }) => {
+  test.skip(process.env.AI_E2E !== '1', 'Requires compose.ai-local.yml and the Gateway generate route');
+  await loginAndOpenBuilder(page);
+  await page.getByRole('button', { name: 'Generate with AI' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Generate with AI' });
+  await dialog.getByLabel('Describe the workflow').fill('ping https://example.com then summarize it');
+  await dialog.getByRole('button', { name: 'Generate', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.locator('.react-flow__node').count()).toBeGreaterThan(1);
+  await expect(page.getByRole('button', { name: 'Continue', exact: true })).toHaveCount(0);
 });
