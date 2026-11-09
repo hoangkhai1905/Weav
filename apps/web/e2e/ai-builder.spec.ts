@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { addNode, loginAndOpenBuilder } from './support/builder.js';
-import { expectNoUnmatched, openStubbedBuilder, resetUnmatched } from './support/http-builder.js';
+import { expectNoUnmatched, openStubbedBuilder, resetUnmatched, STUB_WORKSPACE_ID } from './support/http-builder.js';
 
 test.beforeEach(resetUnmatched);
 test.afterEach(expectNoUnmatched);
@@ -58,15 +58,95 @@ test('configured ai.extract does not block publishing (R7)', async ({ page }) =>
   await expect(page.getByTestId('publish-blocker-summary')).toBeHidden();
 });
 
+const gmailConnection = {
+  id: '20000000-0000-4000-8000-000000000001',
+  workspaceId: STUB_WORKSPACE_ID,
+  createdBy: '00000000-0000-4000-8000-000000000110',
+  name: 'Work Gmail',
+  provider: 'GMAIL',
+  authType: 'OAUTH2',
+  status: 'ACTIVE',
+  config: null,
+  hasCredential: true,
+  credentialExpiresAt: null,
+  lastVerifiedAt: null,
+  canManage: true,
+  canAttach: true,
+  createdAt: '2026-08-01T00:00:00Z',
+  updatedAt: '2026-08-01T00:00:00Z',
+};
+
+async function openGenerateDialog(page: Page, generate: (body: Record<string, unknown>) => unknown, connections: unknown[] = []) {
+  await openStubbedBuilder(page);
+  const generates: Array<Record<string, unknown>> = [];
+  await page.route((url) => url.pathname === `/api/v1/workspaces/${STUB_WORKSPACE_ID}/connections`, (route) =>
+    route.request().method() === 'GET' ? route.fulfill({ json: connections }) : route.fallback());
+  await page.route((url) => url.pathname === `/api/v1/workspaces/${STUB_WORKSPACE_ID}/workflows/generate`, (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    generates.push(body);
+    return route.fulfill({ json: generate(body) });
+  });
+  await page.getByRole('button', { name: 'Generate with AI' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Generate with AI' });
+  await expect(dialog).toBeVisible();
+  // No connection pickers and no answer inputs: only the prompt box.
+  await expect(dialog.getByRole('combobox')).toHaveCount(0);
+  await expect(dialog.getByRole('textbox')).toHaveCount(1);
+  await dialog.getByLabel('Describe the workflow').fill('email me a Sheets summary every morning');
+  return { dialog, generates };
+}
+
 test('generate with AI', async ({ page }) => {
+  page.on('dialog', (confirm) => void confirm.accept());
+  const ready = {
+    status: 'ready',
+    name: 'Morning summary',
+    definition: {
+      schemaVersion: '1.0',
+      nodes: [
+        { id: 'start', type: 'trigger.manual', config: {} },
+        { id: 'sheet', type: 'google.sheets', config: {} },
+        { id: 'mail', type: 'email.send', config: { to: 'ui@example.test', subject: 'Hi', body: 'Hello' } },
+      ],
+      edges: [{ id: 'e1', source: 'start', target: 'sheet' }, { id: 'e2', source: 'sheet', target: 'mail' }],
+      variables: {},
+    },
+    layout: { start: { x: 100, y: 100 }, sheet: { x: 400, y: 100 }, mail: { x: 700, y: 100 } },
+  };
+  const { dialog, generates } = await openGenerateDialog(page, () => ready, [gmailConnection]);
+  await dialog.getByRole('button', { name: 'Generate', exact: true }).click();
+
+  await expect(dialog).toHaveCount(0);
+  expect(generates).toHaveLength(1);
+  expect(generates[0]).toMatchObject({ allowBlanks: true });
+  expect(generates[0]).not.toHaveProperty('answers');
+  expect(generates[0]).not.toHaveProperty('connections');
+  await expect(page.getByTestId('workflow-node')).toHaveCount(3);
+  // No Sheets connection exists: that step stays blank and red.
+  await expect(page.locator('[data-testid="workflow-node"][data-node-type="google.sheets"]')).toHaveAttribute('data-readiness', 'not-configured');
+  // The single Gmail connection was picked for the email step.
+  await page.locator('[data-testid="workflow-node"][data-node-type="email.send"]').click();
+  await expect(page.getByTestId('workflow-inspector').getByTestId('email-connection')).toHaveValue(gmailConnection.id);
+});
+
+test('generate with AI explains an unclear request without asking for answers', async ({ page }) => {
+  const { dialog, generates } = await openGenerateDialog(page, () => ({ status: 'needs_input', questions: [{ code: 'VALUE', field: 'email.send.body' }] }));
+  await dialog.getByRole('button', { name: 'Generate', exact: true }).click();
+
+  await expect(dialog.getByText("The AI needs a clearer description")).toBeVisible();
+  await expect(dialog.getByRole('textbox')).toHaveCount(1);
+  await expect(dialog.getByRole('button', { name: 'Continue' })).toHaveCount(0);
+  expect(generates).toHaveLength(1);
+});
+
+test('generate with AI against the real Gateway', async ({ page }) => {
   test.skip(process.env.AI_E2E !== '1', 'Requires compose.ai-local.yml and the Gateway generate route');
   await loginAndOpenBuilder(page);
   await page.getByRole('button', { name: 'Generate with AI' }).click();
-  await page.getByLabel('Describe the workflow').fill('scenario:needs-input ping a website every morning');
-  await page.getByRole('button', { name: 'Generate', exact: true }).click();
-  await expect(page.getByText('Which URL should be used?')).toBeVisible();
-  await page.getByLabel('Which URL should be used?').fill('https://example.com');
-  await page.getByLabel('Describe the workflow').fill('ping https://example.com then summarize it');
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.locator('.react-flow__node')).toHaveCount(3);
+  const dialog = page.getByRole('dialog', { name: 'Generate with AI' });
+  await dialog.getByLabel('Describe the workflow').fill('ping https://example.com then summarize it');
+  await dialog.getByRole('button', { name: 'Generate', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.locator('.react-flow__node').count()).toBeGreaterThan(1);
+  await expect(page.getByRole('button', { name: 'Continue', exact: true })).toHaveCount(0);
 });

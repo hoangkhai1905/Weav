@@ -1,39 +1,10 @@
 import { useEffect, useId, useState } from 'react';
 import { connectionApi, type ConnectionResponse } from '../../api/connection.api';
-import type { GenerationResponse } from '../../api/workflow-v1.api';
 import { useWorkflowGeneration, type ReadyGeneration } from '../ai/useWorkflowGeneration';
-import { useAuthStore } from '../../store/useAuthStore';
+import { autoPickConnections } from '../../lib/autoPickConnections';
+import { requiredConnectionProvider } from '../../lib/nodeReadiness';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useWorkspaceStore } from '../../store/useWorkspaceStore';
-
-type Question = Extract<GenerationResponse, { status: 'needs_input' }>['questions'][number];
-
-/** Everything except a connection pick can be answered in words. */
-const isAnswerable = (question: Question) => question.code !== 'CONNECTION';
-
-/** A missing recipient is most often the user themselves, so offer their address (still editable). */
-const isRecipientField = (question: Question) => question.field.endsWith('.config.to');
-
-/** Plain-language question for a server question; never shows field paths or node ids. */
-function questionText(t: (key: string) => string, question: Question): string {
-  const lookup = (key: string) => {
-    const text = t(key);
-    return text === key ? null : text;
-  };
-  const parts = question.field.split('.');
-  const name = parts[parts.length - 1];
-  if (question.code === 'CONNECTION') {
-    return `${t('ai.question.CONNECTION')} (${lookup(`ai.service.${question.field}`) ?? name.replace(/_/g, ' ')})`;
-  }
-  if (question.code !== 'VALUE') return t(`ai.question.${question.code}`);
-  // "email.send.body" (node type + field) or "<nodeId>.config.body" (a node id from the model).
-  const type = question.field.includes('.config.') ? '' : parts.slice(0, -1).join('.');
-  return (
-    (type ? lookup(`ai.ask.${type}.${name}`) : null) ??
-    lookup(`ai.ask.${name}`) ??
-    t('ai.ask.generic').replace('{label}', name.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').toLowerCase())
-  );
-}
 
 interface GenerateWorkflowPanelProps {
   open: boolean;
@@ -43,22 +14,15 @@ interface GenerateWorkflowPanelProps {
 
 export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkflowPanelProps) {
   const { t } = useI18nStore();
-  const userEmail = useAuthStore((state) => state.user?.email ?? '');
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const promptId = useId();
-  const sheetsConnectionId = useId();
-  const emailConnectionId = useId();
   const [prompt, setPrompt] = useState('');
-  const [sheetsConnection, setSheetsConnection] = useState('');
-  const [emailConnection, setEmailConnection] = useState('');
   const [connections, setConnections] = useState<ConnectionResponse[]>([]);
   const { isPending, error, result, generate, reset } = useWorkflowGeneration();
-  const [answers, setAnswers] = useState<Record<string, string>>({});
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
     reset();
-    setAnswers({});
     setConnections([]);
   }
 
@@ -74,31 +38,14 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
 
   if (!open) return null;
 
-  const sheetsConnections = connections.filter(
-    (connection) => connection.provider === 'GOOGLE_SHEETS' && connection.status === 'ACTIVE',
-  );
-  const emailConnections = connections.filter(
-    (connection) => connection.provider === 'GMAIL' && connection.status === 'ACTIVE',
-  );
-
-  const questions = result?.status === 'needs_input' ? result.questions.filter(isAnswerable) : [];
-  const answerOf = (question: Question) => answers[question.field] ?? (isRecipientField(question) ? userEmail : '');
-  const canSubmit = !isPending && prompt.trim() !== '' && questions.every((question) => answerOf(question).trim());
+  const canSubmit = !isPending && prompt.trim() !== '';
 
   const handleGenerate = async () => {
     if (!canSubmit) return;
-    const given = Object.fromEntries(
-      [...Object.entries(answers), ...questions.map((question) => [question.field, answerOf(question)] as const)].filter(([, value]) => value.trim()),
-    );
-    const generated = await generate({
-      prompt: prompt.trim(),
-      answers: given,
-      connections: {
-        ...(sheetsConnection ? { 'google.sheets': sheetsConnection } : {}),
-        ...(emailConnection ? { 'email.send': emailConnection } : {}),
-      },
-    });
-    if (generated?.status === 'ready') onReady(generated);
+    const generated = await generate({ prompt: prompt.trim(), allowBlanks: true });
+    if (generated?.status === 'ready') {
+      onReady({ ...generated, definition: autoPickConnections(generated.definition, connections, requiredConnectionProvider) as typeof generated.definition });
+    }
   };
 
   return (
@@ -122,65 +69,19 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
               className="w-full resize-y rounded border border-border bg-subtle px-2.5 py-1.5 text-xs text-foreground"
             />
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label htmlFor={sheetsConnectionId} className="mb-1 block text-[13px] font-medium text-foreground">{t('ai.connection_sheets')}</label>
-              <select
-                id={sheetsConnectionId}
-                value={sheetsConnection}
-                onChange={(event) => setSheetsConnection(event.target.value)}
-                className="w-full rounded border border-border bg-subtle px-2.5 py-1.5 text-xs text-foreground"
-              >
-                <option value="">{t('ai.connection_none')}</option>
-                {sheetsConnections.map((connection) => (
-                  <option key={connection.id} value={connection.id}>{connection.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor={emailConnectionId} className="mb-1 block text-[13px] font-medium text-foreground">{t('ai.connection_email')}</label>
-              <select
-                id={emailConnectionId}
-                value={emailConnection}
-                onChange={(event) => setEmailConnection(event.target.value)}
-                className="w-full rounded border border-border bg-subtle px-2.5 py-1.5 text-xs text-foreground"
-              >
-                <option value="">{t('ai.connection_none')}</option>
-                {emailConnections.map((connection) => (
-                  <option key={connection.id} value={connection.id}>{connection.name}</option>
-                ))}
-              </select>
-            </div>
+          <div aria-live="polite" className="space-y-3">
+            {error ? <p role="alert" className="text-[11px] text-err">{error}</p> : null}
+            {result?.status === 'needs_input' || result?.status === 'unsupported' ? (
+              <div className="rounded border border-warn/30 bg-warn-bg px-2.5 py-1.5 text-[11px] text-foreground">
+                <p className="font-medium">{result.status === 'needs_input' ? t('hp.ai.unclear') : t('hp.ai.cannot_build')}</p>
+                <ul className="mt-1 list-disc pl-4 text-text-2">
+                  {result.status === 'needs_input'
+                    ? result.questions.map((question, index) => <li key={`${question.code}-${index}`}>{t(`ai.question.${question.code}`)}</li>)
+                    : result.reasons.map((reason, index) => <li key={`${reason.code}-${index}`}>{t(`ai.reason.${reason.code}`)}</li>)}
+                </ul>
+              </div>
+            ) : null}
           </div>
-          {error ? <p role="alert" className="text-[11px] text-err">{error}</p> : null}
-          {result?.status === 'needs_input' ? (
-            <ul className="space-y-2" data-testid="generate-questions">
-              {result.questions.map((question, index) => (
-                <li key={`${question.code}-${question.field}-${index}`} className="rounded border border-warn/30 bg-warn-bg px-2.5 py-1.5 text-[11px] text-warn">
-                  <label htmlFor={`${promptId}-q${index}`} className="block font-medium">{questionText(t, question)}</label>
-                  {isAnswerable(question) ? (
-                    <input
-                      id={`${promptId}-q${index}`}
-                      type="text"
-                      maxLength={1000}
-                      value={answerOf(question)}
-                      onChange={(event) => setAnswers((current) => ({ ...current, [question.field]: event.target.value }))}
-                      className="mt-1 w-full rounded border border-border bg-card px-2.5 py-1.5 text-xs text-foreground"
-                    />
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {result?.status === 'unsupported' ? (
-            <ul className="space-y-1.5">
-              {result.reasons.map((reason, index) => (
-                <li key={`${reason.code}-${index}`} className="rounded border border-border bg-subtle px-2.5 py-1.5 text-[11px] text-text-2">
-                  {t(`ai.reason.${reason.code}`)}
-                </li>
-              ))}
-            </ul>
-          ) : null}
           <div className="flex justify-end gap-2">
             <button
               type="button"
@@ -195,7 +96,7 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
               disabled={!canSubmit}
               className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {questions.length ? t('ai.continue') : t('ai.generate')}
+              {t('ai.generate')}
             </button>
           </div>
         </div>

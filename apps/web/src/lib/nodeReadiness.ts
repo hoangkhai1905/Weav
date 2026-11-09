@@ -12,6 +12,10 @@ export type NodeReadinessState =
   | 'unavailable'
   | 'unsupported';
 
+/** Steps the user still has to set up (shown in red, listed in the publish bar). */
+export const isUnfinishedReadiness = (state: NodeReadinessState): boolean =>
+  state === 'not-configured' || state === 'authorization-required' || state === 'unsupported';
+
 export interface NodeReadinessBadge {
   state: NodeReadinessState;
   label: string;
@@ -198,4 +202,12 @@ export const getNodeReadinessBadge = (
     return { state: 'not-configured', label: 'Not configured', labelKey: 'builder.readiness.not_configured' };
   }
   return { state: 'ready', label: 'Ready', labelKey: 'builder.readiness.ready' };
+};
+
+/** The provider a step's required connection must come from, when the schema names exactly one. */
+export const requiredConnectionProvider = (nodeType: string): string | undefined => {
+  const schema = NODE_SCHEMAS[nodeType];
+  if (!schema?.required.includes('connectionId')) return undefined;
+  const provider = schema.properties.connectionId?.['x-weav-connection']?.provider;
+  return typeof provider === 'string' ? provider : undefined;
 };
