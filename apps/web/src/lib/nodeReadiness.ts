@@ -199,3 +199,11 @@ export const getNodeReadinessBadge = (
   }
   return { state: 'ready', label: 'Ready', labelKey: 'builder.readiness.ready' };
 };
+
+/** The provider a step's required connection must come from, when the schema names exactly one. */
+export const requiredConnectionProvider = (nodeType: string): string | undefined => {
+  const schema = NODE_SCHEMAS[nodeType];
+  if (!schema?.required.includes('connectionId')) return undefined;
+  const provider = schema.properties.connectionId?.['x-weav-connection']?.provider;
+  return typeof provider === 'string' ? provider : undefined;
+};
