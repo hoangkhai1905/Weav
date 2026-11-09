@@ -1,4 +1,5 @@
-import type { ReadinessIssue } from '../../domain/workflow/workflow.types';
+import type { ReadinessIssue, WorkflowReadiness } from '../../domain/workflow/workflow.types';
+import { fill } from '../common/fill';
 import { fieldName, humanizeField, providerForNodeType } from '../ai/ai.answers';
 
 export type { ReadinessIssue };
@@ -47,4 +48,15 @@ export function webStepUrl(base: string | undefined, workflowId: string, nodeId:
   const root = (base ?? '').trim().replace(/\/+$/, '');
   if (!root) return null;
   return `${root}/workflows/${encodeURIComponent(workflowId)}/builder?step=${encodeURIComponent(nodeId)}`;
+}
+
+/** The store's t(key) ignores variables; this fills {placeholders} so reasonFor's t(key, vars) works. */
+export function withVars(t: (key: string) => string): (key: string, vars?: Record<string, string>) => string {
+  return (key, vars) => fill(t(key), vars ?? {});
+}
+
+/** Derived screen state. Undefined readiness (loading or request error) shows nothing and blocks nothing. */
+export function readinessView(readiness: WorkflowReadiness | undefined, stepIds: readonly string[]) {
+  const { byStep, graphIssues, redCount } = groupIssues(readiness?.issues ?? [], stepIds);
+  return { byStep, redCount, showGraphLine: graphIssues > 0, publishBlocked: redCount + graphIssues > 0 };
 }

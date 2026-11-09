@@ -56,3 +56,43 @@ test('webStepUrl', () => {
   assert.equal(webStepUrl('', 'wf-1', 'a'), null);
   assert.equal(webStepUrl(undefined, 'wf-1', 'a'), null);
 });
+
+test('readinessView: undefined readiness (loading or error) -> nothing red, publish not blocked', () => {
+  const { readinessView } = require('./readiness.ts');
+  const v = readinessView(undefined, ['a']);
+  assert.equal(v.redCount, 0);
+  assert.equal(v.publishBlocked, false);
+  assert.equal(v.showGraphLine, false);
+  assert.equal(v.byStep.size, 0);
+});
+
+test('readinessView: ready workflow -> not blocked', () => {
+  const { readinessView } = require('./readiness.ts');
+  const v = readinessView({ ready: true, issues: [] }, ['a']);
+  assert.equal(v.publishBlocked, false);
+});
+
+test('readinessView: step issues -> redCount, blocked, no graph line', () => {
+  const { readinessView } = require('./readiness.ts');
+  const v = readinessView({ ready: false, issues: [issue('a', 'x'), issue('b', 'y'), issue('b', 'z')] }, ['a', 'b']);
+  assert.equal(v.redCount, 2);
+  assert.equal(v.publishBlocked, true);
+  assert.equal(v.showGraphLine, false);
+});
+
+test('readinessView: graph-only issue -> blocked with graph line, zero red steps', () => {
+  const { readinessView } = require('./readiness.ts');
+  const v = readinessView({ ready: false, issues: [issue(null, null, 'CYCLE')] }, ['a']);
+  assert.equal(v.redCount, 0);
+  assert.equal(v.publishBlocked, true);
+  assert.equal(v.showGraphLine, true);
+});
+
+test('withVars fills {placeholders} that the store t() ignores', () => {
+  const { withVars, reasonFor } = require('./readiness.ts');
+  const base = (k) => ({ 'workflows.readiness.pickAccount': 'Chọn tài khoản {provider}', 'provider.GMAIL': 'Gmail' })[k] ?? k;
+  const tv = withVars(base);
+  assert.equal(tv('workflows.readiness.pickAccount', { provider: 'Gmail' }), 'Chọn tài khoản Gmail');
+  assert.equal(tv('provider.GMAIL'), 'Gmail');
+  assert.equal(reasonFor(issue('a', 'connectionId'), 'email.send', tv), 'Chọn tài khoản Gmail');
+});

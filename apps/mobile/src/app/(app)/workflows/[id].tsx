@@ -1,7 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, ChevronRight, Ellipsis, Play, Trash2, Upload } from 'lucide-react-native';
 import { format } from 'date-fns';
 import { useWorkflowDetail } from '../../../features/workflows/hooks/useWorkflowDetail';
@@ -10,6 +10,7 @@ import {
   usePauseWorkflow,
   usePublishWorkflow,
   useResumeWorkflow,
+  useWorkflowReadiness,
 } from '../../../features/workflows/hooks/useWorkflows';
 import { useRunWorkflow } from '../../../features/workflows/hooks/useRunWorkflow';
 import { useWorkflowPermissions } from '../../../features/workflows/hooks/useWorkflowPermissions';
@@ -18,8 +19,11 @@ import { completeWorkflowRunInCurrentSession } from '../../../features/workflows
 import { newIdempotencyKey } from '../../../infrastructure/http/workflow.http.contract';
 import { isUnknownOutcomeTimeout } from '../../../infrastructure/http/gateway-request';
 import { FlowCards } from '../../../features/workflows/components/FlowCards';
+import { useNodeLabel } from '../../../features/workflows/components/FlowList';
 import { PublishResultSheet } from '../../../features/workflows/components/PublishResultSheet';
 import { publishErrorKey } from '../../../features/workflows/publish-error';
+import { SetupOnWebSheet } from '../../../features/workflows/components/SetupOnWebSheet';
+import { readinessView, reasonFor, webStepUrl, withVars } from '../../../features/workflows/readiness';
 import { RunSheet } from '../../../features/workflows/components/RunSheet';
 import { TriggerList } from '../../../features/workflows/components/TriggerList';
 import { friendlyErrorMessage } from '../../../features/common/friendly-error';
@@ -72,12 +76,36 @@ export default function WorkflowDetailScreen() {
   const [payloadInput, setPayloadInput] = useState('');
   const [confirmPublish, setConfirmPublish] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [setupNodeId, setSetupNodeId] = useState<string | null>(null);
   const [publication, setPublication] = useState<WorkflowPublication | null>(null);
   // One Idempotency-Key per tap. It is kept only after a 504/timeout (outcome unknown), so the
   // retry is de-duplicated by the backend; a changed input or any other outcome starts a new key.
   const runKeyRef = useRef<string | null>(null);
 
   const workflow = detail.data;
+  const nodeLabel = useNodeLabel();
+
+  // On error `data` is undefined: nothing turns red and Publish behaves as before.
+  const readiness = useWorkflowReadiness(workflowId);
+  const refetchReadiness = readiness.refetch;
+  useFocusEffect(
+    useCallback(() => {
+      void refetchReadiness();
+    }, [refetchReadiness]),
+  );
+  const view = useMemo(
+    () => readinessView(workflow?.status === 'DRAFT' ? readiness.data : undefined, workflow?.nodes.map((n) => n.id) ?? []),
+    [readiness.data, workflow?.nodes, workflow?.status],
+  );
+  const issuesByStep = useMemo(() => {
+    const tv = withVars(t);
+    const out = new Map<string, string[]>();
+    for (const [nodeId, issues] of view.byStep) {
+      const type = workflow?.nodes.find((n) => n.id === nodeId)?.type ?? '';
+      out.set(nodeId, [...new Set(issues.map((issue) => reasonFor(issue, type, tv)))]);
+    }
+    return out;
+  }, [view.byStep, workflow?.nodes, t]);
 
   const handleBack = () => {
     if (router.canGoBack()) router.back();
@@ -180,6 +208,7 @@ export default function WorkflowDetailScreen() {
     const canRun = status === 'PUBLISHED';
     const canToggle = status !== 'DRAFT' && perms.canManageState;
     const canPublish = status === 'DRAFT' && perms.canPublish;
+    const setupNode = setupNodeId ? workflow.nodes.find((n) => n.id === setupNodeId) : undefined;
     const canDelete = perms.canManageState;
     const noPermission = perms.loaded && !perms.canManageState && !perms.canPublish;
     const stateBusy = pauseMutation.isPending || resumeMutation.isPending;
@@ -240,6 +269,7 @@ export default function WorkflowDetailScreen() {
                 testID="workflow-publish"
                 label={t('wfd.publish')}
                 icon={<Upload size={16} strokeWidth={1.75} color={colors.onButton} />}
+                disabled={view.publishBlocked}
                 onPress={() => setConfirmPublish(true)}
               />
             </View>
@@ -258,6 +288,11 @@ export default function WorkflowDetailScreen() {
         {status !== 'PUBLISHED' ? (
           <Text style={[Typography.caption, { color: colors.textMuted }]}>{t(`wfd.run.cannot.${status}`)}</Text>
         ) : null}
+        {canPublish && view.redCount > 0 ? (
+          <Text style={[Typography.caption, { color: colors.textMuted }]}>
+            {fill(t('wfd.setup.publishCaption'), { n: view.redCount })}
+          </Text>
+        ) : null}
         {noPermission ? <Text style={[Typography.caption, { color: colors.textMuted }]}>{t('wfd.noPermission')}</Text> : null}
 
         <SegmentedControl<DetailSegment>
@@ -272,7 +307,25 @@ export default function WorkflowDetailScreen() {
 
         {segment === 'steps' ? (
           <>
-            <FlowCards workflow={workflow} />
+            {view.publishBlocked ? (
+              <View
+                accessibilityRole="alert"
+                style={[styles.setup, { backgroundColor: colors.tones.danger.bg, borderColor: colors.tones.danger.border }]}
+              >
+                {view.redCount > 0 ? (
+                  <>
+                    <Text style={[Typography.label, { color: colors.tones.danger.fg }]}>
+                      {fill(t('wfd.setup.summary'), { n: view.redCount })}
+                    </Text>
+                    <Text style={[Typography.caption, { color: colors.tones.danger.fg }]}>{t('wfd.setup.hint')}</Text>
+                  </>
+                ) : null}
+                {view.showGraphLine ? (
+                  <Text style={[Typography.caption, { color: colors.tones.danger.fg }]}>{t('wfd.setup.graph')}</Text>
+                ) : null}
+              </View>
+            ) : null}
+            <FlowCards workflow={workflow} issuesByStep={issuesByStep} onStepPress={setSetupNodeId} />
             <Text style={[Typography.caption, styles.note, { color: colors.textSubtle }]}>{t('wfd.flow.note')}</Text>
             <View style={styles.section}>
               <Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.text }]}>
@@ -353,8 +406,13 @@ export default function WorkflowDetailScreen() {
           onConfirm={() => void handleDelete()}
           onClose={() => setConfirmDelete(false)}
         />
+        <SetupOnWebSheet
+          step={setupNode ? { name: nodeLabel(setupNode), reasons: issuesByStep.get(setupNode.id) ?? [] } : null}
+          url={setupNode ? webStepUrl(process.env.EXPO_PUBLIC_WEB_URL, workflow.workflowId, setupNode.id) : null}
+          onClose={() => setSetupNodeId(null)}
+        />
         <Sheet visible={moreOpen} onClose={() => setMoreOpen(false)} title={t('wfd.more')}>
-          {canPublish ? (
+          {canPublish && !view.publishBlocked ? (
             <MenuRow
               icon={<Upload size={18} strokeWidth={1.75} color={colors.text} />}
               label={t('wfd.publish')}
@@ -446,6 +504,7 @@ const styles = StyleSheet.create({
   section: { gap: Spacing.two },
   sectionTitle: { fontFamily: FontFamily.semibold, fontSize: 16, lineHeight: 22 },
   card: { borderWidth: 1, borderRadius: Radius.lg, padding: 14 },
+  setup: { gap: Spacing.one, padding: Spacing.two, borderWidth: 1, borderRadius: Radius.md },
   runs: { padding: 0, overflow: 'hidden' },
   runRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, paddingVertical: 10, paddingHorizontal: 14 },
   runText: { flex: 1 },
