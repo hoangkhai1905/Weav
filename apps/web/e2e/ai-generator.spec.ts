@@ -59,6 +59,7 @@ async function stubWorkflows(
 ) {
   const posts: unknown[] = [];
   const generates: unknown[] = [];
+  const drafts: Array<{ definition: { nodes: Array<{ type: string; config: Record<string, unknown> }> } }> = [];
   await page.route(`**/api/v1/workspaces/${WORKSPACE_ID}/workflows**`, async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -72,10 +73,14 @@ async function stubWorkflows(
       if (opts.createStatus) return fulfillJson(route, { error: { code: "INTERNAL", message: "boom" } }, opts.createStatus);
       return fulfillJson(route, { workflowId: WORKFLOW_ID }, 201);
     }
+    if (request.method() === "PUT" && path.endsWith(`/workflows/${WORKFLOW_ID}/draft`)) {
+      drafts.push(request.postDataJSON());
+      return fulfillJson(route, opts.detail ?? emptyDetail);
+    }
     if (path.endsWith(`/workflows/${WORKFLOW_ID}`)) return fulfillJson(route, opts.detail ?? emptyDetail);
     return fulfillJson(route, { items: [], page: 0, size: 100, totalElements: 0 });
   });
-  return { posts, generates };
+  return { posts, generates, drafts };
 }
 
 async function gotoGenerator(page: Page) {
@@ -108,45 +113,128 @@ test.describe("Create with AI page", () => {
     expect((generates[0] as { prompt: string }).prompt).toBe(PROMPT);
   });
 
-  test("offers a draft with blanks: resends the prompt with allowBlanks, then creates the draft", async ({ page }) => {
-    await installAuthFixture(page);
-    const ready = {
-      status: "ready",
-      name: "Email report",
-      definition: {
-        schemaVersion: "1.0",
-        nodes: [
-          { id: "start", type: "trigger.manual", config: {} },
-          { id: "send_email", type: "email.send", config: { to: "owner@example.test" } },
-        ],
-        edges: [{ id: "e1", source: "start", target: "send_email" }],
-        variables: {},
-      },
-      layout: { start: { x: 100, y: 100 }, send_email: { x: 400, y: 100 } },
-    };
-    const { generates, posts } = await stubWorkflows(page, {
-      generate: (body) =>
-        body.allowBlanks === true
-          ? ready
-          : { status: "needs_input", questions: [{ code: "VALUE", field: "send_email.config.body" }] },
-    });
+  const gmailConnection = {
+    id: "20000000-0000-4000-8000-000000000001",
+    workspaceId: WORKSPACE_ID,
+    createdBy: USER_ID,
+    name: "Work Gmail",
+    provider: "GMAIL",
+    authType: "OAUTH2",
+    status: "ACTIVE",
+    config: null,
+    hasCredential: true,
+    credentialExpiresAt: null,
+    lastVerifiedAt: null,
+    canManage: true,
+    canAttach: true,
+    createdAt: "2026-08-01T00:00:00Z",
+    updatedAt: "2026-08-01T00:00:00Z",
+  };
+  const ready = {
+    status: "ready",
+    name: "Email report",
+    definition: {
+      schemaVersion: "1.0",
+      nodes: [
+        { id: "start", type: "trigger.manual", config: {} },
+        { id: "send_email", type: "email.send", config: { to: "owner@example.test" } },
+      ],
+      edges: [{ id: "e1", source: "start", target: "send_email" }],
+      variables: {},
+    },
+    layout: { start: { x: 100, y: 100 }, send_email: { x: 400, y: 100 } },
+  };
+
+  // Registered after installAuthFixture, so it wins over that fixture's 404 for unknown workspace paths.
+  async function stubConnections(page: Page, response: { status?: number; body: unknown }) {
+    await page.route(`**/api/v1/workspaces/${WORKSPACE_ID}/connections`, (route) =>
+      fulfillJson(route, response.body, response.status ?? 200),
+    );
+  }
+
+  const emailConnectionId = (draft: { definition: { nodes: Array<{ type: string; config: Record<string, unknown> }> } }) =>
+    draft.definition.nodes.find((node) => node.type === "email.send")?.config.connectionId;
+
+  async function generateFromPrompt(page: Page, mode: "click" | "dblclick" = "click") {
     await gotoGenerator(page);
-
     await page.getByLabel("What should this workflow do?").fill(PROMPT);
-    await page.getByRole("button", { name: "Generate workflow", exact: true }).click();
-    const later = page.getByRole("button", { name: "Create the draft now, I'll fill in the rest" });
-    await expect(later).toBeEnabled();
+    await page.getByRole("button", { name: "Generate workflow", exact: true })[mode]();
+  }
+
+  test("builds the draft at once and opens the builder", async ({ page }) => {
+    await installAuthFixture(page);
+    await stubConnections(page, { body: [gmailConnection] });
+    const { generates, posts, drafts } = await stubWorkflows(page, { generate: () => ready });
+    await generateFromPrompt(page);
+
+    await page.waitForURL(`**/workflows/${WORKFLOW_ID}/builder`);
     expect(generates).toHaveLength(1);
-    expect(generates[0]).not.toHaveProperty("allowBlanks");
+    expect(generates[0]).toMatchObject({ prompt: PROMPT, allowBlanks: true });
+    expect(generates[0]).not.toHaveProperty("answers");
+    expect(generates[0]).not.toHaveProperty("connections");
+    expect(posts).toHaveLength(1);
+    expect(drafts).toHaveLength(1);
+    expect(emailConnectionId(drafts[0])).toBe(gmailConnection.id);
+  });
 
-    await later.click();
-    await expect(page.getByTestId("ai-generator-preview")).toContainText("Email report");
-    expect(generates).toHaveLength(2);
-    expect(generates[1]).toMatchObject({ prompt: PROMPT, allowBlanks: true });
+  test("leaves the connection blank when none fits", async ({ page }) => {
+    await installAuthFixture(page);
+    await stubConnections(page, { body: [] });
+    const { posts, drafts } = await stubWorkflows(page, { generate: () => ready });
+    await generateFromPrompt(page);
 
-    await page.getByRole("button", { name: "Create draft", exact: true }).click();
     await page.waitForURL(`**/workflows/${WORKFLOW_ID}/builder`);
     expect(posts).toHaveLength(1);
+    expect(emailConnectionId(drafts[0])).toBeUndefined();
+  });
+
+  test("keeps going when connections cannot load", async ({ page }) => {
+    await installAuthFixture(page);
+    await stubConnections(page, { status: 500, body: { error: { code: "INTERNAL", message: "boom" } } });
+    const { posts, drafts } = await stubWorkflows(page, { generate: () => ready });
+    await generateFromPrompt(page);
+
+    await page.waitForURL(`**/workflows/${WORKFLOW_ID}/builder`);
+    expect(posts).toHaveLength(1);
+    expect(emailConnectionId(drafts[0])).toBeUndefined();
+  });
+
+  test("creates only one draft on a double click", async ({ page }) => {
+    await installAuthFixture(page);
+    await stubConnections(page, { body: [gmailConnection] });
+    const { generates, posts } = await stubWorkflows(page, { generate: () => ready });
+    await generateFromPrompt(page, "dblclick");
+
+    await page.waitForURL(`**/workflows/${WORKFLOW_ID}/builder`);
+    expect(generates).toHaveLength(1);
+    expect(posts).toHaveLength(1);
+  });
+
+  test("shows what is unclear and keeps the prompt", async ({ page }) => {
+    await installAuthFixture(page);
+    await stubConnections(page, { body: [] });
+    const { posts } = await stubWorkflows(page, {
+      generate: () => ({ status: "needs_input", questions: [{ code: "SCHEDULE", field: "trigger.schedule.cron" }] }),
+    });
+    await generateFromPrompt(page);
+
+    await expect(page.getByText("The AI needs a clearer description")).toBeVisible();
+    await expect(page.getByText("When should it run?")).toBeVisible();
+    await expect(page.getByRole("textbox")).toHaveCount(1);
+    await expect(page.getByLabel("What should this workflow do?")).toHaveValue(PROMPT);
+    expect(posts).toHaveLength(0);
+  });
+
+  test("keeps the prompt when the draft cannot be created", async ({ page }) => {
+    await installAuthFixture(page);
+    await stubConnections(page, { body: [] });
+    await stubWorkflows(page, { generate: () => ready, createStatus: 500 });
+    await generateFromPrompt(page);
+
+    await expect(page.getByRole("alert")).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/ai/workflow-generator");
+    await expect(page.getByLabel("What should this workflow do?")).toHaveValue(PROMPT);
+    await expect(page.getByRole("button", { name: "Generate workflow", exact: true })).toBeEnabled();
   });
 });
 
