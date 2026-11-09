@@ -73,7 +73,7 @@ export function GenerateWorkflowPanel({ open, onClose, onReady }: GenerateWorkfl
             {error ? <p role="alert" className="text-[11px] text-err">{error}</p> : null}
             {result?.status === 'needs_input' || result?.status === 'unsupported' ? (
               <div className="rounded border border-warn/30 bg-warn-bg px-2.5 py-1.5 text-[11px] text-foreground">
-                <p className="font-medium">{t('hp.ai.unclear')}</p>
+                <p className="font-medium">{result.status === 'needs_input' ? t('hp.ai.unclear') : t('hp.ai.cannot_build')}</p>
                 <ul className="mt-1 list-disc pl-4 text-text-2">
                   {result.status === 'needs_input'
                     ? result.questions.map((question, index) => <li key={`${question.code}-${index}`}>{t(`ai.question.${question.code}`)}</li>)

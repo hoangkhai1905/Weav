@@ -2191,9 +2191,14 @@ export const WorkflowBuilderPage: React.FC = () => {
                 </button>
               )}
             </div>
-            <span className={selectedNodeReadiness?.state === 'ready'
-              ? 'shrink-0 rounded-full bg-ok-bg px-2 py-0.5 text-xs font-medium text-ok'
-              : 'shrink-0 rounded-full bg-warn-bg px-2 py-0.5 text-xs font-medium text-warn'}>
+            <span
+              data-testid="inspector-readiness-badge"
+              className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${selectedNodeReadiness?.state === 'ready'
+                ? 'bg-ok-bg text-ok'
+                : selectedNodeReadiness && isUnfinishedReadiness(selectedNodeReadiness.state)
+                  ? 'bg-err-bg text-err'
+                  : 'bg-warn-bg text-warn'}`}
+            >
               ● {(selectedNodeReadiness ? t(selectedNodeReadiness.labelKey) : null) ?? t('builder.ready')}
             </span>
           </div>

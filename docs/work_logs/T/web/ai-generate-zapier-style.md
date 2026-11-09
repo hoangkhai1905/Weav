@@ -74,12 +74,17 @@ Dùng compose `compose.yml` + `compose.dev.yml` + `compose.ai-local.yml` với `
 
 - Mỗi lần tạo sinh một draft nằm lại trong workspace của người dùng, kể cả khi họ bỏ dở.
 - Mobile vẫn dùng luồng hỏi câu, hành vi lệch với web.
-- Badge trạng thái ở header inspector còn vàng trong khi node đỏ.
+- ~~Badge trạng thái ở header inspector còn vàng trong khi node đỏ.~~ Đã sửa (đỏ).
 - Test live AI chưa chạy được (thiếu đăng nhập).
 
 ## 9. Việc tiếp theo
 
 1. Đồng bộ mobile (`apps/mobile`): tạo ngay, không hỏi.
-2. Đồng bộ màu badge trạng thái ở header inspector với node (đỏ).
+2. ~~Đồng bộ màu badge ở header inspector với node (đỏ).~~ Xong.
 3. Thêm bước đăng nhập thật (tài khoản test) cho `loginAndOpenBuilder` ở chế độ http để test `AI_E2E` chạy được.
 4. Cân nhắc cách dọn các draft AI bị bỏ dở.
+
+## 10. Sửa sau review cuối
+
+- Commit `fix(web): red inspector badge and clearer AI messages`: badge inspector đỏ khi chưa xong (thêm assertion `text-err`); tiêu đề riêng `hp.ai.cannot_build` cho trường hợp AI không dựng được; bỏ kết quả cũ khi đổi workspace và không điều hướng nếu workspace đã đổi (bỏ cả toast); xóa 3 key i18n thừa; sửa câu `ai.error.invalid_request`; test dùng `OUT_OF_SCOPE`; bỏ assertion testid cũ.
+- Kết quả: `tsc` sạch, eslint sạch trên file đã sửa, Playwright ai-generator + ai-builder + workflow-ui: 49 đạt, 1 bỏ qua.

@@ -81,14 +81,18 @@ export function AiGeneratorPage({ inDialog = false, initialPrompt }: AiGenerator
       // allowBlanks: the user wants the draft now; the builder's publish checks flag whatever stays empty.
       const generated = await generate({ prompt: trimmedPrompt, allowBlanks: true });
       // A result that comes back after the workspace changed (or the page closed) belongs to the old workspace.
-      if (!isMounted() || useWorkspaceStore.getState().activeWorkspaceId !== startedIn) return;
-      if (generated?.status === 'ready') await createDraft(generated);
+      if (!isMounted()) return;
+      if (useWorkspaceStore.getState().activeWorkspaceId !== startedIn) {
+        reset();
+        return;
+      }
+      if (generated?.status === 'ready') await createDraft(generated, startedIn);
     } finally {
       inFlight.current = false;
     }
   };
 
-  const createDraft = async (ready: ReadyGeneration) => {
+  const createDraft = async (ready: ReadyGeneration, startedIn: typeof activeWorkspaceId) => {
     const session = captureNotificationSession();
     setIsSaving(true);
     setDraftError(null);
@@ -99,6 +103,7 @@ export function AiGeneratorPage({ inDialog = false, initialPrompt }: AiGenerator
         layout: ready.layout,
       });
       if (!isMounted() || !isCurrentNotificationSession(session)) return;
+      if (useWorkspaceStore.getState().activeWorkspaceId !== startedIn) return;
       showSuccessToast('toast.workflow.created', session);
       refreshNotifications(session);
       useUIStore.getState().closeAiGenerator();
@@ -167,7 +172,7 @@ export function AiGeneratorPage({ inDialog = false, initialPrompt }: AiGenerator
         {error || draftError ? <p role="alert" className="rounded-md border border-err-border bg-err-bg px-3 py-2 text-sm text-err">{draftError ?? error}</p> : null}
         {!busy && (result?.status === 'needs_input' || result?.status === 'unsupported') ? (
           <div className="rounded-md border border-warn/30 bg-warn-bg px-3 py-2 text-sm text-foreground">
-            <p className="font-medium">{t('hp.ai.unclear')}</p>
+            <p className="font-medium">{result.status === 'needs_input' ? t('hp.ai.unclear') : t('hp.ai.cannot_build')}</p>
             <ul className="mt-1 list-disc pl-5 text-text-2">
               {result.status === 'needs_input'
                 ? result.questions.map((question, index) => <li key={`${question.code}-${index}`}>{t(`ai.question.${question.code}`)}</li>)

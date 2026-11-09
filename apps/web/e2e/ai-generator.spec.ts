@@ -319,12 +319,13 @@ test.describe("Generate with AI panel in the builder", () => {
   test("keeps the panel open and the prompt when the request is unsupported", async ({ page }) => {
     await installAuthFixture(page);
     const { generates } = await stubWorkflows(page, {
-      generate: () => ({ status: "unsupported", reasons: [{ code: "UNSUPPORTED_CAPABILITY" }] }),
+      generate: () => ({ status: "unsupported", reasons: [{ code: "OUT_OF_SCOPE" }] }),
     });
     const dialog = await openGeneratePanel(page);
     await dialog.getByRole("textbox").first().fill(PROMPT);
     await dialog.getByRole("button", { name: "Generate", exact: true }).click();
-    await expect(dialog.getByText("The AI needs a clearer description")).toBeVisible();
+    await expect(dialog.getByText("AI cannot build this workflow:")).toBeVisible();
+    await expect(dialog.getByText("This request is out of scope.")).toBeVisible();
     await expect(dialog.getByRole("textbox").first()).toHaveValue(PROMPT);
     expect(generates).toHaveLength(1);
   });
@@ -378,6 +379,7 @@ test.describe("Unfinished steps", () => {
     await expect(chip).toHaveCount(1);
     await chip.click();
     await expect(page.getByTestId("workflow-inspector")).toBeVisible();
+    await expect(page.getByTestId("inspector-readiness-badge")).toHaveClass(/text-err/);
     await expect(page.locator('[data-testid="workflow-node"][data-node-type="email.send"]')).toHaveClass(/ring-run/);
   });
 
