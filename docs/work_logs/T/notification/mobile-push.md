@@ -60,3 +60,26 @@ Branch `fix/push-device-lifecycle` (from `dev` `eaaf2a6f`).
 - Changed: `domain/notification.ts` (`DeliveryRepository.forgetPushDevice`), `prisma.repository.ts`, `delivery.worker.ts` (+spec), `domain/inbox.ts`, `prisma.inbox.repository.ts` (+spec), `testing/fixtures.ts`, mobile `push-notifications.ts`.
 - Verified: notification-service unit 202/202, e2e 24/24, build, eslint on changed files; mobile `tsc` clean. Real stack (rebuilt notification-service, Gateway, RabbitMQ, Neon), throwaway users: a token registered through the Gateway got `EXPO_DeviceNotRegistered` and its `push_devices` row was deleted (0 left, no `forget_failed` log); a device last registered 8 days ago got the inbox item but no push delivery (1 / 0); DLQ 0; cleanup removed all test rows.
 - Limit: the 7-day window is a constant; make it a setting if the refresh-token lifetime changes. Stale `push_devices` rows are not purged, only ignored (the per-user cap of 10 bounds them).
+
+## Session 2026-11-09: sound and heads-up
+
+Branch `fix/push-sound` (from `dev`). Requested: notifications should play a sound.
+
+- `ExpoProvider.send` now sends `sound: 'default'` (iOS), `channelId: 'default'` and `priority: 'high'`. Before, Android fell back to Expo's "Miscellaneous" channel (no pop-up); now it uses the app's own HIGH-importance `default` channel (system sound + heads-up). Every registered device has that channel: the app creates it before asking for the token, since the first push commit `0620f70b`.
+- No app change and no new APK needed; the foreground handler already had `shouldPlaySound: true`.
+- Verified: notification-service unit 202/202 (spec asserts the three fields), build, eslint on changed files. Not checked on a phone yet (needs the change deployed via `main`).
+- Next: a custom Weav sound would need an audio file, the `expo-notifications` `sounds` plugin option, a new channel id (Android channel sounds cannot change) and a new APK.
+
+## Session 2026-11-09 (tối): APK không hiện push ngoài màn hình
+
+- **Triệu chứng:** hộp thư trong app có thông báo (lỗi chạy workflow, kết nối được xác nhận), nhưng ngoài màn hình Android không hiện gì.
+- **Đã kiểm tra:**
+  - EAS env `preview` có `GOOGLE_SERVICES_JSON`.
+  - `compose.prod.yml` mặc định `NOTIFICATION_EXPO_ENABLED:-false`.
+  - DB trong `.env` ở máy là Neon `production`: có bảng nhưng `push_devices` rỗng, không có delivery nào trong 2 ngày, inbox cuối lúc 11:01Z. Như vậy prod không ghi vào DB này; prod dùng branch `demo` (xem `K/platform/demo-deployment.md`), và máy này không có thông tin đăng nhập branch đó.
+- **Chặn:** cần xem `~/weav-secrets/prod.env` trên VM (`NOTIFICATION_EXPO_ENABLED`) và `notification.notification_deliveries` / `push_devices` trên branch `demo`. Cũng cần kiểm tra khóa FCM V1 trên Expo (expo.dev → Credentials → Android).
+- **Cập nhật (đã có thông tin đăng nhập DB `demo`, người dùng cho phép đọc):**
+  - Trước đó `push_devices` rỗng.
+  - Máy Redmi 2404ARN45A (Android 15, HyperOS): `POST_NOTIFICATIONS` đã được cấp, có Google Play Services. Sau khi force-stop rồi mở lại app qua adb, token được đăng ký lúc 13:54:44Z.
+  - Chạy workflow lúc 13:56Z → có delivery `EXPO_PUSH`, Expo nhận ticket (đang chờ receipt). `dumpsys notification` cho thấy thông báo đã lên máy, nhưng ở kênh `expo_notifications_fallback_notification_channel`, không có âm thanh, vì prod chưa có `ef85ccc9` (kênh `default` + âm thanh) và PR #10 chưa merge.
+  - Vì sao lần đăng ký đầu không thành: chưa rõ. App nuốt lỗi của `registerPushDevice`. Nghi ngờ HyperOS hạn chế chạy ngầm làm lần lấy token FCM đầu tiên thất bại. Prod đã bật Expo push và Expo có khóa FCM (thông báo đã tới máy).

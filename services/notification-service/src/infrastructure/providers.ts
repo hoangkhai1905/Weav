@@ -151,6 +151,11 @@ export class ExpoProvider implements NotificationProvider {
           data: { notificationId: d.id, executionId: d.executionId },
           // A re-send of the same delivery replaces the earlier push instead of stacking.
           collapseId: d.id,
+          // Ring and pop up: iOS needs `sound`; Android takes sound and heads-up from the app's
+          // high-importance 'default' channel, created before the device registers its token.
+          sound: 'default',
+          channelId: 'default',
+          priority: 'high',
         },
       ]);
       const [ticket] = await client.sendPushNotificationsAsync(chunks[0]);

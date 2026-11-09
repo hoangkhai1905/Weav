@@ -316,3 +316,31 @@ test.describe('calendar times in another time zone', () => {
     await expect(page.getByTestId('field-start')).toHaveAttribute('data-value', '2026-10-05T10:00:00+07:00');
   });
 });
+
+test('a step with an operation the server does not support is flagged, not ready', async ({ page }) => {
+  await stubBackend(page);
+  const connectionId = '00000000-0000-4000-8000-000000000020';
+  const docsDraft = (operation: string) => {
+    const value = draft();
+    value.definition.nodes.push({ id: 'doc', type: 'google.docs', config: { connectionId, operation, title: 'test gg doc' } } as never);
+    value.definition.edges = [{ id: 'e1', source: 'manual', target: 'doc' }] as never;
+    value.editorState.nodes = { ...value.editorState.nodes, doc: { name: 'Read the Doc', position: { x: 400, y: 120 } } } as never;
+    return value;
+  };
+  let operation = 'get';
+  await page.route(`**/api/v1/workspaces/${workspaceId}/connections**`, (route) => json(route, {
+    items: [{ id: connectionId, workspaceId, name: 'Team Drive', provider: 'GOOGLE_DRIVE', authType: 'OAUTH2', status: 'ACTIVE', config: null,
+      hasCredential: true, credentialExpiresAt: null, lastVerifiedAt: '2026-08-01T00:00:00Z', canManage: true, canAttach: true,
+      createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z' }],
+    page: 0, size: 100, totalElements: 1, totalPages: 1 }));
+  await page.route(base, (route) => json(route, docsDraft(operation)));
+
+  // An AI-generated "get" (Docs only creates or appends) used to show as ready and fail only at run time.
+  await page.goto(`/workflows/${workflowId}/builder`);
+  const badge = page.getByTestId('rf__node-doc').getByTestId('workflow-node-readiness');
+  await expect(badge).toHaveAttribute('data-readiness', 'not-configured');
+
+  operation = 'create';
+  await page.reload();
+  await expect(badge).toHaveAttribute('data-readiness', 'ready');
+});

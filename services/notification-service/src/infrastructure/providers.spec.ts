@@ -100,7 +100,12 @@ describe('provider adapters', () => {
       .mockResolvedValue([{ status: 'ok', id: 'ticket' }]);
     expect(await provider.send(row)).toEqual({ kind: 'receipt', id: 'ticket' });
     expect(chunk).toHaveBeenCalledTimes(1);
-    expect(chunk.mock.calls[0][0][0]).toMatchObject({ collapseId: row.id });
+    expect(chunk.mock.calls[0][0][0]).toMatchObject({
+      collapseId: row.id,
+      sound: 'default',
+      channelId: 'default',
+      priority: 'high',
+    });
   });
   it.each([
     'DeviceNotRegistered',

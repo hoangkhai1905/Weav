@@ -88,3 +88,22 @@ Dùng compose `compose.yml` + `compose.dev.yml` + `compose.ai-local.yml` với `
 
 - Commit `fix(web): red inspector badge and clearer AI messages`: badge inspector đỏ khi chưa xong (thêm assertion `text-err`); tiêu đề riêng `hp.ai.cannot_build` cho trường hợp AI không dựng được; bỏ kết quả cũ khi đổi workspace và không điều hướng nếu workspace đã đổi (bỏ cả toast); xóa 3 key i18n thừa; sửa câu `ai.error.invalid_request`; test dùng `OUT_OF_SCOPE`; bỏ assertion testid cũ.
 - Kết quả: `tsc` sạch, eslint sạch trên file đã sửa, Playwright ai-generator + ai-builder + workflow-ui: 49 đạt, 1 bỏ qua.
+
+## 11. Phiên 2026-11-09 (tối): AI bịa thao tác `get` cho Google Docs
+
+- **Triệu chứng:** workflow do AI tạo có bước "Đọc nội dung Google Doc" với `operation: "get"`. Web hiện "Sẵn sàng", xuất bản được, nhưng khi chạy thì báo `CONFIGURATION_ERROR`. Google Docs chỉ có `create` và `append` (`GoogleDocsNodeExecutor`).
+- **Nguyên nhân:**
+  1. workflow-service chỉ gửi cho AI tên các trường (`capabilities.configFields`), không gửi giá trị hợp lệ, nên AI tự đoán.
+  2. `DefinitionValidator.LITERAL_ENUMS` thiếu `google.docs.operation`, `google.drive.operation` và `email.send.bodyType`.
+  3. Web `nodeReadiness` coi mọi thao tác khác `append` là `create`.
+- **Sửa (nhánh `fix/enum-operation-validation`):**
+  - `DefinitionValidator`: thêm 3 trường trên vào `LITERAL_ENUMS` (chuyển sang `Map.ofEntries` vì quá 10 cặp). Lưu nháp, xuất bản và `IntentCompiler` (kết quả AI) giờ đều từ chối giá trị lạ (`INVALID_ENUM_VALUE`); mapping `{{...}}` vẫn được chấp nhận.
+  - ai-service `GENERATE_SYSTEM`: liệt kê các giá trị `operation` hợp lệ của từng node và yêu cầu trả `unsupported CAPABILITY_UNAVAILABLE` khi cần thao tác không có (ví dụ đọc Google Doc). Test mới đối chiếu prompt với `packages/workflow-schema/nodes/*.json` để không bị lệch.
+  - Web `nodeReadiness`: giá trị literal nằm ngoài enum của schema → bước báo đỏ (`not-configured`), và tên trường xuất hiện trong danh sách "cần sửa".
+- **Kiểm tra:**
+  - workflow-service (JDK 25, `-Duser.timezone=UTC`): NodePolishValidationTest 13/13 (có test mới), DefinitionValidatorTest 71, NodeConfigSchemasTest 29, IntentCompilerTest 9, WorkflowGenerationServiceTest 23 đều đạt.
+  - ai-service: jest `src/prompts` + `src/application` đạt 79/79; tsc và eslint sạch.
+  - Web: tsc và eslint sạch. Playwright `builder-correctness` đạt 13/13 (test mới: `get` → đỏ, `create` → sẵn sàng); `ai-builder` 4 đạt, 1 bỏ qua (cần `AI_E2E`).
+- **Còn lại:**
+  - Workflow `0454d805…` trên prod vẫn còn `get`. Sau khi deploy, bước đó sẽ báo đỏ; người dùng phải đổi thao tác hoặc bỏ bước.
+  - "Đọc nội dung Google Doc" chưa được hỗ trợ (giới hạn quyền `drive.file`), cần thiết kế riêng.
