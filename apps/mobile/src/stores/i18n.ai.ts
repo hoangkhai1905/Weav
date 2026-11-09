@@ -106,7 +106,6 @@ export const aiVi: Record<string, string> = {
   'aig.hint.2': 'Nêu thời điểm chạy: mỗi ngày lúc 8 giờ, khi có email mới, khi nhận dữ liệu từ web.',
   'aig.hint.3': 'Mỗi lần chỉ nên mô tả một công việc, các việc khác tạo thành quy trình riêng.',
 
-  'aig.ready.save': 'Lưu bản nháp',
   'aig.ready.saveFail': 'Chưa lưu được bản nháp',
 
   'asst.title': 'Trợ lý AI',
@@ -253,7 +252,6 @@ export const aiEn: Record<string, string> = {
   'aig.hint.2': 'Say when it runs: every day at 8, when a new email arrives, when data comes in from the web.',
   'aig.hint.3': 'Describe one job at a time; other jobs become separate workflows.',
 
-  'aig.ready.save': 'Save draft',
   'aig.ready.saveFail': 'Could not save the draft',
 
   'asst.title': 'AI assistant',

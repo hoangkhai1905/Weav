@@ -7,7 +7,7 @@ import { useAiGenerator } from '../../../features/ai/hooks/useAiGenerator';
 import { useSaveGeneratedWorkflow } from '../../../features/ai/hooks/useSaveGeneratedWorkflow';
 import { questionLabel } from '../../../features/ai/ai.answers';
 import { autoPickConnections, requiredConnectionProvider } from '../../../features/ai/auto-pick';
-import { buildGenerateRequest } from '../../../features/ai/generate-request';
+import { buildGenerateRequest, shouldForgetDraft } from '../../../features/ai/generate-request';
 import { useConnections } from '../../../features/connections/hooks/useConnections';
 import { AI_PROMPT_MAX_LENGTH } from '../../../infrastructure/http/ai.http.contract';
 import { useNodeLabel } from '../../../features/workflows/components/FlowList';
@@ -51,6 +51,7 @@ export default function AiGeneratorScreen() {
   const [error, setError] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  const saveFailed = useRef(false);
 
   const promptLength = Array.from(prompt).length;
   const tooLong = promptLength > AI_PROMPT_MAX_LENGTH;
@@ -66,6 +67,7 @@ export default function AiGeneratorScreen() {
     setBusy(true);
     setError(null);
     setNotice(null);
+    let keepBusy = false;
     let stage: 'generate' | 'save' = 'generate';
     try {
       const res = await generate.mutateAsync(buildGenerateRequest(prompt, deviceTimeZone()));
@@ -86,14 +88,19 @@ export default function AiGeneratorScreen() {
         save.forget(); // the half-made workflow belongs to the other workspace
         return;
       }
+      keepBusy = true; // stay on the progress view until the workflow screen replaces this one
       router.replace(`/(app)/workflows/${id}`);
     } catch (e) {
+      if (shouldForgetDraft(stage, stale())) save.forget();
       if (stale()) return;
       if (stage === 'generate') setError(e as ApiError);
-      else showToast({ type: 'error', title: t('aig.ready.saveFail'), message: friendlyErrorMessage(e) });
+      else {
+        saveFailed.current = true; // a retry of the same prompt reuses the half-made draft
+        showToast({ type: 'error', title: t('aig.ready.saveFail'), message: friendlyErrorMessage(e) });
+      }
     } finally {
       inFlight.current = false;
-      setBusy(false);
+      if (!keepBusy) setBusy(false);
     }
   };
 
@@ -106,7 +113,7 @@ export default function AiGeneratorScreen() {
     body = (
       <View style={styles.stack}>
         {notice?.status === 'needs_input' ? (
-          <View accessibilityRole="alert" style={[styles.banner, { backgroundColor: colors.tones.warning.bg, borderColor: colors.tones.warning.border }]}>
+          <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.banner, { backgroundColor: colors.tones.warning.bg, borderColor: colors.tones.warning.border }]}>
             <TriangleAlert size={22} color={colors.tones.warning.fg} />
             <View style={styles.flex}>
               <Text style={[Typography.label, { color: colors.text }]}>{t('aig.needs.heading')}</Text>
@@ -118,7 +125,7 @@ export default function AiGeneratorScreen() {
         ) : null}
         {notice?.status === 'unsupported' ? (
           <>
-            <View accessibilityRole="alert" style={[styles.banner, { backgroundColor: colors.tones.warning.bg, borderColor: colors.tones.warning.border }]}>
+            <View accessibilityRole="alert" accessibilityLiveRegion="polite" style={[styles.banner, { backgroundColor: colors.tones.warning.bg, borderColor: colors.tones.warning.border }]}>
               <TriangleAlert size={22} color={colors.tones.warning.fg} />
               <View style={styles.flex}>
                 <Text style={[Typography.label, { color: colors.text }]}>{t('aig.unsupported.heading')}</Text>
@@ -142,7 +149,13 @@ export default function AiGeneratorScreen() {
         <TextInput
           accessibilityLabel={t('aig.prompt.label')}
           value={prompt}
-          onChangeText={setPrompt}
+          onChangeText={(text) => {
+            if (saveFailed.current) {
+              saveFailed.current = false;
+              save.forget(); // a new description makes a new workflow
+            }
+            setPrompt(text);
+          }}
           multiline
           placeholder={t('aig.prompt.placeholder')}
           placeholderTextColor={colors.textSubtle}
