@@ -278,7 +278,7 @@ test.describe("Generate with AI panel in the builder", () => {
     expect((generates[0] as { prompt: string }).prompt).toBe(PROMPT);
   });
 
-  test("asks a plain question for a missing value, then builds the workflow from the answer", async ({ page }) => {
+  test("builds the workflow at once with blanks allowed and no questions", async ({ page }) => {
     await installAuthFixture(page);
     const ready = {
       status: "ready",
@@ -287,82 +287,46 @@ test.describe("Generate with AI panel in the builder", () => {
         schemaVersion: "1.0",
         nodes: [
           { id: "start", type: "trigger.manual", config: {} },
-          { id: "send_email", type: "email.send", config: { to: "a@example.test", subject: "Hi", body: "Hello there" } },
+          { id: "send_email", type: "email.send", config: { to: "a@example.test", subject: "Hi" } },
         ],
         edges: [{ id: "e1", source: "start", target: "send_email" }],
         variables: {},
       },
       layout: { start: { x: 100, y: 100 }, send_email: { x: 400, y: 100 } },
     };
-    const { generates } = await stubWorkflows(page, {
-      generate: (body) =>
-        (body.answers as Record<string, string> | undefined)?.["email.send.body"]
-          ? ready
-          : { status: "needs_input", questions: [{ code: "VALUE", field: "email.send.body" }] },
-    });
+    const { generates } = await stubWorkflows(page, { generate: () => ready });
     const dialog = await openGeneratePanel(page);
     await dialog.getByRole("textbox").first().fill(PROMPT);
     await dialog.getByRole("button", { name: "Generate", exact: true }).click();
-    const question = dialog.getByLabel("What should the email say?");
-    await expect(question).toBeVisible();
-    await expect(dialog.getByTestId("generate-questions")).not.toContainText("email.send");
-    await expect(dialog.getByTestId("generate-questions")).not.toContainText("config");
-    await expect(dialog.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
-
-    await question.fill("Hello there");
-    await dialog.getByRole("button", { name: "Continue", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.locator(".react-flow__node")).toHaveCount(2);
-    expect(generates).toHaveLength(2);
-    expect((generates[1] as { prompt: string }).prompt).toBe(PROMPT);
-    expect((generates[1] as { answers: unknown }).answers).toEqual({ "email.send.body": "Hello there" });
+    expect(generates).toHaveLength(1);
+    expect(generates[0]).toMatchObject({ prompt: PROMPT, allowBlanks: true });
+    expect(generates[0]).not.toHaveProperty("answers");
   });
-  test("pre-fills a missing recipient with the signed-in email and sends it unless edited", async ({ page }) => {
+  test("shows one notice instead of questions when the request is unclear", async ({ page }) => {
     await installAuthFixture(page);
-    const ready = {
-      status: "ready",
-      name: "Notify me",
-      definition: {
-        schemaVersion: "1.0",
-        nodes: [
-          { id: "start", type: "trigger.manual", config: {} },
-          { id: "send_email", type: "email.send", config: { to: "owner@example.test", subject: "Hi", body: "Hello" } },
-        ],
-        edges: [{ id: "e1", source: "start", target: "send_email" }],
-        variables: {},
-      },
-      layout: { start: { x: 100, y: 100 }, send_email: { x: 400, y: 100 } },
-    };
-    const { generates } = await stubWorkflows(page, {
-      generate: (body) =>
-        (body.answers as Record<string, string> | undefined)?.["send_email.config.to"]
-          ? ready
-          : { status: "needs_input", questions: [{ code: "VALUE", field: "send_email.config.to" }] },
-    });
-    const dialog = await openGeneratePanel(page);
-    await dialog.getByRole("textbox").first().fill(PROMPT);
-    await dialog.getByRole("button", { name: "Generate", exact: true }).click();
-    const recipient = dialog.getByLabel("Which email address should it be sent to?");
-    await expect(recipient).toHaveValue("owner@example.test");
-    await recipient.fill("boss@example.test");
-    await expect(recipient).toHaveValue("boss@example.test");
-    await recipient.fill("owner@example.test");
-    await dialog.getByRole("button", { name: "Continue", exact: true }).click();
-    await expect(dialog).toHaveCount(0);
-    expect((generates[1] as { answers: unknown }).answers).toEqual({ "send_email.config.to": "owner@example.test" });
-  });
-  test("sends the prefilled recipient when Continue is clicked without touching it", async ({ page }) => {
-    await installAuthFixture(page);
-    const { generates } = await stubWorkflows(page, {
+    await stubWorkflows(page, {
       generate: () => ({ status: "needs_input", questions: [{ code: "VALUE", field: "send_email.config.to" }] }),
     });
     const dialog = await openGeneratePanel(page);
     await dialog.getByRole("textbox").first().fill(PROMPT);
     await dialog.getByRole("button", { name: "Generate", exact: true }).click();
-    await expect(dialog.getByLabel("Which email address should it be sent to?")).toHaveValue("owner@example.test");
-    await dialog.getByRole("button", { name: "Continue", exact: true }).click();
-    await expect.poll(() => generates.length).toBe(2);
-    expect((generates[1] as { answers: unknown }).answers).toEqual({ "send_email.config.to": "owner@example.test" });
+    await expect(dialog.getByText("The AI needs a clearer description")).toBeVisible();
+    await expect(dialog.getByRole("textbox")).toHaveCount(1);
+    await expect(dialog.getByRole("button", { name: "Continue" })).toHaveCount(0);
+  });
+  test("keeps the panel open and the prompt when the request is unsupported", async ({ page }) => {
+    await installAuthFixture(page);
+    const { generates } = await stubWorkflows(page, {
+      generate: () => ({ status: "unsupported", reasons: [{ code: "UNSUPPORTED_CAPABILITY" }] }),
+    });
+    const dialog = await openGeneratePanel(page);
+    await dialog.getByRole("textbox").first().fill(PROMPT);
+    await dialog.getByRole("button", { name: "Generate", exact: true }).click();
+    await expect(dialog.getByText("The AI needs a clearer description")).toBeVisible();
+    await expect(dialog.getByRole("textbox").first()).toHaveValue(PROMPT);
+    expect(generates).toHaveLength(1);
   });
 });
 

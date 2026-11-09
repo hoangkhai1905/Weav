@@ -31,11 +31,7 @@ export function useWorkflowGeneration() {
     setResult(null);
   }, []);
 
-  const generate = useCallback(async (input: { prompt: string; connections?: Record<string, string>; answers?: Record<string, string>; allowBlanks?: boolean }) => {
-    // An empty selection must never reach the API (it rejects non-UUID values).
-    const chosen = Object.fromEntries(Object.entries(input.connections ?? {}).filter(([, id]) => id));
-    // Replies to an earlier needs_input round, keyed by question field; the server wants the original prompt with them.
-    const given = Object.fromEntries(Object.entries(input.answers ?? {}).filter(([, value]) => value.trim()));
+  const generate = useCallback(async (input: { prompt: string; allowBlanks?: boolean }) => {
     setIsPending(true);
     setError(null);
     setResult(null);
@@ -43,8 +39,6 @@ export function useWorkflowGeneration() {
       const generated = await workflowApi.generateWorkflow({
         prompt: input.prompt,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        ...(Object.keys(given).length > 0 ? { answers: given } : {}),
-        ...(Object.keys(chosen).length > 0 ? { connections: chosen } : {}),
         ...(input.allowBlanks ? { allowBlanks: true } : {}),
       });
       setResult(generated);
