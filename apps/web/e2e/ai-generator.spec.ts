@@ -28,7 +28,7 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-async function installAuthFixture(page: Page) {
+async function installAuthFixture(page: Page, extraWorkspaces: unknown[] = []) {
   await page.addInitScript(() => {
     localStorage.setItem("weav_token", "assistant-token");
     localStorage.setItem("weav_lang_v1", "EN");
@@ -39,7 +39,7 @@ async function installAuthFixture(page: Page) {
   await page.route("**/api/v1/workspaces**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/v1/workspaces" && route.request().method() === "GET") {
-      return fulfillJson(route, { items: [workspace], page: 0, size: 20, totalElements: 1, totalPages: 1 });
+      return fulfillJson(route, { items: [workspace, ...extraWorkspaces], page: 0, size: 20, totalElements: 1 + extraWorkspaces.length, totalPages: 1 });
     }
     if (url.pathname === `/api/v1/workspaces/${WORKSPACE_ID}`) return fulfillJson(route, workspace);
     if (url.pathname === `/api/v1/workspaces/${WORKSPACE_ID}/members`) {
@@ -55,7 +55,7 @@ const emptyDetail = { workflowId: WORKFLOW_ID, name: "x", status: "DRAFT", defin
 
 async function stubWorkflows(
   page: Page,
-  opts: { createStatus?: number; detail?: unknown; generate?: (body: Record<string, unknown>) => unknown } = {},
+  opts: { createStatus?: number; detail?: unknown; hold?: Promise<void>; generate?: (body: Record<string, unknown>) => unknown } = {},
 ) {
   const posts: unknown[] = [];
   const generates: unknown[] = [];
@@ -65,6 +65,7 @@ async function stubWorkflows(
     const path = new URL(request.url()).pathname;
     if (request.method() === "POST" && path.endsWith("/workflows/generate")) {
       generates.push(request.postDataJSON());
+      await opts.hold;
       if (opts.generate) return fulfillJson(route, opts.generate(request.postDataJSON()));
       return fulfillJson(route, { error: { code: "AI_DISABLED", message: "AI disabled" } }, 503);
     }
@@ -202,12 +203,13 @@ test.describe("Create with AI page", () => {
   test("creates only one draft on a double click", async ({ page }) => {
     await installAuthFixture(page);
     await stubConnections(page, { body: [gmailConnection] });
-    const { generates, posts } = await stubWorkflows(page, { generate: () => ready });
+    const { generates, posts, drafts } = await stubWorkflows(page, { generate: () => ready });
     await generateFromPrompt(page, "dblclick");
 
     await page.waitForURL(`**/workflows/${WORKFLOW_ID}/builder`);
     expect(generates).toHaveLength(1);
     expect(posts).toHaveLength(1);
+    expect(drafts).toHaveLength(1);
   });
 
   test("shows what is unclear and keeps the prompt", async ({ page }) => {
@@ -235,6 +237,30 @@ test.describe("Create with AI page", () => {
     expect(new URL(page.url()).pathname).toBe("/ai/workflow-generator");
     await expect(page.getByLabel("What should this workflow do?")).toHaveValue(PROMPT);
     await expect(page.getByRole("button", { name: "Generate workflow", exact: true })).toBeEnabled();
+  });
+
+  test("drops a late AI result after the workspace changes", async ({ page }) => {
+    const otherWorkspace = { ...workspace, id: "00000000-0000-4000-8000-000000000002", name: "Beta workspace" };
+    await installAuthFixture(page, [otherWorkspace]);
+    await stubConnections(page, { body: [gmailConnection] });
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const { generates } = await stubWorkflows(page, { generate: () => ready, hold });
+    // Any workspace's workflow writes count; the stub only sees the first workspace.
+    const writes: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (request.method() !== "GET" && pathname.includes("/workflows") && !pathname.endsWith("/generate")) writes.push(pathname);
+    });
+    await generateFromPrompt(page);
+    await expect.poll(() => generates.length).toBe(1);
+
+    await page.getByTestId("topbar-workspace-selector").selectOption(otherWorkspace.id);
+    release();
+    await page.waitForTimeout(500);
+
+    expect(writes).toEqual([]);
+    expect(new URL(page.url()).pathname).toBe("/ai/workflow-generator");
   });
 });
 

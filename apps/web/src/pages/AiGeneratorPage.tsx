@@ -69,12 +69,23 @@ export function AiGeneratorPage({ inDialog = false, initialPrompt }: AiGenerator
 
   const busy = isPending || isSaving;
 
+  // Set synchronously: `busy` lags a render between the generate call ending and the save starting.
+  const inFlight = useRef(false);
+
   const submit = async () => {
-    if (busy || !trimmedPrompt) return;
-    setDraftError(null);
-    // allowBlanks: the user wants the draft now; the builder's publish checks flag whatever stays empty.
-    const generated = await generate({ prompt: trimmedPrompt, allowBlanks: true });
-    if (generated?.status === 'ready') await createDraft(generated);
+    if (busy || inFlight.current || !trimmedPrompt) return;
+    inFlight.current = true;
+    const startedIn = activeWorkspaceId;
+    try {
+      setDraftError(null);
+      // allowBlanks: the user wants the draft now; the builder's publish checks flag whatever stays empty.
+      const generated = await generate({ prompt: trimmedPrompt, allowBlanks: true });
+      // A result that comes back after the workspace changed (or the page closed) belongs to the old workspace.
+      if (!isMounted() || useWorkspaceStore.getState().activeWorkspaceId !== startedIn) return;
+      if (generated?.status === 'ready') await createDraft(generated);
+    } finally {
+      inFlight.current = false;
+    }
   };
 
   const createDraft = async (ready: ReadyGeneration) => {
