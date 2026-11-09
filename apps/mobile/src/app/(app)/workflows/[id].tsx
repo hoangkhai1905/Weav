@@ -86,12 +86,13 @@ export default function WorkflowDetailScreen() {
   const nodeLabel = useNodeLabel();
 
   // On error `data` is undefined: nothing turns red and Publish behaves as before.
-  const readiness = useWorkflowReadiness(workflowId);
+  const isDraft = workflow?.status === 'DRAFT';
+  const readiness = useWorkflowReadiness(workflowId, isDraft);
   const refetchReadiness = readiness.refetch;
   useFocusEffect(
     useCallback(() => {
-      void refetchReadiness();
-    }, [refetchReadiness]),
+      if (isDraft) void refetchReadiness();
+    }, [isDraft, refetchReadiness]),
   );
   const view = useMemo(
     () => readinessView(workflow?.status === 'DRAFT' ? readiness.data : undefined, workflow?.nodes.map((n) => n.id) ?? []),
@@ -176,6 +177,7 @@ export default function WorkflowDetailScreen() {
   const refresh = () => {
     void detail.refetch();
     void history.refetch();
+    if (isDraft) void refetchReadiness();
   };
 
   const runWhen = (iso: string) => {
@@ -288,9 +290,9 @@ export default function WorkflowDetailScreen() {
         {status !== 'PUBLISHED' ? (
           <Text style={[Typography.caption, { color: colors.textMuted }]}>{t(`wfd.run.cannot.${status}`)}</Text>
         ) : null}
-        {canPublish && view.redCount > 0 ? (
+        {canPublish && view.publishBlocked ? (
           <Text style={[Typography.caption, { color: colors.textMuted }]}>
-            {fill(t('wfd.setup.publishCaption'), { n: view.redCount })}
+            {view.redCount > 0 ? fill(t('wfd.setup.publishCaption'), { n: view.redCount }) : t('wfd.setup.graph')}
           </Text>
         ) : null}
         {noPermission ? <Text style={[Typography.caption, { color: colors.textMuted }]}>{t('wfd.noPermission')}</Text> : null}

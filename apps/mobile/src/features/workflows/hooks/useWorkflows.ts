@@ -34,12 +34,12 @@ export function useInfiniteWorkflows() {
 }
 
 /** Server-side check of which steps of a draft are unfinished; refetched after publish and draft saves. */
-export function useWorkflowReadiness(workflowId: string) {
+export function useWorkflowReadiness(workflowId: string, enabled = true) {
   const workspaceId = useActiveWorkspaceId();
   return useQuery({
     queryKey: ['workflow-readiness', workspaceId, workflowId],
     queryFn: () => workflowRepository.getReadiness(workspaceId ?? '', workflowId),
-    enabled: !!workspaceId && !!workflowId,
+    enabled: enabled && !!workspaceId && !!workflowId,
     staleTime: 5000,
   });
 }

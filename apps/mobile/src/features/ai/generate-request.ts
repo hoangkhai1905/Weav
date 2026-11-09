@@ -9,3 +9,8 @@ export function buildGenerateRequest(prompt: string, timezone: string): AiGenera
 export function shouldForgetDraft(stage: 'generate' | 'save', workspaceChanged: boolean): boolean {
   return stage === 'save' && workspaceChanged;
 }
+
+/** After a slow generate and save, open the draft only if the user is still on the generator. */
+export function shouldOpenDraft(stillOnScreen: boolean): boolean {
+  return stillOnScreen;
+}

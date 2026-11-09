@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 require('../../../test-support/register-typescript.cjs');
-const { buildGenerateRequest, shouldForgetDraft } = require('./generate-request.ts');
+const { buildGenerateRequest, shouldForgetDraft, shouldOpenDraft } = require('./generate-request.ts');
 
 test('generate request allows blanks and never carries answers or connections', () => {
   const req = buildGenerateRequest('  gui email moi sang ', 'Asia/Ho_Chi_Minh');
@@ -14,4 +14,9 @@ test('a half-made draft is forgotten only when the save stage ends in another wo
   assert.equal(shouldForgetDraft('save', true), true);
   assert.equal(shouldForgetDraft('save', false), false);
   assert.equal(shouldForgetDraft('generate', true), false);
+});
+
+test('the draft opens only while the user is still on the generator', () => {
+  assert.equal(shouldOpenDraft(true), true);
+  assert.equal(shouldOpenDraft(false), false);
 });

@@ -7,7 +7,7 @@ import { useAiGenerator } from '../../../features/ai/hooks/useAiGenerator';
 import { useSaveGeneratedWorkflow } from '../../../features/ai/hooks/useSaveGeneratedWorkflow';
 import { questionLabel } from '../../../features/ai/ai.answers';
 import { autoPickConnections, requiredConnectionProvider } from '../../../features/ai/auto-pick';
-import { buildGenerateRequest, shouldForgetDraft } from '../../../features/ai/generate-request';
+import { buildGenerateRequest, shouldForgetDraft, shouldOpenDraft } from '../../../features/ai/generate-request';
 import { useConnections } from '../../../features/connections/hooks/useConnections';
 import { AI_PROMPT_MAX_LENGTH } from '../../../infrastructure/http/ai.http.contract';
 import { useNodeLabel } from '../../../features/workflows/components/FlowList';
@@ -51,6 +51,13 @@ export default function AiGeneratorScreen() {
   const [error, setError] = useState<ApiError | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const saveFailed = useRef(false);
 
   const promptLength = Array.from(prompt).length;
@@ -88,20 +95,30 @@ export default function AiGeneratorScreen() {
         save.forget(); // the half-made workflow belongs to the other workspace
         return;
       }
+      // The user left during the wait: the draft is saved and shows in the list, so do not pull them back.
+      if (!shouldOpenDraft(mounted.current)) return;
       keepBusy = true; // stay on the progress view until the workflow screen replaces this one
       router.replace(`/(app)/workflows/${id}`);
     } catch (e) {
       if (shouldForgetDraft(stage, stale())) save.forget();
       if (stale()) return;
       if (stage === 'generate') setError(e as ApiError);
-      else {
+      else if (mounted.current) {
         saveFailed.current = true; // a retry of the same prompt reuses the half-made draft
         showToast({ type: 'error', title: t('aig.ready.saveFail'), message: friendlyErrorMessage(e) });
       }
     } finally {
       inFlight.current = false;
-      if (!keepBusy) setBusy(false);
+      if (!keepBusy && mounted.current) setBusy(false);
     }
+  };
+
+  const changePrompt = (text: string) => {
+    if (saveFailed.current) {
+      saveFailed.current = false;
+      save.forget(); // a new description makes a new workflow
+    }
+    setPrompt(text);
   };
 
   let body: React.ReactNode;
@@ -149,13 +166,7 @@ export default function AiGeneratorScreen() {
         <TextInput
           accessibilityLabel={t('aig.prompt.label')}
           value={prompt}
-          onChangeText={(text) => {
-            if (saveFailed.current) {
-              saveFailed.current = false;
-              save.forget(); // a new description makes a new workflow
-            }
-            setPrompt(text);
-          }}
+          onChangeText={changePrompt}
           multiline
           placeholder={t('aig.prompt.placeholder')}
           placeholderTextColor={colors.textSubtle}
@@ -176,7 +187,7 @@ export default function AiGeneratorScreen() {
               key={k}
               accessibilityRole="button"
               accessibilityLabel={t(k)}
-              onPress={() => setPrompt(t(k))}
+              onPress={() => changePrompt(t(k))}
               style={[styles.example, { backgroundColor: colors.card, borderColor: colors.border }]}
             >
               <Text style={[Typography.body, { color: colors.text }]}>{t(k)}</Text>

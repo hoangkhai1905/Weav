@@ -91,3 +91,15 @@ adacfa51 docs(workflow): state what readiness checks
 
 - Phase 2: chỉnh sửa bước bằng bottom sheet ngay trên mobile.
 - Các lỗi nhỏ chưa xử lý: gọi fetch hai lần ở lần focus đầu; thay đổi prop không dùng của `FlowList`; chưa có chú thích khi chỉ có lỗi graph chặn Publish.
+
+## 11. Commit sửa sau review cuối nhánh
+
+Commit `fix(mobile): keep FlowList as before and guard the generator`:
+
+- `FlowList.tsx`: trả về đúng bản trên `dev` (bỏ `Pressable` và props `issuesByStep`/`onStepPress` không ai dùng) để trợ năng của chat trợ lý và chi tiết mẫu không bị đọc là "disabled".
+- `ai/generator.tsx`: thêm ref `mounted`; nếu người dùng đã rời màn hình trong lúc tạo/lưu thì không `router.replace` và không toast (nháp đã lưu, hiện trong danh sách). Quyết định nằm ở `shouldOpenDraft` trong `generate-request.ts`, có test.
+- `ai/generator.tsx`: ô nhập và các câu ví dụ cùng dùng `changePrompt`, nên sau lỗi lưu, bấm ví dụ cũng xoá nháp lưu dở.
+- `workflows/[id].tsx` và `useWorkflowReadiness(workflowId, enabled)`: chỉ gọi readiness cho workflow DRAFT; kéo để làm mới cũng tải lại readiness.
+- Chú thích dưới nút Publish hiện mỗi khi Publish bị chặn; chỉ có lỗi graph thì dùng câu "Quy trình còn lỗi cần sửa trên máy tính." (readiness chỉ mang tính tư vấn, server vẫn có thể từ chối Publish).
+
+Kết quả: `node --test` 274 pass / 0 fail; `npx tsc --noEmit -p .` PASS; `expo lint` các file đổi không có lỗi; `git diff --check` sạch. Chưa kiểm tra trên thiết bị.
