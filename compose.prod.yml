@@ -1,7 +1,8 @@
 # Demo / production stack. Standalone (do not combine with compose.yml or compose.dev.yml):
 #   docker compose -f compose.prod.yml --env-file "$WEAV_SECRETS_DIR/prod.env" up -d
 # No service publishes a port: the only way in is the Cloudflare Tunnel (docs/architecture/deployment-exposure.md).
-# OCR runs here with the ONNX runtime (file source only). Databases (Neon), Valkey (Aiven) and object storage (R2) are remote.
+# OCR runs here with the ONNX runtime (file source only). Databases (Neon) and object storage (R2) are remote.
+# Valkey runs here on the internal `cache` network: next to the services, not a round trip to another region per request.
 name: weav-prod
 
 x-rabbit: &rabbit
@@ -45,6 +46,21 @@ services:
       timeout: 5s
       retries: 5
 
+  valkey:
+    # Gateway rate limits, identity OTP/OAuth state and the workspace authorization cache. Every key has a TTL and a
+    # missing key is a cache miss, so there is no persistence: a restart only drops sign-in codes in flight.
+    image: valkey/valkey:8.1.11-alpine
+    restart: unless-stopped
+    mem_limit: 128m
+    command: ["valkey-server", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no", "--protected-mode", "no"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - cache
+
   identity-service:
     image: ${WEAV_IMAGE_REGISTRY:-ghcr.io/hoangkhai1905}/weav-identity-service:${WEAV_IMAGE_TAG:-main}
     build:
@@ -77,7 +93,7 @@ services:
       OAUTH_WEB_ALLOWED_ORIGIN: https://app.weav.id.vn
       # The deep link the mobile app registers (apps/mobile GOOGLE_RETURN_URL); blank disables mobile Google sign-in (503).
       OAUTH_MOBILE_RETURN_TARGET_URI: weav://auth/callback
-      VALKEY_URL: ${VALKEY_URL:?set VALKEY_URL in prod.env}
+      VALKEY_URL: redis://valkey:6379
       OTP_HMAC_SECRET: ${OTP_HMAC_SECRET:?set OTP_HMAC_SECRET in prod.env}
       AVATAR_S3_ENDPOINT: ${R2_ENDPOINT:?set R2_ENDPOINT in prod.env}
       AVATAR_S3_REGION: auto
@@ -89,10 +105,13 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      valkey:
+        condition: service_healthy
     volumes:
       - ${WEAV_SECRETS_DIR:-./tmp/prod}/service-keys/identity:/run/identity-keys:ro
     networks:
       default: {}
+      cache: {}
       edge:
         # Only the gateway and cloudflared reach identity through this alias, so their pinned IPs are what it sees.
         aliases:
@@ -118,7 +137,7 @@ services:
       IDENTITY_INTERNAL_SERVICE_KEY: ${IDENTITY_INTERNAL_SERVICE_KEY:?set IDENTITY_INTERNAL_SERVICE_KEY in prod.env}
       WEAV_INTERNAL_SERVICE_KEY: ${WEAV_INTERNAL_SERVICE_KEY:?set WEAV_INTERNAL_SERVICE_KEY in prod.env}
       WORKSPACE_SERVICE_JWKS_FILE: /run/weav-keys/workflow-service.jwks.json
-      REDIS_URL: ${VALKEY_URL:?set VALKEY_URL in prod.env}
+      REDIS_URL: redis://valkey:6379
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?set CREDENTIAL_ENCRYPTION_KEY in prod.env}
       CREDENTIAL_ENCRYPTION_KEY_VERSION: v1
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID in prod.env}
@@ -127,9 +146,15 @@ services:
       GOOGLE_OAUTH_FRONTEND_RETURN_URL: https://app.weav.id.vn/connections
       WORKFLOW_SERVICE_URL: http://workflow-service:8080
       WORKFLOW_INTERNAL_SERVICE_KEY: ${WORKFLOW_INTERNAL_SERVICE_KEY:?set WORKFLOW_INTERNAL_SERVICE_KEY in prod.env}
+    depends_on:
+      valkey:
+        condition: service_healthy
     volumes:
       # Public half only (workflow's service-JWT JWKS).
       - ${WEAV_SECRETS_DIR:-./tmp/prod}/service-keys/public:/run/weav-keys:ro
+    networks:
+      default: {}
+      cache: {}
 
   workflow-service:
     image: ${WEAV_IMAGE_REGISTRY:-ghcr.io/hoangkhai1905}/weav-workflow-service:${WEAV_IMAGE_TAG:-main}
@@ -222,7 +247,7 @@ services:
       <<: [*jwt, *jwt-secret]
       APP_ENV: production
       # Rate-limit storage (the gateway reads only this variable, not VALKEY_URL).
-      GATEWAY_THROTTLER_REDIS_URL: ${VALKEY_URL:?set VALKEY_URL in prod.env}
+      GATEWAY_THROTTLER_REDIS_URL: redis://valkey:6379
       # Via the `edge` network so identity sees the pinned gateway IP (X-Forwarded-For trust).
       IDENTITY_SERVICE_URL: http://identity-edge:8080
       WORKSPACE_SERVICE_URL: http://workspace-service:8080
@@ -236,10 +261,14 @@ services:
       GATEWAY_OCR_SIGNING_KEY_LOCATION: /run/gateway-keys/api-gateway.pem
       GATEWAY_OCR_SIGNING_KEY_ID: gateway-dev-1
       GATEWAY_OCR_TIMEOUT_MS: "95000"
+    depends_on:
+      valkey:
+        condition: service_healthy
     volumes:
       - ${WEAV_SECRETS_DIR:-./tmp/prod}/service-keys/gateway:/run/gateway-keys:ro
     networks:
       default: {}
+      cache: {}
       edge:
         ipv4_address: 172.31.250.10
 
@@ -359,6 +388,9 @@ volumes:
   rabbitmq_data:
 
 networks:
+  # Valkey only; no egress (the attached services keep `default` for that).
+  cache:
+    internal: true
   # Fixed subnet so the gateway (.10) and cloudflared (.11) IPs can be pinned for identity's X-Forwarded-For trust.
   edge:
     ipam:
