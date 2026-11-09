@@ -6,6 +6,7 @@ export interface GenerateWorkflowRequestDto {
   timezone?: string;
   connections?: Record<string, string>;
   answers?: Record<string, string>;
+  allowBlanks?: boolean;
 }
 
 export interface GenerateReadyDto {
