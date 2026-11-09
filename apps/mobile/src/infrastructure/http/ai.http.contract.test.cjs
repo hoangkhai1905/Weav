@@ -32,3 +32,8 @@ test('forwards answers and connections, validates them like the server', () => {
     /long/i,
   );
 });
+
+test('forwards allowBlanks only when asked', () => {
+  assert.equal(buildGenerateWorkflowRequest(WS, { prompt: 'p', allowBlanks: true }).data.allowBlanks, true);
+  assert.equal('allowBlanks' in buildGenerateWorkflowRequest(WS, { prompt: 'p' }).data, false);
+});

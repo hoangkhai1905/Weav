@@ -146,4 +146,10 @@ export interface WorkflowRepository {
   saveDraft(workspaceId: string, workflowId: string, input: SaveDraftInput): Promise<Workflow>;
   publishWorkflow(workspaceId: string, workflowId: string): Promise<WorkflowPublication>;
   deleteWorkflow(workspaceId: string, workflowId: string): Promise<void>;
+  getReadiness(workspaceId: string, workflowId: string): Promise<WorkflowReadiness>;
 }
+
+/** One problem found by the server-side readiness check of a workflow draft. */
+export type ReadinessIssue = { nodeId: string | null; field: string | null; code: string };
+
+export type WorkflowReadiness = { ready: boolean; issues: ReadinessIssue[] };

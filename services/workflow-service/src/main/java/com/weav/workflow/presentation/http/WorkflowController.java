@@ -23,6 +23,7 @@ import com.weav.workflow.presentation.http.request.CreateWorkflowRequest;
 import com.weav.workflow.presentation.http.request.SaveWorkflowDraftRequest;
 import com.weav.workflow.presentation.http.request.GenerateWorkflowRequest;
 import com.weav.workflow.application.service.WorkflowGenerationService;
+import com.weav.workflow.presentation.http.response.WorkflowReadinessResponse;
 import com.weav.workflow.presentation.http.response.WorkflowResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -149,6 +150,16 @@ public class WorkflowController {
         Workflow workflow = workflowDraftService.get(workspaceId, workflowId, actorId(jwt));
         return WorkflowResponse.from(workflow,
                 workflowPublicationService.currentTriggers(workflowId, workflow.getCurrentVersionId()));
+    }
+
+    /** Read-only: which steps still block publishing (shown red on mobile). */
+    @GetMapping("/{workflowId}/readiness")
+    public WorkflowReadinessResponse readiness(
+            @PathVariable UUID workspaceId,
+            @PathVariable UUID workflowId,
+            @AuthenticationPrincipal Jwt jwt) {
+        return WorkflowReadinessResponse.from(
+                workflowPublicationService.readiness(workspaceId, workflowId, actorId(jwt)));
     }
 
     @PutMapping("/{workflowId}/draft")

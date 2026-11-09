@@ -481,6 +481,35 @@ describe('Gateway routes added for full service coverage (Fastify e2e)', () => {
     expect(fixtureRequests[0].method).toBe('GET');
   });
 
+  it('routes workflow readiness and validates both ids', async () => {
+    const workflowId = randomUUID();
+    const ok = await inject({
+      method: 'GET',
+      url: `/api/v1/workspaces/${WORKSPACE_ID}/workflows/${workflowId}/readiness`,
+      headers: { authorization: user },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(fixtureRequests).toHaveLength(1);
+    expect(fixtureRequests[0].method).toBe('GET');
+    expect(fixtureRequests[0].path).toBe(
+      `/workspaces/${WORKSPACE_ID}/workflows/${workflowId}/readiness`,
+    );
+
+    const bad = await inject({
+      method: 'GET',
+      url: `/api/v1/workspaces/${WORKSPACE_ID}/workflows/not-a-uuid/readiness`,
+      headers: { authorization: user },
+    });
+    const badGet = await inject({
+      method: 'GET',
+      url: `/api/v1/workspaces/${WORKSPACE_ID}/workflows/not-a-uuid`,
+      headers: { authorization: user },
+    });
+    expect(bad.statusCode).toBe(badGet.statusCode);
+    expect(bad.statusCode).toBe(400);
+    expect(fixtureRequests).toHaveLength(1);
+  });
+
   it('routes workflow generation with its own size cap', async () => {
     const generated = await inject({
       method: 'POST',

@@ -167,6 +167,14 @@ export function buildPublishWorkflowRequest(
   return { method: 'POST', url: `${workflowPath(workspaceId, workflowId)}/publish` };
 }
 
+export function buildWorkflowReadinessRequest(
+  workspaceId: string,
+  workflowId: string,
+  signal?: AbortSignal,
+): AxiosRequestConfig {
+  return { url: `${workflowPath(workspaceId, workflowId)}/readiness`, ...(signal ? { signal } : {}) };
+}
+
 export function buildDeleteWorkflowRequest(
   workspaceId: string,
   workflowId: string,
