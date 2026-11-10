@@ -393,7 +393,7 @@ test.describe("Unfinished steps", () => {
   test("shows no step chips when every step is ready", async ({ page }) => {
     await openBuilderWith(page, [
       { id: "start", type: "trigger.manual", config: {} },
-      { id: "check", type: "logic.condition", config: { left: "{{a}}", operator: "equals", right: "1" } },
+      { id: "check", type: "logic.condition", config: { left: "{{a}}", operator: "eq", right: "1" } },
     ], [{ id: "e1", source: "start", target: "check" }]);
     await expect(page.locator('[data-testid="workflow-node"]')).toHaveCount(2);
     await expect(page.getByTestId("setup-step-chip")).toHaveCount(0);
