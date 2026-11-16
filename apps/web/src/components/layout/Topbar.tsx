@@ -1,11 +1,94 @@
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Bell, Menu } from 'lucide-react';
+import { Bell, CircleHelp, LogOut, Menu, ShieldCheck, UserRound } from 'lucide-react';
 import { useI18nStore } from '../../store/useI18nStore';
 import { useUIStore } from '../../store/useUIStore';
 import { LanguageSwitch, ThemeToggle } from './ShellControls';
 import { useNotificationUnreadCount } from '../../hooks/useNotifications';
 import { useAuthStore } from '../../store/useAuthStore';
-import { ICON_BTN } from '../../lib/uiClasses';
+import { FOCUS_RING, ICON_BTN } from '../../lib/uiClasses';
+
+const MENU_ITEM = `flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-foreground hover:bg-subtle ${FOCUS_RING}`;
+
+/** Avatar button with an account menu: profile, security, help, logout. Closes on outside click and Escape. */
+function UserMenu({ name, initials, email }: { name: string; initials: string; email?: string }) {
+  const { t } = useI18nStore();
+  const logout = useAuthStore((state) => state.logout);
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  const close = () => setOpen(false);
+
+  return (
+    <div ref={rootRef} className="relative ml-1">
+      <button
+        ref={buttonRef}
+        type="button"
+        data-testid="topbar-user-avatar"
+        title={name}
+        aria-label={`${t('nav.account')}: ${name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-subtle text-[11px] font-semibold text-foreground transition-colors hover:border-border-strong ${FOCUS_RING}`}
+      >
+        {initials || 'A'}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          data-testid="topbar-user-menu"
+          aria-label={t('nav.account')}
+          className="absolute right-0 top-9 z-50 w-60 rounded-[10px] border border-border-strong bg-card p-1.5 shadow-pop"
+        >
+          <div className="border-b border-border px-2.5 pb-2 pt-1">
+            <p className="truncate text-sm font-medium text-foreground">{name}</p>
+            {email && email !== name && <p className="truncate text-xs text-muted-foreground">{email}</p>}
+          </div>
+          <div className="flex flex-col gap-0.5 py-1">
+            <Link role="menuitem" to="/settings/profile" onClick={close} className={MENU_ITEM}>
+              <UserRound size={16} strokeWidth={1.75} aria-hidden="true" className="text-text-2" />
+              {t('settings.profile')}
+            </Link>
+            <Link role="menuitem" to="/settings/security" onClick={close} className={MENU_ITEM}>
+              <ShieldCheck size={16} strokeWidth={1.75} aria-hidden="true" className="text-text-2" />
+              {t('settings.security')}
+            </Link>
+            <Link role="menuitem" to="/help" onClick={close} className={MENU_ITEM}>
+              <CircleHelp size={16} strokeWidth={1.75} aria-hidden="true" className="text-text-2" />
+              {t('nav.help')}
+            </Link>
+          </div>
+          <div className="border-t border-border pt-1">
+            <button type="button" role="menuitem" data-testid="topbar-logout" onClick={logout} className={`${MENU_ITEM} text-err hover:bg-err-bg`}>
+              <LogOut size={16} strokeWidth={1.75} aria-hidden="true" />
+              {t('nav.logout')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const getTopbarPageKey = (pathname: string) => {
   if (pathname.startsWith('/workflows')) return 'nav.workflows';
@@ -82,9 +165,7 @@ export function Topbar() {
           )}
         </Link>
 
-        <div data-testid="topbar-user-avatar" title={profileName} className="ml-1 flex h-7 w-7 shrink-0 cursor-default items-center justify-center rounded-full border border-border bg-subtle text-[11px] font-semibold text-foreground">
-          {profileInitials || 'A'}
-        </div>
+        <UserMenu name={profileName} initials={profileInitials} email={user?.email} />
       </div>
     </header>
   );

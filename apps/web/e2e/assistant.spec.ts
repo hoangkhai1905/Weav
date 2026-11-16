@@ -349,3 +349,58 @@ test.describe("AI assistant page", () => {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 });
+
+test("bot full-screen button opens /assistant with the same conversation", async ({ page }) => {
+  await installAuthFixture(page);
+  await stubConversationList(page, []);
+  await page.route("**/api/v1/assistant/chat", (route) =>
+    fulfillStream(route, sse(["conversation", { conversationId: NEW_CONVERSATION }], ["delta", { text: "Bot reply" }], ["done", {}])),
+  );
+  await page.route(`**/api/v1/assistant/conversations/${NEW_CONVERSATION}/messages`, (route) =>
+    fulfillJson(route, {
+      conversationId: NEW_CONVERSATION,
+      workspaceId: WORKSPACE_ID,
+      title: "From bot",
+      messages: [
+        { role: "user", content: "Hi bot", createdAt: "2026-10-03T00:00:00Z" },
+        { role: "assistant", content: "Bot reply", createdAt: "2026-10-03T00:00:01Z" },
+      ],
+    }),
+  );
+
+  await page.goto("/help");
+  await page.getByTestId("assistant-bot-fab").click();
+  await page.getByTestId("assistant-bot-input").fill("Hi bot");
+  await page.getByTestId("assistant-bot-send").click();
+  await expect(page.getByTestId("assistant-bot-message-assistant")).toContainText("Bot reply");
+
+  await page.getByTestId("assistant-bot-expand").click();
+  await expect(page).toHaveURL(/\/assistant$/);
+  await expect(page.getByTestId("assistant-bot-fab")).toHaveCount(0);
+  await expect(page.getByTestId("assistant-message-user")).toHaveText("Hi bot");
+  await expect(page.getByTestId("assistant-message-assistant")).toContainText("Bot reply");
+});
+
+test("topbar avatar opens an account menu that links to profile and logs out", async ({ page }) => {
+  await installAuthFixture(page);
+  await stubConversationList(page, []);
+  await page.goto("/help");
+
+  const avatar = page.getByTestId("topbar-user-avatar");
+  await expect(avatar).toHaveText("WO");
+  await avatar.click();
+  const menu = page.getByTestId("topbar-user-menu");
+  await expect(menu).toContainText("owner@example.test");
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(avatar).toBeFocused();
+
+  await avatar.click();
+  await menu.getByRole("menuitem", { name: "Profile information" }).click();
+  await expect(page).toHaveURL(/\/settings\/profile$/);
+  await expect(menu).toHaveCount(0);
+
+  await avatar.click();
+  await page.getByTestId("topbar-logout").click();
+  await expect(page).toHaveURL(/\/login/);
+});

@@ -61,6 +61,18 @@ function AssistantChat({ activeWorkspaceId }: { activeWorkspaceId: string | null
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per navigation state; send/t are re-created every render
   }, [explainRun, activeWorkspaceId, disabled]);
 
+  // The bot's "full screen" button hands over its conversation id; open it once, then clear the state (same as explainRun).
+  const handedConversation = (location.state as { conversationId?: string } | null)?.conversationId;
+  useEffect(() => {
+    if (!handedConversation || !activeWorkspaceId || disabled) return;
+    const timer = window.setTimeout(() => {
+      navigate(location.pathname, { replace: true, state: null });
+      if (UUID.test(handedConversation)) void openChat(handedConversation);
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once per navigation state; openChat is re-created every render
+  }, [handedConversation, activeWorkspaceId, disabled]);
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     void send();

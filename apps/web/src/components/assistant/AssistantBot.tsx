@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { Check, GitFork, Loader2, Plus, Send, Square, X } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Check, GitFork, Loader2, Maximize2, Plus, Send, Square, X } from 'lucide-react';
 import { isAssistantMockMode } from '../../api/assistant.api';
 import { countDraftNodes, useAssistantChat } from '../../hooks/useAssistantChat';
 import { useWorkspaceListContext } from '../../hooks/useWorkspace';
@@ -20,7 +20,8 @@ function BotChat({ activeWorkspaceId, visible, onClose }: { activeWorkspaceId: s
   const user = useAuthStore((state) => state.user);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
-  const { disabled, messages, input, setInput, streaming, openingDraft, resetChat, send, stop, openDraft, toolLabel } =
+  const navigate = useNavigate();
+  const { disabled, conversationId, messages, input, setInput, streaming, openingDraft, resetChat, send, stop, openDraft, toolLabel } =
     useAssistantChat(activeWorkspaceId, { withHistory: false, inputRef });
   const name = user?.displayName?.trim() || user?.name?.trim() || '';
 
@@ -54,6 +55,18 @@ function BotChat({ activeWorkspaceId, visible, onClose }: { activeWorkspaceId: s
             <span className="truncate">{t('bot.subtitle')}</span>
           </span>
         </span>
+        {/* Disabled while streaming: leaving unmounts the bot and would abort the reply. */}
+        <button
+          type="button"
+          data-testid="assistant-bot-expand"
+          className={ICON_BTN}
+          disabled={streaming}
+          onClick={() => navigate('/assistant', conversationId ? { state: { conversationId } } : undefined)}
+          aria-label={t('bot.expand')}
+          title={t('bot.expand')}
+        >
+          <Maximize2 size={16} strokeWidth={1.75} aria-hidden="true" />
+        </button>
         <button type="button" data-testid="assistant-bot-new" className={ICON_BTN} onClick={resetChat} aria-label={t('assistant.new')} title={t('assistant.new')}>
           <Plus size={18} strokeWidth={1.75} aria-hidden="true" />
         </button>
