@@ -107,3 +107,11 @@ Dùng compose `compose.yml` + `compose.dev.yml` + `compose.ai-local.yml` với `
 - **Còn lại:**
   - Workflow `0454d805…` trên prod vẫn còn `get`. Sau khi deploy, bước đó sẽ báo đỏ; người dùng phải đổi thao tác hoặc bỏ bước.
   - "Đọc nội dung Google Doc" chưa được hỗ trợ (giới hạn quyền `drive.file`), cần thiết kế riêng.
+
+## 12. Phiên 2026-11-10: hai test web lỗi sau đợt sửa enum
+
+- Chạy lại toàn bộ Playwright (chromium) trên `dev` 9781e104: 457 đạt, 2 bỏ qua, 8 lỗi. Hai lỗi chạy riêng vẫn lỗi:
+  - `ai-generator › shows no step chips when every step is ready`: dữ liệu test dùng `operator: "equals"`, ngoài enum `eq/ne/gt/gte/lt/lte` của `logic.condition`. Sau mục 11, web báo bước đó chưa cấu hình là đúng. Sửa dữ liệu test thành `"eq"`.
+  - `simple-node-ui › every output path has a vi and en label`: nhãn `google.docs.documentId` (EN "Document ID") dùng từ bị cấm "ID", `appendedCharacters` (VI "Số ký tự đã thêm") quá 4 từ. Đổi thành "Document code" và "Số ký tự thêm", theo cách đặt nhãn của Drive ("File code", "Mã tệp").
+- Kiểm tra: tsc sạch; Playwright `simple-node-ui`, `ai-generator`, `ai-provider-step`, `control-bot`, `localization`, `workspace-connections`: 171 đạt, 1 lỗi.
+- Còn lại: `workspace-connections › OCR picks the photo sent to the bot…` lỗi cả khi máy rảnh: bảng cấu hình (inspector) che node Telegram nên không bấm được. Chưa sửa. `notification-task10-live` cần stack thật (như trước).
